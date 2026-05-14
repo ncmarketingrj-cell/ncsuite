@@ -2,6 +2,7 @@ import { Link, useRouterState } from "@tanstack/react-router";
 import { motion } from "framer-motion";
 import {
   LayoutDashboard, FileText, Upload, BarChart3, Settings, Briefcase,
+  Activity, Palette, Link2, HelpCircle, Megaphone, LineChart,
 } from "lucide-react";
 import { Logo } from "@/components/Logo";
 
@@ -14,7 +15,24 @@ const GROUPS = [
     label: "Performance",
     items: [
       { to: "/relatorios", icon: FileText, label: "Relatórios", highlight: true },
+      { to: "/multicanal", icon: BarChart3, label: "Dashboard Métricas" },
       { to: "/upload", icon: Upload, label: "Extração de Dados", highlight: true },
+    ],
+  },
+  {
+    label: "Conversão",
+    items: [
+      { to: "/organizador", icon: Link2, label: "Link Pages" },
+      { to: "/quiz", icon: HelpCircle, label: "Quizzes" },
+      { to: "/utms", icon: Megaphone, label: "UTM Builder" },
+    ],
+  },
+  {
+    label: "Operação",
+    items: [
+      { to: "/campanhas", icon: Activity, label: "Campanhas" },
+      { to: "/metricas", icon: LineChart, label: "Métricas" },
+      { to: "/criativos", icon: Palette, label: "Criativos" },
     ],
   },
   {

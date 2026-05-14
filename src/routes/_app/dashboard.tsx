@@ -3,7 +3,7 @@ import { motion } from "framer-motion";
 import { useQuery } from "@tanstack/react-query";
 import {
   Upload, FileText, BarChart3, Settings, ArrowUpRight, Activity,
-  Sparkles, Layers,
+  Sparkles, Layers, Cpu, Link2, Megaphone, LineChart, Palette, Zap,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
@@ -13,11 +13,27 @@ export const Route = createFileRoute("/_app/dashboard")({
   component: Dashboard,
 });
 
-const MODULES = [
-  { to: "/upload", icon: Upload, title: "Extrair dados", desc: "Suba um print do gerenciador.", color: "from-primary/20 to-primary/5" },
-  { to: "/relatorios", icon: FileText, title: "Relatórios", desc: "Gere e gerencie entregas.", color: "from-secondary/20 to-secondary/5" },
-  { to: "/relatorios", icon: BarChart3, title: "Performance", desc: "Visão consolidada.", color: "from-accent/20 to-accent/5" },
-  { to: "/config", icon: Settings, title: "Configurações", desc: "Time, integrações, sistema.", color: "from-muted/40 to-muted/10" },
+const HUB_ITEMS = [
+  { to: "/multicanal", icon: BarChart3, title: "Performance Meta Ads", desc: "Visão consolidada de campanhas e métricas.", tag: "Core", tagColor: "bg-primary/20 text-primary" },
+  { to: "/criativos", icon: Palette, title: "Laboratório de Criativos", desc: "Galeria de criativos e análise de desempenho.", tag: "Lab", tagColor: "bg-secondary/20 text-secondary" },
+  { to: "/organizador", icon: Link2, title: "Central de Links", desc: "Crie link pages personalizadas para cada cliente.", tag: "Conversão", tagColor: "bg-accent/20 text-accent" },
+  { to: "/metricas", icon: LineChart, title: "Controle de Indicadores", desc: "KPIs, gráficos e análise de tendência.", tag: "Data", tagColor: "bg-primary/20 text-primary" },
+  { to: "/integrations", icon: Zap, title: "Integração Meta API", desc: "Sincronize campanhas direto da Graph API.", tag: "API", tagColor: "bg-success/20 text-success" },
+  { to: "/campanhas", icon: Megaphone, title: "Gestão de Campanhas", desc: "CRUD completo e controle de budget.", tag: "Ops", tagColor: "bg-secondary/20 text-secondary" },
+];
+
+const OPS_ITEMS = [
+  { to: "/upload", icon: Upload, title: "Gerar Relatório", desc: "Suba print do gerenciador." },
+  { to: "/campanhas", icon: Activity, title: "Campanhas", desc: "Gerencie todas as campanhas." },
+  { to: "/utms", icon: Megaphone, title: "UTM Builder", desc: "Crie URLs rastreáveis." },
+  { to: "/metricas", icon: LineChart, title: "Métricas Detalhadas", desc: "Dados granulares." },
+];
+
+const STEPS = [
+  { n: "01", t: "Conecte a conta", d: "Cole o access token Meta Ads nas configurações." },
+  { n: "02", t: "Sincronize dados", d: "O motor importa campanhas e métricas automaticamente." },
+  { n: "03", t: "Analise performance", d: "Dashboards e gráficos atualizados em tempo real." },
+  { n: "04", t: "Entregue relatórios", d: "Monte e envie relatórios profissionais em segundos." },
 ];
 
 function Dashboard() {
@@ -43,12 +59,15 @@ function Dashboard() {
         className="glass-panel relative overflow-hidden p-8 sm:p-10"
       >
         <div className="absolute -right-20 -top-20 h-64 w-64 rounded-full bg-primary/20 blur-3xl" />
-        <p className="label-mono text-primary">Hub central</p>
-        <h1 className="mt-3 font-display text-3xl font-bold sm:text-4xl">
-          Bem-vindo de volta, <span className="text-gradient">{user?.email?.split("@")[0]}</span>.
+        <Cpu className="absolute right-8 top-8 h-24 w-24 animate-pulse text-primary/10" />
+        <span className="inline-flex items-center gap-1.5 rounded-full bg-primary/10 px-3 py-1 text-[10px] font-semibold uppercase tracking-wider text-primary">
+          Ecossistema NC Performance
+        </span>
+        <h1 className="mt-4 font-display text-3xl font-bold sm:text-4xl">
+          Bem-vindo ao <span className="text-gradient">Futuro da Gestão.</span>
         </h1>
         <p className="mt-2 max-w-xl text-sm text-muted-foreground">
-          Tudo pronto para operar. Comece pela extração ou abra um relatório.
+          Suite completa de performance Meta Ads para o segmento automotivo. Extraia, analise e entregue em escala.
         </p>
 
         <div className="mt-8 grid grid-cols-3 gap-px overflow-hidden rounded-xl border border-white/5 bg-white/5">
@@ -58,24 +77,54 @@ function Dashboard() {
         </div>
       </motion.section>
 
-      {/* Modules grid */}
+      {/* Hub modules — 6 cards */}
       <section>
-        <p className="label-mono mb-4 text-primary">Módulos</p>
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {MODULES.map((m, i) => (
+        <p className="label-mono mb-4 text-primary">Módulos principais</p>
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {HUB_ITEMS.map((m, i) => (
             <motion.div
-              key={m.to}
+              key={m.to + m.title}
               initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}
               transition={{ delay: i * 0.05 }}
             >
               <Link
                 to={m.to}
-                className={`glass-panel group relative block h-full overflow-hidden bg-gradient-to-br ${m.color} p-6 transition hover:border-primary/30`}
+                className="glass-panel group relative block h-full overflow-hidden p-6 transition hover:border-primary/30 hover:scale-[1.01]"
               >
-                <m.icon className="h-6 w-6 text-primary" />
-                <h3 className="mt-6 font-display text-lg font-semibold">{m.title}</h3>
+                <div className="flex items-center justify-between">
+                  <m.icon className="h-6 w-6 text-primary" />
+                  <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${m.tagColor}`}>{m.tag}</span>
+                </div>
+                <h3 className="mt-5 font-display text-lg font-semibold">{m.title}</h3>
                 <p className="mt-1 text-xs text-muted-foreground">{m.desc}</p>
-                <ArrowUpRight className="absolute right-5 top-5 h-4 w-4 text-muted-foreground transition group-hover:-translate-y-0.5 group-hover:translate-x-0.5 group-hover:text-primary" />
+                <ArrowUpRight className="absolute right-5 bottom-5 h-4 w-4 text-muted-foreground transition group-hover:-translate-y-0.5 group-hover:translate-x-0.5 group-hover:text-primary" />
+              </Link>
+            </motion.div>
+          ))}
+        </div>
+      </section>
+
+      {/* Operation modules */}
+      <section>
+        <p className="label-mono mb-4 text-primary">Módulos de operação</p>
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {OPS_ITEMS.map((m, i) => (
+            <motion.div
+              key={m.to + m.title}
+              initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: i * 0.04 }}
+            >
+              <Link
+                to={m.to}
+                className="glass-panel group flex items-center gap-4 p-4 transition hover:border-primary/30"
+              >
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-primary/20 to-secondary/20">
+                  <m.icon className="h-5 w-5 text-primary" />
+                </div>
+                <div className="min-w-0">
+                  <h4 className="text-sm font-semibold">{m.title}</h4>
+                  <p className="truncate text-xs text-muted-foreground">{m.desc}</p>
+                </div>
               </Link>
             </motion.div>
           ))}
@@ -86,13 +135,17 @@ function Dashboard() {
       <section className="glass-panel p-8">
         <div className="flex items-center gap-2">
           <Sparkles className="h-4 w-4 text-primary" />
-          <p className="label-mono text-primary">Guia rápido</p>
+          <p className="label-mono text-primary">Guia de operação</p>
         </div>
-        <h2 className="mt-2 font-display text-2xl font-semibold">Operação em 3 passos</h2>
-        <ol className="mt-6 grid gap-px overflow-hidden rounded-xl border border-white/5 bg-white/5 sm:grid-cols-3">
-          <Step n="01" t="Extrair print" d="Abra Upload e envie a captura do gerenciador. O motor extrai campanhas em segundos." />
-          <Step n="02" t="Montar relatório" d="O ReportBuilder abre automaticamente. Arraste campanhas, escolha um formato e revise." />
-          <Step n="03" t="Entregar" d="Copie o markdown ou salve no histórico. A próxima entrega leva metade do tempo." />
+        <h2 className="mt-2 font-display text-2xl font-semibold">Operação em 4 passos</h2>
+        <ol className="mt-6 grid gap-px overflow-hidden rounded-xl border border-white/5 bg-white/5 sm:grid-cols-2 lg:grid-cols-4">
+          {STEPS.map((s) => (
+            <li key={s.n} className="bg-background/60 p-6">
+              <div className="label-mono text-primary">{s.n}</div>
+              <h4 className="mt-3 font-display text-base font-semibold">{s.t}</h4>
+              <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{s.d}</p>
+            </li>
+          ))}
         </ol>
       </section>
     </div>
@@ -107,16 +160,6 @@ function Stat({ label, value, icon: Icon }: { label: string; value: number; icon
         <Icon className="h-3.5 w-3.5 text-primary" />
       </div>
       <div className="mt-2 font-display text-3xl font-bold">{value}</div>
-    </div>
-  );
-}
-
-function Step({ n, t, d }: { n: string; t: string; d: string }) {
-  return (
-    <div className="bg-background/60 p-6">
-      <div className="label-mono text-primary">{n}</div>
-      <h4 className="mt-3 font-display text-base font-semibold">{t}</h4>
-      <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{d}</p>
     </div>
   );
 }

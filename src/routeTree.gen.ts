@@ -9,16 +9,39 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as PrivacyRouteImport } from './routes/privacy'
 import { Route as LoginRouteImport } from './routes/login'
+import { Route as DeletionRouteImport } from './routes/deletion'
 import { Route as AppRouteImport } from './routes/_app'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as QSlugRouteImport } from './routes/q.$slug'
+import { Route as PSlugRouteImport } from './routes/p.$slug'
+import { Route as AppUtmsRouteImport } from './routes/_app/utms'
 import { Route as AppUploadRouteImport } from './routes/_app/upload'
 import { Route as AppRelatoriosRouteImport } from './routes/_app/relatorios'
+import { Route as AppQuizRouteImport } from './routes/_app/quiz'
+import { Route as AppOrganizadorRouteImport } from './routes/_app/organizador'
+import { Route as AppMulticanalRouteImport } from './routes/_app/multicanal'
+import { Route as AppMetricasRouteImport } from './routes/_app/metricas'
+import { Route as AppIntegrationsRouteImport } from './routes/_app/integrations'
 import { Route as AppDashboardRouteImport } from './routes/_app/dashboard'
+import { Route as AppCriativosRouteImport } from './routes/_app/criativos'
+import { Route as AppConfigRouteImport } from './routes/_app/config'
+import { Route as AppCampanhasRouteImport } from './routes/_app/campanhas'
 
+const PrivacyRoute = PrivacyRouteImport.update({
+  id: '/privacy',
+  path: '/privacy',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DeletionRoute = DeletionRouteImport.update({
+  id: '/deletion',
+  path: '/deletion',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AppRoute = AppRouteImport.update({
@@ -30,6 +53,21 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const QSlugRoute = QSlugRouteImport.update({
+  id: '/q/$slug',
+  path: '/q/$slug',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PSlugRoute = PSlugRouteImport.update({
+  id: '/p/$slug',
+  path: '/p/$slug',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AppUtmsRoute = AppUtmsRouteImport.update({
+  id: '/utms',
+  path: '/utms',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppUploadRoute = AppUploadRouteImport.update({
   id: '/upload',
   path: '/upload',
@@ -40,63 +78,209 @@ const AppRelatoriosRoute = AppRelatoriosRouteImport.update({
   path: '/relatorios',
   getParentRoute: () => AppRoute,
 } as any)
+const AppQuizRoute = AppQuizRouteImport.update({
+  id: '/quiz',
+  path: '/quiz',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppOrganizadorRoute = AppOrganizadorRouteImport.update({
+  id: '/organizador',
+  path: '/organizador',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppMulticanalRoute = AppMulticanalRouteImport.update({
+  id: '/multicanal',
+  path: '/multicanal',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppMetricasRoute = AppMetricasRouteImport.update({
+  id: '/metricas',
+  path: '/metricas',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppIntegrationsRoute = AppIntegrationsRouteImport.update({
+  id: '/integrations',
+  path: '/integrations',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppDashboardRoute = AppDashboardRouteImport.update({
   id: '/dashboard',
   path: '/dashboard',
   getParentRoute: () => AppRoute,
 } as any)
+const AppCriativosRoute = AppCriativosRouteImport.update({
+  id: '/criativos',
+  path: '/criativos',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppConfigRoute = AppConfigRouteImport.update({
+  id: '/config',
+  path: '/config',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppCampanhasRoute = AppCampanhasRouteImport.update({
+  id: '/campanhas',
+  path: '/campanhas',
+  getParentRoute: () => AppRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/deletion': typeof DeletionRoute
   '/login': typeof LoginRoute
+  '/privacy': typeof PrivacyRoute
+  '/campanhas': typeof AppCampanhasRoute
+  '/config': typeof AppConfigRoute
+  '/criativos': typeof AppCriativosRoute
   '/dashboard': typeof AppDashboardRoute
+  '/integrations': typeof AppIntegrationsRoute
+  '/metricas': typeof AppMetricasRoute
+  '/multicanal': typeof AppMulticanalRoute
+  '/organizador': typeof AppOrganizadorRoute
+  '/quiz': typeof AppQuizRoute
   '/relatorios': typeof AppRelatoriosRoute
   '/upload': typeof AppUploadRoute
+  '/utms': typeof AppUtmsRoute
+  '/p/$slug': typeof PSlugRoute
+  '/q/$slug': typeof QSlugRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/deletion': typeof DeletionRoute
   '/login': typeof LoginRoute
+  '/privacy': typeof PrivacyRoute
+  '/campanhas': typeof AppCampanhasRoute
+  '/config': typeof AppConfigRoute
+  '/criativos': typeof AppCriativosRoute
   '/dashboard': typeof AppDashboardRoute
+  '/integrations': typeof AppIntegrationsRoute
+  '/metricas': typeof AppMetricasRoute
+  '/multicanal': typeof AppMulticanalRoute
+  '/organizador': typeof AppOrganizadorRoute
+  '/quiz': typeof AppQuizRoute
   '/relatorios': typeof AppRelatoriosRoute
   '/upload': typeof AppUploadRoute
+  '/utms': typeof AppUtmsRoute
+  '/p/$slug': typeof PSlugRoute
+  '/q/$slug': typeof QSlugRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/_app': typeof AppRouteWithChildren
+  '/deletion': typeof DeletionRoute
   '/login': typeof LoginRoute
+  '/privacy': typeof PrivacyRoute
+  '/_app/campanhas': typeof AppCampanhasRoute
+  '/_app/config': typeof AppConfigRoute
+  '/_app/criativos': typeof AppCriativosRoute
   '/_app/dashboard': typeof AppDashboardRoute
+  '/_app/integrations': typeof AppIntegrationsRoute
+  '/_app/metricas': typeof AppMetricasRoute
+  '/_app/multicanal': typeof AppMulticanalRoute
+  '/_app/organizador': typeof AppOrganizadorRoute
+  '/_app/quiz': typeof AppQuizRoute
   '/_app/relatorios': typeof AppRelatoriosRoute
   '/_app/upload': typeof AppUploadRoute
+  '/_app/utms': typeof AppUtmsRoute
+  '/p/$slug': typeof PSlugRoute
+  '/q/$slug': typeof QSlugRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/login' | '/dashboard' | '/relatorios' | '/upload'
+  fullPaths:
+    | '/'
+    | '/deletion'
+    | '/login'
+    | '/privacy'
+    | '/campanhas'
+    | '/config'
+    | '/criativos'
+    | '/dashboard'
+    | '/integrations'
+    | '/metricas'
+    | '/multicanal'
+    | '/organizador'
+    | '/quiz'
+    | '/relatorios'
+    | '/upload'
+    | '/utms'
+    | '/p/$slug'
+    | '/q/$slug'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/login' | '/dashboard' | '/relatorios' | '/upload'
+  to:
+    | '/'
+    | '/deletion'
+    | '/login'
+    | '/privacy'
+    | '/campanhas'
+    | '/config'
+    | '/criativos'
+    | '/dashboard'
+    | '/integrations'
+    | '/metricas'
+    | '/multicanal'
+    | '/organizador'
+    | '/quiz'
+    | '/relatorios'
+    | '/upload'
+    | '/utms'
+    | '/p/$slug'
+    | '/q/$slug'
   id:
     | '__root__'
     | '/'
     | '/_app'
+    | '/deletion'
     | '/login'
+    | '/privacy'
+    | '/_app/campanhas'
+    | '/_app/config'
+    | '/_app/criativos'
     | '/_app/dashboard'
+    | '/_app/integrations'
+    | '/_app/metricas'
+    | '/_app/multicanal'
+    | '/_app/organizador'
+    | '/_app/quiz'
     | '/_app/relatorios'
     | '/_app/upload'
+    | '/_app/utms'
+    | '/p/$slug'
+    | '/q/$slug'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AppRoute: typeof AppRouteWithChildren
+  DeletionRoute: typeof DeletionRoute
   LoginRoute: typeof LoginRoute
+  PrivacyRoute: typeof PrivacyRoute
+  PSlugRoute: typeof PSlugRoute
+  QSlugRoute: typeof QSlugRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/privacy': {
+      id: '/privacy'
+      path: '/privacy'
+      fullPath: '/privacy'
+      preLoaderRoute: typeof PrivacyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/login': {
       id: '/login'
       path: '/login'
       fullPath: '/login'
       preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/deletion': {
+      id: '/deletion'
+      path: '/deletion'
+      fullPath: '/deletion'
+      preLoaderRoute: typeof DeletionRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_app': {
@@ -113,6 +297,27 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/q/$slug': {
+      id: '/q/$slug'
+      path: '/q/$slug'
+      fullPath: '/q/$slug'
+      preLoaderRoute: typeof QSlugRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/p/$slug': {
+      id: '/p/$slug'
+      path: '/p/$slug'
+      fullPath: '/p/$slug'
+      preLoaderRoute: typeof PSlugRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/_app/utms': {
+      id: '/_app/utms'
+      path: '/utms'
+      fullPath: '/utms'
+      preLoaderRoute: typeof AppUtmsRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/upload': {
       id: '/_app/upload'
       path: '/upload'
@@ -127,6 +332,41 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppRelatoriosRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/quiz': {
+      id: '/_app/quiz'
+      path: '/quiz'
+      fullPath: '/quiz'
+      preLoaderRoute: typeof AppQuizRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/organizador': {
+      id: '/_app/organizador'
+      path: '/organizador'
+      fullPath: '/organizador'
+      preLoaderRoute: typeof AppOrganizadorRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/multicanal': {
+      id: '/_app/multicanal'
+      path: '/multicanal'
+      fullPath: '/multicanal'
+      preLoaderRoute: typeof AppMulticanalRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/metricas': {
+      id: '/_app/metricas'
+      path: '/metricas'
+      fullPath: '/metricas'
+      preLoaderRoute: typeof AppMetricasRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/integrations': {
+      id: '/_app/integrations'
+      path: '/integrations'
+      fullPath: '/integrations'
+      preLoaderRoute: typeof AppIntegrationsRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/dashboard': {
       id: '/_app/dashboard'
       path: '/dashboard'
@@ -134,19 +374,58 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppDashboardRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/criativos': {
+      id: '/_app/criativos'
+      path: '/criativos'
+      fullPath: '/criativos'
+      preLoaderRoute: typeof AppCriativosRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/config': {
+      id: '/_app/config'
+      path: '/config'
+      fullPath: '/config'
+      preLoaderRoute: typeof AppConfigRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/campanhas': {
+      id: '/_app/campanhas'
+      path: '/campanhas'
+      fullPath: '/campanhas'
+      preLoaderRoute: typeof AppCampanhasRouteImport
+      parentRoute: typeof AppRoute
+    }
   }
 }
 
 interface AppRouteChildren {
+  AppCampanhasRoute: typeof AppCampanhasRoute
+  AppConfigRoute: typeof AppConfigRoute
+  AppCriativosRoute: typeof AppCriativosRoute
   AppDashboardRoute: typeof AppDashboardRoute
+  AppIntegrationsRoute: typeof AppIntegrationsRoute
+  AppMetricasRoute: typeof AppMetricasRoute
+  AppMulticanalRoute: typeof AppMulticanalRoute
+  AppOrganizadorRoute: typeof AppOrganizadorRoute
+  AppQuizRoute: typeof AppQuizRoute
   AppRelatoriosRoute: typeof AppRelatoriosRoute
   AppUploadRoute: typeof AppUploadRoute
+  AppUtmsRoute: typeof AppUtmsRoute
 }
 
 const AppRouteChildren: AppRouteChildren = {
+  AppCampanhasRoute: AppCampanhasRoute,
+  AppConfigRoute: AppConfigRoute,
+  AppCriativosRoute: AppCriativosRoute,
   AppDashboardRoute: AppDashboardRoute,
+  AppIntegrationsRoute: AppIntegrationsRoute,
+  AppMetricasRoute: AppMetricasRoute,
+  AppMulticanalRoute: AppMulticanalRoute,
+  AppOrganizadorRoute: AppOrganizadorRoute,
+  AppQuizRoute: AppQuizRoute,
   AppRelatoriosRoute: AppRelatoriosRoute,
   AppUploadRoute: AppUploadRoute,
+  AppUtmsRoute: AppUtmsRoute,
 }
 
 const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)
@@ -154,8 +433,22 @@ const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AppRoute: AppRouteWithChildren,
+  DeletionRoute: DeletionRoute,
   LoginRoute: LoginRoute,
+  PrivacyRoute: PrivacyRoute,
+  PSlugRoute: PSlugRoute,
+  QSlugRoute: QSlugRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { startInstance } from './start.ts'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
+  }
+}
