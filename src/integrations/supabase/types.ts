@@ -14,7 +14,274 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      background_jobs: {
+        Row: {
+          created_at: string | null
+          id: string
+          payload: Json | null
+          progress: number | null
+          result: Json | null
+          status: string | null
+          type: string
+          updated_at: string | null
+          user_id: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          payload?: Json | null
+          progress?: number | null
+          result?: Json | null
+          status?: string | null
+          type: string
+          updated_at?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          payload?: Json | null
+          progress?: number | null
+          result?: Json | null
+          status?: string | null
+          type?: string
+          updated_at?: string | null
+          user_id?: string | null
+        }
+        Relationships: []
+      }
+      campaigns: {
+        Row: {
+          budget: number | null
+          client_id: string | null
+          created_at: string | null
+          id: string
+          link: string | null
+          name: string
+          platform: string | null
+          status: string | null
+        }
+        Insert: {
+          budget?: number | null
+          client_id?: string | null
+          created_at?: string | null
+          id?: string
+          link?: string | null
+          name: string
+          platform?: string | null
+          status?: string | null
+        }
+        Update: {
+          budget?: number | null
+          client_id?: string | null
+          created_at?: string | null
+          id?: string
+          link?: string | null
+          name?: string
+          platform?: string | null
+          status?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "campaigns_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      clients: {
+        Row: {
+          created_at: string | null
+          id: string
+          monthly_budget: number | null
+          name: string
+          type: string | null
+          user_id: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          monthly_budget?: number | null
+          name: string
+          type?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          monthly_budget?: number | null
+          name?: string
+          type?: string | null
+          user_id?: string | null
+        }
+        Relationships: []
+      }
+      metrics: {
+        Row: {
+          campaign_id: string | null
+          clicks: number | null
+          client_id: string | null
+          conversions: number | null
+          cost: number | null
+          created_at: string | null
+          date: string | null
+          id: string
+          impressions: number | null
+          reach: number | null
+          result_type: string | null
+        }
+        Insert: {
+          campaign_id?: string | null
+          clicks?: number | null
+          client_id?: string | null
+          conversions?: number | null
+          cost?: number | null
+          created_at?: string | null
+          date?: string | null
+          id?: string
+          impressions?: number | null
+          reach?: number | null
+          result_type?: string | null
+        }
+        Update: {
+          campaign_id?: string | null
+          clicks?: number | null
+          client_id?: string | null
+          conversions?: number | null
+          cost?: number | null
+          created_at?: string | null
+          date?: string | null
+          id?: string
+          impressions?: number | null
+          reach?: number | null
+          result_type?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "metrics_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "campaigns"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "metrics_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      profiles: {
+        Row: {
+          agency_name: string | null
+          avatar_url: string | null
+          created_at: string | null
+          full_name: string | null
+          id: string
+          position: string | null
+          role: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          agency_name?: string | null
+          avatar_url?: string | null
+          created_at?: string | null
+          full_name?: string | null
+          id: string
+          position?: string | null
+          role?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          agency_name?: string | null
+          avatar_url?: string | null
+          created_at?: string | null
+          full_name?: string | null
+          id?: string
+          position?: string | null
+          role?: string | null
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
+      report_templates: {
+        Row: {
+          created_at: string | null
+          footer_text: string | null
+          id: string
+          is_default: boolean | null
+          name: string
+          user_id: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          footer_text?: string | null
+          id?: string
+          is_default?: boolean | null
+          name: string
+          user_id?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          footer_text?: string | null
+          id?: string
+          is_default?: boolean | null
+          name?: string
+          user_id?: string | null
+        }
+        Relationships: []
+      }
+      reports: {
+        Row: {
+          client_id: string | null
+          client_name: string | null
+          created_at: string | null
+          id: string
+          markdown: string | null
+          period: string | null
+          raw_data: Json | null
+          total_campaigns: number | null
+          total_investment: number | null
+          user_id: string | null
+        }
+        Insert: {
+          client_id?: string | null
+          client_name?: string | null
+          created_at?: string | null
+          id?: string
+          markdown?: string | null
+          period?: string | null
+          raw_data?: Json | null
+          total_campaigns?: number | null
+          total_investment?: number | null
+          user_id?: string | null
+        }
+        Update: {
+          client_id?: string | null
+          client_name?: string | null
+          created_at?: string | null
+          id?: string
+          markdown?: string | null
+          period?: string | null
+          raw_data?: Json | null
+          total_campaigns?: number | null
+          total_investment?: number | null
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "reports_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
