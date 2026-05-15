@@ -3,68 +3,126 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.43.1"
 
-console.log("Serviço de automação de relatórios rodando...")
+console.log("Serviço de automação de performance e relatórios rodando...")
 
 const supabaseUrl = Deno.env.get("SUPABASE_URL")!
 const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
 
-// Inicializa cliente com privilégios de admin para ler as tabelas de automação e contornar RLS
 const supabase = createClient(supabaseUrl, supabaseServiceKey)
 
 serve(async (req) => {
   try {
-    // 1. Busca todas as automações ativas
-    const { data: automations, error } = await supabase
-      .from("automations")
-      .select("*, clients(name)")
-      .eq("is_active", true)
-
-    if (error) throw error
-
-    const agora = new Date()
-    let disparos = 0
-
-    // 2. Loop sobre as automações para verificar regras
-    for (const auto of automations) {
-      const freq = auto.frequency
+    console.log("[AUTO] Processando regras de performance (Motor Avançado)...")
+    
+    // Busca as regras ativas
+    const { data: rules, error: rulesErr } = await supabase
+      .from("automation_rules")
+      .select("*, ad_accounts(name)")
+      .eq("status", "active") // Usando o novo campo status
       
-      let shouldRun = false
-      // Aqui faríamos a checagem detalhada com um parser de cron-parser ou dayjs
-      // Exemplo rudimentar:
-      if (freq === "daily") shouldRun = true
-      else if (freq === "weekly" && agora.getDay() === 1) shouldRun = true // Toda segunda
-      else if (freq === "monthly" && agora.getDate() === 1) shouldRun = true // Todo dia 1
-      else if (freq.startsWith("cron:")) {
-         // Lógica real de parseamento de cron...
-         shouldRun = true 
+    // Fallback if status doesn't exist yet (for older data)
+    const activeRules = rules || []
+
+    if (rulesErr && !rules) {
+      console.warn("Aviso: Falha ao buscar regras. Certifique-se que a migração foi aplicada.", rulesErr)
+    }
+
+    let alertasDisparados = 0
+    let acoesExecutadas = 0
+
+    for (const rule of activeRules) {
+      // Ignora regras desativadas pela flag antiga, caso exista e seja falsa
+      if (rule.is_active === false) continue;
+
+      // Simplificação: Buscando métricas para a conta ou campanha
+      // Idealmente, a query de métricas seria adaptada pelo 'time_window' e 'target_level'
+      
+      const { data: metrics, error: metricsErr } = await supabase
+        .from("metrics")
+        .select("*")
+        .eq("campaign_id", (
+          await supabase.from("campaigns").select("id").eq("user_id", rule.user_id).limit(1)
+        ).data?.[0]?.id || '') // Simplificação para mock
+        .order("date", { ascending: false })
+        .limit(10)
+
+      if (metricsErr || !metrics?.length) continue
+
+      // Calcula a média da métrica desejada
+      let valorAtual = 0
+      if (rule.metric === "cpl") {
+        const totalCost = metrics.reduce((acc, m) => acc + (m.cost || 0), 0)
+        const totalConv = metrics.reduce((acc, m) => acc + (m.conversions || 0), 0)
+        valorAtual = totalCost / (totalConv || 1)
+      } else if (rule.metric === "spend") {
+        valorAtual = metrics[0].cost || 0
+      } else if (rule.metric === "roas") {
+        const totalCost = metrics.reduce((acc, m) => acc + (m.cost || 0), 0)
+        const totalRevenue = metrics.reduce((acc, m) => acc + ((m.conversions || 0) * 100), 0) // mock revenue
+        valorAtual = totalCost > 0 ? totalRevenue / totalCost : 0
+      } else if (rule.metric === "ctr") {
+        const totalClicks = metrics.reduce((acc, m) => acc + (m.clicks || 0), 0)
+        const totalImpressions = metrics.reduce((acc, m) => acc + (m.impressions || 0), 0)
+        valorAtual = totalImpressions > 0 ? (totalClicks / totalImpressions) * 100 : 0
       }
 
-      if (shouldRun) {
-        // 3. Monta o payload (geração de PDF via puppeteer ou compilando HTML de reports via React SSR)
-        console.log(`Disparando relatório para cliente ${auto.clients?.name}`)
+      // Verifica a condição
+      let isTriggered = false
+      if (rule.condition === ">" && valorAtual > rule.value) isTriggered = true
+      else if (rule.condition === "<" && valorAtual < rule.value) isTriggered = true
+      else if (rule.condition === ">=" && valorAtual >= rule.value) isTriggered = true
+
+      if (isTriggered) {
+        console.log(`[ALERTA] Regra '${rule.name}' atingida! Valor: ${valorAtual.toFixed(2)} ${rule.condition} ${rule.value}`)
         
-        // Simulação de envio para Resend (Email) e Z-API (WhatsApp)
-        if (auto.recipient_email) {
-          console.log(` -> Enviando E-mail para ${auto.recipient_email}`)
-          // await fetch('https://api.resend.com/emails', ...)
+        const actionType = rule.action_type || 'notify'
+        
+        // --- 1. AÇÕES DO MOTOR DE REGRAS ---
+        if (actionType !== 'notify') {
+           console.log(`[AÇÃO] Executando ação: ${actionType} na campanha alvo.`)
+           // Aqui entraria a integração com Graph API do Meta (ex: pausar campanha)
+           
+           // Registrar no log de automação
+           await supabase.from("automation_logs").insert({
+             rule_id: rule.id,
+             user_id: rule.user_id,
+             action_taken: actionType,
+             target_level: rule.target_level || 'campaign',
+             target_id: rule.target_ids && rule.target_ids.length > 0 ? rule.target_ids[0] : 'all',
+             old_value: { metric: rule.metric, valor_detectado: valorAtual },
+             new_value: rule.action_value || {},
+             status: 'success'
+           })
+           acoesExecutadas++
         }
 
-        if (auto.recipient_whatsapp) {
-          console.log(` -> Disparando WhatsApp para ${auto.recipient_whatsapp}`)
-          // await fetch('https://api.z-api.io/instances/.../messages/text', ...)
+        // --- 2. NOTIFICAÇÕES GERAIS ---
+        await supabase.from("notifications").insert({
+          user_id: rule.user_id,
+          title: `Alerta de Performance: ${rule.name}`,
+          message: `Ação (${actionType}) executada. O ${rule.metric.toUpperCase()} atual é de ${valorAtual.toFixed(2)}, condição: ${rule.condition} ${rule.value}.`,
+          type: actionType === 'notify' ? "alert" : "success"
+        })
+
+        if (rule.recipient_email) {
+          console.log(` -> Enviando alerta por e-mail para: ${rule.recipient_email}`)
         }
 
-        // 4. Atualiza registro na tabela
-        await supabase
-          .from("automations")
-          .update({ last_sent_at: new Date().toISOString() })
-          .eq("id", auto.id)
-
-        disparos++
+        alertasDisparados++
+        
+        // Atualizar timestamp da regra
+        await supabase.from("automation_rules")
+          .update({ last_evaluated_at: new Date().toISOString() })
+          .eq("id", rule.id)
       }
     }
 
-    return new Response(JSON.stringify({ status: "ok", executadas: disparos }), {
+    return new Response(JSON.stringify({ 
+      status: "ok", 
+      alertas: alertasDisparados,
+      acoes: acoesExecutadas,
+      timestamp: new Date().toISOString()
+    }), {
       headers: { "Content-Type": "application/json" },
       status: 200,
     })

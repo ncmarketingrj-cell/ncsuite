@@ -9,6 +9,7 @@ CREATE TABLE IF NOT EXISTS public.meta_ads_configs (
   updated_at timestamptz DEFAULT now()
 );
 ALTER TABLE public.meta_ads_configs ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "meta_ads_configs all auth" ON public.meta_ads_configs;
 CREATE POLICY "meta_ads_configs all auth" ON public.meta_ads_configs FOR ALL TO authenticated USING (true) WITH CHECK (true);
 
 -- Link Pages
@@ -24,6 +25,7 @@ CREATE TABLE IF NOT EXISTS public.link_pages (
   created_at timestamptz DEFAULT now()
 );
 ALTER TABLE public.link_pages ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "link_pages all auth" ON public.link_pages;
 CREATE POLICY "link_pages all auth" ON public.link_pages FOR ALL TO authenticated USING (true) WITH CHECK (true);
 
 -- Swipe Files (Criativos)
@@ -37,4 +39,5 @@ CREATE TABLE IF NOT EXISTS public.swipe_files (
   created_at timestamptz DEFAULT now()
 );
 ALTER TABLE public.swipe_files ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "swipe_files all auth" ON public.swipe_files;
 CREATE POLICY "swipe_files all auth" ON public.swipe_files FOR ALL TO authenticated USING (true) WITH CHECK (true);

@@ -2,7 +2,8 @@ import { Link, useRouterState } from "@tanstack/react-router";
 import { motion } from "framer-motion";
 import {
   LayoutDashboard, FileText, Upload, BarChart3, Settings, Briefcase,
-  Activity, Palette, Link2, HelpCircle, Megaphone, LineChart,
+  Activity, Palette, Link2, HelpCircle, Megaphone, LineChart, Zap, Layers,
+  Bot
 } from "lucide-react";
 import { Logo } from "@/components/Logo";
 
@@ -31,6 +32,9 @@ const GROUPS = [
     label: "Operação",
     items: [
       { to: "/campanhas", icon: Activity, label: "Campanhas" },
+      { to: "/portfolios", icon: Layers, label: "Portfólios", highlight: true },
+      { to: "/automacoes", icon: Zap, label: "Automações", highlight: true },
+      { to: "/agente", icon: Bot, label: "Agente IA", highlight: true },
       { to: "/metricas", icon: LineChart, label: "Métricas" },
       { to: "/criativos", icon: Palette, label: "Criativos" },
     ],

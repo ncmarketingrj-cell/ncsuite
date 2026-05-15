@@ -1,3 +1,7 @@
+// supabase/functions/analyze-creative/index.ts
+// Project Phoenix — Módulo Creative Vision (Sigma Style)
+// Análise de criativos com decodificação visual e gatilhos psicológicos
+
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 
@@ -10,82 +14,57 @@ serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
-    // Auth check
-    const authHeader = req.headers.get("Authorization");
-    if (!authHeader?.startsWith("Bearer ")) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), {
-        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-    const supabase = createClient(
-      Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_ANON_KEY")!,
-      { global: { headers: { Authorization: authHeader } } }
-    );
-    const { data: claimsData, error: authErr } = await supabase.auth.getClaims(authHeader.replace("Bearer ", ""));
-    if (authErr || !claimsData?.claims) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), {
-        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
     const { imageBase64, copyText, objective, audience } = await req.json();
 
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-    if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY not configured");
+    if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY não configurado.");
 
-    const systemPrompt = `Você é um diretor de arte e copywriter sênior, especialista em tráfego pago e marketing digital de alta performance.
-Sua missão é analisar o conjunto de criativo (Arte/Imagem + Copy) enviado pelo usuário.
-
-Use metodologias consolidadas como AIDA (Atenção, Interesse, Desejo, Ação) ou PAS (Problema, Agitação, Solução) para embasar sua análise.
-
-Avalie rigorosamente:
-1. Potencial de Conversão (0-100): Quão provável é que o público realize a ação desejada?
-2. Potencial de Viralidade/Engajamento (0-100): Quão compartilhável ou cativante é a junção?
-3. Pontos Fortes: O que está excelente?
-4. Pontos Fracos: Gargalos, confusões ou falhas na mensagem/design.
-5. Recomendações: Ações diretas e detalhadas para aumentar o CTR e a conversão.
-
-Você deve SEMPRE usar a ferramenta 'return_creative_analysis' para estruturar sua resposta.`;
-
-    const userPrompt = `
-Por favor, analise este criativo.
-Objetivo da Campanha: ${objective || "Não especificado"}
-Público-Alvo: ${audience || "Geral"}
-
-Copy do Anúncio:
-"""
-${copyText || "[Sem copy]"}
-"""
-${imageBase64 ? "A imagem do anúncio está anexada a esta mensagem." : "Nenhuma imagem foi enviada, analise apenas a copy."}
-`;
+    const systemPrompt = `Você é o Módulo Creative Vision (Sigma Style). Sua missão é decodificar anúncios com precisão cirúrgica.
+    
+    Analise a Imagem/Criativo e a Copy sob os seguintes prismas:
+    1. SWOT de Performance (Strengths, Weaknesses, Opportunities, Threats).
+    2. Gatilhos Psicológicos (Ganância, Novidade, Urgência, Autoridade, Curiosidade).
+    3. Análise de Gancho (Hook): Os primeiros 3 segundos são eficazes? Por quê?
+    4. Qualidade Visual e Hierarquia: Cores, elementos de dashboard (se houver), speaker.
+    
+    Sempre responda em Português (PT-BR) usando a ferramenta 'return_creative_analysis'.`;
 
     const messages: any[] = [
       { role: "system", content: systemPrompt },
-      { role: "user", content: [] }
+      { role: "user", content: [
+        { type: "text", text: `Objetivo: ${objective || "Conversão"}\nPúblico: ${audience || "Geral"}\nCopy: ${copyText || "[Sem texto]"}` }
+      ] }
     ];
 
     if (imageBase64) {
       messages[1].content.push({ type: "image_url", image_url: { url: imageBase64 } });
     }
-    messages[1].content.push({ type: "text", text: userPrompt });
 
     const tools = [{
       type: "function",
       function: {
         name: "return_creative_analysis",
-        description: "Retorna a análise estruturada do criativo",
+        description: "Retorna a análise estratégica do criativo estilo Sigma Studio",
         parameters: {
           type: "object",
           properties: {
-            conversion_score: { type: "number", description: "Nota de 0 a 100" },
-            virality_score: { type: "number", description: "Nota de 0 a 100" },
-            strengths: { type: "array", items: { type: "string" }, description: "Lista de pontos fortes" },
-            weaknesses: { type: "array", items: { type: "string" }, description: "Lista de pontos fracos/gargalos" },
-            recommendations: { type: "array", items: { type: "string" }, description: "Dicas detalhadas para alta performance" },
-            analysis: { type: "string", description: "Resumo executivo da análise (1 a 2 parágrafos)" }
+            conversion_score: { type: "number" },
+            virality_score: { type: "number" },
+            hook_analysis: { type: "string", description: "Análise dos primeiros segundos e retenção" },
+            psychological_triggers: { type: "array", items: { type: "string" }, description: "Gatilhos identificados" },
+            swot: {
+              type: "object",
+              properties: {
+                strengths: { type: "array", items: { type: "string" } },
+                weaknesses: { type: "array", items: { type: "string" } },
+                opportunities: { type: "array", items: { type: "string" } },
+                threats: { type: "array", items: { type: "string" } }
+              }
+            },
+            recommendations: { type: "array", items: { type: "string" } },
+            executive_summary: { type: "string", description: "Resumo executivo de 3 segundos para o gestor" }
           },
-          required: ["conversion_score", "virality_score", "strengths", "weaknesses", "recommendations", "analysis"],
+          required: ["conversion_score", "hook_analysis", "psychological_triggers", "swot", "recommendations", "executive_summary"],
         },
       },
     }];
@@ -97,32 +76,24 @@ ${imageBase64 ? "A imagem do anúncio está anexada a esta mensagem." : "Nenhuma
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "google/gemini-2.5-pro",
+        model: "gpt-4o-mini", // Rápido e eficaz para visão
         messages,
         tools,
         tool_choice: { type: "function", function: { name: "return_creative_analysis" } },
       }),
     });
 
-    if (!response.ok) {
-      const errTxt = await response.text();
-      console.error("AI gateway error:", response.status, errTxt);
-      throw new Error(`Erro na IA: ${response.status}`);
-    }
-
     const data = await response.json();
     const toolCall = data.choices?.[0]?.message?.tool_calls?.[0];
-    if (!toolCall) throw new Error("Sem análise retornada pela IA");
+    if (!toolCall) throw new Error("A IA falhou em gerar a análise SWOT.");
 
-    const analysisResult = JSON.parse(toolCall.function.arguments);
-
-    return new Response(JSON.stringify(analysisResult), {
+    return new Response(toolCall.function.arguments, {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
 
-  } catch (e) {
-    console.error("analyze-creative error:", e);
-    return new Response(JSON.stringify({ error: e instanceof Error ? e.message : "Erro desconhecido" }), {
+  } catch (e: any) {
+    console.error("Creative Vision Error:", e.message);
+    return new Response(JSON.stringify({ error: e.message }), {
       status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }

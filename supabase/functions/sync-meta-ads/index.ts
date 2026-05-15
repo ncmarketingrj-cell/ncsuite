@@ -1,134 +1,267 @@
+// supabase/functions/sync-meta-ads/index.ts
+// Project Phoenix — Motor de Sincronização com Breakdowns Demográficos
+
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.43.1"
 
-const supabaseUrl = Deno.env.get("SUPABASE_URL")!
-const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
-const metaToken = Deno.env.get("META_ACCESS_TOKEN")! // Token Geral (System User)
-
-const supabase = createClient(supabaseUrl, supabaseServiceKey)
-
-interface MetaCampaign {
-  id: string;
-  name: string;
-  objective: string;
-  spend: string;
-  cpc: string;
-  ctr: string;
-  reach: string;
-  impressions: string;
-  actions?: Array<{ action_type: string, value: string }>;
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
-async function fetchAdAccountInsights(adAccountId: string): Promise<MetaCampaign[]> {
-  const url = `https://graph.facebook.com/v19.0/${adAccountId}/insights?level=campaign&fields=campaign_name,objective,spend,actions,reach,impressions,cpc,ctr&date_preset=maximum&access_token=${metaToken}`
-  const response = await fetch(url)
-  const data = await response.json()
+const supabase = createClient(
+  Deno.env.get("SUPABASE_URL")!,
+  Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
+)
 
-  if (data.error) {
-    throw new Error(data.error.message)
-  }
+const META_API_BASE = "https://graph.facebook.com/v21.0"
 
-  return data.data.map((c: any) => ({
-    id: c.campaign_id || Math.random().toString(),
-    name: c.campaign_name,
-    objective: c.objective || "CONVERSIONS",
-    spend: c.spend || "0",
-    cpc: c.cpc || "0",
-    ctr: c.ctr || "0",
-    reach: c.reach || "0",
-    impressions: c.impressions || "0",
-    actions: c.actions || []
-  }))
+// ─── Meta API Helper ─────────────────────────────────────────────────────────
+async function metaGet(path: string, token: string, params: Record<string, string> = {}) {
+  const url = new URL(`${META_API_BASE}${path}`)
+  url.searchParams.set("access_token", token)
+  for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v)
+  const res = await fetch(url.toString())
+  const data = await res.json()
+  if (data.error) throw new Error(`Meta API [${path}]: ${data.error.message}`)
+  return data
 }
 
-serve(async (req) => {
+// ─── Buscar todas as contas vinculadas ao token ───────────────────────────────
+async function fetchAdAccounts(token: string) {
+  const data = await metaGet("/me/adaccounts", token, {
+    fields: "name,currency,account_status,id,timezone_name"
+  })
+  return data.data || []
+}
+
+// ─── Buscar insights diários de campanha ─────────────────────────────────────
+async function fetchCampaignInsights(adAccountId: string, token: string): Promise<any[]> {
   try {
-    if (!metaToken) throw new Error("META_ACCESS_TOKEN não configurado no ambiente Supabase.");
+    const data = await metaGet(`/${adAccountId}/insights`, token, {
+      level: "campaign",
+      fields: "campaign_id,campaign_name,objective,spend,actions,reach,impressions,inline_link_clicks,date_start,date_stop",
+      time_increment: "1",
+      date_preset: "last_30d",
+      limit: "500"
+    })
+    return data.data || []
+  } catch (e: any) {
+    console.error(`[SYNC] Erro ao buscar insights de ${adAccountId}:`, e.message)
+    return []
+  }
+}
 
-    // 1. Busca todos os clientes que possuem uma conta Meta Ads vinculada
-    const { data: clients, error: clientErr } = await supabase
-      .from("clients")
-      .select("id, name, meta_ad_account_id")
-      .not("meta_ad_account_id", "is", null)
+// ─── Buscar breakdowns demográficos (NOVO — Project Phoenix) ─────────────────
+async function fetchDemographicBreakdowns(adAccountId: string, token: string): Promise<any[]> {
+  try {
+    const data = await metaGet(`/${adAccountId}/insights`, token, {
+      level: "campaign",
+      fields: "campaign_id,campaign_name,spend,actions,reach,impressions,inline_link_clicks,date_start",
+      breakdowns: "age,gender,publisher_platform",
+      time_increment: "1",
+      date_preset: "last_30d",
+      limit: "500"
+    })
+    return data.data || []
+  } catch (e: any) {
+    console.error(`[SYNC-DEMO] Erro ao buscar breakdowns de ${adAccountId}:`, e.message)
+    return []
+  }
+}
 
-    if (clientErr) throw clientErr
+// ─── Extrair conversões do array de actions ───────────────────────────────────
+function extractConversions(actions: any[] = []): number {
+  const conversionTypes = ["lead", "purchase", "conversion", "complete_registration", "submit_application"]
+  const action = actions.find(a => conversionTypes.some(t => a.action_type?.includes(t)))
+  return parseInt(action?.value || "0") || 0
+}
 
-    let syncedAccounts = 0;
-    let failedAccounts = 0;
+// ─── Sync principal ───────────────────────────────────────────────────────────
+serve(async (req) => {
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
 
-    // 2. Itera sobre cada cliente e sincroniza sua conta de anúncios
-    for (const client of clients) {
-      const adAccountId = client.meta_ad_account_id
-      if (!adAccountId) continue
+  const syncId = crypto.randomUUID()
+  console.log(`[SYNC ${syncId}] Iniciando sincronização Project Phoenix...`)
 
-      try {
-        console.log(`[SYNC] Iniciando extração para o cliente ${client.name} (Conta: ${adAccountId})`)
-        const campaigns = await fetchAdAccountInsights(adAccountId)
-        
-        // 3. Traduzir o JSON do Meta para o nosso array padrão "raw_data"
-        const rawCampaigns = campaigns.map(c => {
-          // Achar a métrica principal (ex: leads, purchases)
-          const results = c.actions?.find(a => a.action_type === "lead" || a.action_type === "offsite_conversion.fb_pixel_purchase" || a.action_type === "onsite_conversion.messaging_first_reply")?.value || "0"
-          
-          return {
-            id: c.id,
-            name: c.name,
-            investment: parseFloat(c.spend),
-            results: parseInt(results),
-            result_type: c.objective,
-            cost_per_result: parseFloat(c.spend) / (parseInt(results) || 1),
-            reach: parseInt(c.reach),
-            impressions: parseInt(c.impressions),
-            ctr: parseFloat(c.ctr),
-            cpc: parseFloat(c.cpc)
-          }
-        })
+  try {
+    // 1. Buscar configuração (token master)
+    const { data: config, error: configErr } = await supabase
+      .from("meta_ads_configs")
+      .select("access_token, user_id")
+      .maybeSingle()
 
-        const totalInvestment = rawCampaigns.reduce((acc, c) => acc + (c.investment || 0), 0);
-        const periodText = new Date().toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' }).toUpperCase();
-        
-        const rawData = {
-          campaigns: rawCampaigns,
-          total_investment: totalInvestment,
-          total_campaigns: rawCampaigns.length,
-          groups: [],
-          format: "general"
-        }
+    if (configErr || !config?.access_token) {
+      throw new Error("Meta Token não configurado. Acesse Configurações → Integrações.")
+    }
 
-        // 4. Salvar como um relatório do tipo "Integração"
-        await supabase
-          .from("reports")
-          .insert({
-            client_name: client.name,
-            period: periodText,
-            total_investment: totalInvestment,
-            total_campaigns: rawCampaigns.length,
-            raw_data: rawData,
-            markdown: `## Sincronização Automática - ${client.name}\n\nOs dados desta tabela foram importados da conta ${adAccountId} no Meta Ads via integração nativa.\n`
+    const token = config.access_token
+    const userId = config.user_id
+
+    // 2. Buscar e salvar contas
+    console.log(`[SYNC ${syncId}] Buscando contas vinculadas...`)
+    const adAccounts = await fetchAdAccounts(token)
+    
+    if (adAccounts.length === 0) {
+      throw new Error("Nenhuma conta de anúncios encontrada. Verifique as permissões do token.")
+    }
+
+    await supabase.from("ad_accounts").upsert(
+      adAccounts.map((acc: any) => ({
+        id: acc.id,
+        name: acc.name,
+        currency: acc.currency,
+        status: acc.account_status,
+        user_id: userId,
+        last_sync: new Date().toISOString()
+      }))
+    )
+
+    console.log(`[SYNC ${syncId}] ${adAccounts.length} contas encontradas. Sincronizando insights...`)
+
+    // 3. Sincronizar insights + breakdowns em paralelo
+    const syncResults = await Promise.all(
+      adAccounts.map(async (acc: any) => {
+        const [insights, demographics] = await Promise.all([
+          fetchCampaignInsights(acc.id, token),
+          fetchDemographicBreakdowns(acc.id, token)
+        ])
+        return { accountId: acc.id, insights, demographics }
+      })
+    )
+
+    let totalMetrics = 0
+    let totalDemographics = 0
+    let totalCampaigns = 0
+
+    for (const { accountId, insights, demographics } of syncResults) {
+      if (insights.length === 0 && demographics.length === 0) continue
+
+      // ── 3a. Upsert campanhas (deduplicado por external_id) ──────────────────
+      const campaignMap = new Map<string, any>()
+      for (const row of [...insights, ...demographics]) {
+        if (!campaignMap.has(row.campaign_id)) {
+          campaignMap.set(row.campaign_id, {
+            name: row.campaign_name,
+            platform: "Meta Ads",
+            user_id: userId,
+            status: "active",
+            external_id: row.campaign_id,
+            ad_account_id: accountId
           })
+        }
+      }
 
-        syncedAccounts++
+      const { data: syncedCamps, error: campErr } = await supabase
+        .from("campaigns")
+        .upsert(Array.from(campaignMap.values()), { onConflict: "external_id" })
+        .select("id, external_id")
 
-      } catch (err: any) {
-        console.error(`[ERRO] Falha ao sincronizar ${client.name}:`, err.message)
-        failedAccounts++
-        // Disparar notificação de erro ou email de alerta para a agência
-        // (Seria o mesmo fluxo do run-automations se passasse de um limite de CPL)
+      if (campErr) {
+        console.error(`[SYNC] Erro ao upsert campanhas de ${accountId}:`, campErr.message)
+        continue
+      }
+
+      totalCampaigns += syncedCamps.length
+      const idMap = new Map(syncedCamps.map(c => [c.external_id, c.id]))
+
+      // ── 3b. Upsert métricas diárias ─────────────────────────────────────────
+      const metricsToUpsert = insights.map(row => {
+        const campaign_id = idMap.get(row.campaign_id)
+        if (!campaign_id) return null
+        return {
+          campaign_id,
+          date: row.date_start,
+          impressions: parseInt(row.impressions) || 0,
+          clicks: parseInt(row.inline_link_clicks || "0") || 0,
+          cost: parseFloat(row.spend) || 0,
+          reach: parseInt(row.reach) || 0,
+          conversions: extractConversions(row.actions),
+          result_type: row.objective
+        }
+      }).filter(Boolean)
+
+      if (metricsToUpsert.length > 0) {
+        const { error } = await supabase
+          .from("metrics")
+          .upsert(metricsToUpsert, { onConflict: "campaign_id,date" })
+        if (error) console.error(`[SYNC] Erro métricas ${accountId}:`, error.message)
+        else totalMetrics += metricsToUpsert.length
+      }
+
+      // ── 3c. Upsert breakdowns demográficos (Project Phoenix Core) ───────────
+      const demoToUpsert = demographics.map(row => {
+        const campaign_id = idMap.get(row.campaign_id)
+        if (!campaign_id) return null
+        return {
+          campaign_id,
+          ad_account_id: accountId,
+          date: row.date_start,
+          age_range: row.age || "unknown",
+          gender: row.gender || "unknown",
+          platform: row.publisher_platform || "facebook",
+          impressions: parseInt(row.impressions) || 0,
+          clicks: parseInt(row.inline_link_clicks || "0") || 0,
+          spend: parseFloat(row.spend) || 0,
+          conversions: extractConversions(row.actions),
+          reach: parseInt(row.reach) || 0
+        }
+      }).filter(Boolean)
+
+      if (demoToUpsert.length > 0) {
+        const { error } = await supabase
+          .from("demographic_metrics")
+          .upsert(demoToUpsert, { onConflict: "campaign_id,date,age_range,gender,platform" })
+        if (error) console.error(`[SYNC] Erro demographics ${accountId}:`, error.message)
+        else totalDemographics += demoToUpsert.length
       }
     }
 
-    return new Response(
-      JSON.stringify({
-        status: "success",
-        message: "Sincronização Meta Ads finalizada",
-        details: { syncedAccounts, failedAccounts }
-      }),
-      { headers: { "Content-Type": "application/json" } }
-    )
+    // 4. Atualizar timestamp do último heartbeat na config
+    await supabase.from("meta_ads_configs").update({
+      is_connected: true,
+      last_heartbeat_at: new Date().toISOString(),
+      last_heartbeat_status: "success",
+      last_heartbeat_summary: {
+        accounts: adAccounts.length,
+        campaigns: totalCampaigns,
+        metrics: totalMetrics,
+        demographic_records: totalDemographics,
+        sync_id: syncId
+      }
+    }).eq("user_id", userId)
+
+    const summary = {
+      sync_id: syncId,
+      status: "success",
+      message: `✅ Sync concluído: ${adAccounts.length} contas, ${totalCampaigns} campanhas, ${totalMetrics} métricas diárias, ${totalDemographics} registros demográficos (idade × gênero × plataforma).`,
+      accounts: adAccounts.length,
+      campaigns: totalCampaigns,
+      metrics: totalMetrics,
+      demographic_records: totalDemographics,
+      timestamp: new Date().toISOString()
+    }
+
+    console.log(`[SYNC ${syncId}] Concluído:`, JSON.stringify(summary))
+
+    return new Response(JSON.stringify(summary), {
+      headers: { ...corsHeaders, "Content-Type": "application/json" }
+    })
+
   } catch (error: any) {
-    console.error("Erro Fatal:", error.message)
-    return new Response(JSON.stringify({ error: error.message }), {
-      headers: { "Content-Type": "application/json" },
+    console.error(`[SYNC ${syncId}] ERRO FATAL:`, error.message)
+    
+    // Registrar falha na config
+    try {
+      await supabase.from("meta_ads_configs").update({
+        last_heartbeat_at: new Date().toISOString(),
+        last_heartbeat_status: "error",
+        last_heartbeat_summary: { error: error.message, sync_id: syncId }
+      }).neq("id", "00000000-0000-0000-0000-000000000000")
+    } catch(_) {}
+
+    return new Response(JSON.stringify({ error: error.message, sync_id: syncId }), {
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
       status: 500
     })
   }

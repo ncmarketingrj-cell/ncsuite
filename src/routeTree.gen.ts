@@ -20,6 +20,7 @@ import { Route as AppUtmsRouteImport } from './routes/_app/utms'
 import { Route as AppUploadRouteImport } from './routes/_app/upload'
 import { Route as AppRelatoriosRouteImport } from './routes/_app/relatorios'
 import { Route as AppQuizRouteImport } from './routes/_app/quiz'
+import { Route as AppPortfoliosRouteImport } from './routes/_app/portfolios'
 import { Route as AppOrganizadorRouteImport } from './routes/_app/organizador'
 import { Route as AppMulticanalRouteImport } from './routes/_app/multicanal'
 import { Route as AppMetricasRouteImport } from './routes/_app/metricas'
@@ -28,6 +29,8 @@ import { Route as AppDashboardRouteImport } from './routes/_app/dashboard'
 import { Route as AppCriativosRouteImport } from './routes/_app/criativos'
 import { Route as AppConfigRouteImport } from './routes/_app/config'
 import { Route as AppCampanhasRouteImport } from './routes/_app/campanhas'
+import { Route as AppAutomacoesRouteImport } from './routes/_app/automacoes'
+import { Route as AppAgenteRouteImport } from './routes/_app/agente'
 
 const PrivacyRoute = PrivacyRouteImport.update({
   id: '/privacy',
@@ -83,6 +86,11 @@ const AppQuizRoute = AppQuizRouteImport.update({
   path: '/quiz',
   getParentRoute: () => AppRoute,
 } as any)
+const AppPortfoliosRoute = AppPortfoliosRouteImport.update({
+  id: '/portfolios',
+  path: '/portfolios',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppOrganizadorRoute = AppOrganizadorRouteImport.update({
   id: '/organizador',
   path: '/organizador',
@@ -123,12 +131,24 @@ const AppCampanhasRoute = AppCampanhasRouteImport.update({
   path: '/campanhas',
   getParentRoute: () => AppRoute,
 } as any)
+const AppAutomacoesRoute = AppAutomacoesRouteImport.update({
+  id: '/automacoes',
+  path: '/automacoes',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppAgenteRoute = AppAgenteRouteImport.update({
+  id: '/agente',
+  path: '/agente',
+  getParentRoute: () => AppRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/deletion': typeof DeletionRoute
   '/login': typeof LoginRoute
   '/privacy': typeof PrivacyRoute
+  '/agente': typeof AppAgenteRoute
+  '/automacoes': typeof AppAutomacoesRoute
   '/campanhas': typeof AppCampanhasRoute
   '/config': typeof AppConfigRoute
   '/criativos': typeof AppCriativosRoute
@@ -137,6 +157,7 @@ export interface FileRoutesByFullPath {
   '/metricas': typeof AppMetricasRoute
   '/multicanal': typeof AppMulticanalRoute
   '/organizador': typeof AppOrganizadorRoute
+  '/portfolios': typeof AppPortfoliosRoute
   '/quiz': typeof AppQuizRoute
   '/relatorios': typeof AppRelatoriosRoute
   '/upload': typeof AppUploadRoute
@@ -149,6 +170,8 @@ export interface FileRoutesByTo {
   '/deletion': typeof DeletionRoute
   '/login': typeof LoginRoute
   '/privacy': typeof PrivacyRoute
+  '/agente': typeof AppAgenteRoute
+  '/automacoes': typeof AppAutomacoesRoute
   '/campanhas': typeof AppCampanhasRoute
   '/config': typeof AppConfigRoute
   '/criativos': typeof AppCriativosRoute
@@ -157,6 +180,7 @@ export interface FileRoutesByTo {
   '/metricas': typeof AppMetricasRoute
   '/multicanal': typeof AppMulticanalRoute
   '/organizador': typeof AppOrganizadorRoute
+  '/portfolios': typeof AppPortfoliosRoute
   '/quiz': typeof AppQuizRoute
   '/relatorios': typeof AppRelatoriosRoute
   '/upload': typeof AppUploadRoute
@@ -171,6 +195,8 @@ export interface FileRoutesById {
   '/deletion': typeof DeletionRoute
   '/login': typeof LoginRoute
   '/privacy': typeof PrivacyRoute
+  '/_app/agente': typeof AppAgenteRoute
+  '/_app/automacoes': typeof AppAutomacoesRoute
   '/_app/campanhas': typeof AppCampanhasRoute
   '/_app/config': typeof AppConfigRoute
   '/_app/criativos': typeof AppCriativosRoute
@@ -179,6 +205,7 @@ export interface FileRoutesById {
   '/_app/metricas': typeof AppMetricasRoute
   '/_app/multicanal': typeof AppMulticanalRoute
   '/_app/organizador': typeof AppOrganizadorRoute
+  '/_app/portfolios': typeof AppPortfoliosRoute
   '/_app/quiz': typeof AppQuizRoute
   '/_app/relatorios': typeof AppRelatoriosRoute
   '/_app/upload': typeof AppUploadRoute
@@ -193,6 +220,8 @@ export interface FileRouteTypes {
     | '/deletion'
     | '/login'
     | '/privacy'
+    | '/agente'
+    | '/automacoes'
     | '/campanhas'
     | '/config'
     | '/criativos'
@@ -201,6 +230,7 @@ export interface FileRouteTypes {
     | '/metricas'
     | '/multicanal'
     | '/organizador'
+    | '/portfolios'
     | '/quiz'
     | '/relatorios'
     | '/upload'
@@ -213,6 +243,8 @@ export interface FileRouteTypes {
     | '/deletion'
     | '/login'
     | '/privacy'
+    | '/agente'
+    | '/automacoes'
     | '/campanhas'
     | '/config'
     | '/criativos'
@@ -221,6 +253,7 @@ export interface FileRouteTypes {
     | '/metricas'
     | '/multicanal'
     | '/organizador'
+    | '/portfolios'
     | '/quiz'
     | '/relatorios'
     | '/upload'
@@ -234,6 +267,8 @@ export interface FileRouteTypes {
     | '/deletion'
     | '/login'
     | '/privacy'
+    | '/_app/agente'
+    | '/_app/automacoes'
     | '/_app/campanhas'
     | '/_app/config'
     | '/_app/criativos'
@@ -242,6 +277,7 @@ export interface FileRouteTypes {
     | '/_app/metricas'
     | '/_app/multicanal'
     | '/_app/organizador'
+    | '/_app/portfolios'
     | '/_app/quiz'
     | '/_app/relatorios'
     | '/_app/upload'
@@ -339,6 +375,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppQuizRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/portfolios': {
+      id: '/_app/portfolios'
+      path: '/portfolios'
+      fullPath: '/portfolios'
+      preLoaderRoute: typeof AppPortfoliosRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/organizador': {
       id: '/_app/organizador'
       path: '/organizador'
@@ -395,10 +438,26 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppCampanhasRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/automacoes': {
+      id: '/_app/automacoes'
+      path: '/automacoes'
+      fullPath: '/automacoes'
+      preLoaderRoute: typeof AppAutomacoesRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/agente': {
+      id: '/_app/agente'
+      path: '/agente'
+      fullPath: '/agente'
+      preLoaderRoute: typeof AppAgenteRouteImport
+      parentRoute: typeof AppRoute
+    }
   }
 }
 
 interface AppRouteChildren {
+  AppAgenteRoute: typeof AppAgenteRoute
+  AppAutomacoesRoute: typeof AppAutomacoesRoute
   AppCampanhasRoute: typeof AppCampanhasRoute
   AppConfigRoute: typeof AppConfigRoute
   AppCriativosRoute: typeof AppCriativosRoute
@@ -407,6 +466,7 @@ interface AppRouteChildren {
   AppMetricasRoute: typeof AppMetricasRoute
   AppMulticanalRoute: typeof AppMulticanalRoute
   AppOrganizadorRoute: typeof AppOrganizadorRoute
+  AppPortfoliosRoute: typeof AppPortfoliosRoute
   AppQuizRoute: typeof AppQuizRoute
   AppRelatoriosRoute: typeof AppRelatoriosRoute
   AppUploadRoute: typeof AppUploadRoute
@@ -414,6 +474,8 @@ interface AppRouteChildren {
 }
 
 const AppRouteChildren: AppRouteChildren = {
+  AppAgenteRoute: AppAgenteRoute,
+  AppAutomacoesRoute: AppAutomacoesRoute,
   AppCampanhasRoute: AppCampanhasRoute,
   AppConfigRoute: AppConfigRoute,
   AppCriativosRoute: AppCriativosRoute,
@@ -422,6 +484,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppMetricasRoute: AppMetricasRoute,
   AppMulticanalRoute: AppMulticanalRoute,
   AppOrganizadorRoute: AppOrganizadorRoute,
+  AppPortfoliosRoute: AppPortfoliosRoute,
   AppQuizRoute: AppQuizRoute,
   AppRelatoriosRoute: AppRelatoriosRoute,
   AppUploadRoute: AppUploadRoute,

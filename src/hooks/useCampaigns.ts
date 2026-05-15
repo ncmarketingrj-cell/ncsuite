@@ -10,6 +10,8 @@ export type Campaign = {
   status: string | null;
   budget: number | null;
   link: string | null;
+  external_id: string | null;
+  ad_account_id: string | null;
   created_at: string | null;
 };
 
@@ -31,7 +33,7 @@ export function useCampaigns(filters?: { clientId?: string; status?: string; sea
 
   const addCampaign = useMutation({
     mutationFn: async (c: Omit<Campaign, "id" | "created_at">) => {
-      const { error } = await supabase.from("campaigns").insert(c);
+      const { error } = await (supabase as any).from("campaigns").insert(c);
       if (error) throw error;
     },
     onSuccess: () => {
@@ -43,7 +45,7 @@ export function useCampaigns(filters?: { clientId?: string; status?: string; sea
 
   const updateCampaign = useMutation({
     mutationFn: async ({ id, ...patch }: Partial<Campaign> & { id: string }) => {
-      const { error } = await supabase.from("campaigns").update(patch).eq("id", id);
+      const { error } = await (supabase as any).from("campaigns").update(patch).eq("id", id);
       if (error) throw error;
     },
     onSuccess: () => {

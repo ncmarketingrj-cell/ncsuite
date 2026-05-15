@@ -1,11 +1,14 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Plus, Trash2, Search, Check, X, Loader2, Filter } from "lucide-react";
+import { Plus, Trash2, Search, Check, X, Loader2, Filter, Zap } from "lucide-react";
 import { toast } from "sonner";
+import { supabase } from "@/integrations/supabase/client";
 import { PageHeader } from "@/components/PageHeader";
 import { useCampaigns, type Campaign } from "@/hooks/useCampaigns";
 import { useClients } from "@/hooks/useClients";
+
+import { SyncButton } from "@/components/SyncButton";
 
 export const Route = createFileRoute("/_app/campanhas")({
   head: () => ({ meta: [{ title: "Campanhas — NC Suite" }] }),
@@ -41,11 +44,40 @@ function CampanhasPage() {
 
   return (
     <div className="mx-auto max-w-6xl space-y-8">
-      <PageHeader eyebrow="Operação" title="Campanhas" description="Gerencie todas as campanhas ativas, pausadas e encerradas."
+      <PageHeader eyebrow="Operação" title="Campanhas Meta Ads" description="Todas as suas campanhas são sincronizadas automaticamente da Graph API."
         actions={
-          <button onClick={() => { setEditing(null); setModal(true); }} className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-primary to-secondary px-4 py-2 text-xs font-semibold text-background shadow-glow">
-            <Plus className="h-4 w-4" /> Nova campanha
-          </button>
+          <div className="flex items-center gap-3">
+            <button 
+              onClick={() => {
+                const name = prompt("Nome base para o lote de campanhas:");
+                if (!name) return;
+                const count = parseInt(prompt("Quantas campanhas?", "3") || "0");
+                if (count <= 0) return;
+                
+                const payload = Array.from({ length: count }, (_, i) => ({
+                  campaign_name: `${name} - #${i + 1}`,
+                  objective: "OUTCOME_LEADS",
+                  budget: 20
+                }));
+                
+                toast.promise(
+                  supabase.functions.invoke("campaign-manager", {
+                    body: { action: "mass_deploy", payload, ad_account_id: "ALL" }
+                  }),
+                  {
+                    loading: "🚀 Phoenix Ads CLI: Subindo estrutura em massa...",
+                    success: "✅ Deploy concluído com sucesso!",
+                    error: "❌ Falha no deploy em massa."
+                  }
+                );
+              }}
+              className="flex items-center gap-2 rounded-full bg-gradient-to-r from-primary to-secondary px-5 py-2.5 text-xs font-black text-background shadow-glow transition hover:scale-105 active:scale-95"
+            >
+              <Zap className="h-4 w-4 fill-current" />
+              DEPLOY PHOENIX
+            </button>
+            <SyncButton />
+          </div>
         }
       />
 
