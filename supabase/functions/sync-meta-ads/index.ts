@@ -165,7 +165,6 @@ serve(async (req) => {
           campaignMap.set(row.campaign_id, {
             name: row.campaign_name,
             platform: "Meta Ads",
-            user_id: userId,
             status: "active",
             external_id: row.campaign_id,
             ad_account_id: accountId
