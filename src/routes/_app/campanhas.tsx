@@ -45,12 +45,12 @@ function CampanhasPage() {
 
   const handleAccountChange = (val: string) => {
     setAccountFilter(val);
-    navigate({ search: (prev: any) => ({ ...prev, search: search || undefined, accountId: val || undefined }) });
+    navigate({ search: (prev) => ({ ...prev, accountId: val || undefined }) });
   };
 
   const handleSearchChange = (val: string) => {
     setSearch(val);
-    navigate({ search: (prev: any) => ({ ...prev, search: val || undefined, accountId: accountFilter || undefined }) });
+    navigate({ search: (prev) => ({ ...prev, search: val || undefined }) });
   };
 
   const toggle = (id: string) => {

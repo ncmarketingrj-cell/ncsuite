@@ -1,12 +1,13 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Settings, User, Building2, Plug, BookOpen, Cpu, Plus, Trash2, Check, X, Loader2, Wifi, WifiOff, ChevronDown, Zap, Brain } from "lucide-react";
+import { Settings, User, Building2, Plug, BookOpen, Cpu, Plus, Trash2, Check, X, Loader2, Wifi, WifiOff, ChevronDown, Zap, Brain, LayoutDashboard, FileText, Target, Upload, Send } from "lucide-react";
 import { toast } from "sonner";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { PageHeader } from "@/components/PageHeader";
 import { useClients } from "@/hooks/useClients";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/lib/auth";
 
 export const Route = createFileRoute("/_app/config")({
   head: () => ({ meta: [{ title: "Configurações — NC Suite" }] }),
@@ -14,34 +15,50 @@ export const Route = createFileRoute("/_app/config")({
 });
 
 const TABS = [
-  { id: "conta", label: "Conta", icon: User },
-  { id: "clientes", label: "Clientes", icon: Building2 },
-  { id: "integracoes", label: "Integrações", icon: Plug },
-  { id: "automacoes", label: "Automações", icon: Zap },
-  { id: "tutorial", label: "Tutorial", icon: BookOpen },
-  { id: "sistema", label: "Sistema", icon: Cpu },
+  { id: "conta", label: "Minha Conta", icon: User, adminOnly: false },
+  { id: "tutorial", label: "NC Academy", icon: BookOpen, adminOnly: false },
+  { id: "clientes", label: "Gestão de Clientes", icon: Building2, adminOnly: true },
+  { id: "integracoes", label: "Integrações Master", icon: Plug, adminOnly: true },
+  { id: "automacoes", label: "Regras de Automação", icon: Zap, adminOnly: true },
+  { id: "sistema", label: "Status do Sistema", icon: Cpu, adminOnly: true },
 ] as const;
 type Tab = typeof TABS[number]["id"];
 
 function ConfigPage() {
-  const [tab, setTab] = useState<Tab>("conta");
+  const { user } = useAuth();
+  const isAdmin = user?.email === "nc.marketingrj@gmail.com";
+  const [tab, setTab] = useState<Tab>("tutorial");
+
+  const visibleTabs = TABS.filter(t => !t.adminOnly || isAdmin);
+
   return (
     <div className="mx-auto max-w-5xl space-y-8">
-      <PageHeader eyebrow="Sistema" title="Configurações" description="Gerencie conta, clientes, integrações e preferências." />
-      <div className="flex gap-2 overflow-x-auto pb-2">
-        {TABS.map((t) => (
-          <button key={t.id} onClick={() => setTab(t.id)} className={`relative flex items-center gap-2 whitespace-nowrap rounded-full px-4 py-2 text-xs font-medium transition ${tab === t.id ? "bg-primary/10 text-primary ring-1 ring-primary/30" : "text-muted-foreground hover:bg-white/[0.03]"}`}>
+      <PageHeader eyebrow="Sistema" title="Configurações" description="Gerencie sua experiência e aprenda a usar a NC Suite." />
+      
+      <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
+        {visibleTabs.map((t) => (
+          <button 
+            key={t.id} 
+            onClick={() => setTab(t.id)} 
+            className={`relative flex items-center gap-2 whitespace-nowrap rounded-full px-5 py-2.5 text-xs font-bold transition-all ${tab === t.id ? "bg-primary text-primary-foreground shadow-glow-sm" : "text-muted-foreground hover:bg-white/[0.05]"}`}
+          >
             <t.icon className="h-3.5 w-3.5" /> {t.label}
           </button>
         ))}
       </div>
-      <motion.div key={tab} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="glass-panel p-6">
+
+      <motion.div 
+        key={tab} 
+        initial={{ opacity: 0, y: 8 }} 
+        animate={{ opacity: 1, y: 0 }} 
+        className="glass-panel p-8"
+      >
         {tab === "conta" && <TabConta />}
-        {tab === "clientes" && <TabClientes />}
-        {tab === "integracoes" && <TabIntegracoes />}
-        {tab === "automacoes" && <TabAutomacoes />}
         {tab === "tutorial" && <TabTutorial />}
-        {tab === "sistema" && <TabSistema />}
+        {tab === "clientes" && isAdmin && <TabClientes />}
+        {tab === "integracoes" && isAdmin && <TabIntegracoes />}
+        {tab === "automacoes" && isAdmin && <TabAutomacoes />}
+        {tab === "sistema" && isAdmin && <TabSistema />}
       </motion.div>
     </div>
   );
@@ -68,7 +85,7 @@ function TabAutomacoes() {
         <h3 className="font-display text-lg font-semibold text-gradient">Automações Inteligentes</h3>
         <button onClick={() => setShowModal(true)} className="inline-flex items-center gap-1 rounded-full bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:shadow-glow"><Plus className="h-3 w-3" /> Nova Regra</button>
       </div>
-      
+
       {isLoading ? <div className="flex justify-center py-12"><Loader2 className="h-5 w-5 animate-spin text-primary" /></div> : !rules.length ? <p className="py-8 text-center text-sm text-muted-foreground">Nenhuma automação ativa.</p> : (
         <div className="grid gap-3">{rules.map((r: any) => (
           <div key={r.id} className="flex items-center justify-between rounded-lg border border-white/5 bg-background/40 p-4 transition hover:border-primary/20">
@@ -180,6 +197,7 @@ function TabIntegracoes() {
   const [connected, setConnected] = useState<boolean | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [openaiConfigured, setOpenaiConfigured] = useState(false);
+  const [showTokenPlain, setShowTokenPlain] = useState(false);
 
   useEffect(() => {
     const loadConfig = async () => {
@@ -204,9 +222,9 @@ function TabIntegracoes() {
         webhook_url: webhook,
         ad_account_id: "ALL_ACCOUNTS"
       }, { onConflict: "user_id" });
-      
+
       if (error) throw error;
-      toast.success("Configurações do Agente salvas com sucesso!");
+      toast.success("✅ Configurações salvas! Clique em 'Sincronizar Agora' no Dashboard.");
     } catch (err: any) {
       toast.error(err.message ?? "Erro ao salvar");
     }
@@ -242,26 +260,30 @@ function TabIntegracoes() {
 
       <div className="grid gap-6">
         <div className="space-y-2">
-          <label className="label-mono text-[10px] text-muted-foreground uppercase">Meta Access Token (System User)</label>
-          <input 
-            value={token} 
-            onChange={(e) => setToken(e.target.value)} 
-            type="password" 
-            placeholder="EAANmoU71..." 
-            className="w-full rounded-lg border border-white/10 bg-background/50 px-3 py-2 text-sm focus:border-primary focus:outline-none" 
+          <div className="flex items-center justify-between">
+            <label className="label-mono text-[10px] text-muted-foreground uppercase">Meta Access Token (Long-Lived — System User)</label>
+            <button onClick={() => setShowTokenPlain(v => !v)} className="text-[10px] text-muted-foreground hover:text-primary transition">
+              {showTokenPlain ? "ocultar" : "mostrar"} token
+            </button>
+          </div>
+          <input
+            value={token}
+            onChange={(e) => setToken(e.target.value)}
+            type={showTokenPlain ? "text" : "password"}
+            placeholder="EAANmoU71vRU..."
+            className="w-full rounded-lg border border-white/10 bg-background/50 px-3 py-2 text-sm focus:border-primary focus:outline-none font-mono"
           />
         </div>
 
         <div className="space-y-2">
           <label className="label-mono text-[10px] text-muted-foreground uppercase">WhatsApp Webhook URL (Evolution / Z-API)</label>
-          <input 
-            value={webhook} 
-            onChange={(e) => setWebhook(e.target.value)} 
-            type="text" 
-            placeholder="https://api.sua-instancia.com/message/send" 
-            className="w-full rounded-lg border border-white/10 bg-background/50 px-3 py-2 text-sm focus:border-primary focus:outline-none" 
+          <input
+            value={webhook}
+            onChange={(e) => setWebhook(e.target.value)}
+            type="text"
+            placeholder="https://api.sua-instancia.com/message/send"
+            className="w-full rounded-lg border border-white/10 bg-background/50 px-3 py-2 text-sm focus:border-primary focus:outline-none"
           />
-          <p className="text-[10px] text-muted-foreground italic">O agente disparará alertas proativos para esta URL quando as regras forem atingidas.</p>
         </div>
 
         <div className="rounded-xl border border-white/5 bg-white/[0.02] p-4">
@@ -287,7 +309,7 @@ function TabIntegracoes() {
           <Check className="h-3.5 w-3.5" /> SALVAR CONFIGURAÇÕES
         </button>
         <button onClick={test} disabled={testing} className="inline-flex items-center gap-2 rounded-full border border-white/10 px-4 py-2 text-xs font-medium disabled:opacity-50 hover:bg-white/5">
-          {testing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : connected ? <Wifi className="h-3.5 w-3.5 text-success" /> : <WifiOff className="h-3.5 w-3.5" />} 
+          {testing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : connected ? <Wifi className="h-3.5 w-3.5 text-success" /> : <WifiOff className="h-3.5 w-3.5" />}
           TESTAR HEARTBEAT
         </button>
       </div>
@@ -295,22 +317,227 @@ function TabIntegracoes() {
   );
 }
 
-const TUTORIALS = [
-  { q: "Como subir um print?", a: "Vá em Extração de Dados, clique em upload e selecione a imagem. O motor extrai as campanhas automaticamente." },
-  { q: "Como gerar um relatório?", a: "Após a extração, clique em 'Montar Relatório'. Adicione cliente, período, formato e salve." },
-  { q: "Como conectar o Meta Ads?", a: "Vá em Configurações → Integrações. Cole token e ID. Teste a conexão." },
-];
-function TabTutorial() {
-  const [open, setOpen] = useState<number | null>(null);
+function VisualGuide({ module, step }: { module: string, step: number }) {
   return (
-    <div className="space-y-4">
-      <h3 className="font-display text-lg font-semibold">Guia rápido</h3>
-      {TUTORIALS.map((t, i) => (
-        <div key={i} className="rounded-lg border border-white/5 overflow-hidden">
-          <button onClick={() => setOpen(open === i ? null : i)} className="flex w-full items-center justify-between p-4 text-left text-sm font-medium hover:bg-white/[0.02]">{t.q}<ChevronDown className={`h-4 w-4 text-primary transition ${open === i ? "rotate-180" : ""}`} /></button>
-          <AnimatePresence>{open === i && <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden"><p className="px-4 pb-4 text-sm text-muted-foreground">{t.a}</p></motion.div>}</AnimatePresence>
+    <div className="relative w-full h-48 bg-black/40 rounded-2xl border border-white/5 overflow-hidden group/guide">
+      <div className="absolute inset-0 opacity-10 bg-[radial-gradient(#fff_1px,transparent_1px)] [background-size:16px_16px]" />
+      <div className="absolute inset-0 flex items-center justify-center p-4 text-center">
+        {module === "dashboard" && (
+           <div className="space-y-4">
+              <div className="flex gap-2">
+                 <div className="h-16 w-24 rounded bg-primary/10 border border-primary/20 relative">
+                    <div className="absolute -top-4 -right-4">
+                       <motion.div animate={{ y: [0, 5, 0] }} transition={{ repeat: Infinity }}>
+                          <ChevronDown className="h-6 w-6 text-primary" />
+                       </motion.div>
+                    </div>
+                 </div>
+                 <div className="h-16 w-24 rounded bg-white/5 border border-white/10" />
+              </div>
+              <p className="text-[10px] font-bold text-primary uppercase tracking-widest">Analise os KPIs em tempo real</p>
+           </div>
+        )}
+        {module === "operacao" && (
+           <div className="flex flex-col items-center gap-3">
+              <div className="grid grid-cols-3 gap-2 w-full max-w-[200px]">
+                 {[1,2,3].map(i => <div key={i} className={`h-12 rounded border ${i===2 ? 'border-primary bg-primary/10' : 'border-white/5 bg-white/5'}`} />)}
+              </div>
+              <div className="flex items-center gap-2">
+                 <div className="w-8 h-[2px] bg-primary" />
+                 <p className="text-[9px] font-black text-primary uppercase">Hub de Módulos</p>
+              </div>
+           </div>
+        )}
+        {module === "relatorios" && (
+           <div className="relative p-4 border border-white/10 rounded-xl bg-white/5 w-48">
+              <div className="h-2 w-full bg-white/10 rounded mb-2" />
+              <div className="h-2 w-2/3 bg-white/10 rounded mb-4" />
+              <div className="h-8 w-full rounded bg-primary flex items-center justify-center text-[10px] font-black text-background">
+                 EXPORTAR PDF
+              </div>
+              <div className="absolute -left-6 top-1/2 -translate-y-1/2">
+                 <motion.div animate={{ x: [0, 5, 0] }} transition={{ repeat: Infinity }} className="rotate-90">
+                    <ChevronDown className="h-6 w-6 text-primary" />
+                 </motion.div>
+              </div>
+           </div>
+        )}
+        {module === "agente" && (
+           <div className="relative h-32 w-48 bg-white/5 rounded-xl border border-white/10 p-3">
+              <div className="flex items-center gap-2 mb-4">
+                 <Brain className="h-4 w-4 text-primary" />
+                 <div className="h-1.5 w-20 bg-white/20 rounded" />
+              </div>
+              <div className="h-8 w-full rounded bg-primary/20 border border-primary/30 flex items-center px-2">
+                 <div className="h-2 w-24 bg-primary/40 rounded" />
+              </div>
+              <p className="mt-3 text-[8px] font-black text-primary uppercase animate-pulse">Victoria está ouvindo...</p>
+           </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+const ACADEMY_MODULES = [
+  {
+    id: "dashboard",
+    title: "1. Domine o Dashboard",
+    desc: "Como interpretar seus dados de performance",
+    icon: LayoutDashboard,
+    steps: [
+      {
+        title: "Leitura de KPIs",
+        content: "No topo do Dashboard, acompanhe o Investimento, Conversões e CPL em tempo real. As sparklines (linhas azuis) mostram a tendência das últimas 24h.",
+      },
+      {
+        title: "Visão Multi-Conta",
+        content: "Use o seletor no topo para filtrar dados de uma conta específica ou ver o resultado consolidado de toda a sua operação.",
+      }
+    ]
+  },
+  {
+    id: "operacao",
+    title: "2. Operações e Hub",
+    desc: "Navegando entre as ferramentas",
+    icon: Zap,
+    steps: [
+      {
+        title: "O Hub de Módulos",
+        content: "O centro da tela organiza suas ferramentas. Clique nos cards de 'Performance', 'Operação' ou 'Lab' para abrir as funções específicas de cada área.",
+      }
+    ]
+  },
+  {
+    id: "relatorios",
+    title: "3. Relatórios Estratégicos",
+    desc: "Crie entregas profissionais em segundos",
+    icon: FileText,
+    steps: [
+      {
+        title: "Gerador de Markdown",
+        content: "Vá em 'Relatórios' no Hub. Selecione o período e o cliente. A Victoria vai consolidar os dados e gerar um texto formatado pronto para enviar ao cliente.",
+      }
+    ]
+  },
+  {
+    id: "agente",
+    title: "4. IA Orquestradora",
+    desc: "Conversando com a Victoria",
+    icon: Brain,
+    steps: [
+      {
+        title: "Comandos Rápidos",
+        content: "Na sidebar direita, use os botões rápidos como 'Como está a performance?' para receber um briefing instantâneo do que está acontecendo nas contas.",
+      },
+      {
+        title: "Análise Profunda",
+        content: "Peça para a Victoria analisar breakdowns específicos: 'Victoria, qual a faixa etária que mais converteu na campanha de Teste?'",
+      }
+    ]
+  }
+];
+
+function TabTutorial() {
+  const [activeModule, setActiveModule] = useState(0);
+  const [completedSteps, setCompletedSteps] = useState<Record<string, boolean>>({});
+
+  const toggleStep = (id: string) => {
+    setCompletedSteps(prev => ({ ...prev, [id]: !prev[id] }));
+  };
+
+  const progress = (Object.keys(completedSteps).filter(k => completedSteps[k]).length / 
+                    ACADEMY_MODULES.reduce((acc, m) => acc + m.steps.length, 0)) * 100;
+
+  return (
+    <div className="space-y-8">
+      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between border-b border-white/5 pb-6">
+        <div>
+          <h3 className="text-2xl font-black uppercase tracking-tight text-gradient">NC Academy</h3>
+          <p className="text-xs text-muted-foreground font-medium">Aprenda a dominar o NC Performance Suite do zero.</p>
         </div>
-      ))}
+        <div className="flex items-center gap-4">
+           <div className="text-right">
+              <p className="text-[10px] font-black uppercase tracking-widest text-primary mb-1">Seu Progresso</p>
+              <p className="text-lg font-black">{Math.round(progress)}%</p>
+           </div>
+           <div className="h-12 w-1 bg-white/5 rounded-full overflow-hidden">
+              <motion.div 
+                initial={{ height: 0 }} 
+                animate={{ height: `${progress}%` }} 
+                className="w-full bg-primary shadow-glow-sm" 
+              />
+           </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
+        <div className="space-y-2 lg:col-span-1">
+          {ACADEMY_MODULES.map((mod, idx) => (
+            <button
+              key={mod.id}
+              onClick={() => setActiveModule(idx)}
+              className={`w-full flex items-center gap-3 p-4 rounded-2xl transition-all border ${activeModule === idx ? "bg-primary/10 border-primary/30 text-primary" : "bg-white/[0.02] border-white/5 text-muted-foreground hover:bg-white/5"}`}
+            >
+              <div className={`h-8 w-8 rounded-xl flex items-center justify-center ${activeModule === idx ? "bg-primary/20" : "bg-white/5"}`}>
+                 <mod.icon className="h-4 w-4" />
+              </div>
+              <div className="text-left min-w-0">
+                 <p className="text-[10px] font-black uppercase tracking-tighter truncate">{mod.title}</p>
+                 <p className="text-[9px] font-medium opacity-60 truncate">{mod.desc}</p>
+              </div>
+            </button>
+          ))}
+        </div>
+
+        <div className="lg:col-span-3 space-y-6">
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={activeModule}
+              initial={{ opacity: 0, x: 20 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -20 }}
+              className="space-y-8"
+            >
+              <div className="space-y-2">
+                 <h4 className="text-xl font-bold">{ACADEMY_MODULES[activeModule].title.split(".")[1]}</h4>
+                 <p className="text-sm text-muted-foreground leading-relaxed">{ACADEMY_MODULES[activeModule].desc}</p>
+              </div>
+
+              {ACADEMY_MODULES[activeModule].steps.map((step, sIdx) => {
+                const stepId = `${ACADEMY_MODULES[activeModule].id}-${sIdx}`;
+                const isDone = completedSteps[stepId];
+                
+                return (
+                  <div key={sIdx} className={`group relative p-6 rounded-3xl border transition-all ${isDone ? "bg-success/[0.02] border-success/20" : "bg-white/[0.02] border-white/5 hover:border-white/10"}`}>
+                    <div className="flex items-start gap-4">
+                      <button 
+                        onClick={() => toggleStep(stepId)}
+                        className={`mt-1 h-6 w-6 rounded-lg border-2 flex items-center justify-center transition-all ${isDone ? "bg-success border-success text-white" : "border-white/10 hover:border-primary/50"}`}
+                      >
+                        {isDone && <Check className="h-4 w-4" />}
+                      </button>
+                      
+                      <div className="flex-1 space-y-4">
+                        <div className="flex items-center justify-between">
+                           <h5 className={`text-sm font-bold uppercase tracking-tight ${isDone ? "text-success/80 line-through" : "text-foreground"}`}>{step.title}</h5>
+                           <span className="text-[10px] font-black text-muted-foreground/30 uppercase tracking-widest">Passo {sIdx + 1}</span>
+                        </div>
+                        
+                        <p className="text-xs text-muted-foreground leading-relaxed">
+                          {step.content}
+                        </p>
+
+                        <VisualGuide module={ACADEMY_MODULES[activeModule].id} step={sIdx} />
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </motion.div>
+          </AnimatePresence>
+        </div>
+      </div>
     </div>
   );
 }
@@ -321,7 +548,10 @@ function TabSistema() {
       <h3 className="font-display text-lg font-semibold">Informações do Sistema</h3>
       <div className="grid gap-3 sm:grid-cols-2">
         {[{ label: "Versão", value: "2.0.0" }, { label: "Plataforma", value: "NC Performance Suite" }, { label: "Stack", value: "React 18 + Vite + Supabase" }, { label: "Edge Runtime", value: "Supabase Edge Functions" }, { label: "DB", value: "PostgreSQL (Supabase)" }, { label: "Auth", value: "Supabase Auth" }].map((info) => (
-          <div key={info.label} className="flex items-center justify-between rounded-lg border border-white/5 bg-background/40 p-3"><span className="label-mono text-muted-foreground">{info.label}</span><span className="text-sm font-medium">{info.value}</span></div>
+          <div key={info.label} className="flex items-center justify-between rounded-lg border border-white/5 bg-background/40 p-3">
+            <span className="label-mono text-muted-foreground">{info.label}</span>
+            <span className="text-sm font-medium">{info.value}</span>
+          </div>
         ))}
       </div>
     </div>
