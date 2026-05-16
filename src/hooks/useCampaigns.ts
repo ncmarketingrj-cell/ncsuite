@@ -15,7 +15,7 @@ export type Campaign = {
   created_at: string | null;
 };
 
-export function useCampaigns(filters?: { clientId?: string; status?: string; search?: string }) {
+export function useCampaigns(filters?: { clientId?: string; status?: string; search?: string; accountId?: string }) {
   const qc = useQueryClient();
 
   const { data: campaigns = [], isLoading } = useQuery({
@@ -25,6 +25,7 @@ export function useCampaigns(filters?: { clientId?: string; status?: string; sea
       if (filters?.clientId) q = q.eq("client_id", filters.clientId);
       if (filters?.status && filters.status !== "all") q = q.eq("status", filters.status);
       if (filters?.search) q = q.ilike("name", `%${filters.search}%`);
+      if (filters?.accountId) q = q.eq("ad_account_id", filters.accountId);
       const { data, error } = await q;
       if (error) throw error;
       return data as Campaign[];

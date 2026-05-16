@@ -9,6 +9,7 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as TermsRouteImport } from './routes/terms'
 import { Route as PrivacyRouteImport } from './routes/privacy'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as DeletionRouteImport } from './routes/deletion'
@@ -20,18 +21,25 @@ import { Route as AppUtmsRouteImport } from './routes/_app/utms'
 import { Route as AppUploadRouteImport } from './routes/_app/upload'
 import { Route as AppRelatoriosRouteImport } from './routes/_app/relatorios'
 import { Route as AppQuizRouteImport } from './routes/_app/quiz'
-import { Route as AppPortfoliosRouteImport } from './routes/_app/portfolios'
 import { Route as AppOrganizadorRouteImport } from './routes/_app/organizador'
 import { Route as AppMulticanalRouteImport } from './routes/_app/multicanal'
 import { Route as AppMetricasRouteImport } from './routes/_app/metricas'
 import { Route as AppIntegrationsRouteImport } from './routes/_app/integrations'
 import { Route as AppDashboardRouteImport } from './routes/_app/dashboard'
 import { Route as AppCriativosRouteImport } from './routes/_app/criativos'
+import { Route as AppContasRouteImport } from './routes/_app/contas'
 import { Route as AppConfigRouteImport } from './routes/_app/config'
 import { Route as AppCampanhasRouteImport } from './routes/_app/campanhas'
 import { Route as AppAutomacoesRouteImport } from './routes/_app/automacoes'
 import { Route as AppAgenteRouteImport } from './routes/_app/agente'
+import { Route as AppPortfoliosIndexRouteImport } from './routes/_app/portfolios/index'
+import { Route as AppPortfoliosPortfolioIdRouteImport } from './routes/_app/portfolios/$portfolioId'
 
+const TermsRoute = TermsRouteImport.update({
+  id: '/terms',
+  path: '/terms',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const PrivacyRoute = PrivacyRouteImport.update({
   id: '/privacy',
   path: '/privacy',
@@ -86,11 +94,6 @@ const AppQuizRoute = AppQuizRouteImport.update({
   path: '/quiz',
   getParentRoute: () => AppRoute,
 } as any)
-const AppPortfoliosRoute = AppPortfoliosRouteImport.update({
-  id: '/portfolios',
-  path: '/portfolios',
-  getParentRoute: () => AppRoute,
-} as any)
 const AppOrganizadorRoute = AppOrganizadorRouteImport.update({
   id: '/organizador',
   path: '/organizador',
@@ -121,6 +124,11 @@ const AppCriativosRoute = AppCriativosRouteImport.update({
   path: '/criativos',
   getParentRoute: () => AppRoute,
 } as any)
+const AppContasRoute = AppContasRouteImport.update({
+  id: '/contas',
+  path: '/contas',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppConfigRoute = AppConfigRouteImport.update({
   id: '/config',
   path: '/config',
@@ -141,52 +149,69 @@ const AppAgenteRoute = AppAgenteRouteImport.update({
   path: '/agente',
   getParentRoute: () => AppRoute,
 } as any)
+const AppPortfoliosIndexRoute = AppPortfoliosIndexRouteImport.update({
+  id: '/portfolios/',
+  path: '/portfolios/',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppPortfoliosPortfolioIdRoute =
+  AppPortfoliosPortfolioIdRouteImport.update({
+    id: '/portfolios/$portfolioId',
+    path: '/portfolios/$portfolioId',
+    getParentRoute: () => AppRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/deletion': typeof DeletionRoute
   '/login': typeof LoginRoute
   '/privacy': typeof PrivacyRoute
+  '/terms': typeof TermsRoute
   '/agente': typeof AppAgenteRoute
   '/automacoes': typeof AppAutomacoesRoute
   '/campanhas': typeof AppCampanhasRoute
   '/config': typeof AppConfigRoute
+  '/contas': typeof AppContasRoute
   '/criativos': typeof AppCriativosRoute
   '/dashboard': typeof AppDashboardRoute
   '/integrations': typeof AppIntegrationsRoute
   '/metricas': typeof AppMetricasRoute
   '/multicanal': typeof AppMulticanalRoute
   '/organizador': typeof AppOrganizadorRoute
-  '/portfolios': typeof AppPortfoliosRoute
   '/quiz': typeof AppQuizRoute
   '/relatorios': typeof AppRelatoriosRoute
   '/upload': typeof AppUploadRoute
   '/utms': typeof AppUtmsRoute
   '/p/$slug': typeof PSlugRoute
   '/q/$slug': typeof QSlugRoute
+  '/portfolios/$portfolioId': typeof AppPortfoliosPortfolioIdRoute
+  '/portfolios/': typeof AppPortfoliosIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/deletion': typeof DeletionRoute
   '/login': typeof LoginRoute
   '/privacy': typeof PrivacyRoute
+  '/terms': typeof TermsRoute
   '/agente': typeof AppAgenteRoute
   '/automacoes': typeof AppAutomacoesRoute
   '/campanhas': typeof AppCampanhasRoute
   '/config': typeof AppConfigRoute
+  '/contas': typeof AppContasRoute
   '/criativos': typeof AppCriativosRoute
   '/dashboard': typeof AppDashboardRoute
   '/integrations': typeof AppIntegrationsRoute
   '/metricas': typeof AppMetricasRoute
   '/multicanal': typeof AppMulticanalRoute
   '/organizador': typeof AppOrganizadorRoute
-  '/portfolios': typeof AppPortfoliosRoute
   '/quiz': typeof AppQuizRoute
   '/relatorios': typeof AppRelatoriosRoute
   '/upload': typeof AppUploadRoute
   '/utms': typeof AppUtmsRoute
   '/p/$slug': typeof PSlugRoute
   '/q/$slug': typeof QSlugRoute
+  '/portfolios/$portfolioId': typeof AppPortfoliosPortfolioIdRoute
+  '/portfolios': typeof AppPortfoliosIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -195,23 +220,26 @@ export interface FileRoutesById {
   '/deletion': typeof DeletionRoute
   '/login': typeof LoginRoute
   '/privacy': typeof PrivacyRoute
+  '/terms': typeof TermsRoute
   '/_app/agente': typeof AppAgenteRoute
   '/_app/automacoes': typeof AppAutomacoesRoute
   '/_app/campanhas': typeof AppCampanhasRoute
   '/_app/config': typeof AppConfigRoute
+  '/_app/contas': typeof AppContasRoute
   '/_app/criativos': typeof AppCriativosRoute
   '/_app/dashboard': typeof AppDashboardRoute
   '/_app/integrations': typeof AppIntegrationsRoute
   '/_app/metricas': typeof AppMetricasRoute
   '/_app/multicanal': typeof AppMulticanalRoute
   '/_app/organizador': typeof AppOrganizadorRoute
-  '/_app/portfolios': typeof AppPortfoliosRoute
   '/_app/quiz': typeof AppQuizRoute
   '/_app/relatorios': typeof AppRelatoriosRoute
   '/_app/upload': typeof AppUploadRoute
   '/_app/utms': typeof AppUtmsRoute
   '/p/$slug': typeof PSlugRoute
   '/q/$slug': typeof QSlugRoute
+  '/_app/portfolios/$portfolioId': typeof AppPortfoliosPortfolioIdRoute
+  '/_app/portfolios/': typeof AppPortfoliosIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -220,46 +248,52 @@ export interface FileRouteTypes {
     | '/deletion'
     | '/login'
     | '/privacy'
+    | '/terms'
     | '/agente'
     | '/automacoes'
     | '/campanhas'
     | '/config'
+    | '/contas'
     | '/criativos'
     | '/dashboard'
     | '/integrations'
     | '/metricas'
     | '/multicanal'
     | '/organizador'
-    | '/portfolios'
     | '/quiz'
     | '/relatorios'
     | '/upload'
     | '/utms'
     | '/p/$slug'
     | '/q/$slug'
+    | '/portfolios/$portfolioId'
+    | '/portfolios/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/deletion'
     | '/login'
     | '/privacy'
+    | '/terms'
     | '/agente'
     | '/automacoes'
     | '/campanhas'
     | '/config'
+    | '/contas'
     | '/criativos'
     | '/dashboard'
     | '/integrations'
     | '/metricas'
     | '/multicanal'
     | '/organizador'
-    | '/portfolios'
     | '/quiz'
     | '/relatorios'
     | '/upload'
     | '/utms'
     | '/p/$slug'
     | '/q/$slug'
+    | '/portfolios/$portfolioId'
+    | '/portfolios'
   id:
     | '__root__'
     | '/'
@@ -267,23 +301,26 @@ export interface FileRouteTypes {
     | '/deletion'
     | '/login'
     | '/privacy'
+    | '/terms'
     | '/_app/agente'
     | '/_app/automacoes'
     | '/_app/campanhas'
     | '/_app/config'
+    | '/_app/contas'
     | '/_app/criativos'
     | '/_app/dashboard'
     | '/_app/integrations'
     | '/_app/metricas'
     | '/_app/multicanal'
     | '/_app/organizador'
-    | '/_app/portfolios'
     | '/_app/quiz'
     | '/_app/relatorios'
     | '/_app/upload'
     | '/_app/utms'
     | '/p/$slug'
     | '/q/$slug'
+    | '/_app/portfolios/$portfolioId'
+    | '/_app/portfolios/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -292,12 +329,20 @@ export interface RootRouteChildren {
   DeletionRoute: typeof DeletionRoute
   LoginRoute: typeof LoginRoute
   PrivacyRoute: typeof PrivacyRoute
+  TermsRoute: typeof TermsRoute
   PSlugRoute: typeof PSlugRoute
   QSlugRoute: typeof QSlugRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/terms': {
+      id: '/terms'
+      path: '/terms'
+      fullPath: '/terms'
+      preLoaderRoute: typeof TermsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/privacy': {
       id: '/privacy'
       path: '/privacy'
@@ -375,13 +420,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppQuizRouteImport
       parentRoute: typeof AppRoute
     }
-    '/_app/portfolios': {
-      id: '/_app/portfolios'
-      path: '/portfolios'
-      fullPath: '/portfolios'
-      preLoaderRoute: typeof AppPortfoliosRouteImport
-      parentRoute: typeof AppRoute
-    }
     '/_app/organizador': {
       id: '/_app/organizador'
       path: '/organizador'
@@ -424,6 +462,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppCriativosRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/contas': {
+      id: '/_app/contas'
+      path: '/contas'
+      fullPath: '/contas'
+      preLoaderRoute: typeof AppContasRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/config': {
       id: '/_app/config'
       path: '/config'
@@ -452,6 +497,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppAgenteRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/portfolios/': {
+      id: '/_app/portfolios/'
+      path: '/portfolios'
+      fullPath: '/portfolios/'
+      preLoaderRoute: typeof AppPortfoliosIndexRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/portfolios/$portfolioId': {
+      id: '/_app/portfolios/$portfolioId'
+      path: '/portfolios/$portfolioId'
+      fullPath: '/portfolios/$portfolioId'
+      preLoaderRoute: typeof AppPortfoliosPortfolioIdRouteImport
+      parentRoute: typeof AppRoute
+    }
   }
 }
 
@@ -460,17 +519,19 @@ interface AppRouteChildren {
   AppAutomacoesRoute: typeof AppAutomacoesRoute
   AppCampanhasRoute: typeof AppCampanhasRoute
   AppConfigRoute: typeof AppConfigRoute
+  AppContasRoute: typeof AppContasRoute
   AppCriativosRoute: typeof AppCriativosRoute
   AppDashboardRoute: typeof AppDashboardRoute
   AppIntegrationsRoute: typeof AppIntegrationsRoute
   AppMetricasRoute: typeof AppMetricasRoute
   AppMulticanalRoute: typeof AppMulticanalRoute
   AppOrganizadorRoute: typeof AppOrganizadorRoute
-  AppPortfoliosRoute: typeof AppPortfoliosRoute
   AppQuizRoute: typeof AppQuizRoute
   AppRelatoriosRoute: typeof AppRelatoriosRoute
   AppUploadRoute: typeof AppUploadRoute
   AppUtmsRoute: typeof AppUtmsRoute
+  AppPortfoliosPortfolioIdRoute: typeof AppPortfoliosPortfolioIdRoute
+  AppPortfoliosIndexRoute: typeof AppPortfoliosIndexRoute
 }
 
 const AppRouteChildren: AppRouteChildren = {
@@ -478,17 +539,19 @@ const AppRouteChildren: AppRouteChildren = {
   AppAutomacoesRoute: AppAutomacoesRoute,
   AppCampanhasRoute: AppCampanhasRoute,
   AppConfigRoute: AppConfigRoute,
+  AppContasRoute: AppContasRoute,
   AppCriativosRoute: AppCriativosRoute,
   AppDashboardRoute: AppDashboardRoute,
   AppIntegrationsRoute: AppIntegrationsRoute,
   AppMetricasRoute: AppMetricasRoute,
   AppMulticanalRoute: AppMulticanalRoute,
   AppOrganizadorRoute: AppOrganizadorRoute,
-  AppPortfoliosRoute: AppPortfoliosRoute,
   AppQuizRoute: AppQuizRoute,
   AppRelatoriosRoute: AppRelatoriosRoute,
   AppUploadRoute: AppUploadRoute,
   AppUtmsRoute: AppUtmsRoute,
+  AppPortfoliosPortfolioIdRoute: AppPortfoliosPortfolioIdRoute,
+  AppPortfoliosIndexRoute: AppPortfoliosIndexRoute,
 }
 
 const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)
@@ -499,6 +562,7 @@ const rootRouteChildren: RootRouteChildren = {
   DeletionRoute: DeletionRoute,
   LoginRoute: LoginRoute,
   PrivacyRoute: PrivacyRoute,
+  TermsRoute: TermsRoute,
   PSlugRoute: PSlugRoute,
   QSlugRoute: QSlugRoute,
 }

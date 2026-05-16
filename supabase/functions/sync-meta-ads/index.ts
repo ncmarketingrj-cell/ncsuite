@@ -56,15 +56,27 @@ async function fetchCampaignInsights(adAccountId: string, token: string): Promis
 // ─── Buscar breakdowns demográficos (NOVO — Project Phoenix) ─────────────────
 async function fetchDemographicBreakdowns(adAccountId: string, token: string): Promise<any[]> {
   try {
-    const data = await metaGet(`/${adAccountId}/insights`, token, {
+    const dataAgeGender = await metaGet(`/${adAccountId}/insights`, token, {
       level: "campaign",
       fields: "campaign_id,campaign_name,spend,actions,reach,impressions,inline_link_clicks,date_start",
-      breakdowns: "age,gender,publisher_platform",
+      breakdowns: "age,gender",
       time_increment: "1",
       date_preset: "last_30d",
       limit: "500"
     })
-    return data.data || []
+    
+    // Meta API não permite combinar age/gender com platform na mesma query com time_increment 1 em alguns casos.
+    const dataPlatform = await metaGet(`/${adAccountId}/insights`, token, {
+      level: "campaign",
+      fields: "campaign_id,campaign_name,spend,actions,reach,impressions,inline_link_clicks,date_start",
+      breakdowns: "publisher_platform",
+      time_increment: "1",
+      date_preset: "last_30d",
+      limit: "500"
+    })
+
+    const result = [...(dataAgeGender.data || []), ...(dataPlatform.data || [])]
+    return result
   } catch (e: any) {
     console.error(`[SYNC-DEMO] Erro ao buscar breakdowns de ${adAccountId}:`, e.message)
     return []
@@ -120,16 +132,24 @@ serve(async (req) => {
 
     console.log(`[SYNC ${syncId}] ${adAccounts.length} contas encontradas. Sincronizando insights...`)
 
-    // 3. Sincronizar insights + breakdowns em paralelo
-    const syncResults = await Promise.all(
-      adAccounts.map(async (acc: any) => {
-        const [insights, demographics] = await Promise.all([
-          fetchCampaignInsights(acc.id, token),
-          fetchDemographicBreakdowns(acc.id, token)
-        ])
-        return { accountId: acc.id, insights, demographics }
-      })
-    )
+    // 3. Sincronizar insights + breakdowns de forma SEQUENCIAL para evitar RATE LIMIT da Meta API
+    const syncResults = []
+    let apiErrors = []
+
+    for (const acc of adAccounts) {
+      try {
+        console.log(`[SYNC] Buscando dados da conta: ${acc.id}`)
+        const insights = await fetchCampaignInsights(acc.id, token)
+        const demographics = await fetchDemographicBreakdowns(acc.id, token)
+        syncResults.push({ accountId: acc.id, insights, demographics })
+        
+        // Sleep para evitar rate limit
+        await new Promise(r => setTimeout(r, 500))
+      } catch (err: any) {
+        console.error(`[SYNC] Erro na conta ${acc.id}:`, err.message)
+        apiErrors.push(`Conta ${acc.id}: ${err.message}`)
+      }
+    }
 
     let totalMetrics = 0
     let totalDemographics = 0
@@ -234,12 +254,13 @@ serve(async (req) => {
 
     const summary = {
       sync_id: syncId,
-      status: "success",
-      message: `✅ Sync concluído: ${adAccounts.length} contas, ${totalCampaigns} campanhas, ${totalMetrics} métricas diárias, ${totalDemographics} registros demográficos (idade × gênero × plataforma).`,
+      status: apiErrors.length > 0 ? "partial_success" : "success",
+      message: `✅ Sync concluído: ${adAccounts.length} contas processadas. ${totalCampaigns} campanhas, ${totalMetrics} métricas diárias, ${totalDemographics} registros demográficos. ${apiErrors.length > 0 ? `Avisos: ${apiErrors.join('; ')}` : ''}`,
       accounts: adAccounts.length,
       campaigns: totalCampaigns,
       metrics: totalMetrics,
       demographic_records: totalDemographics,
+      errors: apiErrors,
       timestamp: new Date().toISOString()
     }
 

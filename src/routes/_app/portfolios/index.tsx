@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Plus, Search, Check, X, Loader2, Layers, FolderDot, TrendingUp, Target } from "lucide-react";
@@ -8,7 +8,7 @@ import { useCampaigns } from "@/hooks/useCampaigns";
 
 import { SyncButton } from "@/components/SyncButton";
 
-export const Route = createFileRoute("/_app/portfolios")({
+export const Route = createFileRoute("/_app/portfolios/")({
   head: () => ({ meta: [{ title: "Portfólios — NC Suite" }] }),
   component: PortfoliosPage,
 });
@@ -56,9 +56,10 @@ function PortfoliosPage() {
 
             return (
               <motion.div key={p.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}
-                className="glass-panel flex flex-col justify-between p-5 hover:border-primary/30 transition-colors"
+                className="glass-panel flex flex-col justify-between p-5 hover:border-primary/30 transition-colors group relative"
               >
-                <div className="space-y-4">
+                <Link to="/portfolios/$portfolioId" params={{ portfolioId: p.id }} className="absolute inset-0 z-0" aria-label={`Ver detalhes do portfólio ${p.name}`}></Link>
+                <div className="space-y-4 relative z-10 pointer-events-none">
                   <div className="flex items-start justify-between">
                     <div>
                       <h3 className="font-display font-semibold text-lg flex items-center gap-2">
@@ -84,12 +85,12 @@ function PortfoliosPage() {
                   </div>
                 </div>
 
-                <div className="mt-6 flex items-center justify-between border-t border-white/5 pt-4">
-                  <div className="text-xs text-muted-foreground">
+                <div className="mt-6 flex items-center justify-between border-t border-white/5 pt-4 relative z-10">
+                  <div className="text-xs text-muted-foreground pointer-events-none">
                     <span className="font-semibold text-foreground">{mappedCampaigns.length}</span> campanhas 
                     (R$ {totalBudget.toLocaleString('pt-BR')})
                   </div>
-                  <button onClick={() => { setEditing(p); setModal(true); }} className="text-xs font-medium text-primary hover:underline">
+                  <button onClick={(e) => { e.preventDefault(); setEditing(p); setModal(true); }} className="text-xs font-medium text-primary hover:underline cursor-pointer">
                     Editar
                   </button>
                 </div>

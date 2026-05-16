@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Plus, Trash2, Search, Check, X, Loader2, Filter, Zap } from "lucide-react";
@@ -7,28 +7,51 @@ import { supabase } from "@/integrations/supabase/client";
 import { PageHeader } from "@/components/PageHeader";
 import { useCampaigns, type Campaign } from "@/hooks/useCampaigns";
 import { useClients } from "@/hooks/useClients";
+import { useAdAccounts } from "@/hooks/useAdAccounts";
 
 import { SyncButton } from "@/components/SyncButton";
 
 export const Route = createFileRoute("/_app/campanhas")({
   head: () => ({ meta: [{ title: "Campanhas — NC Suite" }] }),
+  validateSearch: (search: Record<string, unknown>) => {
+    return {
+      accountId: search.accountId as string | undefined,
+      search: search.search as string | undefined,
+    };
+  },
   component: CampanhasPage,
 });
 
 function CampanhasPage() {
+  const { accountId: defaultAccountId, search: defaultSearch } = Route.useSearch();
+  const navigate = useNavigate({ from: Route.id });
+
   const [clientFilter, setClientFilter] = useState("");
+  const [accountFilter, setAccountFilter] = useState(defaultAccountId || "");
   const [statusFilter, setStatusFilter] = useState("all");
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useState(defaultSearch || "");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [modal, setModal] = useState(false);
   const [editing, setEditing] = useState<Campaign | null>(null);
 
   const { clients } = useClients();
+  const { adAccounts } = useAdAccounts();
   const { campaigns, isLoading, addCampaign, updateCampaign, removeCampaign, removeBulk } = useCampaigns({
     clientId: clientFilter || undefined,
+    accountId: accountFilter || undefined,
     status: statusFilter,
     search: search || undefined,
   });
+
+  const handleAccountChange = (val: string) => {
+    setAccountFilter(val);
+    navigate({ search: (prev: any) => ({ ...prev, search: search || undefined, accountId: val || undefined }) });
+  };
+
+  const handleSearchChange = (val: string) => {
+    setSearch(val);
+    navigate({ search: (prev: any) => ({ ...prev, search: val || undefined, accountId: accountFilter || undefined }) });
+  };
 
   const toggle = (id: string) => {
     const s = new Set(selected);
@@ -85,9 +108,13 @@ function CampanhasPage() {
       <div className="flex flex-wrap items-center gap-3">
         <div className="relative flex-1 min-w-[200px]">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Buscar campanha..." className="w-full rounded-lg border border-white/10 bg-background/50 py-2 pl-10 pr-3 text-sm focus:border-primary focus:outline-none" />
+          <input value={search} onChange={(e) => handleSearchChange(e.target.value)} placeholder="Buscar campanha..." className="w-full rounded-lg border border-white/10 bg-background/50 py-2 pl-10 pr-3 text-sm focus:border-primary focus:outline-none" />
         </div>
-        <select value={clientFilter} onChange={(e) => setClientFilter(e.target.value)} className="rounded-lg border border-white/10 bg-background/50 px-3 py-2 text-sm focus:border-primary focus:outline-none">
+        <select value={accountFilter} onChange={(e) => handleAccountChange(e.target.value)} className="rounded-lg border border-white/10 bg-background/50 px-3 py-2 text-sm focus:border-primary focus:outline-none">
+          <option value="">Todas as Contas</option>
+          {adAccounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+        </select>
+        <select value={clientFilter} onChange={(e) => setClientFilter(e.target.value)} className="rounded-lg border border-white/10 bg-background/50 px-3 py-2 text-sm focus:border-primary focus:outline-none hidden md:block">
           <option value="">Todos os clientes</option>
           {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
         </select>

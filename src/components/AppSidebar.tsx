@@ -31,6 +31,7 @@ const GROUPS = [
   {
     label: "Operação",
     items: [
+      { to: "/contas", icon: Briefcase, label: "Contas de Anúncio" },
       { to: "/campanhas", icon: Activity, label: "Campanhas" },
       { to: "/portfolios", icon: Layers, label: "Portfólios", highlight: true },
       { to: "/automacoes", icon: Zap, label: "Automações", highlight: true },
