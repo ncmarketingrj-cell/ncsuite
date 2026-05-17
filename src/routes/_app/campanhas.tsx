@@ -171,7 +171,7 @@ function MetaAdsManagerPage() {
           <Layers className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
           <select
             value={accountFilter}
-            onChange={(e) => { setAccountFilter(e.target.value); navigate({ search: (p) => ({ ...p, accountId: e.target.value === "all" ? undefined : e.target.value }) }); }}
+            onChange={(e) => setAccountFilter(e.target.value)}
             className="w-full appearance-none rounded-xl border border-white/10 bg-background/40 py-2.5 pl-9 pr-8 text-xs font-bold focus:border-primary/50 focus:outline-none transition-all"
           >
             <option value="all">Todas as Contas</option>
@@ -266,12 +266,10 @@ function MetaAdsManagerPage() {
                         <th className="px-2 py-3 w-16 text-[9px] font-black uppercase tracking-widest text-muted-foreground text-center">Status</th>
                         <th className="px-4 py-3 text-left text-[9px] font-black uppercase tracking-widest text-muted-foreground">Campanha</th>
                         <th className="px-4 py-3 text-right text-[9px] font-black uppercase tracking-widest text-muted-foreground">Orçamento</th>
-                        <th className="px-4 py-3 text-right text-[9px] font-black uppercase tracking-widest text-muted-foreground">Resultados</th>
-                        <th className="px-4 py-3 text-right text-[9px] font-black uppercase tracking-widest text-primary">CPL</th>
+                        <th className="px-4 py-3 text-right text-[9px] font-black uppercase tracking-widest text-muted-foreground">Alcance</th>
                         <th className="px-4 py-3 text-right text-[9px] font-black uppercase tracking-widest text-muted-foreground">Impressões</th>
-                        <th className="px-4 py-3 text-right text-[9px] font-black uppercase tracking-widest text-muted-foreground">Gasto</th>
-                        <th className="px-4 py-3 text-right text-[9px] font-black uppercase tracking-widest text-muted-foreground">CTR</th>
-                        <th className="px-4 py-3 text-right text-[9px] font-black uppercase tracking-widest text-muted-foreground">CPM</th>
+                        <th className="px-4 py-3 text-right text-[9px] font-black uppercase tracking-widest text-secondary">Resultados</th>
+                        <th className="px-4 py-3 text-right text-[9px] font-black uppercase tracking-widest text-primary">Gasto</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -310,13 +308,11 @@ function MetaAdsManagerPage() {
                                 <p className="text-[9px] text-muted-foreground/60 font-mono mt-0.5">{c.ad_account?.name || "Conta desconhecida"}</p>
                               </div>
                             </td>
-                            <td className="px-4 py-3 text-right font-mono">R$ {(c.budget || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</td>
-                            <td className="px-4 py-3 text-right font-mono font-bold">{c.totals.conversions.toLocaleString("pt-BR")}</td>
-                            <td className="px-4 py-3 text-right font-mono font-bold text-primary">{c.totals.cpl > 0 ? `R$ ${c.totals.cpl.toFixed(2)}` : "—"}</td>
+                            <td className="px-4 py-3 text-right font-mono text-muted-foreground">R$ {(c.budget || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</td>
+                            <td className="px-4 py-3 text-right font-mono text-muted-foreground">{(c.totals as any).reach ? (c.totals as any).reach.toLocaleString("pt-BR") : "—"}</td>
                             <td className="px-4 py-3 text-right font-mono text-muted-foreground">{c.totals.impressions.toLocaleString("pt-BR")}</td>
-                            <td className="px-4 py-3 text-right font-mono font-bold">R$ {c.totals.cost.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</td>
-                            <td className="px-4 py-3 text-right font-mono text-muted-foreground">{c.totals.ctr.toFixed(2)}%</td>
-                            <td className="px-4 py-3 text-right font-mono text-muted-foreground">{c.totals.cpm > 0 ? `R$ ${c.totals.cpm.toFixed(2)}` : "—"}</td>
+                            <td className="px-4 py-3 text-right font-mono font-bold text-secondary">{c.totals.conversions.toLocaleString("pt-BR")}</td>
+                            <td className="px-4 py-3 text-right font-mono font-bold text-primary">R$ {c.totals.cost.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</td>
                           </tr>
                         );
                       })}
@@ -329,13 +325,10 @@ function MetaAdsManagerPage() {
                           Total ({filteredCampaigns.length} campanhas)
                         </td>
                         <td className="px-4 py-3 text-right font-mono font-bold text-[10px]">—</td>
-                        <td className="px-4 py-3 text-right font-mono font-bold text-[10px]">{filteredCampaigns.reduce((s, c) => s + c.totals.conversions, 0).toLocaleString("pt-BR")}</td>
-                        <td className="px-4 py-3 text-right font-mono font-bold text-primary text-[10px]">
-                          R$ {(filteredCampaigns.reduce((s, c) => s + c.totals.cost, 0) / (filteredCampaigns.reduce((s, c) => s + c.totals.conversions, 0) || 1)).toFixed(2)}
-                        </td>
-                        <td className="px-4 py-3 text-right font-mono text-[10px]">{filteredCampaigns.reduce((s, c) => s + c.totals.impressions, 0).toLocaleString("pt-BR")}</td>
-                        <td className="px-4 py-3 text-right font-mono font-bold text-[10px]">R$ {filteredCampaigns.reduce((s, c) => s + c.totals.cost, 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</td>
-                        <td colSpan={2} />
+                        <td className="px-4 py-3 text-right font-mono font-bold text-[10px]">—</td>
+                        <td className="px-4 py-3 text-right font-mono font-bold text-[10px]">{filteredCampaigns.reduce((s, c) => s + c.totals.impressions, 0).toLocaleString("pt-BR")}</td>
+                        <td className="px-4 py-3 text-right font-mono font-bold text-secondary text-[10px]">{filteredCampaigns.reduce((s, c) => s + c.totals.conversions, 0).toLocaleString("pt-BR")}</td>
+                        <td className="px-4 py-3 text-right font-mono font-bold text-primary text-[10px]">R$ {filteredCampaigns.reduce((s, c) => s + c.totals.cost, 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</td>
                       </tr>
                     </tfoot>
                   </table>
