@@ -268,7 +268,15 @@ function Dashboard() {
         </div>
 
         <div className="flex items-center gap-4">
-          <AgentStatusBadge config={config} />
+          {config ? (
+            <span className="inline-flex items-center rounded-full bg-success/20 px-2 py-0.5 text-[10px] font-black uppercase tracking-widest text-success border border-success/30 shadow-glow-sm">
+              Ads Conectado
+            </span>
+          ) : (
+            <span className="inline-flex items-center rounded-full bg-amber-500/20 px-2 py-0.5 text-[10px] font-black uppercase tracking-widest text-amber-500 border border-amber-500/30">
+              Sem Integração Ads
+            </span>
+          )}
         </div>
       </div>
 
