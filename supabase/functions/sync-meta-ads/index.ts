@@ -209,10 +209,12 @@ serve(async (req) => {
     for (const acc of adAccounts) {
       try {
         console.log(`[SYNC] Buscando dados da conta: ${acc.id} com parametros ${JSON.stringify(timeParams)}`)
-        const insights = await fetchCampaignInsights(acc.id, token, timeParams)
-        const demographics = await fetchDemographicBreakdowns(acc.id, token, timeParams)
-        const adsetInsights = await fetchAdSetInsights(acc.id, token, timeParams)
-        const adInsights = await fetchAdInsights(acc.id, token, timeParams)
+        const [insights, demographics, adsetInsights, adInsights] = await Promise.all([
+          fetchCampaignInsights(acc.id, token, timeParams),
+          fetchDemographicBreakdowns(acc.id, token, timeParams),
+          fetchAdSetInsights(acc.id, token, timeParams),
+          fetchAdInsights(acc.id, token, timeParams)
+        ])
         syncResults.push({ accountId: acc.id, insights, demographics, adsetInsights, adInsights })
         
         // Sleep para evitar rate limit
@@ -255,14 +257,18 @@ serve(async (req) => {
         }
       }
 
-      const { data: syncedCamps, error: campErr } = await supabase
-        .from("campaigns")
-        .upsert(Array.from(campaignMap.values()), { onConflict: "external_id" })
-        .select("id, external_id")
+      let syncedCamps: any[] = []
+      if (campaignMap.size > 0) {
+        const { data, error: campErr } = await supabase
+          .from("campaigns")
+          .upsert(Array.from(campaignMap.values()), { onConflict: "external_id" })
+          .select("id, external_id")
 
-      if (campErr) {
-        console.error(`[SYNC] Erro ao upsert campanhas de ${accountId}:`, campErr.message)
-        continue
+        if (campErr) {
+          console.error(`[SYNC] Erro ao upsert campanhas de ${accountId}:`, campErr.message)
+          continue
+        }
+        syncedCamps = data || []
       }
 
       totalCampaigns += syncedCamps.length
@@ -283,10 +289,15 @@ serve(async (req) => {
           }
         }
       }
-      const { data: syncedAdsets, error: adsetErr } = await supabase
-        .from("ad_sets")
-        .upsert(Array.from(adsetMap.values()), { onConflict: "external_id" })
-        .select("id, external_id")
+      let syncedAdsets: any[] = []
+      if (adsetMap.size > 0) {
+        const { data, error: adsetErr } = await supabase
+          .from("ad_sets")
+          .upsert(Array.from(adsetMap.values()), { onConflict: "external_id" })
+          .select("id, external_id")
+        if (adsetErr) console.error(`[SYNC] Erro adsets ${accountId}:`, adsetErr.message)
+        syncedAdsets = data || []
+      }
       
       const adsetIdMap = new Map((syncedAdsets || []).map(a => [a.external_id, a.id]))
 
@@ -307,10 +318,15 @@ serve(async (req) => {
           }
         }
       }
-      const { data: syncedAds } = await supabase
-        .from("ads")
-        .upsert(Array.from(adMap.values()), { onConflict: "external_id" })
-        .select("id, external_id")
+      let syncedAds: any[] = []
+      if (adMap.size > 0) {
+        const { data, error: adErr } = await supabase
+          .from("ads")
+          .upsert(Array.from(adMap.values()), { onConflict: "external_id" })
+          .select("id, external_id")
+        if (adErr) console.error(`[SYNC] Erro ads ${accountId}:`, adErr.message)
+        syncedAds = data || []
+      }
 
       const adIdMap = new Map((syncedAds || []).map(a => [a.external_id, a.id]))
 
