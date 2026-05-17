@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState, useRef } from "react";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import { useQuery } from "@tanstack/react-query";
 import { 
   FileText, Download, Printer, ArrowLeft, Target, 
@@ -41,14 +41,14 @@ function RelatoriosPage() {
       const dateLimit = subDays(new Date(), days).toISOString();
 
       // Puxar métricas globais
-      let qMetrics = supabase.from("metrics").select(`*, campaigns!inner(ad_account_id)`).gte('date', dateLimit);
+      let qMetrics = (supabase as any).from("metrics").select(`*, campaigns!inner(ad_account_id)`).gte('date', dateLimit);
       if (selectedAccountId !== "all") {
         qMetrics = qMetrics.eq("campaigns.ad_account_id", selectedAccountId);
       }
       const { data: metrics } = await qMetrics;
 
       // Puxar demográficos
-      let qDemos = supabase.from("demographic_metrics").select(`*, campaigns!inner(ad_account_id)`).gte('date', dateLimit);
+      let qDemos = (supabase as any).from("demographic_metrics").select(`*, campaigns!inner(ad_account_id)`).gte('date', dateLimit);
       if (selectedAccountId !== "all") {
         qDemos = qDemos.eq("campaigns.ad_account_id", selectedAccountId);
       }

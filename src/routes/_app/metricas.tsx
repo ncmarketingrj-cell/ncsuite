@@ -12,7 +12,7 @@ import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   BarChart, Bar, Legend, Cell, PieChart, Pie, Sector
 } from "recharts";
-import { format, subDays } from "date-fns";
+import { format, subDays, isAfter } from "date-fns";
 import { ptBR } from "date-fns/locale";
 
 export const Route = createFileRoute("/_app/metricas")({
@@ -41,14 +41,14 @@ function MetricasPage() {
       const dateLimit = subDays(new Date(), days).toISOString();
 
       // Busca métricas de performance globais
-      let qMetrics = supabase.from("metrics").select(`*, campaigns!inner(ad_account_id)`).gte('date', dateLimit);
+      let qMetrics = (supabase as any).from("metrics").select(`*, campaigns!inner(ad_account_id)`).gte('date', dateLimit);
       if (selectedAccountId !== "all") {
         qMetrics = qMetrics.eq("campaigns.ad_account_id", selectedAccountId);
       }
       const { data: rawMetrics } = await qMetrics;
 
       // Busca demográficos
-      let qDemos = supabase.from("demographic_metrics").select(`*, campaigns!inner(ad_account_id)`).gte('date', dateLimit);
+      let qDemos = (supabase as any).from("demographic_metrics").select(`*, campaigns!inner(ad_account_id)`).gte('date', dateLimit);
       if (selectedAccountId !== "all") {
         qDemos = qDemos.eq("campaigns.ad_account_id", selectedAccountId);
       }
@@ -429,7 +429,7 @@ function PerformanceTable({ selectedAccountId, dateRange }: { selectedAccountId:
       const startDateStr = dateRange === "all_time" ? null : subDays(new Date(), days).toISOString();
 
       // Puxa Campanhas + Conta de Anúncios (Para saber o "Portfólio/Conta")
-      let q = supabase
+      let q = (supabase as any)
         .from("campaigns")
         .select(`
           id, name, status, budget,
