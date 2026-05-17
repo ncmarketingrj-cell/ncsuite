@@ -53,6 +53,40 @@ async function fetchCampaignInsights(adAccountId: string, token: string, timePar
   }
 }
 
+// ─── Buscar insights diários de adsets ─────────────────────────────────────
+async function fetchAdSetInsights(adAccountId: string, token: string, timeParams: Record<string, string>): Promise<any[]> {
+  try {
+    const data = await metaGet(`/${adAccountId}/insights`, token, {
+      level: "adset",
+      fields: "adset_id,adset_name,campaign_id,spend,actions,reach,impressions,inline_link_clicks,date_start",
+      time_increment: "1",
+      limit: "500",
+      ...timeParams
+    })
+    return data.data || []
+  } catch (e: any) {
+    console.error(`[SYNC] Erro adsets de ${adAccountId}:`, e.message)
+    return []
+  }
+}
+
+// ─── Buscar insights diários de ads ─────────────────────────────────────
+async function fetchAdInsights(adAccountId: string, token: string, timeParams: Record<string, string>): Promise<any[]> {
+  try {
+    const data = await metaGet(`/${adAccountId}/insights`, token, {
+      level: "ad",
+      fields: "ad_id,ad_name,adset_id,campaign_id,spend,actions,reach,impressions,inline_link_clicks,date_start",
+      time_increment: "1",
+      limit: "500",
+      ...timeParams
+    })
+    return data.data || []
+  } catch (e: any) {
+    console.error(`[SYNC] Erro ads de ${adAccountId}:`, e.message)
+    return []
+  }
+}
+
 // ─── Buscar breakdowns demográficos (NOVO — Project Phoenix) ─────────────────
 async function fetchDemographicBreakdowns(adAccountId: string, token: string, timeParams: Record<string, string>): Promise<any[]> {
   try {
@@ -109,7 +143,8 @@ serve(async (req) => {
 
   try {
     // 1. Tentar ler parâmetros de data no corpo da requisição (POST)
-    let timeParams: Record<string, string> = { date_preset: "last_90d" } // Padrão agora é 90 dias
+    let timeParams: Record<string, string> = { date_preset: "maximum" } // Default to maximum to include today
+    let targetAccountId: string | null = null;
     try {
       const body = await req.json()
       if (body.time_range) {
@@ -119,8 +154,12 @@ serve(async (req) => {
         timeParams = { date_preset: body.date_preset }
         console.log(`[SYNC ${syncId}] Sincronizando com preset: ${body.date_preset}`)
       }
+      if (body.account_id && body.account_id !== "all") {
+        targetAccountId = body.account_id;
+        console.log(`[SYNC ${syncId}] Filtrando para conta especifica: ${targetAccountId}`)
+      }
     } catch (_) {
-      console.log(`[SYNC ${syncId}] Nenhum body enviado. Usando preset padrão: last_90d`)
+      console.log(`[SYNC ${syncId}] Nenhum body enviado. Usando preset padrão: maximum`)
     }
 
     // 2. Buscar configuração (token master)
@@ -142,6 +181,12 @@ serve(async (req) => {
     
     if (adAccounts.length === 0) {
       throw new Error("Nenhuma conta de anúncios encontrada. Verifique as permissões do token.")
+    }
+
+    // Filtra se for para sync específico
+    if (targetAccountId) {
+      adAccounts = adAccounts.filter((a: any) => a.id === targetAccountId);
+      if (adAccounts.length === 0) throw new Error("A conta selecionada não pertence a este token.");
     }
 
     await supabase.from("ad_accounts").upsert(
@@ -166,7 +211,9 @@ serve(async (req) => {
         console.log(`[SYNC] Buscando dados da conta: ${acc.id} com parametros ${JSON.stringify(timeParams)}`)
         const insights = await fetchCampaignInsights(acc.id, token, timeParams)
         const demographics = await fetchDemographicBreakdowns(acc.id, token, timeParams)
-        syncResults.push({ accountId: acc.id, insights, demographics })
+        const adsetInsights = await fetchAdSetInsights(acc.id, token, timeParams)
+        const adInsights = await fetchAdInsights(acc.id, token, timeParams)
+        syncResults.push({ accountId: acc.id, insights, demographics, adsetInsights, adInsights })
         
         // Sleep para evitar rate limit
         await new Promise(r => setTimeout(r, 500))
@@ -180,8 +227,8 @@ serve(async (req) => {
     let totalDemographics = 0
     let totalCampaigns = 0
 
-    for (const { accountId, insights, demographics } of syncResults) {
-      if (insights.length === 0 && demographics.length === 0) continue
+    for (const { accountId, insights, demographics, adsetInsights, adInsights } of syncResults) {
+      if (insights.length === 0 && demographics.length === 0 && adsetInsights.length === 0 && adInsights.length === 0) continue
 
       // ── 3a. Upsert campanhas (deduplicado por external_id) ──────────────────
       const campaignMap = new Map<string, any>()
@@ -189,6 +236,17 @@ serve(async (req) => {
         if (!campaignMap.has(row.campaign_id)) {
           campaignMap.set(row.campaign_id, {
             name: row.campaign_name,
+            platform: "Meta Ads",
+            status: "active",
+            external_id: row.campaign_id,
+            ad_account_id: accountId
+          })
+        }
+      }
+      for (const row of [...adsetInsights, ...adInsights]) {
+        if (row.campaign_id && !campaignMap.has(row.campaign_id)) {
+          campaignMap.set(row.campaign_id, {
+            name: `Campanha Desconhecida (${row.campaign_id})`,
             platform: "Meta Ads",
             status: "active",
             external_id: row.campaign_id,
@@ -210,7 +268,53 @@ serve(async (req) => {
       totalCampaigns += syncedCamps.length
       const idMap = new Map(syncedCamps.map(c => [c.external_id, c.id]))
 
-      // ── 3b. Upsert métricas diárias ─────────────────────────────────────────
+      // ── 3a2. Upsert AdSets ────────────────────────────────────────────────────
+      const adsetMap = new Map<string, any>()
+      for (const row of [...adsetInsights, ...adInsights]) {
+        if (row.adset_id && !adsetMap.has(row.adset_id)) {
+          const campaign_id = idMap.get(row.campaign_id)
+          if (campaign_id) {
+            adsetMap.set(row.adset_id, {
+              campaign_id,
+              name: row.adset_name || `Conjunto ${row.adset_id}`,
+              external_id: row.adset_id,
+              status: "active"
+            })
+          }
+        }
+      }
+      const { data: syncedAdsets, error: adsetErr } = await supabase
+        .from("ad_sets")
+        .upsert(Array.from(adsetMap.values()), { onConflict: "external_id" })
+        .select("id, external_id")
+      
+      const adsetIdMap = new Map((syncedAdsets || []).map(a => [a.external_id, a.id]))
+
+      // ── 3a3. Upsert Ads ───────────────────────────────────────────────────────
+      const adMap = new Map<string, any>()
+      for (const row of adInsights) {
+        if (row.ad_id && !adMap.has(row.ad_id)) {
+          const ad_set_id = adsetIdMap.get(row.adset_id)
+          const campaign_id = idMap.get(row.campaign_id)
+          if (ad_set_id && campaign_id) {
+            adMap.set(row.ad_id, {
+              ad_set_id,
+              campaign_id,
+              name: row.ad_name || `Anúncio ${row.ad_id}`,
+              external_id: row.ad_id,
+              status: "active"
+            })
+          }
+        }
+      }
+      const { data: syncedAds } = await supabase
+        .from("ads")
+        .upsert(Array.from(adMap.values()), { onConflict: "external_id" })
+        .select("id, external_id")
+
+      const adIdMap = new Map((syncedAds || []).map(a => [a.external_id, a.id]))
+
+      // ── 3b. Upsert métricas diárias (Campanhas) ─────────────────────────────
       const metricsToUpsert = insights.map(row => {
         const campaign_id = idMap.get(row.campaign_id)
         if (!campaign_id) return null
@@ -259,6 +363,57 @@ serve(async (req) => {
           .upsert(demoToUpsert, { onConflict: "campaign_id,date,age_range,gender,platform" })
         if (error) console.error(`[SYNC] Erro demographics ${accountId}:`, error.message)
         else totalDemographics += demoToUpsert.length
+      }
+
+      // ── 3d. Upsert asset_metrics (AdSets e Ads) ─────────────────────────────
+      const assetMetricsToUpsert = []
+      
+      for (const row of adsetInsights) {
+        const ad_set_id = adsetIdMap.get(row.adset_id)
+        if (ad_set_id) {
+          assetMetricsToUpsert.push({
+            ad_set_id,
+            date: row.date_start,
+            impressions: parseInt(row.impressions) || 0,
+            clicks: parseInt(row.inline_link_clicks || "0") || 0,
+            cost: parseFloat(row.spend) || 0,
+            conversions: extractConversions(row.actions),
+            reach: parseInt(row.reach) || 0
+          })
+        }
+      }
+
+      for (const row of adInsights) {
+        const ad_id = adIdMap.get(row.ad_id)
+        if (ad_id) {
+          assetMetricsToUpsert.push({
+            ad_id,
+            date: row.date_start,
+            impressions: parseInt(row.impressions) || 0,
+            clicks: parseInt(row.inline_link_clicks || "0") || 0,
+            cost: parseFloat(row.spend) || 0,
+            conversions: extractConversions(row.actions),
+            reach: parseInt(row.reach) || 0
+          })
+        }
+      }
+
+      if (assetMetricsToUpsert.length > 0) {
+        const chunkSize = 500
+        for (let i = 0; i < assetMetricsToUpsert.length; i += chunkSize) {
+          const chunk = assetMetricsToUpsert.slice(i, i + chunkSize)
+          const adSetChunk = chunk.filter(c => c.ad_set_id);
+          const adChunk = chunk.filter(c => c.ad_id);
+          
+          if (adSetChunk.length > 0) {
+             const { error } = await supabase.from("asset_metrics").upsert(adSetChunk, { onConflict: "ad_set_id, date" })
+             if (error) console.error(`[SYNC] Erro adset_metrics ${accountId}:`, error.message)
+          }
+          if (adChunk.length > 0) {
+             const { error } = await supabase.from("asset_metrics").upsert(adChunk, { onConflict: "ad_id, date" })
+             if (error) console.error(`[SYNC] Erro ad_metrics ${accountId}:`, error.message)
+          }
+        }
       }
     }
 
