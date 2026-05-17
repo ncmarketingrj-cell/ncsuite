@@ -37,14 +37,14 @@ async function fetchAdAccounts(token: string) {
 }
 
 // ─── Buscar insights diários de campanha ─────────────────────────────────────
-async function fetchCampaignInsights(adAccountId: string, token: string): Promise<any[]> {
+async function fetchCampaignInsights(adAccountId: string, token: string, timeParams: Record<string, string>): Promise<any[]> {
   try {
     const data = await metaGet(`/${adAccountId}/insights`, token, {
       level: "campaign",
       fields: "campaign_id,campaign_name,objective,spend,actions,reach,impressions,inline_link_clicks,date_start,date_stop",
       time_increment: "1",
-      date_preset: "last_30d",
-      limit: "500"
+      limit: "500",
+      ...timeParams
     })
     return data.data || []
   } catch (e: any) {
@@ -54,15 +54,15 @@ async function fetchCampaignInsights(adAccountId: string, token: string): Promis
 }
 
 // ─── Buscar breakdowns demográficos (NOVO — Project Phoenix) ─────────────────
-async function fetchDemographicBreakdowns(adAccountId: string, token: string): Promise<any[]> {
+async function fetchDemographicBreakdowns(adAccountId: string, token: string, timeParams: Record<string, string>): Promise<any[]> {
   try {
     const dataAgeGender = await metaGet(`/${adAccountId}/insights`, token, {
       level: "campaign",
       fields: "campaign_id,campaign_name,spend,actions,reach,impressions,inline_link_clicks,date_start",
       breakdowns: "age,gender",
       time_increment: "1",
-      date_preset: "last_30d",
-      limit: "500"
+      limit: "500",
+      ...timeParams
     })
     
     // Meta API não permite combinar age/gender com platform na mesma query com time_increment 1 em alguns casos.
@@ -71,8 +71,8 @@ async function fetchDemographicBreakdowns(adAccountId: string, token: string): P
       fields: "campaign_id,campaign_name,spend,actions,reach,impressions,inline_link_clicks,date_start",
       breakdowns: "publisher_platform",
       time_increment: "1",
-      date_preset: "last_30d",
-      limit: "500"
+      limit: "500",
+      ...timeParams
     })
 
     const result = [...(dataAgeGender.data || []), ...(dataPlatform.data || [])]
@@ -85,13 +85,12 @@ async function fetchDemographicBreakdowns(adAccountId: string, token: string): P
 
 // ─── Extrair conversões (Resultados) do array de actions ───────────────────────
 function extractConversions(actions: any[] = []): number {
-  // Lista priorizada do que consideramos um "Resultado" baseado no objetivo
   const priorityTypes = [
-    "purchase", "lead", "complete_registration", "submit_application", "conversion", // Bottom Funnel
-    "messaging_conversation_started_7d", "onsite_conversion.messaging_conversation_started_7d", // Messages
-    "landing_page_view", "link_click", // Traffic
-    "video_view", "thruplay", "video_view_thruplay", // Video Views
-    "post_engagement", "page_engagement" // Engagement
+    "purchase", "lead", "complete_registration", "submit_application", "conversion",
+    "messaging_conversation_started_7d", "onsite_conversion.messaging_conversation_started_7d",
+    "landing_page_view", "link_click",
+    "video_view", "thruplay", "video_view_thruplay",
+    "post_engagement", "page_engagement"
   ];
   
   for (const type of priorityTypes) {
@@ -109,7 +108,22 @@ serve(async (req) => {
   console.log(`[SYNC ${syncId}] Iniciando sincronização Project Phoenix...`)
 
   try {
-    // 1. Buscar configuração (token master)
+    // 1. Tentar ler parâmetros de data no corpo da requisição (POST)
+    let timeParams: Record<string, string> = { date_preset: "last_90d" } // Padrão agora é 90 dias
+    try {
+      const body = await req.json()
+      if (body.time_range) {
+        timeParams = { time_range: JSON.stringify(body.time_range) }
+        console.log(`[SYNC ${syncId}] Sincronizando período personalizado: ${JSON.stringify(body.time_range)}`)
+      } else if (body.date_preset) {
+        timeParams = { date_preset: body.date_preset }
+        console.log(`[SYNC ${syncId}] Sincronizando com preset: ${body.date_preset}`)
+      }
+    } catch (_) {
+      console.log(`[SYNC ${syncId}] Nenhum body enviado. Usando preset padrão: last_90d`)
+    }
+
+    // 2. Buscar configuração (token master)
     const { data: config, error: configErr } = await supabase
       .from("meta_ads_configs")
       .select("access_token, user_id")
@@ -122,7 +136,7 @@ serve(async (req) => {
     const token = config.access_token
     const userId = config.user_id
 
-    // 2. Buscar e salvar contas
+    // 3. Buscar e salvar contas
     console.log(`[SYNC ${syncId}] Buscando contas vinculadas...`)
     const adAccounts = await fetchAdAccounts(token)
     
@@ -143,15 +157,15 @@ serve(async (req) => {
 
     console.log(`[SYNC ${syncId}] ${adAccounts.length} contas encontradas. Sincronizando insights...`)
 
-    // 3. Sincronizar insights + breakdowns de forma SEQUENCIAL para evitar RATE LIMIT da Meta API
+    // 4. Sincronizar insights + breakdowns de forma SEQUENCIAL para evitar RATE LIMIT da Meta API
     const syncResults = []
     let apiErrors = []
 
     for (const acc of adAccounts) {
       try {
-        console.log(`[SYNC] Buscando dados da conta: ${acc.id}`)
-        const insights = await fetchCampaignInsights(acc.id, token)
-        const demographics = await fetchDemographicBreakdowns(acc.id, token)
+        console.log(`[SYNC] Buscando dados da conta: ${acc.id} com parametros ${JSON.stringify(timeParams)}`)
+        const insights = await fetchCampaignInsights(acc.id, token, timeParams)
+        const demographics = await fetchDemographicBreakdowns(acc.id, token, timeParams)
         syncResults.push({ accountId: acc.id, insights, demographics })
         
         // Sleep para evitar rate limit

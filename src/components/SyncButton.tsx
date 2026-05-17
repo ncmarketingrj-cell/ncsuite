@@ -6,7 +6,12 @@ import { toast } from "sonner";
 import { formatDistanceToNow, format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 
-export function SyncButton() {
+interface SyncButtonProps {
+  startDate?: Date;
+  endDate?: Date;
+}
+
+export function SyncButton({ startDate, endDate }: SyncButtonProps = {}) {
   const qc = useQueryClient();
   const [syncing, setSyncing] = useState(false);
   const [lastStatus, setLastStatus] = useState<"idle" | "success" | "error">("idle");
@@ -33,7 +38,19 @@ export function SyncButton() {
     const t = toast.loading("🔄 Conectando à Graph API da Meta Ads...", { duration: 60000 });
     
     try {
-      const { data, error } = await supabase.functions.invoke("sync-meta-ads");
+      let bodyArgs = {};
+      if (startDate && endDate) {
+        bodyArgs = {
+          time_range: {
+            since: startDate.toISOString().split("T")[0],
+            until: endDate.toISOString().split("T")[0],
+          }
+        };
+      }
+
+      const { data, error } = await supabase.functions.invoke("sync-meta-ads", {
+        body: bodyArgs
+      });
       
       if (error) throw new Error(error.message);
       if (data?.error) throw new Error(data.error);
