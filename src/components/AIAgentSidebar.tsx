@@ -42,16 +42,23 @@ export function AIAgentSidebar({ isOpen, onClose }: AIAgentSidebarProps) {
       });
 
       if (error) throw error;
+      if (data?.error) throw new Error(data.error);
 
       const assistantMsg: Message = { 
         role: "assistant", 
-        content: data.message || "Comando processado com sucesso pelo MCP.", 
+        content: data.message || "Comando processado com sucesso.", 
         timestamp: new Date() 
       };
       setMessages(prev => [...prev, assistantMsg]);
     } catch (err: any) {
       toast.error("Falha na comunicação com o Agente.");
       console.error(err);
+      const errorMsg: Message = { 
+        role: "assistant", 
+        content: `❌ Ocorreu um erro ao processar sua solicitação: ${err.message || "Serviço indisponível."}`, 
+        timestamp: new Date() 
+      };
+      setMessages(prev => [...prev, errorMsg]);
     } finally {
       setLoading(false);
     }

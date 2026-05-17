@@ -278,9 +278,11 @@ function MulticanalPage() {
                         cx="50%" 
                         cy="50%" 
                         outerRadius={90} 
-                        label={({ name, percent }) => `${name?.slice(0, 10)} (${(percent * 100).toFixed(0)}%)`}
+                        label={({ name, percent, cx, cy, midAngle, innerRadius, outerRadius, value }) => {
+                          return `${name?.slice(0, 10)} (${(percent * 100).toFixed(0)}%)`;
+                        }}
                         labelLine={false}
-                        style={{ fontSize: 9, fill: "#fff" }}
+                        style={{ fontSize: 9 }}
                       >
                         {pieData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
                       </Pie>

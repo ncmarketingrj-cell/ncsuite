@@ -39,10 +39,8 @@ const GROUPS: SidebarGroup[] = [
     label: "Operação Meta",
     icon: Target,
     items: [
-      { to: "/campanhas", icon: Megaphone, label: "Campanhas" },
-      { to: "/contas", icon: Briefcase, label: "Contas de Anúncio" },
-      { to: "/portfolios", icon: Layers, label: "Portfólios", highlight: true },
-      { to: "/automacoes", icon: Zap, label: "Automações", highlight: true },
+      { to: "/campanhas", icon: Megaphone, label: "Gestão de Ads (Manager)", highlight: true },
+      { to: "/automacoes", icon: Zap, label: "Automações Inteligentes" },
     ],
   },
   {
