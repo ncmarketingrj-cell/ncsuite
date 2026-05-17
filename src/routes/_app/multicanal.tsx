@@ -21,6 +21,7 @@ const COLORS = ["#00d4ff", "#9b87f5", "#f97316", "#22c55e", "#ef4444", "#eab308"
 
 function MulticanalPage() {
   const [clientId, setClientId] = useState("all");
+  const [accountId, setAccountId] = useState("all");
   
   // Período flexível de datas (Default: últimos 30 dias)
   const [dateRange, setDateRange] = useState<{ startDate: Date; endDate: Date }>({
@@ -37,9 +38,18 @@ function MulticanalPage() {
     }
   });
 
-  // 2. Query de métricas consolidada de acordo com o intervalo de datas customizado
+  // 2. Buscar Ad Accounts (Contas Meta)
+  const { data: adAccounts = [] } = useQuery({
+    queryKey: ["ad-accounts"],
+    queryFn: async () => {
+      const { data } = await supabase.from("ad_accounts").select("*").order("name");
+      return data || [];
+    }
+  });
+
+  // 3. Query de métricas consolidada de acordo com o intervalo de datas customizado
   const { data: dashData, isLoading, refetch } = useQuery({
-    queryKey: ["multicanal-performance-consolidated", clientId, dateRange.startDate.toISOString(), dateRange.endDate.toISOString()],
+    queryKey: ["multicanal-performance-consolidated", clientId, accountId, dateRange.startDate.toISOString(), dateRange.endDate.toISOString()],
     queryFn: async () => {
       const startStr = dateRange.startDate.toISOString().split("T")[0] + "T00:00:00Z";
       const endStr = dateRange.endDate.toISOString().split("T")[0] + "T23:59:59Z";
@@ -48,12 +58,15 @@ function MulticanalPage() {
       let q = supabase
         .from("campaigns")
         .select(`
-          id, name, status, budget, client_id, platform,
+          id, name, status, budget, client_id, platform, ad_account_id,
           metrics(cost, conversions, impressions, clicks, date)
         `);
 
       if (clientId !== "all") {
         q = q.eq("client_id", clientId);
+      }
+      if (accountId !== "all") {
+        q = q.eq("ad_account_id", accountId);
       }
 
       const { data: campaignsRaw, error } = await q;
@@ -156,20 +169,34 @@ function MulticanalPage() {
         }
       />
 
-      {/* Seletor de Cliente */}
-      <div className="glass-panel p-4 flex items-center justify-between">
+      {/* 🛠️ BARRA DE FILTROS EXECUTIVA PREMIUM */}
+      <div className="glass-panel p-4 flex flex-wrap items-center justify-between gap-4">
         <div className="flex items-center gap-3">
           <Layers className="h-4 w-4 text-primary" />
-          <p className="text-xs font-black uppercase tracking-widest text-muted-foreground">Filtro de Carteira Comercial</p>
+          <p className="text-xs font-black uppercase tracking-widest text-muted-foreground">Filtro de Carteira e Contas</p>
         </div>
-        <select 
-          value={clientId} 
-          onChange={(e) => setClientId(e.target.value)} 
-          className="rounded-xl border border-white/10 bg-background/50 px-4 py-2.5 text-xs font-semibold focus:border-primary/50 focus:outline-none transition-all"
-        >
-          <option value="all">Todos os clientes ativos</option>
-          {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-        </select>
+        
+        <div className="flex flex-wrap items-center gap-3">
+          {/* Filtro de Conta Meta */}
+          <select 
+            value={accountId} 
+            onChange={(e) => setAccountId(e.target.value)} 
+            className="rounded-xl border border-white/10 bg-background/50 px-4 py-2.5 text-xs font-semibold focus:border-primary/50 focus:outline-none transition-all"
+          >
+            <option value="all">Todas as Contas Meta</option>
+            {adAccounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+          </select>
+
+          {/* Filtro de Cliente */}
+          <select 
+            value={clientId} 
+            onChange={(e) => setClientId(e.target.value)} 
+            className="rounded-xl border border-white/10 bg-background/50 px-4 py-2.5 text-xs font-semibold focus:border-primary/50 focus:outline-none transition-all"
+          >
+            <option value="all">Todos os clientes ativos</option>
+            {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </select>
+        </div>
       </div>
 
       {isLoading ? (
