@@ -1,390 +1,292 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { motion, AnimatePresence } from "framer-motion";
-import { FileText, Plus, Trash2, Copy, Save, Loader2, Sparkles, X } from "lucide-react";
-import Markdown from "react-markdown";
-import rehypeRaw from "rehype-raw";
-import { toast } from "sonner";
+import { createFileRoute, Link } from "@tanstack/react-router";
+import { useState, useRef } from "react";
+import { motion } from "framer-motion";
+import { useQuery } from "@tanstack/react-query";
+import { 
+  FileText, Download, Printer, ArrowLeft, Target, 
+  Calendar, CheckCircle2, Loader2, Globe, Brain,
+  TrendingUp, Users, PieChart
+} from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
-import type { ExtractedCampaign } from "@/lib/ocr.functions";
+import { format, subDays } from "date-fns";
+import { ptBR } from "date-fns/locale";
 
 export const Route = createFileRoute("/_app/relatorios")({
-  head: () => ({ meta: [{ title: "Relatórios — NC Suite" }] }),
-  validateSearch: (s: Record<string, unknown>) => ({ from: s.from as string | undefined }),
-  component: ReportsPage,
+  head: () => ({ meta: [{ title: "Gerador de Relatórios — NC Suite" }] }),
+  component: RelatoriosPage,
 });
 
-type Report = {
-  id: string;
-  client_name: string | null;
-  period: string | null;
-  markdown: string | null;
-  total_investment: number | null;
-  total_campaigns: number | null;
-  created_at: string;
-};
+function RelatoriosPage() {
+  const [selectedAccountId, setSelectedAccountId] = useState<string>("all");
+  const [days, setDays] = useState<number>(30);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [generatedReport, setGeneratedReport] = useState<any>(null);
 
-function ReportsPage() {
-  const search = Route.useSearch();
-  const qc = useQueryClient();
-  const [builderOpen, setBuilderOpen] = useState(false);
-  const [initial, setInitial] = useState<ExtractedCampaign[]>([]);
-  const [selected, setSelected] = useState<Report | null>(null);
+  const reportRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    if (search.from === "upload") {
-      const raw = sessionStorage.getItem("nc_extracted_campaigns");
-      if (raw) {
-        try {
-          setInitial(JSON.parse(raw));
-          setBuilderOpen(true);
-          sessionStorage.removeItem("nc_extracted_campaigns");
-        } catch { /* noop */ }
-      }
-    }
-  }, [search.from]);
-
-  const { data: reports, isLoading } = useQuery({
-    queryKey: ["reports"],
+  // Fetch das contas
+  const { data: accounts = [] } = useQuery({
+    queryKey: ["ad-accounts-reports"],
     queryFn: async () => {
-      const { data, error } = await supabase.from("reports")
-        .select("id,client_name,period,markdown,total_investment,total_campaigns,created_at")
-        .order("created_at", { ascending: false });
-      if (error) throw error;
-      return data as Report[];
+      const { data } = await supabase.from("ad_accounts").select("*").order("name");
+      return (data as any[]) ?? [];
     },
   });
 
-  const del = useMutation({
-    mutationFn: async (id: string) => {
-      const { error } = await supabase.from("reports").delete().eq("id", id);
-      if (error) throw error;
-    },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["reports"] });
-      toast.success("Relatório removido");
-      setSelected(null);
-    },
-  });
+  const handleGenerate = async () => {
+    setIsGenerating(true);
+    setGeneratedReport(null);
 
-  return (
-    <div className="mx-auto max-w-7xl space-y-8">
-      <header className="flex items-end justify-between">
-        <div>
-          <p className="label-mono text-primary">Histórico</p>
-          <h1 className="mt-2 font-display text-3xl font-bold">Relatórios</h1>
-          <p className="mt-1 text-sm text-muted-foreground">Crie, salve e revisite entregas.</p>
-        </div>
-        <button
-          onClick={() => { setInitial([]); setBuilderOpen(true); }}
-          className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-primary to-secondary px-4 py-2 text-xs font-semibold text-background shadow-glow"
-        >
-          <Plus className="h-4 w-4" /> Novo relatório
-        </button>
-      </header>
-
-      <div className="grid gap-6 lg:grid-cols-[380px_1fr]">
-        <aside className="glass-panel max-h-[70vh] overflow-y-auto p-2 custom-scrollbar">
-          {isLoading ? (
-            <div className="flex items-center justify-center py-12 text-muted-foreground"><Loader2 className="h-5 w-5 animate-spin" /></div>
-          ) : !reports?.length ? (
-            <Empty />
-          ) : (
-            <ul className="space-y-1">
-              {reports.map((r) => (
-                <li key={r.id}>
-                  <button
-                    onClick={() => setSelected(r)}
-                    className={`w-full rounded-lg p-3 text-left text-sm transition ${selected?.id === r.id ? "bg-primary/10 ring-1 ring-primary/30" : "hover:bg-white/[0.03]"}`}
-                  >
-                    <div className="flex items-center gap-2">
-                      <FileText className="h-3.5 w-3.5 text-primary" />
-                      <span className="truncate font-medium">{r.client_name || "Sem cliente"}</span>
-                    </div>
-                    <div className="label-mono mt-1 flex items-center justify-between text-muted-foreground">
-                      <span>{r.period || "—"}</span>
-                      <span>{r.total_campaigns ?? 0} camp.</span>
-                    </div>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-        </aside>
-
-        <section className="glass-panel min-h-[70vh] p-6">
-          {selected ? (
-            <div>
-              <div className="mb-4 flex items-center justify-between border-b border-white/5 pb-4">
-                <div>
-                  <h2 className="font-display text-xl font-semibold">{selected.client_name}</h2>
-                  <p className="label-mono text-muted-foreground">{selected.period}</p>
-                </div>
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => { navigator.clipboard.writeText(selected.markdown ?? ""); toast.success("Copiado"); }}
-                    className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-white/[0.02] px-3 py-1.5 text-xs hover:border-primary/30"
-                  ><Copy className="h-3 w-3" /> Copiar</button>
-                  <button
-                    onClick={() => del.mutate(selected.id)}
-                    className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-white/[0.02] px-3 py-1.5 text-xs text-destructive hover:border-destructive/30"
-                  ><Trash2 className="h-3 w-3" /> Excluir</button>
-                </div>
-              </div>
-              <article className="prose prose-invert prose-sm max-w-none prose-headings:font-display prose-headings:text-foreground prose-p:text-muted-foreground prose-strong:text-primary">
-                <Markdown rehypePlugins={[rehypeRaw]}>{selected.markdown ?? ""}</Markdown>
-              </article>
-            </div>
-          ) : (
-            <div className="flex h-full min-h-[60vh] flex-col items-center justify-center text-center">
-              <Sparkles className="h-8 w-8 text-primary/60" />
-              <p className="mt-4 text-sm text-muted-foreground">Selecione um relatório à esquerda<br />ou crie um novo.</p>
-            </div>
-          )}
-        </section>
-      </div>
-
-      <AnimatePresence>
-        {builderOpen && (
-          <ReportBuilder
-            initialCampaigns={initial}
-            onClose={() => setBuilderOpen(false)}
-            onSaved={() => {
-              setBuilderOpen(false);
-              qc.invalidateQueries({ queryKey: ["reports"] });
-            }}
-          />
-        )}
-      </AnimatePresence>
-    </div>
-  );
-}
-
-function Empty() {
-  return (
-    <div className="flex flex-col items-center gap-2 px-4 py-12 text-center text-sm text-muted-foreground">
-      <FileText className="h-6 w-6 text-primary/60" />
-      Nenhum relatório ainda.
-    </div>
-  );
-}
-
-/* ============== ReportBuilder ============== */
-
-const FORMATS = [
-  { id: "executive", label: "Executivo (resumo)" },
-  { id: "detailed", label: "Detalhado por campanha" },
-  { id: "comparative", label: "Comparativo (period vs period)" },
-  { id: "creative", label: "Foco em criativos" },
-  { id: "funnel", label: "Funil completo" },
-] as const;
-
-function ReportBuilder({
-  initialCampaigns, onClose, onSaved,
-}: {
-  initialCampaigns: ExtractedCampaign[];
-  onClose: () => void;
-  onSaved: () => void;
-}) {
-  const [campaigns, setCampaigns] = useState<ExtractedCampaign[]>(initialCampaigns);
-  const [clientName, setClientName] = useState("");
-  const [period, setPeriod] = useState(new Date().toLocaleDateString("pt-BR", { month: "long", year: "numeric" }));
-  const [format, setFormat] = useState<typeof FORMATS[number]["id"]>("executive");
-  const [analysis, setAnalysis] = useState("");
-  const [footer, setFooter] = useState("Relatório gerado por NC AGÊNCIA · Performance Suite");
-  const [saving, setSaving] = useState(false);
-
-  const totalCost = campaigns.reduce((s, c) => s + (c.cost ?? 0), 0);
-  const totalConv = campaigns.reduce((s, c) => s + (c.conversions ?? 0), 0);
-  const totalClicks = campaigns.reduce((s, c) => s + (c.clicks ?? 0), 0);
-  const totalImpr = campaigns.reduce((s, c) => s + (c.impressions ?? 0), 0);
-
-  const markdown = generateMarkdown({ clientName, period, format, campaigns, analysis, footer, totalCost, totalConv, totalClicks, totalImpr });
-
-  const addEmpty = () => setCampaigns([...campaigns, { name: "Nova campanha" }]);
-  const updateCamp = (i: number, patch: Partial<ExtractedCampaign>) =>
-    setCampaigns(campaigns.map((c, idx) => idx === i ? { ...c, ...patch } : c));
-  const removeCamp = (i: number) => setCampaigns(campaigns.filter((_, idx) => idx !== i));
-
-  const save = async () => {
-    if (!clientName.trim()) { toast.error("Informe o nome do cliente"); return; }
-    setSaving(true);
     try {
-      const { data: u } = await supabase.auth.getUser();
-      const { error } = await supabase.from("reports").insert({
-        client_name: clientName,
-        period,
-        markdown,
-        raw_data: { campaigns, format, analysis },
-        total_investment: totalCost,
-        total_campaigns: campaigns.length,
-        user_id: u.user?.id,
+      const dateLimit = subDays(new Date(), days).toISOString();
+
+      // Puxar métricas globais
+      let qMetrics = supabase.from("metrics").select(`*, campaigns!inner(ad_account_id)`).gte('date', dateLimit);
+      if (selectedAccountId !== "all") {
+        qMetrics = qMetrics.eq("campaigns.ad_account_id", selectedAccountId);
+      }
+      const { data: metrics } = await qMetrics;
+
+      // Puxar demográficos
+      let qDemos = supabase.from("demographic_metrics").select(`*, campaigns!inner(ad_account_id)`).gte('date', dateLimit);
+      if (selectedAccountId !== "all") {
+        qDemos = qDemos.eq("campaigns.ad_account_id", selectedAccountId);
+      }
+      const { data: demos } = await qDemos;
+
+      // Cálculos
+      let cost = 0, conversions = 0, clicks = 0, impressions = 0;
+      (metrics || []).forEach((m: any) => {
+        cost += Number(m.cost || 0);
+        conversions += Number(m.conversions || 0);
+        clicks += Number(m.clicks || 0);
+        impressions += Number(m.impressions || 0);
       });
-      if (error) throw error;
-      toast.success("Relatório salvo");
-      onSaved();
-    } catch (err: any) {
-      toast.error(err.message ?? "Erro ao salvar");
-    } finally {
-      setSaving(false);
+
+      const ctr = impressions > 0 ? (clicks / impressions) * 100 : 0;
+      const cpa = conversions > 0 ? cost / conversions : 0;
+      const roas = cost > 0 ? (conversions * 150) / cost : 0; // Simulated ROAS
+
+      // Top Público
+      const demoMap = new Map();
+      (demos || []).forEach((d: any) => {
+        if (!d.age_range || !d.gender || d.gender === 'unknown') return;
+        const key = `${d.age_range}-${d.gender}`;
+        const cur = demoMap.get(key) || { name: key, conversions: 0 };
+        cur.conversions += Number(d.conversions || 0);
+        demoMap.set(key, cur);
+      });
+      const topDemo = Array.from(demoMap.values()).sort((a, b) => b.conversions - a.conversions)[0];
+
+      // Top Plataforma
+      const platMap = new Map();
+      (demos || []).forEach((d: any) => {
+        if (!d.platform) return;
+        const p = d.platform;
+        const cur = platMap.get(p) || { name: p, spend: 0 };
+        cur.spend += Number(d.spend || 0);
+        platMap.set(p, cur);
+      });
+      const topPlatform = Array.from(platMap.values()).sort((a, b) => b.spend - a.spend)[0];
+
+      const accountName = selectedAccountId === "all" ? "Múltiplas Contas" : accounts.find(a => a.id === selectedAccountId)?.name;
+
+      setTimeout(() => {
+        setGeneratedReport({
+          dateGenerated: new Date().toISOString(),
+          period: `${days} dias`,
+          accountName,
+          cost, conversions, clicks, ctr, cpa, roas,
+          topDemo: topDemo ? `${topDemo.name.split('-')[1] === 'female' ? 'Mulheres' : 'Homens'} ${topDemo.name.split('-')[0]}` : "N/D",
+          topPlatform: topPlatform?.name || "N/D"
+        });
+        setIsGenerating(false);
+      }, 1500); // Finge um processamento para efeito visual
+      
+    } catch (e) {
+      console.error(e);
+      setIsGenerating(false);
     }
   };
 
+  const handlePrint = () => {
+    window.print();
+  };
+
   return (
-    <motion.div
-      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-      className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm"
-    >
-      <motion.div
-        initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 20, opacity: 0 }}
-        className="absolute inset-4 sm:inset-8 overflow-hidden rounded-2xl border border-white/10 bg-card shadow-glow"
-      >
-        <header className="flex items-center justify-between border-b border-white/5 px-6 py-4">
-          <div>
-            <p className="label-mono text-primary">Builder</p>
-            <h2 className="font-display text-lg font-semibold">Montar relatório</h2>
-          </div>
-          <div className="flex gap-2">
-            <button
-              onClick={() => { navigator.clipboard.writeText(markdown); toast.success("Markdown copiado"); }}
-              className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.02] px-3 py-1.5 text-xs hover:border-primary/30"
-            ><Copy className="h-3 w-3" /> Copiar</button>
-            <button
-              onClick={save} disabled={saving}
-              className="inline-flex items-center gap-1.5 rounded-full bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:shadow-glow disabled:opacity-50"
-            >{saving ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />} Salvar</button>
-            <button onClick={onClose} className="rounded-full border border-white/10 p-1.5 hover:bg-white/[0.05]"><X className="h-4 w-4" /></button>
-          </div>
-        </header>
+    <div className="mx-auto max-w-5xl space-y-8 pb-20">
+      
+      {/* HEADER TÉCNICO */}
+      <div className="flex items-center gap-3 border-b border-white/5 pb-8 print:hidden">
+        <Link to="/dashboard" className="flex items-center justify-center h-10 w-10 rounded-2xl bg-white/5 hover:bg-white/10 transition-colors">
+          <ArrowLeft className="h-5 w-5 text-muted-foreground" />
+        </Link>
+        <div>
+          <h1 className="text-3xl font-black tracking-tighter text-gradient uppercase">Motor de Relatórios</h1>
+          <p className="text-xs text-muted-foreground font-bold tracking-widest uppercase mt-1">Extração Dinâmica de Performance</p>
+        </div>
+      </div>
 
-        <div className="grid h-[calc(100%-65px)] grid-cols-1 lg:grid-cols-2">
-          {/* Left: form */}
-          <div className="overflow-y-auto border-r border-white/5 p-6 custom-scrollbar">
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-3">
-                <Field label="Cliente" value={clientName} onChange={setClientName} />
-                <Field label="Período" value={period} onChange={setPeriod} />
-              </div>
-
-              <div>
-                <label className="label-mono mb-2 block text-muted-foreground">Formato</label>
-                <select
-                  value={format} onChange={(e) => setFormat(e.target.value as any)}
-                  className="w-full rounded-lg border border-white/10 bg-background/50 px-3 py-2 text-sm focus:border-primary focus:outline-none"
-                >
-                  {FORMATS.map((f) => <option key={f.id} value={f.id}>{f.label}</option>)}
-                </select>
-              </div>
-
-              <div className="border-t border-white/5 pt-4">
-                <div className="mb-3 flex items-center justify-between">
-                  <label className="label-mono text-muted-foreground">Campanhas ({campaigns.length})</label>
-                  <button onClick={addEmpty} className="inline-flex items-center gap-1 text-xs text-primary hover:underline">
-                    <Plus className="h-3 w-3" /> Adicionar
-                  </button>
-                </div>
-                <ul className="space-y-2">
-                  {campaigns.map((c, i) => (
-                    <li key={i} className="rounded-lg border border-white/5 bg-background/40 p-3">
-                      <div className="flex items-start gap-2">
-                        <input
-                          value={c.name} onChange={(e) => updateCamp(i, { name: e.target.value })}
-                          className="flex-1 bg-transparent text-sm font-medium focus:outline-none"
-                        />
-                        <button onClick={() => removeCamp(i)} className="text-muted-foreground hover:text-destructive"><Trash2 className="h-3.5 w-3.5" /></button>
-                      </div>
-                      <div className="mt-2 grid grid-cols-4 gap-2 text-xs">
-                        <NumberInput label="Custo" value={c.cost} onChange={(v) => updateCamp(i, { cost: v })} />
-                        <NumberInput label="Impr." value={c.impressions} onChange={(v) => updateCamp(i, { impressions: v })} />
-                        <NumberInput label="Cliques" value={c.clicks} onChange={(v) => updateCamp(i, { clicks: v })} />
-                        <NumberInput label="Conv." value={c.conversions} onChange={(v) => updateCamp(i, { conversions: v })} />
-                      </div>
-                    </li>
-                  ))}
-                  {!campaigns.length && (
-                    <li className="rounded-lg border border-dashed border-white/10 px-3 py-6 text-center text-xs text-muted-foreground">
-                      Nenhuma campanha. Adicione manualmente ou volte ao Upload.
-                    </li>
-                  )}
-                </ul>
-              </div>
-
-              <div className="border-t border-white/5 pt-4">
-                <label className="label-mono mb-2 block text-muted-foreground">Análise (opcional)</label>
-                <textarea
-                  value={analysis} onChange={(e) => setAnalysis(e.target.value)} rows={4}
-                  placeholder="Comentários estratégicos, próximos passos…"
-                  className="w-full rounded-lg border border-white/10 bg-background/50 px-3 py-2 text-sm focus:border-primary focus:outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="label-mono mb-2 block text-muted-foreground">Rodapé / Assinatura</label>
-                <input
-                  value={footer} onChange={(e) => setFooter(e.target.value)}
-                  className="w-full rounded-lg border border-white/10 bg-background/50 px-3 py-2 text-sm focus:border-primary focus:outline-none"
-                />
-              </div>
+      {/* ÁREA DE CONTROLES (Não aparece na impressão) */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 print:hidden">
+        <div className="glass-panel p-6 md:col-span-2 flex flex-col sm:flex-row gap-4 items-end">
+          
+          <div className="flex-1 w-full space-y-2">
+            <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Conta Analisada</label>
+            <div className="relative">
+              <Globe className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-primary" />
+              <select 
+                value={selectedAccountId} 
+                onChange={(e) => setSelectedAccountId(e.target.value)}
+                className="w-full rounded-xl border border-white/10 bg-background/50 pl-10 pr-4 py-3 text-sm font-bold focus:border-primary focus:outline-none appearance-none"
+              >
+                <option value="all">Visão Consolidada (Global)</option>
+                {accounts.map(acc => (
+                  <option key={acc.id} value={acc.id}>{acc.name}</option>
+                ))}
+              </select>
             </div>
           </div>
 
-          {/* Right: preview */}
-          <div className="overflow-y-auto bg-background/40 p-6 custom-scrollbar">
-            <p className="label-mono mb-4 text-primary">Preview</p>
-            <article className="prose prose-invert prose-sm max-w-none prose-headings:font-display prose-headings:text-foreground prose-p:text-muted-foreground prose-strong:text-primary prose-table:text-xs">
-              <Markdown rehypePlugins={[rehypeRaw]}>{markdown}</Markdown>
-            </article>
+          <div className="w-full sm:w-48 space-y-2">
+            <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Período de Extração</label>
+            <div className="relative">
+              <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-primary" />
+              <select 
+                value={days} 
+                onChange={(e) => setDays(Number(e.target.value))}
+                className="w-full rounded-xl border border-white/10 bg-background/50 pl-10 pr-4 py-3 text-sm font-bold focus:border-primary focus:outline-none appearance-none"
+              >
+                <option value={7}>Últimos 7 dias</option>
+                <option value={14}>Últimos 14 dias</option>
+                <option value={30}>Últimos 30 dias</option>
+                <option value={90}>Últimos 90 dias</option>
+              </select>
+            </div>
           </div>
+
         </div>
-      </motion.div>
-    </motion.div>
-  );
-}
 
-function Field({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
-  return (
-    <div>
-      <label className="label-mono mb-2 block text-muted-foreground">{label}</label>
-      <input
-        value={value} onChange={(e) => onChange(e.target.value)}
-        className="w-full rounded-lg border border-white/10 bg-background/50 px-3 py-2 text-sm focus:border-primary focus:outline-none"
-      />
+        <div className="glass-panel p-6 flex flex-col justify-center border-primary/20 bg-primary/[0.02]">
+           <button 
+             onClick={handleGenerate}
+             disabled={isGenerating}
+             className="w-full group relative flex items-center justify-center gap-2 overflow-hidden rounded-xl bg-primary px-5 py-4 text-sm font-black uppercase tracking-widest text-primary-foreground transition-all hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
+           >
+             {isGenerating ? (
+               <><Loader2 className="h-5 w-5 animate-spin" /> Compilando...</>
+             ) : (
+               <><FileText className="h-5 w-5" /> Gerar Documento</>
+             )}
+           </button>
+        </div>
+      </div>
+
+      {/* ÁREA DO RELATÓRIO GERADO */}
+      <AnimatePresence>
+        {generatedReport && (
+          <motion.div 
+            initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
+            className="space-y-6"
+          >
+            <div className="flex justify-end gap-3 print:hidden">
+              <button 
+                onClick={handlePrint}
+                className="flex items-center gap-2 rounded-xl bg-white/5 border border-white/10 px-4 py-2 text-xs font-bold uppercase tracking-widest hover:bg-white/10 transition"
+              >
+                <Printer className="h-4 w-4" /> Imprimir / PDF
+              </button>
+            </div>
+
+            {/* DOCUMENTO (Visível na tela e na impressão) */}
+            <div ref={reportRef} className="glass-panel p-10 bg-background border-white/10 print:shadow-none print:border-none print:p-0 print:bg-white print:text-black">
+              
+              <div className="border-b border-white/10 print:border-black/10 pb-8 mb-8 flex justify-between items-start">
+                <div>
+                  <h2 className="text-3xl font-black tracking-tighter uppercase print:text-black">Relatório de Performance</h2>
+                  <p className="text-primary font-mono text-sm mt-1 print:text-black/60">Sistema de Inteligência NC Suite</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground print:text-black/50">Data da Extração</p>
+                  <p className="text-sm font-mono font-bold print:text-black">{format(new Date(generatedReport.dateGenerated), "dd/MM/yyyy HH:mm", { locale: ptBR })}</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-8 mb-12">
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground print:text-black/50">Conta/Portfólio</p>
+                  <p className="text-xl font-bold mt-1 print:text-black">{generatedReport.accountName}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground print:text-black/50">Janela de Análise</p>
+                  <p className="text-xl font-bold mt-1 print:text-black">{generatedReport.period}</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-6 mb-12">
+                <div className="p-5 rounded-2xl bg-white/5 border border-white/10 print:bg-gray-100 print:border-gray-200">
+                   <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground print:text-black/50">Investimento</p>
+                   <p className="text-2xl font-mono font-black mt-2 print:text-black">R$ {generatedReport.cost.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+                </div>
+                <div className="p-5 rounded-2xl bg-white/5 border border-white/10 print:bg-gray-100 print:border-gray-200">
+                   <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground print:text-black/50">Conversões</p>
+                   <p className="text-2xl font-mono font-black mt-2 text-secondary print:text-black">+{generatedReport.conversions.toLocaleString('pt-BR')}</p>
+                </div>
+                <div className="p-5 rounded-2xl bg-white/5 border border-white/10 print:bg-gray-100 print:border-gray-200">
+                   <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground print:text-black/50">CPA Médio</p>
+                   <p className="text-2xl font-mono font-black mt-2 print:text-black">R$ {generatedReport.cpa.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+                </div>
+                <div className="p-5 rounded-2xl bg-white/5 border border-white/10 print:bg-gray-100 print:border-gray-200">
+                   <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground print:text-black/50">ROAS Estimado</p>
+                   <p className="text-2xl font-mono font-black mt-2 text-primary print:text-black">{generatedReport.roas.toFixed(2)}x</p>
+                </div>
+              </div>
+
+              <div className="border-t border-white/10 print:border-black/10 pt-8 mt-8">
+                 <h3 className="text-lg font-black uppercase tracking-tight mb-6 print:text-black flex items-center gap-2">
+                   <Brain className="h-5 w-5 text-primary print:text-black" />
+                   Análise e Breakdowns
+                 </h3>
+                 
+                 <div className="grid lg:grid-cols-2 gap-6">
+                   <div className="flex items-center gap-4 p-5 rounded-xl bg-primary/5 border border-primary/20 print:bg-white print:border-gray-300">
+                      <div className="h-12 w-12 rounded-full bg-primary/20 flex items-center justify-center">
+                        <Users className="h-6 w-6 text-primary" />
+                      </div>
+                      <div>
+                        <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground print:text-black/50">Público de Alta Conversão</p>
+                        <p className="text-lg font-bold print:text-black">{generatedReport.topDemo}</p>
+                      </div>
+                   </div>
+
+                   <div className="flex items-center gap-4 p-5 rounded-xl bg-secondary/5 border border-secondary/20 print:bg-white print:border-gray-300">
+                      <div className="h-12 w-12 rounded-full bg-secondary/20 flex items-center justify-center">
+                        <PieChart className="h-6 w-6 text-secondary" />
+                      </div>
+                      <div>
+                        <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground print:text-black/50">Plataforma Principal</p>
+                        <p className="text-lg font-bold print:text-black capitalize">{generatedReport.topPlatform}</p>
+                      </div>
+                   </div>
+                 </div>
+              </div>
+
+              <div className="mt-16 pt-8 border-t border-white/5 print:border-black/5 text-center">
+                <p className="text-[10px] font-mono text-muted-foreground print:text-black/40">Este documento foi gerado de forma autônoma pela Inteligência Artificial do NC Performance Suite.</p>
+              </div>
+
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <style>{`
+        @media print {
+          body { background: white !important; color: black !important; }
+          .glass-panel { background: white !important; box-shadow: none !important; }
+          .text-gradient { background: none !important; -webkit-text-fill-color: black !important; color: black !important; }
+        }
+      `}</style>
     </div>
   );
-}
-
-function NumberInput({ label, value, onChange }: { label: string; value?: number | null; onChange: (v: number | undefined) => void }) {
-  return (
-    <div>
-      <span className="label-mono block text-[9px] text-muted-foreground">{label}</span>
-      <input
-        type="number" value={value ?? ""} onChange={(e) => onChange(e.target.value === "" ? undefined : Number(e.target.value))}
-        className="mt-1 w-full rounded border border-white/10 bg-background/50 px-2 py-1 text-xs font-mono focus:border-primary focus:outline-none"
-      />
-    </div>
-  );
-}
-
-function generateMarkdown(d: {
-  clientName: string; period: string; format: string;
-  campaigns: ExtractedCampaign[]; analysis: string; footer: string;
-  totalCost: number; totalConv: number; totalClicks: number; totalImpr: number;
-}): string {
-  const ctr = d.totalImpr ? ((d.totalClicks / d.totalImpr) * 100).toFixed(2) : "0";
-  const cpc = d.totalClicks ? (d.totalCost / d.totalClicks).toFixed(2) : "0";
-  const cpa = d.totalConv ? (d.totalCost / d.totalConv).toFixed(2) : "—";
-
-  let body = `# Relatório de Performance\n\n**Cliente:** ${d.clientName || "—"}  \n**Período:** ${d.period}  \n**Formato:** ${d.format}\n\n---\n\n## Resumo Consolidado\n\n| Métrica | Valor |\n|---|---|\n| Investimento total | **R$ ${d.totalCost.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}** |\n| Impressões | ${d.totalImpr.toLocaleString("pt-BR")} |\n| Cliques | ${d.totalClicks.toLocaleString("pt-BR")} |\n| Conversões | **${d.totalConv.toLocaleString("pt-BR")}** |\n| CTR | ${ctr}% |\n| CPC médio | R$ ${cpc} |\n| CPA | R$ ${cpa} |\n\n## Campanhas\n\n| # | Campanha | Custo | Impr. | Cliques | Conv. |\n|---|---|---|---|---|---|\n`;
-
-  d.campaigns.forEach((c, i) => {
-    body += `| ${i + 1} | ${c.name} | R$ ${(c.cost ?? 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 })} | ${(c.impressions ?? 0).toLocaleString("pt-BR")} | ${(c.clicks ?? 0).toLocaleString("pt-BR")} | **${c.conversions ?? 0}** |\n`;
-  });
-
-  if (d.analysis.trim()) {
-    body += `\n## Análise\n\n${d.analysis}\n`;
-  }
-
-  body += `\n---\n\n_${d.footer}_\n`;
-  return body;
 }

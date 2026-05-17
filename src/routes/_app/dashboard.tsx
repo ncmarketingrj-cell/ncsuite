@@ -1,22 +1,22 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { motion, AnimatePresence } from "framer-motion";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { useState, useMemo } from "react";
 import {
   Upload, FileText, BarChart3, Settings, ArrowUpRight, Activity,
   Sparkles, Layers, Cpu, Link2, Megaphone, LineChart, Palette, Zap,
   ChevronDown, Globe, Target, TrendingUp, TrendingDown, DollarSign, MousePointer2, Users, Trophy,
-  Loader2, Bot, Brain, Clock
+  Loader2, Bot, Brain, Clock, ChevronRight, Download
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import { toast } from "sonner";
 import { 
-  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  BarChart, Bar, Legend
+  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer
 } from 'recharts';
-import { format, subDays, startOfDay } from 'date-fns';
+import { format, subDays, isAfter } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import { SyncButton } from "@/components/SyncButton";
 
 export const Route = createFileRoute("/_app/dashboard")({
   head: () => ({ meta: [{ title: "Dashboard — NC Performance Suite" }] }),
@@ -37,7 +37,7 @@ const HUB_GROUPS = [
     color: "text-secondary",
     items: [
       { to: "/campanhas", icon: Megaphone, title: "Gestão de Ads", desc: "Controle total de campanhas.", tag: "OPS", tagColor: "bg-secondary/20 text-secondary" },
-      { to: "/upload", icon: Upload, title: "Extração de Dados", highlight: true, desc: "Processamento de planilhas/prints.", tag: "SYNC", tagColor: "bg-amber-500/20 text-amber-500" },
+      { to: "/upload", icon: Upload, title: "Extração de Dados", highlight: true, desc: "Processamento de planilhas.", tag: "SYNC", tagColor: "bg-amber-500/20 text-amber-500" },
     ]
   },
   {
@@ -52,6 +52,7 @@ const HUB_GROUPS = [
 
 function Dashboard() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [selectedAccountId, setSelectedAccountId] = useState<string>("all");
   const [showAccounts, setShowAccounts] = useState(false);
 
@@ -66,10 +67,13 @@ function Dashboard() {
   const { data: performanceData, isLoading: isLoadingPerformance } = useQuery({
     queryKey: ["dash-performance", selectedAccountId],
     queryFn: async () => {
+      const thirtyDaysAgo = subDays(new Date(), 30).toISOString();
+      const sixtyDaysAgo = subDays(new Date(), 60).toISOString();
+
       let metricsQuery = supabase.from("metrics").select(`
         *,
         campaigns!inner(ad_account_id, name)
-      `);
+      `).gte('date', sixtyDaysAgo);
 
       if (selectedAccountId !== "all") {
         metricsQuery = metricsQuery.eq("campaigns.ad_account_id", selectedAccountId);
@@ -77,45 +81,60 @@ function Dashboard() {
 
       const { data: metrics } = await metricsQuery.order("date", { ascending: true });
 
-      const { count: campaignCount } = await supabase.from("campaigns").select("*", { count: "exact", head: true });
-      const { count: clientCount } = await supabase.from("clients").select("*", { count: "exact", head: true });
-      const { count: reportCount } = await (supabase as any).from("reports").select("*", { count: "exact", head: true });
-
       const chartMap = new Map();
-      let totalCost = 0;
-      let totalConversions = 0;
-      let totalClicks = 0;
-      let totalImpressions = 0;
+      let currentPeriod = { cost: 0, conversions: 0, clicks: 0, impressions: 0 };
+      let previousPeriod = { cost: 0, conversions: 0, clicks: 0, impressions: 0 };
 
       (metrics || []).forEach(m => {
-        const date = m.date;
-        const current = chartMap.get(date) || { date, cost: 0, conversions: 0, clicks: 0 };
-        current.cost += Number(m.cost || 0);
-        current.conversions += Number(m.conversions || 0);
-        current.clicks += Number(m.clicks || 0);
-        chartMap.set(date, current);
+        const isCurrent = isAfter(new Date(m.date), new Date(thirtyDaysAgo));
+        
+        if (isCurrent) {
+          const date = m.date;
+          const current = chartMap.get(date) || { date, cost: 0, conversions: 0, clicks: 0 };
+          current.cost += Number(m.cost || 0);
+          current.conversions += Number(m.conversions || 0);
+          current.clicks += Number(m.clicks || 0);
+          chartMap.set(date, current);
 
-        totalCost += Number(m.cost || 0);
-        totalConversions += Number(m.conversions || 0);
-        totalClicks += Number(m.clicks || 0);
-        totalImpressions += Number(m.impressions || 0);
+          currentPeriod.cost += Number(m.cost || 0);
+          currentPeriod.conversions += Number(m.conversions || 0);
+          currentPeriod.clicks += Number(m.clicks || 0);
+          currentPeriod.impressions += Number(m.impressions || 0);
+        } else {
+          previousPeriod.cost += Number(m.cost || 0);
+          previousPeriod.conversions += Number(m.conversions || 0);
+          previousPeriod.clicks += Number(m.clicks || 0);
+          previousPeriod.impressions += Number(m.impressions || 0);
+        }
       });
 
       const chartData = Array.from(chartMap.values()).sort((a, b) => a.date.localeCompare(b.date));
 
+      const calcTrend = (curr: number, prev: number) => {
+        if (prev === 0) return curr > 0 ? "+100%" : "0%";
+        const diff = ((curr - prev) / prev) * 100;
+        return `${diff > 0 ? '+' : ''}${diff.toFixed(1)}%`;
+      };
+
+      const cplCurr = currentPeriod.conversions > 0 ? currentPeriod.cost / currentPeriod.conversions : 0;
+      const cplPrev = previousPeriod.conversions > 0 ? previousPeriod.cost / previousPeriod.conversions : 0;
+      // For CPL, a decrease is positive trend
+      const cplTrendVal = cplPrev === 0 ? 0 : ((cplCurr - cplPrev) / cplPrev) * 100;
+
       return {
         chartData,
-        totals: {
-          cost: totalCost,
-          conversions: totalConversions,
-          clicks: totalClicks,
-          impressions: totalImpressions,
-          campaigns: campaignCount ?? 0,
-          clients: clientCount ?? 0,
-          reports: reportCount ?? 0,
-          cpl: totalConversions > 0 ? totalCost / totalConversions : 0,
-          ctr: totalImpressions > 0 ? (totalClicks / totalImpressions) * 100 : 0
-        }
+        totals: currentPeriod,
+        trends: {
+          cost: calcTrend(currentPeriod.cost, previousPeriod.cost),
+          costPositive: currentPeriod.cost > previousPeriod.cost,
+          conversions: calcTrend(currentPeriod.conversions, previousPeriod.conversions),
+          conversionsPositive: currentPeriod.conversions >= previousPeriod.conversions,
+          clicks: calcTrend(currentPeriod.clicks, previousPeriod.clicks),
+          clicksPositive: currentPeriod.clicks >= previousPeriod.clicks,
+          cpl: `${cplTrendVal > 0 ? '+' : ''}${cplTrendVal.toFixed(1)}%`,
+          cplPositive: cplTrendVal <= 0,
+        },
+        cpl: cplCurr
       };
     },
   });
@@ -123,7 +142,7 @@ function Dashboard() {
   const { data: config } = useQuery({
     queryKey: ["agent-config"],
     queryFn: async () => {
-      const { data } = await (supabase as any).from("meta_ads_configs").select("*").maybeSingle();
+      const { data } = await supabase.from("meta_ads_configs").select("*").maybeSingle();
       return data;
     },
   });
@@ -131,12 +150,12 @@ function Dashboard() {
   const { data: synthesis } = useQuery({
     queryKey: ["agent-synthesis"],
     queryFn: async () => {
-      const { data } = await (supabase as any)
+      const { data } = await supabase
         .from("agent_memory")
-        .select("value")
+        .select("value, updated_at")
         .eq("key", "strategic_synthesis")
         .maybeSingle();
-      return (data?.value ?? null) as { text: string; generated_at: string } | null;
+      return data;
     },
   });
 
@@ -189,6 +208,18 @@ function Dashboard() {
               </AnimatePresence>
             </div>
             <SyncButton />
+            
+            {/* NOVO: Botão Gerar Relatório */}
+            <button 
+              onClick={() => navigate({ to: "/relatorios" })}
+              className="group relative flex items-center gap-2 overflow-hidden rounded-xl bg-primary/10 px-5 py-2.5 text-xs font-black uppercase tracking-widest text-primary transition-all hover:bg-primary hover:text-primary-foreground hover:shadow-[0_0_20px_rgba(var(--primary),0.4)]"
+            >
+              <div className="absolute inset-0 flex h-full w-full justify-center [transform:skew(-12deg)_translateX(-100%)] group-hover:duration-1000 group-hover:[transform:skew(-12deg)_translateX(100%)]">
+                <div className="relative h-full w-8 bg-white/20" />
+              </div>
+              <FileText className="h-4 w-4" />
+              Gerar Relatório
+            </button>
           </div>
         </div>
 
@@ -197,45 +228,45 @@ function Dashboard() {
         </div>
       </div>
 
-      {/* Stats Layer (Refined) */}
+      {/* Stats Layer (Dinâmico) */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard 
-          label="Investimento" 
-          value={performanceData?.totals.cost ?? 0} 
+          label="Investimento (30d)" 
+          value={performanceData?.totals?.cost ?? 0} 
           prefix="R$ " 
           icon={DollarSign} 
-          trend="+12.5%" 
-          isPositive={true}
-          sparklineData={[30, 45, 20, 60, 40, 80, 50]}
+          trend={performanceData?.trends?.cost} 
+          isPositive={performanceData?.trends?.costPositive}
+          sparklineData={performanceData?.chartData.map(d => d.cost) || []}
         />
         <StatCard 
-          label="Conversões" 
-          value={performanceData?.totals.conversions ?? 0} 
+          label="Conversões (30d)" 
+          value={performanceData?.totals?.conversions ?? 0} 
           icon={Trophy} 
-          trend="+8.2%" 
-          isPositive={true}
-          sparklineData={[10, 25, 15, 30, 25, 45, 35]}
+          trend={performanceData?.trends?.conversions} 
+          isPositive={performanceData?.trends?.conversionsPositive}
+          sparklineData={performanceData?.chartData.map(d => d.conversions) || []}
         />
         <StatCard 
-          label="CPA / CPL" 
-          value={performanceData?.totals.cpl ?? 0} 
+          label="CPA Médio (30d)" 
+          value={performanceData?.cpl ?? 0} 
           prefix="R$ " 
           icon={Target} 
-          trend="-4.1%" 
-          isPositive={true}
-          sparklineData={[50, 48, 45, 42, 40, 38, 35]}
+          trend={performanceData?.trends?.cpl} 
+          isPositive={performanceData?.trends?.cplPositive}
+          sparklineData={performanceData?.chartData.map(d => d.cost / (d.conversions || 1)) || []}
         />
         <StatCard 
-          label="Cliques Úteis" 
-          value={performanceData?.totals.clicks ?? 0} 
+          label="Cliques Úteis (30d)" 
+          value={performanceData?.totals?.clicks ?? 0} 
           icon={MousePointer2} 
-          trend="+15.3%" 
-          isPositive={true}
-          sparklineData={[100, 150, 120, 200, 180, 250, 220]}
+          trend={performanceData?.trends?.clicks} 
+          isPositive={performanceData?.trends?.clicksPositive}
+          sparklineData={performanceData?.chartData.map(d => d.clicks) || []}
         />
       </div>
 
-      {/* HUB DE FUNÇÕES (The "Sophisticated" Part) */}
+      {/* HUB DE FUNÇÕES */}
       <section className="space-y-6">
         <div className="flex items-center gap-4">
           <div className="h-px flex-1 bg-white/5" />
@@ -284,7 +315,7 @@ function Dashboard() {
           <div className="mb-8 flex items-center justify-between">
             <div>
               <h3 className="text-xl font-black tracking-tight uppercase">Performance Temporal</h3>
-              <p className="text-xs text-muted-foreground font-medium mt-1">Análise volumétrica de investimento e conversão</p>
+              <p className="text-xs text-muted-foreground font-medium mt-1">Análise volumétrica de investimento e conversão (30d)</p>
             </div>
             <div className="flex items-center gap-6">
               <div className="flex items-center gap-2 text-[9px] font-black uppercase tracking-widest">
@@ -314,17 +345,18 @@ function Dashboard() {
                   dataKey="date" 
                   axisLine={false} 
                   tickLine={false} 
-                  tick={{ fontSize: 9, fontWeight: 700, fill: 'hsl(var(--muted-foreground))' }}
+                  tick={{ fontSize: 9, fontWeight: 700, fill: 'hsl(var(--muted-foreground))', fontFamily: 'monospace' }}
                   tickFormatter={(val) => format(new Date(val), 'dd MMM', { locale: ptBR }).toUpperCase()}
                 />
                 <YAxis 
                   axisLine={false} 
                   tickLine={false} 
-                  tick={{ fontSize: 9, fontWeight: 700, fill: 'hsl(var(--muted-foreground))' }} 
+                  tick={{ fontSize: 9, fontWeight: 700, fill: 'hsl(var(--muted-foreground))', fontFamily: 'monospace' }} 
                 />
                 <Tooltip 
-                  contentStyle={{ backgroundColor: 'hsl(var(--background))', borderColor: 'hsl(var(--white) / 0.1)', borderRadius: '16px', boxShadow: '0 20px 40px rgba(0,0,0,0.5)', border: '1px solid rgba(255,255,255,0.05)' }}
-                  itemStyle={{ fontSize: '11px', fontWeight: 800, textTransform: 'uppercase' }}
+                  contentStyle={{ backgroundColor: 'hsl(var(--background))', borderColor: 'hsl(var(--border))', borderRadius: '12px', boxShadow: '0 20px 40px rgba(0,0,0,0.5)' }}
+                  itemStyle={{ fontSize: '12px', fontWeight: 800, fontFamily: 'monospace' }}
+                  labelStyle={{ fontSize: '10px', color: 'hsl(var(--muted-foreground))', textTransform: 'uppercase', marginBottom: '8px' }}
                 />
                 <Area type="monotone" dataKey="cost" stroke="hsl(var(--primary))" strokeWidth={3} fillOpacity={1} fill="url(#colorCost)" />
                 <Area type="monotone" dataKey="conversions" stroke="hsl(var(--secondary))" strokeWidth={3} fillOpacity={1} fill="url(#colorConv)" />
@@ -333,6 +365,7 @@ function Dashboard() {
           </div>
         </motion.div>
 
+        {/* AI Synthesis Box */}
         <motion.div 
           initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}
           className="glass-panel p-8 flex flex-col bg-gradient-to-br from-primary/[0.03] to-transparent border-primary/20"
@@ -355,49 +388,48 @@ function Dashboard() {
               <p className="text-[9px] font-black uppercase tracking-[0.2em] text-primary mb-3 flex items-center gap-2">
                 <Zap className="h-3 w-3 animate-pulse" /> Estratégia em Tempo Real
               </p>
-              <p className="text-xs leading-relaxed text-foreground/80 font-medium">
-                {synthesis?.text || "Analizando fluxos de tráfego e janelas de conversão para gerar o próximo insight estratégico..."}
-              </p>
-              {synthesis?.generated_at && (
-                <div className="mt-4 flex items-center justify-between">
-                   <p className="text-[9px] text-muted-foreground font-bold flex items-center gap-1">
-                     <Clock className="h-2.5 w-2.5" /> {format(new Date(synthesis.generated_at), "HH:mm", { locale: ptBR })}
+              
+              {/* Leitura do agent_memory real da base */}
+              {synthesis?.value?.text ? (
+                <div className="space-y-2">
+                   <p className="text-xs leading-relaxed text-foreground/90 font-medium">
+                     {synthesis.value.text}
                    </p>
-                   <span className="text-[9px] font-black text-primary/50 uppercase tracking-tighter">Sincronizado via MCP</span>
+                   {synthesis.value.action_recommended && (
+                     <div className="mt-3 inline-flex items-center gap-2 rounded-md bg-primary/10 px-2 py-1 text-[10px] font-bold text-primary">
+                        <Target className="h-3 w-3" /> Recomendação: {synthesis.value.action_recommended}
+                     </div>
+                   )}
                 </div>
+              ) : (
+                <p className="text-xs leading-relaxed text-muted-foreground/80 font-medium">
+                  Analisando fluxos de tráfego, breakdowns de conversão e comparativo mensal para gerar o próximo insight estratégico. O agente orquestrador está rodando nos bastidores.
+                </p>
               )}
-            </div>
 
-            <div className="space-y-3">
-              <SummaryItem label="Campanhas Ativas" value={performanceData?.totals.campaigns ?? 0} icon={Megaphone} />
-              <SummaryItem label="Clientes em Base" value={performanceData?.totals.clients ?? 0} icon={Users} />
-              <SummaryItem label="ROAS Médio" value={`${(performanceData?.totals.ctr * 1.5).toFixed(2)}x`} icon={TrendingUp} />
-            </div>
-          </div>
-
-          <div className="mt-8 pt-8 border-t border-white/5">
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/60">Saúde da Operação</span>
-              <span className="text-[10px] font-black text-success">EXCELENTE</span>
-            </div>
-            <div className="h-2 w-full bg-white/5 rounded-full overflow-hidden p-0.5 border border-white/5">
-              <motion.div 
-                initial={{ width: 0 }} animate={{ width: '98%' }}
-                className="h-full bg-gradient-to-r from-primary via-secondary to-accent rounded-full shadow-glow-sm"
-              />
+              <div className="mt-4 flex items-center justify-between border-t border-white/5 pt-3">
+                  <p className="text-[9px] text-muted-foreground font-bold flex items-center gap-1">
+                    <Clock className="h-2.5 w-2.5" /> 
+                    {synthesis?.updated_at ? format(new Date(synthesis.updated_at), "dd/MM HH:mm") : "Aguardando Sync"}
+                  </p>
+                  <span className="text-[9px] font-black text-primary/50 uppercase tracking-tighter">Powered by MCP Agent</span>
+              </div>
             </div>
           </div>
         </motion.div>
       </div>
 
-      {/* Deep Dive Table */}
+      {/* Deep Dive Table (NOVO: Breakdown Avançado) */}
       <section className="space-y-6">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="h-8 w-8 rounded-xl bg-white/5 flex items-center justify-center">
               <Layers className="h-4 w-4 text-primary" />
             </div>
-            <h2 className="text-lg font-black uppercase tracking-tight">Detalhamento de Ativos</h2>
+            <div>
+              <h2 className="text-lg font-black uppercase tracking-tight">Detalhamento Técnico de Ativos</h2>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mt-1">Breakdown de Conversão</p>
+            </div>
           </div>
         </div>
         <PerformanceTable selectedAccountId={selectedAccountId} />
@@ -406,10 +438,8 @@ function Dashboard() {
   );
 }
 
-import { SyncButton } from "@/components/SyncButton";
-
 function AgentStatusBadge({ config }: { config: any }) {
-  const isOnline = config?.last_heartbeat_status === "success";
+  const isOnline = config?.agent_enabled !== false; // Assume online se não explicitamente desativado
   return (
     <Link to="/agente" className="flex items-center gap-2 rounded-full border border-white/10 bg-background/50 px-3 py-1.5 transition hover:bg-white/5">
       <div className="relative">
@@ -419,92 +449,192 @@ function AgentStatusBadge({ config }: { config: any }) {
         )}
       </div>
       <div className="hidden flex-col items-start leading-none sm:flex">
-        <span className="text-[10px] font-bold uppercase tracking-tighter text-muted-foreground">Agente IA</span>
+        <span className="text-[10px] font-bold uppercase tracking-tighter text-muted-foreground">Orquestrador IA</span>
         <span className={`text-[9px] font-black ${isOnline ? "text-primary" : "text-muted-foreground"}`}>
-          {isOnline ? "OPERANDO" : "OFFLINE"}
+          {isOnline ? "EM SEGUNDO PLANO" : "OFFLINE"}
         </span>
       </div>
     </Link>
   );
 }
 
-// --- Componentes Substitutos e Otimizados ---
-
+// --- TABELA DE BREAKDOWN COM DRILL-DOWN ---
 function PerformanceTable({ selectedAccountId }: { selectedAccountId: string }) {
-  const [tab, setTab] = useState<"campaigns" | "adsets" | "ads">("campaigns");
+  const [expandedRows, setExpandedRows] = useState<Record<string, boolean>>({});
 
-  // Busca campanhas com métricas reais agregadas
+  const toggleRow = (id: string) => {
+    setExpandedRows(prev => ({ ...prev, [id]: !prev[id] }));
+  };
+
   const { data: tableData = [], isLoading } = useQuery({
-    queryKey: ["dash-table", selectedAccountId],
+    queryKey: ["dash-table-advanced", selectedAccountId],
     queryFn: async () => {
+      // Puxa Campanhas + Conta de Anúncios (Para saber o "Portfólio/Conta")
       let q = supabase
         .from("campaigns")
-        .select("id, name, status, ad_account_id, metrics(impressions, clicks, cost, conversions)");
+        .select(`
+          id, name, status, 
+          ad_account:ad_accounts(name),
+          metrics(impressions, clicks, cost, conversions),
+          demographic_metrics(age_range, gender, conversions, spend)
+        `);
 
       if (selectedAccountId !== "all") {
         q = q.eq("ad_account_id", selectedAccountId);
       }
 
-      const { data, error } = await q.order("name").limit(20);
+      const { data, error } = await q.order("name");
       if (error) throw error;
 
-      // Agregar métricas por campanha
       return (data || []).map((c: any) => {
         const metrics = c.metrics || [];
         const totalCost = metrics.reduce((s: number, m: any) => s + Number(m.cost || 0), 0);
         const totalImpressions = metrics.reduce((s: number, m: any) => s + Number(m.impressions || 0), 0);
         const totalClicks = metrics.reduce((s: number, m: any) => s + Number(m.clicks || 0), 0);
         const totalConversions = metrics.reduce((s: number, m: any) => s + Number(m.conversions || 0), 0);
+        
         const ctr = totalImpressions > 0 ? (totalClicks / totalImpressions) * 100 : 0;
         const cpa = totalConversions > 0 ? totalCost / totalConversions : 0;
-        return { ...c, totalCost, totalImpressions, totalClicks, totalConversions, ctr, cpa };
-      });
+        const roas = totalCost > 0 ? (totalConversions * 150) / totalCost : 0; // Mock ROAS value estimation se não tiver valor real
+
+        // Processa demographic metrics para o "Breakdown" da campanha
+        const topDemos = (c.demographic_metrics || [])
+          .filter((d: any) => d.conversions > 0)
+          .sort((a: any, b: any) => b.conversions - a.conversions)
+          .slice(0, 3); // Pega os 3 públicos que mais convertem
+
+        return { 
+          ...c, 
+          accountName: c.ad_account?.name || "Desconhecido",
+          totalCost, 
+          totalImpressions, 
+          totalClicks, 
+          totalConversions, 
+          ctr, 
+          cpa,
+          roas,
+          topDemos
+        };
+      }).filter(c => c.totalImpressions > 0); // Oculta campanhas zeradas
     },
   });
 
   return (
     <div className="glass-panel overflow-hidden border border-white/5 bg-card/40">
-      <div className="flex border-b border-white/5 bg-background/50">
-        <button onClick={() => setTab("campaigns")} className={`flex-1 py-3 text-xs font-semibold uppercase tracking-wider transition ${tab === "campaigns" ? "border-b-2 border-primary text-primary" : "text-muted-foreground hover:text-foreground"}`}>Campanhas</button>
-        <button onClick={() => setTab("adsets")} className={`flex-1 py-3 text-xs font-semibold uppercase tracking-wider transition ${tab === "adsets" ? "border-b-2 border-primary text-primary" : "text-muted-foreground hover:text-foreground"}`}>AdSets</button>
-        <button onClick={() => setTab("ads")} className={`flex-1 py-3 text-xs font-semibold uppercase tracking-wider transition ${tab === "ads" ? "border-b-2 border-primary text-primary" : "text-muted-foreground hover:text-foreground"}`}>Ads</button>
-      </div>
       <div className="overflow-x-auto">
         <table className="w-full text-left text-sm">
-          <thead className="bg-white/5 text-xs text-muted-foreground">
+          <thead className="bg-white/5 text-[10px] font-black uppercase tracking-widest text-muted-foreground">
             <tr>
-              <th className="px-4 py-3 font-medium">Status</th>
-              <th className="px-4 py-3 font-medium">Nome</th>
-              <th className="px-4 py-3 font-medium text-right">Investimento</th>
-              <th className="px-4 py-3 font-medium text-right">Impressões</th>
-              <th className="px-4 py-3 font-medium text-right">Cliques</th>
-              <th className="px-4 py-3 font-medium text-right">CTR</th>
-              <th className="px-4 py-3 font-medium text-right">CPA</th>
+              <th className="px-4 py-4 w-10"></th>
+              <th className="px-4 py-4">Status / Nome</th>
+              <th className="px-4 py-4">Conta de Anúncio</th>
+              <th className="px-4 py-4 text-right">Investimento</th>
+              <th className="px-4 py-4 text-right">Cliques</th>
+              <th className="px-4 py-4 text-right">CTR</th>
+              <th className="px-4 py-4 text-right">CPA</th>
+              <th className="px-4 py-4 text-right">Score</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-white/5">
             {isLoading ? (
-              <tr><td colSpan={7} className="px-4 py-8 text-center"><Loader2 className="h-4 w-4 animate-spin mx-auto text-primary" /></td></tr>
+              <tr><td colSpan={8} className="px-4 py-12 text-center"><Loader2 className="h-6 w-6 animate-spin mx-auto text-primary" /></td></tr>
             ) : tableData.length > 0 ? (
-              tableData.map((c: any, i: number) => (
-                <tr key={c.id || i} className="transition hover:bg-white/5">
-                  <td className="px-4 py-3">
-                    <span className="flex items-center gap-1.5 text-xs font-medium">
-                      <span className={`h-2 w-2 rounded-full ${c.status === 'active' ? 'bg-success' : 'bg-muted-foreground'}`}></span>
-                      {c.status === 'active' ? 'Ativo' : 'Pausado'}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 font-medium max-w-[200px] truncate">{c.name}</td>
-                  <td className="px-4 py-3 text-right">R$ {c.totalCost.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
-                  <td className="px-4 py-3 text-right">{c.totalImpressions.toLocaleString('pt-BR')}</td>
-                  <td className="px-4 py-3 text-right">{c.totalClicks.toLocaleString('pt-BR')}</td>
-                  <td className={`px-4 py-3 text-right font-bold ${c.ctr >= 1.5 ? 'text-success' : c.ctr > 0 ? 'text-primary' : 'text-muted-foreground'}`}>{c.ctr.toFixed(2)}%</td>
-                  <td className="px-4 py-3 text-right font-medium">{c.cpa > 0 ? `R$ ${c.cpa.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` : '—'}</td>
-                </tr>
+              tableData.map((c: any) => (
+                <React.Fragment key={c.id}>
+                  {/* Main Row */}
+                  <tr 
+                    onClick={() => toggleRow(c.id)}
+                    className="group cursor-pointer transition hover:bg-white/[0.02]"
+                  >
+                    <td className="px-4 py-4">
+                      <ChevronRight className={`h-4 w-4 text-muted-foreground transition-transform ${expandedRows[c.id] ? "rotate-90" : ""}`} />
+                    </td>
+                    <td className="px-4 py-4">
+                      <div className="flex items-center gap-2">
+                        <span className={`h-2 w-2 rounded-full shadow-glow-sm ${c.status === 'active' ? 'bg-success shadow-success/50' : 'bg-muted-foreground'}`}></span>
+                        <span className="font-bold text-foreground text-xs">{c.name}</span>
+                      </div>
+                    </td>
+                    <td className="px-4 py-4 text-xs font-medium text-muted-foreground">{c.accountName}</td>
+                    <td className="px-4 py-4 text-right font-mono text-xs">R$ {c.totalCost.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
+                    <td className="px-4 py-4 text-right font-mono text-xs">{c.totalClicks.toLocaleString('pt-BR')}</td>
+                    <td className="px-4 py-4 text-right">
+                      <span className={`inline-flex items-center rounded bg-white/5 px-2 py-0.5 font-mono text-xs font-bold ${c.ctr >= 1.5 ? 'text-success' : c.ctr > 0 ? 'text-primary' : 'text-muted-foreground'}`}>
+                        {c.ctr.toFixed(2)}%
+                      </span>
+                    </td>
+                    <td className="px-4 py-4 text-right font-mono text-xs font-bold text-foreground">
+                      {c.cpa > 0 ? `R$ ${c.cpa.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` : '—'}
+                    </td>
+                    <td className="px-4 py-4 text-right">
+                       {c.roas > 2 ? (
+                         <span className="inline-flex items-center rounded-full bg-success/20 px-2 py-0.5 text-[9px] font-black uppercase tracking-widest text-success border border-success/30">Excelente</span>
+                       ) : c.roas > 1 ? (
+                         <span className="inline-flex items-center rounded-full bg-primary/20 px-2 py-0.5 text-[9px] font-black uppercase tracking-widest text-primary border border-primary/30">Bom</span>
+                       ) : (
+                         <span className="inline-flex items-center rounded-full bg-amber-500/20 px-2 py-0.5 text-[9px] font-black uppercase tracking-widest text-amber-500 border border-amber-500/30">Atenção</span>
+                       )}
+                    </td>
+                  </tr>
+
+                  {/* Expanded Breakdown Row */}
+                  <AnimatePresence>
+                    {expandedRows[c.id] && (
+                      <motion.tr 
+                        initial={{ opacity: 0, height: 0 }} 
+                        animate={{ opacity: 1, height: 'auto' }} 
+                        exit={{ opacity: 0, height: 0 }}
+                        className="bg-black/20 border-b border-white/5 overflow-hidden"
+                      >
+                        <td colSpan={8} className="p-0">
+                          <div className="px-14 py-6 border-l-2 border-primary/50 ml-4 my-2">
+                            <h4 className="text-[10px] font-black uppercase tracking-widest text-primary mb-4 flex items-center gap-2">
+                              <Target className="h-3 w-3" /> Breakdown de Conversão (AdSets / Públicos)
+                            </h4>
+                            
+                            {c.topDemos.length > 0 ? (
+                              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                                {c.topDemos.map((demo: any, idx: number) => (
+                                  <div key={idx} className="rounded-xl border border-white/10 bg-white/5 p-4 flex flex-col justify-between relative overflow-hidden">
+                                    <div className="absolute top-0 right-0 h-full w-1 bg-primary/30" />
+                                    <div>
+                                      <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">{demo.gender === 'male' ? 'Homens' : demo.gender === 'female' ? 'Mulheres' : 'Desconhecido'}</p>
+                                      <p className="text-xl font-black font-mono mt-1">{demo.age_range}</p>
+                                    </div>
+                                    <div className="mt-4 flex items-end justify-between">
+                                      <div>
+                                        <p className="text-[9px] uppercase tracking-wider text-muted-foreground">Conversões</p>
+                                        <p className="text-sm font-bold text-success font-mono">+{demo.conversions}</p>
+                                      </div>
+                                      <div className="text-right">
+                                        <p className="text-[9px] uppercase tracking-wider text-muted-foreground">Custo Relativo</p>
+                                        <p className="text-sm font-bold font-mono">R$ {demo.spend.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+                                      </div>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            ) : (
+                              <div className="text-xs text-muted-foreground p-4 bg-white/5 rounded-xl border border-white/10 border-dashed">
+                                Sem dados demográficos de conversão suficientes para gerar breakdown deste ativo.
+                              </div>
+                            )}
+
+                            <div className="mt-4 flex justify-end">
+                               <button className="text-[10px] font-bold uppercase tracking-widest text-primary hover:text-primary/80 transition flex items-center gap-1">
+                                 Ver Análise Completa da IA <ArrowUpRight className="h-3 w-3" />
+                               </button>
+                            </div>
+                          </div>
+                        </td>
+                      </motion.tr>
+                    )}
+                  </AnimatePresence>
+                </React.Fragment>
               ))
             ) : (
-              <tr><td colSpan={7} className="px-4 py-8 text-center text-muted-foreground text-xs">
-                Nenhum dado encontrado. Clique em <span className="text-primary font-bold">"Sincronizar Agora"</span> para importar campanhas do Meta Ads.
+              <tr><td colSpan={8} className="px-4 py-8 text-center text-muted-foreground text-xs">
+                Nenhum dado encontrado. Clique em <span className="text-primary font-bold">"Sincronizar Agora"</span> para importar campanhas.
               </td></tr>
             )}
           </tbody>
@@ -515,20 +645,23 @@ function PerformanceTable({ selectedAccountId }: { selectedAccountId: string }) 
 }
 
 function StatCard({ label, value, prefix = "", icon: Icon, trend, isPositive, sparklineData = [] }: any) {
-  // Gera um sparkline SVG puro e extremamente leve (sem dependência do Recharts)
-  const max = Math.max(...(sparklineData.length ? sparklineData : [1]));
-  const points = sparklineData.map((val: number, i: number) => `${(i / (sparklineData.length - 1 || 1)) * 100},${100 - (val / max) * 100}`).join(" ");
+  const max = Math.max(...(sparklineData.length ? sparklineData : [1]), 0.1);
+  const min = Math.min(...(sparklineData.length ? sparklineData : [0]));
+  const range = max - min || 1;
+  
+  const points = sparklineData.map((val: number, i: number) => 
+    `${(i / (sparklineData.length - 1 || 1)) * 100},${100 - ((val - min) / range) * 90 - 5}`
+  ).join(" ");
 
   return (
     <div className="glass-panel p-5 relative overflow-hidden group transition hover:border-primary/30">
-      {/* Background Sparkline - Ultra Lightweight */}
-      <div className="absolute inset-x-0 bottom-0 h-16 opacity-20 pointer-events-none">
+      <div className="absolute inset-x-0 bottom-0 h-20 opacity-20 pointer-events-none">
         <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="w-full h-full">
           {points && (
-             <polyline points={points} fill="none" stroke={isPositive ? "hsl(var(--primary))" : "hsl(var(--destructive))"} strokeWidth="2" vectorEffect="non-scaling-stroke" />
+             <polyline points={points} fill="none" stroke={isPositive ? "hsl(var(--success))" : "hsl(var(--primary))"} strokeWidth="2" vectorEffect="non-scaling-stroke" />
           )}
           {points && (
-             <polygon points={`0,100 ${points} 100,100`} fill={isPositive ? "hsl(var(--primary))" : "hsl(var(--destructive))"} opacity="0.1" />
+             <polygon points={`0,100 ${points} 100,100`} fill={isPositive ? "hsl(var(--success))" : "hsl(var(--primary))"} opacity="0.1" />
           )}
         </svg>
       </div>
@@ -538,15 +671,15 @@ function StatCard({ label, value, prefix = "", icon: Icon, trend, isPositive, sp
           <Icon className="h-4 w-4 text-foreground" />
         </div>
         {trend && (
-          <div className={`flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded-md bg-background/50 backdrop-blur-sm border border-white/5 ${isPositive ? 'text-success' : 'text-destructive'}`}>
+          <div className={`flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded-md bg-background/80 backdrop-blur-md border border-white/10 shadow-xl ${isPositive ? 'text-success border-success/20' : 'text-primary border-primary/20'}`}>
             {isPositive ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
             {trend}
           </div>
         )}
       </div>
       <div className="relative z-10">
-        <p className="text-[10px] uppercase tracking-wider font-bold text-muted-foreground mb-1">{label}</p>
-        <h4 className="text-2xl font-bold font-display text-gradient">
+        <p className="text-[10px] uppercase tracking-wider font-black text-muted-foreground/80 mb-1">{label}</p>
+        <h4 className="text-3xl font-black font-mono tracking-tighter text-foreground drop-shadow-md">
           {prefix}{typeof value === 'number' ? value.toLocaleString('pt-BR', { minimumFractionDigits: value % 1 !== 0 ? 2 : 0 }) : value}
         </h4>
       </div>
@@ -554,15 +687,4 @@ function StatCard({ label, value, prefix = "", icon: Icon, trend, isPositive, sp
   );
 }
 
-function SummaryItem({ label, value, icon: Icon }: any) {
-  return (
-    <div className="flex items-center justify-between p-3 rounded-xl border border-white/5 bg-white/5 hover:bg-white/10 transition-colors">
-      <div className="flex items-center gap-3">
-        <Icon className="h-4 w-4 text-primary" />
-        <span className="text-xs font-medium text-foreground/80">{label}</span>
-      </div>
-      <span className="text-xs font-bold text-foreground">{value}</span>
-    </div>
-  );
-}
-
+import React from "react";
