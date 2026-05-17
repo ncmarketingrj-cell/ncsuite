@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useAdAccounts } from "@/hooks/useAdAccounts";
 import { PageHeader } from "@/components/PageHeader";
 import { SyncButton } from "@/components/SyncButton";
@@ -12,6 +12,7 @@ export const Route = createFileRoute("/_app/contas")({
 
 function ContasPage() {
   const { adAccounts, isLoading } = useAdAccounts();
+  const navigate = useNavigate();
 
   return (
     <div className="mx-auto max-w-6xl space-y-8 pb-20">
@@ -31,13 +32,14 @@ function ContasPage() {
           </div>
           <div>
             <p className="font-medium text-foreground">Nenhuma conta de anúncios encontrada.</p>
-            <p>Certifique-se de que o token da Meta está configurado e clique em Sincronizar Agora.</p>
+            <p>Configure o token Meta em <strong>Configurações</strong> e clique em <strong>Sincronizar Agora</strong>.</p>
           </div>
+          <SyncButton />
         </div>
       ) : (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {adAccounts.map((account, i) => {
-            const isActive = account.status === 1; // Meta API status: 1 = Active
+            const isActive = account.status === 1;
             
             return (
               <motion.div 
@@ -50,9 +52,7 @@ function ContasPage() {
                 <div className="space-y-4">
                   <div className="flex items-start justify-between">
                     <div>
-                      <h3 className="font-display font-semibold text-lg flex items-center gap-2">
-                        {account.name}
-                      </h3>
+                      <h3 className="font-display font-semibold text-lg">{account.name}</h3>
                       <p className="text-xs text-muted-foreground mt-1 font-mono">ID: {account.id}</p>
                     </div>
                     {isActive ? (
@@ -73,20 +73,19 @@ function ContasPage() {
                     </div>
                     <div className="rounded-lg bg-background/50 p-3">
                       <p className="label-mono mb-1 text-muted-foreground">Moeda</p>
-                      <p className="font-semibold text-primary">{account.currency || "USD"}</p>
+                      <p className="font-semibold text-primary">{account.currency || "BRL"}</p>
                     </div>
                   </div>
                 </div>
 
                 <div className="mt-6 border-t border-white/5 pt-4">
-                  <Link
-                    to="/campanhas"
-                    search={{ accountId: account.id, search: undefined }}
+                  <button
+                    onClick={() => navigate({ to: "/campanhas", search: { accountId: account.id } })}
                     className="flex w-full items-center justify-between rounded-lg bg-white/5 px-4 py-2 text-xs font-medium transition hover:bg-primary hover:text-primary-foreground"
                   >
-                    <span>Ver Campanhas</span>
+                    <span>Ver Campanhas desta Conta</span>
                     <ChevronRight className="h-4 w-4" />
-                  </Link>
+                  </button>
                 </div>
               </motion.div>
             );
