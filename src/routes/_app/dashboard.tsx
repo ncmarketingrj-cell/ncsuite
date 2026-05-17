@@ -6,7 +6,7 @@ import {
   Upload, FileText, BarChart3, Settings, ArrowUpRight, Activity,
   Sparkles, Layers, Cpu, Link2, Megaphone, LineChart, Palette, Zap,
   ChevronDown, Globe, Target, TrendingUp, TrendingDown, DollarSign, MousePointer2, Users, Trophy,
-  Loader2, Bot, Brain, Clock, ChevronRight, Download
+  Loader2, Bot, Brain, Clock, ChevronRight, Download, Calendar
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
@@ -55,6 +55,8 @@ function Dashboard() {
   const navigate = useNavigate();
   const [selectedAccountId, setSelectedAccountId] = useState<string>("all");
   const [showAccounts, setShowAccounts] = useState(false);
+  const [dateRange, setDateRange] = useState<string>("last_30d");
+  const [showDateRange, setShowDateRange] = useState(false);
 
   const { data: accounts = [] } = useQuery({
     queryKey: ["ad-accounts"],
@@ -65,15 +67,19 @@ function Dashboard() {
   });
 
   const { data: performanceData, isLoading: isLoadingPerformance } = useQuery({
-    queryKey: ["dash-performance", selectedAccountId],
+    queryKey: ["dash-performance", selectedAccountId, dateRange],
     queryFn: async () => {
-      const thirtyDaysAgo = subDays(new Date(), 30).toISOString();
-      const sixtyDaysAgo = subDays(new Date(), 60).toISOString();
+      let days = 30;
+      if (dateRange === "last_7d") days = 7;
+      if (dateRange === "last_90d") days = 90;
+      
+      const startDateStr = dateRange === "all_time" ? "2000-01-01T00:00:00Z" : subDays(new Date(), days).toISOString();
+      const previousDateStr = dateRange === "all_time" ? "2000-01-01T00:00:00Z" : subDays(new Date(), days * 2).toISOString();
 
       let metricsQuery = supabase.from("metrics").select(`
         *,
         campaigns!inner(ad_account_id, name)
-      `).gte('date', sixtyDaysAgo);
+      `).gte('date', previousDateStr);
 
       if (selectedAccountId !== "all") {
         metricsQuery = metricsQuery.eq("campaigns.ad_account_id", selectedAccountId);
@@ -86,7 +92,7 @@ function Dashboard() {
       let previousPeriod = { cost: 0, conversions: 0, clicks: 0, impressions: 0 };
 
       (metrics || []).forEach(m => {
-        const isCurrent = isAfter(new Date(m.date), new Date(thirtyDaysAgo));
+        const isCurrent = dateRange === "all_time" || isAfter(new Date(m.date), new Date(startDateStr));
         
         if (isCurrent) {
           const date = m.date;
@@ -207,6 +213,44 @@ function Dashboard() {
                 )}
               </AnimatePresence>
             </div>
+
+            {/* Date Range Selector */}
+            <div className="relative">
+              <button 
+                onClick={() => setShowDateRange(!showDateRange)}
+                className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-xs font-black uppercase tracking-widest transition hover:border-primary/40 hover:bg-white/10"
+              >
+                <Calendar className="h-3.5 w-3.5 text-primary" />
+                {dateRange === "last_7d" ? "Últimos 7 dias" : dateRange === "last_30d" ? "Últimos 30 dias" : dateRange === "last_90d" ? "Últimos 90 dias" : "Todo o Período"}
+                <ChevronDown className={`h-3 w-3 transition ${showDateRange ? "rotate-180" : ""}`} />
+              </button>
+
+              <AnimatePresence>
+                {showDateRange && (
+                  <motion.div 
+                    initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }}
+                    className="absolute left-0 top-full z-50 mt-2 w-56 rounded-2xl border border-white/10 bg-background/95 p-2 shadow-2xl backdrop-blur-2xl"
+                  >
+                    {[
+                      { id: "last_7d", label: "Últimos 7 dias" },
+                      { id: "last_30d", label: "Últimos 30 dias" },
+                      { id: "last_90d", label: "Últimos 90 dias" },
+                      { id: "all_time", label: "Todo o Período" },
+                    ].map(dr => (
+                      <button 
+                        key={dr.id}
+                        onClick={() => { setDateRange(dr.id); setShowDateRange(false); }}
+                        className={`flex w-full items-center gap-3 rounded-xl px-4 py-3 text-left text-[11px] font-bold uppercase tracking-widest transition ${dateRange === dr.id ? "bg-primary/20 text-primary" : "hover:bg-white/5 text-muted-foreground"}`}
+                      >
+                        <div className={`h-1.5 w-1.5 rounded-full ${dateRange === dr.id ? 'bg-primary animate-pulse' : 'bg-white/10'}`} />
+                        {dr.label}
+                      </button>
+                    ))}
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+
             <SyncButton />
             
             {/* NOVO: Botão Gerar Relatório */}
@@ -419,230 +463,10 @@ function Dashboard() {
         </motion.div>
       </div>
 
-      {/* Deep Dive Table (NOVO: Breakdown Avançado) */}
-      <section className="space-y-6">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="h-8 w-8 rounded-xl bg-white/5 flex items-center justify-center">
-              <Layers className="h-4 w-4 text-primary" />
-            </div>
-            <div>
-              <h2 className="text-lg font-black uppercase tracking-tight">Detalhamento Técnico de Ativos</h2>
-              <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mt-1">Breakdown de Conversão</p>
-            </div>
-          </div>
-        </div>
-        <PerformanceTable selectedAccountId={selectedAccountId} />
-      </section>
     </div>
   );
 }
 
-function AgentStatusBadge({ config }: { config: any }) {
-  const isOnline = config?.agent_enabled !== false; // Assume online se não explicitamente desativado
-  return (
-    <Link to="/agente" className="flex items-center gap-2 rounded-full border border-white/10 bg-background/50 px-3 py-1.5 transition hover:bg-white/5">
-      <div className="relative">
-        <Bot className={`h-4 w-4 ${isOnline ? "text-primary" : "text-muted-foreground"}`} />
-        {isOnline && (
-          <span className="absolute -right-0.5 -top-0.5 h-1.5 w-1.5 animate-pulse rounded-full bg-primary" />
-        )}
-      </div>
-      <div className="hidden flex-col items-start leading-none sm:flex">
-        <span className="text-[10px] font-bold uppercase tracking-tighter text-muted-foreground">Orquestrador IA</span>
-        <span className={`text-[9px] font-black ${isOnline ? "text-primary" : "text-muted-foreground"}`}>
-          {isOnline ? "EM SEGUNDO PLANO" : "OFFLINE"}
-        </span>
-      </div>
-    </Link>
-  );
-}
-
-// --- TABELA DE BREAKDOWN COM DRILL-DOWN ---
-function PerformanceTable({ selectedAccountId }: { selectedAccountId: string }) {
-  const [expandedRows, setExpandedRows] = useState<Record<string, boolean>>({});
-
-  const toggleRow = (id: string) => {
-    setExpandedRows(prev => ({ ...prev, [id]: !prev[id] }));
-  };
-
-  const { data: tableData = [], isLoading } = useQuery({
-    queryKey: ["dash-table-advanced", selectedAccountId],
-    queryFn: async () => {
-      // Puxa Campanhas + Conta de Anúncios (Para saber o "Portfólio/Conta")
-      let q = supabase
-        .from("campaigns")
-        .select(`
-          id, name, status, 
-          ad_account:ad_accounts(name),
-          metrics(impressions, clicks, cost, conversions),
-          demographic_metrics(age_range, gender, conversions, spend)
-        `);
-
-      if (selectedAccountId !== "all") {
-        q = q.eq("ad_account_id", selectedAccountId);
-      }
-
-      const { data, error } = await q.order("name");
-      if (error) throw error;
-
-      return (data || []).map((c: any) => {
-        const metrics = c.metrics || [];
-        const totalCost = metrics.reduce((s: number, m: any) => s + Number(m.cost || 0), 0);
-        const totalImpressions = metrics.reduce((s: number, m: any) => s + Number(m.impressions || 0), 0);
-        const totalClicks = metrics.reduce((s: number, m: any) => s + Number(m.clicks || 0), 0);
-        const totalConversions = metrics.reduce((s: number, m: any) => s + Number(m.conversions || 0), 0);
-        
-        const ctr = totalImpressions > 0 ? (totalClicks / totalImpressions) * 100 : 0;
-        const cpa = totalConversions > 0 ? totalCost / totalConversions : 0;
-        const roas = totalCost > 0 ? (totalConversions * 150) / totalCost : 0; // Mock ROAS value estimation se não tiver valor real
-
-        // Processa demographic metrics para o "Breakdown" da campanha
-        const topDemos = (c.demographic_metrics || [])
-          .filter((d: any) => d.conversions > 0)
-          .sort((a: any, b: any) => b.conversions - a.conversions)
-          .slice(0, 3); // Pega os 3 públicos que mais convertem
-
-        return { 
-          ...c, 
-          accountName: c.ad_account?.name || "Desconhecido",
-          totalCost, 
-          totalImpressions, 
-          totalClicks, 
-          totalConversions, 
-          ctr, 
-          cpa,
-          roas,
-          topDemos
-        };
-      }).filter(c => c.totalImpressions > 0); // Oculta campanhas zeradas
-    },
-  });
-
-  return (
-    <div className="glass-panel overflow-hidden border border-white/5 bg-card/40">
-      <div className="overflow-x-auto">
-        <table className="w-full text-left text-sm">
-          <thead className="bg-white/5 text-[10px] font-black uppercase tracking-widest text-muted-foreground">
-            <tr>
-              <th className="px-4 py-4 w-10"></th>
-              <th className="px-4 py-4">Status / Nome</th>
-              <th className="px-4 py-4">Conta de Anúncio</th>
-              <th className="px-4 py-4 text-right">Investimento</th>
-              <th className="px-4 py-4 text-right">Cliques</th>
-              <th className="px-4 py-4 text-right">CTR</th>
-              <th className="px-4 py-4 text-right">CPA</th>
-              <th className="px-4 py-4 text-right">Score</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-white/5">
-            {isLoading ? (
-              <tr><td colSpan={8} className="px-4 py-12 text-center"><Loader2 className="h-6 w-6 animate-spin mx-auto text-primary" /></td></tr>
-            ) : tableData.length > 0 ? (
-              tableData.map((c: any) => (
-                <React.Fragment key={c.id}>
-                  {/* Main Row */}
-                  <tr 
-                    onClick={() => toggleRow(c.id)}
-                    className="group cursor-pointer transition hover:bg-white/[0.02]"
-                  >
-                    <td className="px-4 py-4">
-                      <ChevronRight className={`h-4 w-4 text-muted-foreground transition-transform ${expandedRows[c.id] ? "rotate-90" : ""}`} />
-                    </td>
-                    <td className="px-4 py-4">
-                      <div className="flex items-center gap-2">
-                        <span className={`h-2 w-2 rounded-full shadow-glow-sm ${c.status === 'active' ? 'bg-success shadow-success/50' : 'bg-muted-foreground'}`}></span>
-                        <span className="font-bold text-foreground text-xs">{c.name}</span>
-                      </div>
-                    </td>
-                    <td className="px-4 py-4 text-xs font-medium text-muted-foreground">{c.accountName}</td>
-                    <td className="px-4 py-4 text-right font-mono text-xs">R$ {c.totalCost.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</td>
-                    <td className="px-4 py-4 text-right font-mono text-xs">{c.totalClicks.toLocaleString('pt-BR')}</td>
-                    <td className="px-4 py-4 text-right">
-                      <span className={`inline-flex items-center rounded bg-white/5 px-2 py-0.5 font-mono text-xs font-bold ${c.ctr >= 1.5 ? 'text-success' : c.ctr > 0 ? 'text-primary' : 'text-muted-foreground'}`}>
-                        {c.ctr.toFixed(2)}%
-                      </span>
-                    </td>
-                    <td className="px-4 py-4 text-right font-mono text-xs font-bold text-foreground">
-                      {c.cpa > 0 ? `R$ ${c.cpa.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` : '—'}
-                    </td>
-                    <td className="px-4 py-4 text-right">
-                       {c.roas > 2 ? (
-                         <span className="inline-flex items-center rounded-full bg-success/20 px-2 py-0.5 text-[9px] font-black uppercase tracking-widest text-success border border-success/30">Excelente</span>
-                       ) : c.roas > 1 ? (
-                         <span className="inline-flex items-center rounded-full bg-primary/20 px-2 py-0.5 text-[9px] font-black uppercase tracking-widest text-primary border border-primary/30">Bom</span>
-                       ) : (
-                         <span className="inline-flex items-center rounded-full bg-amber-500/20 px-2 py-0.5 text-[9px] font-black uppercase tracking-widest text-amber-500 border border-amber-500/30">Atenção</span>
-                       )}
-                    </td>
-                  </tr>
-
-                  {/* Expanded Breakdown Row */}
-                  <AnimatePresence>
-                    {expandedRows[c.id] && (
-                      <motion.tr 
-                        initial={{ opacity: 0, height: 0 }} 
-                        animate={{ opacity: 1, height: 'auto' }} 
-                        exit={{ opacity: 0, height: 0 }}
-                        className="bg-black/20 border-b border-white/5 overflow-hidden"
-                      >
-                        <td colSpan={8} className="p-0">
-                          <div className="px-14 py-6 border-l-2 border-primary/50 ml-4 my-2">
-                            <h4 className="text-[10px] font-black uppercase tracking-widest text-primary mb-4 flex items-center gap-2">
-                              <Target className="h-3 w-3" /> Breakdown de Conversão (AdSets / Públicos)
-                            </h4>
-                            
-                            {c.topDemos.length > 0 ? (
-                              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                                {c.topDemos.map((demo: any, idx: number) => (
-                                  <div key={idx} className="rounded-xl border border-white/10 bg-white/5 p-4 flex flex-col justify-between relative overflow-hidden">
-                                    <div className="absolute top-0 right-0 h-full w-1 bg-primary/30" />
-                                    <div>
-                                      <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">{demo.gender === 'male' ? 'Homens' : demo.gender === 'female' ? 'Mulheres' : 'Desconhecido'}</p>
-                                      <p className="text-xl font-black font-mono mt-1">{demo.age_range}</p>
-                                    </div>
-                                    <div className="mt-4 flex items-end justify-between">
-                                      <div>
-                                        <p className="text-[9px] uppercase tracking-wider text-muted-foreground">Conversões</p>
-                                        <p className="text-sm font-bold text-success font-mono">+{demo.conversions}</p>
-                                      </div>
-                                      <div className="text-right">
-                                        <p className="text-[9px] uppercase tracking-wider text-muted-foreground">Custo Relativo</p>
-                                        <p className="text-sm font-bold font-mono">R$ {demo.spend.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
-                                      </div>
-                                    </div>
-                                  </div>
-                                ))}
-                              </div>
-                            ) : (
-                              <div className="text-xs text-muted-foreground p-4 bg-white/5 rounded-xl border border-white/10 border-dashed">
-                                Sem dados demográficos de conversão suficientes para gerar breakdown deste ativo.
-                              </div>
-                            )}
-
-                            <div className="mt-4 flex justify-end">
-                               <button className="text-[10px] font-bold uppercase tracking-widest text-primary hover:text-primary/80 transition flex items-center gap-1">
-                                 Ver Análise Completa da IA <ArrowUpRight className="h-3 w-3" />
-                               </button>
-                            </div>
-                          </div>
-                        </td>
-                      </motion.tr>
-                    )}
-                  </AnimatePresence>
-                </React.Fragment>
-              ))
-            ) : (
-              <tr><td colSpan={8} className="px-4 py-8 text-center text-muted-foreground text-xs">
-                Nenhum dado encontrado. Clique em <span className="text-primary font-bold">"Sincronizar Agora"</span> para importar campanhas.
-              </td></tr>
-            )}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-}
 
 function StatCard({ label, value, prefix = "", icon: Icon, trend, isPositive, sparklineData = [] }: any) {
   const max = Math.max(...(sparklineData.length ? sparklineData : [1]), 0.1);

@@ -55,17 +55,17 @@ function RelatoriosPage() {
       const { data: demos } = await qDemos;
 
       // Cálculos
-      let cost = 0, conversions = 0, clicks = 0, impressions = 0;
+      let cost = 0, conversions = 0, clicks = 0, impressions = 0, reach = 0;
       (metrics || []).forEach((m: any) => {
         cost += Number(m.cost || 0);
         conversions += Number(m.conversions || 0);
         clicks += Number(m.clicks || 0);
         impressions += Number(m.impressions || 0);
+        reach += Number(m.reach || 0);
       });
 
       const ctr = impressions > 0 ? (clicks / impressions) * 100 : 0;
       const cpa = conversions > 0 ? cost / conversions : 0;
-      const roas = cost > 0 ? (conversions * 150) / cost : 0; // Simulated ROAS
 
       // Top Público
       const demoMap = new Map();
@@ -96,7 +96,7 @@ function RelatoriosPage() {
           dateGenerated: new Date().toISOString(),
           period: `${days} dias`,
           accountName,
-          cost, conversions, clicks, ctr, cpa, roas,
+          cost, conversions, clicks, impressions, reach, ctr, cpa,
           topDemo: topDemo ? `${topDemo.name.split('-')[1] === 'female' ? 'Mulheres' : 'Homens'} ${topDemo.name.split('-')[0]}` : "N/D",
           topPlatform: topPlatform?.name || "N/D"
         });
@@ -223,22 +223,26 @@ function RelatoriosPage() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-6 mb-12">
-                <div className="p-5 rounded-2xl bg-white/5 border border-white/10 print:bg-gray-100 print:border-gray-200">
-                   <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground print:text-black/50">Investimento</p>
-                   <p className="text-2xl font-mono font-black mt-2 print:text-black">R$ {generatedReport.cost.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+              <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-12">
+                <div className="p-4 rounded-2xl bg-white/5 border border-white/10 print:bg-gray-100 print:border-gray-200">
+                   <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground print:text-black/50">Alcance</p>
+                   <p className="text-xl font-mono font-black mt-2 print:text-black">{generatedReport.reach.toLocaleString('pt-BR')}</p>
                 </div>
-                <div className="p-5 rounded-2xl bg-white/5 border border-white/10 print:bg-gray-100 print:border-gray-200">
-                   <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground print:text-black/50">Conversões</p>
-                   <p className="text-2xl font-mono font-black mt-2 text-secondary print:text-black">+{generatedReport.conversions.toLocaleString('pt-BR')}</p>
+                <div className="p-4 rounded-2xl bg-white/5 border border-white/10 print:bg-gray-100 print:border-gray-200">
+                   <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground print:text-black/50">Impressões</p>
+                   <p className="text-xl font-mono font-black mt-2 print:text-black">{generatedReport.impressions.toLocaleString('pt-BR')}</p>
                 </div>
-                <div className="p-5 rounded-2xl bg-white/5 border border-white/10 print:bg-gray-100 print:border-gray-200">
-                   <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground print:text-black/50">CPA Médio</p>
-                   <p className="text-2xl font-mono font-black mt-2 print:text-black">R$ {generatedReport.cpa.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+                <div className="p-4 rounded-2xl bg-white/5 border border-white/10 print:bg-gray-100 print:border-gray-200">
+                   <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground print:text-black/50">Investimento</p>
+                   <p className="text-xl font-mono font-black mt-2 print:text-black">R$ {generatedReport.cost.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
                 </div>
-                <div className="p-5 rounded-2xl bg-white/5 border border-white/10 print:bg-gray-100 print:border-gray-200">
-                   <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground print:text-black/50">ROAS Estimado</p>
-                   <p className="text-2xl font-mono font-black mt-2 text-primary print:text-black">{generatedReport.roas.toFixed(2)}x</p>
+                <div className="p-4 rounded-2xl bg-white/5 border border-white/10 print:bg-gray-100 print:border-gray-200">
+                   <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground print:text-black/50">Resultados</p>
+                   <p className="text-xl font-mono font-black mt-2 text-secondary print:text-black">+{generatedReport.conversions.toLocaleString('pt-BR')}</p>
+                </div>
+                <div className="p-4 rounded-2xl bg-white/5 border border-white/10 print:bg-gray-100 print:border-gray-200">
+                   <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground print:text-black/50">Custo por Resultado</p>
+                   <p className="text-xl font-mono font-black mt-2 print:text-black">R$ {generatedReport.cpa.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
                 </div>
               </div>
 

@@ -1,3 +1,4 @@
+import { useState, useEffect } from "react";
 import { createFileRoute, Outlet, redirect, Link, useRouterState } from "@tanstack/react-router";
 import { motion } from "framer-motion";
 import {
@@ -32,6 +33,13 @@ const DOCK = [
 function Shell() {
   const { loading, user, signOut } = useAuth();
   const path = useRouterState({ select: (s) => s.location.pathname });
+  const [isAgentOpen, setIsAgentOpen] = useState(false);
+
+  useEffect(() => {
+    const handleOpenAI = () => setIsAgentOpen(true);
+    window.addEventListener('open-ai-agent', handleOpenAI);
+    return () => window.removeEventListener('open-ai-agent', handleOpenAI);
+  }, []);
 
   if (loading) {
     return (
@@ -79,11 +87,14 @@ function Shell() {
              </div>
 
              <div className="flex items-center gap-4 border-l border-white/5 pl-6">
-                {/* Status Indicator */}
-                <div className="hidden xl:flex items-center gap-2 px-2 py-1 rounded-md bg-success/10 border border-success/20">
+                {/* Status Indicator / Agent Toggle */}
+                <button 
+                  onClick={() => setIsAgentOpen(!isAgentOpen)}
+                  className="hidden xl:flex items-center gap-2 px-2 py-1 rounded-md bg-success/10 border border-success/20 hover:bg-success/20 transition-colors cursor-pointer"
+                >
                    <div className="h-1.5 w-1.5 rounded-full bg-success animate-pulse" />
                    <span className="text-[9px] font-black uppercase tracking-tighter text-success">Agente Online</span>
-                </div>
+                </button>
 
                 <button className="relative text-muted-foreground hover:text-foreground transition-colors p-1.5 rounded-lg hover:bg-white/5">
                   <Bell className="h-4 w-4" />
@@ -112,7 +123,7 @@ function Shell() {
       </div>
 
       {/* 3. Right Sidebar (AI Agent) */}
-      <AIAgentSidebar />
+      <AIAgentSidebar isOpen={isAgentOpen} onClose={() => setIsAgentOpen(false)} />
     </div>
   );
 }

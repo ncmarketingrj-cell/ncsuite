@@ -1,17 +1,32 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Send, Bot, Sparkles, TrendingUp, Search, Loader2, User } from "lucide-react";
+import { Send, Bot, Sparkles, TrendingUp, Search, Loader2, User, X } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 
 type Message = { role: "user" | "assistant"; content: string; timestamp: Date };
 
-export function AIAgentSidebar() {
+interface AIAgentSidebarProps {
+  isOpen: boolean;
+  onClose: () => void;
+}
+
+export function AIAgentSidebar({ isOpen, onClose }: AIAgentSidebarProps) {
   const [prompt, setPrompt] = useState("");
   const [loading, setLoading] = useState(false);
   const [messages, setMessages] = useState<Message[]>([
     { role: "assistant", content: "Olá! Sou seu assistente NC Performance. Como posso ajudar com suas campanhas hoje?", timestamp: new Date() }
   ]);
+
+  useEffect(() => {
+    const handleSetPrompt = (e: any) => {
+      if (e.detail?.prompt) {
+        setPrompt(e.detail.prompt);
+      }
+    };
+    window.addEventListener('set-ai-prompt', handleSetPrompt);
+    return () => window.removeEventListener('set-ai-prompt', handleSetPrompt);
+  }, []);
 
   const handleSend = async () => {
     if (!prompt.trim() || loading) return;
@@ -49,22 +64,48 @@ export function AIAgentSidebar() {
   ];
 
   return (
-    <aside className="hidden lg:flex flex-col w-[380px] border-l border-white/5 bg-card/20 backdrop-blur-2xl h-screen sticky top-0 right-0 z-40 overflow-hidden">
-      <div className="p-5 border-b border-white/5 flex items-center gap-3 bg-background/40">
-        <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-primary/20 to-secondary/20 flex items-center justify-center ring-1 ring-white/10 shadow-glow-sm">
-          <Bot className="h-5 w-5 text-primary" />
-        </div>
-        <div>
-          <h3 className="font-display font-bold text-sm tracking-tight text-foreground">NC Agent Orquestrador</h3>
-          <p className="text-[10px] text-muted-foreground flex items-center gap-1.5 uppercase font-black tracking-widest">
-            <span className="relative flex h-2 w-2">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-success opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-success"></span>
-            </span>
-            Sincronizado via MCP
-          </p>
-        </div>
-      </div>
+    <AnimatePresence>
+      {isOpen && (
+        <>
+          {/* Backdrop on mobile */}
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={onClose}
+            className="fixed inset-0 bg-background/80 backdrop-blur-sm z-40 lg:hidden"
+          />
+          
+          <motion.aside 
+            initial={{ x: "100%" }}
+            animate={{ x: 0 }}
+            exit={{ x: "100%" }}
+            transition={{ type: "spring", damping: 25, stiffness: 200 }}
+            className="fixed top-0 right-0 z-50 flex flex-col w-full sm:w-[380px] h-screen border-l border-white/5 bg-background/95 backdrop-blur-2xl overflow-hidden shadow-2xl"
+          >
+            <div className="p-5 border-b border-white/5 flex items-center justify-between bg-background/40">
+              <div className="flex items-center gap-3">
+                <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-primary/20 to-secondary/20 flex items-center justify-center ring-1 ring-white/10 shadow-glow-sm">
+                  <Bot className="h-5 w-5 text-primary" />
+                </div>
+                <div>
+                  <h3 className="font-display font-bold text-sm tracking-tight text-foreground">NC Agent Orquestrador</h3>
+                  <p className="text-[10px] text-muted-foreground flex items-center gap-1.5 uppercase font-black tracking-widest">
+                    <span className="relative flex h-2 w-2">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-success opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-success"></span>
+                    </span>
+                    Sincronizado via MCP
+                  </p>
+                </div>
+              </div>
+              <button 
+                onClick={onClose} 
+                className="p-2 text-muted-foreground hover:text-foreground hover:bg-white/10 rounded-lg transition-colors"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
 
       <div className="flex-1 overflow-y-auto p-5 custom-scrollbar flex flex-col gap-5">
         <AnimatePresence initial={false}>
@@ -131,6 +172,9 @@ export function AIAgentSidebar() {
           IA Orquestradora — Powered by Model Context Protocol
         </p>
       </div>
-    </aside>
+          </motion.aside>
+        </>
+      )}
+    </AnimatePresence>
   );
 }

@@ -83,11 +83,22 @@ async function fetchDemographicBreakdowns(adAccountId: string, token: string): P
   }
 }
 
-// ─── Extrair conversões do array de actions ───────────────────────────────────
+// ─── Extrair conversões (Resultados) do array de actions ───────────────────────
 function extractConversions(actions: any[] = []): number {
-  const conversionTypes = ["lead", "purchase", "conversion", "complete_registration", "submit_application"]
-  const action = actions.find(a => conversionTypes.some(t => a.action_type?.includes(t)))
-  return parseInt(action?.value || "0") || 0
+  // Lista priorizada do que consideramos um "Resultado" baseado no objetivo
+  const priorityTypes = [
+    "purchase", "lead", "complete_registration", "submit_application", "conversion", // Bottom Funnel
+    "messaging_conversation_started_7d", "onsite_conversion.messaging_conversation_started_7d", // Messages
+    "landing_page_view", "link_click", // Traffic
+    "video_view", "thruplay", "video_view_thruplay", // Video Views
+    "post_engagement", "page_engagement" // Engagement
+  ];
+  
+  for (const type of priorityTypes) {
+    const action = actions.find(a => a.action_type === type || a.action_type?.includes(type));
+    if (action) return parseInt(action.value || "0") || 0;
+  }
+  return 0;
 }
 
 // ─── Sync principal ───────────────────────────────────────────────────────────
