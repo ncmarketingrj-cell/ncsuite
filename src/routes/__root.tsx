@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   Outlet,
@@ -12,6 +13,15 @@ import { Toaster } from "sonner";
 import appCss from "../styles.css?url";
 
 function NotFoundComponent() {
+  useEffect(() => {
+    const path = window.location.pathname;
+    if (path.startsWith("/_app/")) {
+      const cleanPath = path.replace("/_app/", "/");
+      const search = window.location.search;
+      window.location.replace(cleanPath + search);
+    }
+  }, []);
+
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-4">
       <div className="max-w-md text-center">
@@ -105,6 +115,16 @@ function RootShell({ children }: { children: React.ReactNode }) {
 
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
+  
+  useEffect(() => {
+    const path = window.location.pathname;
+    if (path.startsWith("/_app/")) {
+      const cleanPath = path.replace("/_app/", "/");
+      const search = window.location.search;
+      window.location.replace(cleanPath + search);
+    }
+  }, []);
+
   return (
     <QueryClientProvider client={queryClient}>
       <Outlet />
