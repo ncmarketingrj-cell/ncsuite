@@ -14,6 +14,7 @@ import {
 } from "recharts";
 import { format, subDays, isAfter } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { DateRangePicker } from "@/components/DateRangePicker";
 
 export const Route = createFileRoute("/_app/metricas")({
   head: () => ({ meta: [{ title: "Métricas Avançadas — NC Suite" }] }),
@@ -25,7 +26,12 @@ const COLORS = ["hsl(var(--primary))", "hsl(var(--secondary))", "hsl(var(--accen
 function MetricasPage() {
   const [selectedAccountId, setSelectedAccountId] = useState<string>("all");
   const [showAccounts, setShowAccounts] = useState(false);
-  const [days, setDays] = useState<number>(30);
+  
+  // Intervalo de data flexível personalizado (Padrão: últimos 30 dias)
+  const [dateRange, setDateRange] = useState<{ startDate: Date; endDate: Date }>({
+    startDate: subDays(new Date(), 29),
+    endDate: new Date(),
+  });
 
   const { data: accounts = [] } = useQuery({
     queryKey: ["ad-accounts-metrics"],
@@ -36,19 +42,30 @@ function MetricasPage() {
   });
 
   const { data: dashData, isLoading } = useQuery({
-    queryKey: ["advanced-metrics", selectedAccountId, days],
+    queryKey: ["advanced-metrics", selectedAccountId, dateRange.startDate.toISOString(), dateRange.endDate.toISOString()],
     queryFn: async () => {
-      const dateLimit = subDays(new Date(), days).toISOString();
+      const startStr = dateRange.startDate.toISOString().split("T")[0] + "T00:00:00Z";
+      const endStr = dateRange.endDate.toISOString().split("T")[0] + "T23:59:59Z";
 
-      // Busca métricas de performance globais
-      let qMetrics = (supabase as any).from("metrics").select(`*, campaigns!inner(ad_account_id)`).gte('date', dateLimit);
+      // Busca métricas de performance globais no período customizado
+      let qMetrics = (supabase as any)
+        .from("metrics")
+        .select(`*, campaigns!inner(ad_account_id)`)
+        .gte('date', startStr)
+        .lte('date', endStr);
+        
       if (selectedAccountId !== "all") {
         qMetrics = qMetrics.eq("campaigns.ad_account_id", selectedAccountId);
       }
       const { data: rawMetrics } = await qMetrics;
 
-      // Busca demográficos
-      let qDemos = (supabase as any).from("demographic_metrics").select(`*, campaigns!inner(ad_account_id)`).gte('date', dateLimit);
+      // Busca demográficos no período customizado
+      let qDemos = (supabase as any)
+        .from("demographic_metrics")
+        .select(`*, campaigns!inner(ad_account_id)`)
+        .gte('date', startStr)
+        .lte('date', endStr);
+        
       if (selectedAccountId !== "all") {
         qDemos = qDemos.eq("campaigns.ad_account_id", selectedAccountId);
       }
@@ -90,7 +107,7 @@ function MetricasPage() {
         cur.spend += Number(d.spend || 0);
         demoMap.set(key, cur);
       });
-      const demographicData = Array.from(demoMap.values()).sort((a, b) => b.conversions - a.conversions).slice(0, 8); // Top 8
+      const demographicData = Array.from(demoMap.values()).sort((a, b) => b.conversions - a.conversions).slice(0, 8);
 
       // --- Processamento de Plataformas (Pie Chart) ---
       const platformMap = new Map();
@@ -98,7 +115,7 @@ function MetricasPage() {
         if (!d.platform) return;
         const p = d.platform;
         const cur = platformMap.get(p) || { name: p, value: 0 };
-        cur.value += Number(d.spend || 0); // Distribuição de investimento por plataforma
+        cur.value += Number(d.spend || 0);
         platformMap.set(p, cur);
       });
       const platformData = Array.from(platformMap.values());
@@ -123,11 +140,11 @@ function MetricasPage() {
           </div>
           
           <div className="flex items-center gap-3 flex-wrap">
-            {/* Seletor de Conta Global (Igual ao Dashboard) */}
+            {/* Seletor de Conta Global */}
             <div className="relative">
               <button 
                 onClick={() => setShowAccounts(!showAccounts)}
-                className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-xs font-black uppercase tracking-widest transition hover:border-primary/40 hover:bg-white/10"
+                className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-xs font-black uppercase tracking-widest transition hover:border-primary/40 hover:bg-white/10 shadow-inner"
               >
                 <Target className="h-3.5 w-3.5 text-primary" />
                 {selectedAccountId === "all" ? "Todas as Contas Meta" : selectedAccount?.name}
@@ -164,18 +181,12 @@ function MetricasPage() {
               </AnimatePresence>
             </div>
 
-            {/* Seletor de Período */}
-            <div className="flex items-center rounded-xl border border-white/10 bg-white/5 p-1">
-              {[7, 14, 30, 90].map((d) => (
-                 <button
-                   key={d}
-                   onClick={() => setDays(d)}
-                   className={`px-3 py-1.5 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all ${days === d ? 'bg-primary text-primary-foreground shadow-glow-sm' : 'text-muted-foreground hover:text-foreground'}`}
-                 >
-                   {d}D
-                 </button>
-              ))}
-            </div>
+            {/* 📅 SELETOR DE PERÍODO PERSONALIZADO PREMIUM */}
+            <DateRangePicker 
+              startDate={dateRange.startDate} 
+              endDate={dateRange.endDate} 
+              onChange={(start, end) => setDateRange({ startDate: start, endDate: end })} 
+            />
           </div>
         </div>
       </div>
@@ -239,7 +250,11 @@ function MetricasPage() {
           {/* Tabela Deep Dive */}
           <section className="space-y-4">
             <h2 className="text-lg font-black uppercase tracking-tight">Detalhamento Técnico de Ativos</h2>
-            <PerformanceTable selectedAccountId={selectedAccountId} dateRange={`last_${days}d`} />
+            <PerformanceTable 
+              selectedAccountId={selectedAccountId} 
+              startDate={dateRange.startDate} 
+              endDate={dateRange.endDate} 
+            />
           </section>
 
           {/* Gráfico 1: Performance Temporal Escalonada */}
@@ -251,7 +266,7 @@ function MetricasPage() {
                  </div>
                  <div>
                    <h3 className="text-xl font-black tracking-tight uppercase">Volumetria de Escala</h3>
-                   <p className="text-xs text-muted-foreground font-medium mt-1">Comparativo de Investimento vs Conversões ({days} dias)</p>
+                   <p className="text-xs text-muted-foreground font-medium mt-1">Comparativo de Investimento vs Conversões no Período Selecionado</p>
                  </div>
               </div>
             </div>
@@ -413,7 +428,7 @@ function MetricasPage() {
 }
 
 // --- TABELA DE BREAKDOWN COM DRILL-DOWN ---
-function PerformanceTable({ selectedAccountId, dateRange }: { selectedAccountId: string, dateRange: string }) {
+function PerformanceTable({ selectedAccountId, startDate, endDate }: { selectedAccountId: string, startDate: Date, endDate: Date }) {
   const [expandedRows, setExpandedRows] = useState<Record<string, boolean>>({});
 
   const toggleRow = (id: string) => {
@@ -421,12 +436,10 @@ function PerformanceTable({ selectedAccountId, dateRange }: { selectedAccountId:
   };
 
   const { data: tableData = [], isLoading } = useQuery({
-    queryKey: ["dash-table-advanced", selectedAccountId, dateRange],
+    queryKey: ["dash-table-advanced-custom", selectedAccountId, startDate.toISOString(), endDate.toISOString()],
     queryFn: async () => {
-      let days = 30;
-      if (dateRange === "last_7d") days = 7;
-      if (dateRange === "last_90d") days = 90;
-      const startDateStr = dateRange === "all_time" ? null : subDays(new Date(), days).toISOString();
+      const startStr = startDate.toISOString().split("T")[0] + "T00:00:00Z";
+      const endStr = endDate.toISOString().split("T")[0] + "T23:59:59Z";
 
       // Puxa Campanhas + Conta de Anúncios (Para saber o "Portfólio/Conta")
       let q = (supabase as any)
@@ -446,7 +459,12 @@ function PerformanceTable({ selectedAccountId, dateRange }: { selectedAccountId:
       if (error) throw error;
 
       return (data || []).map((c: any) => {
-        const metrics = (c.metrics || []).filter((m: any) => !startDateStr || isAfter(new Date(m.date), new Date(startDateStr)));
+        // Filtra métricas dentro do intervalo selecionado de forma estrita
+        const metrics = (c.metrics || []).filter((m: any) => {
+          const d = new Date(m.date);
+          return d >= new Date(startStr) && d <= new Date(endStr);
+        });
+
         const totalCost = metrics.reduce((s: number, m: any) => s + Number(m.cost || 0), 0);
         const totalImpressions = metrics.reduce((s: number, m: any) => s + Number(m.impressions || 0), 0);
         const totalClicks = metrics.reduce((s: number, m: any) => s + Number(m.clicks || 0), 0);
@@ -457,10 +475,13 @@ function PerformanceTable({ selectedAccountId, dateRange }: { selectedAccountId:
         const cpm = totalImpressions > 0 ? (totalCost / totalImpressions) * 1000 : 0;
         const cpa = totalConversions > 0 ? totalCost / totalConversions : 0;
         const freq = totalReach > 0 ? totalImpressions / totalReach : 0;
-        const roas = totalCost > 0 ? (totalConversions * 150) / totalCost : 0; // Mock ROAS value estimation se não tiver valor real
+        const roas = totalCost > 0 ? (totalConversions * 150) / totalCost : 0;
 
-        // Processa demographic metrics para o "Breakdown" da campanha
-        const demos = (c.demographic_metrics || []).filter((m: any) => !startDateStr || isAfter(new Date(m.date), new Date(startDateStr)));
+        // Filtra métricas demográficas dentro do intervalo selecionado de forma estrita
+        const demos = (c.demographic_metrics || []).filter((m: any) => {
+          const d = new Date(m.date);
+          return d >= new Date(startStr) && d <= new Date(endStr);
+        });
         
         // Agrupar dados por idade e gênero
         const demoMap = new Map();

@@ -17,6 +17,7 @@ import {
 import { format, subDays, isAfter } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { SyncButton } from "@/components/SyncButton";
+import { DateRangePicker } from "@/components/DateRangePicker";
 
 export const Route = createFileRoute("/_app/dashboard")({
   head: () => ({ meta: [{ title: "Dashboard — NC Performance Suite" }] }),
@@ -55,8 +56,12 @@ function Dashboard() {
   const navigate = useNavigate();
   const [selectedAccountId, setSelectedAccountId] = useState<string>("all");
   const [showAccounts, setShowAccounts] = useState(false);
-  const [dateRange, setDateRange] = useState<string>("last_30d");
-  const [showDateRange, setShowDateRange] = useState(false);
+  
+  // Período de data flexível personalizado (Padrão: últimos 30 dias)
+  const [dateRange, setDateRange] = useState<{ startDate: Date; endDate: Date }>({
+    startDate: subDays(new Date(), 29),
+    endDate: new Date(),
+  });
 
   const { data: accounts = [] } = useQuery({
     queryKey: ["ad-accounts"],
@@ -67,19 +72,21 @@ function Dashboard() {
   });
 
   const { data: performanceData, isLoading: isLoadingPerformance } = useQuery({
-    queryKey: ["dash-performance", selectedAccountId, dateRange],
+    queryKey: ["dash-performance-custom", selectedAccountId, dateRange.startDate.toISOString(), dateRange.endDate.toISOString()],
     queryFn: async () => {
-      let days = 30;
-      if (dateRange === "last_7d") days = 7;
-      if (dateRange === "last_90d") days = 90;
+      const diffTime = Math.abs(dateRange.endDate.getTime() - dateRange.startDate.getTime());
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
       
-      const startDateStr = dateRange === "all_time" ? "2000-01-01T00:00:00Z" : subDays(new Date(), days).toISOString();
-      const previousDateStr = dateRange === "all_time" ? "2000-01-01T00:00:00Z" : subDays(new Date(), days * 2).toISOString();
+      const startStr = dateRange.startDate.toISOString().split("T")[0] + "T00:00:00Z";
+      const endStr = dateRange.endDate.toISOString().split("T")[0] + "T23:59:59Z";
+      
+      // O período anterior terá a mesma duração exata em dias!
+      const prevStartStr = subDays(dateRange.startDate, diffDays).toISOString().split("T")[0] + "T00:00:00Z";
 
       let metricsQuery = supabase.from("metrics").select(`
         *,
         campaigns!inner(ad_account_id, name)
-      `).gte('date', previousDateStr);
+      `).gte('date', prevStartStr).lte('date', endStr);
 
       if (selectedAccountId !== "all") {
         metricsQuery = metricsQuery.eq("campaigns.ad_account_id", selectedAccountId);
@@ -92,7 +99,9 @@ function Dashboard() {
       let previousPeriod = { cost: 0, conversions: 0, clicks: 0, impressions: 0 };
 
       (metrics || []).forEach(m => {
-        const isCurrent = dateRange === "all_time" || isAfter(new Date(m.date), new Date(startDateStr));
+        const d = new Date(m.date);
+        const isCurrent = d >= new Date(startStr) && d <= new Date(endStr);
+        const isPrevious = d >= new Date(prevStartStr) && d < new Date(startStr);
         
         if (isCurrent) {
           const date = m.date;
@@ -106,7 +115,7 @@ function Dashboard() {
           currentPeriod.conversions += Number(m.conversions || 0);
           currentPeriod.clicks += Number(m.clicks || 0);
           currentPeriod.impressions += Number(m.impressions || 0);
-        } else {
+        } else if (isPrevious) {
           previousPeriod.cost += Number(m.cost || 0);
           previousPeriod.conversions += Number(m.conversions || 0);
           previousPeriod.clicks += Number(m.clicks || 0);
@@ -124,7 +133,6 @@ function Dashboard() {
 
       const cplCurr = currentPeriod.conversions > 0 ? currentPeriod.cost / currentPeriod.conversions : 0;
       const cplPrev = previousPeriod.conversions > 0 ? previousPeriod.cost / previousPeriod.conversions : 0;
-      // For CPL, a decrease is positive trend
       const cplTrendVal = cplPrev === 0 ? 0 : ((cplCurr - cplPrev) / cplPrev) * 100;
 
       return {
@@ -214,42 +222,12 @@ function Dashboard() {
               </AnimatePresence>
             </div>
 
-            {/* Date Range Selector */}
-            <div className="relative">
-              <button 
-                onClick={() => setShowDateRange(!showDateRange)}
-                className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-xs font-black uppercase tracking-widest transition hover:border-primary/40 hover:bg-white/10"
-              >
-                <Calendar className="h-3.5 w-3.5 text-primary" />
-                {dateRange === "last_7d" ? "Últimos 7 dias" : dateRange === "last_30d" ? "Últimos 30 dias" : dateRange === "last_90d" ? "Últimos 90 dias" : "Todo o Período"}
-                <ChevronDown className={`h-3 w-3 transition ${showDateRange ? "rotate-180" : ""}`} />
-              </button>
-
-              <AnimatePresence>
-                {showDateRange && (
-                  <motion.div 
-                    initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }}
-                    className="absolute left-0 top-full z-50 mt-2 w-56 rounded-2xl border border-white/10 bg-background/95 p-2 shadow-2xl backdrop-blur-2xl"
-                  >
-                    {[
-                      { id: "last_7d", label: "Últimos 7 dias" },
-                      { id: "last_30d", label: "Últimos 30 dias" },
-                      { id: "last_90d", label: "Últimos 90 dias" },
-                      { id: "all_time", label: "Todo o Período" },
-                    ].map(dr => (
-                      <button 
-                        key={dr.id}
-                        onClick={() => { setDateRange(dr.id); setShowDateRange(false); }}
-                        className={`flex w-full items-center gap-3 rounded-xl px-4 py-3 text-left text-[11px] font-bold uppercase tracking-widest transition ${dateRange === dr.id ? "bg-primary/20 text-primary" : "hover:bg-white/5 text-muted-foreground"}`}
-                      >
-                        <div className={`h-1.5 w-1.5 rounded-full ${dateRange === dr.id ? 'bg-primary animate-pulse' : 'bg-white/10'}`} />
-                        {dr.label}
-                      </button>
-                    ))}
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </div>
+            {/* 📅 SELETOR DE PERÍODO PERSONALIZADO PREMIUM */}
+            <DateRangePicker 
+              startDate={dateRange.startDate} 
+              endDate={dateRange.endDate} 
+              onChange={(start, end) => setDateRange({ startDate: start, endDate: end })} 
+            />
 
             <SyncButton />
             
