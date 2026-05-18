@@ -689,7 +689,17 @@ function TabUsuarios() {
   const [editRole, setEditRole] = useState("employee");
   const [editPosition, setEditPosition] = useState("Gestor de Tráfego");
   const [editName, setEditName] = useState("");
+  const [editPassword, setEditPassword] = useState("");
   const [saving, setSaving] = useState(false);
+
+  // States for user creation
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [newEmail, setNewEmail] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [newName, setNewName] = useState("");
+  const [newPosition, setNewPosition] = useState("Gestor de Tráfego");
+  const [newRole, setNewRole] = useState("employee");
+  const [creating, setCreating] = useState(false);
 
   const POSITIONS_LIST = [
     "Gestor de Tráfego",
@@ -734,7 +744,8 @@ function TabUsuarios() {
         target_user_id: editingUser.id,
         new_role: editRole,
         new_position: editPosition,
-        new_name: editName
+        new_name: editName,
+        new_password: editPassword.trim() || null
       });
       if (error) throw error;
       toast.success("Dados do usuário atualizados!");
@@ -744,6 +755,41 @@ function TabUsuarios() {
       toast.error(err.message || "Erro ao atualizar usuário");
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleCreateUser = async () => {
+    if (!newEmail.trim() || !newPassword.trim() || !newName.trim()) {
+      toast.error("Por favor, preencha todos os campos obrigatórios.");
+      return;
+    }
+    if (newPassword.length < 6) {
+      toast.error("A senha deve ter no mínimo 6 caracteres.");
+      return;
+    }
+    setCreating(true);
+    try {
+      const { error } = await supabase.rpc("admin_create_user", {
+        new_email: newEmail.trim(),
+        new_password: newPassword.trim(),
+        new_name: newName.trim(),
+        new_position: newPosition,
+        new_role: newRole
+      });
+      if (error) throw error;
+      
+      toast.success("Novo usuário cadastrado com sucesso!");
+      setShowAddModal(false);
+      setNewEmail("");
+      setNewPassword("");
+      setNewName("");
+      setNewPosition("Gestor de Tráfego");
+      setNewRole("employee");
+      qc.invalidateQueries({ queryKey: ["admin_users_list"] });
+    } catch (err: any) {
+      toast.error(err.message || "Erro ao cadastrar usuário");
+    } finally {
+      setCreating(false);
     }
   };
 
@@ -759,13 +805,19 @@ function TabUsuarios() {
           <h3 className="font-display text-lg font-semibold text-gradient">Gestão Completa de Usuários</h3>
           <p className="text-xs text-muted-foreground mt-1">Gerencie permissões, cargos, atualize informações e exclua contas de equipe.</p>
         </div>
-        <div className="w-full sm:w-64">
+        <div className="flex items-center gap-3 w-full sm:w-auto">
           <input 
             value={search} 
             onChange={(e) => setSearch(e.target.value)} 
             placeholder="Buscar por nome ou cargo..." 
-            className="w-full rounded-lg border border-white/10 bg-background/50 px-3 py-2 text-xs focus:border-primary focus:outline-none" 
+            className="w-full sm:w-64 rounded-lg border border-white/10 bg-background/50 px-3 py-2 text-xs focus:border-primary focus:outline-none" 
           />
+          <button 
+            onClick={() => setShowAddModal(true)} 
+            className="shrink-0 inline-flex items-center gap-2 rounded-full bg-primary px-4 py-2.5 text-xs font-bold text-primary-foreground hover:shadow-glow transition"
+          >
+            <Plus className="h-3.5 w-3.5" /> NOVO USUÁRIO
+          </button>
         </div>
       </div>
 
@@ -804,6 +856,7 @@ function TabUsuarios() {
                       setEditRole(u.role || "employee");
                       setEditPosition(u.position || POSITIONS_LIST[0]);
                       setEditName(u.full_name || "");
+                      setEditPassword("");
                     }} 
                     className="rounded-full border border-white/10 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider hover:bg-white/5 transition"
                   >
@@ -822,6 +875,70 @@ function TabUsuarios() {
         </div>
       )}
 
+      {/* Modal de Cadastro */}
+      <AnimatePresence>
+        {showAddModal && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm p-4">
+            <motion.div initial={{ scale: 0.95 }} animate={{ scale: 1 }} exit={{ scale: 0.95 }} className="glass-panel w-full max-w-md p-6 space-y-4 shadow-2xl">
+              <h4 className="font-display text-base font-bold text-gradient">Cadastrar Novo Usuário</h4>
+              
+              <div className="space-y-1.5">
+                <label className="label-mono text-[10px] text-muted-foreground uppercase">Nome Completo</label>
+                <input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="Ex: João Silva" className="w-full rounded-lg border border-white/10 bg-background/50 px-3 py-2 text-sm focus:border-primary focus:outline-none" />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="label-mono text-[10px] text-muted-foreground uppercase">E-mail</label>
+                <input value={newEmail} onChange={(e) => setNewEmail(e.target.value)} type="email" placeholder="exemplo@gmail.com" className="w-full rounded-lg border border-white/10 bg-background/50 px-3 py-2 text-sm focus:border-primary focus:outline-none" />
+              </div>
+
+              <div className="space-y-1.5">
+                <div className="flex justify-between items-center">
+                  <label className="label-mono text-[10px] text-muted-foreground uppercase">Senha de Acesso</label>
+                  <button 
+                    onClick={() => {
+                      const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*";
+                      let pass = "";
+                      for (let i = 0; i < 10; i++) pass += chars.charAt(Math.floor(Math.random() * chars.length));
+                      setNewPassword(pass);
+                    }}
+                    type="button"
+                    className="text-[9px] font-black uppercase text-primary hover:underline"
+                  >
+                    Gerar Aleatória
+                  </button>
+                </div>
+                <input value={newPassword} onChange={(e) => setNewPassword(e.target.value)} placeholder="Mínimo 6 caracteres" className="w-full rounded-lg border border-white/10 bg-background/50 px-3 py-2 text-sm focus:border-primary focus:outline-none font-mono" />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <label className="label-mono text-[10px] text-muted-foreground uppercase">Acesso</label>
+                  <select value={newRole} onChange={(e) => setNewRole(e.target.value)} className="w-full rounded-lg border border-white/10 bg-background px-3 py-2 text-xs text-foreground focus:outline-none">
+                    <option value="employee">Membro (Employee)</option>
+                    <option value="admin">Administrador (Admin)</option>
+                  </select>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="label-mono text-[10px] text-muted-foreground uppercase">Cargo / Função</label>
+                  <select value={newPosition} onChange={(e) => setNewPosition(e.target.value)} className="w-full rounded-lg border border-white/10 bg-background px-3 py-2 text-xs text-foreground focus:outline-none">
+                    {POSITIONS_LIST.map(pos => <option key={pos} value={pos}>{pos}</option>)}
+                  </select>
+                </div>
+              </div>
+
+              <div className="flex gap-2 justify-end pt-2">
+                <button onClick={() => setShowAddModal(false)} className="rounded-full border border-white/10 px-3 py-1.5 text-xs font-bold uppercase">Cancelar</button>
+                <button onClick={handleCreateUser} disabled={creating} className="rounded-full bg-primary px-4 py-1.5 text-xs font-bold uppercase text-primary-foreground hover:shadow-glow transition disabled:opacity-50">
+                  {creating ? "Cadastrando..." : "Cadastrar Usuário"}
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Modal de Edição */}
       <AnimatePresence>
         {editingUser && (
@@ -832,6 +949,25 @@ function TabUsuarios() {
               <div className="space-y-1.5">
                 <label className="label-mono text-[10px] text-muted-foreground uppercase">Nome Completo</label>
                 <input value={editName} onChange={(e) => setEditName(e.target.value)} className="w-full rounded-lg border border-white/10 bg-background/50 px-3 py-2 text-sm focus:border-primary focus:outline-none" />
+              </div>
+
+              <div className="space-y-1.5">
+                <div className="flex justify-between items-center">
+                  <label className="label-mono text-[10px] text-muted-foreground uppercase">Nova Senha (Opcional)</label>
+                  <button 
+                    onClick={() => {
+                      const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*";
+                      let pass = "";
+                      for (let i = 0; i < 10; i++) pass += chars.charAt(Math.floor(Math.random() * chars.length));
+                      setEditPassword(pass);
+                    }}
+                    type="button"
+                    className="text-[9px] font-black uppercase text-primary hover:underline"
+                  >
+                    Gerar Aleatória
+                  </button>
+                </div>
+                <input value={editPassword} onChange={(e) => setEditPassword(e.target.value)} placeholder="Deixar em branco para não alterar" className="w-full rounded-lg border border-white/10 bg-background/50 px-3 py-2 text-sm focus:border-primary focus:outline-none font-mono" />
               </div>
 
               <div className="grid grid-cols-2 gap-3">
