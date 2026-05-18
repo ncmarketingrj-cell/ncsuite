@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Send, Bot, Sparkles, TrendingUp, Search, Loader2, User, X } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import ReactMarkdown from "react-markdown";
 
 type Message = { role: "user" | "assistant"; content: string; timestamp: Date };
 
@@ -267,7 +268,23 @@ Atualmente, estamos gerenciando **${activeCount} campanhas ativas** com um inves
                   ? "bg-primary text-primary-foreground font-medium rounded-tr-none" 
                   : "bg-white/5 border border-white/5 text-foreground rounded-tl-none"
               }`}>
-                {msg.content}
+                {msg.role === "user" ? (
+                  msg.content
+                ) : (
+                  <ReactMarkdown 
+                    components={{
+                      p: ({node, ...props}) => <p className="mb-2 last:mb-0 leading-relaxed text-foreground/90" {...props} />,
+                      h3: ({node, ...props}) => <h3 className="text-[11px] font-black text-primary mt-3 mb-1.5 uppercase tracking-widest first:mt-0 flex items-center gap-1.5 border-b border-white/5 pb-1" {...props} />,
+                      h4: ({node, ...props}) => <h4 className="text-[10px] font-black text-foreground mt-2.5 mb-1 uppercase tracking-wider" {...props} />,
+                      ul: ({node, ...props}) => <ul className="list-disc pl-4 mb-2 space-y-1 text-foreground/80" {...props} />,
+                      ol: ({node, ...props}) => <ol className="list-decimal pl-4 mb-2 space-y-1 text-foreground/80" {...props} />,
+                      li: ({node, ...props}) => <li className="leading-relaxed" {...props} />,
+                      strong: ({node, ...props}) => <strong className="font-bold text-foreground" {...props} />
+                    }}
+                  >
+                    {msg.content}
+                  </ReactMarkdown>
+                )}
               </div>
             </motion.div>
           ))}
