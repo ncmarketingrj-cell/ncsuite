@@ -7,16 +7,24 @@ import { supabase } from "@/integrations/supabase/client";
 
 export const Route = createFileRoute("/login")({
   head: () => ({ meta: [{ title: "Entrar — NC Performance Suite" }] }),
+  validateSearch: (search: Record<string, unknown>) => ({
+    signup: search.signup === "true" || search.signup === true,
+  }),
   component: LoginPage,
 });
 
 const POSITIONS = [
-  "Gestor de Tráfego", "Analista de Performance", "Designer de Criativos",
-  "Account Manager", "Diretor de Marketing", "Estrategista", "SDR/Vendas",
-  "Editor de Vídeo", "Outro",
+  "Gestor de Tráfego",
+  "Social Media",
+  "Gerente",
+  "Diretor",
+  "Videomaker",
+  "Designer",
+  "Outros",
 ];
 
 function LoginPage() {
+  const { signup: allowSignup } = Route.useSearch();
   const nav = useNavigate();
   const [mode, setMode] = useState<"login" | "signup">("login");
   const [email, setEmail] = useState("");
@@ -88,9 +96,9 @@ function LoginPage() {
                   className="w-full appearance-none rounded-xl border border-border bg-muted/40 py-3 pl-12 pr-4 text-sm text-foreground focus:border-red-600 focus:outline-none focus:ring-1 focus:ring-red-600 transition-colors"
                 >
                   {POSITIONS.map((p) => (
-                    <option key={p} value={p} className="bg-card text-foreground">
-                      {p}
-                    </option>
+                     <option key={p} value={p} className="bg-card text-foreground">
+                       {p}
+                     </option>
                   ))}
                 </select>
               </div>
@@ -110,15 +118,17 @@ function LoginPage() {
           </button>
         </form>
 
-        <div className="mt-8 text-center text-xs text-muted-foreground/80">
-          {mode === "login" ? "Sem conta?" : "Já tem conta?"}{" "}
-          <button
-            type="button" onClick={() => setMode(mode === "login" ? "signup" : "login")}
-            className="font-semibold text-red-500 hover:text-red-400 transition-colors"
-          >
-            {mode === "login" ? "Cadastre-se" : "Entrar"}
-          </button>
-        </div>
+        {allowSignup && (
+          <div className="mt-8 text-center text-xs text-muted-foreground/80">
+            {mode === "login" ? "Sem conta?" : "Já tem conta?"}{" "}
+            <button
+              type="button" onClick={() => setMode(mode === "login" ? "signup" : "login")}
+              className="font-semibold text-red-500 hover:text-red-400 transition-colors"
+            >
+              {mode === "login" ? "Cadastre-se" : "Entrar"}
+            </button>
+          </div>
+        )}
 
         <div className="mt-6 border-t border-border pt-5 text-center">
           <Link to="/" className="inline-flex items-center gap-1.5 text-[11px] font-mono font-bold uppercase tracking-widest text-muted-foreground/60 hover:text-red-500 transition-colors">
