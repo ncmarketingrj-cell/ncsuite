@@ -54,16 +54,16 @@ function LoginPage() {
   };
 
   return (
-    <div className="relative flex min-h-screen items-center justify-center px-4 py-12 bg-[#0A0A0A]">
+    <div className="relative flex min-h-screen items-center justify-center px-4 py-12 bg-background transition-colors duration-300">
       {/* Background effects */}
       <div className="absolute inset-0 -z-10 overflow-hidden">
-        <div className="absolute left-1/2 top-1/3 -translate-x-1/2 h-[600px] w-[600px] rounded-full bg-red-600/10 blur-[120px]" />
-        <div className="absolute inset-0 opacity-[0.02]" style={{ backgroundImage: 'linear-gradient(rgba(255,255,255,0.1) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.1) 1px, transparent 1px)', backgroundSize: '64px 64px' }} />
+        <div className="absolute left-1/2 top-1/3 -translate-x-1/2 h-[600px] w-[600px] rounded-full bg-red-600/10 blur-[120px] pointer-events-none" />
+        <div className="absolute inset-0 opacity-[0.02] dark:opacity-[0.03] pointer-events-none" style={{ backgroundImage: 'linear-gradient(rgba(255,255,255,0.1) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.1) 1px, transparent 1px)', backgroundSize: '64px 64px' }} />
       </div>
 
       <motion.div
         initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }}
-        className="w-full max-w-md rounded-3xl border border-white/10 bg-white/[0.03] backdrop-blur-xl p-10"
+        className="w-full max-w-md glass-panel p-10 bg-card border-border shadow-2xl transition-all duration-300"
       >
         <div className="flex flex-col items-center gap-5">
           <div className="h-14 w-14 rounded-2xl bg-red-600 flex items-center justify-center shadow-[0_0_30px_rgba(220,38,38,0.3)]">
@@ -71,7 +71,7 @@ function LoginPage() {
           </div>
           <div className="text-center">
             <p className="text-[11px] font-mono font-bold uppercase tracking-[0.3em] text-red-500">Acesso da Equipe</p>
-            <h1 className="mt-3 font-display text-2xl font-bold text-white">
+            <h1 className="mt-3 font-display text-2xl font-black text-foreground">
               {mode === "login" ? "Entrar na Suite" : "Criar conta"}
             </h1>
           </div>
@@ -82,12 +82,16 @@ function LoginPage() {
             <>
               <Field icon={UserIcon} type="text" placeholder="Nome completo" value={fullName} onChange={setFullName} required />
               <div className="relative">
-                <Briefcase className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-white/30" />
+                <Briefcase className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground/60" />
                 <select
                   value={position} onChange={(e) => setPosition(e.target.value)}
-                  className="w-full appearance-none rounded-xl border border-white/10 bg-white/5 py-3 pl-12 pr-4 text-sm text-white focus:border-red-600 focus:outline-none focus:ring-1 focus:ring-red-600"
+                  className="w-full appearance-none rounded-xl border border-border bg-muted/40 py-3 pl-12 pr-4 text-sm text-foreground focus:border-red-600 focus:outline-none focus:ring-1 focus:ring-red-600 transition-colors"
                 >
-                  {POSITIONS.map((p) => <option key={p} value={p}>{p}</option>)}
+                  {POSITIONS.map((p) => (
+                    <option key={p} value={p} className="bg-card text-foreground">
+                      {p}
+                    </option>
+                  ))}
                 </select>
               </div>
             </>
@@ -106,7 +110,7 @@ function LoginPage() {
           </button>
         </form>
 
-        <div className="mt-8 text-center text-xs text-white/40">
+        <div className="mt-8 text-center text-xs text-muted-foreground/80">
           {mode === "login" ? "Sem conta?" : "Já tem conta?"}{" "}
           <button
             type="button" onClick={() => setMode(mode === "login" ? "signup" : "login")}
@@ -116,8 +120,8 @@ function LoginPage() {
           </button>
         </div>
 
-        <div className="mt-6 border-t border-white/5 pt-5 text-center">
-          <Link to="/" className="inline-flex items-center gap-1.5 text-[11px] font-mono font-bold uppercase tracking-widest text-white/30 hover:text-red-500 transition-colors">
+        <div className="mt-6 border-t border-border pt-5 text-center">
+          <Link to="/" className="inline-flex items-center gap-1.5 text-[11px] font-mono font-bold uppercase tracking-widest text-muted-foreground/60 hover:text-red-500 transition-colors">
             <ArrowLeft className="h-3 w-3" /> Voltar
           </Link>
         </div>
@@ -131,11 +135,11 @@ function Field({ icon: Icon, type, placeholder, value, onChange, required }: {
 }) {
   return (
     <div className="relative">
-      <Icon className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-white/30" />
+      <Icon className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground/60" />
       <input
         type={type} value={value} onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder} required={required}
-        className="w-full rounded-xl border border-white/10 bg-white/5 py-3 pl-12 pr-4 text-sm text-white placeholder:text-white/20 focus:border-red-600 focus:outline-none focus:ring-1 focus:ring-red-600 transition-colors"
+        className="w-full rounded-xl border border-border bg-muted/40 py-3 pl-12 pr-4 text-sm text-foreground placeholder:text-muted-foreground/50 focus:border-red-600 focus:outline-none focus:ring-1 focus:ring-red-600 transition-colors"
       />
     </div>
   );

@@ -195,9 +195,9 @@ function CriativosPage() {
                       {item.tags.map((t, idx) => (
                         <span 
                           key={idx} 
-                          className="inline-flex items-center gap-1 rounded bg-white/5 border border-white/5 px-2 py-0.5 text-[8px] font-black uppercase tracking-wider text-muted-foreground"
+                          className="inline-flex items-center gap-1 rounded-lg bg-muted border border-border px-2.5 py-1 text-[9px] font-black uppercase tracking-wider text-foreground"
                         >
-                          {idx === 1 ? <MapPin className="h-2 w-2 text-primary" /> : <Tag className="h-2 w-2 text-secondary" />}
+                          {idx === 1 ? <MapPin className="h-3 w-3 text-primary animate-pulse" /> : <Tag className="h-3 w-3 text-secondary" />}
                           {t}
                         </span>
                       ))}
@@ -615,14 +615,14 @@ function AIAnalysisModal({ item, onClose }: { item: SwipeFile; onClose: () => vo
           {/* ELEMENTOS DETECTADOS VISUALMENTE */}
           {report.detectedElements && report.detectedElements.length > 0 && (
             <div className="space-y-3">
-              <h4 className="text-sm font-black uppercase tracking-widest text-secondary border-b border-white/5 pb-2 flex items-center gap-2">
-                <Layers className="h-4 w-4 text-secondary" /> Elementos Identificados por Visão Computacional
+              <h4 className="text-sm font-black uppercase tracking-widest text-primary border-b border-white/5 pb-2 flex items-center gap-2">
+                <Layers className="h-4 w-4 text-primary" /> Elementos Identificados por Visão Computacional
               </h4>
               <div className="flex flex-wrap gap-2">
                 {report.detectedElements.map((el, index) => (
                   <span 
                     key={index} 
-                    className="inline-flex rounded-lg bg-secondary/10 border border-secondary/20 px-3 py-1 text-xs font-bold uppercase tracking-wider text-secondary"
+                    className="inline-flex rounded-lg bg-muted border border-border px-3 py-1.5 text-xs font-black uppercase tracking-wider text-foreground shadow-sm"
                   >
                     {el}
                   </span>
@@ -641,7 +641,7 @@ function AIAnalysisModal({ item, onClose }: { item: SwipeFile; onClose: () => vo
               </h4>
               <ul className="space-y-2">
                 {report.strengths.map((str, index) => (
-                  <li key={index} className="flex gap-2.5 items-start p-3 rounded-xl bg-success/5 border border-success/10 text-xs text-muted-foreground leading-relaxed">
+                  <li key={index} className="flex gap-2.5 items-start p-3 rounded-xl bg-success/5 border border-success/20 text-xs text-foreground font-medium leading-relaxed">
                     <span className="flex h-5 w-5 items-center justify-center rounded-full bg-success/20 text-success text-[10px] font-black font-mono mt-0.5">
                       {index + 1}
                     </span>
@@ -658,7 +658,7 @@ function AIAnalysisModal({ item, onClose }: { item: SwipeFile; onClose: () => vo
               </h4>
               <ul className="space-y-2">
                 {report.weaknesses.map((wk, index) => (
-                  <li key={index} className="flex gap-2.5 items-start p-3 rounded-xl bg-warning/5 border border-warning/10 text-xs text-muted-foreground leading-relaxed">
+                  <li key={index} className="flex gap-2.5 items-start p-3 rounded-xl bg-warning/5 border border-warning/20 text-xs text-foreground font-medium leading-relaxed">
                     <span className="flex h-5 w-5 items-center justify-center rounded-full bg-warning/20 text-warning text-[10px] font-black font-mono mt-0.5">
                       {index + 1}
                     </span>
@@ -715,7 +715,7 @@ function AIAnalysisModal({ item, onClose }: { item: SwipeFile; onClose: () => vo
                   {/* Gatilhos */}
                   <div className="flex flex-wrap gap-1.5 pt-2">
                     {idea.psychologicalTriggers.map((trig, idx) => (
-                      <span key={idx} className="inline-flex rounded bg-secondary/10 border border-secondary/15 px-2 py-0.5 text-[8px] font-black uppercase tracking-wider text-secondary">
+                      <span key={idx} className="inline-flex rounded-lg bg-muted border border-border px-2.5 py-1 text-[9px] font-black uppercase tracking-wider text-foreground">
                         🧠 {trig}
                       </span>
                     ))}
