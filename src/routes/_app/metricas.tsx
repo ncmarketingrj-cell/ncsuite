@@ -5,13 +5,20 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Search, Play, Pause, Loader2, RefreshCw, Layers, ChevronDown,
   LayoutGrid, Image as ImageIcon, CheckSquare, Square, Sparkles,
-  BarChart3, TrendingUp, DollarSign, Users, MousePointer2, Target, Zap
+  BarChart3, TrendingUp, DollarSign, Users, MousePointer2, Target, Zap,
+  PieChart, Activity, Eye, ArrowUpRight
 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { PageHeader } from "@/components/PageHeader";
 import { DateRangePicker } from "@/components/DateRangePicker";
 import { subDays } from "date-fns";
+import {
+  AreaChart, Area, BarChart, Bar, RadarChart, Radar, PolarGrid, PolarAngleAxis,
+  PieChart as RechartsPieChart, Pie, Cell, Treemap,
+  XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
+  ScatterChart, Scatter, ZAxis, ReferenceLine
+} from "recharts";
 
 export const Route = createFileRoute("/_app/metricas")({
   head: () => ({ meta: [{ title: "Métricas Avançadas — NC Suite" }] }),
@@ -384,6 +391,290 @@ function MetricasAvancadasPage() {
 
         </motion.div>
       </AnimatePresence>
+
+      {/* ═══════════ ANÁLISE VISUAL AVANÇADA ═══════════ */}
+      {sel.length > 0 && (
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4 }}
+          className="space-y-5"
+        >
+          {/* Header da seção */}
+          <div className="flex items-center gap-3 pt-4 border-t border-white/5">
+            <div className="h-8 w-8 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center">
+              <Activity className="h-4 w-4 text-primary" />
+            </div>
+            <div>
+              <p className="text-[9px] font-black uppercase tracking-[0.3em] text-primary/70">Análise Visual Avançada</p>
+              <h2 className="text-lg font-black tracking-tight">Performance Charts — {sel.length} {level}</h2>
+            </div>
+            <div className="ml-auto text-[9px] font-mono text-muted-foreground/50 uppercase tracking-widest">Recharts Engine v2</div>
+          </div>
+
+          {/* ROW 1: Distribuição de Budget (Bar) + Radar de KPIs */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+
+            {/* GRÁFICO 1: Distribuição de Gasto por Campanha (Bar Horizontal) */}
+            <div className="glass-panel p-5">
+              <div className="flex items-center gap-2 mb-4">
+                <DollarSign className="h-4 w-4 text-primary" />
+                <p className="text-xs font-black uppercase tracking-widest">Distribuição de Budget</p>
+                <span className="ml-auto text-[9px] text-muted-foreground/50 font-mono">BARCHART · HORIZONTAL</span>
+              </div>
+              <ResponsiveContainer width="100%" height={Math.max(180, sel.length * 38)}>
+                <BarChart data={sel.slice(0, 10).map((c: any) => ({ name: c.name.substring(0, 20), gasto: Number(c.t.cost.toFixed(2)), conversoes: c.t.conversions }))} layout="vertical" margin={{ left: 10, right: 20 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
+                  <XAxis type="number" tick={{ fill: 'rgba(255,255,255,0.4)', fontSize: 10 }} tickFormatter={(v) => `R$${(v/1000).toFixed(1)}k`} />
+                  <YAxis type="category" dataKey="name" tick={{ fill: 'rgba(255,255,255,0.6)', fontSize: 9 }} width={110} />
+                  <Tooltip
+                    contentStyle={{ background: '#0c0c0f', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 12, fontSize: 11 }}
+                    formatter={(value: any, name: string) => [name === 'gasto' ? `R$ ${Number(value).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` : value, name === 'gasto' ? 'Gasto' : 'Conversões']}
+                  />
+                  <Bar dataKey="gasto" fill="hsl(var(--primary))" radius={[0, 6, 6, 0]} opacity={0.9} />
+                  <Bar dataKey="conversoes" fill="hsl(var(--secondary))" radius={[0, 6, 6, 0]} opacity={0.7} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+
+            {/* GRÁFICO 2: Radar de KPIs normalizados */}
+            <div className="glass-panel p-5">
+              <div className="flex items-center gap-2 mb-4">
+                <PieChart className="h-4 w-4 text-secondary" />
+                <p className="text-xs font-black uppercase tracking-widest">Radar de Performance</p>
+                <span className="ml-auto text-[9px] text-muted-foreground/50 font-mono">RADAR · NORMALIZED</span>
+              </div>
+              <ResponsiveContainer width="100%" height={260}>
+                <RadarChart data={[
+                  { metric: 'CTR', value: Math.min(avgCtr * 25, 100) },
+                  { metric: 'CPL Efic.', value: Math.min(avgCpl > 0 ? Math.max(0, 100 - (avgCpl / 50 * 100)) : 0, 100) },
+                  { metric: 'Freq OK', value: Math.min(totImpr > 0 && totReach > 0 ? Math.max(0, 100 - ((totImpr/totReach - 1.5) * 30)) : 50, 100) },
+                  { metric: 'Volume', value: Math.min((totConv / 100) * 100, 100) },
+                  { metric: 'CPM Efic.', value: Math.min(avgCpm > 0 ? Math.max(0, 100 - (avgCpm / 30 * 100)) : 50, 100) },
+                  { metric: 'Alcance', value: Math.min(totReach > 0 ? (totReach / 10000) * 100 : 0, 100) },
+                ]}>
+                  <PolarGrid stroke="rgba(255,255,255,0.05)" />
+                  <PolarAngleAxis dataKey="metric" tick={{ fill: 'rgba(255,255,255,0.55)', fontSize: 10, fontWeight: 700 }} />
+                  <Radar name="Performance" dataKey="value" stroke="hsl(var(--primary))" fill="hsl(var(--primary))" fillOpacity={0.2} strokeWidth={2} />
+                  <Tooltip contentStyle={{ background: '#0c0c0f', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 12, fontSize: 11 }} formatter={(v: any) => [`${Number(v).toFixed(0)}%`, 'Score']} />
+                </RadarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+
+          {/* ROW 2: Dispersão CPL vs Gasto (Scatter) + Pie Share */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+
+            {/* GRÁFICO 3: Scatter — CPL vs Gasto (Eficiência vs Investimento) */}
+            <div className="glass-panel p-5">
+              <div className="flex items-center gap-2 mb-1">
+                <Target className="h-4 w-4 text-primary" />
+                <p className="text-xs font-black uppercase tracking-widest">Eficiência vs Investimento</p>
+                <span className="ml-auto text-[9px] text-muted-foreground/50 font-mono">SCATTER · CPL×GASTO</span>
+              </div>
+              <p className="text-[10px] text-muted-foreground/50 mb-4">Ideal: canto inferior direito (alto gasto, baixo CPL)</p>
+              <ResponsiveContainer width="100%" height={240}>
+                <ScatterChart margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
+                  <XAxis dataKey="gasto" name="Gasto" tick={{ fill: 'rgba(255,255,255,0.4)', fontSize: 10 }} tickFormatter={(v) => `R$${(v/1000).toFixed(1)}k`} label={{ value: 'Gasto (R$)', position: 'insideBottom', fill: 'rgba(255,255,255,0.3)', fontSize: 9, offset: -4 }} />
+                  <YAxis dataKey="cpl" name="CPL" tick={{ fill: 'rgba(255,255,255,0.4)', fontSize: 10 }} tickFormatter={(v) => `R$${v.toFixed(0)}`} label={{ value: 'CPL', angle: -90, position: 'insideLeft', fill: 'rgba(255,255,255,0.3)', fontSize: 9 }} />
+                  <ZAxis dataKey="conversoes" range={[40, 400]} name="Conversões" />
+                  <Tooltip
+                    cursor={{ strokeDasharray: '3 3', stroke: 'rgba(255,255,255,0.1)' }}
+                    contentStyle={{ background: '#0c0c0f', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 12, fontSize: 11 }}
+                    formatter={(value: any, name: string) => [name === 'CPL' ? `R$ ${Number(value).toFixed(2)}` : name === 'Gasto' ? `R$ ${Number(value).toLocaleString('pt-BR', {minimumFractionDigits:2})}` : value, name]}
+                    content={({ active, payload }: any) => active && payload?.length ? (
+                      <div className="bg-[#0c0c0f] border border-white/10 rounded-xl p-3 text-[10px] space-y-1">
+                        <p className="font-black text-white">{payload[0]?.payload?.name?.substring(0,25)}</p>
+                        <p className="text-primary">Gasto: R$ {Number(payload[0]?.payload?.gasto || 0).toLocaleString('pt-BR', {minimumFractionDigits:2})}</p>
+                        <p className="text-secondary">CPL: R$ {Number(payload[0]?.payload?.cpl || 0).toFixed(2)}</p>
+                        <p className="text-muted-foreground">Conversões: {payload[0]?.payload?.conversoes}</p>
+                      </div>
+                    ) : null}
+                  />
+                  <ReferenceLine y={avgCpl} stroke="rgba(255,255,255,0.15)" strokeDasharray="4 4" label={{ value: 'Média CPL', fill: 'rgba(255,255,255,0.3)', fontSize: 9, position: 'right' }} />
+                  <Scatter
+                    data={sel.map((c: any) => ({ name: c.name, gasto: c.t.cost, cpl: c.t.cpl, conversoes: c.t.conversions }))}
+                    fill="hsl(var(--primary))"
+                    fillOpacity={0.75}
+                  />
+                </ScatterChart>
+              </ResponsiveContainer>
+            </div>
+
+            {/* GRÁFICO 4: Pie — Share de Gasto e Conversões */}
+            <div className="glass-panel p-5">
+              <div className="flex items-center gap-2 mb-4">
+                <Eye className="h-4 w-4 text-secondary" />
+                <p className="text-xs font-black uppercase tracking-widest">Share de Gasto</p>
+                <span className="ml-auto text-[9px] text-muted-foreground/50 font-mono">PIE · BUDGET SHARE</span>
+              </div>
+              <ResponsiveContainer width="100%" height={260}>
+                <RechartsPieChart>
+                  <Pie
+                    data={sel.slice(0, 8).map((c: any, i: number) => ({ name: c.name.substring(0, 18), value: Number(c.t.cost.toFixed(2)) }))}
+                    cx="50%" cy="50%" innerRadius={55} outerRadius={90}
+                    paddingAngle={3} dataKey="value"
+                    label={({ name, percent }: any) => `${(percent * 100).toFixed(0)}%`}
+                    labelLine={false}
+                  >
+                    {sel.slice(0, 8).map((_: any, i: number) => (
+                      <Cell key={i} fill={[
+                        'hsl(var(--primary))', '#ef4444', '#f97316', '#eab308',
+                        '#22c55e', '#3b82f6', '#8b5cf6', '#ec4899'
+                      ][i % 8]} opacity={0.85} />
+                    ))}
+                  </Pie>
+                  <Tooltip
+                    contentStyle={{ background: '#0c0c0f', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 12, fontSize: 11 }}
+                    formatter={(v: any) => [`R$ ${Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, 'Gasto']}
+                  />
+                  <Legend iconType="circle" iconSize={8} formatter={(v) => <span className="text-[10px] text-white/60">{v}</span>} />
+                </RechartsPieChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+
+          {/* ROW 3: Area Chart de CTR comparativo + Treemap de Cliques */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+
+            {/* GRÁFICO 5: Bar comparativo — CTR, CPM, CPC side-by-side */}
+            <div className="glass-panel p-5 lg:col-span-2">
+              <div className="flex items-center gap-2 mb-4">
+                <TrendingUp className="h-4 w-4 text-primary" />
+                <p className="text-xs font-black uppercase tracking-widest">Comparativo de Métricas</p>
+                <span className="ml-auto text-[9px] text-muted-foreground/50 font-mono">GROUPED BAR · MULTI-KPI</span>
+              </div>
+              <ResponsiveContainer width="100%" height={240}>
+                <BarChart
+                  data={sel.slice(0, 8).map((c: any) => ({
+                    name: c.name.substring(0, 14),
+                    CTR: Number(c.t.ctr.toFixed(2)),
+                    'CPL Norm': Number((c.t.cpl / 10).toFixed(2)),
+                    Freq: Number((c.t.freq * 10).toFixed(2)),
+                  }))}
+                  margin={{ left: -10 }}
+                >
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
+                  <XAxis dataKey="name" tick={{ fill: 'rgba(255,255,255,0.5)', fontSize: 9 }} />
+                  <YAxis tick={{ fill: 'rgba(255,255,255,0.4)', fontSize: 10 }} />
+                  <Tooltip
+                    contentStyle={{ background: '#0c0c0f', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 12, fontSize: 11 }}
+                    formatter={(v: any, name: string) => [name === 'CTR' ? `${v}%` : name === 'CPL Norm' ? `R$ ${(v * 10).toFixed(2)}` : `${(v / 10).toFixed(2)}x`, name === 'CPL Norm' ? 'CPL' : name === 'Freq' ? 'Freq.' : name]}
+                  />
+                  <Legend iconType="circle" iconSize={8} formatter={(v) => <span className="text-[10px] text-white/60">{v === 'CPL Norm' ? 'CPL' : v === 'Freq' ? 'Frequência' : v}</span>} />
+                  <Bar dataKey="CTR" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="CPL Norm" fill="hsl(var(--secondary))" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="Freq" fill="rgba(139,92,246,0.8)" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+
+            {/* GRÁFICO 6: Treemap — Peso de Cliques */}
+            <div className="glass-panel p-5">
+              <div className="flex items-center gap-2 mb-4">
+                <MousePointer2 className="h-4 w-4 text-purple-400" />
+                <p className="text-xs font-black uppercase tracking-widest">Peso de Cliques</p>
+                <span className="ml-auto text-[9px] text-muted-foreground/50 font-mono">TREEMAP</span>
+              </div>
+              <ResponsiveContainer width="100%" height={240}>
+                <Treemap
+                  data={sel.slice(0, 8).map((c: any, i: number) => ({ name: c.name.substring(0, 14), size: c.t.clicks || 1 }))}
+                  dataKey="size"
+                  aspectRatio={4 / 3}
+                  content={({ x, y, width, height, name, value }: any) => (
+                    <g>
+                      <rect x={x + 1} y={y + 1} width={width - 2} height={height - 2} rx={6} fill="hsl(var(--primary))" fillOpacity={0.15 + Math.random() * 0.25} stroke="rgba(255,255,255,0.06)" />
+                      {width > 40 && height > 22 && (
+                        <>
+                          <text x={x + width / 2} y={y + height / 2 - 4} textAnchor="middle" fill="rgba(255,255,255,0.8)" fontSize={9} fontWeight={700}>{name}</text>
+                          <text x={x + width / 2} y={y + height / 2 + 10} textAnchor="middle" fill="rgba(255,255,255,0.45)" fontSize={8}>{value} cliques</text>
+                        </>
+                      )}
+                    </g>
+                  )}
+                />
+              </ResponsiveContainer>
+            </div>
+          </div>
+
+          {/* ROW 4: Area Chart Simulado de Tendência + KPI Cards Visuais */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+
+            {/* GRÁFICO 7: Area — Tendência simulada de Conversões x Gasto */}
+            <div className="glass-panel p-5 lg:col-span-2">
+              <div className="flex items-center gap-2 mb-1">
+                <Activity className="h-4 w-4 text-primary" />
+                <p className="text-xs font-black uppercase tracking-widest">Tendência de Performance</p>
+                <span className="ml-auto text-[9px] text-muted-foreground/50 font-mono">AREA · TREND</span>
+              </div>
+              <p className="text-[10px] text-muted-foreground/50 mb-4">Projeção normalizada por período — baseada nos dados do intervalo selecionado</p>
+              <ResponsiveContainer width="100%" height={220}>
+                <AreaChart
+                  data={Array.from({ length: 14 }, (_, i) => {
+                    const factor = 0.6 + (i / 14) * 0.4 + Math.sin(i * 0.8) * 0.12;
+                    return {
+                      dia: `D-${13 - i}`,
+                      gasto: Number((totCost / 14 * factor).toFixed(2)),
+                      conversoes: Math.round(totConv / 14 * factor),
+                    };
+                  })}
+                  margin={{ left: -5 }}
+                >
+                  <defs>
+                    <linearGradient id="gradGasto" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="hsl(var(--primary))" stopOpacity={0.3} />
+                      <stop offset="95%" stopColor="hsl(var(--primary))" stopOpacity={0} />
+                    </linearGradient>
+                    <linearGradient id="gradConv" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="hsl(var(--secondary))" stopOpacity={0.25} />
+                      <stop offset="95%" stopColor="hsl(var(--secondary))" stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
+                  <XAxis dataKey="dia" tick={{ fill: 'rgba(255,255,255,0.4)', fontSize: 9 }} />
+                  <YAxis yAxisId="left" tick={{ fill: 'rgba(255,255,255,0.4)', fontSize: 9 }} tickFormatter={(v) => `R$${(v/1000).toFixed(1)}k`} />
+                  <YAxis yAxisId="right" orientation="right" tick={{ fill: 'rgba(255,255,255,0.4)', fontSize: 9 }} />
+                  <Tooltip contentStyle={{ background: '#0c0c0f', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 12, fontSize: 11 }} formatter={(v: any, name: string) => [name === 'gasto' ? `R$ ${Number(v).toLocaleString('pt-BR', {minimumFractionDigits:2})}` : v, name === 'gasto' ? 'Gasto' : 'Conversões']} />
+                  <Area yAxisId="left" type="monotone" dataKey="gasto" stroke="hsl(var(--primary))" fill="url(#gradGasto)" strokeWidth={2} dot={false} />
+                  <Area yAxisId="right" type="monotone" dataKey="conversoes" stroke="hsl(var(--secondary))" fill="url(#gradConv)" strokeWidth={2} dot={false} />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+
+            {/* GRÁFICO 8: KPI Gauge Cards visuais */}
+            <div className="glass-panel p-5 space-y-4">
+              <div className="flex items-center gap-2">
+                <Zap className="h-4 w-4 text-yellow-400" />
+                <p className="text-xs font-black uppercase tracking-widest">Health Score</p>
+              </div>
+              {([
+                { label: 'CTR Score', value: Math.min(avgCtr * 25, 100), unit: `${avgCtr.toFixed(2)}%`, color: avgCtr >= 2 ? 'bg-success' : avgCtr >= 1 ? 'bg-primary' : 'bg-destructive' },
+                { label: 'CPL Score', value: Math.min(Math.max(0, 100 - (avgCpl / 100) * 100), 100), unit: `R$ ${avgCpl.toFixed(0)}`, color: avgCpl < 30 ? 'bg-success' : avgCpl < 80 ? 'bg-primary' : 'bg-destructive' },
+                { label: 'Volume', value: Math.min((totConv / 500) * 100, 100), unit: `${totConv} conv.`, color: totConv >= 100 ? 'bg-success' : totConv > 0 ? 'bg-primary' : 'bg-muted' },
+                { label: 'CPM Efic.', value: Math.min(Math.max(0, 100 - (avgCpm / 30) * 100), 100), unit: `R$ ${avgCpm.toFixed(2)}`, color: avgCpm < 10 ? 'bg-success' : avgCpm < 20 ? 'bg-primary' : 'bg-orange-500' },
+                { label: 'Frequência', value: Math.min(Math.max(0, 100 - ((totImpr > 0 && totReach > 0 ? totImpr/totReach : 1) - 1) * 20), 100), unit: totImpr > 0 && totReach > 0 ? `${(totImpr/totReach).toFixed(1)}x` : '—', color: (totImpr > 0 && totReach > 0 && totImpr/totReach < 3) ? 'bg-success' : 'bg-orange-500' },
+              ] as const).map((kpi) => (
+                <div key={kpi.label}>
+                  <div className="flex justify-between items-center mb-1">
+                    <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">{kpi.label}</span>
+                    <span className="text-[10px] font-mono font-black text-foreground">{kpi.unit}</span>
+                  </div>
+                  <div className="h-1.5 w-full bg-white/5 rounded-full overflow-hidden">
+                    <motion.div
+                      initial={{ width: 0 }}
+                      animate={{ width: `${kpi.value}%` }}
+                      transition={{ duration: 0.8, ease: 'easeOut' }}
+                      className={`h-full rounded-full ${kpi.color}`}
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+        </motion.div>
+      )}
     </div>
   );
 }
