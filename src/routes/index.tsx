@@ -6,8 +6,8 @@ import { useState, useEffect } from "react";
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "NC Performance Suite — A Máquina de Vendas Automotiva" },
-      { name: "description", content: "Metodologia validada e tecnologia avançada para escalar vendas de veículos no Brasil." },
+      { title: "NC Performance Suite — O Sistema Operacional de Marketing da NC Agência" },
+      { name: "description", content: "Nosso ecossistema proprietário de Business Intelligence, automação de dados de mídia e IA para gestão de tráfego pago de alta performance." },
     ],
   }),
   component: LandingPage,
@@ -72,27 +72,27 @@ function LandingPage() {
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
               <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span>
             </span>
-            O Fim dos Contatos Improdutivos
+            A Tecnologia Proprietária da NC Agência
           </motion.div>
 
           <motion.h1
             initial={{ opacity: 0, y: 40 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.8, delay: 0.1, ease: [0.16, 1, 0.3, 1] }}
-            className="font-display text-5xl sm:text-7xl lg:text-[90px] font-black leading-[0.9] tracking-tighter"
+            className="font-display text-5xl sm:text-7xl lg:text-[80px] font-black leading-[0.9] tracking-tighter"
           >
-            Transforme sua loja em<br />
-            <span className="bg-gradient-to-r from-white via-gray-300 to-gray-500 bg-clip-text text-transparent">uma máquina de </span>
-            <span className="text-red-600">vendas.</span>
+            O ecossistema interno de<br />
+            <span className="bg-gradient-to-r from-white via-gray-300 to-gray-500 bg-clip-text text-transparent">alta performance para </span>
+            <span className="text-red-600">nossa agência.</span>
           </motion.h1>
 
           <motion.p
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.8, delay: 0.2, ease: [0.16, 1, 0.3, 1] }}
-            className="mx-auto mt-8 max-w-2xl text-lg sm:text-xl text-gray-400 font-medium leading-relaxed"
+            className="mx-auto mt-8 max-w-3xl text-base sm:text-lg text-gray-400 font-medium leading-relaxed"
           >
-            A metodologia focada em atrair compradores com crédito aprovado. O ecossistema exclusivo que une marketing automotivo de elite com inteligência de dados.
+            Apresentamos o NC Performance Suite: nossa plataforma privada de Business Intelligence e Inteligência Artificial projetada para centralizar a operação, gerar relatórios estratégicos e orquestrar tráfego pago de elite para nossa equipe e clientes parceiros.
           </motion.p>
 
           <motion.div
@@ -103,11 +103,11 @@ function LandingPage() {
           >
             <button
               onClick={() => {
-                document.getElementById('metodologia')?.scrollIntoView({ behavior: 'smooth' });
+                document.getElementById('tecnologia')?.scrollIntoView({ behavior: 'smooth' });
               }}
               className="w-full sm:w-auto rounded-full bg-red-600 px-8 py-4 text-sm font-black uppercase tracking-widest text-white transition-all hover:bg-red-500 hover:shadow-[0_0_40px_rgba(220,38,38,0.4)] active:scale-95"
             >
-              Descubra o Método
+              Explorar Ecossistema
             </button>
             <Link
               to="/login"
@@ -136,8 +136,8 @@ function LandingPage() {
         </motion.div>
       </section>
 
-      {/* ══════════════ A DOR & A METODOLOGIA ══════════════ */}
-      <section id="metodologia" className="relative py-32 bg-[#050505]">
+      {/* ══════════════ TECNOLOGIA & INTELIGÊNCIA ══════════════ */}
+      <section id="tecnologia" className="relative py-32 bg-[#050505]">
         <div className="mx-auto max-w-7xl px-6">
           <div className="grid lg:grid-cols-2 gap-16 items-center">
             <motion.div
@@ -147,19 +147,19 @@ function LandingPage() {
               transition={{ duration: 0.8 }}
             >
               <h2 className="font-display text-4xl sm:text-5xl font-black tracking-tighter mb-6">
-                O mercado mudou.<br/>
-                <span className="text-gray-500">Sua agência acompanhou?</span>
+                Gestão de tráfego integrada.<br/>
+                <span className="text-gray-500">Dados reais em tempo real.</span>
               </h2>
-              <p className="text-gray-400 text-lg leading-relaxed mb-8">
-                Esqueça leads frios que não respondem ou curiosos sem aprovação de crédito. A metodologia da NC atua na raiz do problema comercial: a qualificação da demanda.
+              <p className="text-gray-400 text-base leading-relaxed mb-8">
+                Eliminamos a descentralização de informações e planilhas dispersas. A NC Performance Suite unifica o monitoramento de mídia de toda a nossa operação, provendo uma visão cristalina e segura da evolução comercial de cada conta ativa.
               </p>
               
               <ul className="space-y-6">
                 {[
-                  "Atração focada em compradores com crédito aprovado.",
-                  "Eliminação drástica de contatos improdutivos.",
-                  "Gestão de tráfego ultra segmentado para o varejo automotivo.",
-                  "Consultoria e processos comerciais de alta conversão."
+                  "Centralização e consolidação automática de investimentos em mídia.",
+                  "Governança total de acessos com papéis definidos de time.",
+                  "Análise automatizada de breakdowns de campanha com precisão.",
+                  "Geração acelerada de relatórios estratégicos para tomada de decisão comercial."
                 ].map((item, i) => (
                   <motion.li 
                     key={i}
@@ -203,10 +203,10 @@ function LandingPage() {
         <div className="mx-auto max-w-7xl px-6">
           <div className="text-center max-w-3xl mx-auto mb-20">
             <h2 className="font-display text-4xl sm:text-5xl font-black tracking-tighter mb-6">
-              O Ecossistema Definitivo
+              Nosso Hub Tecnológico
             </h2>
             <p className="text-gray-400 text-lg">
-              Um hub tecnológico fechado desenvolvido exclusivamente para as concessionárias parceiras da NC Agência.
+              A plataforma interna e exclusiva que conecta nossa equipe operacional aos dados reais dos projetos.
             </p>
           </div>
 
@@ -221,7 +221,7 @@ function LandingPage() {
               </div>
               <h3 className="text-2xl font-black mb-3">Command Center</h3>
               <p className="text-gray-400 leading-relaxed text-sm">
-                Dashboard central que consolida todo o seu investimento em Meta Ads. Monitore CPA, ROAS, cliques e conversões em tempo real, sem planilhas complexas.
+                Dashboard consolidado de investimentos em mídia e KPIs operacionais. Oferece visualização clara de CPA, ROAS, cliques e conversões para Gestores e Diretores.
               </p>
             </motion.div>
 
@@ -235,7 +235,7 @@ function LandingPage() {
               </div>
               <h3 className="text-2xl font-black mb-3">Victoria AI</h3>
               <p className="text-gray-400 leading-relaxed text-sm">
-                Uma inteligência artificial treinada como especialista em marketing automotivo. Ela analisa seus relatórios, sugere escalas de budget e audita sua performance 24/7.
+                Nossa assistente de inteligência artificial de elite integrada. Realiza análises profundas de performance das contas e sugere ajustes estratégicos em tempo real.
               </p>
             </motion.div>
 
@@ -247,9 +247,9 @@ function LandingPage() {
               <div className="h-14 w-14 rounded-2xl bg-gradient-to-br from-gray-700 to-black flex items-center justify-center mb-6 shadow-lg border border-white/10">
                 <Zap className="h-6 w-6 text-white" />
               </div>
-              <h3 className="text-2xl font-black mb-3">Extração OCR</h3>
+              <h3 className="text-2xl font-black mb-3">Segurança & Controle</h3>
               <p className="text-gray-400 leading-relaxed text-sm">
-                Não tem integração de API? Sem problemas. A Suite conta com tecnologia de leitura de imagem (OCR) para extrair dados diretamente de prints do Meta Ads.
+                Ambiente criptografado e seguro com gestão estrita de cargos. Garante conformidade total de informações do fluxo operacional da NC Agência.
               </p>
             </motion.div>
           </div>
@@ -258,14 +258,14 @@ function LandingPage() {
           <div className="mt-16 rounded-3xl border border-white/10 bg-gradient-to-r from-[#0A0A0A] to-[#111] overflow-hidden flex flex-col md:flex-row items-center relative">
             <div className="absolute right-0 top-0 bottom-0 w-1/2 bg-red-600/5 blur-[80px]" />
             <div className="p-10 md:w-1/2 z-10">
-              <span className="text-[10px] font-black uppercase tracking-[0.3em] text-red-500 mb-2 block">Powered by AI</span>
-              <h3 className="text-3xl font-black mb-4">A primeira IA especializada no seu estoque.</h3>
+              <span className="text-[10px] font-black uppercase tracking-[0.3em] text-red-500 mb-2 block">POWERED BY AI</span>
+              <h3 className="text-3xl font-black mb-4">Inteligência Artificial focada em relatórios de growth.</h3>
               <p className="text-gray-400 mb-8">
-                A Victoria AI audita campanhas ativas, detecta gargalos em idades e plataformas, e ajuda a sua agência a identificar criativos vencedores automaticamente.
+                A Victoria AI foi treinada com nossa metodologia proprietária para auditar campanhas, identificar criativos vencedores e redigir insights acionáveis com extrema precisão analítica.
               </p>
               <div className="flex items-center gap-3 text-sm font-bold">
                 <span className="flex h-2 w-2 rounded-full bg-green-500 animate-pulse" />
-                Sincronizada via NC Database
+                Orquestração via NC Database
               </div>
             </div>
             <div className="md:w-1/2 p-6 md:p-10 flex justify-end z-10">
@@ -275,7 +275,7 @@ function LandingPage() {
         </div>
       </section>
 
-      {/* ══════════════ FOUNDER STORY ══════════════ */}
+      {/* ══════════════ BRANDING STORY ══════════════ */}
       <section className="py-32 bg-[#050505] relative">
         <div className="mx-auto max-w-7xl px-6">
           <div className="flex flex-col lg:flex-row items-center gap-16">
@@ -299,8 +299,8 @@ function LandingPage() {
                     <Award className="h-6 w-6" />
                   </div>
                   <div>
-                    <p className="text-xs font-mono font-bold uppercase tracking-widest text-gray-400">Track Record</p>
-                    <p className="font-display text-xl font-black">10 Anos de Mercado</p>
+                    <p className="text-xs font-mono font-bold uppercase tracking-widest text-gray-400">AGÊNCIA DE ELITE</p>
+                    <p className="font-display text-xl font-black">NC Performance</p>
                   </div>
                 </div>
               </div>
@@ -314,19 +314,19 @@ function LandingPage() {
               className="w-full lg:w-1/2"
             >
               <h2 className="font-display text-4xl sm:text-5xl font-black tracking-tighter mb-4">
-                Quem está por trás<br />da <span className="text-red-600">NC?</span>
+                A Visão Estratégica<br />da <span className="text-red-600">NC Agência</span>
               </h2>
               <p className="text-xl font-medium text-white/90 mb-6">Victoria Maia, fundadora e estrategista chefe.</p>
               
               <div className="space-y-5 text-gray-400 leading-relaxed">
                 <p>
-                  O que começou no Rio de Janeiro hoje se expandiu para diversas regiões do Brasil. Com vasta experiência no mercado automotivo, Victoria desenvolveu uma metodologia validada por centenas de lojas de veículos seminovos e novos.
+                  O que começou como uma visão de escala em mídia de alta performance hoje se materializa como o principal hub operacional e tecnológico para nossa equipe operacional do Rio de Janeiro para todo o Brasil.
                 </p>
                 <p>
-                  Especialista em transformar agências em verdadeiras máquinas de vendas, seu trabalho vai muito além do marketing digital tradicional. O ecossistema NC engloba processos comerciais estruturados, gestão de tráfego altamente qualificado, ferramentas estratégicas de ponta e um treinamento comercial que realmente funciona.
+                  Para apoiar nosso time especializado (Gestores de Tráfego, Designers, Social Media, Videomakers e Gerentes de Contas), concebemos a NC Performance Suite. Uma ferramenta desenvolvida sob medida que unifica governança, agilidade na extração de dados e orquestração de mídias pagas com absoluto controle de qualidade.
                 </p>
                 <p className="border-l-2 border-red-600 pl-4 italic text-white/80">
-                  "Dezenas de lojas já revolucionaram seus resultados e atingiram novos patamares de faturamento através de um método testado, replicável e adaptado à realidade do mercado brasileiro."
+                  "Nossa plataforma corporativa foi desenhada para a excelência. Não entregamos apenas dados; fornecemos o ecossistema ideal para que nossa equipe opere no mais alto nível de performance comercial."
                 </p>
               </div>
 
@@ -348,24 +348,18 @@ function LandingPage() {
         
         <div className="mx-auto max-w-4xl px-6 text-center z-10 relative">
           <h2 className="font-display text-5xl sm:text-7xl font-black tracking-tighter mb-8">
-            Faça parte da Elite.
+            Tecnologia Operacional.
           </h2>
           <p className="text-xl text-gray-400 mb-12 max-w-2xl mx-auto">
-            A NC Performance Suite é restrita às agências e concessionárias que fazem parte da nossa mentoria e aceleração.
+            A NC Performance Suite é de uso estrito e exclusivo de colaboradores autorizados e parceiros homologados da NC Agência.
           </p>
           <div className="flex flex-col sm:flex-row justify-center items-center gap-6">
             <Link
               to="/login"
               className="w-full sm:w-auto rounded-full bg-red-600 px-10 py-5 text-sm font-black uppercase tracking-widest text-white transition-all hover:scale-105 hover:bg-red-500 hover:shadow-[0_0_40px_rgba(220,38,38,0.4)] shadow-2xl"
             >
-              Login de Parceiros
+              Acessar Portal Operacional
             </Link>
-            <a
-              href="#"
-              className="w-full sm:w-auto rounded-full border border-white/20 bg-transparent px-10 py-5 text-sm font-black uppercase tracking-widest text-white transition-all hover:bg-white/5"
-            >
-              Aplicar para Agência
-            </a>
           </div>
         </div>
       </section>
@@ -375,10 +369,10 @@ function LandingPage() {
         <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-6 px-6 sm:flex-row">
           <div className="flex items-center gap-3">
             <img src="/assets/nc-logo.png" alt="NC Agência" className="h-8 w-8 object-contain" />
-            <span className="font-display text-sm font-black text-white/60 tracking-widest uppercase">NC Agência Automotiva</span>
+            <span className="font-display text-sm font-black text-white/60 tracking-widest uppercase">NC Agência</span>
           </div>
           <span className="text-[10px] font-mono font-bold uppercase tracking-[0.2em] text-white/30">
-            © {new Date().getFullYear()} Todos os direitos reservados.
+            © {new Date().getFullYear()} Todos os direitos reservados. NC Performance Suite.
           </span>
         </div>
       </footer>
