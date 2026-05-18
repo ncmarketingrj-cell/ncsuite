@@ -123,7 +123,7 @@ export function DateRangePicker({ startDate, endDate, onChange, className = "" }
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 10, scale: 0.95 }}
             transition={{ duration: 0.15 }}
-            className="absolute left-0 top-full z-[100] mt-2 flex flex-col md:flex-row rounded-2xl border border-white/10 bg-background/95 p-4 shadow-2xl backdrop-blur-2xl gap-4 w-[300px] sm:w-[350px] md:w-[550px] max-w-[calc(100vw-2rem)] origin-top-left"
+            className="absolute right-0 top-full z-[100] mt-2 flex flex-col md:flex-row rounded-2xl border border-white/10 bg-background/95 p-4 shadow-2xl backdrop-blur-2xl gap-4 w-[300px] sm:w-[350px] md:w-[550px] max-w-[calc(100vw-2rem)] origin-top-right"
           >
             {/* Atalhos Rápidos */}
             <div className="flex flex-col gap-1.5 border-b md:border-b-0 md:border-r border-white/5 pb-3 md:pb-0 md:pr-4 min-w-[130px]">
