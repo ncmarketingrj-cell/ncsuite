@@ -54,6 +54,13 @@ const MORE_ITEMS: NavItem[] = [
 
 function Shell() {
   const { loading, user, signOut } = useAuth();
+  
+  const isAdmin = user?.email === "nc.marketingrj@gmail.com";
+  const filteredMoreItems = MORE_ITEMS.filter(item => {
+    if (item.to === "/agente" && !isAdmin) return false;
+    return true;
+  });
+
   const path = useRouterState({ select: (s) => s.location.pathname });
   const [isAgentOpen, setIsAgentOpen] = useState(false);
   const [showNotification, setShowNotification] = useState(false);
@@ -251,7 +258,7 @@ function Shell() {
               <button 
                 onClick={() => setShowMore(!showMore)}
                 className={`flex items-center gap-1.5 rounded-xl px-3 py-2 text-[13px] font-semibold transition-all ${
-                  MORE_ITEMS.some(i => path.startsWith(i.to))
+                  filteredMoreItems.some(i => path.startsWith(i.to))
                     ? "text-primary bg-primary/10"
                     : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
                 }`}
@@ -270,7 +277,7 @@ function Shell() {
                       exit={{ opacity: 0, y: 8, scale: 0.96 }}
                       className="absolute right-0 top-full z-50 mt-2 w-56 rounded-2xl border border-border bg-card p-2 shadow-2xl"
                     >
-                      {MORE_ITEMS.map((item) => {
+                      {filteredMoreItems.map((item) => {
                         const isActive = path.startsWith(item.to);
                         return (
                           <Link
@@ -461,7 +468,7 @@ function Shell() {
               className="lg:hidden border-t border-border bg-card overflow-hidden"
             >
               <nav className="p-4 grid grid-cols-2 gap-2">
-                {[...NAV_ITEMS, ...MORE_ITEMS].map((item) => {
+                {[...NAV_ITEMS, ...filteredMoreItems].map((item) => {
                   const isActive = path === item.to || path.startsWith(item.to);
                   return (
                     <Link

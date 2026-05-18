@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, redirect } from "@tanstack/react-router";
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -9,6 +9,13 @@ import { PageHeader } from "@/components/PageHeader";
 
 export const Route = createFileRoute("/_app/agente")({
   head: () => ({ meta: [{ title: "Agente IA — NC Performance Suite" }] }),
+  beforeLoad: async () => {
+    const { data } = await supabase.auth.getSession();
+    if (!data.session) throw redirect({ to: "/login" });
+    if (data.session.user.email !== "nc.marketingrj@gmail.com") {
+      throw redirect({ to: "/dashboard" });
+    }
+  },
   component: AgentePage,
 });
 
