@@ -19,6 +19,7 @@ function UploadPage() {
   const [mime, setMime] = useState<string>("image/png");
   const [loading, setLoading] = useState(false);
   const [campaigns, setCampaigns] = useState<ExtractedCampaign[] | null>(null);
+  const [detectedPlatform, setDetectedPlatform] = useState<"meta" | "google" | null>(null);
 
   const onFile = (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -30,6 +31,7 @@ function UploadPage() {
       setPreview(result);
       setBase64(result.split(",")[1] ?? "");
       setCampaigns(null);
+      setDetectedPlatform(null);
     };
     reader.readAsDataURL(file);
   };
@@ -40,8 +42,9 @@ function UploadPage() {
     try {
       const r = await extract({ data: { imageBase64: base64, mimeType: mime } });
       setCampaigns(r.campaigns);
+      setDetectedPlatform(r.platform as any);
       if (!r.campaigns.length) toast.warning("Nenhuma campanha identificada — tente um print mais nítido");
-      else toast.success(`${r.campaigns.length} campanha(s) extraída(s)`);
+      else toast.success(`${r.campaigns.length} campanha(s) extraída(s) via ${r.platform === 'meta' ? 'Meta Ads' : 'Google Ads'}`);
     } catch (err: any) {
       toast.error(err.message ?? "Falha na extração");
     } finally {
@@ -50,8 +53,9 @@ function UploadPage() {
   };
 
   const goToReport = () => {
-    if (!campaigns?.length) return;
+    if (!campaigns?.length || !detectedPlatform) return;
     sessionStorage.setItem("nc_extracted_campaigns", JSON.stringify(campaigns));
+    sessionStorage.setItem("nc_extracted_platform", detectedPlatform);
     nav({ to: "/relatorios", search: { from: "upload" } as any });
   };
 
@@ -126,7 +130,12 @@ function UploadPage() {
                 </div>
                 <div>
                   <h2 className="font-display text-xl font-bold">{campaigns.length} Campanhas Identificadas</h2>
-                  <p className="text-[10px] text-muted-foreground uppercase tracking-widest font-bold">Extração concluída com sucesso</p>
+                  <div className="flex items-center gap-2 mt-1">
+                    <p className="text-[10px] text-muted-foreground uppercase tracking-widest font-bold">Extração concluída com sucesso •</p>
+                    <span className={`inline-flex rounded px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider ${detectedPlatform === 'meta' ? 'bg-primary/20 text-primary border border-primary/30' : 'bg-secondary/20 text-secondary border border-secondary/30'}`}>
+                      {detectedPlatform === 'meta' ? 'Meta Ads 🎯' : 'Google Ads 🌐'}
+                    </span>
+                  </div>
                 </div>
               </div>
               <button

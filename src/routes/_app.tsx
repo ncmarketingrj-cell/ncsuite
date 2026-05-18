@@ -59,6 +59,7 @@ function Shell() {
   const [showNotification, setShowNotification] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [showMore, setShowMore] = useState(false);
+  const [showNotifications, setShowNotifications] = useState(false);
   const { theme, toggleTheme } = useTheme();
   const qc = useQueryClient();
 
@@ -157,7 +158,7 @@ function Shell() {
         .from("automation_logs")
         .select("*, automation_rules(name)")
         .order("created_at", { ascending: false })
-        .limit(3);
+        .limit(8);
       if (error) return [];
       return data as any[];
     },
@@ -323,10 +324,87 @@ function Shell() {
             </button>
 
             {/* Notifications */}
-            <button className="relative flex h-9 w-9 items-center justify-center rounded-xl border border-border bg-card text-muted-foreground transition-all hover:text-foreground hover:border-primary/30 active:scale-95">
-              <Bell className="h-4 w-4" />
-              <span className="absolute top-2 right-2 h-1.5 w-1.5 rounded-full bg-primary" />
-            </button>
+            <div className="relative">
+              <button 
+                onClick={() => setShowNotifications(!showNotifications)}
+                className={`relative flex h-9 w-9 items-center justify-center rounded-xl border transition-all active:scale-95 ${
+                  showNotifications 
+                    ? "border-primary bg-primary/10 text-primary" 
+                    : "border-border bg-card text-muted-foreground hover:text-foreground hover:border-primary/30"
+                }`}
+              >
+                <Bell className="h-4 w-4" />
+                {recentLogs.length > 0 && (
+                  <span className="absolute top-1.5 right-1.5 h-2 w-2 rounded-full bg-primary animate-pulse" />
+                )}
+              </button>
+
+              <AnimatePresence>
+                {showNotifications && (
+                  <>
+                    <div className="fixed inset-0 z-40" onClick={() => setShowNotifications(false)} />
+                    <motion.div
+                      initial={{ opacity: 0, y: 8, scale: 0.96 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, y: 8, scale: 0.96 }}
+                      className="absolute right-0 top-full z-50 mt-2 w-80 sm:w-96 rounded-2xl border border-border bg-card p-4 shadow-2xl overflow-hidden"
+                    >
+                      <div className="flex items-center justify-between border-b border-border pb-2.5 mb-2.5">
+                        <div className="flex items-center gap-2">
+                          <Activity className="h-4 w-4 text-primary" />
+                          <h4 className="text-xs font-black uppercase tracking-widest text-foreground">Alertas do Agente AI</h4>
+                        </div>
+                        <span className="rounded bg-primary/10 px-1.5 py-0.5 text-[9px] font-black text-primary uppercase">
+                          {recentLogs.length} Eventos
+                        </span>
+                      </div>
+
+                      {recentLogs.length === 0 ? (
+                        <div className="py-8 text-center text-muted-foreground flex flex-col items-center justify-center">
+                          <Activity className="h-8 w-8 text-muted-foreground/30 mb-2" />
+                          <p className="text-xs font-bold">Nenhum evento recente</p>
+                          <p className="text-[10px] text-muted-foreground/60 mt-0.5">As ações automáticas de otimização aparecerão aqui.</p>
+                        </div>
+                      ) : (
+                        <div className="space-y-1.5 max-h-[300px] overflow-y-auto pr-1 scrollbar-thin">
+                          {recentLogs.map((log) => {
+                            const timeAgo = formatDistanceToNow(new Date(log.created_at), { addSuffix: true, locale: ptBR });
+                            return (
+                              <Link
+                                key={log.id}
+                                to="/automacoes"
+                                onClick={() => setShowNotifications(false)}
+                                className="flex flex-col gap-1 rounded-xl p-2.5 bg-white/[0.02] hover:bg-primary/[0.03] border border-transparent hover:border-primary/10 transition-all text-left"
+                              >
+                                <div className="flex items-center justify-between">
+                                  <span className="text-[10px] font-black uppercase tracking-wider text-primary truncate max-w-[200px]">
+                                    {log.automation_rules?.name || "Otimização IA"}
+                                  </span>
+                                  <span className="text-[9px] text-muted-foreground font-mono">{timeAgo}</span>
+                                </div>
+                                <p className="text-[11px] text-foreground leading-relaxed font-medium">
+                                  {log.message || "Ação de monitoramento disparada com sucesso."}
+                                </p>
+                              </Link>
+                            );
+                          })}
+                        </div>
+                      )}
+
+                      <div className="border-t border-border mt-3 pt-2.5">
+                        <Link
+                          to="/automacoes"
+                          onClick={() => setShowNotifications(false)}
+                          className="w-full flex items-center justify-center gap-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-xs font-bold text-foreground py-2 transition"
+                        >
+                          <Zap className="h-3.5 w-3.5 text-primary" /> Ver Central de Automações
+                        </Link>
+                      </div>
+                    </motion.div>
+                  </>
+                )}
+              </AnimatePresence>
+            </div>
 
             {/* User Profile */}
             <div className="flex items-center gap-2 pl-2 ml-1 border-l border-border">
