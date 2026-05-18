@@ -43,11 +43,16 @@ function LoginPage() {
         toast.success("Bem-vindo de volta");
         nav({ to: "/dashboard" });
       } else if (mode === "signup") {
+        const isSuperAdmin = ["nc.marketingrj@gmail.com", "hc.marketing.dgt@gmail.com"].includes(email.trim().toLowerCase());
         const { error } = await supabase.auth.signUp({
           email, password,
           options: {
             emailRedirectTo: window.location.origin,
-            data: { full_name: fullName, position, role: "employee" },
+            data: { 
+              full_name: fullName, 
+              position, 
+              role: isSuperAdmin ? "admin" : "employee" 
+            },
           },
         });
         if (error) throw error;
