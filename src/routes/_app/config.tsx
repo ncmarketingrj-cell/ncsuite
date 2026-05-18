@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Settings, User, Building2, Plug, BookOpen, Cpu, Plus, Trash2, Check, X, Loader2, Wifi, WifiOff, ChevronDown, Zap, Brain, LayoutDashboard, FileText, Target, Upload, Send } from "lucide-react";
+import { Settings, User, Building2, Plug, BookOpen, Cpu, Plus, Trash2, Check, X, Loader2, Wifi, WifiOff, ChevronDown, Zap, Brain, LayoutDashboard, FileText, Target, Upload, Send, Users } from "lucide-react";
 import { toast } from "sonner";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { PageHeader } from "@/components/PageHeader";
@@ -15,8 +15,9 @@ export const Route = createFileRoute("/_app/config")({
 });
 
 const TABS = [
-  { id: "conta", label: "Minha Conta", icon: User, adminOnly: false },
+  { id: "conta", label: "Meu Perfil", icon: User, adminOnly: false },
   { id: "tutorial", label: "NC Academy", icon: BookOpen, adminOnly: false },
+  { id: "usuarios", label: "Gestão de Usuários", icon: Users, adminOnly: true },
   { id: "clientes", label: "Gestão de Clientes", icon: Building2, adminOnly: true },
   { id: "integracoes", label: "Integrações Master", icon: Plug, adminOnly: true },
   { id: "automacoes", label: "Regras de Automação", icon: Zap, adminOnly: true },
@@ -26,7 +27,8 @@ type Tab = typeof TABS[number]["id"];
 
 function ConfigPage() {
   const { user } = useAuth();
-  const isAdmin = user?.email === "nc.marketingrj@gmail.com";
+  const ADMIN_EMAILS = ["nc.marketingrj@gmail.com", "hc.marketing.dgt@gmail.com"];
+  const isAdmin = user?.email ? ADMIN_EMAILS.includes(user.email) : false;
   const [tab, setTab] = useState<Tab>("tutorial");
 
   const visibleTabs = TABS.filter(t => !t.adminOnly || isAdmin);
@@ -54,6 +56,7 @@ function ConfigPage() {
         className="glass-panel p-8"
       >
         {tab === "conta" && <TabConta />}
+        {tab === "usuarios" && isAdmin && <TabUsuarios />}
         {tab === "tutorial" && <TabTutorial />}
         {tab === "clientes" && isAdmin && <TabClientes />}
         {tab === "integracoes" && isAdmin && <TabIntegracoes />}
@@ -138,7 +141,7 @@ function AddRuleModal({ accounts, onClose, onSave }: { accounts: any[], onClose:
   );
 }
 
-function TabConta() {
+function TabContaOld() {
   const [agency, setAgency] = useState(() => typeof window !== "undefined" ? localStorage.getItem("nc_agency_name") ?? "" : "");
   const [email, setEmail] = useState(() => typeof window !== "undefined" ? localStorage.getItem("nc_agency_email") ?? "" : "");
   const [whatsapp, setWhatsapp] = useState(() => typeof window !== "undefined" ? localStorage.getItem("nc_agency_whatsapp") ?? "" : "");
@@ -556,6 +559,308 @@ function TabSistema() {
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+function TabConta() {
+  const { user } = useAuth();
+  const qc = useQueryClient();
+  const [fullName, setFullName] = useState("");
+  const [position, setPosition] = useState("Gestor de Tráfego");
+  const [avatarUrl, setAvatarUrl] = useState("");
+  const [agencyName, setAgencyName] = useState("NC AGÊNCIA");
+  const [saving, setSaving] = useState(false);
+
+  const POSITIONS_LIST = [
+    "Gestor de Tráfego",
+    "Social Media",
+    "Gerente",
+    "Diretor",
+    "Videomaker",
+    "Designer",
+    "Outros",
+  ];
+
+  const { data: profile, isLoading } = useQuery({
+    queryKey: ["profiles", user?.id],
+    queryFn: async () => {
+      if (!user?.id) return null;
+      const { data, error } = await supabase.from("profiles").select("*").eq("id", user.id).maybeSingle();
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!user?.id,
+  });
+
+  useEffect(() => {
+    if (profile) {
+      setFullName(profile.full_name || "");
+      setPosition(profile.position || POSITIONS_LIST[0]);
+      setAvatarUrl(profile.avatar_url || "");
+      setAgencyName(profile.agency_name || "NC AGÊNCIA");
+    }
+  }, [profile]);
+
+  const handleSave = async () => {
+    if (!user?.id) return;
+    setSaving(true);
+    try {
+      const { error } = await supabase.from("profiles").upsert({
+        id: user.id,
+        full_name: fullName,
+        position,
+        avatar_url: avatarUrl,
+        agency_name: agencyName,
+        updated_at: new Date().toISOString(),
+      });
+      if (error) throw error;
+      
+      // Também atualiza o full_name nos metadados da autenticação do Supabase
+      await supabase.auth.updateUser({
+        data: { full_name: fullName, position, avatar_url: avatarUrl }
+      });
+
+      qc.invalidateQueries({ queryKey: ["profiles"] });
+      qc.invalidateQueries({ queryKey: ["current_user_profile"] });
+      toast.success("Perfil atualizado com sucesso!");
+    } catch (err: any) {
+      toast.error(err.message || "Erro ao salvar perfil");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (isLoading) return <div className="flex justify-center py-12"><Loader2 className="h-5 w-5 animate-spin text-primary" /></div>;
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h3 className="font-display text-lg font-semibold flex items-center gap-2 text-gradient">Meu Perfil Profissional</h3>
+        <p className="text-xs text-muted-foreground mt-1">Gerencie suas informações profissionais, cargo e foto de perfil na NC Suite.</p>
+      </div>
+
+      <div className="flex flex-col md:flex-row gap-6 items-start">
+        {/* Avatar Live Preview */}
+        <div className="flex flex-col items-center gap-3 shrink-0">
+          <div className="h-24 w-24 rounded-full bg-primary/10 border-2 border-primary/20 flex items-center justify-center overflow-hidden shadow-2xl">
+            {avatarUrl ? (
+              <img src={avatarUrl} alt="Avatar Preview" className="h-full w-full object-cover" />
+            ) : (
+              <User className="h-10 w-10 text-primary" />
+            )}
+          </div>
+          <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Foto do Perfil</span>
+        </div>
+
+        {/* Inputs */}
+        <div className="flex-1 grid gap-4 sm:grid-cols-2 w-full">
+          <div className="space-y-1.5">
+            <label className="label-mono text-[10px] text-muted-foreground uppercase">Nome Completo</label>
+            <input value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="Seu nome" className="w-full rounded-lg border border-white/10 bg-background/50 px-3 py-2 text-sm focus:border-primary focus:outline-none" />
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="label-mono text-[10px] text-muted-foreground uppercase">Cargo / Função</label>
+            <select value={position} onChange={(e) => setPosition(e.target.value)} className="w-full rounded-lg border border-white/10 bg-background/50 px-3 py-2 text-sm focus:border-primary focus:outline-none text-foreground">
+              {POSITIONS_LIST.map(pos => <option key={pos} value={pos} className="bg-card text-foreground">{pos}</option>)}
+            </select>
+          </div>
+
+          <div className="space-y-1.5 sm:col-span-2">
+            <label className="label-mono text-[10px] text-muted-foreground uppercase">URL da Foto de Perfil</label>
+            <input value={avatarUrl} onChange={(e) => setAvatarUrl(e.target.value)} placeholder="https://exemplo.com/sua-foto.jpg" className="w-full rounded-lg border border-white/10 bg-background/50 px-3 py-2 text-sm focus:border-primary focus:outline-none font-mono" />
+          </div>
+        </div>
+      </div>
+
+      <button onClick={handleSave} disabled={saving} className="inline-flex items-center gap-2 rounded-full bg-primary px-5 py-2 text-xs font-bold text-primary-foreground hover:shadow-glow transition disabled:opacity-50">
+        {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
+        SALVAR PERFIL
+      </button>
+    </div>
+  );
+}
+
+function TabUsuarios() {
+  const qc = useQueryClient();
+  const [search, setSearch] = useState("");
+  const [editingUser, setEditingUser] = useState<any | null>(null);
+  const [editRole, setEditRole] = useState("employee");
+  const [editPosition, setEditPosition] = useState("Gestor de Tráfego");
+  const [editName, setEditName] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const POSITIONS_LIST = [
+    "Gestor de Tráfego",
+    "Social Media",
+    "Gerente",
+    "Diretor",
+    "Videomaker",
+    "Designer",
+    "Outros",
+  ];
+
+  // Carrega todos os perfis cadastrados no banco
+  const { data: users = [], isLoading } = useQuery({
+    queryKey: ["admin_users_list"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("*")
+        .order("created_at", { ascending: false });
+      if (error) throw error;
+      return data ?? [];
+    }
+  });
+
+  const handleDelete = async (userId: string) => {
+    if (!confirm("Tem certeza que deseja excluir permanentemente este usuário da Suite? Esta ação não pode ser desfeita.")) return;
+    try {
+      const { error } = await supabase.rpc("admin_delete_user", { target_user_id: userId });
+      if (error) throw error;
+      toast.success("Usuário excluído com sucesso!");
+      qc.invalidateQueries({ queryKey: ["admin_users_list"] });
+    } catch (err: any) {
+      toast.error(err.message || "Erro ao excluir usuário");
+    }
+  };
+
+  const handleUpdate = async () => {
+    if (!editingUser) return;
+    setSaving(true);
+    try {
+      const { error } = await supabase.rpc("admin_update_user", {
+        target_user_id: editingUser.id,
+        new_role: editRole,
+        new_position: editPosition,
+        new_name: editName
+      });
+      if (error) throw error;
+      toast.success("Dados do usuário atualizados!");
+      setEditingUser(null);
+      qc.invalidateQueries({ queryKey: ["admin_users_list"] });
+    } catch (err: any) {
+      toast.error(err.message || "Erro ao atualizar usuário");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const filteredUsers = users.filter((u: any) => 
+    (u.full_name || "").toLowerCase().includes(search.toLowerCase()) || 
+    (u.position || "").toLowerCase().includes(search.toLowerCase())
+  );
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-white/5 pb-4">
+        <div>
+          <h3 className="font-display text-lg font-semibold text-gradient">Gestão Completa de Usuários</h3>
+          <p className="text-xs text-muted-foreground mt-1">Gerencie permissões, cargos, atualize informações e exclua contas de equipe.</p>
+        </div>
+        <div className="w-full sm:w-64">
+          <input 
+            value={search} 
+            onChange={(e) => setSearch(e.target.value)} 
+            placeholder="Buscar por nome ou cargo..." 
+            className="w-full rounded-lg border border-white/10 bg-background/50 px-3 py-2 text-xs focus:border-primary focus:outline-none" 
+          />
+        </div>
+      </div>
+
+      {isLoading ? (
+        <div className="flex justify-center py-12"><Loader2 className="h-5 w-5 animate-spin text-primary" /></div>
+      ) : filteredUsers.length === 0 ? (
+        <p className="py-8 text-center text-sm text-muted-foreground">Nenhum usuário encontrado.</p>
+      ) : (
+        <div className="grid gap-4 sm:grid-cols-2">
+          {filteredUsers.map((u: any) => {
+            return (
+              <div key={u.id} className="flex items-center justify-between rounded-xl border border-white/5 bg-background/40 p-4 hover:border-primary/20 transition duration-300">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="h-10 w-10 rounded-full bg-primary/10 border border-primary/20 overflow-hidden flex items-center justify-center shrink-0">
+                    {u.avatar_url ? (
+                      <img src={u.avatar_url} alt="Avatar" className="h-full w-full object-cover" />
+                    ) : (
+                      <User className="h-5 w-5 text-primary" />
+                    )}
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold truncate flex items-center gap-1.5">
+                      {u.full_name || "Membro Sem Nome"}
+                      <span className={`rounded-full px-2 py-0.5 text-[8px] font-black tracking-widest ${u.role === "admin" ? "bg-red-500/20 text-red-400" : "bg-white/5 text-muted-foreground"}`}>
+                        {u.role === "admin" ? "ADMIN" : "MEMBRO"}
+                      </span>
+                    </p>
+                    <p className="text-[10px] text-muted-foreground/80 mt-0.5 uppercase font-bold tracking-tighter">Cargo: {u.position || "Não Definido"}</p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button 
+                    onClick={() => {
+                      setEditingUser(u);
+                      setEditRole(u.role || "employee");
+                      setEditPosition(u.position || POSITIONS_LIST[0]);
+                      setEditName(u.full_name || "");
+                    }} 
+                    className="rounded-full border border-white/10 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider hover:bg-white/5 transition"
+                  >
+                    Editar
+                  </button>
+                  <button 
+                    onClick={() => handleDelete(u.id)} 
+                    className="rounded-full border border-red-500/20 bg-red-500/5 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-red-400 hover:bg-red-500/10 transition"
+                  >
+                    Excluir
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Modal de Edição */}
+      <AnimatePresence>
+        {editingUser && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm p-4">
+            <motion.div initial={{ scale: 0.95 }} animate={{ scale: 1 }} exit={{ scale: 0.95 }} className="glass-panel w-full max-w-md p-6 space-y-4 shadow-2xl">
+              <h4 className="font-display text-base font-bold text-gradient">Alterar Dados do Usuário</h4>
+              
+              <div className="space-y-1.5">
+                <label className="label-mono text-[10px] text-muted-foreground uppercase">Nome Completo</label>
+                <input value={editName} onChange={(e) => setEditName(e.target.value)} className="w-full rounded-lg border border-white/10 bg-background/50 px-3 py-2 text-sm focus:border-primary focus:outline-none" />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <label className="label-mono text-[10px] text-muted-foreground uppercase">Nível de Acesso</label>
+                  <select value={editRole} onChange={(e) => setEditRole(e.target.value)} className="w-full rounded-lg border border-white/10 bg-background px-3 py-2 text-xs text-foreground focus:outline-none">
+                    <option value="employee">Membro (Employee)</option>
+                    <option value="admin">Administrador (Admin)</option>
+                  </select>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="label-mono text-[10px] text-muted-foreground uppercase">Cargo / Função</label>
+                  <select value={editPosition} onChange={(e) => setEditPosition(e.target.value)} className="w-full rounded-lg border border-white/10 bg-background px-3 py-2 text-xs text-foreground focus:outline-none">
+                    {POSITIONS_LIST.map(pos => <option key={pos} value={pos}>{pos}</option>)}
+                  </select>
+                </div>
+              </div>
+
+              <div className="flex gap-2 justify-end pt-2">
+                <button onClick={() => setEditingUser(null)} className="rounded-full border border-white/10 px-3 py-1.5 text-xs font-bold uppercase">Cancelar</button>
+                <button onClick={handleUpdate} disabled={saving} className="rounded-full bg-primary px-4 py-1.5 text-xs font-bold uppercase text-primary-foreground hover:shadow-glow transition disabled:opacity-50">
+                  {saving ? "Salvando..." : "Salvar Alterações"}
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

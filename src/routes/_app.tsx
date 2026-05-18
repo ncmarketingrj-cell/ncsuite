@@ -55,7 +55,24 @@ const MORE_ITEMS: NavItem[] = [
 function Shell() {
   const { loading, user, signOut } = useAuth();
   
-  const isAdmin = user?.email === "nc.marketingrj@gmail.com";
+  const ADMIN_EMAILS = ["nc.marketingrj@gmail.com", "hc.marketing.dgt@gmail.com"];
+  const isAdmin = user?.email ? ADMIN_EMAILS.includes(user.email) : false;
+
+  const { data: profile } = useQuery({
+    queryKey: ["current_user_profile", user?.id],
+    queryFn: async () => {
+      if (!user?.id) return null;
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("*")
+        .eq("id", user.id)
+        .maybeSingle();
+      if (error) return null;
+      return data;
+    },
+    enabled: !!user?.id,
+  });
+
   const filteredMoreItems = MORE_ITEMS.filter(item => {
     if (item.to === "/agente" && !isAdmin) return false;
     return true;
@@ -438,13 +455,19 @@ function Shell() {
             {/* User Profile */}
             <div className="flex items-center gap-2 pl-2 ml-1 border-l border-border">
               <div className="hidden md:flex flex-col items-end leading-none">
-                <p className="text-[11px] font-bold">{user?.email?.split('@')[0]}</p>
+                <p className="text-[11px] font-bold text-foreground">
+                  {profile?.full_name || user?.email?.split('@')[0]}
+                </p>
                 <button onClick={signOut} className="text-[10px] text-muted-foreground hover:text-primary transition-colors font-semibold mt-0.5">
                   Sair
                 </button>
               </div>
-              <div className="h-8 w-8 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center">
-                <User className="h-4 w-4 text-primary" />
+              <div className="h-8 w-8 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center overflow-hidden shrink-0">
+                {profile?.avatar_url ? (
+                  <img src={profile.avatar_url} alt="Profile" className="h-full w-full object-cover" />
+                ) : (
+                  <User className="h-4 w-4 text-primary" />
+                )}
               </div>
             </div>
 
