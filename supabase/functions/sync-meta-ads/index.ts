@@ -447,6 +447,69 @@ serve(async (req) => {
       }
     }).eq("user_id", userId)
 
+    // 4b. Gerar notificação diária da Victoria AI para cada conta sincronizada
+    console.log(`[SYNC ${syncId}] Gerando notificações da Victoria para cada conta...`)
+    for (const acc of adAccounts) {
+      try {
+        // Encontrar os insights específicos desta conta
+        const accInsights = syncResults.find(r => r.accountId === acc.id)?.insights || []
+        if (accInsights.length === 0) continue
+
+        // Agrupar spend e reach por data e pegar a data mais recente com spend > 0
+        const dateGroups: Record<string, { spend: number, reach: number }> = {}
+        for (const row of accInsights) {
+          const d = row.date_start // "YYYY-MM-DD"
+          if (!dateGroups[d]) dateGroups[d] = { spend: 0, reach: 0 }
+          dateGroups[d].spend += parseFloat(row.spend || "0")
+          dateGroups[d].reach += parseInt(row.reach || "0")
+        }
+
+        // Ordenar as datas para pegar a mais recente
+        const sortedDates = Object.keys(dateGroups).sort((a, b) => b.localeCompare(a))
+        const recentDate = sortedDates[0] // A data mais recente sincronizada
+
+        if (recentDate) {
+          const stats = dateGroups[recentDate]
+          if (stats.spend > 0) {
+            // Formatar a data para "DD de MÊS" (ex: "18 de mai")
+            const parts = recentDate.split("-") // ["2026", "05", "18"]
+            const day = parseInt(parts[2])
+            const monthIdx = parseInt(parts[1]) - 1
+            const monthsPT = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"]
+            const monthPT = monthsPT[monthIdx] || "mai"
+
+            const formattedSpend = stats.spend.toFixed(2)
+            const formattedReach = stats.reach.toLocaleString("en-US")
+
+            const alertTitle = `📊 Resumo Diário Victoria: ${acc.name}`
+            const alertMsg = `Resumo diário: você gastou R$${formattedSpend} em ${day} de ${monthPT} e alcançou ${formattedReach} pessoas.`
+
+            // Link da notificação clicável, passando o accountId e a data da sincronização!
+            const targetLink = `/campanhas?accountId=${acc.id}&date=${recentDate}`
+
+            console.log(`[SYNC] Notificação para ${acc.name}: "${alertMsg}" | Link: ${targetLink}`)
+
+            await supabase.from("notifications").insert({
+              user_id: userId,
+              title: alertTitle,
+              message: alertMsg,
+              type: "success",
+              link: targetLink,
+              metadata: {
+                account_id: acc.id,
+                date: recentDate,
+                spend: stats.spend,
+                reach: stats.reach
+              }
+            })
+          }
+        }
+      } catch (err: any) {
+        console.error(`[SYNC-NOTIF] Falha ao gerar notificação para a conta ${acc.id}:`, err.message)
+      }
+    }
+
+
     const summary = {
       sync_id: syncId,
       status: apiErrors.length > 0 ? "partial_success" : "success",

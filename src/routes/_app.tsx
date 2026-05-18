@@ -141,33 +141,44 @@ function Shell() {
     return () => window.removeEventListener('open-ai-agent', handleOpenAI);
   }, []);
 
-  // Monitora ações em tempo real do Agente
-  const { data: recentLogs = [] } = useQuery({
-    queryKey: ["header_automation_logs"],
+  // Monitora notificações em tempo real do Agente (da tabela de notifications)
+  const { data: recentNotifications = [], refetch: refetchNotifications } = useQuery({
+    queryKey: ["header_notifications"],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from("automation_logs")
-        .select("*, automation_rules(name)")
+        .from("notifications")
+        .select("*")
         .order("created_at", { ascending: false })
         .limit(8);
       if (error) return [];
       return data as any[];
     },
-    refetchInterval: 30000,
+    refetchInterval: 15000,
   });
 
+  const hasUnread = recentNotifications.some(n => !n.is_read);
+
   useEffect(() => {
-    if (recentLogs.length > 0) {
-      const lastLog = recentLogs[0];
-      const logTime = new Date(lastLog.created_at).getTime();
+    if (recentNotifications.length > 0) {
+      const lastNotif = recentNotifications[0];
+      const logTime = new Date(lastNotif.created_at).getTime();
       const now = new Date().getTime();
-      if (now - logTime < 120000) {
+      if (now - logTime < 60000 && !lastNotif.is_read) {
         setShowNotification(true);
         const timer = setTimeout(() => setShowNotification(false), 8000);
         return () => clearTimeout(timer);
       }
     }
-  }, [recentLogs]);
+  }, [recentNotifications]);
+
+  const handleMarkAllAsRead = async () => {
+    const unreadIds = recentNotifications.filter(n => !n.is_read).map(n => n.id);
+    if (unreadIds.length === 0) return;
+    await supabase.from("notifications").update({ is_read: true }).in("id", unreadIds);
+    refetchNotifications();
+  };
+
+
 
   // Fecha o menu mobile ao navegar
   useEffect(() => {
@@ -325,7 +336,7 @@ function Shell() {
                 }`}
               >
                 <Bell className="h-4 w-4" />
-                {recentLogs.length > 0 && (
+                {hasUnread && (
                   <span className="absolute top-1.5 right-1.5 h-2 w-2 rounded-full bg-primary animate-pulse" />
                 )}
               </button>
@@ -335,22 +346,31 @@ function Shell() {
                   <>
                     <div className="fixed inset-0 z-40" onClick={() => setShowNotifications(false)} />
                     <motion.div
-                      initial={{ opacity: 0, y: 8, scale: 0.96 }}
-                      animate={{ opacity: 1, y: 0, scale: 1 }}
-                      exit={{ opacity: 0, y: 8, scale: 0.96 }}
-                      className="absolute right-0 top-full z-50 mt-2 w-80 sm:w-96 rounded-2xl border border-border bg-card p-4 shadow-2xl overflow-hidden"
+                       initial={{ opacity: 0, y: 8, scale: 0.96 }}
+                       animate={{ opacity: 1, y: 0, scale: 1 }}
+                       exit={{ opacity: 0, y: 8, scale: 0.96 }}
+                       className="absolute right-0 top-full z-50 mt-2 w-80 sm:w-96 rounded-2xl border border-border bg-card p-4 shadow-2xl overflow-hidden"
                     >
                       <div className="flex items-center justify-between border-b border-border pb-2.5 mb-2.5">
                         <div className="flex items-center gap-2">
                           <Activity className="h-4 w-4 text-primary" />
                           <h4 className="text-xs font-black uppercase tracking-widest text-foreground">Alertas do Agente AI</h4>
                         </div>
-                        <span className="rounded bg-primary/10 px-1.5 py-0.5 text-[9px] font-black text-primary uppercase">
-                          {recentLogs.length} Eventos
-                        </span>
+                        {hasUnread ? (
+                          <button
+                            onClick={handleMarkAllAsRead}
+                            className="text-[9px] font-black text-primary hover:text-primary/80 transition-colors uppercase tracking-wider"
+                          >
+                            Lidas
+                          </button>
+                        ) : (
+                          <span className="rounded bg-primary/10 px-1.5 py-0.5 text-[9px] font-black text-primary uppercase">
+                            {recentNotifications.length} Alertas
+                          </span>
+                        )}
                       </div>
 
-                      {recentLogs.length === 0 ? (
+                      {recentNotifications.length === 0 ? (
                         <div className="py-8 text-center text-muted-foreground flex flex-col items-center justify-center">
                           <Activity className="h-8 w-8 text-muted-foreground/30 mb-2" />
                           <p className="text-xs font-bold">Nenhum evento recente</p>
@@ -358,23 +378,34 @@ function Shell() {
                         </div>
                       ) : (
                         <div className="space-y-1.5 max-h-[300px] overflow-y-auto pr-1 scrollbar-thin">
-                          {recentLogs.map((log) => {
-                            const timeAgo = formatDistanceToNow(new Date(log.created_at), { addSuffix: true, locale: ptBR });
+                          {recentNotifications.map((notif) => {
+                            const timeAgo = formatDistanceToNow(new Date(notif.created_at), { addSuffix: true, locale: ptBR });
                             return (
                               <Link
-                                key={log.id}
-                                to="/automacoes"
-                                onClick={() => setShowNotifications(false)}
-                                className="flex flex-col gap-1 rounded-xl p-2.5 bg-white/[0.02] hover:bg-primary/[0.03] border border-transparent hover:border-primary/10 transition-all text-left"
+                                key={notif.id}
+                                to={notif.link || "/automacoes"}
+                                onClick={async () => {
+                                  setShowNotifications(false);
+                                  await supabase.from("notifications").update({ is_read: true }).eq("id", notif.id);
+                                  refetchNotifications();
+                                }}
+                                className={`flex flex-col gap-1 rounded-xl p-2.5 border transition-all text-left relative ${
+                                  !notif.is_read 
+                                    ? "bg-primary/[0.03] hover:bg-primary/[0.06] border-primary/20" 
+                                    : "bg-white/[0.01] hover:bg-white/[0.03] border-transparent"
+                                }`}
                               >
+                                {!notif.is_read && (
+                                  <span className="absolute top-3 right-3 h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />
+                                )}
                                 <div className="flex items-center justify-between">
                                   <span className="text-[10px] font-black uppercase tracking-wider text-primary truncate max-w-[200px]">
-                                    {log.automation_rules?.name || "Otimização IA"}
+                                    {notif.title}
                                   </span>
                                   <span className="text-[9px] text-muted-foreground font-mono">{timeAgo}</span>
                                 </div>
-                                <p className="text-[11px] text-foreground leading-relaxed font-medium">
-                                  {log.message || "Ação de monitoramento disparada com sucesso."}
+                                <p className="text-[11px] text-foreground leading-relaxed font-medium pr-4">
+                                  {notif.message}
                                 </p>
                               </Link>
                             );
@@ -459,7 +490,7 @@ function Shell() {
           
           {/* Notificação Flutuante de Ação Autônoma da IA */}
           <AnimatePresence>
-            {showNotification && recentLogs.length > 0 && (
+            {showNotification && recentNotifications.length > 0 && (
               <motion.div
                 initial={{ opacity: 0, y: 50, scale: 0.9 }}
                 animate={{ opacity: 1, y: 0, scale: 1 }}
@@ -468,20 +499,31 @@ function Shell() {
               >
                 <div className="flex items-start gap-3">
                   <div className="rounded-xl bg-primary/10 p-2 text-primary">
-                    <Sparkles className="h-4 w-4" />
+                    <Sparkles className="h-4 w-4 animate-pulse" />
                   </div>
                   <div className="flex-1">
-                    <p className="text-xs font-black uppercase tracking-wider text-primary">Ação de IA</p>
-                    <p className="text-[11px] font-bold text-foreground mt-0.5">{recentLogs[0].automation_rules?.name}</p>
-                    <p className="text-[10px] text-muted-foreground mt-1">{recentLogs[0].action_taken}</p>
+                    <p className="text-xs font-black uppercase tracking-wider text-primary">Victoria AI</p>
+                    <p className="text-[11px] font-bold text-foreground mt-0.5">{recentNotifications[0].title}</p>
+                    <p className="text-[10px] text-muted-foreground mt-1 leading-relaxed">{recentNotifications[0].message}</p>
                     <div className="mt-2 flex justify-end">
-                      <Link to="/automacoes" className="text-[9px] font-bold uppercase text-primary hover:underline">Ver Logs</Link>
+                      <Link 
+                        to={recentNotifications[0].link || "/automacoes"} 
+                        onClick={async () => {
+                          setShowNotification(false);
+                          await supabase.from("notifications").update({ is_read: true }).eq("id", recentNotifications[0].id);
+                          refetchNotifications();
+                        }}
+                        className="text-[9px] font-bold uppercase text-primary hover:underline"
+                      >
+                        Ver Detalhes
+                      </Link>
                     </div>
                   </div>
                 </div>
               </motion.div>
             )}
           </AnimatePresence>
+
 
           <Outlet />
         </div>

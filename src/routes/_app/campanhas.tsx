@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
@@ -15,7 +15,10 @@ import { subDays } from "date-fns";
 
 export const Route = createFileRoute("/_app/campanhas")({
   head: () => ({ meta: [{ title: "Meta Ads Manager — NC Suite" }] }),
-  validateSearch: (search: Record<string, unknown>) => ({ accountId: search.accountId as string | undefined }),
+  validateSearch: (search: Record<string, unknown>) => ({ 
+    accountId: search.accountId as string | undefined,
+    date: search.date as string | undefined
+  }),
   component: MetaAdsManagerPage,
 });
 
@@ -28,19 +31,44 @@ const LEVEL_TABS: { id: Level; label: string; icon: any }[] = [
 ];
 
 function MetaAdsManagerPage() {
-  const { accountId: defaultAccountId } = Route.useSearch();
+  const { accountId: defaultAccountId, date: filterDate } = Route.useSearch();
   const qc = useQueryClient();
 
   const [accountFilter, setAccountFilter] = useState(defaultAccountId || "all");
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "active" | "paused">("all");
-  const [dateRange, setDateRange] = useState({ startDate: subDays(new Date(), 29), endDate: new Date() });
+  const [dateRange, setDateRange] = useState(() => {
+    if (filterDate) {
+      const parsed = new Date(filterDate + "T12:00:00");
+      if (!isNaN(parsed.getTime())) {
+        return { startDate: parsed, endDate: parsed };
+      }
+    }
+    return { startDate: subDays(new Date(), 29), endDate: new Date() };
+  });
 
   const [level, setLevel] = useState<Level>("campanhas");
   const [selectedCamps, setSelectedCamps] = useState<Set<string>>(new Set());
   const [selectedAdSets, setSelectedAdSets] = useState<Set<string>>(new Set());
   const [selectedAds, setSelectedAds] = useState<Set<string>>(new Set());
   const [changingId, setChangingId] = useState<string | null>(null);
+
+  // Sincroniza query params com o estado interno reativamente
+  useEffect(() => {
+    if (defaultAccountId) {
+      setAccountFilter(defaultAccountId);
+    }
+  }, [defaultAccountId]);
+
+  useEffect(() => {
+    if (filterDate) {
+      const parsed = new Date(filterDate + "T12:00:00");
+      if (!isNaN(parsed.getTime())) {
+        setDateRange({ startDate: parsed, endDate: parsed });
+      }
+    }
+  }, [filterDate]);
+
 
   const { data: adAccounts = [] } = useQuery({
     queryKey: ["ad-accounts"],
