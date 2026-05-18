@@ -15,9 +15,17 @@ interface AIAgentSidebarProps {
 export function AIAgentSidebar({ isOpen, onClose }: AIAgentSidebarProps) {
   const [prompt, setPrompt] = useState("");
   const [loading, setLoading] = useState(false);
-  const [messages, setMessages] = useState<Message[]>([
-    { role: "assistant", content: "Olá! Sou seu assistente NC Performance. Como posso ajudar com suas campanhas hoje?", timestamp: new Date() }
-  ]);
+  const [accounts, setAccounts] = useState<{ id: string; name: string }[]>([]);
+  const [selectedAccountId, setSelectedAccountId] = useState<string>("");
+  const [messages, setMessages] = useState<Message[]>([]);
+
+  useEffect(() => {
+    const fetchAccounts = async () => {
+      const { data } = await supabase.from("ad_accounts").select("id, name").order("name");
+      if (data) setAccounts(data);
+    };
+    fetchAccounts();
+  }, []);
 
   useEffect(() => {
     const handleSetPrompt = (e: any) => {
@@ -28,6 +36,17 @@ export function AIAgentSidebar({ isOpen, onClose }: AIAgentSidebarProps) {
     window.addEventListener('set-ai-prompt', handleSetPrompt);
     return () => window.removeEventListener('set-ai-prompt', handleSetPrompt);
   }, []);
+
+  const selectAccount = (id: string, name: string) => {
+    setSelectedAccountId(id);
+    setMessages([
+      { 
+        role: "assistant", 
+        content: `### 🤖 Comandante Estratégica Victoria AI v2.5\n\nExcelente, Comandante! Travei o meu foco operacional estritamente na conta **"${name}"**.\n\nEstou conectada ao banco de dados e pronta para auditar os números desta conta. O que deseja analisar agora?`, 
+        timestamp: new Date() 
+      }
+    ]);
+  };
 
   const handleSend = async () => {
     if (!prompt.trim() || loading) return;
@@ -43,7 +62,10 @@ export function AIAgentSidebar({ isOpen, onClose }: AIAgentSidebarProps) {
       let responseText = "";
       try {
         const { data, error } = await supabase.functions.invoke("victoria-agent", {
-          body: { messages: requestMessages }
+          body: { 
+            messages: requestMessages,
+            selectedAccountId: selectedAccountId
+          }
         });
 
         if (error) throw error;
@@ -52,10 +74,11 @@ export function AIAgentSidebar({ isOpen, onClose }: AIAgentSidebarProps) {
       } catch (err: any) {
         console.warn("Victoria Edge Function failed, executing advanced frontend database-grounded fallback...", err);
         
-        // 1. Buscar todas as campanhas do banco com suas métricas históricas completas
+        // 1. Buscar todas as campanhas da conta selecionada com suas métricas históricas completas
         const { data: campaignsRaw } = await supabase
           .from('campaigns')
           .select('name, status, budget, platform, metrics(cost, conversions, clicks, impressions)')
+          .eq('ad_account_id', selectedAccountId)
           .order('name');
 
         const campaigns = (campaignsRaw || []).map((c: any) => {
@@ -226,103 +249,159 @@ Atualmente, estamos gerenciando **${activeCount} campanhas ativas** com um inves
             transition={{ type: "spring", damping: 25, stiffness: 200 }}
             className="fixed top-0 right-0 z-50 flex flex-col w-full sm:w-[380px] h-screen border-l border-white/5 bg-background/95 backdrop-blur-2xl overflow-hidden shadow-2xl"
           >
-            <div className="p-5 border-b border-white/5 flex items-center justify-between bg-background/40">
-              <div className="flex items-center gap-3">
-                <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-primary/20 to-secondary/20 flex items-center justify-center ring-1 ring-white/10 shadow-glow-sm">
-                  <Bot className="h-5 w-5 text-primary" />
+            <div className="p-5 border-b border-white/5 flex flex-col gap-3 bg-background/40">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-primary/20 to-secondary/20 flex items-center justify-center ring-1 ring-white/10 shadow-glow-sm">
+                    <Bot className="h-5 w-5 text-primary" />
+                  </div>
+                  <div>
+                    <h3 className="font-display font-bold text-sm tracking-tight text-foreground">Victoria AI</h3>
+                    <p className="text-[10px] text-muted-foreground flex items-center gap-1.5 uppercase font-black tracking-widest">
+                      <span className="relative flex h-2 w-2">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-success opacity-75"></span>
+                        <span className="relative inline-flex rounded-full h-2 w-2 bg-success"></span>
+                      </span>
+                      {selectedAccountId ? "Foco Travado" : "Aguardando Conta"}
+                    </p>
+                  </div>
                 </div>
-                <div>
-                  <h3 className="font-display font-bold text-sm tracking-tight text-foreground">Victoria AI</h3>
-                  <p className="text-[10px] text-muted-foreground flex items-center gap-1.5 uppercase font-black tracking-widest">
-                    <span className="relative flex h-2 w-2">
-                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-success opacity-75"></span>
-                      <span className="relative inline-flex rounded-full h-2 w-2 bg-success"></span>
-                    </span>
-                    Sincronizada via NC Database
-                  </p>
-                </div>
+                <button 
+                  onClick={onClose} 
+                  className="p-2 text-muted-foreground hover:text-foreground hover:bg-white/10 rounded-lg transition-colors"
+                >
+                  <X className="h-4 w-4" />
+                </button>
               </div>
-              <button 
-                onClick={onClose} 
-                className="p-2 text-muted-foreground hover:text-foreground hover:bg-white/10 rounded-lg transition-colors"
-              >
-                <X className="h-4 w-4" />
-              </button>
+
+              {selectedAccountId && (
+                <div className="flex items-center justify-between bg-primary/10 border border-primary/20 rounded-xl px-3 py-2">
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <div className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse shrink-0" />
+                    <span className="text-[9px] font-black text-primary uppercase tracking-widest truncate">
+                      {accounts.find(a => a.id === selectedAccountId)?.name || "Conta Meta"}
+                    </span>
+                  </div>
+                  <button 
+                    onClick={() => { setSelectedAccountId(""); setMessages([]); }}
+                    className="text-[9px] font-black text-foreground/50 hover:text-primary uppercase tracking-widest transition-all shrink-0 ml-2"
+                  >
+                    🔄 Mudar
+                  </button>
+                </div>
+              )}
             </div>
 
       <div className="flex-1 overflow-y-auto p-5 custom-scrollbar flex flex-col gap-5">
-        <AnimatePresence initial={false}>
-          {messages.map((msg, i) => (
-            <motion.div
-              key={i}
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              className={`flex flex-col ${msg.role === "user" ? "items-end" : "items-start"}`}
-            >
-              <div className={`flex items-center gap-2 mb-1 text-[10px] font-bold uppercase tracking-tighter ${msg.role === "user" ? "flex-row-reverse text-primary" : "text-muted-foreground"}`}>
-                {msg.role === "user" ? <User className="h-3 w-3" /> : <Bot className="h-3 w-3" />}
-                {msg.role === "user" ? "Você" : "Victoria AI"}
+        {selectedAccountId === "" ? (
+          <div className="flex flex-col gap-4 py-2">
+            <div className="flex items-start gap-2.5">
+              <div className="h-6 w-6 rounded-lg bg-primary/10 flex items-center justify-center ring-1 ring-white/5 mt-0.5 shrink-0">
+                <Bot className="h-3.5 w-3.5 text-primary" />
               </div>
-              <div className={`max-w-[90%] rounded-2xl px-4 py-3 text-xs leading-relaxed shadow-sm ${
-                msg.role === "user" 
-                  ? "bg-primary text-primary-foreground font-medium rounded-tr-none" 
-                  : "bg-white/5 border border-white/5 text-foreground rounded-tl-none"
-              }`}>
-                {msg.role === "user" ? (
-                  msg.content
-                ) : (
-                  <ReactMarkdown 
-                    components={{
-                      p: ({node, ...props}) => <p className="mb-2 last:mb-0 leading-relaxed text-foreground/90" {...props} />,
-                      h3: ({node, ...props}) => <h3 className="text-[11px] font-black text-primary mt-3 mb-1.5 uppercase tracking-widest first:mt-0 flex items-center gap-1.5 border-b border-white/5 pb-1" {...props} />,
-                      h4: ({node, ...props}) => <h4 className="text-[10px] font-black text-foreground mt-2.5 mb-1 uppercase tracking-wider" {...props} />,
-                      ul: ({node, ...props}) => <ul className="list-disc pl-4 mb-2 space-y-1 text-foreground/80" {...props} />,
-                      ol: ({node, ...props}) => <ol className="list-decimal pl-4 mb-2 space-y-1 text-foreground/80" {...props} />,
-                      li: ({node, ...props}) => <li className="leading-relaxed" {...props} />,
-                      strong: ({node, ...props}) => <strong className="font-bold text-foreground" {...props} />
-                    }}
-                  >
-                    {msg.content}
-                  </ReactMarkdown>
-                )}
+              <div className="flex-1 rounded-2xl bg-white/5 border border-white/5 px-4 py-3 text-xs leading-relaxed text-foreground rounded-tl-none">
+                <p className="mb-1 text-[10px] font-black text-primary uppercase tracking-widest">FALA, COMANDANTE!</p>
+                <p className="leading-relaxed text-foreground/90">
+                  Sou a **Victoria AI**, sua estrategista de performance de elite. Para que possamos fazer uma auditoria cirúrgica e sem mistura de dados, **selecione qual conta de anúncios** deseja analisar e otimizar agora:
+                </p>
               </div>
-            </motion.div>
-          ))}
-          {loading && (
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex items-center gap-2 text-xs text-muted-foreground animate-pulse px-2">
-              <Loader2 className="h-3 w-3 animate-spin" /> Processando comando...
-            </motion.div>
-          )}
-        </AnimatePresence>
+            </div>
+            
+            <div className="pl-8 flex flex-col gap-2">
+              {accounts.map(acc => (
+                <button
+                  key={acc.id}
+                  onClick={() => selectAccount(acc.id, acc.name)}
+                  className="w-full text-left rounded-xl px-4 py-3.5 bg-white/5 hover:bg-primary/10 border border-white/5 hover:border-primary/30 text-xs font-bold uppercase tracking-widest text-muted-foreground hover:text-foreground transition-all duration-200 active:scale-[0.98] shadow-sm flex items-center justify-between group"
+                >
+                  <span className="truncate max-w-[220px]">{acc.name}</span>
+                  <div className="h-1.5 w-1.5 rounded-full bg-primary/30 group-hover:bg-primary transition-colors" />
+                </button>
+              ))}
+              {accounts.length === 0 && (
+                <div className="flex items-center gap-2 text-[10px] text-muted-foreground italic px-2">
+                  <Loader2 className="h-3 w-3 animate-spin" /> Carregando contas do banco...
+                </div>
+              )}
+            </div>
+          </div>
+        ) : (
+          <AnimatePresence initial={false}>
+            {messages.map((msg, i) => (
+              <motion.div
+                key={i}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className={`flex flex-col ${msg.role === "user" ? "items-end" : "items-start"}`}
+              >
+                <div className={`flex items-center gap-2 mb-1 text-[10px] font-bold uppercase tracking-tighter ${msg.role === "user" ? "flex-row-reverse text-primary" : "text-muted-foreground"}`}>
+                  {msg.role === "user" ? <User className="h-3 w-3" /> : <Bot className="h-3 w-3" />}
+                  {msg.role === "user" ? "Você" : "Victoria AI"}
+                </div>
+                <div className={`max-w-[90%] rounded-2xl px-4 py-3 text-xs leading-relaxed shadow-sm ${
+                  msg.role === "user" 
+                    ? "bg-primary text-primary-foreground font-medium rounded-tr-none" 
+                    : "bg-white/5 border border-white/5 text-foreground rounded-tl-none"
+                }`}>
+                  {msg.role === "user" ? (
+                    msg.content
+                  ) : (
+                    <ReactMarkdown 
+                      components={{
+                        p: ({node, ...props}) => <p className="mb-2 last:mb-0 leading-relaxed text-foreground/90" {...props} />,
+                        h3: ({node, ...props}) => <h3 className="text-[11px] font-black text-primary mt-3 mb-1.5 uppercase tracking-widest first:mt-0 flex items-center gap-1.5 border-b border-white/5 pb-1" {...props} />,
+                        h4: ({node, ...props}) => <h4 className="text-[10px] font-black text-foreground mt-2.5 mb-1 uppercase tracking-wider" {...props} />,
+                        ul: ({node, ...props}) => <ul className="list-disc pl-4 mb-2 space-y-1 text-foreground/80" {...props} />,
+                        ol: ({node, ...props}) => <ol className="list-decimal pl-4 mb-2 space-y-1 text-foreground/80" {...props} />,
+                        li: ({node, ...props}) => <li className="leading-relaxed" {...props} />,
+                        strong: ({node, ...props}) => <strong className="font-bold text-foreground" {...props} />
+                      }}
+                    >
+                      {msg.content}
+                    </ReactMarkdown>
+                  )}
+                </div>
+              </motion.div>
+            ))}
+            {loading && (
+              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex items-center gap-2 text-xs text-muted-foreground animate-pulse px-2">
+                <Loader2 className="h-3 w-3 animate-spin" /> Analisando dados da conta...
+              </motion.div>
+            )}
+          </AnimatePresence>
+        )}
       </div>
 
       <div className="p-4 border-t border-white/5 bg-background/60 backdrop-blur-md">
-        <div className="flex gap-2 flex-wrap mb-4">
-          {quickActions.map((action, i) => (
-            <button
-              key={i}
-              onClick={() => { setPrompt(action.prompt); }}
-              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-white/5 hover:bg-white/10 border border-white/5 transition-all text-[10px] font-bold text-muted-foreground hover:text-primary active:scale-95"
-            >
-              <action.icon className="h-3 w-3" />
-              {action.label}
-            </button>
-          ))}
-        </div>
+        {selectedAccountId !== "" && (
+          <div className="flex gap-2 flex-wrap mb-4">
+            {quickActions.map((action, i) => (
+              <button
+                key={i}
+                onClick={() => { setPrompt(action.prompt); }}
+                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-white/5 hover:bg-white/10 border border-white/5 transition-all text-[10px] font-bold text-muted-foreground hover:text-primary active:scale-95"
+              >
+                <action.icon className="h-3 w-3" />
+                {action.label}
+              </button>
+            ))}
+          </div>
+        )}
         
         <div className="relative group">
           <input
             type="text"
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && handleSend()}
-            placeholder="Comando para Meta Ads..."
-            className="w-full bg-input/40 border border-white/10 rounded-xl pl-4 pr-12 py-3.5 text-xs focus:outline-none focus:ring-1 focus:ring-primary/40 focus:border-primary/40 transition-all placeholder:text-muted-foreground/30 shadow-inner"
+            onKeyDown={(e) => e.key === "Enter" && selectedAccountId !== "" && handleSend()}
+            disabled={selectedAccountId === "" || loading}
+            placeholder={selectedAccountId === "" ? "Selecione uma conta acima para liberar o chat..." : "Comando para Meta Ads..."}
+            className="w-full bg-input/40 border border-white/10 rounded-xl pl-4 pr-12 py-3.5 text-xs focus:outline-none focus:ring-1 focus:ring-primary/40 focus:border-primary/40 transition-all placeholder:text-muted-foreground/30 shadow-inner disabled:opacity-50 disabled:cursor-not-allowed"
           />
           <button 
             onClick={handleSend}
-            disabled={loading}
-            className="absolute right-2 top-1/2 -translate-y-1/2 p-2 bg-primary text-primary-foreground rounded-lg hover:brightness-110 transition-all shadow-glow-sm disabled:opacity-50"
+            disabled={selectedAccountId === "" || loading || !prompt.trim()}
+            className="absolute right-2 top-1/2 -translate-y-1/2 p-2 bg-primary text-primary-foreground rounded-lg hover:brightness-110 transition-all shadow-glow-sm disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
           </button>
