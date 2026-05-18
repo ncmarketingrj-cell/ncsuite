@@ -26,7 +26,7 @@ const POSITIONS = [
 function LoginPage() {
   const { signup: allowSignup } = Route.useSearch();
   const nav = useNavigate();
-  const [mode, setMode] = useState<"login" | "signup">("login");
+  const [mode, setMode] = useState<"login" | "signup" | "forgot">("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [fullName, setFullName] = useState("");
@@ -42,7 +42,7 @@ function LoginPage() {
         if (error) throw error;
         toast.success("Bem-vindo de volta");
         nav({ to: "/dashboard" });
-      } else {
+      } else if (mode === "signup") {
         const { error } = await supabase.auth.signUp({
           email, password,
           options: {
@@ -52,6 +52,13 @@ function LoginPage() {
         });
         if (error) throw error;
         toast.success("Conta criada. Você já pode entrar.");
+        setMode("login");
+      } else {
+        const { error } = await supabase.auth.resetPasswordForEmail(email, {
+          redirectTo: window.location.origin + "/login",
+        });
+        if (error) throw error;
+        toast.success("E-mail de recuperação enviado com sucesso!");
         setMode("login");
       }
     } catch (err: any) {
@@ -80,7 +87,9 @@ function LoginPage() {
           <div className="text-center">
             <p className="text-[11px] font-mono font-bold uppercase tracking-[0.3em] text-red-500">Acesso da Equipe</p>
             <h1 className="mt-3 font-display text-2xl font-black text-foreground">
-              {mode === "login" ? "Entrar na Suite" : "Criar conta"}
+              {mode === "login" && "Entrar na Suite"}
+              {mode === "signup" && "Criar conta"}
+              {mode === "forgot" && "Recuperar senha"}
             </h1>
           </div>
         </div>
@@ -105,27 +114,69 @@ function LoginPage() {
             </>
           )}
           <Field icon={Mail} type="email" placeholder="email@agencia.com" value={email} onChange={setEmail} required />
-          <Field icon={Lock} type="password" placeholder="Senha" value={password} onChange={setPassword} required />
+          
+          {mode !== "forgot" && (
+            <Field icon={Lock} type="password" placeholder="Senha" value={password} onChange={setPassword} required />
+          )}
+
+          {mode === "login" && (
+            <div className="flex justify-end pr-1">
+              <button
+                type="button" onClick={() => setMode("forgot")}
+                className="text-[11px] text-muted-foreground hover:text-red-500 transition-colors font-medium"
+              >
+                Esqueci minha senha
+              </button>
+            </div>
+          )}
 
           <button
             type="submit" disabled={loading}
             className="group flex w-full items-center justify-center gap-2 rounded-xl bg-red-600 py-3.5 text-sm font-bold text-white transition-all hover:bg-red-500 hover:shadow-[0_0_30px_rgba(220,38,38,0.3)] disabled:opacity-50 active:scale-[0.98]"
           >
             {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <>
-              {mode === "login" ? "Entrar" : "Criar conta"}
+              {mode === "login" && "Entrar"}
+              {mode === "signup" && "Criar conta"}
+              {mode === "forgot" && "Enviar link de recuperação"}
               <ArrowRight className="h-4 w-4 transition group-hover:translate-x-0.5" />
             </>}
           </button>
         </form>
 
         <div className="mt-8 text-center text-xs text-muted-foreground/80">
-          {mode === "login" ? "Sem conta?" : "Já tem conta?"}{" "}
-          <button
-            type="button" onClick={() => setMode(mode === "login" ? "signup" : "login")}
-            className="font-semibold text-red-500 hover:text-red-400 transition-colors"
-          >
-            {mode === "login" ? "Cadastre-se" : "Entrar"}
-          </button>
+          {mode === "login" && (
+            <>
+              Sem conta?{" "}
+              <button
+                type="button" onClick={() => setMode("signup")}
+                className="font-semibold text-red-500 hover:text-red-400 transition-colors"
+              >
+                Cadastre-se
+              </button>
+            </>
+          )}
+          {mode === "signup" && (
+            <>
+              Já tem conta?{" "}
+              <button
+                type="button" onClick={() => setMode("login")}
+                className="font-semibold text-red-500 hover:text-red-400 transition-colors"
+              >
+                Entrar
+              </button>
+            </>
+          )}
+          {mode === "forgot" && (
+            <>
+              Lembrou a senha?{" "}
+              <button
+                type="button" onClick={() => setMode("login")}
+                className="font-semibold text-red-500 hover:text-red-400 transition-colors"
+              >
+                Voltar para o Login
+              </button>
+            </>
+          )}
         </div>
 
         <div className="mt-6 border-t border-border pt-5 text-center">
