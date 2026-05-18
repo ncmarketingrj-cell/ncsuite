@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState, createContext, useContext } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   Outlet,
@@ -11,6 +11,21 @@ import {
 import { Toaster } from "sonner";
 
 import appCss from "../styles.css?url";
+
+// ═══════════════════════════════════════
+// THEME CONTEXT — Dark/Light Toggle
+// ═══════════════════════════════════════
+type Theme = "dark" | "light";
+type ThemeContextType = { theme: Theme; toggleTheme: () => void };
+
+export const ThemeContext = createContext<ThemeContextType>({
+  theme: "dark",
+  toggleTheme: () => {},
+});
+
+export function useTheme() {
+  return useContext(ThemeContext);
+}
 
 function NotFoundComponent() {
   useEffect(() => {
@@ -68,42 +83,44 @@ function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
   );
 }
 
-export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()({
-  head: () => ({
-    meta: [
-      { charSet: "utf-8" },
-      { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "NC Performance Suite — Motor de tráfego pago automotivo" },
-      { name: "description", content: "Suite SaaS para gestão e relatórios de performance Meta Ads no segmento automotivo." },
-      { name: "theme-color", content: "#00d4ff" },
-      { property: "og:title", content: "NC Performance Suite — Motor de tráfego pago automotivo" },
-      { property: "og:description", content: "Suite SaaS para gestão e relatórios de performance Meta Ads no segmento automotivo." },
-      { property: "og:type", content: "website" },
-      { name: "twitter:title", content: "NC Performance Suite — Motor de tráfego pago automotivo" },
-      { name: "twitter:description", content: "Suite SaaS para gestão e relatórios de performance Meta Ads no segmento automotivo." },
-      { property: "og:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/7cd3254f-040f-43e5-97e1-471846f1d21c/id-preview-fa213812--77b0eaf2-9183-45a2-a6bd-af190dc9de8c.lovable.app-1778846697148.png" },
-      { name: "twitter:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/7cd3254f-040f-43e5-97e1-471846f1d21c/id-preview-fa213812--77b0eaf2-9183-45a2-a6bd-af190dc9de8c.lovable.app-1778846697148.png" },
-      { name: "twitter:card", content: "summary_large_image" },
-    ],
-    links: [
-      { rel: "stylesheet", href: appCss },
-      { rel: "preconnect", href: "https://fonts.googleapis.com" },
-      { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "anonymous" },
-      {
-        rel: "stylesheet",
-        href: "https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap",
-      },
-    ],
-  }),
-  shellComponent: RootShell,
-  component: RootComponent,
-  notFoundComponent: NotFoundComponent,
-  errorComponent: ErrorComponent,
-});
+export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
+  {
+    head: () => ({
+      meta: [
+        { charSet: "utf-8" },
+        { name: "viewport", content: "width=device-width, initial-scale=1" },
+        { title: "NC Performance Suite — Motor de tráfego pago automotivo" },
+        { name: "description", content: "Suite SaaS para gestão e relatórios de performance Meta Ads no segmento automotivo." },
+        { name: "theme-color", content: "#DC2626" },
+        { property: "og:title", content: "NC Performance Suite — Motor de tráfego pago automotivo" },
+        { property: "og:description", content: "Suite SaaS para gestão e relatórios de performance Meta Ads no segmento automotivo." },
+        { property: "og:type", content: "website" },
+        { name: "twitter:title", content: "NC Performance Suite — Motor de tráfego pago automotivo" },
+        { name: "twitter:description", content: "Suite SaaS para gestão e relatórios de performance Meta Ads no segmento automotivo." },
+        { property: "og:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/7cd3254f-040f-43e5-97e1-471846f1d21c/id-preview-fa213812--77b0eaf2-9183-45a2-a6bd-af190dc9de8c.lovable.app-1778846697148.png" },
+        { name: "twitter:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/7cd3254f-040f-43e5-97e1-471846f1d21c/id-preview-fa213812--77b0eaf2-9183-45a2-a6bd-af190dc9de8c.lovable.app-1778846697148.png" },
+        { name: "twitter:card", content: "summary_large_image" },
+      ],
+      links: [
+        { rel: "stylesheet", href: appCss },
+        { rel: "preconnect", href: "https://fonts.googleapis.com" },
+        { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "anonymous" },
+        {
+          rel: "stylesheet",
+          href: "https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800;900&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap",
+        },
+      ],
+    }),
+    shellComponent: RootShell,
+    component: RootComponent,
+    notFoundComponent: NotFoundComponent,
+    errorComponent: ErrorComponent,
+  }
+);
 
 function RootShell({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="pt-BR" className="dark">
+    <html lang="pt-BR">
       <head><HeadContent /></head>
       <body>
         {children}
@@ -115,7 +132,26 @@ function RootShell({ children }: { children: React.ReactNode }) {
 
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
-  
+  const [theme, setTheme] = useState<Theme>("dark");
+
+  useEffect(() => {
+    // Recupera tema salvo no localStorage
+    const saved = localStorage.getItem("nc-theme") as Theme | null;
+    const initial = saved || "dark";
+    setTheme(initial);
+    document.documentElement.className = initial;
+  }, []);
+
+  const toggleTheme = () => {
+    const next = theme === "dark" ? "light" : "dark";
+    setTheme(next);
+    document.documentElement.className = next;
+    localStorage.setItem("nc-theme", next);
+    // Adiciona classe de transição temporária para animação suave
+    document.documentElement.classList.add("theme-transition");
+    setTimeout(() => document.documentElement.classList.remove("theme-transition"), 400);
+  };
+
   useEffect(() => {
     const path = window.location.pathname;
     if (path.startsWith("/_app/")) {
@@ -126,9 +162,11 @@ function RootComponent() {
   }, []);
 
   return (
-    <QueryClientProvider client={queryClient}>
-      <Outlet />
-      <Toaster theme="dark" position="top-right" richColors />
-    </QueryClientProvider>
+    <ThemeContext.Provider value={{ theme, toggleTheme }}>
+      <QueryClientProvider client={queryClient}>
+        <Outlet />
+        <Toaster theme={theme} position="top-right" richColors />
+      </QueryClientProvider>
+    </ThemeContext.Provider>
   );
 }

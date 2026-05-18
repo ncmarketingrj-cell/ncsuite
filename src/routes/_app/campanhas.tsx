@@ -55,7 +55,8 @@ function MetaAdsManagerPage() {
     queryFn: async () => {
       const startStr = dateRange.startDate.toISOString().split("T")[0];
       const endStr = dateRange.endDate.toISOString().split("T")[0];
-      let q = supabase.from("campaigns").select(`id, name, status, budget, external_id, ad_account_id, ad_account:ad_accounts(name), metrics(cost, conversions, impressions, reach, date)`);
+      let q = (supabase as any)
+        .from("campaigns").select(`id, name, status, budget, external_id, ad_account_id, ad_account:ad_accounts(name), metrics(cost, conversions, impressions, reach, date)`);
       if (accountFilter !== "all") q = q.eq("ad_account_id", accountFilter);
       if (statusFilter !== "all") q = q.ilike("status", statusFilter === "active" ? "ACTIVE" : "PAUSED");
       const { data, error } = await q.order("name");
@@ -71,8 +72,10 @@ function MetaAdsManagerPage() {
       if (selectedCamps.size === 0) return [];
       const startStr = dateRange.startDate.toISOString().split("T")[0];
       const endStr = dateRange.endDate.toISOString().split("T")[0];
-      let q = supabase.from("ad_sets").select(`id, name, status, budget, external_id, campaign_id, asset_metrics(cost, conversions, impressions, reach, date)`);
-      q = q.in("campaign_id", Array.from(selectedCamps));
+      let q = (supabase as any).from("ad_sets").select(`
+        id, name, status, budget, external_id, campaign_id,
+        asset_metrics(cost, conversions, impressions, clicks, reach, date)
+      `);q = q.in("campaign_id", Array.from(selectedCamps));
       if (statusFilter !== "all") q = q.ilike("status", statusFilter === "active" ? "ACTIVE" : "PAUSED");
       const { data, error } = await q.order("name");
       if (error) throw error;
@@ -86,8 +89,10 @@ function MetaAdsManagerPage() {
     queryFn: async () => {
       const startStr = dateRange.startDate.toISOString().split("T")[0];
       const endStr = dateRange.endDate.toISOString().split("T")[0];
-      let q = supabase.from("ads").select(`id, name, status, external_id, campaign_id, ad_set_id, asset_metrics(cost, conversions, impressions, reach, date)`);
-      if (selectedAdSets.size > 0) q = q.in("ad_set_id", Array.from(selectedAdSets));
+      let q = (supabase as any).from("ads").select(`
+        id, name, status, external_id, campaign_id, ad_set_id, creative_url,
+        asset_metrics(cost, conversions, impressions, clicks, reach, date)
+      `);if (selectedAdSets.size > 0) q = q.in("ad_set_id", Array.from(selectedAdSets));
       else if (selectedCamps.size > 0) q = q.in("campaign_id", Array.from(selectedCamps));
       else return [];
       if (statusFilter !== "all") q = q.ilike("status", statusFilter === "active" ? "ACTIVE" : "PAUSED");
@@ -137,7 +142,7 @@ function MetaAdsManagerPage() {
       const targetStatus = isActive ? "PAUSED" : "ACTIVE";
       setChangingId(id);
       const table = type === "campanhas" ? "campaigns" : type === "conjuntos" ? "ad_sets" : "ads";
-      await supabase.from(table).update({ status: targetStatus }).eq("id", id);
+      await (supabase as any).from(table).update({ status: targetStatus }).eq("id", id);
       return { id, targetStatus, type };
     },
     onSuccess: ({ targetStatus }) => { 

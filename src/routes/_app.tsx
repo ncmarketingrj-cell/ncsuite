@@ -3,16 +3,17 @@ import { createFileRoute, Outlet, redirect, Link, useRouterState } from "@tansta
 import { motion, AnimatePresence } from "framer-motion";
 import {
   LayoutDashboard, FileText, Upload, Settings, LogOut, Loader2,
-  ChevronRight, Bell, Search, User, Bot, Sparkles, Activity, ShieldCheck, Zap, Info
+  Bell, Search, User, Bot, Sparkles, Activity, ShieldCheck, Zap,
+  Sun, Moon, Menu, X, BarChart3, Megaphone, LineChart, Palette, Link2,
+  HelpCircle, ChevronDown
 } from "lucide-react";
 import { AuthProvider, useAuth } from "@/lib/auth";
 import { supabase } from "@/integrations/supabase/client";
-import { AppSidebar } from "@/components/AppSidebar";
-import { Logo } from "@/components/Logo";
 import { AIAgentSidebar } from "@/components/AIAgentSidebar";
 import { useQuery } from "@tanstack/react-query";
 import { formatDistanceToNow } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { useTheme } from "./__root";
 
 export const Route = createFileRoute("/_app")({
   beforeLoad: async () => {
@@ -26,11 +27,38 @@ export const Route = createFileRoute("/_app")({
   ),
 });
 
+type NavItem = {
+  to: string;
+  icon: any;
+  label: string;
+  group?: string;
+};
+
+const NAV_ITEMS: NavItem[] = [
+  { to: "/dashboard", icon: LayoutDashboard, label: "Dashboard" },
+  { to: "/metricas", icon: LineChart, label: "Métricas" },
+  { to: "/campanhas", icon: Megaphone, label: "Campanhas" },
+  { to: "/relatorios", icon: FileText, label: "Relatórios" },
+  { to: "/upload", icon: Upload, label: "Upload" },
+  { to: "/criativos", icon: Palette, label: "Criativos" },
+];
+
+const MORE_ITEMS: NavItem[] = [
+  { to: "/multicanal", icon: BarChart3, label: "Multicanal" },
+  { to: "/organizador", icon: Link2, label: "Link Pages" },
+  { to: "/automacoes", icon: Zap, label: "Automações" },
+  { to: "/agente", icon: Bot, label: "Agente IA" },
+  { to: "/config", icon: Settings, label: "Configurações" },
+];
+
 function Shell() {
   const { loading, user, signOut } = useAuth();
   const path = useRouterState({ select: (s) => s.location.pathname });
   const [isAgentOpen, setIsAgentOpen] = useState(false);
   const [showNotification, setShowNotification] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [showMore, setShowMore] = useState(false);
+  const { theme, toggleTheme } = useTheme();
 
   useEffect(() => {
     const handleOpenAI = () => setIsAgentOpen(true);
@@ -38,7 +66,7 @@ function Shell() {
     return () => window.removeEventListener('open-ai-agent', handleOpenAI);
   }, []);
 
-  // Monitora as ações em tempo real do Agente de Automação
+  // Monitora ações em tempo real do Agente
   const { data: recentLogs = [] } = useQuery({
     queryKey: ["header_automation_logs"],
     queryFn: async () => {
@@ -47,21 +75,17 @@ function Shell() {
         .select("*, automation_rules(name)")
         .order("created_at", { ascending: false })
         .limit(3);
-      
       if (error) return [];
       return data as any[];
     },
-    refetchInterval: 30000, // Atualiza a cada 30 segundos
+    refetchInterval: 30000,
   });
 
-  // Dispara uma notificação flutuante suave quando o agente executa uma ação
   useEffect(() => {
     if (recentLogs.length > 0) {
       const lastLog = recentLogs[0];
       const logTime = new Date(lastLog.created_at).getTime();
       const now = new Date().getTime();
-      
-      // Se a ação ocorreu nos últimos 2 minutos, exibe uma notificação para o usuário sentir a IA ativa!
       if (now - logTime < 120000) {
         setShowNotification(true);
         const timer = setTimeout(() => setShowNotification(false), 8000);
@@ -70,163 +94,246 @@ function Shell() {
     }
   }, [recentLogs]);
 
+  // Fecha o menu mobile ao navegar
+  useEffect(() => {
+    setMobileMenuOpen(false);
+    setShowMore(false);
+  }, [path]);
+
   if (loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center">
-        <Loader2 className="h-6 w-6 animate-spin text-primary" />
+      <div className="flex min-h-screen items-center justify-center bg-background">
+        <div className="flex flex-col items-center gap-4">
+          <div className="h-10 w-10 rounded-2xl bg-primary flex items-center justify-center">
+            <span className="font-display font-black text-primary-foreground text-lg">NC</span>
+          </div>
+          <Loader2 className="h-5 w-5 animate-spin text-primary" />
+        </div>
       </div>
     );
   }
 
-  const segments = path.split("/").filter(Boolean);
-  const breadcrumb = segments.length > 0 
-    ? segments.map(s => s.charAt(0).toUpperCase() + s.slice(1).replace("-", " "))
-    : ["Dashboard"];
-
   return (
-    <div className="flex h-screen w-full bg-background overflow-hidden selection:bg-primary/30">
-      <AppSidebar />
+    <div className="flex min-h-screen w-full flex-col bg-background overflow-hidden selection:bg-primary/30">
       
-      <div className="flex min-w-0 flex-1 flex-col relative overflow-hidden">
-        <header className="h-14 border-b border-white/5 bg-background/50 backdrop-blur-xl flex items-center justify-between px-8 z-40 shrink-0">
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground/50">
-              <span className="hover:text-primary transition-colors cursor-pointer hidden md:inline">NC Performance Suite</span>
-              {breadcrumb.map((b, i) => (
-                <div key={i} className="flex items-center gap-2">
-                  <ChevronRight className="h-2.5 w-2.5 hidden md:block" />
-                  <span className={i === breadcrumb.length - 1 ? "text-foreground" : ""}>{b}</span>
-                </div>
-              ))}
+      {/* ═══════════════════════════════════════
+          TOP NAVIGATION BAR — Premium Horizontal
+          ═══════════════════════════════════════ */}
+      <header className="sticky top-0 z-50 border-b border-border bg-background/80 backdrop-blur-xl">
+        <div className="mx-auto flex h-16 max-w-[1600px] items-center justify-between px-4 md:px-8">
+          
+          {/* LEFT: Logo */}
+          <Link to="/dashboard" className="flex items-center gap-2.5 shrink-0">
+            <div className="h-9 w-9 rounded-xl bg-primary flex items-center justify-center shadow-glow-sm">
+              <span className="font-display font-black text-primary-foreground text-sm">NC</span>
             </div>
-          </div>
+            <div className="hidden sm:flex flex-col leading-none">
+              <span className="font-display text-sm font-bold tracking-tight">Performance</span>
+              <span className="text-[8px] font-mono font-bold uppercase tracking-[0.25em] text-primary">Suite</span>
+            </div>
+          </Link>
 
-          <div className="flex items-center gap-6">
-             <div className="hidden lg:flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/5 border border-white/5 group focus-within:border-primary/50 transition-all">
-                <Search className="h-3.5 w-3.5 text-muted-foreground group-focus-within:text-primary" />
-                <input 
-                  placeholder="Pesquisar métricas..." 
-                  className="bg-transparent border-none outline-none text-[11px] w-32 focus:w-48 transition-all"
-                />
-             </div>
-
-             <div className="flex items-center gap-4 border-l border-white/5 pl-6">
-                
-                {/* 🤖 MONITOR DE INTELIGÊNCIA ARTIFICIAL - VICTORIA AGENT */}
-                <div className="relative group/agent">
-                  <button 
-                    onClick={() => setIsAgentOpen(!isAgentOpen)}
-                    className="flex items-center gap-2 px-2.5 py-1.5 rounded-xl bg-primary/10 border border-primary/20 hover:bg-primary/20 transition-all duration-300 cursor-pointer shadow-glow-sm hover:scale-105 active:scale-95"
-                  >
-                     <Bot className="h-3.5 w-3.5 text-primary animate-pulse" />
-                     <span className="text-[9px] font-black uppercase tracking-widest text-primary hidden sm:inline">Victoria IA Ativa</span>
-                     <div className="h-1.5 w-1.5 rounded-full bg-success animate-ping" />
-                  </button>
-
-                  {/* Flyout detalhando a atividade do orquestrador de IA */}
-                  <div className="pointer-events-none absolute right-0 top-full z-50 mt-2 w-80 origin-top-right scale-95 rounded-2xl border border-white/10 bg-background/95 p-4 opacity-0 shadow-2xl transition-all duration-200 group-hover/agent:pointer-events-auto group-hover/agent:scale-100 group-hover/agent:opacity-100 backdrop-blur-xl">
-                    <div className="flex items-center justify-between border-b border-white/5 pb-2.5 mb-3">
-                      <p className="text-[10px] font-black uppercase tracking-wider text-primary flex items-center gap-1.5">
-                        <Sparkles className="h-3 w-3 text-primary animate-pulse" /> Victoria AI Engine
-                      </p>
-                      <span className="rounded-full bg-success/15 px-1.5 py-0.5 text-[8px] font-bold uppercase text-success flex items-center gap-1">
-                        <span className="h-1 w-1 rounded-full bg-success animate-pulse" /> Autônomo
-                      </span>
-                    </div>
-
-                    <div className="space-y-3">
-                      <p className="text-[9px] font-black text-muted-foreground uppercase tracking-widest">Atividade Recente do Agente</p>
-                      
-                      {recentLogs.length > 0 ? (
-                        <div className="space-y-2 max-h-[180px] overflow-y-auto custom-scrollbar pr-1">
-                          {recentLogs.map((log: any) => (
-                            <div key={log.id} className="rounded-lg bg-white/[0.02] border border-white/5 p-2 text-[10px]">
-                              <p className="font-bold text-foreground flex items-center justify-between">
-                                <span>{log.automation_rules?.name || "Regra de Otimização"}</span>
-                                <span className="text-primary font-mono text-[8px]">
-                                  {formatDistanceToNow(new Date(log.created_at), { locale: ptBR, addSuffix: false })}
-                                </span>
-                              </p>
-                              <p className="text-muted-foreground mt-1 text-[9px] leading-relaxed">
-                                {log.action_taken} {log.new_value !== null && `(Ajustado de ${log.old_value} para ${log.new_value})`}
-                              </p>
-                            </div>
-                          ))}
-                        </div>
-                      ) : (
-                        <div className="rounded-xl bg-white/[0.02] border border-white/5 p-4 text-center">
-                          <ShieldCheck className="h-6 w-6 text-success/70 mx-auto mb-2" />
-                          <p className="text-[10px] text-foreground font-bold">Modo de Proteção Ativo</p>
-                          <p className="text-[9px] text-muted-foreground mt-1 leading-relaxed">
-                            A IA está monitorando os KPIs de ROAS, CPA e orçamentos ativamente. Nenhuma intervenção ou desvio crítico nas últimas 24 horas.
-                          </p>
-                        </div>
-                      )}
-
-                      <div className="border-t border-white/5 pt-2.5 mt-2 flex items-center justify-between text-[9px] text-muted-foreground">
-                        <span className="font-medium">Sessão da IA: 24/7</span>
-                        <button 
-                          onClick={() => { setIsAgentOpen(true); }}
-                          className="text-primary font-bold hover:underline uppercase tracking-tighter"
-                        >
-                          Abrir Console de Insights →
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <button className="relative text-muted-foreground hover:text-foreground transition-colors p-1.5 rounded-lg hover:bg-white/5">
-                  <Bell className="h-4 w-4" />
-                  <span className="absolute top-1.5 right-1.5 h-1.5 w-1.5 rounded-full bg-primary" />
-                </button>
-                
-                <div className="flex items-center gap-3 pl-2 border-l border-white/5">
-                   <div className="hidden text-right lg:block">
-                      <p className="text-[10px] font-bold leading-none">{user?.email?.split('@')[0]}</p>
-                      <button onClick={signOut} className="text-[9px] text-muted-foreground hover:text-destructive transition-colors font-bold uppercase tracking-tighter mt-1">Sair da conta</button>
-                   </div>
-                   <div className="h-8 w-8 rounded-full bg-gradient-to-br from-primary/20 to-secondary/20 border border-white/10 flex items-center justify-center ring-1 ring-white/5 shadow-glow-sm">
-                      <User className="h-4 w-4 text-primary" />
-                   </div>
-                </div>
-             </div>
-          </div>
-        </header>
-        
-        <main className="flex-1 overflow-y-auto custom-scrollbar bg-[radial-gradient(circle_at_top_right,rgba(var(--primary-rgb),0.03),transparent_40%)]">
-          <div className="mx-auto max-w-[1400px] p-6 md:p-10 relative">
-            
-            {/* Notificação Flutuante de Ação Autônoma da IA */}
-            <AnimatePresence>
-              {showNotification && recentLogs.length > 0 && (
-                <motion.div
-                  initial={{ opacity: 0, y: 50, scale: 0.9 }}
-                  animate={{ opacity: 1, y: 0, scale: 1 }}
-                  exit={{ opacity: 0, y: 20, scale: 0.9 }}
-                  className="fixed bottom-6 right-6 z-50 max-w-sm rounded-2xl border border-primary/30 bg-background/95 p-4 shadow-2xl backdrop-blur-xl"
+          {/* CENTER: Navigation Links (Desktop) */}
+          <nav className="hidden lg:flex items-center gap-1">
+            {NAV_ITEMS.map((item) => {
+              const isActive = path === item.to || (item.to !== "/dashboard" && path.startsWith(item.to));
+              return (
+                <Link
+                  key={item.to}
+                  to={item.to}
+                  className={`group relative flex items-center gap-2 rounded-xl px-3.5 py-2 text-[13px] font-semibold transition-all duration-200 ${
+                    isActive 
+                      ? "text-primary bg-primary/10" 
+                      : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
+                  }`}
                 >
-                  <div className="flex items-start gap-3">
-                    <div className="rounded-xl bg-primary/10 p-2 text-primary">
-                      <Sparkles className="h-4 w-4 animate-spin-slow" />
-                    </div>
-                    <div className="flex-1">
-                      <p className="text-xs font-black uppercase tracking-wider text-primary">Ação de IA Executada!</p>
-                      <p className="text-[11px] font-bold text-foreground mt-0.5">{recentLogs[0].automation_rules?.name}</p>
-                      <p className="text-[10px] text-muted-foreground mt-1 leading-relaxed">{recentLogs[0].action_taken}</p>
-                      <div className="mt-2.5 flex justify-end">
-                        <Link to="/automacoes" className="text-[9px] font-black uppercase text-primary hover:underline">Ver Histórico de Logs</Link>
-                      </div>
+                  <item.icon className={`h-4 w-4 transition-transform group-hover:scale-110 ${isActive ? 'text-primary' : ''}`} />
+                  <span>{item.label}</span>
+                  {isActive && (
+                    <motion.div
+                      layoutId="nav-indicator"
+                      className="absolute inset-x-2 -bottom-[17px] h-[2px] bg-primary rounded-full"
+                      transition={{ type: "spring", stiffness: 500, damping: 35 }}
+                    />
+                  )}
+                </Link>
+              );
+            })}
+
+            {/* More dropdown */}
+            <div className="relative">
+              <button 
+                onClick={() => setShowMore(!showMore)}
+                className={`flex items-center gap-1.5 rounded-xl px-3 py-2 text-[13px] font-semibold transition-all ${
+                  MORE_ITEMS.some(i => path.startsWith(i.to))
+                    ? "text-primary bg-primary/10"
+                    : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
+                }`}
+              >
+                Mais
+                <ChevronDown className={`h-3.5 w-3.5 transition-transform ${showMore ? 'rotate-180' : ''}`} />
+              </button>
+              
+              <AnimatePresence>
+                {showMore && (
+                  <>
+                    <div className="fixed inset-0 z-40" onClick={() => setShowMore(false)} />
+                    <motion.div
+                      initial={{ opacity: 0, y: 8, scale: 0.96 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, y: 8, scale: 0.96 }}
+                      className="absolute right-0 top-full z-50 mt-2 w-56 rounded-2xl border border-border bg-card p-2 shadow-2xl"
+                    >
+                      {MORE_ITEMS.map((item) => {
+                        const isActive = path.startsWith(item.to);
+                        return (
+                          <Link
+                            key={item.to}
+                            to={item.to}
+                            onClick={() => setShowMore(false)}
+                            className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all ${
+                              isActive ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
+                            }`}
+                          >
+                            <item.icon className="h-4 w-4" />
+                            {item.label}
+                          </Link>
+                        );
+                      })}
+                    </motion.div>
+                  </>
+                )}
+              </AnimatePresence>
+            </div>
+          </nav>
+
+          {/* RIGHT: Actions */}
+          <div className="flex items-center gap-2 sm:gap-3">
+            
+            {/* Theme Toggle */}
+            <button
+              onClick={toggleTheme}
+              className="relative flex h-9 w-9 items-center justify-center rounded-xl border border-border bg-card text-muted-foreground transition-all hover:text-foreground hover:border-primary/30 hover:shadow-glow-sm active:scale-95"
+              title={theme === "dark" ? "Modo Claro" : "Modo Escuro"}
+            >
+              <AnimatePresence mode="wait">
+                {theme === "dark" ? (
+                  <motion.div key="sun" initial={{ rotate: -90, opacity: 0 }} animate={{ rotate: 0, opacity: 1 }} exit={{ rotate: 90, opacity: 0 }} transition={{ duration: 0.2 }}>
+                    <Sun className="h-4 w-4" />
+                  </motion.div>
+                ) : (
+                  <motion.div key="moon" initial={{ rotate: 90, opacity: 0 }} animate={{ rotate: 0, opacity: 1 }} exit={{ rotate: -90, opacity: 0 }} transition={{ duration: 0.2 }}>
+                    <Moon className="h-4 w-4" />
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </button>
+
+            {/* Victoria AI Badge */}
+            <button
+              onClick={() => setIsAgentOpen(!isAgentOpen)}
+              className="hidden sm:flex items-center gap-2 rounded-xl border border-primary/20 bg-primary/10 px-3 py-2 text-[11px] font-bold uppercase tracking-wider text-primary transition-all hover:bg-primary/20 hover:shadow-glow-sm active:scale-95"
+            >
+              <Bot className="h-3.5 w-3.5" />
+              <span className="hidden md:inline">Victoria</span>
+              <span className="h-1.5 w-1.5 rounded-full bg-success animate-pulse" />
+            </button>
+
+            {/* Notifications */}
+            <button className="relative flex h-9 w-9 items-center justify-center rounded-xl border border-border bg-card text-muted-foreground transition-all hover:text-foreground hover:border-primary/30 active:scale-95">
+              <Bell className="h-4 w-4" />
+              <span className="absolute top-2 right-2 h-1.5 w-1.5 rounded-full bg-primary" />
+            </button>
+
+            {/* User Profile */}
+            <div className="flex items-center gap-2 pl-2 ml-1 border-l border-border">
+              <div className="hidden md:flex flex-col items-end leading-none">
+                <p className="text-[11px] font-bold">{user?.email?.split('@')[0]}</p>
+                <button onClick={signOut} className="text-[10px] text-muted-foreground hover:text-primary transition-colors font-semibold mt-0.5">
+                  Sair
+                </button>
+              </div>
+              <div className="h-8 w-8 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center">
+                <User className="h-4 w-4 text-primary" />
+              </div>
+            </div>
+
+            {/* Mobile Menu Toggle */}
+            <button 
+              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+              className="flex lg:hidden h-9 w-9 items-center justify-center rounded-xl border border-border bg-card text-muted-foreground"
+            >
+              {mobileMenuOpen ? <X className="h-4 w-4" /> : <Menu className="h-4 w-4" />}
+            </button>
+          </div>
+        </div>
+
+        {/* Mobile Navigation Dropdown */}
+        <AnimatePresence>
+          {mobileMenuOpen && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: "auto", opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              className="lg:hidden border-t border-border bg-card overflow-hidden"
+            >
+              <nav className="p-4 grid grid-cols-2 gap-2">
+                {[...NAV_ITEMS, ...MORE_ITEMS].map((item) => {
+                  const isActive = path === item.to || path.startsWith(item.to);
+                  return (
+                    <Link
+                      key={item.to}
+                      to={item.to}
+                      className={`flex items-center gap-2.5 rounded-xl px-3 py-3 text-sm font-semibold transition-all ${
+                        isActive ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-muted/50"
+                      }`}
+                    >
+                      <item.icon className="h-4 w-4" />
+                      {item.label}
+                    </Link>
+                  );
+                })}
+              </nav>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </header>
+
+      {/* ═══════════════════════════════════════
+          MAIN CONTENT
+          ═══════════════════════════════════════ */}
+      <main className="flex-1 overflow-y-auto custom-scrollbar">
+        <div className="mx-auto max-w-[1600px] p-4 md:p-8 lg:p-10">
+          
+          {/* Notificação Flutuante de Ação Autônoma da IA */}
+          <AnimatePresence>
+            {showNotification && recentLogs.length > 0 && (
+              <motion.div
+                initial={{ opacity: 0, y: 50, scale: 0.9 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: 20, scale: 0.9 }}
+                className="fixed bottom-6 right-6 z-50 max-w-sm rounded-2xl border border-primary/30 bg-card p-4 shadow-2xl"
+              >
+                <div className="flex items-start gap-3">
+                  <div className="rounded-xl bg-primary/10 p-2 text-primary">
+                    <Sparkles className="h-4 w-4" />
+                  </div>
+                  <div className="flex-1">
+                    <p className="text-xs font-black uppercase tracking-wider text-primary">Ação de IA</p>
+                    <p className="text-[11px] font-bold text-foreground mt-0.5">{recentLogs[0].automation_rules?.name}</p>
+                    <p className="text-[10px] text-muted-foreground mt-1">{recentLogs[0].action_taken}</p>
+                    <div className="mt-2 flex justify-end">
+                      <Link to="/automacoes" className="text-[9px] font-bold uppercase text-primary hover:underline">Ver Logs</Link>
                     </div>
                   </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
 
-            <Outlet />
-          </div>
-        </main>
-      </div>
+          <Outlet />
+        </div>
+      </main>
 
       <AIAgentSidebar isOpen={isAgentOpen} onClose={() => setIsAgentOpen(false)} />
     </div>

@@ -21,7 +21,8 @@ export function useCampaigns(filters?: { clientId?: string; status?: string; sea
   const { data: campaigns = [], isLoading } = useQuery({
     queryKey: ["campaigns", filters],
     queryFn: async () => {
-      let q = supabase.from("campaigns").select("*").order("created_at", { ascending: false });
+      let q = (supabase as any)
+        .from("campaigns").select("*").order("created_at", { ascending: false });
       if (filters?.clientId) q = q.eq("client_id", filters.clientId);
       if (filters?.status && filters.status !== "all") q = q.eq("status", filters.status);
       if (filters?.search) q = q.ilike("name", `%${filters.search}%`);

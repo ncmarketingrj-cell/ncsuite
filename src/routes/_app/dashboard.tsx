@@ -99,6 +99,7 @@ function Dashboard() {
       let previousPeriod = { cost: 0, conversions: 0, clicks: 0, impressions: 0 };
 
       (metrics || []).forEach(m => {
+        if (!m.date) return;
         const d = new Date(m.date);
         const isCurrent = d >= new Date(startStr) && d <= new Date(endStr);
         const isPrevious = d >= new Date(prevStartStr) && d < new Date(startStr);
@@ -156,7 +157,7 @@ function Dashboard() {
   const { data: config } = useQuery({
     queryKey: ["agent-config"],
     queryFn: async () => {
-      const { data } = await supabase.from("meta_ads_configs").select("*").maybeSingle();
+      const { data } = await (supabase as any).from("meta_ads_configs").select("*").maybeSingle();
       return data;
     },
   });
@@ -164,7 +165,7 @@ function Dashboard() {
   const { data: synthesis } = useQuery({
     queryKey: ["agent-synthesis"],
     queryFn: async () => {
-      const { data } = await supabase
+      const { data } = await (supabase as any)
         .from("agent_memory")
         .select("value, updated_at")
         .eq("key", "strategic_synthesis")

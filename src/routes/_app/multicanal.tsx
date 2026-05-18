@@ -55,7 +55,7 @@ function MulticanalPage() {
       const endStr = dateRange.endDate.toISOString().split("T")[0] + "T23:59:59Z";
 
       // Puxa campanhas com métricas associadas filtradas por data
-      let q = supabase
+      let q = (supabase as any)
         .from("campaigns")
         .select(`
           id, name, status, budget, client_id, platform, ad_account_id,
