@@ -518,7 +518,7 @@ function RelatoriosPage() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 print:hidden">
         
         {/* Painel Esquerdo: Variáveis do Relatório */}
-        <div className="glass-panel p-6 space-y-6 lg:col-span-1 border-white/10 bg-white/5">
+        <div className="glass-panel p-6 space-y-6 lg:col-span-1 border-white/10 bg-white/5 relative z-20">
           <h3 className="text-sm font-black uppercase tracking-widest text-primary border-b border-white/5 pb-3">Parâmetros de Customização</h3>
           
           <div className="space-y-4">
