@@ -125,12 +125,12 @@ function LandingPage() {
           transition={{ duration: 1.2, delay: 0.4, ease: [0.16, 1, 0.3, 1] }}
           className="relative mt-24 w-full max-w-[1200px] px-6 perspective-[2000px] z-20"
         >
-          <div className="relative rounded-2xl shadow-[0_0_150px_rgba(220,38,38,0.15)] ring-1 ring-white/10 overflow-hidden group">
+          <div className="relative rounded-2xl shadow-[0_0_150px_rgba(220,38,38,0.15)] ring-1 ring-white/10 overflow-hidden group aspect-video flex items-center justify-center bg-black/50">
             <div className="absolute inset-0 bg-gradient-to-b from-white/[0.05] to-transparent pointer-events-none z-10" />
             <img 
               src="/assets/mockup-dashboard.png" 
               alt="NC Dashboard Preview" 
-              className="w-full h-auto object-cover transform transition-transform duration-700 group-hover:scale-[1.02]"
+              className="absolute w-full h-full object-cover transform scale-[1.25] transition-transform duration-700 group-hover:scale-[1.28]"
             />
           </div>
         </motion.div>
@@ -186,11 +186,13 @@ function LandingPage() {
               className="relative"
             >
               <div className="absolute inset-0 -z-10 bg-red-600/5 blur-[100px] rounded-full" />
-              <img 
-                src="/assets/mockup-reports.png" 
-                alt="Motor de Relatórios" 
-                className="w-full rounded-2xl border border-white/10 shadow-2xl rotate-2 hover:rotate-0 transition-transform duration-700"
-              />
+              <div className="relative w-full rounded-2xl shadow-2xl rotate-2 hover:rotate-0 transition-transform duration-700 overflow-hidden aspect-video bg-black/50 ring-1 ring-white/10">
+                <img 
+                  src="/assets/mockup-reports.png" 
+                  alt="Motor de Relatórios" 
+                  className="absolute inset-0 w-full h-full object-cover transform scale-[1.25]"
+                />
+              </div>
             </motion.div>
           </div>
         </div>
@@ -269,7 +271,9 @@ function LandingPage() {
               </div>
             </div>
             <div className="md:w-1/2 p-6 md:p-10 flex justify-end z-10">
-              <img src="/assets/mockup-victoria.png" alt="Victoria AI Interface" className="rounded-xl shadow-2xl border border-white/10 max-h-[400px] object-cover object-left-top" />
+              <div className="relative rounded-xl shadow-2xl ring-1 ring-white/10 w-full max-w-[350px] h-[400px] overflow-hidden bg-black/50">
+                <img src="/assets/mockup-victoria.png" alt="Victoria AI Interface" className="absolute inset-0 w-full h-full object-cover object-left-top transform scale-[1.25]" />
+              </div>
             </div>
           </div>
         </div>
