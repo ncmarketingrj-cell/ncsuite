@@ -9,6 +9,7 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as TermsRouteImport } from './routes/terms'
 import { Route as PrivacyRouteImport } from './routes/privacy'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as DeletionRouteImport } from './routes/deletion'
@@ -19,7 +20,6 @@ import { Route as PSlugRouteImport } from './routes/p.$slug'
 import { Route as AppUtmsRouteImport } from './routes/_app/utms'
 import { Route as AppUploadRouteImport } from './routes/_app/upload'
 import { Route as AppRelatoriosRouteImport } from './routes/_app/relatorios'
-import { Route as AppQuizRouteImport } from './routes/_app/quiz'
 import { Route as AppOrganizadorRouteImport } from './routes/_app/organizador'
 import { Route as AppMulticanalRouteImport } from './routes/_app/multicanal'
 import { Route as AppMetricasRouteImport } from './routes/_app/metricas'
@@ -28,7 +28,14 @@ import { Route as AppDashboardRouteImport } from './routes/_app/dashboard'
 import { Route as AppCriativosRouteImport } from './routes/_app/criativos'
 import { Route as AppConfigRouteImport } from './routes/_app/config'
 import { Route as AppCampanhasRouteImport } from './routes/_app/campanhas'
+import { Route as AppAutomacoesRouteImport } from './routes/_app/automacoes'
+import { Route as AppAgenteRouteImport } from './routes/_app/agente'
 
+const TermsRoute = TermsRouteImport.update({
+  id: '/terms',
+  path: '/terms',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const PrivacyRoute = PrivacyRouteImport.update({
   id: '/privacy',
   path: '/privacy',
@@ -78,11 +85,6 @@ const AppRelatoriosRoute = AppRelatoriosRouteImport.update({
   path: '/relatorios',
   getParentRoute: () => AppRoute,
 } as any)
-const AppQuizRoute = AppQuizRouteImport.update({
-  id: '/quiz',
-  path: '/quiz',
-  getParentRoute: () => AppRoute,
-} as any)
 const AppOrganizadorRoute = AppOrganizadorRouteImport.update({
   id: '/organizador',
   path: '/organizador',
@@ -123,12 +125,25 @@ const AppCampanhasRoute = AppCampanhasRouteImport.update({
   path: '/campanhas',
   getParentRoute: () => AppRoute,
 } as any)
+const AppAutomacoesRoute = AppAutomacoesRouteImport.update({
+  id: '/automacoes',
+  path: '/automacoes',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppAgenteRoute = AppAgenteRouteImport.update({
+  id: '/agente',
+  path: '/agente',
+  getParentRoute: () => AppRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/deletion': typeof DeletionRoute
   '/login': typeof LoginRoute
   '/privacy': typeof PrivacyRoute
+  '/terms': typeof TermsRoute
+  '/agente': typeof AppAgenteRoute
+  '/automacoes': typeof AppAutomacoesRoute
   '/campanhas': typeof AppCampanhasRoute
   '/config': typeof AppConfigRoute
   '/criativos': typeof AppCriativosRoute
@@ -137,7 +152,6 @@ export interface FileRoutesByFullPath {
   '/metricas': typeof AppMetricasRoute
   '/multicanal': typeof AppMulticanalRoute
   '/organizador': typeof AppOrganizadorRoute
-  '/quiz': typeof AppQuizRoute
   '/relatorios': typeof AppRelatoriosRoute
   '/upload': typeof AppUploadRoute
   '/utms': typeof AppUtmsRoute
@@ -149,6 +163,9 @@ export interface FileRoutesByTo {
   '/deletion': typeof DeletionRoute
   '/login': typeof LoginRoute
   '/privacy': typeof PrivacyRoute
+  '/terms': typeof TermsRoute
+  '/agente': typeof AppAgenteRoute
+  '/automacoes': typeof AppAutomacoesRoute
   '/campanhas': typeof AppCampanhasRoute
   '/config': typeof AppConfigRoute
   '/criativos': typeof AppCriativosRoute
@@ -157,7 +174,6 @@ export interface FileRoutesByTo {
   '/metricas': typeof AppMetricasRoute
   '/multicanal': typeof AppMulticanalRoute
   '/organizador': typeof AppOrganizadorRoute
-  '/quiz': typeof AppQuizRoute
   '/relatorios': typeof AppRelatoriosRoute
   '/upload': typeof AppUploadRoute
   '/utms': typeof AppUtmsRoute
@@ -171,6 +187,9 @@ export interface FileRoutesById {
   '/deletion': typeof DeletionRoute
   '/login': typeof LoginRoute
   '/privacy': typeof PrivacyRoute
+  '/terms': typeof TermsRoute
+  '/_app/agente': typeof AppAgenteRoute
+  '/_app/automacoes': typeof AppAutomacoesRoute
   '/_app/campanhas': typeof AppCampanhasRoute
   '/_app/config': typeof AppConfigRoute
   '/_app/criativos': typeof AppCriativosRoute
@@ -179,7 +198,6 @@ export interface FileRoutesById {
   '/_app/metricas': typeof AppMetricasRoute
   '/_app/multicanal': typeof AppMulticanalRoute
   '/_app/organizador': typeof AppOrganizadorRoute
-  '/_app/quiz': typeof AppQuizRoute
   '/_app/relatorios': typeof AppRelatoriosRoute
   '/_app/upload': typeof AppUploadRoute
   '/_app/utms': typeof AppUtmsRoute
@@ -193,6 +211,9 @@ export interface FileRouteTypes {
     | '/deletion'
     | '/login'
     | '/privacy'
+    | '/terms'
+    | '/agente'
+    | '/automacoes'
     | '/campanhas'
     | '/config'
     | '/criativos'
@@ -201,7 +222,6 @@ export interface FileRouteTypes {
     | '/metricas'
     | '/multicanal'
     | '/organizador'
-    | '/quiz'
     | '/relatorios'
     | '/upload'
     | '/utms'
@@ -213,6 +233,9 @@ export interface FileRouteTypes {
     | '/deletion'
     | '/login'
     | '/privacy'
+    | '/terms'
+    | '/agente'
+    | '/automacoes'
     | '/campanhas'
     | '/config'
     | '/criativos'
@@ -221,7 +244,6 @@ export interface FileRouteTypes {
     | '/metricas'
     | '/multicanal'
     | '/organizador'
-    | '/quiz'
     | '/relatorios'
     | '/upload'
     | '/utms'
@@ -234,6 +256,9 @@ export interface FileRouteTypes {
     | '/deletion'
     | '/login'
     | '/privacy'
+    | '/terms'
+    | '/_app/agente'
+    | '/_app/automacoes'
     | '/_app/campanhas'
     | '/_app/config'
     | '/_app/criativos'
@@ -242,7 +267,6 @@ export interface FileRouteTypes {
     | '/_app/metricas'
     | '/_app/multicanal'
     | '/_app/organizador'
-    | '/_app/quiz'
     | '/_app/relatorios'
     | '/_app/upload'
     | '/_app/utms'
@@ -256,12 +280,20 @@ export interface RootRouteChildren {
   DeletionRoute: typeof DeletionRoute
   LoginRoute: typeof LoginRoute
   PrivacyRoute: typeof PrivacyRoute
+  TermsRoute: typeof TermsRoute
   PSlugRoute: typeof PSlugRoute
   QSlugRoute: typeof QSlugRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/terms': {
+      id: '/terms'
+      path: '/terms'
+      fullPath: '/terms'
+      preLoaderRoute: typeof TermsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/privacy': {
       id: '/privacy'
       path: '/privacy'
@@ -332,13 +364,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppRelatoriosRouteImport
       parentRoute: typeof AppRoute
     }
-    '/_app/quiz': {
-      id: '/_app/quiz'
-      path: '/quiz'
-      fullPath: '/quiz'
-      preLoaderRoute: typeof AppQuizRouteImport
-      parentRoute: typeof AppRoute
-    }
     '/_app/organizador': {
       id: '/_app/organizador'
       path: '/organizador'
@@ -395,10 +420,26 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppCampanhasRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/automacoes': {
+      id: '/_app/automacoes'
+      path: '/automacoes'
+      fullPath: '/automacoes'
+      preLoaderRoute: typeof AppAutomacoesRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/agente': {
+      id: '/_app/agente'
+      path: '/agente'
+      fullPath: '/agente'
+      preLoaderRoute: typeof AppAgenteRouteImport
+      parentRoute: typeof AppRoute
+    }
   }
 }
 
 interface AppRouteChildren {
+  AppAgenteRoute: typeof AppAgenteRoute
+  AppAutomacoesRoute: typeof AppAutomacoesRoute
   AppCampanhasRoute: typeof AppCampanhasRoute
   AppConfigRoute: typeof AppConfigRoute
   AppCriativosRoute: typeof AppCriativosRoute
@@ -407,13 +448,14 @@ interface AppRouteChildren {
   AppMetricasRoute: typeof AppMetricasRoute
   AppMulticanalRoute: typeof AppMulticanalRoute
   AppOrganizadorRoute: typeof AppOrganizadorRoute
-  AppQuizRoute: typeof AppQuizRoute
   AppRelatoriosRoute: typeof AppRelatoriosRoute
   AppUploadRoute: typeof AppUploadRoute
   AppUtmsRoute: typeof AppUtmsRoute
 }
 
 const AppRouteChildren: AppRouteChildren = {
+  AppAgenteRoute: AppAgenteRoute,
+  AppAutomacoesRoute: AppAutomacoesRoute,
   AppCampanhasRoute: AppCampanhasRoute,
   AppConfigRoute: AppConfigRoute,
   AppCriativosRoute: AppCriativosRoute,
@@ -422,7 +464,6 @@ const AppRouteChildren: AppRouteChildren = {
   AppMetricasRoute: AppMetricasRoute,
   AppMulticanalRoute: AppMulticanalRoute,
   AppOrganizadorRoute: AppOrganizadorRoute,
-  AppQuizRoute: AppQuizRoute,
   AppRelatoriosRoute: AppRelatoriosRoute,
   AppUploadRoute: AppUploadRoute,
   AppUtmsRoute: AppUtmsRoute,
@@ -436,6 +477,7 @@ const rootRouteChildren: RootRouteChildren = {
   DeletionRoute: DeletionRoute,
   LoginRoute: LoginRoute,
   PrivacyRoute: PrivacyRoute,
+  TermsRoute: TermsRoute,
   PSlugRoute: PSlugRoute,
   QSlugRoute: QSlugRoute,
 }

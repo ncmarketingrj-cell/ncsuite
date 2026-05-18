@@ -15,7 +15,9 @@ export type ExtractedCampaign = {
   clicks?: number;
   conversions?: number;
   reach?: number;
+  cpl?: number;
   result_type?: string;
+  platform?: "meta" | "google";
 };
 
 export const extractPrintFn = createServerFn({ method: "POST" })
@@ -26,8 +28,20 @@ export const extractPrintFn = createServerFn({ method: "POST" })
       throw new Error("LOVABLE_API_KEY não configurada");
     }
 
-    const systemPrompt = `Você é um motor de extração de dados de prints do Gerenciador de Anúncios do Meta (Facebook/Instagram Ads). Receba a imagem e retorne APENAS um JSON válido com a estrutura:
+    const systemPrompt = `Você é um motor de extração de dados de prints de dashboards de tráfego pago (Gerenciador de Anúncios do Meta Ads ou painel do Google Ads). Receba a imagem, identifique a plataforma do print (Meta Ads ou Google Ads) e extraia a lista de campanhas e suas métricas correspondentes.
+
+Preste extrema atenção para identificar as colunas e extrair:
+1. 'Nome da campanha' ou 'Campaign name' -> name
+2. 'Alcance' ou 'Reach' -> reach
+3. 'Impressões' ou 'Impressions' -> impressions
+4. 'Valor gasto', 'Custo', 'Cost' ou 'Amount spent' -> cost
+5. 'Resultados', 'Results', 'Conversões' ou 'Conversions' -> conversions (o número absoluto)
+6. 'Tipo de Resultado' ou 'Result type' (ex: 'Mensagens de conversas iniciadas', 'Visualizações', 'Cliques no link', 'Compras', 'Leads') -> result_type
+7. 'Custo por resultado', 'CPL', 'CPA', 'Custo por conversão' -> cpl (o valor monetário unitário)
+
+Retorne APENAS um JSON válido com a estrutura:
 {
+  "platform": "meta|google",
   "campaigns": [
     {
       "name": "string",
@@ -38,6 +52,7 @@ export const extractPrintFn = createServerFn({ method: "POST" })
       "clicks": number|null,
       "conversions": number|null,
       "reach": number|null,
+      "cpl": number|null,
       "result_type": "string|null"
     }
   ]
@@ -57,7 +72,7 @@ Não invente dados. Se não conseguir ler um campo, use null. Valores monetário
           {
             role: "user",
             content: [
-              { type: "text", text: "Extraia as campanhas deste print." },
+              { type: "text", text: "Extraia as campanhas e identifique a plataforma deste print." },
               { type: "image_url", image_url: { url: `data:${data.mimeType};base64,${data.imageBase64}` } },
             ],
           },
@@ -74,12 +89,17 @@ Não invente dados. Se não conseguir ler um campo, use null. Valores monetário
     const json = await res.json();
     const content: string = json.choices?.[0]?.message?.content ?? "";
     const cleaned = content.replace(/```json\s*/g, "").replace(/```/g, "").trim();
-    let parsed: { campaigns: ExtractedCampaign[] } = { campaigns: [] };
+    let parsed: { platform?: "meta" | "google"; campaigns: ExtractedCampaign[] } = { campaigns: [] };
     try {
       parsed = JSON.parse(cleaned);
     } catch {
       const match = cleaned.match(/\{[\s\S]*\}/);
       if (match) parsed = JSON.parse(match[0]);
     }
-    return { campaigns: parsed.campaigns ?? [] };
+    const detectedPlatform = parsed.platform ?? "meta";
+    const mappedCampaigns = (parsed.campaigns ?? []).map(c => ({
+      ...c,
+      platform: detectedPlatform
+    }));
+    return { platform: detectedPlatform, campaigns: mappedCampaigns };
   });

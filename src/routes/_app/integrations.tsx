@@ -3,6 +3,8 @@ import { motion } from "framer-motion";
 import { Zap, Wifi, WifiOff, ArrowRight } from "lucide-react";
 import { PageHeader } from "@/components/PageHeader";
 
+import { SyncButton } from "@/components/SyncButton";
+
 export const Route = createFileRoute("/_app/integrations")({
   head: () => ({ meta: [{ title: "Integrações — NC Suite" }] }),
   component: IntegrationsPage,
@@ -24,12 +26,9 @@ function IntegrationsPage() {
               Sincronize campanhas, métricas e insights diretamente do gerenciador de anúncios do Meta.
             </p>
             <div className="mt-4 flex items-center gap-3">
-              <div className="flex items-center gap-1.5 text-xs">
-                <WifiOff className="h-3.5 w-3.5 text-muted-foreground" />
-                <span className="text-muted-foreground">Não conectado</span>
-              </div>
-              <Link to="/config" className="inline-flex items-center gap-1.5 rounded-full bg-primary px-4 py-2 text-xs font-medium text-primary-foreground hover:shadow-glow">
-                Conectar <ArrowRight className="h-3 w-3" />
+              <SyncButton />
+              <Link to="/config" className="inline-flex items-center gap-1.5 rounded-full border border-white/10 px-4 py-2 text-xs font-medium hover:bg-white/5">
+                Configurações de Token <ArrowRight className="h-3 w-3" />
               </Link>
             </div>
           </div>

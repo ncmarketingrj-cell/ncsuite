@@ -1,93 +1,326 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { motion } from "framer-motion";
-import { DollarSign, MousePointer, Users, Target, Loader2 } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { 
+  DollarSign, MousePointer, Users, Target, Loader2, Sparkles, 
+  TrendingUp, BarChart3, PieChart as PieChartIcon, Calendar, Layers, RefreshCw
+} from "lucide-react";
 import { BarChart, Bar, PieChart, Pie, Cell, ResponsiveContainer, XAxis, YAxis, Tooltip, CartesianGrid } from "recharts";
 import { PageHeader } from "@/components/PageHeader";
-import { useMetrics } from "@/hooks/useMetrics";
-import { useClients } from "@/hooks/useClients";
-import { useCampaigns } from "@/hooks/useCampaigns";
+import { supabase } from "@/integrations/supabase/client";
+import { DateRangePicker } from "@/components/DateRangePicker";
+import { subDays } from "date-fns";
 
 export const Route = createFileRoute("/_app/multicanal")({
-  head: () => ({ meta: [{ title: "Performance — NC Suite" }] }),
+  head: () => ({ meta: [{ title: "Consolidado Executivo — NC Performance Suite" }] }),
   component: MulticanalPage,
 });
 
 const COLORS = ["#00d4ff", "#9b87f5", "#f97316", "#22c55e", "#ef4444", "#eab308"];
 
 function MulticanalPage() {
-  const [clientId, setClientId] = useState("");
-  const { clients } = useClients();
-  const { campaigns } = useCampaigns({ clientId: clientId || undefined });
-  const { data: metrics = [], isLoading } = useMetrics({ clientId: clientId || undefined, days: 30 });
+  const [clientId, setClientId] = useState("all");
+  const [accountId, setAccountId] = useState("all");
+  
+  // Período flexível de datas (Default: últimos 30 dias)
+  const [dateRange, setDateRange] = useState<{ startDate: Date; endDate: Date }>({
+    startDate: subDays(new Date(), 29),
+    endDate: new Date(),
+  });
 
-  const totalInvest = metrics.reduce((s, m) => s + (m.cost ?? 0), 0);
-  const totalLeads = metrics.reduce((s, m) => s + (m.conversions ?? 0), 0);
-  const cpl = totalLeads > 0 ? totalInvest / totalLeads : 0;
-  const roas = totalInvest > 0 ? ((totalLeads * 500) / totalInvest).toFixed(1) : "0";
+  // 1. Buscar Clientes
+  const { data: clients = [] } = useQuery({
+    queryKey: ["clients"],
+    queryFn: async () => {
+      const { data } = await supabase.from("clients").select("*").order("name");
+      return data || [];
+    }
+  });
 
-  const barData = campaigns.slice(0, 8).map((c) => ({ name: c.name?.slice(0, 20), invest: c.budget ?? 0 }));
-  const pieData = campaigns.filter((c) => (c.budget ?? 0) > 0).slice(0, 6).map((c) => ({ name: c.name, value: c.budget ?? 0 }));
+  // 2. Buscar Ad Accounts (Contas Meta)
+  const { data: adAccounts = [] } = useQuery({
+    queryKey: ["ad-accounts"],
+    queryFn: async () => {
+      const { data } = await supabase.from("ad_accounts").select("*").order("name");
+      return data || [];
+    }
+  });
+
+  // 3. Query de métricas consolidada de acordo com o intervalo de datas customizado
+  const { data: dashData, isLoading, refetch } = useQuery({
+    queryKey: ["multicanal-performance-consolidated", clientId, accountId, dateRange.startDate.toISOString(), dateRange.endDate.toISOString()],
+    queryFn: async () => {
+      const startStr = dateRange.startDate.toISOString().split("T")[0] + "T00:00:00Z";
+      const endStr = dateRange.endDate.toISOString().split("T")[0] + "T23:59:59Z";
+
+      // Puxa campanhas com métricas associadas filtradas por data
+      let q = (supabase as any)
+        .from("campaigns")
+        .select(`
+          id, name, status, budget, client_id, platform, ad_account_id,
+          metrics(cost, conversions, impressions, clicks, date)
+        `);
+
+      if (clientId !== "all") {
+        q = q.eq("client_id", clientId);
+      }
+      if (accountId !== "all") {
+        q = q.eq("ad_account_id", accountId);
+      }
+
+      const { data: campaignsRaw, error } = await q;
+      if (error) throw error;
+
+      // Agrega métricas no período selecionado
+      let totalCost = 0;
+      let totalConversions = 0;
+      let totalImpressions = 0;
+      let totalClicks = 0;
+
+      const campaignData = (campaignsRaw || []).map((c: any) => {
+        const filteredMetrics = (c.metrics || []).filter((m: any) => {
+          const d = new Date(m.date);
+          return d >= new Date(startStr) && d <= new Date(endStr);
+        });
+
+        const cost = filteredMetrics.reduce((s: number, m: any) => s + Number(m.cost || 0), 0);
+        const conversions = filteredMetrics.reduce((s: number, m: any) => s + Number(m.conversions || 0), 0);
+        const impressions = filteredMetrics.reduce((s: number, m: any) => s + Number(m.impressions || 0), 0);
+        const clicks = filteredMetrics.reduce((s: number, m: any) => s + Number(m.clicks || 0), 0);
+
+        totalCost += cost;
+        totalConversions += conversions;
+        totalImpressions += impressions;
+        totalClicks += clicks;
+
+        return {
+          id: c.id,
+          name: c.name,
+          status: c.status,
+          platform: c.platform || "Meta Ads",
+          budget: Number(c.budget || 0),
+          cost,
+          conversions,
+          impressions,
+          clicks
+        };
+      });
+
+      // Ordena campanhas por gasto
+      const sortedCampaigns = [...campaignData].sort((a, b) => b.cost - a.cost);
+
+      const cpl = totalConversions > 0 ? totalCost / totalConversions : 0;
+      const roas = totalCost > 0 ? (totalConversions * 150) / totalCost : 0; // Estimativa de retorno comercial
+
+      return {
+        campaigns: sortedCampaigns,
+        totals: {
+          cost: totalCost,
+          conversions: totalConversions,
+          cpl,
+          roas,
+          impressions: totalImpressions,
+          clicks: totalClicks
+        }
+      };
+    }
+  });
+
+  const barData = (dashData?.campaigns || [])
+    .slice(0, 8)
+    .map((c) => ({ 
+      name: c.name?.slice(0, 16).toUpperCase(), 
+      Gasto: c.cost, 
+      Resultados: c.conversions 
+    }));
+
+  const pieData = (dashData?.campaigns || [])
+    .filter((c) => c.cost > 0)
+    .slice(0, 6)
+    .map((c) => ({ 
+      name: c.name, 
+      value: c.cost 
+    }));
 
   return (
-    <div className="mx-auto max-w-7xl space-y-8">
-      <PageHeader eyebrow="Performance" title="Dashboard de Performance" description="Visão consolidada multi-cliente e multi-campanha." />
-      <select value={clientId} onChange={(e) => setClientId(e.target.value)} className="rounded-lg border border-white/10 bg-background/50 px-3 py-2 text-sm focus:border-primary focus:outline-none">
-        <option value="">Todos os clientes</option>
-        {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-      </select>
+    <div className="mx-auto max-w-7xl space-y-8 p-1">
+      <PageHeader 
+        eyebrow="Consolidado" 
+        title="Command Center Executivo" 
+        description="Painel de Atribuição, Faturamento e Performance Comercial Consolidada no período personalizado."
+        actions={
+          <div className="flex flex-wrap items-center gap-4">
+            {/* 📅 SELETOR DE PERÍODO PERSONALIZADO PREMIUM */}
+            <DateRangePicker 
+              startDate={dateRange.startDate} 
+              endDate={dateRange.endDate} 
+              onChange={(start, end) => setDateRange({ startDate: start, endDate: end })} 
+            />
+          </div>
+        }
+      />
 
-      {isLoading ? <div className="flex justify-center py-12"><Loader2 className="h-5 w-5 animate-spin text-primary" /></div> : (
+      {/* 🛠️ BARRA DE FILTROS EXECUTIVA PREMIUM */}
+      <div className="glass-panel p-4 flex flex-wrap items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <Layers className="h-4 w-4 text-primary" />
+          <p className="text-xs font-black uppercase tracking-widest text-muted-foreground">Filtro de Carteira e Contas</p>
+        </div>
+        
+        <div className="flex flex-wrap items-center gap-3">
+          {/* Filtro de Conta Meta */}
+          <select 
+            value={accountId} 
+            onChange={(e) => setAccountId(e.target.value)} 
+            className="rounded-xl border border-white/10 bg-background/50 px-4 py-2.5 text-xs font-semibold focus:border-primary/50 focus:outline-none transition-all"
+          >
+            <option value="all">Todas as Contas Meta</option>
+            {adAccounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+          </select>
+
+          {/* Filtro de Cliente */}
+          <select 
+            value={clientId} 
+            onChange={(e) => setClientId(e.target.value)} 
+            className="rounded-xl border border-white/10 bg-background/50 px-4 py-2.5 text-xs font-semibold focus:border-primary/50 focus:outline-none transition-all"
+          >
+            <option value="all">Todos os clientes ativos</option>
+            {clients.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </select>
+        </div>
+      </div>
+
+      {isLoading ? (
+        <div className="flex flex-col items-center justify-center py-20 gap-4">
+          <Loader2 className="h-10 w-10 animate-spin text-primary" />
+          <p className="text-xs text-muted-foreground font-black uppercase tracking-widest">Compilando estatísticas executivas...</p>
+        </div>
+      ) : (
         <>
+          {/* Cards de Métricas Principais (KPIs) */}
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <KPI icon={DollarSign} label="Total Investido" value={`R$ ${totalInvest.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`} trend="+12%" />
-            <KPI icon={Users} label="Total Leads" value={totalLeads.toLocaleString("pt-BR")} trend="+8%" />
-            <KPI icon={Target} label="CPL Médio" value={`R$ ${cpl.toFixed(2)}`} trend="-5%" />
-            <KPI icon={MousePointer} label="ROAS Médio" value={`${roas}x`} trend="+15%" />
+            <KPI 
+              icon={DollarSign} 
+              label="Investimento Consolidado" 
+              value={`R$ ${(dashData?.totals?.cost ?? 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`} 
+              desc="Total investido em tráfego"
+            />
+            <KPI 
+              icon={Users} 
+              label="Resultados Comerciais" 
+              value={(dashData?.totals?.conversions ?? 0).toLocaleString("pt-BR")} 
+              desc="Conversões diretas atribuídas"
+            />
+            <KPI 
+              icon={Target} 
+              label="CPL Médio de Período" 
+              value={dashData?.totals?.cpl ? `R$ ${dashData.totals.cpl.toFixed(2)}` : "R$ 0,00"} 
+              desc="Custo por Lead médio consolidado"
+            />
+            <KPI 
+              icon={MousePointer} 
+              label="ROAS Comercial Estimado" 
+              value={dashData?.totals?.roas ? `${dashData.totals.roas.toFixed(1)}x` : "—"} 
+              desc="Retorno sobre investimento"
+            />
           </div>
 
+          {/* Gráficos de Performance Consolidados */}
           <div className="grid gap-6 lg:grid-cols-2">
+            {/* Gráfico 1: Investimento / Resultados por Campanha */}
             <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="glass-panel p-6">
-              <p className="label-mono mb-4 text-primary">Investimento por campanha</p>
-              <ResponsiveContainer width="100%" height={280}>
-                <BarChart data={barData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
-                  <XAxis dataKey="name" tick={{ fill: "#888", fontSize: 9 }} />
-                  <YAxis tick={{ fill: "#888", fontSize: 10 }} />
-                  <Tooltip contentStyle={{ background: "#1a1a2e", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, fontSize: 12 }} />
-                  <Bar dataKey="invest" fill="#00d4ff" radius={[4, 4, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
+              <div className="flex items-center gap-2 mb-6">
+                <BarChart3 className="h-4 w-4 text-primary" />
+                <p className="text-xs font-black uppercase tracking-widest text-primary">Volume de Gasto por Ativo</p>
+              </div>
+              <div className="w-full relative h-[280px]">
+                {barData.length === 0 ? (
+                  <div className="absolute inset-0 flex items-center justify-center text-xs text-muted-foreground">Sem dados para plotar.</div>
+                ) : (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={barData}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
+                      <XAxis dataKey="name" tick={{ fill: "#888", fontSize: 9 }} />
+                      <YAxis tick={{ fill: "#888", fontSize: 9 }} />
+                      <Tooltip contentStyle={{ background: "#0B0F19", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 12, fontSize: 10 }} />
+                      <Bar dataKey="Gasto" fill="#00d4ff" radius={[4, 4, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                )}
+              </div>
             </motion.div>
+
+            {/* Gráfico 2: Distribuição Faturamento */}
             <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }} className="glass-panel p-6">
-              <p className="label-mono mb-4 text-primary">Distribuição de budget</p>
-              <ResponsiveContainer width="100%" height={280}>
-                <PieChart>
-                  <Pie data={pieData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={100} label={({ name, percent }) => `${name?.slice(0, 12)} (${(percent * 100).toFixed(0)}%)`}>
-                    {pieData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
-                  </Pie>
-                  <Tooltip contentStyle={{ background: "#1a1a2e", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, fontSize: 12 }} />
-                </PieChart>
-              </ResponsiveContainer>
+              <div className="flex items-center gap-2 mb-6">
+                <PieChartIcon className="h-4 w-4 text-secondary" />
+                <p className="text-xs font-black uppercase tracking-widest text-secondary">Distribuição do Gasto Total</p>
+              </div>
+              <div className="w-full relative h-[280px]">
+                {pieData.length === 0 ? (
+                  <div className="absolute inset-0 flex items-center justify-center text-xs text-muted-foreground">Sem dados para plotar.</div>
+                ) : (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie 
+                        data={pieData} 
+                        dataKey="value" 
+                        nameKey="name" 
+                        cx="50%" 
+                        cy="50%" 
+                        outerRadius={90} 
+                        label={({ name, percent, cx, cy, midAngle, innerRadius, outerRadius, value }) => {
+                          return `${name?.slice(0, 10)} (${(percent * 100).toFixed(0)}%)`;
+                        }}
+                        labelLine={false}
+                        style={{ fontSize: 9 }}
+                      >
+                        {pieData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
+                      </Pie>
+                      <Tooltip contentStyle={{ background: "#0B0F19", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 12, fontSize: 10 }} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                )}
+              </div>
             </motion.div>
           </div>
 
-          {/* Campaign table */}
+          {/* Tabela Consolidada de Campanhas */}
           <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="glass-panel overflow-hidden">
-            <div className="border-b border-white/5 p-4"><p className="label-mono text-primary">Campanhas</p></div>
-            <div className="custom-scrollbar overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead><tr className="border-b border-white/5 label-mono text-left text-muted-foreground">
-                  <th className="px-4 py-3">Nome</th><th className="px-2 py-3">Status</th><th className="px-2 py-3 text-right">Budget</th><th className="px-4 py-3">Plataforma</th>
-                </tr></thead>
-                <tbody>{campaigns.map((c) => (
-                  <tr key={c.id} className="border-b border-white/[0.03] hover:bg-white/[0.02]">
-                    <td className="px-4 py-3 font-medium">{c.name}</td>
-                    <td className="px-2 py-3"><span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${c.status === "active" ? "bg-success/10 text-success" : "bg-muted text-muted-foreground"}`}>{c.status === "active" ? "Ativo" : "Pausado"}</span></td>
-                    <td className="px-2 py-3 text-right font-mono text-xs">R$ {(c.budget ?? 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</td>
-                    <td className="px-4 py-3 text-xs text-muted-foreground">{c.platform ?? "Meta Ads"}</td>
+            <div className="border-b border-white/5 p-5 bg-white/[0.01]">
+              <p className="text-xs font-black uppercase tracking-widest text-primary">Demonstrativo Detalhado de Performance</p>
+            </div>
+            <div className="overflow-x-auto custom-scrollbar">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="border-b border-white/5 bg-white/[0.02] text-left text-[10px] font-black uppercase tracking-widest text-muted-foreground">
+                    <th className="px-6 py-4">Campanha</th>
+                    <th className="px-4 py-4">Status</th>
+                    <th className="px-4 py-4 text-right">Budget</th>
+                    <th className="px-4 py-4 text-right">Investido</th>
+                    <th className="px-4 py-4 text-right">Resultados</th>
+                    <th className="px-6 py-4 text-right text-primary">CPL Médio</th>
                   </tr>
-                ))}</tbody>
+                </thead>
+                <tbody>
+                  {(dashData?.campaigns || []).map((c) => (
+                    <tr key={c.id} className="border-b border-white/[0.02] hover:bg-white/[0.01] transition-all">
+                      <td className="px-6 py-4 font-bold text-foreground/90 uppercase tracking-tight">{c.name}</td>
+                      <td className="px-4 py-4">
+                        <span className={`rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-wider ${c.status?.toUpperCase() === "ACTIVE" ? "bg-success/15 text-success animate-pulse" : "bg-white/5 text-muted-foreground"}`}>
+                          {c.status?.toUpperCase() === "ACTIVE" ? "Ativo" : "Pausado"}
+                        </span>
+                      </td>
+                      <td className="px-4 py-4 text-right font-mono font-medium">R$ {(c.budget ?? 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</td>
+                      <td className="px-4 py-4 text-right font-mono font-bold text-foreground">R$ {(c.cost ?? 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</td>
+                      <td className="px-4 py-4 text-right font-mono font-bold text-foreground">{(c.conversions ?? 0).toLocaleString("pt-BR")}</td>
+                      <td className="px-6 py-4 text-right font-mono font-bold text-primary">
+                        {c.conversions > 0 ? `R$ ${(c.cost / c.conversions).toFixed(2)}` : "—"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
               </table>
             </div>
           </motion.div>
@@ -97,12 +330,17 @@ function MulticanalPage() {
   );
 }
 
-function KPI({ icon: Icon, label, value, trend }: { icon: any; label: string; value: string; trend: string }) {
+function KPI({ icon: Icon, label, value, desc }: { icon: any; label: string; value: string; desc: string }) {
   return (
-    <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="glass-panel p-5">
-      <div className="flex items-center justify-between"><span className="label-mono text-muted-foreground">{label}</span><Icon className="h-4 w-4 text-primary" /></div>
-      <p className="mt-2 font-display text-2xl font-bold">{value}</p>
-      <p className={`mt-1 text-xs font-medium ${trend.startsWith("+") ? "text-success" : "text-destructive"}`}>{trend}</p>
+    <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="glass-panel p-5 relative overflow-hidden">
+      <div className="flex items-center justify-between">
+        <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/80">{label}</span>
+        <div className="h-8 w-8 rounded-xl bg-primary/10 flex items-center justify-center text-primary">
+          <Icon className="h-4 w-4" />
+        </div>
+      </div>
+      <p className="mt-3 font-mono text-2xl font-bold tracking-tight text-foreground/90">{value}</p>
+      <p className="mt-1 text-[9px] text-muted-foreground/60 font-semibold tracking-wider uppercase">{desc}</p>
     </motion.div>
   );
 }

@@ -10,19 +10,23 @@ export type Campaign = {
   status: string | null;
   budget: number | null;
   link: string | null;
+  external_id: string | null;
+  ad_account_id: string | null;
   created_at: string | null;
 };
 
-export function useCampaigns(filters?: { clientId?: string; status?: string; search?: string }) {
+export function useCampaigns(filters?: { clientId?: string; status?: string; search?: string; accountId?: string }) {
   const qc = useQueryClient();
 
   const { data: campaigns = [], isLoading } = useQuery({
     queryKey: ["campaigns", filters],
     queryFn: async () => {
-      let q = supabase.from("campaigns").select("*").order("created_at", { ascending: false });
+      let q = (supabase as any)
+        .from("campaigns").select("*").order("created_at", { ascending: false });
       if (filters?.clientId) q = q.eq("client_id", filters.clientId);
       if (filters?.status && filters.status !== "all") q = q.eq("status", filters.status);
       if (filters?.search) q = q.ilike("name", `%${filters.search}%`);
+      if (filters?.accountId) q = q.eq("ad_account_id", filters.accountId);
       const { data, error } = await q;
       if (error) throw error;
       return data as Campaign[];
@@ -31,7 +35,7 @@ export function useCampaigns(filters?: { clientId?: string; status?: string; sea
 
   const addCampaign = useMutation({
     mutationFn: async (c: Omit<Campaign, "id" | "created_at">) => {
-      const { error } = await supabase.from("campaigns").insert(c);
+      const { error } = await (supabase as any).from("campaigns").insert(c);
       if (error) throw error;
     },
     onSuccess: () => {
@@ -43,7 +47,7 @@ export function useCampaigns(filters?: { clientId?: string; status?: string; sea
 
   const updateCampaign = useMutation({
     mutationFn: async ({ id, ...patch }: Partial<Campaign> & { id: string }) => {
-      const { error } = await supabase.from("campaigns").update(patch).eq("id", id);
+      const { error } = await (supabase as any).from("campaigns").update(patch).eq("id", id);
       if (error) throw error;
     },
     onSuccess: () => {
