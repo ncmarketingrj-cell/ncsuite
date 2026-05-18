@@ -110,21 +110,12 @@ function Shell() {
             localStorage.setItem(storageKey, todayStr);
 
             try {
-              // Notifica o usuário de forma sutil
-              toast.info("Iniciando extração agendada do Meta Ads...", {
-                description: `Horário programado: ${sch.start_time.substring(0, 5)}`
-              });
-
-              // Invoca a sincronização
+              // Invoca a sincronização silenciosamente
               const { error } = await supabase.functions.invoke("sync-meta-ads", {
                 body: { date_preset: "maximum" }
               });
 
               if (error) throw error;
-
-              toast.success("NC Performance Suite atualizado! 🏎️", {
-                description: "Métricas diárias e anteriores sincronizadas com sucesso."
-              });
 
               // Invalida cache global do React Query para atualizar todos os dados visuais na tela imediatamente!
               qc.invalidateQueries();

@@ -182,10 +182,6 @@ function MetaAdsManagerPage() {
         actions={
           <div className="flex flex-wrap items-center gap-3">
             <DateRangePicker startDate={dateRange.startDate} endDate={dateRange.endDate} onChange={(s, e) => setDateRange({ startDate: s, endDate: e })} />
-            <button onClick={() => syncMutation.mutate()} disabled={syncMutation.isPending} className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-xs font-black uppercase tracking-widest transition hover:border-primary/40 hover:bg-white/10 disabled:opacity-50">
-              <RefreshCw className={`h-3.5 w-3.5 text-primary ${syncMutation.isPending ? "animate-spin" : ""}`} /> 
-              {syncMutation.isPending ? "Sincronizando..." : "Sincronizar Meta"}
-            </button>
           </div>
         }
       />

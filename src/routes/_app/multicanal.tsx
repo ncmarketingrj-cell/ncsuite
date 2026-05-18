@@ -157,14 +157,6 @@ function MulticanalPage() {
               endDate={dateRange.endDate} 
               onChange={(start, end) => setDateRange({ startDate: start, endDate: end })} 
             />
-
-            <button 
-              onClick={() => refetch()} 
-              className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-xs font-black uppercase tracking-widest text-foreground transition hover:border-primary/40 hover:bg-white/10"
-            >
-              <RefreshCw className="h-3.5 w-3.5 text-primary" />
-              Sincronizar
-            </button>
           </div>
         }
       />

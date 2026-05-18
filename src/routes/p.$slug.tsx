@@ -153,7 +153,7 @@ function PublicLinkPage() {
                   <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity" style={{ background: `linear-gradient(90deg, transparent, ${page.accent_color}30, transparent)` }} />
                   
                   <div className="flex items-center gap-3 relative z-10 font-medium">
-                    {item.type === 'whatsapp' ? <MessageSquare className="h-5 w-5" style={{ color: page.accent_color }} /> : item.type === 'phone' ? <Phone className="h-5 w-5" style={{ color: page.accent_color }} /> : null}
+                    {item.type === 'whatsapp' ? <MessageSquare className="h-5 w-5" style={{ color: page.accent_color }} /> : item.type === 'phone' ? <Phone className="h-5 w-5" style={{ color: page.accent_color }} /> : item.type === 'maps' ? <MapPin className="h-5 w-5" style={{ color: page.accent_color }} /> : null}
                     {item.title}
                   </div>
                   <ExternalLink className="h-4 w-4 opacity-50 relative z-10" />

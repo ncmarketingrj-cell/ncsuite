@@ -182,7 +182,7 @@ function Dashboard() {
       <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between border-b border-white/5 pb-8">
         <div>
           <h1 className="text-4xl font-black tracking-tighter text-gradient mb-2 uppercase">Command Center</h1>
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             <div className="relative">
               <button 
                 onClick={() => setShowAccounts(!showAccounts)}

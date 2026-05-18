@@ -37,8 +37,10 @@ export function AIAgentSidebar({ isOpen, onClose }: AIAgentSidebarProps) {
     setLoading(true);
 
     try {
-      const { data, error } = await supabase.functions.invoke("mcp-agent", {
-        body: { prompt: userMsg.content }
+      const requestMessages = [...messages, userMsg].map(m => ({ role: m.role, content: m.content }));
+      
+      const { data, error } = await supabase.functions.invoke("victoria-agent", {
+        body: { messages: requestMessages }
       });
 
       if (error) throw error;
@@ -51,7 +53,7 @@ export function AIAgentSidebar({ isOpen, onClose }: AIAgentSidebarProps) {
       };
       setMessages(prev => [...prev, assistantMsg]);
     } catch (err: any) {
-      toast.error("Falha na comunicação com o Agente.");
+      toast.error("Falha na comunicação com a Victoria.");
       console.error(err);
       const errorMsg: Message = { 
         role: "assistant", 
@@ -96,13 +98,13 @@ export function AIAgentSidebar({ isOpen, onClose }: AIAgentSidebarProps) {
                   <Bot className="h-5 w-5 text-primary" />
                 </div>
                 <div>
-                  <h3 className="font-display font-bold text-sm tracking-tight text-foreground">NC Agent Orquestrador</h3>
+                  <h3 className="font-display font-bold text-sm tracking-tight text-foreground">Victoria AI</h3>
                   <p className="text-[10px] text-muted-foreground flex items-center gap-1.5 uppercase font-black tracking-widest">
                     <span className="relative flex h-2 w-2">
                       <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-success opacity-75"></span>
                       <span className="relative inline-flex rounded-full h-2 w-2 bg-success"></span>
                     </span>
-                    Sincronizado via MCP
+                    Sincronizada via NC Database
                   </p>
                 </div>
               </div>
@@ -125,7 +127,7 @@ export function AIAgentSidebar({ isOpen, onClose }: AIAgentSidebarProps) {
             >
               <div className={`flex items-center gap-2 mb-1 text-[10px] font-bold uppercase tracking-tighter ${msg.role === "user" ? "flex-row-reverse text-primary" : "text-muted-foreground"}`}>
                 {msg.role === "user" ? <User className="h-3 w-3" /> : <Bot className="h-3 w-3" />}
-                {msg.role === "user" ? "Você" : "NC Agent"}
+                {msg.role === "user" ? "Você" : "Victoria AI"}
               </div>
               <div className={`max-w-[90%] rounded-2xl px-4 py-3 text-xs leading-relaxed shadow-sm ${
                 msg.role === "user" 
@@ -176,7 +178,7 @@ export function AIAgentSidebar({ isOpen, onClose }: AIAgentSidebarProps) {
           </button>
         </div>
         <p className="text-[9px] text-center text-muted-foreground/30 mt-3 uppercase font-bold tracking-widest">
-          IA Orquestradora — Powered by Model Context Protocol
+          IA Especialista em Tráfego Pago Automotivo
         </p>
       </div>
           </motion.aside>
