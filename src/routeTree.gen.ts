@@ -20,7 +20,6 @@ import { Route as PSlugRouteImport } from './routes/p.$slug'
 import { Route as AppUtmsRouteImport } from './routes/_app/utms'
 import { Route as AppUploadRouteImport } from './routes/_app/upload'
 import { Route as AppRelatoriosRouteImport } from './routes/_app/relatorios'
-import { Route as AppQuizRouteImport } from './routes/_app/quiz'
 import { Route as AppOrganizadorRouteImport } from './routes/_app/organizador'
 import { Route as AppMulticanalRouteImport } from './routes/_app/multicanal'
 import { Route as AppMetricasRouteImport } from './routes/_app/metricas'
@@ -84,11 +83,6 @@ const AppUploadRoute = AppUploadRouteImport.update({
 const AppRelatoriosRoute = AppRelatoriosRouteImport.update({
   id: '/relatorios',
   path: '/relatorios',
-  getParentRoute: () => AppRoute,
-} as any)
-const AppQuizRoute = AppQuizRouteImport.update({
-  id: '/quiz',
-  path: '/quiz',
   getParentRoute: () => AppRoute,
 } as any)
 const AppOrganizadorRoute = AppOrganizadorRouteImport.update({
@@ -158,7 +152,6 @@ export interface FileRoutesByFullPath {
   '/metricas': typeof AppMetricasRoute
   '/multicanal': typeof AppMulticanalRoute
   '/organizador': typeof AppOrganizadorRoute
-  '/quiz': typeof AppQuizRoute
   '/relatorios': typeof AppRelatoriosRoute
   '/upload': typeof AppUploadRoute
   '/utms': typeof AppUtmsRoute
@@ -181,7 +174,6 @@ export interface FileRoutesByTo {
   '/metricas': typeof AppMetricasRoute
   '/multicanal': typeof AppMulticanalRoute
   '/organizador': typeof AppOrganizadorRoute
-  '/quiz': typeof AppQuizRoute
   '/relatorios': typeof AppRelatoriosRoute
   '/upload': typeof AppUploadRoute
   '/utms': typeof AppUtmsRoute
@@ -206,7 +198,6 @@ export interface FileRoutesById {
   '/_app/metricas': typeof AppMetricasRoute
   '/_app/multicanal': typeof AppMulticanalRoute
   '/_app/organizador': typeof AppOrganizadorRoute
-  '/_app/quiz': typeof AppQuizRoute
   '/_app/relatorios': typeof AppRelatoriosRoute
   '/_app/upload': typeof AppUploadRoute
   '/_app/utms': typeof AppUtmsRoute
@@ -231,7 +222,6 @@ export interface FileRouteTypes {
     | '/metricas'
     | '/multicanal'
     | '/organizador'
-    | '/quiz'
     | '/relatorios'
     | '/upload'
     | '/utms'
@@ -254,7 +244,6 @@ export interface FileRouteTypes {
     | '/metricas'
     | '/multicanal'
     | '/organizador'
-    | '/quiz'
     | '/relatorios'
     | '/upload'
     | '/utms'
@@ -278,7 +267,6 @@ export interface FileRouteTypes {
     | '/_app/metricas'
     | '/_app/multicanal'
     | '/_app/organizador'
-    | '/_app/quiz'
     | '/_app/relatorios'
     | '/_app/upload'
     | '/_app/utms'
@@ -376,13 +364,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppRelatoriosRouteImport
       parentRoute: typeof AppRoute
     }
-    '/_app/quiz': {
-      id: '/_app/quiz'
-      path: '/quiz'
-      fullPath: '/quiz'
-      preLoaderRoute: typeof AppQuizRouteImport
-      parentRoute: typeof AppRoute
-    }
     '/_app/organizador': {
       id: '/_app/organizador'
       path: '/organizador'
@@ -467,7 +448,6 @@ interface AppRouteChildren {
   AppMetricasRoute: typeof AppMetricasRoute
   AppMulticanalRoute: typeof AppMulticanalRoute
   AppOrganizadorRoute: typeof AppOrganizadorRoute
-  AppQuizRoute: typeof AppQuizRoute
   AppRelatoriosRoute: typeof AppRelatoriosRoute
   AppUploadRoute: typeof AppUploadRoute
   AppUtmsRoute: typeof AppUtmsRoute
@@ -484,7 +464,6 @@ const AppRouteChildren: AppRouteChildren = {
   AppMetricasRoute: AppMetricasRoute,
   AppMulticanalRoute: AppMulticanalRoute,
   AppOrganizadorRoute: AppOrganizadorRoute,
-  AppQuizRoute: AppQuizRoute,
   AppRelatoriosRoute: AppRelatoriosRoute,
   AppUploadRoute: AppUploadRoute,
   AppUtmsRoute: AppUtmsRoute,
