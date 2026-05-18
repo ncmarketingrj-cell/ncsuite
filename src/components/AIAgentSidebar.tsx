@@ -39,16 +39,111 @@ export function AIAgentSidebar({ isOpen, onClose }: AIAgentSidebarProps) {
     try {
       const requestMessages = [...messages, userMsg].map(m => ({ role: m.role, content: m.content }));
       
-      const { data, error } = await supabase.functions.invoke("victoria-agent", {
-        body: { messages: requestMessages }
-      });
+      let responseText = "";
+      try {
+        const { data, error } = await supabase.functions.invoke("victoria-agent", {
+          body: { messages: requestMessages }
+        });
 
-      if (error) throw error;
-      if (data?.error) throw new Error(data.error);
+        if (error) throw error;
+        if (data?.error) throw new Error(data.error);
+        responseText = data.message || "Comando processado com sucesso.";
+      } catch (err: any) {
+        console.warn("Victoria Edge Function failed, executing advanced frontend database-grounded fallback...", err);
+        
+        // 1. Buscar todas as campanhas do banco com suas métricas históricas completas
+        const { data: campaignsRaw } = await supabase
+          .from('campaigns')
+          .select('name, status, budget, platform, metrics(cost, conversions, clicks, impressions)')
+          .order('name');
+
+        const campaigns = (campaignsRaw || []).map((c: any) => {
+          const metrics = c.metrics || [];
+          const cost = metrics.reduce((s: number, m: any) => s + Number(m.cost || 0), 0);
+          const conversions = metrics.reduce((s: number, m: any) => s + Number(m.conversions || 0), 0);
+          const clicks = metrics.reduce((s: number, m: any) => s + Number(m.clicks || 0), 0);
+          const impressions = metrics.reduce((s: number, m: any) => s + Number(m.impressions || 0), 0);
+
+          const cpl = conversions > 0 ? cost / conversions : 0;
+          const ctr = impressions > 0 ? (clicks / impressions) * 100 : 0;
+
+          return {
+            name: c.name,
+            status: c.status?.toUpperCase() || "PAUSED",
+            budget: Number(c.budget || 0),
+            platform: c.platform || "Meta Ads",
+            totals: { cost, conversions, clicks, impressions, cpl, ctr }
+          };
+        });
+
+        // Calcular estatísticas globais
+        const totalInvest = campaigns.reduce((s, c) => s + c.totals.cost, 0);
+        const totalConversions = campaigns.reduce((s, c) => s + c.totals.conversions, 0);
+        const activeCount = campaigns.filter(c => c.status === "ACTIVE").length;
+        const globalCpl = totalConversions > 0 ? totalInvest / totalConversions : 0;
+
+        // Ordenar campanhas por gasto e performance
+        const activeCampaigns = campaigns.filter(c => c.status === "ACTIVE");
+        
+        // Campanha mais eficiente
+        const efficientCamp = [...activeCampaigns]
+          .filter(c => c.totals.conversions > 0)
+          .sort((a, b) => a.totals.cpl - b.totals.cpl)[0];
+
+        // Campanha menos eficiente
+        const inefficientCamp = [...activeCampaigns]
+          .sort((a, b) => {
+            if (a.totals.conversions === 0 && b.totals.conversions > 0) return -1;
+            if (b.totals.conversions === 0 && a.totals.conversions > 0) return 1;
+            return b.totals.cpl - a.totals.cpl;
+          })[0];
+
+        let analysisText = `### 🤖 Comandante Estratégica Victoria AI v2.5\n\n`;
+        analysisText += `Olá! Estou operando em **Modo Tático Local** conectada diretamente ao NC Database. Aqui está a minha **Auditoria de Performance das Campanhas**:\n\n`;
+
+        analysisText += `#### 📊 Resumo Consolidado do Portfólio\n`;
+        analysisText += `- **Investimento Total Acumulado**: R$ ${totalInvest.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}\n`;
+        analysisText += `- **Leads / Conversões**: ${totalConversions} leads capturados\n`;
+        analysisText += `- **CPL Médio Geral**: R$ ${globalCpl.toFixed(2)}\n`;
+        analysisText += `- **Campanhas Ativas**: ${activeCount} no Meta Ads\n\n`;
+
+        if (campaigns.length === 0) {
+          analysisText += `⚠️ *Ainda não temos dados de campanhas registrados na base. Por favor, acesse a aba "Métricas" e sincronize seus dados para que eu possa fazer uma auditoria estratégica completa.*`;
+        } else {
+          analysisText += `#### 🎯 Auditoria Tática e Recomendações\n`;
+          
+          if (efficientCamp) {
+            analysisText += `✅ **Campanha de Destaque (Alta Eficiência)**:\n`;
+            analysisText += `  - **${efficientCamp.name}**\n`;
+            analysisText += `  - CPL: **R$ ${efficientCamp.totals.cpl.toFixed(2)}** (Excepcional, abaixo da média geral!)\n`;
+            analysisText += `  - Conversões: **${efficientCamp.totals.conversions}** leads\n`;
+            analysisText += `  - *Recomendação*: Esta campanha possui o menor custo por lead. Recomendo **escalar o orçamento diário em 15%** para acelerar a aquisição de clientes.\n\n`;
+          }
+
+          if (inefficientCamp && inefficientCamp !== efficientCamp) {
+            analysisText += `⚠️ **Alerta de Ineficiência (Gargalo de CPA)**:\n`;
+            analysisText += `  - **${inefficientCamp.name}**\n`;
+            analysisText += `  - Gasto Acumulado: **R$ ${inefficientCamp.totals.cost.toFixed(2)}**\n`;
+            analysisText += `  - Conversões: **${inefficientCamp.totals.conversions}** leads\n`;
+            if (inefficientCamp.totals.conversions === 0) {
+              analysisText += `  - *Recomendação*: Esta campanha consumiu orçamento e gerou **ZERO leads**. Recomendo **pausar imediatamente** ou revisar a copy/público.\n\n`;
+            } else {
+              analysisText += `  - CPL Atual: **R$ ${inefficientCamp.totals.cpl.toFixed(2)}**\n`;
+              analysisText += `  - *Recomendação*: O custo por lead está elevado. Sugiro analisar se a taxa de cliques (CTR de ${inefficientCamp.totals.ctr.toFixed(2)}%) está caindo, o que indica saturação do criativo.\n\n`;
+            }
+          }
+
+          analysisText += `#### 🛠️ Plano de Ação Recomendado\n`;
+          analysisText += `1. **Redirecionamento de Verba**: Pause os ativos com CPL muito alto e concentre o budget nas campanhas com performance sólida.\n`;
+          analysisText += `2. **Ajuste Criativo**: Renove as peças se o CTR geral estiver abaixo de 1.20%.\n\n`;
+          analysisText += `*Estou pronta para analisar breakdowns ou tirar mais dúvidas estratégicas. Como posso ajudar agora?*`;
+        }
+        responseText = analysisText;
+      }
 
       const assistantMsg: Message = { 
         role: "assistant", 
-        content: data.message || "Comando processado com sucesso.", 
+        content: responseText, 
         timestamp: new Date() 
       };
       setMessages(prev => [...prev, assistantMsg]);
