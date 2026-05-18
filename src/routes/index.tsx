@@ -125,12 +125,12 @@ function LandingPage() {
           transition={{ duration: 1.2, delay: 0.4, ease: [0.16, 1, 0.3, 1] }}
           className="relative mt-24 w-full max-w-[1200px] px-6 perspective-[2000px] z-20"
         >
-          <div className="relative rounded-2xl shadow-[0_0_150px_rgba(220,38,38,0.15)] ring-1 ring-white/10 overflow-hidden group aspect-video flex items-center justify-center bg-black/50">
+          <div className="relative rounded-2xl shadow-[0_0_150px_rgba(220,38,38,0.15)] ring-1 ring-white/10 overflow-hidden group">
             <div className="absolute inset-0 bg-gradient-to-b from-white/[0.05] to-transparent pointer-events-none z-10" />
             <img 
               src="/assets/mockup-dashboard.png" 
               alt="NC Dashboard Preview" 
-              className="absolute w-full h-full object-cover transform scale-[1.25] transition-transform duration-700 group-hover:scale-[1.28]"
+              className="w-full h-auto object-cover transform transition-transform duration-700 group-hover:scale-[1.02]"
             />
           </div>
         </motion.div>
