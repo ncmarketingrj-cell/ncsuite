@@ -26,7 +26,7 @@ function LandingPage() {
   }, []);
 
   return (
-    <div className="relative min-h-screen bg-[#030303] text-white selection:bg-red-600/30 selection:text-red-200 overflow-x-hidden font-sans">
+    <div className="relative min-h-screen bg-[#050508] bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-[#1a0a0a] via-[#050508] to-[#000000] text-white selection:bg-red-600/30 selection:text-red-200 overflow-x-hidden font-sans">
       {/* ══════════════ NAVBAR ══════════════ */}
       <header className={`fixed inset-x-0 top-0 z-50 transition-all duration-500 ${isScrolled ? 'bg-[#030303]/80 backdrop-blur-xl border-b border-white/5 py-4' : 'bg-transparent py-6'}`}>
         <div className="mx-auto flex max-w-7xl items-center justify-between px-6">
@@ -39,7 +39,7 @@ function LandingPage() {
           </div>
           <Link
             to="/login"
-            className="group relative overflow-hidden rounded-full bg-white px-8 py-3 text-xs font-black uppercase tracking-widest text-black transition-all hover:scale-105 hover:shadow-[0_0_40px_rgba(255,255,255,0.2)]"
+            className="group relative overflow-hidden rounded-full border border-red-500/50 bg-red-600/10 px-8 py-3 text-xs font-black uppercase tracking-widest text-red-500 transition-all hover:bg-red-600 hover:text-white hover:shadow-[0_0_40px_rgba(220,38,38,0.4)] backdrop-blur-md"
           >
             <span className="relative z-10 flex items-center gap-2">
               Acessar Portal <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
@@ -111,7 +111,7 @@ function LandingPage() {
             </button>
             <Link
               to="/login"
-              className="group w-full sm:w-auto inline-flex justify-center items-center gap-2 rounded-full border border-white/10 bg-white/5 px-8 py-4 text-sm font-black uppercase tracking-widest text-white transition-all hover:bg-white/10 active:scale-95 backdrop-blur-md"
+              className="group w-full sm:w-auto inline-flex justify-center items-center gap-2 rounded-full border border-red-500/20 bg-black/50 px-8 py-4 text-sm font-black uppercase tracking-widest text-white transition-all hover:border-red-500/50 hover:bg-red-900/20 active:scale-95 backdrop-blur-md shadow-2xl"
             >
               Acesso Restrito <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
             </Link>
@@ -125,12 +125,12 @@ function LandingPage() {
           transition={{ duration: 1.2, delay: 0.4, ease: [0.16, 1, 0.3, 1] }}
           className="relative mt-24 w-full max-w-[1200px] px-6 perspective-[2000px] z-20"
         >
-          <div className="relative rounded-2xl border border-white/10 bg-[#0A0A0A]/80 p-2 backdrop-blur-xl shadow-[0_0_100px_rgba(0,0,0,0.8)] ring-1 ring-white/5 overflow-hidden">
-            <div className="absolute inset-0 bg-gradient-to-b from-white/[0.03] to-transparent pointer-events-none" />
+          <div className="relative rounded-2xl shadow-[0_0_150px_rgba(220,38,38,0.15)] ring-1 ring-white/10 overflow-hidden group">
+            <div className="absolute inset-0 bg-gradient-to-b from-white/[0.05] to-transparent pointer-events-none z-10" />
             <img 
               src="/assets/mockup-dashboard.png" 
               alt="NC Dashboard Preview" 
-              className="w-full h-auto rounded-xl border border-white/5 shadow-2xl"
+              className="w-full h-auto object-cover transform transition-transform duration-700 group-hover:scale-[1.02]"
             />
           </div>
         </motion.div>
@@ -356,7 +356,7 @@ function LandingPage() {
           <div className="flex flex-col sm:flex-row justify-center items-center gap-6">
             <Link
               to="/login"
-              className="w-full sm:w-auto rounded-full bg-white px-10 py-5 text-sm font-black uppercase tracking-widest text-black transition-all hover:scale-105 hover:shadow-[0_0_40px_rgba(255,255,255,0.3)] shadow-2xl"
+              className="w-full sm:w-auto rounded-full bg-red-600 px-10 py-5 text-sm font-black uppercase tracking-widest text-white transition-all hover:scale-105 hover:bg-red-500 hover:shadow-[0_0_40px_rgba(220,38,38,0.4)] shadow-2xl"
             >
               Login de Parceiros
             </Link>
