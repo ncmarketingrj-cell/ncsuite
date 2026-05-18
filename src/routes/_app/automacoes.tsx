@@ -14,8 +14,12 @@ export const Route = createFileRoute("/_app/automacoes")({
 
 function AutomationsPage() {
   const [activeTab, setActiveTab] = useState<"rules" | "logs" | "schedules">("rules");
-  const { rules, logs, isLoadingRules, isLoadingLogs, addRule, updateRule, removeRule } = useAutomations();
+  const { 
+    rules, logs, isLoadingRules, isLoadingLogs, addRule, updateRule, removeRule,
+    schedules, isLoadingSchedules, addSchedule, removeSchedule 
+  } = useAutomations();
   const [modal, setModal] = useState(false);
+  const [syncTime, setSyncTime] = useState("08:00");
   
   const { campaigns } = useCampaigns();
   const { portfolios } = usePortfolios();
@@ -36,7 +40,7 @@ function AutomationsPage() {
       <div className="flex space-x-1 rounded-xl bg-background/50 p-1 w-fit border border-white/5 backdrop-blur-md">
         {[
           { id: "rules", label: "Regras Ativas", icon: ListChecks },
-          { id: "schedules", label: "Dayparting", icon: Clock },
+          { id: "schedules", label: "Sincronizações", icon: Clock },
           { id: "logs", label: "Histórico (Logs)", icon: History },
         ].map((tab) => (
           <button key={tab.id} onClick={() => setActiveTab(tab.id as any)}
@@ -164,20 +168,104 @@ function AutomationsPage() {
       )}
 
       {activeTab === "schedules" && (
-         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="glass-panel py-20 text-center flex flex-col items-center">
-            <div className="h-16 w-16 rounded-full bg-primary/10 flex items-center justify-center mb-6 shadow-glow-sm">
-              <Clock className="h-8 w-8 text-primary animate-pulse" />
-            </div>
-            <h3 className="font-display text-xl font-bold mb-2">Agendamentos Inteligentes (Dayparting)</h3>
-            <p className="text-sm text-muted-foreground max-w-md mx-auto">
-              Em breve você poderá otimizar seus orçamentos por hora e dia da semana automaticamente.
+        <div className="space-y-6">
+          {/* Formulário de Criação no Topo */}
+          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="glass-panel p-6">
+            <h3 className="font-display text-lg font-bold mb-2 flex items-center gap-2">
+              <Clock className="h-5 w-5 text-primary" /> Agendar Extração Automática (Meta Ads)
+            </h3>
+            <p className="text-xs text-muted-foreground mb-6">
+              Cadastre os horários diários em que o NC Suite deve se conectar diretamente ao Meta Ads e sincronizar as métricas de tráfego pago (dados de hoje e de ontem) de todas as suas contas conectadas.
             </p>
-            <div className="mt-8 flex gap-3">
-              <div className="h-8 w-24 rounded-lg bg-white/5 animate-pulse" />
-              <div className="h-8 w-24 rounded-lg bg-white/5 animate-pulse" />
-              <div className="h-8 w-24 rounded-lg bg-white/5 animate-pulse" />
+            <div className="flex flex-wrap items-end gap-4 bg-white/5 p-4 rounded-xl border border-white/10">
+              <div className="space-y-1.5 flex-1 min-w-[200px]">
+                <label className="text-[10px] font-bold text-muted-foreground uppercase">Horário de Execução</label>
+                <input 
+                  type="time" 
+                  value={syncTime} 
+                  onChange={(e) => setSyncTime(e.target.value)}
+                  className="w-full rounded-lg border border-white/10 bg-background px-3 py-2.5 text-sm focus:border-primary focus:outline-none"
+                />
+              </div>
+              <button 
+                onClick={() => {
+                  if (!syncTime) return;
+                  addSchedule.mutate({
+                    target_level: "sync",
+                    target_id: "meta_ads_sync",
+                    days_of_week: [1, 2, 3, 4, 5, 6, 7],
+                    start_time: syncTime + ":00",
+                    end_time: syncTime + ":00",
+                    action: "sync",
+                    is_active: true
+                  });
+                }}
+                disabled={addSchedule.isPending}
+                className="rounded-lg bg-gradient-to-r from-primary to-secondary px-6 py-3 text-xs font-bold text-background shadow-glow hover:scale-105 active:scale-95 transition disabled:opacity-50"
+              >
+                {addSchedule.isPending ? "Agendando..." : "CRIAR AGENDAMENTO DIÁRIO"}
+              </button>
             </div>
-         </motion.div>
+          </motion.div>
+
+          {/* Listagem dos Agendamentos */}
+          <div className="space-y-3">
+            <h4 className="text-[10px] font-black uppercase tracking-widest text-primary px-2">Horários de Sincronização Ativos</h4>
+            
+            {isLoadingSchedules ? (
+              <div className="flex justify-center py-10"><Loader2 className="h-6 w-6 animate-spin text-primary/50" /></div>
+            ) : !schedules.filter(s => s.target_level === 'sync').length ? (
+              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="glass-panel py-12 text-center flex flex-col items-center">
+                <Clock className="h-8 w-8 text-muted-foreground/30 mb-3" />
+                <p className="text-xs text-muted-foreground">Nenhum horário de sincronização diária configurado.</p>
+                <p className="text-[10px] text-muted-foreground/50 mt-1">Insira um horário acima para manter seu cockpit atualizado automaticamente.</p>
+              </motion.div>
+            ) : (
+              <div className="grid gap-3">
+                {schedules.filter(s => s.target_level === 'sync').map((sch, i) => (
+                  <motion.div 
+                    key={sch.id} 
+                    initial={{ opacity: 0, x: -10 }} 
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: i * 0.05 }}
+                    className="glass-panel flex items-center justify-between p-4 hover:border-primary/20"
+                  >
+                    <div className="flex items-center gap-4">
+                      <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary shadow-glow-sm">
+                        <Clock className="h-5 w-5 animate-pulse" />
+                      </div>
+                      <div>
+                        <h4 className="font-bold text-sm">{sch.start_time.substring(0, 5)} hrs</h4>
+                        <div className="flex items-center gap-2 mt-0.5">
+                          <span className="inline-flex rounded-full bg-success/20 px-2 py-0.5 text-[9px] font-black tracking-tighter text-success uppercase">ATIVO DIARIAMENTE</span>
+                          <span className="h-1 w-1 rounded-full bg-white/20" />
+                          <span className="text-[9px] text-muted-foreground">Extrai dados do dia de hoje e ontem</span>
+                        </div>
+                      </div>
+                    </div>
+                    <button 
+                      onClick={() => removeSchedule.mutate(sch.id)}
+                      className="h-8 w-8 flex items-center justify-center rounded-lg bg-destructive/10 text-destructive transition hover:bg-destructive/20 active:scale-95"
+                      title="Excluir horário"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </motion.div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Dica de Acessibilidade */}
+          <div className="rounded-2xl border border-primary/20 bg-primary/5 p-5 text-sm">
+            <h5 className="font-bold text-primary flex items-center gap-2 mb-1.5">
+              <span>💡</span> Como Funciona a Sincronização Inteligente?
+            </h5>
+            <p className="text-xs text-muted-foreground leading-relaxed">
+              O robô de inteligência do NC Suite gerencia silenciosamente os horários programados. Assim que a hora é atingida (ex: 8:00 da manhã e 18:00 da noite), o motor de extração é acionado de forma transparente em segundo plano, garantindo que o seu Dashboard, a Central de Métricas e os Relatórios carreguem sempre com dados reais atualizados do Meta Ads.
+            </p>
+          </div>
+        </div>
       )}
 
       {/* Modal Nova Regra */}

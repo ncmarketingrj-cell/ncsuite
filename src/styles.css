@@ -226,4 +226,105 @@ html.light {
   .theme-transition *::after {
     transition: background-color 0.3s ease, border-color 0.3s ease, color 0.3s ease, box-shadow 0.3s ease, fill 0.3s ease, stroke 0.3s ease !important;
   }
+
+  /* ═══════════════════════════════════════════
+     AJUSTES DE LEGBILIDADE E ACESSIBILIDADE GLOBAL
+     ═══════════════════════════════════════════ */
+
+  /* MODO LIGHT: Forçar cores legíveis para textos e ícones que possuem classes fixas claras do Tailwind */
+  html.light {
+    color: hsl(var(--foreground));
+  }
+
+  html.light .text-white,
+  html.light .text-slate-50,
+  html.light .text-slate-100,
+  html.light .text-slate-200,
+  html.light .text-slate-300,
+  html.light .text-gray-50,
+  html.light .text-gray-100,
+  html.light .text-gray-200,
+  html.light .text-gray-300,
+  html.light .text-zinc-100,
+  html.light .text-zinc-200 {
+    color: hsl(var(--foreground)) !important;
+  }
+
+  html.light .text-muted-foreground,
+  html.light .text-slate-400,
+  html.light .text-slate-500,
+  html.light .text-gray-400,
+  html.light .text-gray-500,
+  html.light .text-zinc-400,
+  html.light .text-zinc-500 {
+    color: hsl(var(--muted-foreground)) !important;
+  }
+
+  html.light .border-white\/5,
+  html.light .border-white\/10,
+  html.light .border-white\/20 {
+    border-color: hsl(var(--border)) !important;
+  }
+
+  html.light .bg-white\/5,
+  html.light .bg-white\/10,
+  html.light .bg-white\/20,
+  html.light .bg-white\/30,
+  html.light .bg-slate-900\/50,
+  html.light .bg-background\/50 {
+    background-color: hsl(var(--muted) / 0.7) !important;
+    backdrop-filter: blur(10px);
+  }
+
+  html.light input,
+  html.light select,
+  html.light textarea {
+    background-color: hsl(var(--card)) !important;
+    color: hsl(var(--foreground)) !important;
+    border-color: hsl(var(--border)) !important;
+  }
+
+  html.light input::placeholder,
+  html.light select::placeholder,
+  html.light textarea::placeholder {
+    color: hsl(var(--muted-foreground)) !important;
+    opacity: 0.7;
+  }
+
+  /* MODO DARK: Forçar cores legíveis para textos escuros em elementos */
+  html:not(.light) .text-slate-800,
+  html:not(.light) .text-slate-900,
+  html:not(.light) .text-gray-800,
+  html:not(.light) .text-gray-900,
+  html:not(.light) .text-zinc-800,
+  html:not(.light) .text-zinc-900,
+  html:not(.light) .text-black {
+    color: hsl(var(--foreground)) !important;
+  }
+
+  /* Garante legibilidade nos títulos e textos dentro do card de logs no modo light */
+  html.light table tr td,
+  html.light table tr th {
+    color: hsl(var(--foreground)) !important;
+  }
+
+  html.light table tr th {
+    background-color: hsl(var(--muted)) !important;
+    color: hsl(var(--muted-foreground)) !important;
+  }
+
+  /* Ajustar botões secundários no modo light */
+  html.light .bg-secondary,
+  html.light .bg-white\/5 {
+    background-color: hsl(var(--secondary)) !important;
+    color: hsl(var(--secondary-foreground)) !important;
+  }
+
+  /* Garante cor correta para o cabeçalho de modais no modo light */
+  html.light .bg-white\/5.p-6,
+  html.light .bg-white\/5.p-8,
+  html.light .p-6.bg-white\/5,
+  html.light .p-8.bg-white\/5 {
+    background-color: hsl(var(--muted)) !important;
+  }
 }

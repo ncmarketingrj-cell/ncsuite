@@ -10,10 +10,11 @@ import {
 import { AuthProvider, useAuth } from "@/lib/auth";
 import { supabase } from "@/integrations/supabase/client";
 import { AIAgentSidebar } from "@/components/AIAgentSidebar";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { formatDistanceToNow } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { useTheme } from "./__root";
+import { toast } from "sonner";
 
 export const Route = createFileRoute("/_app")({
   beforeLoad: async () => {
@@ -59,6 +60,88 @@ function Shell() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [showMore, setShowMore] = useState(false);
   const { theme, toggleTheme } = useTheme();
+  const qc = useQueryClient();
+
+  // Carrega os agendamentos ativos de sincronização no Shell para o Background Worker
+  const { data: syncSchedules = [] } = useQuery({
+    queryKey: ["shell_sync_schedules"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("campaign_schedules")
+        .select("*")
+        .eq("target_level", "sync")
+        .eq("is_active", true);
+      if (error) return [];
+      return data as any[];
+    },
+    refetchInterval: 300000, // Atualiza a cada 5 minutos
+  });
+
+  // Background Sync Worker para extrair dados diários de forma programada e transparente
+  useEffect(() => {
+    if (syncSchedules.length === 0) return;
+
+    const checkAndSync = async () => {
+      const now = new Date();
+      const currentHours = now.getHours();
+      const currentMinutes = now.getMinutes();
+      const todayStr = now.toISOString().split('T')[0]; // Ex: "2026-05-18"
+
+      for (const sch of syncSchedules) {
+        if (!sch.start_time) continue;
+        
+        // start_time é do tipo "HH:MM:SS" (ex: "08:00:00")
+        const [schHours, schMinutes] = sch.start_time.split(':').map(Number);
+        
+        const scheduledTotalMinutes = schHours * 60 + schMinutes;
+        const currentTotalMinutes = currentHours * 60 + currentMinutes;
+
+        // Se a hora atual passou do horário agendado
+        if (currentTotalMinutes >= scheduledTotalMinutes) {
+          const storageKey = `nc_last_sync_time_${sch.id}`;
+          const lastSyncDate = localStorage.getItem(storageKey);
+
+          // Se a última sincronização registrada para este agendamento não ocorreu hoje
+          if (lastSyncDate !== todayStr) {
+            console.log(`[SYNC WORKER] Disparando sincronização agendada das ${sch.start_time} para o dia ${todayStr}...`);
+            
+            // Grava imediatamente para evitar loops ou disparos paralelos concorrentes
+            localStorage.setItem(storageKey, todayStr);
+
+            try {
+              // Notifica o usuário de forma sutil
+              toast.info("Iniciando extração agendada do Meta Ads...", {
+                description: `Horário programado: ${sch.start_time.substring(0, 5)}`
+              });
+
+              // Invoca a sincronização
+              const { error } = await supabase.functions.invoke("sync-meta-ads", {
+                body: { date_preset: "maximum" }
+              });
+
+              if (error) throw error;
+
+              toast.success("NC Performance Suite atualizado! 🏎️", {
+                description: "Métricas diárias e anteriores sincronizadas com sucesso."
+              });
+
+              // Invalida cache global do React Query para atualizar todos os dados visuais na tela imediatamente!
+              qc.invalidateQueries();
+            } catch (e: any) {
+              console.error("[SYNC WORKER] Falha na sincronização silenciosa:", e.message);
+              // Remove a marcação do localStorage para tentar novamente no próximo minuto
+              localStorage.removeItem(storageKey);
+            }
+          }
+        }
+      }
+    };
+
+    // Executa imediatamente e depois a cada 1 minuto
+    checkAndSync();
+    const interval = setInterval(checkAndSync, 60000);
+    return () => clearInterval(interval);
+  }, [syncSchedules, qc]);
 
   useEffect(() => {
     const handleOpenAI = () => setIsAgentOpen(true);
