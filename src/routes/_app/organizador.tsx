@@ -352,16 +352,16 @@ function LinkBioEditorForm({ pageId, type }: { pageId: string, type: string }) {
         <div className="grid gap-3 sm:grid-cols-2">
           <div>
             <label className="text-[11px] font-bold text-muted-foreground uppercase mb-1 block">Título</label>
-            <input value={page.title} onChange={(e) => handleChange("title", e.target.value)} className="w-full rounded-lg border border-border bg-background/50 px-3 py-2 text-sm focus:border-primary focus:outline-none" />
+            <input defaultValue={page.title} onBlur={(e) => handleChange("title", e.target.value)} className="w-full rounded-lg border border-border bg-background/50 px-3 py-2 text-sm focus:border-primary focus:outline-none" />
           </div>
           <div>
             <label className="text-[11px] font-bold text-muted-foreground uppercase mb-1 block">Slug (URL)</label>
-            <input value={page.slug} onChange={(e) => handleChange("slug", e.target.value)} className="w-full rounded-lg border border-border bg-background/50 px-3 py-2 text-sm focus:border-primary focus:outline-none" />
+            <input defaultValue={page.slug} onBlur={(e) => handleChange("slug", e.target.value)} className="w-full rounded-lg border border-border bg-background/50 px-3 py-2 text-sm focus:border-primary focus:outline-none" />
           </div>
         </div>
         <div>
           <label className="text-[11px] font-bold text-muted-foreground uppercase mb-1 block">Biografia / Descrição</label>
-          <textarea value={page.bio || ""} onChange={(e) => handleChange("bio", e.target.value)} rows={2} className="w-full rounded-lg border border-border bg-background/50 px-3 py-2 text-sm focus:border-primary focus:outline-none resize-none" />
+          <textarea defaultValue={page.bio || ""} onBlur={(e) => handleChange("bio", e.target.value)} rows={2} className="w-full rounded-lg border border-border bg-background/50 px-3 py-2 text-sm focus:border-primary focus:outline-none resize-none" />
         </div>
         
         <ImageUpload value={page.avatar} onChange={(url) => handleChange("avatar", url)} label="Logo ou Foto de Perfil" />
@@ -422,17 +422,17 @@ function LinkBioEditorForm({ pageId, type }: { pageId: string, type: string }) {
                     <div className="flex-shrink-0 pt-2 cursor-grab text-muted-foreground hover:text-foreground"><GripVertical className="h-4 w-4" /></div>
                     <div className="flex-1 space-y-2">
                        <div className="flex items-center justify-between gap-2">
-                          <input value={link.title} onChange={(e) => updateLinkMutation.mutate({ id: link.id, data: { title: e.target.value } })} placeholder="Título do Botão" className="flex-1 bg-transparent border-b border-border text-sm font-bold focus:border-primary focus:outline-none py-1" />
+                          <input defaultValue={link.title} onBlur={(e) => updateLinkMutation.mutate({ id: link.id, data: { title: e.target.value } })} placeholder="Título do Botão" className="flex-1 bg-transparent border-b border-border text-sm font-bold focus:border-primary focus:outline-none py-1" />
                           <div className="flex items-center gap-2">
                             <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-muted uppercase">{link.type}</span>
                             <button onClick={() => updateLinkMutation.mutate({ id: link.id, data: { is_active: !link.is_active } })} className={`text-[10px] font-bold px-2 py-1 rounded ${link.is_active ? 'bg-success/20 text-success' : 'bg-muted text-muted-foreground'}`}>{link.is_active ? 'ON' : 'OFF'}</button>
                             <button onClick={() => { if(confirm('Excluir link?')) deleteLinkMutation.mutate(link.id); }} className="text-muted-foreground hover:text-destructive"><Trash2 className="h-3.5 w-3.5" /></button>
                           </div>
                        </div>
-                       <input value={link.url} onChange={(e) => updateLinkMutation.mutate({ id: link.id, data: { url: e.target.value } })} placeholder={link.type === 'whatsapp' ? "Número: 5511999999999" : link.type === 'maps' ? "URL do Google Maps" : "URL completa..."} className="w-full text-xs bg-transparent border-none text-muted-foreground focus:text-foreground focus:outline-none" />
+                       <input defaultValue={link.url} onBlur={(e) => updateLinkMutation.mutate({ id: link.id, data: { url: e.target.value } })} placeholder={link.type === 'whatsapp' ? "Número: 5511999999999" : link.type === 'maps' ? "URL do Google Maps" : "URL completa..."} className="w-full text-xs bg-transparent border-none text-muted-foreground focus:text-foreground focus:outline-none" />
                        {link.type === 'whatsapp' && (
                          <div className="pt-2 border-t border-border mt-2">
-                           <input value={link.whatsapp_message || ""} onChange={(e) => updateLinkMutation.mutate({ id: link.id, data: { whatsapp_message: e.target.value } })} placeholder="Mensagem pré-preenchida (ex: Olá, interesse no Civic)" className="w-full text-[11px] bg-background/50 border border-border rounded px-2 py-1.5 text-muted-foreground focus:outline-none focus:border-primary" />
+                           <input defaultValue={link.whatsapp_message || ""} onBlur={(e) => updateLinkMutation.mutate({ id: link.id, data: { whatsapp_message: e.target.value } })} placeholder="Mensagem pré-preenchida (ex: Olá, interesse no Civic)" className="w-full text-[11px] bg-background/50 border border-border rounded px-2 py-1.5 text-muted-foreground focus:outline-none focus:border-primary" />
                          </div>
                        )}
                     </div>
@@ -512,10 +512,10 @@ function QuizEditorForm({ pageId }: { pageId: string }) {
       <div className="glass-panel p-6 space-y-4">
         <h3 className="text-sm font-bold flex items-center gap-2"><Settings className="h-4 w-4 text-primary" /> Configurações do Quiz</h3>
         <div className="grid gap-3 sm:grid-cols-2">
-          <div><label className="text-[11px] font-bold text-muted-foreground uppercase mb-1 block">Título</label><input value={quiz.title} onChange={(e) => handleChange("title", e.target.value)} className="w-full rounded-lg border border-border bg-background/50 px-3 py-2 text-sm focus:border-primary focus:outline-none" /></div>
-          <div><label className="text-[11px] font-bold text-muted-foreground uppercase mb-1 block">Slug (URL)</label><input value={quiz.slug} onChange={(e) => handleChange("slug", e.target.value)} className="w-full rounded-lg border border-border bg-background/50 px-3 py-2 text-sm focus:border-primary focus:outline-none" /></div>
+          <div><label className="text-[11px] font-bold text-muted-foreground uppercase mb-1 block">Título</label><input defaultValue={quiz.title} onBlur={(e) => handleChange("title", e.target.value)} className="w-full rounded-lg border border-border bg-background/50 px-3 py-2 text-sm focus:border-primary focus:outline-none" /></div>
+          <div><label className="text-[11px] font-bold text-muted-foreground uppercase mb-1 block">Slug (URL)</label><input defaultValue={quiz.slug} onBlur={(e) => handleChange("slug", e.target.value)} className="w-full rounded-lg border border-border bg-background/50 px-3 py-2 text-sm focus:border-primary focus:outline-none" /></div>
         </div>
-        <div><label className="text-[11px] font-bold text-muted-foreground uppercase mb-1 block">Descrição / Subtítulo</label><textarea value={quiz.description || ""} onChange={(e) => handleChange("description", e.target.value)} rows={2} className="w-full rounded-lg border border-border bg-background/50 px-3 py-2 text-sm focus:border-primary focus:outline-none resize-none" /></div>
+        <div><label className="text-[11px] font-bold text-muted-foreground uppercase mb-1 block">Descrição / Subtítulo</label><textarea defaultValue={quiz.description || ""} onBlur={(e) => handleChange("description", e.target.value)} rows={2} className="w-full rounded-lg border border-border bg-background/50 px-3 py-2 text-sm focus:border-primary focus:outline-none resize-none" /></div>
         <div className="grid gap-3 sm:grid-cols-2">
           <div><label className="text-[11px] font-bold text-muted-foreground uppercase mb-1 block">Cor de Fundo</label><div className="flex gap-2"><input type="color" value={quiz.bg_color} onChange={(e) => handleChange("bg_color", e.target.value)} className="h-9 w-12 rounded bg-transparent cursor-pointer" /><input value={quiz.bg_color} onChange={(e) => handleChange("bg_color", e.target.value)} className="flex-1 rounded-lg border border-border bg-background/50 px-3 py-2 text-sm uppercase font-mono text-xs" /></div></div>
           <div><label className="text-[11px] font-bold text-muted-foreground uppercase mb-1 block">Cor de Destaque</label><div className="flex gap-2"><input type="color" value={quiz.theme_color} onChange={(e) => handleChange("theme_color", e.target.value)} className="h-9 w-12 rounded bg-transparent cursor-pointer" /><input value={quiz.theme_color} onChange={(e) => handleChange("theme_color", e.target.value)} className="flex-1 rounded-lg border border-border bg-background/50 px-3 py-2 text-sm uppercase font-mono text-xs" /></div></div>
@@ -545,15 +545,15 @@ function QuizEditorForm({ pageId }: { pageId: string }) {
               </div>
               
               <div className="p-4 space-y-3">
-                 <input value={step.title} onChange={(e) => updateStepMutation.mutate({ id: step.id, data: { title: e.target.value } })} placeholder="Qual a sua pergunta?" className="w-full bg-transparent border-b border-border text-base font-bold focus:border-primary focus:outline-none py-1" />
-                 <input value={step.content || ""} onChange={(e) => updateStepMutation.mutate({ id: step.id, data: { content: e.target.value } })} placeholder="Subtítulo ou instrução (opcional)" className="w-full text-xs bg-transparent border-none text-muted-foreground focus:text-foreground focus:outline-none" />
+                 <input defaultValue={step.title} onBlur={(e) => updateStepMutation.mutate({ id: step.id, data: { title: e.target.value } })} placeholder="Qual a sua pergunta?" className="w-full bg-transparent border-b border-border text-base font-bold focus:border-primary focus:outline-none py-1" />
+                 <input defaultValue={step.content || ""} onBlur={(e) => updateStepMutation.mutate({ id: step.id, data: { content: e.target.value } })} placeholder="Subtítulo ou instrução (opcional)" className="w-full text-xs bg-transparent border-none text-muted-foreground focus:text-foreground focus:outline-none" />
 
                  {step.step_type === 'choice' && (
                     <div className="pt-2 space-y-2 border-t border-border mt-2">
                        <label className="text-[10px] font-bold text-muted-foreground uppercase">Opções</label>
                        {(Array.isArray(step.options) ? step.options : []).map((opt: string, i: number) => (
                           <div key={i} className="flex gap-2 items-center">
-                             <input value={opt} onChange={(e) => { const newOpts = [...(step.options||[])]; newOpts[i] = e.target.value; updateStepMutation.mutate({ id: step.id, data: { options: newOpts } }); }} className="flex-1 bg-background/50 border border-border rounded px-2 py-1.5 text-xs focus:outline-none focus:border-primary" />
+                             <input defaultValue={opt} onBlur={(e) => { const newOpts = [...(step.options||[])]; newOpts[i] = e.target.value; updateStepMutation.mutate({ id: step.id, data: { options: newOpts } }); }} className="flex-1 bg-background/50 border border-border rounded px-2 py-1.5 text-xs focus:outline-none focus:border-primary" />
                              <button onClick={() => { const newOpts = (step.options||[]).filter((_:any, j:number) => j !== i); updateStepMutation.mutate({ id: step.id, data: { options: newOpts } }); }} className="text-muted-foreground hover:text-destructive"><X className="h-3.5 w-3.5" /></button>
                              <select value={step.next_step_map?.[opt] || "default"} onChange={(e) => updateStepMutation.mutate({ id: step.id, data: { next_step_map: { ...(step.next_step_map || {}), [opt]: e.target.value === 'default' ? null : e.target.value } } })} className="bg-background border border-border rounded px-2 py-1.5 text-[10px] text-muted-foreground max-w-[130px] outline-none">
                                 <option value="default">Padrão</option>
@@ -573,7 +573,7 @@ function QuizEditorForm({ pageId }: { pageId: string }) {
                           <div key={i} className="flex gap-3 items-center border border-white/10 p-2 rounded-xl bg-white/5">
                              <ImageUpload value={opt.url} onChange={(url) => { const newOpts = [...(step.image_options||[])]; newOpts[i] = {...newOpts[i], url}; updateStepMutation.mutate({ id: step.id, data: { image_options: newOpts } }); }} label="" className="shrink-0" />
                              <div className="flex-1 space-y-2">
-                                <input value={opt.label} onChange={(e) => { const newOpts = [...(step.image_options||[])]; newOpts[i] = {...newOpts[i], label: e.target.value, value: e.target.value}; updateStepMutation.mutate({ id: step.id, data: { image_options: newOpts } }); }} placeholder="Título da Opção" className="w-full bg-background/50 border border-border rounded px-2 py-1.5 text-xs focus:outline-none focus:border-primary" />
+                                <input defaultValue={opt.label} onBlur={(e) => { const newOpts = [...(step.image_options||[])]; newOpts[i] = {...newOpts[i], label: e.target.value, value: e.target.value}; updateStepMutation.mutate({ id: step.id, data: { image_options: newOpts } }); }} placeholder="Título da Opção" className="w-full bg-background/50 border border-border rounded px-2 py-1.5 text-xs focus:outline-none focus:border-primary" />
                                 <select value={step.next_step_map?.[opt.value] || "default"} onChange={(e) => updateStepMutation.mutate({ id: step.id, data: { next_step_map: { ...(step.next_step_map || {}), [opt.value]: e.target.value === 'default' ? null : e.target.value } } })} className="w-full bg-background border border-border rounded px-2 py-1.5 text-[10px] text-muted-foreground outline-none">
                                   <option value="default">Padrão (Próximo Passo)</option>
                                   {steps.filter((s:any) => s.id !== step.id).map((s:any) => <option key={s.id} value={s.id}>Ir para: {s.title.substring(0, 15)}...</option>)}

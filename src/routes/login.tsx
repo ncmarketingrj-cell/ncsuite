@@ -66,8 +66,8 @@ function LoginPage() {
         className="w-full max-w-md glass-panel p-10 bg-card border-border shadow-2xl transition-all duration-300"
       >
         <div className="flex flex-col items-center gap-5">
-          <div className="h-14 w-14 rounded-2xl bg-red-600 flex items-center justify-center shadow-[0_0_30px_rgba(220,38,38,0.3)]">
-            <span className="font-display font-black text-white text-xl">NC</span>
+          <div className="flex items-center justify-center">
+            <img src="/assets/nc-logo.png" alt="NC Performance Logo" className="h-20 w-20 object-contain drop-shadow-[0_0_20px_rgba(220,38,38,0.3)]" />
           </div>
           <div className="text-center">
             <p className="text-[11px] font-mono font-bold uppercase tracking-[0.3em] text-red-500">Acesso da Equipe</p>
