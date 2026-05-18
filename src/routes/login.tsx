@@ -118,17 +118,15 @@ function LoginPage() {
           </button>
         </form>
 
-        {allowSignup && (
-          <div className="mt-8 text-center text-xs text-muted-foreground/80">
-            {mode === "login" ? "Sem conta?" : "Já tem conta?"}{" "}
-            <button
-              type="button" onClick={() => setMode(mode === "login" ? "signup" : "login")}
-              className="font-semibold text-red-500 hover:text-red-400 transition-colors"
-            >
-              {mode === "login" ? "Cadastre-se" : "Entrar"}
-            </button>
-          </div>
-        )}
+        <div className="mt-8 text-center text-xs text-muted-foreground/80">
+          {mode === "login" ? "Sem conta?" : "Já tem conta?"}{" "}
+          <button
+            type="button" onClick={() => setMode(mode === "login" ? "signup" : "login")}
+            className="font-semibold text-red-500 hover:text-red-400 transition-colors"
+          >
+            {mode === "login" ? "Cadastre-se" : "Entrar"}
+          </button>
+        </div>
 
         <div className="mt-6 border-t border-border pt-5 text-center">
           <Link to="/" className="inline-flex items-center gap-1.5 text-[11px] font-mono font-bold uppercase tracking-widest text-muted-foreground/60 hover:text-red-500 transition-colors">
