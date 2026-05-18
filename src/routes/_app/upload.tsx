@@ -154,9 +154,11 @@ function UploadPage() {
                     <th className="px-6 py-4">Campanha</th>
                     <th className="px-4 py-4">Status</th>
                     <th className="px-4 py-4 text-right">Custo</th>
+                    <th className="px-4 py-4 text-right">Alcance</th>
                     <th className="px-4 py-4 text-right">Impressões</th>
                     <th className="px-4 py-4 text-right">Cliques</th>
-                    <th className="px-6 py-4 text-right text-primary">Conversões</th>
+                    <th className="px-4 py-4 text-right">Resultado</th>
+                    <th className="px-6 py-4 text-right text-primary">CPL/CPA</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-white/5">
@@ -173,9 +175,18 @@ function UploadPage() {
                         </span>
                       </td>
                       <td className="px-4 py-4 text-right font-mono text-xs font-medium">{fmt(c.cost)}</td>
+                      <td className="px-4 py-4 text-right font-mono text-xs text-muted-foreground">{fmt(c.reach, false)}</td>
                       <td className="px-4 py-4 text-right font-mono text-xs text-muted-foreground">{fmt(c.impressions, false)}</td>
                       <td className="px-4 py-4 text-right font-mono text-xs text-muted-foreground">{fmt(c.clicks, false)}</td>
-                      <td className="px-6 py-4 text-right font-mono text-xs font-black text-primary">{fmt(c.conversions, false)}</td>
+                      <td className="px-4 py-4 text-right font-mono text-xs font-black text-white">
+                        {fmt(c.conversions, false)}
+                        {c.result_type && (
+                          <span className="block text-[8px] font-black uppercase tracking-wider text-muted-foreground mt-0.5">{c.result_type}</span>
+                        )}
+                      </td>
+                      <td className="px-6 py-4 text-right font-mono text-xs font-black text-primary">
+                        {c.cpl != null ? fmt(c.cpl) : (c.conversions && c.conversions > 0 && c.cost ? fmt(c.cost / c.conversions) : "—")}
+                      </td>
                     </motion.tr>
                   ))}
                 </tbody>

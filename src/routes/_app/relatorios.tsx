@@ -14,6 +14,7 @@ import { format, subDays } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { toast } from "sonner";
 import { z } from "zod";
+import { DateRangePicker } from "@/components/DateRangePicker";
 
 const searchSchema = z.object({
   from: z.string().optional(),
@@ -59,8 +60,19 @@ function RelatoriosPage() {
   const [reportMode, setReportMode] = useState<"complete" | "objective" | "campaigns">("complete");
   
   const [selectedAccountId, setSelectedAccountId] = useState<string>("all");
-  const [days, setDays] = useState<number>(30);
+  const [dateRange, setDateRange] = useState({
+    startDate: subDays(new Date(), 29),
+    endDate: new Date(),
+  });
   const [targetWhatsapp, setTargetWhatsapp] = useState("");
+
+  const handleDateChange = (start: Date, end: Date) => {
+    setDateRange({ startDate: start, endDate: end });
+    const months = ["JANEIRO", "FEVEREIRO", "MARÇO", "ABRIL", "MAIO", "JUNHO", "JULHO", "AGOSTO", "SETEMBRO", "OUTUBRO", "NOVEMBRO", "DEZEMBRO"];
+    const selectedMonth = months[start.getMonth()];
+    const selectedYear = start.getFullYear();
+    setPeriodText(`${selectedMonth} ${selectedYear}`);
+  };
   
   const [campaignList, setCampaignList] = useState<CampaignData[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
@@ -198,7 +210,8 @@ function RelatoriosPage() {
     } else {
       // Buscar dados do Meta Ads integrado local
       try {
-        const dateLimit = subDays(new Date(), days).toISOString();
+        const startLimit = dateRange.startDate.toISOString().split("T")[0];
+        const endLimit = dateRange.endDate.toISOString().split("T")[0];
         
         let qCampaigns = (supabase as any).from("campaigns").select("id, name, ad_account_id");
         if (selectedAccountId !== "all") {
@@ -219,7 +232,8 @@ function RelatoriosPage() {
           .from("metrics")
           .select("*")
           .in("campaign_id", campIds)
-          .gte("date", dateLimit);
+          .gte("date", startLimit)
+          .lte("date", endLimit);
         if (mErr) throw mErr;
         const dbMetrics = (mData as any[]) ?? [];
 
@@ -261,7 +275,7 @@ function RelatoriosPage() {
 
   useEffect(() => {
     loadData();
-  }, [source, selectedAccountId, days]);
+  }, [source, selectedAccountId, dateRange]);
 
   // Função Heurística Inteligente para Detecção de Objetivos
   const detectObjective = (campName: string): string => {
@@ -293,16 +307,13 @@ function RelatoriosPage() {
     setCampaignList(prev => prev.map(c => c.id === id ? { ...c, objective: newObj } : c));
   };
 
-  // Compilação do Relatório Prontinho em Texto e Preview
-  const handleGenerate = () => {
+  // Gera o relatório em tempo real de forma reativa a qualquer alteração de campanhas, período ou modelo
+  useEffect(() => {
     const selected = campaignList.filter(c => c.selected);
     if (selected.length === 0) {
-      toast.warning("Selecione pelo menos uma campanha para gerar o relatório!");
+      setGeneratedText("");
       return;
     }
-
-    setIsGenerating(true);
-    setGeneratedText("");
 
     const totalCost = selected.reduce((sum, c) => sum + c.cost, 0);
     const agencyName = localStorage.getItem("nc_agency_name") || "NC AGÊNCIA";
@@ -438,11 +449,16 @@ function RelatoriosPage() {
       text += `*${agencyName.toUpperCase()}*`;
     }
 
-    setTimeout(() => {
-      setGeneratedText(text);
-      setIsGenerating(false);
-      toast.success("Relatório gerado com sucesso!");
-    }, 800);
+    setGeneratedText(text);
+  }, [campaignList, reportMode, clientName, periodText]);
+
+  const handleGenerate = () => {
+    const selected = campaignList.filter(c => c.selected);
+    if (selected.length === 0) {
+      toast.warning("Selecione pelo menos uma campanha!");
+      return;
+    }
+    toast.success("Métricas compiladas e atualizadas em tempo real!");
   };
 
   const handleCopyToClipboard = () => {
@@ -526,36 +542,30 @@ function RelatoriosPage() {
               />
             </div>
 
-            {source === "api" && (
-              <>
-                <div className="space-y-2">
-                  <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Conta Conectada</label>
-                  <select 
-                    value={selectedAccountId} 
-                    onChange={(e) => setSelectedAccountId(e.target.value)}
-                    className="w-full rounded-xl border border-white/10 bg-background/50 px-4 py-3 text-sm font-bold focus:border-primary focus:outline-none"
-                  >
-                    <option value="all">Consolidado (Todas as contas)</option>
-                    {accounts.map(acc => (
-                      <option key={acc.id} value={acc.id}>{acc.name}</option>
-                    ))}
-                  </select>
-                </div>
+            <div className="space-y-2">
+              <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Janela de Tempo (Calendário)</label>
+              <DateRangePicker 
+                startDate={dateRange.startDate} 
+                endDate={dateRange.endDate} 
+                onChange={handleDateChange}
+                className="w-full"
+              />
+            </div>
 
-                <div className="space-y-2">
-                  <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Janela de Tempo</label>
-                  <select 
-                    value={days} 
-                    onChange={(e) => setDays(Number(e.target.value))}
-                    className="w-full rounded-xl border border-white/10 bg-background/50 px-4 py-3 text-sm font-bold focus:border-primary focus:outline-none"
-                  >
-                    <option value={7}>Últimos 7 dias</option>
-                    <option value={14}>Últimos 14 dias</option>
-                    <option value={30}>Últimos 30 dias</option>
-                    <option value={90}>Últimos 90 dias</option>
-                  </select>
-                </div>
-              </>
+            {source === "api" && (
+              <div className="space-y-2">
+                <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Conta Conectada</label>
+                <select 
+                  value={selectedAccountId} 
+                  onChange={(e) => setSelectedAccountId(e.target.value)}
+                  className="w-full rounded-xl border border-white/10 bg-background/50 px-4 py-3 text-sm font-bold focus:border-primary focus:outline-none"
+                >
+                  <option value="all">Consolidado (Todas as contas)</option>
+                  {accounts.map(acc => (
+                    <option key={acc.id} value={acc.id}>{acc.name}</option>
+                  ))}
+                </select>
+              </div>
             )}
 
             <div className="space-y-2">

@@ -15,6 +15,7 @@ export type ExtractedCampaign = {
   clicks?: number;
   conversions?: number;
   reach?: number;
+  cpl?: number;
   result_type?: string;
   platform?: "meta" | "google";
 };
@@ -29,6 +30,15 @@ export const extractPrintFn = createServerFn({ method: "POST" })
 
     const systemPrompt = `Você é um motor de extração de dados de prints de dashboards de tráfego pago (Gerenciador de Anúncios do Meta Ads ou painel do Google Ads). Receba a imagem, identifique a plataforma do print (Meta Ads ou Google Ads) e extraia a lista de campanhas e suas métricas correspondentes.
 
+Preste extrema atenção para identificar as colunas e extrair:
+1. 'Nome da campanha' ou 'Campaign name' -> name
+2. 'Alcance' ou 'Reach' -> reach
+3. 'Impressões' ou 'Impressions' -> impressions
+4. 'Valor gasto', 'Custo', 'Cost' ou 'Amount spent' -> cost
+5. 'Resultados', 'Results', 'Conversões' ou 'Conversions' -> conversions (o número absoluto)
+6. 'Tipo de Resultado' ou 'Result type' (ex: 'Mensagens de conversas iniciadas', 'Visualizações', 'Cliques no link', 'Compras', 'Leads') -> result_type
+7. 'Custo por resultado', 'CPL', 'CPA', 'Custo por conversão' -> cpl (o valor monetário unitário)
+
 Retorne APENAS um JSON válido com a estrutura:
 {
   "platform": "meta|google",
@@ -42,6 +52,7 @@ Retorne APENAS um JSON válido com a estrutura:
       "clicks": number|null,
       "conversions": number|null,
       "reach": number|null,
+      "cpl": number|null,
       "result_type": "string|null"
     }
   ]
