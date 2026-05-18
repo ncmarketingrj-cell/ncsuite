@@ -186,13 +186,11 @@ function LandingPage() {
               className="relative"
             >
               <div className="absolute inset-0 -z-10 bg-red-600/5 blur-[100px] rounded-full" />
-              <div className="relative w-full rounded-2xl shadow-2xl rotate-2 hover:rotate-0 transition-transform duration-700 overflow-hidden aspect-video bg-black/50 ring-1 ring-white/10">
-                <img 
-                  src="/assets/mockup-reports.png" 
-                  alt="Motor de Relatórios" 
-                  className="absolute inset-0 w-full h-full object-cover transform scale-[1.25]"
-                />
-              </div>
+              <img 
+                src="/assets/mockup-reports.png" 
+                alt="Motor de Relatórios" 
+                className="w-full rounded-2xl border border-white/10 shadow-2xl rotate-2 hover:rotate-0 transition-transform duration-700"
+              />
             </motion.div>
           </div>
         </div>
@@ -271,9 +269,7 @@ function LandingPage() {
               </div>
             </div>
             <div className="md:w-1/2 p-6 md:p-10 flex justify-end z-10">
-              <div className="relative rounded-xl shadow-2xl ring-1 ring-white/10 w-full max-w-[350px] h-[400px] overflow-hidden bg-black/50">
-                <img src="/assets/mockup-victoria.png" alt="Victoria AI Interface" className="absolute inset-0 w-full h-full object-cover object-left-top transform scale-[1.25]" />
-              </div>
+              <img src="/assets/mockup-victoria.png" alt="Victoria AI Interface" className="rounded-xl shadow-2xl border border-white/10 max-h-[400px] object-cover object-left-top" />
             </div>
           </div>
         </div>
