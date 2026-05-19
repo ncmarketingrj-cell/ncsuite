@@ -46,84 +46,90 @@
 }
 
 /* ═══════════════════════════════════════════
-   DARK MODE (Padrão) — Vermelho Ferrari + Carvão
+   DARK MODE (Padrão) — Vermelho Ferrari + Carvão Suave
+   Background 8% = cinza-carvão confortável (não preto puro)
+   Cards 11% = separação visual clara sem forçar a vista
+   Muted/Borders subiram para criar camadas visíveis
    ═══════════════════════════════════════════ */
 :root {
   --radius: 0.75rem;
-  /* Fundo ultra-escuro carvão */
-  --background: 0 0% 4%;
-  --foreground: 0 0% 95%;
-  /* Cards */
-  --card: 0 0% 7%;
-  --card-foreground: 0 0% 95%;
-  --popover: 0 0% 7%;
-  --popover-foreground: 0 0% 95%;
+  /* Fundo carvão suave — confortável para longas sessões */
+  --background: 220 10% 8%;
+  --foreground: 210 10% 93%;
+  /* Cards — claramente separados do fundo */
+  --card: 220 8% 12%;
+  --card-foreground: 210 10% 93%;
+  --popover: 220 8% 14%;
+  --popover-foreground: 210 10% 93%;
   /* Vermelho Ferrari — Cor primária */
   --primary: 0 84% 50%;
   --primary-foreground: 0 0% 100%;
   /* Cinza quente — Secundária */
-  --secondary: 0 0% 20%;
-  --secondary-foreground: 0 0% 95%;
+  --secondary: 220 6% 20%;
+  --secondary-foreground: 210 10% 93%;
   /* Vermelho escuro — Accent */
   --accent: 0 72% 40%;
   --accent-foreground: 0 0% 100%;
   /* Sucesso */
   --success: 142 71% 45%;
   --success-foreground: 0 0% 100%;
-  /* Muted */
-  --muted: 0 0% 12%;
-  --muted-foreground: 0 0% 55%;
+  /* Muted — camadas internas e sub-fundos */
+  --muted: 220 6% 16%;
+  --muted-foreground: 215 8% 58%;
   /* Destructive */
   --destructive: 0 84% 60%;
   --destructive-foreground: 0 0% 98%;
-  /* Bordas */
-  --border: 0 0% 14%;
-  --input: 0 0% 14%;
+  /* Bordas — visíveis sem ser agressivas */
+  --border: 220 6% 18%;
+  --input: 220 6% 18%;
   --ring: 0 84% 50%;
-  /* Sidebar (não usada mais, mas mantida para compatibilidade) */
-  --sidebar: 0 0% 4%;
-  --sidebar-foreground: 0 0% 95%;
+  /* Sidebar */
+  --sidebar: 220 10% 7%;
+  --sidebar-foreground: 210 10% 93%;
   --sidebar-primary: 0 84% 50%;
   --sidebar-primary-foreground: 0 0% 100%;
-  --sidebar-accent: 0 0% 7%;
-  --sidebar-accent-foreground: 0 0% 95%;
-  --sidebar-border: 0 0% 10%;
+  --sidebar-accent: 220 8% 12%;
+  --sidebar-accent-foreground: 210 10% 93%;
+  --sidebar-border: 220 6% 14%;
   --sidebar-ring: 0 84% 50%;
 }
 
 /* ═══════════════════════════════════════════
-   LIGHT MODE — Vermelho Ferrari + Branco Clean
+   LIGHT MODE — Vermelho Ferrari + Off-White Confortável
+   Background 93% = cinza-gelo (não branco puro → menos cansaço)
+   Cards 100% = branco real → separação clara do fundo
+   Bordas mais escuras para delimitar os módulos
    ═══════════════════════════════════════════ */
 html.light {
-  --background: 0 0% 97%;
-  --foreground: 0 0% 9%;
+  --background: 220 14% 93%;
+  --foreground: 220 15% 12%;
   --card: 0 0% 100%;
-  --card-foreground: 0 0% 9%;
+  --card-foreground: 220 15% 12%;
   --popover: 0 0% 100%;
-  --popover-foreground: 0 0% 9%;
+  --popover-foreground: 220 15% 12%;
   /* Vermelho Ferrari ligeiramente mais escuro para contraste em fundo claro */
   --primary: 0 72% 42%;
   --primary-foreground: 0 0% 100%;
-  --secondary: 0 0% 92%;
-  --secondary-foreground: 0 0% 20%;
+  --secondary: 220 12% 90%;
+  --secondary-foreground: 220 15% 18%;
   --accent: 0 60% 35%;
   --accent-foreground: 0 0% 100%;
   --success: 142 71% 40%;
   --success-foreground: 0 0% 100%;
-  --muted: 0 0% 94%;
-  --muted-foreground: 0 0% 45%;
+  --muted: 220 10% 90%;
+  --muted-foreground: 220 8% 42%;
   --destructive: 0 84% 50%;
   --destructive-foreground: 0 0% 100%;
-  --border: 0 0% 88%;
-  --input: 0 0% 88%;
+  --border: 220 10% 82%;
+  --input: 220 10% 85%;
   --ring: 0 72% 42%;
-  --sidebar: 0 0% 97%;
-  --sidebar-foreground: 0 0% 9%;
+  --sidebar: 220 14% 95%;
+  --sidebar-foreground: 220 15% 12%;
   --sidebar-primary: 0 72% 42%;
   --sidebar-primary-foreground: 0 0% 100%;
-  --sidebar-accent: 0 0% 94%;
-  --sidebar-accent-foreground: 0 0% 9%;
-  --sidebar-border: 0 0% 88%;
+  --sidebar-accent: 220 10% 90%;
+  --sidebar-accent-foreground: 220 15% 12%;
+  --sidebar-border: 220 10% 82%;
   --sidebar-ring: 0 72% 42%;
 }
 
@@ -141,15 +147,15 @@ html.light {
   /* Background sutil — Dark */
   body {
     background-image:
-      radial-gradient(circle at 15% 15%, hsl(var(--primary) / 0.04), transparent 40%),
-      radial-gradient(circle at 85% 85%, hsl(var(--primary) / 0.02), transparent 40%);
+      radial-gradient(circle at 15% 15%, hsl(var(--primary) / 0.03), transparent 40%),
+      radial-gradient(circle at 85% 85%, hsl(220 40% 50% / 0.03), transparent 40%);
     background-attachment: fixed;
   }
   /* Background sutil — Light */
   html.light body {
     background-image:
-      radial-gradient(circle at 15% 15%, hsl(var(--primary) / 0.03), transparent 40%),
-      radial-gradient(circle at 85% 85%, hsl(var(--primary) / 0.02), transparent 40%);
+      radial-gradient(circle at 15% 15%, hsl(var(--primary) / 0.04), transparent 40%),
+      radial-gradient(circle at 85% 85%, hsl(220 60% 60% / 0.04), transparent 40%);
   }
 }
 
@@ -160,18 +166,26 @@ html.light {
     border: 1px solid hsl(var(--border));
     background: hsl(var(--card));
     backdrop-filter: blur(20px);
-    box-shadow: 0 4px 24px -1px hsl(0 0% 0% / 0.1);
+    box-shadow:
+      0 1px 2px hsl(0 0% 0% / 0.08),
+      0 4px 16px -2px hsl(0 0% 0% / 0.12);
     transition: all 0.3s ease;
   }
   .glass-panel:hover {
     border-color: hsl(var(--primary) / 0.3);
-    box-shadow: 0 8px 32px -1px hsl(var(--primary) / 0.08);
+    box-shadow:
+      0 2px 4px hsl(0 0% 0% / 0.08),
+      0 8px 24px -2px hsl(var(--primary) / 0.1);
   }
   html.light .glass-panel {
-    box-shadow: 0 1px 3px hsl(0 0% 0% / 0.06), 0 4px 16px hsl(0 0% 0% / 0.04);
+    box-shadow:
+      0 1px 3px hsl(220 20% 30% / 0.06),
+      0 4px 16px hsl(220 20% 30% / 0.06);
   }
   html.light .glass-panel:hover {
-    box-shadow: 0 4px 24px hsl(var(--primary) / 0.1);
+    box-shadow:
+      0 2px 6px hsl(220 20% 30% / 0.08),
+      0 8px 28px hsl(var(--primary) / 0.08);
   }
 
   .bg-card-gradient {
