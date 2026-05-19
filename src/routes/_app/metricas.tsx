@@ -262,16 +262,16 @@ function MetricasAvancadasPage() {
           <div className="relative min-w-[200px]">
             <Layers className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
             <select value={accountFilter} onChange={(e) => setAccountFilter(e.target.value)} className="w-full appearance-none rounded-xl border border-white/10 bg-background/40 py-2.5 pl-9 pr-8 text-xs font-bold focus:border-primary/50 focus:outline-none transition-all">
-              <option value="all">Todas as Contas</option>
-              {adAccounts.map((a: any) => <option key={a.id} value={a.id}>{a.name}</option>)}
+              <option value="all" className="bg-background text-foreground">Todas as Contas</option>
+              {adAccounts.map((a: any) => <option key={a.id} value={a.id} className="bg-background text-foreground">{a.name}</option>)}
             </select>
             <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
           </div>
           <div className="relative">
             <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as any)} className="appearance-none rounded-xl border border-white/10 bg-background/40 px-4 py-2.5 pr-8 text-xs font-bold focus:border-primary/50 focus:outline-none transition-all">
-              <option value="all">Todos os Status</option>
-              <option value="active">Ativos</option>
-              <option value="paused">Pausados</option>
+              <option value="all" className="bg-background text-foreground">Todos os Status</option>
+              <option value="active" className="bg-background text-foreground">Ativos</option>
+              <option value="paused" className="bg-background text-foreground">Pausados</option>
             </select>
             <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
           </div>
