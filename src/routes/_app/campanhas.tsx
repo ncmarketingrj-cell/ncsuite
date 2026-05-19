@@ -270,7 +270,7 @@ function MetaAdsManagerPage() {
                 <div className="border-b border-white/5 bg-primary/5 px-6 py-3 flex flex-wrap items-center gap-5 text-xs">
                   <span className="font-black text-primary uppercase tracking-widest">{selSet.size} selecionados</span>
                   <span className="text-muted-foreground">Gasto: <strong className="text-foreground font-mono">R$ {totCost.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</strong></span>
-                  <span className="text-muted-foreground">Resultados: <strong className="text-secondary font-mono">{totConv}</strong></span>
+                  <span className="text-muted-foreground">Resultados: <strong className="text-violet-600 dark:text-violet-400 font-mono">{totConv}</strong></span>
                   <span className="text-muted-foreground">Alcance: <strong className="text-foreground font-mono">{totReach.toLocaleString("pt-BR")}</strong></span>
                   <button onClick={() => setSelSet(new Set())} className="ml-auto text-[9px] text-muted-foreground hover:text-foreground underline">Limpar Seleção</button>
                 </div>
@@ -295,7 +295,7 @@ function MetaAdsManagerPage() {
                         <th className="px-4 py-3 text-right text-[9px] font-black uppercase tracking-widest text-muted-foreground">Orçamento</th>
                         <th className="px-4 py-3 text-right text-[9px] font-black uppercase tracking-widest text-muted-foreground">Alcance</th>
                         <th className="px-4 py-3 text-right text-[9px] font-black uppercase tracking-widest text-muted-foreground">Impressões</th>
-                        <th className="px-4 py-3 text-right text-[9px] font-black uppercase tracking-widest text-secondary">Resultados</th>
+                        <th className="px-4 py-3 text-right text-[9px] font-black uppercase tracking-widest text-violet-600 dark:text-violet-400">Resultados</th>
                         <th className="px-4 py-3 text-right text-[9px] font-black uppercase tracking-widest text-primary">Gasto</th>
                       </tr>
                     </thead>
@@ -327,7 +327,7 @@ function MetaAdsManagerPage() {
                             <td className="px-4 py-3 text-right font-mono text-muted-foreground">{(c.budget > 0) ? `R$ ${c.budget.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}` : "—"}</td>
                             <td className="px-4 py-3 text-right font-mono text-muted-foreground">{c.t.reach > 0 ? c.t.reach.toLocaleString("pt-BR") : "—"}</td>
                             <td className="px-4 py-3 text-right font-mono text-muted-foreground">{c.t.impressions.toLocaleString("pt-BR")}</td>
-                            <td className="px-4 py-3 text-right font-mono font-bold text-secondary">{c.t.conversions.toLocaleString("pt-BR")}</td>
+                            <td className="px-4 py-3 text-right font-mono font-bold text-violet-600 dark:text-violet-400">{c.t.conversions.toLocaleString("pt-BR")}</td>
                             <td className="px-4 py-3 text-right font-mono font-bold text-primary">R$ {c.t.cost.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</td>
                           </tr>
                         );
@@ -339,7 +339,7 @@ function MetaAdsManagerPage() {
                         <td className="px-4 py-3 text-right font-mono font-bold text-[10px]">—</td>
                         <td className="px-4 py-3 text-right font-mono font-bold text-[10px]">{totReach > 0 ? totReach.toLocaleString("pt-BR") : "—"}</td>
                         <td className="px-4 py-3 text-right font-mono font-bold text-[10px]">{totImpr.toLocaleString("pt-BR")}</td>
-                        <td className="px-4 py-3 text-right font-mono font-bold text-secondary text-[10px]">{totConv.toLocaleString("pt-BR")}</td>
+                        <td className="px-4 py-3 text-right font-mono font-bold text-violet-600 dark:text-violet-400 text-[10px]">{totConv.toLocaleString("pt-BR")}</td>
                         <td className="px-4 py-3 text-right font-mono font-bold text-primary text-[10px]">R$ {totCost.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</td>
                       </tr>
                     </tfoot>

@@ -139,7 +139,7 @@ function AgentePage() {
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
         <StatusCard icon={isOnline ? Wifi : WifiOff} label="Status do Agente" value={isOnline ? "Online" : "Aguardando"} color={isOnline ? "text-success" : "text-muted-foreground"} />
         <StatusCard icon={Clock} label="Último Heartbeat" value={lastSync ? formatRelative(lastSync) : "Nunca"} color="text-primary" />
-        <StatusCard icon={Zap} label="Ações Executadas" value={summary?.actions_taken ?? 0} color="text-secondary" />
+        <StatusCard icon={Zap} label="Ações Executadas" value={summary?.actions_taken ?? 0} color="text-violet-600 dark:text-violet-400" />
         <StatusCard icon={AlertTriangle} label="Alertas Gerados" value={summary?.alerts_generated ?? 0} color="text-accent" />
       </div>
 
@@ -231,7 +231,7 @@ function AgentePage() {
         {/* Memória do Agente */}
         <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="glass-panel p-6">
           <div className="mb-4 flex items-center gap-2">
-            <Brain className="h-4 w-4 text-secondary" />
+            <Brain className="h-4 w-4 text-violet-600 dark:text-violet-400" />
             <h3 className="font-display font-semibold">Memória Persistente do Agente</h3>
           </div>
           <div className="space-y-2">

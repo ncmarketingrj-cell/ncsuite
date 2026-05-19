@@ -240,10 +240,10 @@ function MulticanalPage() {
                 ) : (
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={barData}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
-                      <XAxis dataKey="name" tick={{ fill: "#888", fontSize: 9 }} />
-                      <YAxis tick={{ fill: "#888", fontSize: 9 }} />
-                      <Tooltip contentStyle={{ background: "#0B0F19", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 12, fontSize: 10 }} />
+                      <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" opacity={0.3} />
+                      <XAxis dataKey="name" tick={{ fill: "var(--color-muted-foreground)", fontSize: 9 }} />
+                      <YAxis tick={{ fill: "var(--color-muted-foreground)", fontSize: 9 }} />
+                      <Tooltip contentStyle={{ background: "var(--color-card)", border: "1px solid var(--color-border)", borderRadius: 12, fontSize: 10, color: "var(--color-foreground)" }} />
                       <Bar dataKey="Gasto" fill="#00d4ff" radius={[4, 4, 0, 0]} />
                     </BarChart>
                   </ResponsiveContainer>
@@ -254,8 +254,8 @@ function MulticanalPage() {
             {/* Gráfico 2: Distribuição Faturamento */}
             <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }} className="glass-panel p-6">
               <div className="flex items-center gap-2 mb-6">
-                <PieChartIcon className="h-4 w-4 text-secondary" />
-                <p className="text-xs font-black uppercase tracking-widest text-secondary">Distribuição do Gasto Total</p>
+                <PieChartIcon className="h-4 w-4 text-violet-600 dark:text-violet-400" />
+                <p className="text-xs font-black uppercase tracking-widest text-violet-600 dark:text-violet-400">Distribuição do Gasto Total</p>
               </div>
               <div className="w-full relative h-[280px]">
                 {pieData.length === 0 ? (
@@ -278,7 +278,7 @@ function MulticanalPage() {
                       >
                         {pieData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
                       </Pie>
-                      <Tooltip contentStyle={{ background: "#0B0F19", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 12, fontSize: 10 }} />
+                      <Tooltip contentStyle={{ background: "var(--color-card)", border: "1px solid var(--color-border)", borderRadius: 12, fontSize: 10, color: "var(--color-foreground)" }} />
                     </PieChart>
                   </ResponsiveContainer>
                 )}

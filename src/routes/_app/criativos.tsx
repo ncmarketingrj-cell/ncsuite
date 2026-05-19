@@ -197,7 +197,7 @@ function CriativosPage() {
                           key={idx} 
                           className="inline-flex items-center gap-1 rounded-lg bg-muted border border-border px-2.5 py-1 text-[9px] font-black uppercase tracking-wider text-foreground"
                         >
-                          {idx === 1 ? <MapPin className="h-3 w-3 text-primary animate-pulse" /> : <Tag className="h-3 w-3 text-secondary" />}
+                          {idx === 1 ? <MapPin className="h-3 w-3 text-primary animate-pulse" /> : <Tag className="h-3 w-3 text-violet-600 dark:text-violet-400" />}
                           {t}
                         </span>
                       ))}
@@ -686,17 +686,17 @@ function AIAnalysisModal({ item, onClose }: { item: SwipeFile; onClose: () => vo
 
           {/* SUGESTÕES DE NOVOS CRIATIVOS (IA CRIATIVIDADE INFINITA) */}
           <div className="space-y-4">
-            <h4 className="text-sm font-black uppercase tracking-widest text-secondary border-b border-white/5 pb-2 flex items-center gap-2">
-              <Lightbulb className="h-4 w-4 text-secondary" /> Próximas Ideias Criativas Recomendadas pela IA
+            <h4 className="text-sm font-black uppercase tracking-widest text-violet-600 dark:text-violet-400 border-b border-white/5 pb-2 flex items-center gap-2">
+              <Lightbulb className="h-4 w-4 text-violet-600 dark:text-violet-400" /> Próximas Ideias Criativas Recomendadas pela IA
             </h4>
             
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               {report.newCreativeIdeas.map((idea, index) => (
-                <div key={index} className="glass-panel p-5 border-white/10 bg-white/5 space-y-4 hover:border-secondary/30 transition-all duration-300">
+                <div key={index} className="glass-panel p-5 border-white/10 bg-white/5 space-y-4 hover:border-violet-500/30 transition-all duration-300">
                   
                   {/* Conceito */}
                   <div className="space-y-1">
-                    <span className="text-[9px] font-black uppercase tracking-widest text-secondary">IDEIA RECOMENDADA #{index + 1}</span>
+                    <span className="text-[9px] font-black uppercase tracking-widest text-violet-600 dark:text-violet-400">IDEIA RECOMENDADA #{index + 1}</span>
                     <h5 className="text-sm font-black text-white uppercase tracking-wider">{idea.concept}</h5>
                   </div>
                   

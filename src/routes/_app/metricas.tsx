@@ -215,7 +215,7 @@ function MetricasAvancadasPage() {
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-8">
         {[
           { label: "Gasto", value: `R$ ${totCost.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`, icon: DollarSign, color: "text-primary" },
-          { label: "Resultados", value: totConv.toLocaleString("pt-BR"), icon: Target, color: "text-secondary" },
+          { label: "Resultados", value: totConv.toLocaleString("pt-BR"), icon: Target, color: "text-violet-600 dark:text-violet-400" },
           { label: "CPL/CPA", value: avgCpl > 0 ? `R$ ${avgCpl.toFixed(2)}` : "—", icon: Zap, color: "text-primary" },
           { label: "Impressões", value: totImpr.toLocaleString("pt-BR"), icon: BarChart3, color: "text-muted-foreground" },
           { label: "Alcance", value: totReach > 0 ? totReach.toLocaleString("pt-BR") : "—", icon: Users, color: "text-muted-foreground" },
@@ -289,7 +289,7 @@ function MetricasAvancadasPage() {
                 <div className="border-b border-white/5 bg-primary/5 px-6 py-3 flex flex-wrap items-center gap-5 text-xs">
                   <span className="font-black text-primary uppercase tracking-widest">{selSet.size} selecionados</span>
                   <span className="text-muted-foreground">Gasto: <strong className="text-foreground font-mono">R$ {totCost.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</strong></span>
-                  <span className="text-muted-foreground">Resultados: <strong className="text-secondary font-mono">{totConv}</strong></span>
+                  <span className="text-muted-foreground">Resultados: <strong className="text-violet-600 dark:text-violet-400 font-mono">{totConv}</strong></span>
                   <span className="text-muted-foreground">CPL: <strong className="text-primary font-mono">R$ {avgCpl.toFixed(2)}</strong></span>
                   <button onClick={() => setSelSet(new Set())} className="ml-auto text-[9px] text-muted-foreground hover:text-foreground underline">Limpar Seleção</button>
                 </div>
@@ -314,7 +314,7 @@ function MetricasAvancadasPage() {
                         <th className="px-3 py-3 text-right text-[9px] font-black uppercase tracking-widest text-muted-foreground">Alcance</th>
                         <th className="px-3 py-3 text-right text-[9px] font-black uppercase tracking-widest text-muted-foreground">Impressões</th>
                         <th className="px-3 py-3 text-right text-[9px] font-black uppercase tracking-widest text-muted-foreground">Freq.</th>
-                        <th className="px-3 py-3 text-right text-[9px] font-black uppercase tracking-widest text-secondary">Resultados</th>
+                        <th className="px-3 py-3 text-right text-[9px] font-black uppercase tracking-widest text-violet-600 dark:text-violet-400">Resultados</th>
                         <th className="px-3 py-3 text-right text-[9px] font-black uppercase tracking-widest text-primary">CPL/CPA</th>
                         <th className="px-3 py-3 text-right text-[9px] font-black uppercase tracking-widest text-primary">Gasto</th>
                         <th className="px-3 py-3 text-right text-[9px] font-black uppercase tracking-widest text-muted-foreground">CTR</th>
@@ -351,7 +351,7 @@ function MetricasAvancadasPage() {
                             <td className="px-3 py-3 text-right font-mono text-muted-foreground">{c.t.reach > 0 ? c.t.reach.toLocaleString("pt-BR") : "—"}</td>
                             <td className="px-3 py-3 text-right font-mono text-muted-foreground">{c.t.impressions.toLocaleString("pt-BR")}</td>
                             <td className="px-3 py-3 text-right font-mono text-muted-foreground">{c.t.freq.toFixed(2)}</td>
-                            <td className="px-3 py-3 text-right font-mono font-bold text-secondary">{c.t.conversions.toLocaleString("pt-BR")}</td>
+                            <td className="px-3 py-3 text-right font-mono font-bold text-violet-600 dark:text-violet-400">{c.t.conversions.toLocaleString("pt-BR")}</td>
                             <td className="px-3 py-3 text-right font-mono font-bold text-primary">{c.t.cpl > 0 ? `R$ ${c.t.cpl.toFixed(2)}` : "—"}</td>
                             <td className="px-3 py-3 text-right font-mono font-bold text-primary">R$ {c.t.cost.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</td>
                             <td className="px-3 py-3 text-right font-mono">
@@ -376,7 +376,7 @@ function MetricasAvancadasPage() {
                         <td className="px-3 py-3 text-right font-mono text-[10px]">{totReach > 0 ? totReach.toLocaleString("pt-BR") : "—"}</td>
                         <td className="px-3 py-3 text-right font-mono text-[10px]">{totImpr.toLocaleString("pt-BR")}</td>
                         <td className="px-3 py-3 text-right font-mono text-[10px]">{totImpr > 0 && totReach > 0 ? (totImpr / totReach).toFixed(2) : "—"}</td>
-                        <td className="px-3 py-3 text-right font-mono font-bold text-secondary text-[10px]">{totConv.toLocaleString("pt-BR")}</td>
+                        <td className="px-3 py-3 text-right font-mono font-bold text-violet-600 dark:text-violet-400 text-[10px]">{totConv.toLocaleString("pt-BR")}</td>
                         <td className="px-3 py-3 text-right font-mono font-bold text-primary text-[10px]">{avgCpl > 0 ? `R$ ${avgCpl.toFixed(2)}` : "—"}</td>
                         <td className="px-3 py-3 text-right font-mono font-bold text-primary text-[10px]">R$ {totCost.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</td>
                         <td className="px-3 py-3 text-right font-mono text-[10px]">{avgCtr.toFixed(2)}%</td>
@@ -412,6 +412,100 @@ function MetricasAvancadasPage() {
             <div className="ml-auto text-[9px] font-mono text-muted-foreground/50 uppercase tracking-widest">Recharts Engine v2</div>
           </div>
 
+          {/* ═══════════ MAPA DE CALOR DE PERFORMANCE ═══════════ */}
+          <div className="glass-panel p-5">
+            <div className="flex items-center gap-2 mb-2">
+              <Activity className="h-4 w-4 text-violet-600 dark:text-violet-400" />
+              <p className="text-xs font-black uppercase tracking-widest">Mapa de Calor de Performance Operacional</p>
+              <span className="ml-auto text-[9px] text-muted-foreground/50 font-mono">HEATMAP · ATIVOS SELECIONADOS</span>
+            </div>
+            <p className="text-[10px] text-muted-foreground mb-4">
+              Visão matricial comparativa dos ativos com maior engajamento e conversão. Tons mais fortes indicam performance superior às médias no período.
+            </p>
+            <div className="overflow-x-auto custom-scrollbar">
+              <table className="w-full text-xs min-w-[750px] border-collapse">
+                <thead>
+                  <tr className="border-b border-white/5 text-left text-[9px] font-black uppercase tracking-widest text-muted-foreground">
+                    <th className="px-3 py-3 w-1/4">Ativo</th>
+                    <th className="px-3 py-3 text-center">Gasto</th>
+                    <th className="px-3 py-3 text-center">Resultados</th>
+                    <th className="px-3 py-3 text-center">CTR</th>
+                    <th className="px-3 py-3 text-center">CPL/CPA</th>
+                    <th className="px-3 py-3 text-center">ROAS Est.</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/[0.02]">
+                  {sel.slice(0, 10).map((c: any) => {
+                    const spendScore = totCost > 0 ? (c.t.cost / (totCost / sel.length)) : 1;
+                    const convScore = totConv > 0 ? (c.t.conversions / (totConv / sel.length)) : 1;
+                    const ctrScore = avgCtr > 0 ? (c.t.ctr / avgCtr) : 1;
+                    const cplScore = avgCpl > 0 ? (c.t.cpl > 0 ? (avgCpl / c.t.cpl) : 0) : 1; // Maior = CPL menor (melhor)
+                    const roasScore = c.t.roas > 0 ? (c.t.roas / 3) : 1;
+
+                    const getCellClasses = (score: number, type: 'success' | 'danger' | 'info' | 'warning' | 'primary') => {
+                      if (type === 'success') {
+                        if (score >= 1.3) return 'bg-emerald-500/20 text-emerald-800 dark:text-emerald-300 dark:bg-emerald-500/30 border border-emerald-500/20';
+                        if (score >= 0.8) return 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 dark:bg-emerald-500/15';
+                        return 'bg-amber-500/10 text-amber-700 dark:text-amber-400 dark:bg-amber-500/15';
+                      }
+                      if (type === 'danger') {
+                        if (score >= 1.3) return 'bg-emerald-500/20 text-emerald-800 dark:text-emerald-300 dark:bg-emerald-500/30 border border-emerald-500/20'; // Bom CPL
+                        if (score >= 0.8) return 'bg-amber-500/10 text-amber-700 dark:text-amber-400 dark:bg-amber-500/15';
+                        return 'bg-red-500/20 text-red-800 dark:text-red-300 dark:bg-red-500/30 border border-red-500/20'; // CPL Ruim
+                      }
+                      if (type === 'info') {
+                        if (score >= 1.3) return 'bg-violet-500/20 text-violet-800 dark:text-violet-300 dark:bg-violet-500/30 border border-violet-500/20';
+                        if (score >= 0.8) return 'bg-violet-500/10 text-violet-700 dark:text-violet-400 dark:bg-violet-500/15';
+                        return 'bg-white/5 text-muted-foreground';
+                      }
+                      // Investimento / Geral
+                      if (score >= 1.3) return 'bg-blue-500/20 text-blue-800 dark:text-blue-300 dark:bg-blue-500/30 border border-blue-500/20';
+                      return 'bg-white/5 text-muted-foreground';
+                    };
+
+                    return (
+                      <tr key={c.id} className="hover:bg-white/[0.01] transition-all">
+                        <td className="px-3 py-3 font-bold text-foreground/90 truncate uppercase max-w-[200px]" title={c.name}>
+                          {c.name}
+                        </td>
+                        {/* Gasto */}
+                        <td className="px-3 py-2 text-center">
+                          <div className={`mx-auto w-fit rounded-lg px-2.5 py-1.5 font-mono text-[10px] font-black ${getCellClasses(spendScore, 'primary')}`}>
+                            R$ {c.t.cost.toLocaleString("pt-BR", { maximumFractionDigits: 0 })}
+                          </div>
+                        </td>
+                        {/* Conversões */}
+                        <td className="px-3 py-2 text-center">
+                          <div className={`mx-auto w-fit rounded-lg px-2.5 py-1.5 font-mono text-[10px] font-black ${getCellClasses(convScore, 'info')}`}>
+                            {c.t.conversions}
+                          </div>
+                        </td>
+                        {/* CTR */}
+                        <td className="px-3 py-2 text-center">
+                          <div className={`mx-auto w-fit rounded-lg px-2.5 py-1.5 font-mono text-[10px] font-black ${getCellClasses(ctrScore, 'success')}`}>
+                            {c.t.ctr.toFixed(2)}%
+                          </div>
+                        </td>
+                        {/* CPL */}
+                        <td className="px-3 py-2 text-center">
+                          <div className={`mx-auto w-fit rounded-lg px-2.5 py-1.5 font-mono text-[10px] font-black ${getCellClasses(cplScore, 'danger')}`}>
+                            {c.t.cpl > 0 ? `R$ ${c.t.cpl.toFixed(0)}` : '—'}
+                          </div>
+                        </td>
+                        {/* ROAS */}
+                        <td className="px-3 py-2 text-center">
+                          <div className={`mx-auto w-fit rounded-lg px-2.5 py-1.5 font-mono text-[10px] font-black ${getCellClasses(roasScore, 'success')}`}>
+                            {c.t.roas > 0 ? `${c.t.roas.toFixed(1)}x` : '—'}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
           {/* ROW 1: Distribuição de Budget (Bar) + Radar de KPIs */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
 
@@ -424,15 +518,15 @@ function MetricasAvancadasPage() {
               </div>
               <ResponsiveContainer width="100%" height={Math.max(180, sel.length * 38)}>
                 <BarChart data={sel.slice(0, 10).map((c: any) => ({ name: c.name.substring(0, 20), gasto: Number(c.t.cost.toFixed(2)), conversoes: c.t.conversions }))} layout="vertical" margin={{ left: 10, right: 20 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
-                  <XAxis type="number" tick={{ fill: 'rgba(255,255,255,0.4)', fontSize: 10 }} tickFormatter={(v) => `R$${(v/1000).toFixed(1)}k`} />
-                  <YAxis type="category" dataKey="name" tick={{ fill: 'rgba(255,255,255,0.6)', fontSize: 9 }} width={110} />
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" opacity={0.3} />
+                  <XAxis type="number" tick={{ fill: 'var(--color-muted-foreground)', fontSize: 10 }} tickFormatter={(v) => `R$${(v/1000).toFixed(1)}k`} />
+                  <YAxis type="category" dataKey="name" tick={{ fill: 'var(--color-foreground)', fontSize: 9 }} width={110} />
                   <Tooltip
-                    contentStyle={{ background: '#0c0c0f', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 12, fontSize: 11 }}
+                    contentStyle={{ background: 'var(--color-card)', border: '1px solid var(--color-border)', borderRadius: 12, fontSize: 11, color: 'var(--color-foreground)' }}
                     formatter={(value: any, name: string) => [name === 'gasto' ? `R$ ${Number(value).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` : value, name === 'gasto' ? 'Gasto' : 'Conversões']}
                   />
                   <Bar dataKey="gasto" fill="hsl(var(--primary))" radius={[0, 6, 6, 0]} opacity={0.9} />
-                  <Bar dataKey="conversoes" fill="hsl(var(--secondary))" radius={[0, 6, 6, 0]} opacity={0.7} />
+                  <Bar dataKey="conversoes" fill="hsl(262 83% 74%)" radius={[0, 6, 6, 0]} opacity={0.7} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
@@ -440,7 +534,7 @@ function MetricasAvancadasPage() {
             {/* GRÁFICO 2: Radar de KPIs normalizados */}
             <div className="glass-panel p-5">
               <div className="flex items-center gap-2 mb-4">
-                <PieChart className="h-4 w-4 text-secondary" />
+                <PieChart className="h-4 w-4 text-violet-600 dark:text-violet-400" />
                 <p className="text-xs font-black uppercase tracking-widest">Radar de Performance</p>
                 <span className="ml-auto text-[9px] text-muted-foreground/50 font-mono">RADAR · NORMALIZED</span>
               </div>
@@ -453,10 +547,10 @@ function MetricasAvancadasPage() {
                   { metric: 'CPM Efic.', value: Math.min(avgCpm > 0 ? Math.max(0, 100 - (avgCpm / 30 * 100)) : 50, 100) },
                   { metric: 'Alcance', value: Math.min(totReach > 0 ? (totReach / 10000) * 100 : 0, 100) },
                 ]}>
-                  <PolarGrid stroke="rgba(255,255,255,0.05)" />
-                  <PolarAngleAxis dataKey="metric" tick={{ fill: 'rgba(255,255,255,0.55)', fontSize: 10, fontWeight: 700 }} />
+                  <PolarGrid stroke="var(--color-border)" opacity={0.3} />
+                  <PolarAngleAxis dataKey="metric" tick={{ fill: 'var(--color-foreground)', fontSize: 10, fontWeight: 700 }} />
                   <Radar name="Performance" dataKey="value" stroke="hsl(var(--primary))" fill="hsl(var(--primary))" fillOpacity={0.2} strokeWidth={2} />
-                  <Tooltip contentStyle={{ background: '#0c0c0f', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 12, fontSize: 11 }} formatter={(v: any) => [`${Number(v).toFixed(0)}%`, 'Score']} />
+                  <Tooltip contentStyle={{ background: 'var(--color-card)', border: '1px solid var(--color-border)', borderRadius: 12, fontSize: 11, color: 'var(--color-foreground)' }} formatter={(v: any) => [`${Number(v).toFixed(0)}%`, 'Score']} />
                 </RadarChart>
               </ResponsiveContainer>
             </div>
@@ -475,24 +569,24 @@ function MetricasAvancadasPage() {
               <p className="text-[10px] text-muted-foreground/50 mb-4">Ideal: canto inferior direito (alto gasto, baixo CPL)</p>
               <ResponsiveContainer width="100%" height={240}>
                 <ScatterChart margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
-                  <XAxis dataKey="gasto" name="Gasto" tick={{ fill: 'rgba(255,255,255,0.4)', fontSize: 10 }} tickFormatter={(v) => `R$${(v/1000).toFixed(1)}k`} label={{ value: 'Gasto (R$)', position: 'insideBottom', fill: 'rgba(255,255,255,0.3)', fontSize: 9, offset: -4 }} />
-                  <YAxis dataKey="cpl" name="CPL" tick={{ fill: 'rgba(255,255,255,0.4)', fontSize: 10 }} tickFormatter={(v) => `R$${v.toFixed(0)}`} label={{ value: 'CPL', angle: -90, position: 'insideLeft', fill: 'rgba(255,255,255,0.3)', fontSize: 9 }} />
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" opacity={0.3} />
+                  <XAxis dataKey="gasto" name="Gasto" tick={{ fill: 'var(--color-muted-foreground)', fontSize: 10 }} tickFormatter={(v) => `R$${(v/1000).toFixed(1)}k`} label={{ value: 'Gasto (R$)', position: 'insideBottom', fill: 'var(--color-muted-foreground)', fontSize: 9, offset: -4 }} />
+                  <YAxis dataKey="cpl" name="CPL" tick={{ fill: 'var(--color-muted-foreground)', fontSize: 10 }} tickFormatter={(v) => `R$${v.toFixed(0)}`} label={{ value: 'CPL', angle: -90, position: 'insideLeft', fill: 'var(--color-muted-foreground)', fontSize: 9 }} />
                   <ZAxis dataKey="conversoes" range={[40, 400]} name="Conversões" />
                   <Tooltip
-                    cursor={{ strokeDasharray: '3 3', stroke: 'rgba(255,255,255,0.1)' }}
-                    contentStyle={{ background: '#0c0c0f', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 12, fontSize: 11 }}
+                    cursor={{ strokeDasharray: '3 3', stroke: 'var(--color-border)' }}
+                    contentStyle={{ background: 'var(--color-card)', border: '1px solid var(--color-border)', borderRadius: 12, fontSize: 11, color: 'var(--color-foreground)' }}
                     formatter={(value: any, name: string) => [name === 'CPL' ? `R$ ${Number(value).toFixed(2)}` : name === 'Gasto' ? `R$ ${Number(value).toLocaleString('pt-BR', {minimumFractionDigits:2})}` : value, name]}
                     content={({ active, payload }: any) => active && payload?.length ? (
-                      <div className="bg-[#0c0c0f] border border-white/10 rounded-xl p-3 text-[10px] space-y-1">
-                        <p className="font-black text-white">{payload[0]?.payload?.name?.substring(0,25)}</p>
+                      <div className="bg-card border border-border rounded-xl p-3 text-[10px] space-y-1">
+                        <p className="font-black text-foreground">{payload[0]?.payload?.name?.substring(0,25)}</p>
                         <p className="text-primary">Gasto: R$ {Number(payload[0]?.payload?.gasto || 0).toLocaleString('pt-BR', {minimumFractionDigits:2})}</p>
-                        <p className="text-secondary">CPL: R$ {Number(payload[0]?.payload?.cpl || 0).toFixed(2)}</p>
+                        <p className="text-violet-600 dark:text-violet-400">CPL: R$ {Number(payload[0]?.payload?.cpl || 0).toFixed(2)}</p>
                         <p className="text-muted-foreground">Conversões: {payload[0]?.payload?.conversoes}</p>
                       </div>
                     ) : null}
                   />
-                  <ReferenceLine y={avgCpl} stroke="rgba(255,255,255,0.15)" strokeDasharray="4 4" label={{ value: 'Média CPL', fill: 'rgba(255,255,255,0.3)', fontSize: 9, position: 'right' }} />
+                  <ReferenceLine y={avgCpl} stroke="var(--color-border)" strokeDasharray="4 4" label={{ value: 'Média CPL', fill: 'var(--color-muted-foreground)', fontSize: 9, position: 'right' }} />
                   <Scatter
                     data={sel.map((c: any) => ({ name: c.name, gasto: c.t.cost, cpl: c.t.cpl, conversoes: c.t.conversions }))}
                     fill="hsl(var(--primary))"
@@ -505,7 +599,7 @@ function MetricasAvancadasPage() {
             {/* GRÁFICO 4: Pie — Share de Gasto e Conversões */}
             <div className="glass-panel p-5">
               <div className="flex items-center gap-2 mb-4">
-                <Eye className="h-4 w-4 text-secondary" />
+                <Eye className="h-4 w-4 text-violet-600 dark:text-violet-400" />
                 <p className="text-xs font-black uppercase tracking-widest">Share de Gasto</p>
                 <span className="ml-auto text-[9px] text-muted-foreground/50 font-mono">PIE · BUDGET SHARE</span>
               </div>
@@ -526,10 +620,10 @@ function MetricasAvancadasPage() {
                     ))}
                   </Pie>
                   <Tooltip
-                    contentStyle={{ background: '#0c0c0f', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 12, fontSize: 11 }}
+                    contentStyle={{ background: 'var(--color-card)', border: '1px solid var(--color-border)', borderRadius: 12, fontSize: 11, color: 'var(--color-foreground)' }}
                     formatter={(v: any) => [`R$ ${Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, 'Gasto']}
                   />
-                  <Legend iconType="circle" iconSize={8} formatter={(v) => <span className="text-[10px] text-white/60">{v}</span>} />
+                  <Legend iconType="circle" iconSize={8} formatter={(v) => <span className="text-[10px] text-muted-foreground">{v}</span>} />
                 </RechartsPieChart>
               </ResponsiveContainer>
             </div>
@@ -555,16 +649,16 @@ function MetricasAvancadasPage() {
                   }))}
                   margin={{ left: -10 }}
                 >
-                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
-                  <XAxis dataKey="name" tick={{ fill: 'rgba(255,255,255,0.5)', fontSize: 9 }} />
-                  <YAxis tick={{ fill: 'rgba(255,255,255,0.4)', fontSize: 10 }} />
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" opacity={0.3} />
+                  <XAxis dataKey="name" tick={{ fill: 'var(--color-muted-foreground)', fontSize: 9 }} />
+                  <YAxis tick={{ fill: 'var(--color-muted-foreground)', fontSize: 10 }} />
                   <Tooltip
-                    contentStyle={{ background: '#0c0c0f', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 12, fontSize: 11 }}
+                    contentStyle={{ background: 'var(--color-card)', border: '1px solid var(--color-border)', borderRadius: 12, fontSize: 11, color: 'var(--color-foreground)' }}
                     formatter={(v: any, name: string) => [name === 'CTR' ? `${v}%` : name === 'CPL Norm' ? `R$ ${(v * 10).toFixed(2)}` : `${(v / 10).toFixed(2)}x`, name === 'CPL Norm' ? 'CPL' : name === 'Freq' ? 'Freq.' : name]}
                   />
-                  <Legend iconType="circle" iconSize={8} formatter={(v) => <span className="text-[10px] text-white/60">{v === 'CPL Norm' ? 'CPL' : v === 'Freq' ? 'Frequência' : v}</span>} />
+                  <Legend iconType="circle" iconSize={8} formatter={(v) => <span className="text-[10px] text-muted-foreground">{v === 'CPL Norm' ? 'CPL' : v === 'Freq' ? 'Frequência' : v}</span>} />
                   <Bar dataKey="CTR" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />
-                  <Bar dataKey="CPL Norm" fill="hsl(var(--secondary))" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="CPL Norm" fill="hsl(262 83% 74%)" radius={[4, 4, 0, 0]} />
                   <Bar dataKey="Freq" fill="rgba(139,92,246,0.8)" radius={[4, 4, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
@@ -584,11 +678,11 @@ function MetricasAvancadasPage() {
                   aspectRatio={4 / 3}
                   content={({ x, y, width, height, name, value }: any) => (
                     <g>
-                      <rect x={x + 1} y={y + 1} width={width - 2} height={height - 2} rx={6} fill="hsl(var(--primary))" fillOpacity={0.15 + Math.random() * 0.25} stroke="rgba(255,255,255,0.06)" />
+                      <rect x={x + 1} y={y + 1} width={width - 2} height={height - 2} rx={6} fill="hsl(var(--primary))" fillOpacity={0.15 + Math.random() * 0.25} stroke="var(--color-border)" opacity={0.3} />
                       {width > 40 && height > 22 && (
                         <>
-                          <text x={x + width / 2} y={y + height / 2 - 4} textAnchor="middle" fill="rgba(255,255,255,0.8)" fontSize={9} fontWeight={700}>{name}</text>
-                          <text x={x + width / 2} y={y + height / 2 + 10} textAnchor="middle" fill="rgba(255,255,255,0.45)" fontSize={8}>{value} cliques</text>
+                          <text x={x + width / 2} y={y + height / 2 - 4} textAnchor="middle" fill="var(--color-foreground)" fontSize={9} fontWeight={700}>{name}</text>
+                          <text x={x + width / 2} y={y + height / 2 + 10} textAnchor="middle" fill="var(--color-muted-foreground)" fontSize={8}>{value} cliques</text>
                         </>
                       )}
                     </g>
@@ -627,17 +721,17 @@ function MetricasAvancadasPage() {
                       <stop offset="95%" stopColor="hsl(var(--primary))" stopOpacity={0} />
                     </linearGradient>
                     <linearGradient id="gradConv" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="hsl(var(--secondary))" stopOpacity={0.25} />
-                      <stop offset="95%" stopColor="hsl(var(--secondary))" stopOpacity={0} />
+                      <stop offset="5%" stopColor="hsl(262 83% 74%)" stopOpacity={0.25} />
+                      <stop offset="95%" stopColor="hsl(262 83% 74%)" stopOpacity={0} />
                     </linearGradient>
                   </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
-                  <XAxis dataKey="dia" tick={{ fill: 'rgba(255,255,255,0.4)', fontSize: 9 }} />
-                  <YAxis yAxisId="left" tick={{ fill: 'rgba(255,255,255,0.4)', fontSize: 9 }} tickFormatter={(v) => `R$${(v/1000).toFixed(1)}k`} />
-                  <YAxis yAxisId="right" orientation="right" tick={{ fill: 'rgba(255,255,255,0.4)', fontSize: 9 }} />
-                  <Tooltip contentStyle={{ background: '#0c0c0f', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 12, fontSize: 11 }} formatter={(v: any, name: string) => [name === 'gasto' ? `R$ ${Number(v).toLocaleString('pt-BR', {minimumFractionDigits:2})}` : v, name === 'gasto' ? 'Gasto' : 'Conversões']} />
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" opacity={0.3} />
+                  <XAxis dataKey="dia" tick={{ fill: 'var(--color-muted-foreground)', fontSize: 9 }} />
+                  <YAxis yAxisId="left" tick={{ fill: 'var(--color-muted-foreground)', fontSize: 9 }} tickFormatter={(v) => `R$${(v/1000).toFixed(1)}k`} />
+                  <YAxis yAxisId="right" orientation="right" tick={{ fill: 'var(--color-muted-foreground)', fontSize: 9 }} />
+                  <Tooltip contentStyle={{ background: 'var(--color-card)', border: '1px solid var(--color-border)', borderRadius: 12, fontSize: 11, color: 'var(--color-foreground)' }} formatter={(v: any, name: string) => [name === 'gasto' ? `R$ ${Number(v).toLocaleString('pt-BR', {minimumFractionDigits:2})}` : v, name === 'gasto' ? 'Gasto' : 'Conversões']} />
                   <Area yAxisId="left" type="monotone" dataKey="gasto" stroke="hsl(var(--primary))" fill="url(#gradGasto)" strokeWidth={2} dot={false} />
-                  <Area yAxisId="right" type="monotone" dataKey="conversoes" stroke="hsl(var(--secondary))" fill="url(#gradConv)" strokeWidth={2} dot={false} />
+                  <Area yAxisId="right" type="monotone" dataKey="conversoes" stroke="hsl(262 83% 74%)" fill="url(#gradConv)" strokeWidth={2} dot={false} />
                 </AreaChart>
               </ResponsiveContainer>
             </div>

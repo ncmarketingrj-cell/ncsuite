@@ -35,9 +35,9 @@ const HUB_GROUPS = [
   },
   {
     label: "Operação Estratégica",
-    color: "text-secondary",
+    color: "text-violet-600 dark:text-violet-400",
     items: [
-      { to: "/campanhas", icon: Megaphone, title: "Gestão de Ads", desc: "Controle total de campanhas.", tag: "OPS", tagColor: "bg-secondary/20 text-secondary" },
+      { to: "/campanhas", icon: Megaphone, title: "Gestão de Ads", desc: "Controle total de campanhas.", tag: "OPS", tagColor: "bg-violet-500/20 text-violet-600 dark:text-violet-400" },
       { to: "/upload", icon: Upload, title: "Extração de Dados", highlight: true, desc: "Processamento de planilhas.", tag: "SYNC", tagColor: "bg-amber-500/20 text-amber-500" },
     ]
   },
@@ -353,7 +353,7 @@ function Dashboard() {
                 <div className="h-2 w-2 rounded-full bg-primary" /> Invest
               </div>
               <div className="flex items-center gap-2 text-[9px] font-black uppercase tracking-widest">
-                <div className="h-2 w-2 rounded-full bg-secondary" /> Conv
+                <div className="h-2 w-2 rounded-full bg-violet-500" /> Conv
               </div>
             </div>
           </div>
@@ -367,8 +367,8 @@ function Dashboard() {
                     <stop offset="95%" stopColor="hsl(var(--primary))" stopOpacity={0}/>
                   </linearGradient>
                   <linearGradient id="colorConv" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="hsl(var(--secondary))" stopOpacity={0.2}/>
-                    <stop offset="95%" stopColor="hsl(var(--secondary))" stopOpacity={0}/>
+                    <stop offset="5%" stopColor="hsl(262 83% 74%)" stopOpacity={0.2}/>
+                    <stop offset="95%" stopColor="hsl(262 83% 74%)" stopOpacity={0}/>
                   </linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border) / 0.2)" vertical={false} />
@@ -390,7 +390,7 @@ function Dashboard() {
                   labelStyle={{ fontSize: '10px', color: 'hsl(var(--muted-foreground))', textTransform: 'uppercase', marginBottom: '8px' }}
                 />
                 <Area type="monotone" dataKey="cost" stroke="hsl(var(--primary))" strokeWidth={3} fillOpacity={1} fill="url(#colorCost)" />
-                <Area type="monotone" dataKey="conversions" stroke="hsl(var(--secondary))" strokeWidth={3} fillOpacity={1} fill="url(#colorConv)" />
+                <Area type="monotone" dataKey="conversions" stroke="hsl(262 83% 74%)" strokeWidth={3} fillOpacity={1} fill="url(#colorConv)" />
               </AreaChart>
             </ResponsiveContainer>
           </div>
