@@ -56,12 +56,30 @@ export function useAutoSync() {
     }
 
     try {
-      const preset = overridePreset || (triggeredBy === "manual" ? "maximum" : "last_7d");
-      console.log(`[AUTO-SYNC] Iniciando sync (${triggeredBy} | ${preset})...`);
+      let bodyPayload: any = { triggered_by: triggeredBy };
+      
+      if (overridePreset || triggeredBy === "manual") {
+        const preset = overridePreset || "maximum";
+        console.log(`[AUTO-SYNC] Iniciando sync (${triggeredBy} | preset: ${preset})...`);
+        bodyPayload.date_preset = preset;
+      } else {
+        // Correção Crítica: O preset 'last_7d' do Meta exclui o dia de hoje (D0).
+        // Passamos um 'time_range' explícito desde 7 dias atrás ATÉ a data exata de hoje.
+        const until = new Date();
+        const since = new Date();
+        since.setDate(until.getDate() - 7);
+        
+        const timeRange = {
+          since: since.toISOString().split("T")[0],
+          until: until.toISOString().split("T")[0]
+        };
+        console.log(`[AUTO-SYNC] Iniciando sync (${triggeredBy} | range: ${timeRange.since} até ${timeRange.until})...`);
+        bodyPayload.time_range = timeRange;
+      }
 
       // 1. Sincronizar dados do Meta Ads
       const { error: syncError } = await supabase.functions.invoke("sync-meta-ads", {
-        body: { date_preset: preset, triggered_by: triggeredBy }
+        body: bodyPayload
       });
 
       if (syncError) throw syncError;
