@@ -1,5 +1,5 @@
 // supabase/functions/sync-meta-ads/index.ts
-// Project Phoenix — Motor de Sincronização com Breakdowns Demográficos
+// NC Performance Suite — Motor de Sincronização com Budgets e Histórico
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.43.1"
@@ -34,6 +34,20 @@ async function fetchAdAccounts(token: string) {
     fields: "name,currency,account_status,id,timezone_name"
   })
   return data.data || []
+}
+
+// ─── NOVO: Buscar campanhas com orçamentos ────────────────────────────────────
+async function fetchCampaignsWithBudgets(adAccountId: string, token: string): Promise<any[]> {
+  try {
+    const data = await metaGet(`/${adAccountId}/campaigns`, token, {
+      fields: "id,name,status,daily_budget,lifetime_budget,objective",
+      limit: "500"
+    })
+    return data.data || []
+  } catch (e: any) {
+    console.error(`[SYNC] Erro ao buscar campanhas com orçamento de ${adAccountId}:`, e.message)
+    return []
+  }
 }
 
 // ─── Buscar insights diários de campanha ─────────────────────────────────────
@@ -87,7 +101,7 @@ async function fetchAdInsights(adAccountId: string, token: string, timeParams: R
   }
 }
 
-// ─── Buscar breakdowns demográficos (NOVO — Project Phoenix) ─────────────────
+// ─── Buscar breakdowns demográficos ─────────────────────────────────────────
 async function fetchDemographicBreakdowns(adAccountId: string, token: string, timeParams: Record<string, string>): Promise<any[]> {
   try {
     const dataAgeGender = await metaGet(`/${adAccountId}/insights`, token, {
@@ -99,7 +113,6 @@ async function fetchDemographicBreakdowns(adAccountId: string, token: string, ti
       ...timeParams
     })
     
-    // Meta API não permite combinar age/gender com platform na mesma query com time_increment 1 em alguns casos.
     const dataPlatform = await metaGet(`/${adAccountId}/insights`, token, {
       level: "campaign",
       fields: "campaign_id,campaign_name,spend,actions,reach,impressions,inline_link_clicks,date_start",
@@ -109,8 +122,7 @@ async function fetchDemographicBreakdowns(adAccountId: string, token: string, ti
       ...timeParams
     })
 
-    const result = [...(dataAgeGender.data || []), ...(dataPlatform.data || [])]
-    return result
+    return [...(dataAgeGender.data || []), ...(dataPlatform.data || [])]
   } catch (e: any) {
     console.error(`[SYNC-DEMO] Erro ao buscar breakdowns de ${adAccountId}:`, e.message)
     return []
@@ -139,27 +151,28 @@ serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
 
   const syncId = crypto.randomUUID()
-  console.log(`[SYNC ${syncId}] Iniciando sincronização Project Phoenix...`)
+  let syncHistoryId: string | null = null
+  console.log(`[SYNC ${syncId}] Iniciando sincronização NC Performance...`)
 
   try {
-    // 1. Tentar ler parâmetros de data no corpo da requisição (POST)
-    let timeParams: Record<string, string> = { date_preset: "maximum" } // Default to maximum to include today
+    // 1. Ler parâmetros
+    let timeParams: Record<string, string> = { date_preset: "maximum" }
     let targetAccountId: string | null = null;
+    let triggeredBy = "auto"
+    
     try {
       const body = await req.json()
       if (body.time_range) {
         timeParams = { time_range: JSON.stringify(body.time_range) }
-        console.log(`[SYNC ${syncId}] Sincronizando período personalizado: ${JSON.stringify(body.time_range)}`)
       } else if (body.date_preset) {
         timeParams = { date_preset: body.date_preset }
-        console.log(`[SYNC ${syncId}] Sincronizando com preset: ${body.date_preset}`)
       }
       if (body.account_id && body.account_id !== "all") {
         targetAccountId = body.account_id;
-        console.log(`[SYNC ${syncId}] Filtrando para conta especifica: ${targetAccountId}`)
       }
+      if (body.triggered_by) triggeredBy = body.triggered_by
     } catch (_) {
-      console.log(`[SYNC ${syncId}] Nenhum body enviado. Usando preset padrão: maximum`)
+      console.log(`[SYNC ${syncId}] Usando preset padrão: maximum`)
     }
 
     // 2. Buscar configuração (token master)
@@ -175,15 +188,23 @@ serve(async (req) => {
     const token = config.access_token
     const userId = config.user_id
 
-    // 3. Buscar e salvar contas
+    // 3. Registrar início do sync no histórico
+    const { data: syncRecord } = await supabase.from("sync_history").insert({
+      user_id: userId,
+      status: "running",
+      triggered_by: triggeredBy
+    }).select("id").maybeSingle()
+    
+    syncHistoryId = syncRecord?.id || null
+
+    // 4. Buscar contas
     console.log(`[SYNC ${syncId}] Buscando contas vinculadas...`)
-    const adAccounts = await fetchAdAccounts(token)
+    let adAccounts = await fetchAdAccounts(token)
     
     if (adAccounts.length === 0) {
       throw new Error("Nenhuma conta de anúncios encontrada. Verifique as permissões do token.")
     }
 
-    // Filtra se for para sync específico
     if (targetAccountId) {
       adAccounts = adAccounts.filter((a: any) => a.id === targetAccountId);
       if (adAccounts.length === 0) throw new Error("A conta selecionada não pertence a este token.");
@@ -200,24 +221,34 @@ serve(async (req) => {
       }))
     )
 
-    console.log(`[SYNC ${syncId}] ${adAccounts.length} contas encontradas. Sincronizando insights...`)
+    console.log(`[SYNC ${syncId}] ${adAccounts.length} contas. Sincronizando...`)
 
-    // 4. Sincronizar insights + breakdowns de forma SEQUENCIAL para evitar RATE LIMIT da Meta API
     const syncResults = []
-    let apiErrors = []
+    const apiErrors: string[] = []
+    let totalMetrics = 0
+    let totalDemographics = 0
+    let totalCampaigns = 0
 
     for (const acc of adAccounts) {
       try {
-        console.log(`[SYNC] Buscando dados da conta: ${acc.id} com parametros ${JSON.stringify(timeParams)}`)
+        console.log(`[SYNC] Conta: ${acc.id}`)
+        
+        // NOVO: Buscar campanhas com orçamentos primeiro
+        const campaignsWithBudgets = await fetchCampaignsWithBudgets(acc.id, token)
+        const budgetMap = new Map(campaignsWithBudgets.map((c: any) => [c.id, {
+          daily_budget: c.daily_budget ? parseFloat(c.daily_budget) / 100 : 0, // Meta retorna em centavos
+          lifetime_budget: c.lifetime_budget ? parseFloat(c.lifetime_budget) / 100 : 0,
+          budget_currency: acc.currency || 'BRL'
+        }]))
+
         const [insights, demographics, adsetInsights, adInsights] = await Promise.all([
           fetchCampaignInsights(acc.id, token, timeParams),
           fetchDemographicBreakdowns(acc.id, token, timeParams),
           fetchAdSetInsights(acc.id, token, timeParams),
           fetchAdInsights(acc.id, token, timeParams)
         ])
-        syncResults.push({ accountId: acc.id, insights, demographics, adsetInsights, adInsights })
+        syncResults.push({ accountId: acc.id, accountName: acc.name, insights, demographics, adsetInsights, adInsights, budgetMap })
         
-        // Sleep para evitar rate limit
         await new Promise(r => setTimeout(r, 500))
       } catch (err: any) {
         console.error(`[SYNC] Erro na conta ${acc.id}:`, err.message)
@@ -225,34 +256,38 @@ serve(async (req) => {
       }
     }
 
-    let totalMetrics = 0
-    let totalDemographics = 0
-    let totalCampaigns = 0
-
-    for (const { accountId, insights, demographics, adsetInsights, adInsights } of syncResults) {
+    for (const { accountId, accountName, insights, demographics, adsetInsights, adInsights, budgetMap } of syncResults) {
       if (insights.length === 0 && demographics.length === 0 && adsetInsights.length === 0 && adInsights.length === 0) continue
 
-      // ── 3a. Upsert campanhas (deduplicado por external_id) ──────────────────
+      // Upsert campanhas com orçamentos
       const campaignMap = new Map<string, any>()
       for (const row of [...insights, ...demographics]) {
         if (!campaignMap.has(row.campaign_id)) {
+          const budget = budgetMap.get(row.campaign_id) || {}
           campaignMap.set(row.campaign_id, {
             name: row.campaign_name,
             platform: "Meta Ads",
             status: "active",
             external_id: row.campaign_id,
-            ad_account_id: accountId
+            ad_account_id: accountId,
+            daily_budget: budget.daily_budget || 0,
+            lifetime_budget: budget.lifetime_budget || 0,
+            budget_currency: budget.budget_currency || 'BRL'
           })
         }
       }
       for (const row of [...adsetInsights, ...adInsights]) {
         if (row.campaign_id && !campaignMap.has(row.campaign_id)) {
+          const budget = budgetMap.get(row.campaign_id) || {}
           campaignMap.set(row.campaign_id, {
             name: `Campanha Desconhecida (${row.campaign_id})`,
             platform: "Meta Ads",
             status: "active",
             external_id: row.campaign_id,
-            ad_account_id: accountId
+            ad_account_id: accountId,
+            daily_budget: budget.daily_budget || 0,
+            lifetime_budget: budget.lifetime_budget || 0,
+            budget_currency: budget.budget_currency || 'BRL'
           })
         }
       }
@@ -265,7 +300,7 @@ serve(async (req) => {
           .select("id, external_id")
 
         if (campErr) {
-          console.error(`[SYNC] Erro ao upsert campanhas de ${accountId}:`, campErr.message)
+          console.error(`[SYNC] Erro campanhas ${accountId}:`, campErr.message)
           continue
         }
         syncedCamps = data || []
@@ -274,7 +309,7 @@ serve(async (req) => {
       totalCampaigns += syncedCamps.length
       const idMap = new Map(syncedCamps.map(c => [c.external_id, c.id]))
 
-      // ── 3a2. Upsert AdSets ────────────────────────────────────────────────────
+      // Upsert AdSets
       const adsetMap = new Map<string, any>()
       for (const row of [...adsetInsights, ...adInsights]) {
         if (row.adset_id && !adsetMap.has(row.adset_id)) {
@@ -301,7 +336,7 @@ serve(async (req) => {
       
       const adsetIdMap = new Map((syncedAdsets || []).map(a => [a.external_id, a.id]))
 
-      // ── 3a3. Upsert Ads ───────────────────────────────────────────────────────
+      // Upsert Ads
       const adMap = new Map<string, any>()
       for (const row of adInsights) {
         if (row.ad_id && !adMap.has(row.ad_id)) {
@@ -330,7 +365,7 @@ serve(async (req) => {
 
       const adIdMap = new Map((syncedAds || []).map(a => [a.external_id, a.id]))
 
-      // ── 3b. Upsert métricas diárias (Campanhas) ─────────────────────────────
+      // Upsert métricas diárias de campanhas
       const metricsToUpsert = insights.map(row => {
         const campaign_id = idMap.get(row.campaign_id)
         if (!campaign_id) return null
@@ -354,7 +389,7 @@ serve(async (req) => {
         else totalMetrics += metricsToUpsert.length
       }
 
-      // ── 3c. Upsert breakdowns demográficos (Project Phoenix Core) ───────────
+      // Upsert breakdowns demográficos
       const demoToUpsert = demographics.map(row => {
         const campaign_id = idMap.get(row.campaign_id)
         if (!campaign_id) return null
@@ -381,8 +416,8 @@ serve(async (req) => {
         else totalDemographics += demoToUpsert.length
       }
 
-      // ── 3d. Upsert asset_metrics (AdSets e Ads) ─────────────────────────────
-      const assetMetricsToUpsert = []
+      // Upsert asset_metrics (AdSets e Ads)
+      const assetMetricsToUpsert: any[] = []
       
       for (const row of adsetInsights) {
         const ad_set_id = adsetIdMap.get(row.adset_id)
@@ -431,9 +466,48 @@ serve(async (req) => {
           }
         }
       }
+
+      // Gerar notificação de resumo diário por conta
+      try {
+        const dateGroups: Record<string, { spend: number, reach: number }> = {}
+        for (const row of insights) {
+          const d = row.date_start
+          if (!dateGroups[d]) dateGroups[d] = { spend: 0, reach: 0 }
+          dateGroups[d].spend += parseFloat(row.spend || "0")
+          dateGroups[d].reach += parseInt(row.reach || "0")
+        }
+
+        const sortedDates = Object.keys(dateGroups).sort((a, b) => b.localeCompare(a))
+        const recentDate = sortedDates[0]
+
+        if (recentDate) {
+          const stats = dateGroups[recentDate]
+          if (stats.spend > 0) {
+            const parts = recentDate.split("-")
+            const day = parseInt(parts[2])
+            const monthIdx = parseInt(parts[1]) - 1
+            const monthsPT = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"]
+            const monthPT = monthsPT[monthIdx] || "mai"
+            const formattedSpend = stats.spend.toFixed(2)
+            const formattedReach = stats.reach.toLocaleString("en-US")
+
+            await supabase.from("notifications").insert({
+              user_id: userId,
+              title: `📊 Resumo: ${accountName}`,
+              message: `${day} de ${monthPT}: R$${formattedSpend} gastos · ${formattedReach} alcance`,
+              type: "success",
+              is_critical: false,
+              link: `/metricas?account=${accountId}&date=${recentDate}`,
+              metadata: { account_id: accountId, date: recentDate, spend: stats.spend, reach: stats.reach }
+            })
+          }
+        }
+      } catch (err: any) {
+        console.error(`[SYNC-NOTIF] Falha ao gerar notificação para ${accountId}:`, err.message)
+      }
     }
 
-    // 4. Atualizar timestamp do último heartbeat na config
+    // Atualizar config com heartbeat
     await supabase.from("meta_ads_configs").update({
       is_connected: true,
       last_heartbeat_at: new Date().toISOString(),
@@ -447,73 +521,22 @@ serve(async (req) => {
       }
     }).eq("user_id", userId)
 
-    // 4b. Gerar notificação diária da Victoria AI para cada conta sincronizada
-    console.log(`[SYNC ${syncId}] Gerando notificações da Victoria para cada conta...`)
-    for (const acc of adAccounts) {
-      try {
-        // Encontrar os insights específicos desta conta
-        const accInsights = syncResults.find(r => r.accountId === acc.id)?.insights || []
-        if (accInsights.length === 0) continue
-
-        // Agrupar spend e reach por data e pegar a data mais recente com spend > 0
-        const dateGroups: Record<string, { spend: number, reach: number }> = {}
-        for (const row of accInsights) {
-          const d = row.date_start // "YYYY-MM-DD"
-          if (!dateGroups[d]) dateGroups[d] = { spend: 0, reach: 0 }
-          dateGroups[d].spend += parseFloat(row.spend || "0")
-          dateGroups[d].reach += parseInt(row.reach || "0")
-        }
-
-        // Ordenar as datas para pegar a mais recente
-        const sortedDates = Object.keys(dateGroups).sort((a, b) => b.localeCompare(a))
-        const recentDate = sortedDates[0] // A data mais recente sincronizada
-
-        if (recentDate) {
-          const stats = dateGroups[recentDate]
-          if (stats.spend > 0) {
-            // Formatar a data para "DD de MÊS" (ex: "18 de mai")
-            const parts = recentDate.split("-") // ["2026", "05", "18"]
-            const day = parseInt(parts[2])
-            const monthIdx = parseInt(parts[1]) - 1
-            const monthsPT = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"]
-            const monthPT = monthsPT[monthIdx] || "mai"
-
-            const formattedSpend = stats.spend.toFixed(2)
-            const formattedReach = stats.reach.toLocaleString("en-US")
-
-            const alertTitle = `📊 Resumo Diário Victoria: ${acc.name}`
-            const alertMsg = `Resumo diário: você gastou R$${formattedSpend} em ${day} de ${monthPT} e alcançou ${formattedReach} pessoas.`
-
-            // Link da notificação clicável, passando o accountId e a data da sincronização!
-            const targetLink = `/campanhas?accountId=${acc.id}&date=${recentDate}`
-
-            console.log(`[SYNC] Notificação para ${acc.name}: "${alertMsg}" | Link: ${targetLink}`)
-
-            await supabase.from("notifications").insert({
-              user_id: userId,
-              title: alertTitle,
-              message: alertMsg,
-              type: "success",
-              link: targetLink,
-              metadata: {
-                account_id: acc.id,
-                date: recentDate,
-                spend: stats.spend,
-                reach: stats.reach
-              }
-            })
-          }
-        }
-      } catch (err: any) {
-        console.error(`[SYNC-NOTIF] Falha ao gerar notificação para a conta ${acc.id}:`, err.message)
-      }
+    // Atualizar histórico de sync
+    if (syncHistoryId) {
+      await supabase.from("sync_history").update({
+        status: apiErrors.length > 0 ? "partial_success" : "success",
+        completed_at: new Date().toISOString(),
+        accounts_synced: adAccounts.length,
+        campaigns_synced: totalCampaigns,
+        metrics_synced: totalMetrics,
+        error_message: apiErrors.length > 0 ? apiErrors.join("; ") : null
+      }).eq("id", syncHistoryId)
     }
-
 
     const summary = {
       sync_id: syncId,
       status: apiErrors.length > 0 ? "partial_success" : "success",
-      message: `✅ Sync concluído: ${adAccounts.length} contas processadas. ${totalCampaigns} campanhas, ${totalMetrics} métricas diárias, ${totalDemographics} registros demográficos. ${apiErrors.length > 0 ? `Avisos: ${apiErrors.join('; ')}` : ''}`,
+      message: `✅ Sync concluído: ${adAccounts.length} contas, ${totalCampaigns} campanhas, ${totalMetrics} métricas diárias, ${totalDemographics} demográficos.`,
       accounts: adAccounts.length,
       campaigns: totalCampaigns,
       metrics: totalMetrics,
@@ -531,7 +554,14 @@ serve(async (req) => {
   } catch (error: any) {
     console.error(`[SYNC ${syncId}] ERRO FATAL:`, error.message)
     
-    // Registrar falha na config
+    if (syncHistoryId) {
+      await supabase.from("sync_history").update({
+        status: "error",
+        completed_at: new Date().toISOString(),
+        error_message: error.message
+      }).eq("id", syncHistoryId)
+    }
+
     try {
       await supabase.from("meta_ads_configs").update({
         last_heartbeat_at: new Date().toISOString(),

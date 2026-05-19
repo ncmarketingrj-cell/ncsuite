@@ -1,5 +1,5 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { useState, useMemo } from "react";
+import { createFileRoute, useSearch } from "@tanstack/react-router";
+import { useState, useMemo, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
@@ -22,6 +22,10 @@ import {
 
 export const Route = createFileRoute("/_app/metricas")({
   head: () => ({ meta: [{ title: "Métricas Avançadas — NC Suite" }] }),
+  validateSearch: (search: Record<string, unknown>) => ({
+    account: (search.account as string) || undefined,
+    campaign: (search.campaign as string) || undefined,
+  }),
   component: MetricasAvancadasPage,
 });
 
@@ -34,10 +38,27 @@ const LEVEL_TABS: { id: Level; label: string; icon: any }[] = [
 
 function MetricasAvancadasPage() {
   const qc = useQueryClient();
-  const [accountFilter, setAccountFilter] = useState("all");
+  const searchParams = useSearch({ from: "/_app/metricas" });
+  const [accountFilter, setAccountFilter] = useState(searchParams.account || "all");
   const [statusFilter, setStatusFilter] = useState<"all" | "active" | "paused">("all");
   const [search, setSearch] = useState("");
   const [level, setLevel] = useState<Level>("campanhas");
+  const [highlightCampaign, setHighlightCampaign] = useState<string | undefined>(searchParams.campaign);
+
+  // Aplicar filtros vindos da URL (ex: clique em notificação de alerta)
+  useEffect(() => {
+    if (searchParams.account && searchParams.account !== "all") {
+      setAccountFilter(searchParams.account);
+    }
+    if (searchParams.campaign) {
+      setHighlightCampaign(searchParams.campaign);
+      // Scroll suave para a campanha destacada após render
+      setTimeout(() => {
+        const el = document.getElementById(`campaign-row-${searchParams.campaign}`);
+        if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+      }, 800);
+    }
+  }, [searchParams.account, searchParams.campaign]);
   
   const [selectedCamps, setSelectedCamps] = useState<Set<string>>(new Set());
   const [selectedAdSets, setSelectedAdSets] = useState<Set<string>>(new Set());
@@ -329,7 +350,15 @@ function MetricasAvancadasPage() {
                         const isChanging = changingId === c.id;
                         const isSel = selSet.has(c.id);
                         return (
-                          <tr key={c.id} className={`border-b border-white/[0.03] transition-colors ${isSel ? "bg-primary/5" : "hover:bg-white/[0.015]"}`}>
+                          <tr
+                            key={c.id}
+                            id={`campaign-row-${c.external_id}`}
+                            className={`border-b border-white/[0.03] transition-colors ${
+                              highlightCampaign && c.external_id === highlightCampaign
+                                ? "bg-destructive/10 border-l-2 border-l-destructive animate-pulse"
+                                : isSel ? "bg-primary/5" : "hover:bg-white/[0.015]"
+                            }`}
+                          >
                             <td className="px-4 py-3 text-center">
                               <button onClick={() => toggleOne(c.id)} className="text-muted-foreground hover:text-primary transition">
                                 {isSel ? <CheckSquare className="h-4 w-4 text-primary" /> : <Square className="h-4 w-4" />}

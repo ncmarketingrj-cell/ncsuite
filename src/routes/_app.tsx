@@ -2,10 +2,10 @@ import { useState, useEffect } from "react";
 import { createFileRoute, Outlet, redirect, Link, useRouterState } from "@tanstack/react-router";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  LayoutDashboard, FileText, Upload, Settings, LogOut, Loader2,
-  Bell, Search, User, Bot, Sparkles, Activity, ShieldCheck, Zap,
+  LayoutDashboard, FileText, Upload, Settings, Loader2,
+  Bell, User, Bot, Sparkles, Activity, Zap,
   Sun, Moon, Menu, X, BarChart3, Megaphone, LineChart, Palette, Link2,
-  HelpCircle, ChevronDown
+  ChevronDown, RefreshCw, Wifi, WifiOff
 } from "lucide-react";
 import { AuthProvider, useAuth } from "@/lib/auth";
 import { supabase } from "@/integrations/supabase/client";
@@ -15,6 +15,8 @@ import { formatDistanceToNow } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { useTheme } from "./__root";
 import { toast } from "sonner";
+import { useAutoSync, getSyncStatus, SYNC_STATUS_EVENT, type SyncStatus } from "@/hooks/useAutoSync";
+import { useAlertEngine } from "@/hooks/useAlertEngine";
 
 export const Route = createFileRoute("/_app")({
   beforeLoad: async () => {
@@ -84,80 +86,22 @@ function Shell() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [showMore, setShowMore] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
+  const [syncStatus, setSyncStatus] = useState<SyncStatus>(getSyncStatus);
   const { theme, toggleTheme } = useTheme();
   const qc = useQueryClient();
 
-  // Carrega os agendamentos ativos de sincronização no Shell para o Background Worker
-  const { data: syncSchedules = [] } = useQuery({
-    queryKey: ["shell_sync_schedules"],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("campaign_schedules")
-        .select("*")
-        .eq("target_level", "sync")
-        .eq("is_active", true);
-      if (error) return [];
-      return data as any[];
-    },
-    refetchInterval: 300000, // Atualiza a cada 5 minutos
-  });
+  // ── Auto-Sync a cada 30 minutos ──────────────────────────────────────────────
+  const { runSync } = useAutoSync();
 
-  // Background Sync Worker para extrair dados diários de forma programada e transparente
+  // ── Motor de Alertas Sonoros ──────────────────────────────────────────────────
+  useAlertEngine();
+
+  // Ouvir mudanças de status do sync
   useEffect(() => {
-    if (syncSchedules.length === 0) return;
-
-    const checkAndSync = async () => {
-      const now = new Date();
-      const currentHours = now.getHours();
-      const currentMinutes = now.getMinutes();
-      const todayStr = now.toISOString().split('T')[0]; // Ex: "2026-05-18"
-
-      for (const sch of syncSchedules) {
-        if (!sch.start_time) continue;
-        
-        // start_time é do tipo "HH:MM:SS" (ex: "08:00:00")
-        const [schHours, schMinutes] = sch.start_time.split(':').map(Number);
-        
-        const scheduledTotalMinutes = schHours * 60 + schMinutes;
-        const currentTotalMinutes = currentHours * 60 + currentMinutes;
-
-        // Se a hora atual passou do horário agendado
-        if (currentTotalMinutes >= scheduledTotalMinutes) {
-          const storageKey = `nc_last_sync_time_${sch.id}`;
-          const lastSyncDate = localStorage.getItem(storageKey);
-
-          // Se a última sincronização registrada para este agendamento não ocorreu hoje
-          if (lastSyncDate !== todayStr) {
-            console.log(`[SYNC WORKER] Disparando sincronização agendada das ${sch.start_time} para o dia ${todayStr}...`);
-            
-            // Grava imediatamente para evitar loops ou disparos paralelos concorrentes
-            localStorage.setItem(storageKey, todayStr);
-
-            try {
-              // Invoca a sincronização silenciosamente
-              const { error } = await supabase.functions.invoke("sync-meta-ads", {
-                body: { date_preset: "maximum" }
-              });
-
-              if (error) throw error;
-
-              // Invalida cache global do React Query para atualizar todos os dados visuais na tela imediatamente!
-              qc.invalidateQueries();
-            } catch (e: any) {
-              console.error("[SYNC WORKER] Falha na sincronização silenciosa:", e.message);
-              // Remove a marcação do localStorage para tentar novamente no próximo minuto
-              localStorage.removeItem(storageKey);
-            }
-          }
-        }
-      }
-    };
-
-    // Executa imediatamente e depois a cada 1 minuto
-    checkAndSync();
-    const interval = setInterval(checkAndSync, 60000);
-    return () => clearInterval(interval);
-  }, [syncSchedules, qc]);
+    const handler = (e: CustomEvent) => setSyncStatus(e.detail);
+    window.addEventListener(SYNC_STATUS_EVENT, handler as EventListener);
+    return () => window.removeEventListener(SYNC_STATUS_EVENT, handler as EventListener);
+  }, []);
 
   useEffect(() => {
     const handleOpenAI = () => setIsAgentOpen(true);
@@ -319,7 +263,28 @@ function Shell() {
 
           {/* RIGHT: Actions */}
           <div className="flex items-center gap-2 sm:gap-3">
-            
+
+            {/* Indicador de Sync */}
+            <button
+              onClick={() => runSync("manual")}
+              disabled={syncStatus.isSyncing}
+              className="hidden md:flex items-center gap-1.5 rounded-xl border border-border bg-card px-2.5 py-1.5 text-[10px] font-bold text-muted-foreground transition-all hover:border-primary/30 hover:text-primary active:scale-95 disabled:opacity-60"
+              title={syncStatus.lastSync ? `Último sync: ${new Date(syncStatus.lastSync).toLocaleTimeString('pt-BR')}` : 'Sincronizar agora'}
+            >
+              <RefreshCw className={`h-3 w-3 ${syncStatus.isSyncing ? 'animate-spin text-primary' : ''}`} />
+              <span className="hidden lg:inline">
+                {syncStatus.isSyncing ? 'Sincronizando...' : syncStatus.lastSync
+                  ? formatDistanceToNow(new Date(syncStatus.lastSync), { addSuffix: true, locale: ptBR })
+                  : 'Sincronizar'}
+              </span>
+              {syncStatus.lastResult === 'success' && !syncStatus.isSyncing && (
+                <span className="h-1.5 w-1.5 rounded-full bg-success" />
+              )}
+              {syncStatus.lastResult === 'error' && (
+                <span className="h-1.5 w-1.5 rounded-full bg-destructive" />
+              )}
+            </button>
+
             {/* Theme Toggle */}
             <button
               onClick={toggleTheme}
