@@ -560,8 +560,8 @@ function MetricasAvancadasPage() {
                     contentStyle={{ background: 'var(--color-card)', border: '1px solid var(--color-border)', borderRadius: 12, fontSize: 11, color: 'var(--color-foreground)' }}
                     formatter={(value: any, name: string) => [name === 'gasto' ? `R$ ${Number(value).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` : value, name === 'gasto' ? 'Gasto' : 'Conversões']}
                   />
-                  <Bar dataKey="gasto" fill="hsl(var(--primary))" radius={[0, 6, 6, 0]} opacity={0.9} />
-                  <Bar dataKey="conversoes" fill="hsl(262 83% 74%)" radius={[0, 6, 6, 0]} opacity={0.7} />
+                  <Bar dataKey="gasto" fill="hsl(var(--primary))" radius={[0, 6, 6, 0]} opacity={0.9} barSize={12} />
+                  <Bar dataKey="conversoes" fill="hsl(262 83% 74%)" radius={[0, 6, 6, 0]} opacity={0.7} barSize={12} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
