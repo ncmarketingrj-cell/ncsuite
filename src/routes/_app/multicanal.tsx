@@ -244,7 +244,7 @@ function MulticanalPage() {
                       <XAxis dataKey="name" tick={{ fill: "var(--color-muted-foreground)", fontSize: 9 }} />
                       <YAxis tick={{ fill: "var(--color-muted-foreground)", fontSize: 9 }} />
                       <Tooltip contentStyle={{ background: "var(--color-card)", border: "1px solid var(--color-border)", borderRadius: 12, fontSize: 10, color: "var(--color-foreground)" }} />
-                      <Bar dataKey="Gasto" fill="#00d4ff" radius={[4, 4, 0, 0]} barSize={40} />
+                      <Bar dataKey="Gasto" fill="#00d4ff" radius={[4, 4, 0, 0]} />
                     </BarChart>
                   </ResponsiveContainer>
                 )}
