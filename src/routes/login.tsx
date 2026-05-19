@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { motion } from "framer-motion";
 import { Loader2, Mail, Lock, User as UserIcon, Briefcase, ArrowRight, ArrowLeft } from "lucide-react";
 import { toast } from "sonner";
@@ -26,6 +26,12 @@ const POSITIONS = [
 function LoginPage() {
   const { signup: allowSignup } = Route.useSearch();
   const nav = useNavigate();
+  
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => {
+      if (data.session) nav({ to: "/dashboard", replace: true });
+    });
+  }, [nav]);
   const [mode, setMode] = useState<"login" | "signup" | "forgot">("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");

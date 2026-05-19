@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { createFileRoute, Outlet, redirect, Link, useRouterState } from "@tanstack/react-router";
+import { createFileRoute, Outlet, redirect, Link, useRouterState, Navigate } from "@tanstack/react-router";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   LayoutDashboard, FileText, Upload, Settings, Loader2,
@@ -10,6 +10,7 @@ import {
 import { AuthProvider, useAuth } from "@/lib/auth";
 import { supabase } from "@/integrations/supabase/client";
 import { AIAgentSidebar } from "@/components/AIAgentSidebar";
+import { ProfileSettingsModal } from "@/components/ProfileSettingsModal";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { formatDistanceToNow } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -19,10 +20,6 @@ import { useAutoSync, getSyncStatus, SYNC_STATUS_EVENT, type SyncStatus } from "
 import { useAlertEngine } from "@/hooks/useAlertEngine";
 
 export const Route = createFileRoute("/_app")({
-  beforeLoad: async () => {
-    const { data } = await supabase.auth.getSession();
-    if (!data.session) throw redirect({ to: "/login" });
-  },
   component: () => (
     <AuthProvider>
       <Shell />
@@ -82,6 +79,7 @@ function Shell() {
 
   const path = useRouterState({ select: (s) => s.location.pathname });
   const [isAgentOpen, setIsAgentOpen] = useState(false);
+  const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [showNotification, setShowNotification] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [showMore, setShowMore] = useState(false);
@@ -165,6 +163,10 @@ function Shell() {
         </div>
       </div>
     );
+  }
+
+  if (!user) {
+    return <Navigate to="/login" />;
   }
 
   return (
@@ -427,13 +429,17 @@ function Shell() {
                   Sair
                 </button>
               </div>
-              <div className="h-8 w-8 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center overflow-hidden shrink-0">
+              <button 
+                onClick={() => setIsProfileOpen(true)}
+                className="h-8 w-8 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center overflow-hidden shrink-0 hover:border-primary/50 transition-colors active:scale-95"
+                title="Configurações do Perfil"
+              >
                 {profile?.avatar_url ? (
                   <img src={profile.avatar_url} alt="Profile" className="h-full w-full object-cover" />
                 ) : (
                   <User className="h-4 w-4 text-primary" />
                 )}
-              </div>
+              </button>
             </div>
 
             {/* Mobile Menu Toggle */}
@@ -525,6 +531,7 @@ function Shell() {
       </main>
 
       <AIAgentSidebar isOpen={isAgentOpen} onClose={() => setIsAgentOpen(false)} />
+      <ProfileSettingsModal isOpen={isProfileOpen} onClose={() => setIsProfileOpen(false)} profile={profile} userId={user?.id || ""} />
     </div>
   );
 }
