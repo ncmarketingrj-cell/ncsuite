@@ -41,9 +41,9 @@ serve(async (req) => {
       const accountName = (threshold.ad_accounts as any)?.name || accountId
       const userId = threshold.user_id
       const maxCpl = threshold.max_cpl
-      const maxBudgetPct = threshold.max_budget_pct || 90
+      const maxBudgetPct = threshold.max_budget_pct
 
-      console.log(`[AUTO] Avaliando conta ${accountName} | Max CPL: R$${maxCpl} | Max Budget: ${maxBudgetPct}%`)
+      console.log(`[AUTO] Avaliando conta ${accountName} | Max CPL: ${maxCpl ? `R$${maxCpl}` : 'OFF'} | Max Budget: ${maxBudgetPct ? `${maxBudgetPct}%` : 'OFF'}`)
 
       // 2. Buscar campanhas ativas desta conta com orçamentos
       const { data: campaigns } = await supabase
@@ -109,7 +109,7 @@ serve(async (req) => {
         }
 
         // ── Alerta de orçamento quase esgotado ────────────────────────────────
-        if (dailyBudget > 0 && budgetUsedPct >= maxBudgetPct) {
+        if (maxBudgetPct !== null && dailyBudget > 0 && budgetUsedPct >= maxBudgetPct) {
           const link = `/metricas?account=${accountId}&campaign=${campaign.external_id}`
           alertsToInsert.push({
             user_id: userId,

@@ -145,12 +145,16 @@ function AutomationsPage() {
                     <div>
                       <h4 className="font-bold text-base text-foreground/90">{th.ad_accounts?.name || 'Conta Desconhecida'}</h4>
                       <div className="flex flex-wrap items-center gap-2 sm:gap-3 mt-1.5">
-                        <span className="inline-flex items-center gap-1 rounded bg-white/5 px-2 py-1 text-[10px] font-mono text-muted-foreground">
-                          MAX CPL: <strong className="text-primary text-[11px]">R$ {th.max_cpl?.toFixed(2)}</strong>
-                        </span>
-                        <span className="inline-flex items-center gap-1 rounded bg-white/5 px-2 py-1 text-[10px] font-mono text-muted-foreground">
-                          ALERTA BUDGET: <strong className="text-orange-400 text-[11px]">{th.max_budget_pct}%</strong>
-                        </span>
+                        {th.max_cpl !== null && (
+                          <span className="inline-flex items-center gap-1 rounded bg-white/5 px-2 py-1 text-[10px] font-mono text-muted-foreground">
+                            MAX CPL: <strong className="text-primary text-[11px]">R$ {th.max_cpl.toFixed(2)}</strong>
+                          </span>
+                        )}
+                        {th.max_budget_pct !== null && (
+                          <span className="inline-flex items-center gap-1 rounded bg-white/5 px-2 py-1 text-[10px] font-mono text-muted-foreground">
+                            ALERTA BUDGET: <strong className="text-orange-400 text-[11px]">{th.max_budget_pct}%</strong>
+                          </span>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -292,14 +296,16 @@ function ThresholdModal({ onClose, accounts, userId, qc }: any) {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleSave = async () => {
-    if (!accountId || !maxCpl || !maxBudgetPct) return toast.error("Preencha todos os campos");
+    if (!accountId) return toast.error("Selecione uma conta de anúncios");
+    if (!maxCpl && !maxBudgetPct) return toast.error("Preencha pelo menos um alerta (CPL ou Orçamento)");
+    
     setIsSubmitting(true);
     try {
       const { error } = await supabase.from("alert_thresholds").insert({
         user_id: userId,
         ad_account_id: accountId,
-        max_cpl: parseFloat(maxCpl),
-        max_budget_pct: parseInt(maxBudgetPct),
+        max_cpl: maxCpl ? parseFloat(maxCpl) : null,
+        max_budget_pct: maxBudgetPct ? parseInt(maxBudgetPct) : null,
         is_active: true
       });
       if (error) throw error;
@@ -340,12 +346,13 @@ function ThresholdModal({ onClose, accounts, userId, qc }: any) {
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
               <label className="text-[10px] font-bold text-muted-foreground uppercase">CPL Máximo Tolerado (R$)</label>
-              <input type="number" step="0.01" value={maxCpl} onChange={(e) => setMaxCpl(e.target.value)} placeholder="Ex: 15.50" className="w-full rounded-lg border border-white/10 bg-background px-3 py-3 text-sm focus:border-primary focus:outline-none" />
+              <input type="number" step="0.01" value={maxCpl} onChange={(e) => setMaxCpl(e.target.value)} placeholder="Opcional: Ex: 15.50" className="w-full rounded-lg border border-white/10 bg-background px-3 py-3 text-sm focus:border-primary focus:outline-none" />
+              <p className="text-[9px] text-muted-foreground">Deixe em branco para ignorar</p>
             </div>
             <div className="space-y-1.5">
               <label className="text-[10px] font-bold text-muted-foreground uppercase">Aviso de Orçamento (%)</label>
-              <input type="number" value={maxBudgetPct} onChange={(e) => setMaxBudgetPct(e.target.value)} placeholder="Ex: 90" className="w-full rounded-lg border border-white/10 bg-background px-3 py-3 text-sm focus:border-primary focus:outline-none" />
-              <p className="text-[9px] text-muted-foreground">Notifica ao atingir {maxBudgetPct}% do orçamento diário</p>
+              <input type="number" value={maxBudgetPct} onChange={(e) => setMaxBudgetPct(e.target.value)} placeholder="Opcional: Ex: 90" className="w-full rounded-lg border border-white/10 bg-background px-3 py-3 text-sm focus:border-primary focus:outline-none" />
+              <p className="text-[9px] text-muted-foreground">Notifica ao atingir X% do orçamento diário. Deixe em branco para ignorar</p>
             </div>
           </div>
         </div>
