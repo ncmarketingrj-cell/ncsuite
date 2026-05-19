@@ -212,6 +212,72 @@ serve(async (req) => {
       }
     }
 
+    // 7. --- NOVA LÓGICA DE RESUMO DIÁRIO UNIFICADO (D-1) ÀS 08:00 BRT ---
+    try {
+      const nowUTC = new Date()
+      // Converter UTC para BRT (UTC-3)
+      const brtTime = new Date(nowUTC.getTime() - 3 * 60 * 60 * 1000)
+      const is8AMorLater = brtTime.getUTCHours() >= 8
+
+      if (is8AMorLater) {
+        // Data de ontem em YYYY-MM-DD
+        const yesterday = new Date(brtTime.getTime() - 24 * 60 * 60 * 1000)
+        const yesterdayStr = yesterday.toISOString().split('T')[0]
+        
+        // Pega o ID do administrador principal via config para enviar o alerta
+        const { data: configMaster } = await supabase.from("meta_ads_configs").select("user_id").limit(1).maybeSingle()
+        const adminUserId = configMaster?.user_id
+
+        if (adminUserId) {
+          // Checar se já enviamos resumo unificado para D-1
+          const { data: existingSummary } = await supabase
+            .from("notifications")
+            .select("id")
+            .eq("type", "success")
+            .eq("metadata->>alert_type", "DAILY_SUMMARY_D1")
+            .eq("metadata->>summary_date", yesterdayStr)
+            .limit(1)
+
+          if (!existingSummary?.length) {
+            // Soma todas as métricas de D-1 (todas as contas e campanhas)
+            const { data: yesterdayMetrics } = await supabase
+              .from("metrics")
+              .select("cost, conversions, reach")
+              .eq("date", yesterdayStr)
+            
+            if (yesterdayMetrics && yesterdayMetrics.length > 0) {
+              const totalSpend = yesterdayMetrics.reduce((acc, m) => acc + (m.cost || 0), 0)
+              const totalConv = yesterdayMetrics.reduce((acc, m) => acc + (m.conversions || 0), 0)
+              const totalReach = yesterdayMetrics.reduce((acc, m) => acc + (m.reach || 0), 0)
+
+              if (totalSpend > 0) {
+                const parts = yesterdayStr.split("-")
+                const day = parseInt(parts[2])
+                const monthsPT = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"]
+                const monthPT = monthsPT[parseInt(parts[1]) - 1]
+
+                await supabase.from("notifications").insert({
+                  user_id: adminUserId,
+                  title: `🌅 Fechamento: ${day} de ${monthPT}`,
+                  message: `Resumo de Ontem (D-1): Você investiu R$ ${totalSpend.toFixed(2)} em todas as contas e obteve ${totalConv} resultados (Alcance: ${totalReach.toLocaleString("pt-BR")}). Bom dia e ótimas campanhas!`,
+                  type: "success",
+                  is_critical: false,
+                  link: `/dashboard`,
+                  metadata: { alert_type: "DAILY_SUMMARY_D1", summary_date: yesterdayStr, spend: totalSpend, conversions: totalConv }
+                })
+                
+                totalAlerts++
+                console.log(`[AUTO] ✅ Resumo D-1 (${yesterdayStr}) gerado com sucesso às 08h.`)
+              }
+            }
+          }
+        }
+      }
+    } catch (summaryErr: any) {
+      console.error("[AUTO] Erro ao gerar resumo D-1:", summaryErr.message)
+    }
+    // -------------------------------------------------------
+
     console.log(`[AUTO] Concluído. ${totalAlerts} alertas gerados.`)
 
     return new Response(JSON.stringify({

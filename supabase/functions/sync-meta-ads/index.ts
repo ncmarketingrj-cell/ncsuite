@@ -493,44 +493,7 @@ serve(async (req) => {
         }
       }
 
-      // Gerar notificação de resumo diário por conta
-      try {
-        const dateGroups: Record<string, { spend: number, reach: number }> = {}
-        for (const row of insights) {
-          const d = row.date_start
-          if (!dateGroups[d]) dateGroups[d] = { spend: 0, reach: 0 }
-          dateGroups[d].spend += parseFloat(row.spend || "0")
-          dateGroups[d].reach += parseInt(row.reach || "0")
-        }
-
-        const sortedDates = Object.keys(dateGroups).sort((a, b) => b.localeCompare(a))
-        const recentDate = sortedDates[0]
-
-        if (recentDate) {
-          const stats = dateGroups[recentDate]
-          if (stats.spend > 0) {
-            const parts = recentDate.split("-")
-            const day = parseInt(parts[2])
-            const monthIdx = parseInt(parts[1]) - 1
-            const monthsPT = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"]
-            const monthPT = monthsPT[monthIdx] || "mai"
-            const formattedSpend = stats.spend.toFixed(2)
-            const formattedReach = stats.reach.toLocaleString("en-US")
-
-            await supabase.from("notifications").insert({
-              user_id: userId,
-              title: `📊 Resumo: ${accountName}`,
-              message: `${day} de ${monthPT}: R$${formattedSpend} gastos · ${formattedReach} alcance`,
-              type: "success",
-              is_critical: false,
-              link: `/metricas?account=${accountId}&date=${recentDate}`,
-              metadata: { account_id: accountId, date: recentDate, spend: stats.spend, reach: stats.reach }
-            })
-          }
-        }
-      } catch (err: any) {
-        console.error(`[SYNC-NOTIF] Falha ao gerar notificação para ${accountId}:`, err.message)
-      }
+      // Antiga notificação diária por conta foi removida daqui e transferida para o run-automations (Resumo D-1 unificado às 08h).
     }
 
     // Atualizar config com heartbeat
