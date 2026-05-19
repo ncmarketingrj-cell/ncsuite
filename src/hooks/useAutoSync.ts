@@ -42,7 +42,7 @@ export function useAutoSync() {
   const isSyncingRef = useRef(false);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const runSync = useCallback(async (triggeredBy: "auto" | "manual" = "auto") => {
+  const runSync = useCallback(async (triggeredBy: "auto" | "manual" = "auto", overridePreset?: "maximum" | "last_7d") => {
     if (isSyncingRef.current) {
       console.log("[AUTO-SYNC] Já está sincronizando, ignorando...");
       return;
@@ -56,11 +56,12 @@ export function useAutoSync() {
     }
 
     try {
-      console.log(`[AUTO-SYNC] Iniciando sync (${triggeredBy})...`);
+      const preset = overridePreset || (triggeredBy === "manual" ? "maximum" : "last_7d");
+      console.log(`[AUTO-SYNC] Iniciando sync (${triggeredBy} | ${preset})...`);
 
-      // 1. Sincronizar dados do Meta Ads (todos os períodos históricos)
+      // 1. Sincronizar dados do Meta Ads
       const { error: syncError } = await supabase.functions.invoke("sync-meta-ads", {
-        body: { date_preset: "maximum", triggered_by: triggeredBy }
+        body: { date_preset: preset, triggered_by: triggeredBy }
       });
 
       if (syncError) throw syncError;
@@ -112,9 +113,9 @@ export function useAutoSync() {
       const now = Date.now();
 
       if (!lastSyncStr) {
-        // Nunca sincronizou — sincroniza agora
-        console.log("[AUTO-SYNC] Primeira sincronização do dia...");
-        runSync("auto");
+        // Nunca sincronizou — sincroniza agora (histórico completo)
+        console.log("[AUTO-SYNC] Primeira sincronização: Buscando histórico completo...");
+        runSync("auto", "maximum");
         return;
       }
 

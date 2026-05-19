@@ -17,7 +17,6 @@ const supabase = createClient(
 
 const META_API_BASE = "https://graph.facebook.com/v21.0"
 
-// ─── Meta API Helper ─────────────────────────────────────────────────────────
 async function metaGet(path: string, token: string, params: Record<string, string> = {}) {
   const url = new URL(`${META_API_BASE}${path}`)
   url.searchParams.set("access_token", token)
@@ -26,6 +25,36 @@ async function metaGet(path: string, token: string, params: Record<string, strin
   const data = await res.json()
   if (data.error) throw new Error(`Meta API [${path}]: ${data.error.message}`)
   return data
+}
+
+// ─── NOVO: Meta API Helper com Paginação Automática ──────────────────────────
+async function metaGetPaginated(path: string, token: string, params: Record<string, string> = {}) {
+  let allData: any[] = [];
+  const url = new URL(`${META_API_BASE}${path}`)
+  url.searchParams.set("access_token", token)
+  for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v)
+  
+  let nextUrl = url.toString();
+  let pages = 0;
+  
+  while (nextUrl && pages < 50) { // limite de segurança de 50 páginas
+    const res = await fetch(nextUrl)
+    const data = await res.json()
+    if (data.error) throw new Error(`Meta API Paginated [${path}]: ${data.error.message}`)
+    
+    if (data.data && Array.isArray(data.data)) {
+      allData = allData.concat(data.data);
+    }
+    
+    if (data.paging && data.paging.next) {
+      nextUrl = data.paging.next;
+      pages++;
+    } else {
+      nextUrl = "";
+    }
+  }
+  
+  return allData;
 }
 
 // ─── Buscar todas as contas vinculadas ao token ───────────────────────────────
@@ -53,14 +82,13 @@ async function fetchCampaignsWithBudgets(adAccountId: string, token: string): Pr
 // ─── Buscar insights diários de campanha ─────────────────────────────────────
 async function fetchCampaignInsights(adAccountId: string, token: string, timeParams: Record<string, string>): Promise<any[]> {
   try {
-    const data = await metaGet(`/${adAccountId}/insights`, token, {
+    return await metaGetPaginated(`/${adAccountId}/insights`, token, {
       level: "campaign",
       fields: "campaign_id,campaign_name,objective,spend,actions,reach,impressions,inline_link_clicks,date_start,date_stop",
       time_increment: "1",
       limit: "500",
       ...timeParams
     })
-    return data.data || []
   } catch (e: any) {
     console.error(`[SYNC] Erro ao buscar insights de ${adAccountId}:`, e.message)
     return []
@@ -70,14 +98,13 @@ async function fetchCampaignInsights(adAccountId: string, token: string, timePar
 // ─── Buscar insights diários de adsets ─────────────────────────────────────
 async function fetchAdSetInsights(adAccountId: string, token: string, timeParams: Record<string, string>): Promise<any[]> {
   try {
-    const data = await metaGet(`/${adAccountId}/insights`, token, {
+    return await metaGetPaginated(`/${adAccountId}/insights`, token, {
       level: "adset",
       fields: "adset_id,adset_name,campaign_id,spend,actions,reach,impressions,inline_link_clicks,date_start",
       time_increment: "1",
       limit: "500",
       ...timeParams
     })
-    return data.data || []
   } catch (e: any) {
     console.error(`[SYNC] Erro adsets de ${adAccountId}:`, e.message)
     return []
@@ -87,14 +114,13 @@ async function fetchAdSetInsights(adAccountId: string, token: string, timeParams
 // ─── Buscar insights diários de ads ─────────────────────────────────────
 async function fetchAdInsights(adAccountId: string, token: string, timeParams: Record<string, string>): Promise<any[]> {
   try {
-    const data = await metaGet(`/${adAccountId}/insights`, token, {
+    return await metaGetPaginated(`/${adAccountId}/insights`, token, {
       level: "ad",
       fields: "ad_id,ad_name,adset_id,campaign_id,spend,actions,reach,impressions,inline_link_clicks,date_start",
       time_increment: "1",
       limit: "500",
       ...timeParams
     })
-    return data.data || []
   } catch (e: any) {
     console.error(`[SYNC] Erro ads de ${adAccountId}:`, e.message)
     return []
@@ -104,7 +130,7 @@ async function fetchAdInsights(adAccountId: string, token: string, timeParams: R
 // ─── Buscar breakdowns demográficos ─────────────────────────────────────────
 async function fetchDemographicBreakdowns(adAccountId: string, token: string, timeParams: Record<string, string>): Promise<any[]> {
   try {
-    const dataAgeGender = await metaGet(`/${adAccountId}/insights`, token, {
+    const dataAgeGender = await metaGetPaginated(`/${adAccountId}/insights`, token, {
       level: "campaign",
       fields: "campaign_id,campaign_name,spend,actions,reach,impressions,inline_link_clicks,date_start",
       breakdowns: "age,gender",
@@ -113,7 +139,7 @@ async function fetchDemographicBreakdowns(adAccountId: string, token: string, ti
       ...timeParams
     })
     
-    const dataPlatform = await metaGet(`/${adAccountId}/insights`, token, {
+    const dataPlatform = await metaGetPaginated(`/${adAccountId}/insights`, token, {
       level: "campaign",
       fields: "campaign_id,campaign_name,spend,actions,reach,impressions,inline_link_clicks,date_start",
       breakdowns: "publisher_platform",
@@ -122,7 +148,7 @@ async function fetchDemographicBreakdowns(adAccountId: string, token: string, ti
       ...timeParams
     })
 
-    return [...(dataAgeGender.data || []), ...(dataPlatform.data || [])]
+    return [...dataAgeGender, ...dataPlatform]
   } catch (e: any) {
     console.error(`[SYNC-DEMO] Erro ao buscar breakdowns de ${adAccountId}:`, e.message)
     return []

@@ -351,8 +351,8 @@ function ThresholdModal({ onClose, accounts, userId, qc }: any) {
             </div>
             <div className="space-y-1.5">
               <label className="text-[10px] font-bold text-muted-foreground uppercase">Aviso de Orçamento (%)</label>
-              <input type="number" value={maxBudgetPct} onChange={(e) => setMaxBudgetPct(e.target.value)} placeholder="Opcional: Ex: 90" className="w-full rounded-lg border border-white/10 bg-background px-3 py-3 text-sm focus:border-primary focus:outline-none" />
-              <p className="text-[9px] text-muted-foreground">Notifica ao atingir X% do orçamento diário. Deixe em branco para ignorar</p>
+              <input type="number" value={maxBudgetPct} onChange={(e) => setMaxBudgetPct(e.target.value)} placeholder="Ex: 100" className="w-full rounded-lg border border-white/10 bg-background px-3 py-3 text-sm focus:border-primary focus:outline-none" />
+              <p className="text-[9px] text-muted-foreground">Ex: 100% (Alerta se gastar todo o orçamento diário). Deixe em branco para ignorar</p>
             </div>
           </div>
         </div>
