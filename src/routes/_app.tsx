@@ -168,7 +168,7 @@ function Shell() {
   }
 
   return (
-    <div className="flex min-h-screen w-full flex-col bg-background overflow-hidden selection:bg-primary/30">
+    <div className="flex h-screen w-full flex-col bg-background overflow-hidden selection:bg-primary/30">
       
       {/* ═══════════════════════════════════════
           TOP NAVIGATION BAR — Premium Horizontal
