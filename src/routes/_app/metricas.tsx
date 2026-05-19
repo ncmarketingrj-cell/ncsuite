@@ -220,76 +220,82 @@ function MetricasAvancadasPage() {
   const avgCpm = totImpr > 0 ? (totCost / totImpr) * 1000 : 0;
 
   return (
-    <div className="mx-auto max-w-[1700px] space-y-5 p-1 pb-20">
-      <PageHeader
-        eyebrow="Hub de Análise Técnica"
-        title="Métricas Avançadas"
-        description="Todos os KPIs técnicos de tráfego pago com gerenciamento em tempo real — CTR, CPM, CPC, Frequência, ROAS, CPL e mais."
-        actions={
-          <div className="flex flex-wrap items-center gap-3">
-            <DateRangePicker startDate={dateRange.startDate} endDate={dateRange.endDate} onChange={(s, e) => setDateRange({ startDate: s, endDate: e })} />
-          </div>
-        }
-      />
-
-      {/* MINI KPI BAR */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-8">
-        {[
-          { label: "Gasto", value: `R$ ${totCost.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`, icon: DollarSign, color: "text-primary" },
-          { label: "Resultados", value: totConv.toLocaleString("pt-BR"), icon: Target, color: "text-violet-600 dark:text-violet-400" },
-          { label: "CPL/CPA", value: avgCpl > 0 ? `R$ ${avgCpl.toFixed(2)}` : "—", icon: Zap, color: "text-primary" },
-          { label: "Impressões", value: totImpr.toLocaleString("pt-BR"), icon: BarChart3, color: "text-muted-foreground" },
-          { label: "Alcance", value: totReach > 0 ? totReach.toLocaleString("pt-BR") : "—", icon: Users, color: "text-muted-foreground" },
-          { label: "Cliques", value: totClicks.toLocaleString("pt-BR"), icon: MousePointer2, color: "text-muted-foreground" },
-          { label: "CTR Médio", value: `${avgCtr.toFixed(2)}%`, icon: TrendingUp, color: avgCtr >= 1.5 ? "text-success" : "text-muted-foreground" },
-          { label: "CPM Médio", value: avgCpm > 0 ? `R$ ${avgCpm.toFixed(2)}` : "—", icon: Layers, color: "text-muted-foreground" },
-        ].map(k => (
-          <div key={k.label} className="glass-panel p-4">
-            <div className="flex items-center justify-between mb-2">
-              <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/70">{k.label}</p>
-              <k.icon className={`h-3.5 w-3.5 ${k.color}`} />
+    <div className="mx-auto max-w-[1700px] p-1 pb-20">
+      
+      {/* ─── STICKY HEADER AREA ─── */}
+      <div className="sticky top-0 z-40 -mx-1 px-1 bg-background/95 backdrop-blur-xl border-b border-white/5 pb-4 pt-2 space-y-5">
+        <PageHeader
+          eyebrow="Hub de Análise Técnica"
+          title="Métricas Avançadas"
+          description="Todos os KPIs técnicos de tráfego pago com gerenciamento em tempo real — CTR, CPM, CPC, Frequência, ROAS, CPL e mais."
+          actions={
+            <div className="flex flex-wrap items-center gap-3">
+              <DateRangePicker startDate={dateRange.startDate} endDate={dateRange.endDate} onChange={(s, e) => setDateRange({ startDate: s, endDate: e })} />
             </div>
-            <p className={`font-mono font-black text-sm ${k.color}`}>{k.value}</p>
+          }
+        />
+
+        {/* MINI KPI BAR */}
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-8">
+          {[
+            { label: "Gasto", value: `R$ ${totCost.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`, icon: DollarSign, color: "text-primary" },
+            { label: "Resultados", value: totConv.toLocaleString("pt-BR"), icon: Target, color: "text-violet-600 dark:text-violet-400" },
+            { label: "CPL/CPA", value: avgCpl > 0 ? `R$ ${avgCpl.toFixed(2)}` : "—", icon: Zap, color: "text-primary" },
+            { label: "Impressões", value: totImpr.toLocaleString("pt-BR"), icon: BarChart3, color: "text-muted-foreground" },
+            { label: "Alcance", value: totReach > 0 ? totReach.toLocaleString("pt-BR") : "—", icon: Users, color: "text-muted-foreground" },
+            { label: "Cliques", value: totClicks.toLocaleString("pt-BR"), icon: MousePointer2, color: "text-muted-foreground" },
+            { label: "CTR Médio", value: `${avgCtr.toFixed(2)}%`, icon: TrendingUp, color: avgCtr >= 1.5 ? "text-success" : "text-muted-foreground" },
+            { label: "CPM Médio", value: avgCpm > 0 ? `R$ ${avgCpm.toFixed(2)}` : "—", icon: Layers, color: "text-muted-foreground" },
+          ].map(k => (
+            <div key={k.label} className="glass-panel p-4">
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/70">{k.label}</p>
+                <k.icon className={`h-3.5 w-3.5 ${k.color}`} />
+              </div>
+              <p className={`font-mono font-black text-sm ${k.color}`}>{k.value}</p>
+            </div>
+          ))}
+        </div>
+
+        {/* FILTROS */}
+        <div className="glass-panel p-3 flex flex-wrap items-center gap-3">
+          <div className="relative min-w-[200px]">
+            <Layers className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+            <select value={accountFilter} onChange={(e) => setAccountFilter(e.target.value)} className="w-full appearance-none rounded-xl border border-white/10 bg-background/40 py-2.5 pl-9 pr-8 text-xs font-bold focus:border-primary/50 focus:outline-none transition-all">
+              <option value="all">Todas as Contas</option>
+              {adAccounts.map((a: any) => <option key={a.id} value={a.id}>{a.name}</option>)}
+            </select>
+            <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
           </div>
-        ))}
+          <div className="relative">
+            <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as any)} className="appearance-none rounded-xl border border-white/10 bg-background/40 px-4 py-2.5 pr-8 text-xs font-bold focus:border-primary/50 focus:outline-none transition-all">
+              <option value="all">Todos os Status</option>
+              <option value="active">Ativos</option>
+              <option value="paused">Pausados</option>
+            </select>
+            <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+          </div>
+          <div className="relative flex-1 min-w-[220px]">
+            <Search className="pointer-events-none absolute left-3.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+            <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder={`Buscar ${level}...`} className="w-full rounded-xl border border-white/10 bg-background/40 py-2.5 pl-10 pr-4 text-xs font-semibold focus:border-primary/50 focus:outline-none transition-all placeholder:text-muted-foreground/50" />
+          </div>
+        </div>
+
+        {/* ABAS */}
+        <div className="flex gap-1">
+          {LEVEL_TABS.map(tab => (
+            <button key={tab.id} onClick={() => setLevel(tab.id)} className={`flex items-center gap-2 px-5 py-3 text-[11px] font-black uppercase tracking-widest border-b-2 transition-all ${level === tab.id ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground hover:border-white/20"}`}>
+              <tab.icon className="h-3.5 w-3.5" />
+              {tab.label}
+              {tab.id === "campanhas" && selectedCamps.size > 0 && <span className="ml-1.5 rounded-full bg-primary/20 text-primary px-2 py-0.5 text-[9px] font-black">{selectedCamps.size} sel.</span>}
+              {tab.id === "conjuntos" && selectedAdSets.size > 0 && <span className="ml-1.5 rounded-full bg-primary/20 text-primary px-2 py-0.5 text-[9px] font-black">{selectedAdSets.size} sel.</span>}
+              {tab.id === "anuncios" && selectedAds.size > 0 && <span className="ml-1.5 rounded-full bg-primary/20 text-primary px-2 py-0.5 text-[9px] font-black">{selectedAds.size} sel.</span>}
+            </button>
+          ))}
+        </div>
       </div>
 
-      {/* FILTROS */}
-      <div className="glass-panel p-3 flex flex-wrap items-center gap-3">
-        <div className="relative min-w-[200px]">
-          <Layers className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-          <select value={accountFilter} onChange={(e) => setAccountFilter(e.target.value)} className="w-full appearance-none rounded-xl border border-white/10 bg-background/40 py-2.5 pl-9 pr-8 text-xs font-bold focus:border-primary/50 focus:outline-none transition-all">
-            <option value="all">Todas as Contas</option>
-            {adAccounts.map((a: any) => <option key={a.id} value={a.id}>{a.name}</option>)}
-          </select>
-          <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-        </div>
-        <div className="relative">
-          <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as any)} className="appearance-none rounded-xl border border-white/10 bg-background/40 px-4 py-2.5 pr-8 text-xs font-bold focus:border-primary/50 focus:outline-none transition-all">
-            <option value="all">Todos os Status</option>
-            <option value="active">Ativos</option>
-            <option value="paused">Pausados</option>
-          </select>
-          <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-        </div>
-        <div className="relative flex-1 min-w-[220px]">
-          <Search className="pointer-events-none absolute left-3.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder={`Buscar ${level}...`} className="w-full rounded-xl border border-white/10 bg-background/40 py-2.5 pl-10 pr-4 text-xs font-semibold focus:border-primary/50 focus:outline-none transition-all placeholder:text-muted-foreground/50" />
-        </div>
-      </div>
-
-      {/* ABAS */}
-      <div className="flex gap-1 border-b border-white/5">
-        {LEVEL_TABS.map(tab => (
-          <button key={tab.id} onClick={() => setLevel(tab.id)} className={`flex items-center gap-2 px-5 py-3 text-[11px] font-black uppercase tracking-widest border-b-2 transition-all ${level === tab.id ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground hover:border-white/20"}`}>
-            <tab.icon className="h-3.5 w-3.5" />
-            {tab.label}
-            {tab.id === "campanhas" && selectedCamps.size > 0 && <span className="ml-1.5 rounded-full bg-primary/20 text-primary px-2 py-0.5 text-[9px] font-black">{selectedCamps.size} sel.</span>}
-            {tab.id === "conjuntos" && selectedAdSets.size > 0 && <span className="ml-1.5 rounded-full bg-primary/20 text-primary px-2 py-0.5 text-[9px] font-black">{selectedAdSets.size} sel.</span>}
-            {tab.id === "anuncios" && selectedAds.size > 0 && <span className="ml-1.5 rounded-full bg-primary/20 text-primary px-2 py-0.5 text-[9px] font-black">{selectedAds.size} sel.</span>}
-          </button>
-        ))}
-      </div>
+      <div className="pt-4 space-y-5">
 
       <AnimatePresence mode="wait">
         <motion.div key={level} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
@@ -798,6 +804,8 @@ function MetricasAvancadasPage() {
 
         </motion.div>
       )}
+      
+      </div>
     </div>
   );
 }

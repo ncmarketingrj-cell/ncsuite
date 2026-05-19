@@ -177,90 +177,93 @@ function Dashboard() {
   const selectedAccount = accounts.find(a => a.id === selectedAccountId);
 
   return (
-    <div className="mx-auto max-w-[1600px] space-y-12 pb-20">
-      {/* Top Bar: Seletor & Global Actions */}
-      <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between border-b border-white/5 pb-8">
-        <div>
-          <h1 className="text-4xl font-black tracking-tighter text-gradient mb-2 uppercase">Command Center</h1>
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="relative">
-              <button 
-                onClick={() => setShowAccounts(!showAccounts)}
-                className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-xs font-black uppercase tracking-widest transition hover:border-primary/40 hover:bg-white/10"
-              >
-                <Target className="h-3.5 w-3.5 text-primary" />
-                {selectedAccountId === "all" ? "Todas as Contas Meta" : selectedAccount?.name}
-                <ChevronDown className={`h-3 w-3 transition ${showAccounts ? "rotate-180" : ""}`} />
-              </button>
+    <div className="mx-auto max-w-[1600px] p-1 pb-20">
+      
+      {/* ─── STICKY HEADER AREA ─── */}
+      <div className="sticky top-0 z-40 -mx-1 px-1 bg-background/95 backdrop-blur-xl border-b border-white/5 pb-4 pt-2 space-y-5">
+        {/* Top Bar: Seletor & Global Actions */}
+        <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between pb-2">
+          <div>
+            <h1 className="text-4xl font-black tracking-tighter text-gradient mb-2 uppercase">Command Center</h1>
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="relative">
+                <button 
+                  onClick={() => setShowAccounts(!showAccounts)}
+                  className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-xs font-black uppercase tracking-widest transition hover:border-primary/40 hover:bg-white/10"
+                >
+                  <Target className="h-3.5 w-3.5 text-primary" />
+                  {selectedAccountId === "all" ? "Todas as Contas Meta" : selectedAccount?.name}
+                  <ChevronDown className={`h-3 w-3 transition ${showAccounts ? "rotate-180" : ""}`} />
+                </button>
 
-              <AnimatePresence>
-                {showAccounts && (
-                  <motion.div 
-                    initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }}
-                    className="absolute left-0 top-full z-50 mt-2 w-72 rounded-2xl border border-white/10 bg-background/95 p-2 shadow-2xl backdrop-blur-2xl"
-                  >
-                    <button 
-                      onClick={() => { setSelectedAccountId("all"); setShowAccounts(false); }}
-                      className={`flex w-full items-center gap-3 rounded-xl px-4 py-3 text-left text-[11px] font-bold uppercase tracking-widest transition ${selectedAccountId === "all" ? "bg-primary/20 text-primary" : "hover:bg-white/5 text-muted-foreground"}`}
+                <AnimatePresence>
+                  {showAccounts && (
+                    <motion.div 
+                      initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }}
+                      className="absolute left-0 top-full z-50 mt-2 w-72 rounded-2xl border border-white/10 bg-background/95 p-2 shadow-2xl backdrop-blur-2xl"
                     >
-                      <Globe className="h-4 w-4" /> Todas as Contas
-                    </button>
-                    <div className="my-2 h-px bg-white/5" />
-                    <div className="max-h-[300px] overflow-y-auto custom-scrollbar">
-                      {accounts.map(acc => (
-                        <button 
-                          key={acc.id}
-                          onClick={() => { setSelectedAccountId(acc.id); setShowAccounts(false); }}
-                          className={`flex w-full items-center gap-3 rounded-xl px-4 py-3 text-left text-[11px] font-bold uppercase tracking-widest transition ${selectedAccountId === acc.id ? "bg-primary/20 text-primary" : "hover:bg-white/5 text-muted-foreground"}`}
-                        >
-                          <div className={`h-1.5 w-1.5 rounded-full ${selectedAccountId === acc.id ? 'bg-primary animate-pulse' : 'bg-white/10'}`} />
-                          {acc.name}
-                        </button>
-                      ))}
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </div>
-
-            {/* 📅 SELETOR DE PERÍODO PERSONALIZADO PREMIUM */}
-            <DateRangePicker 
-              startDate={dateRange.startDate} 
-              endDate={dateRange.endDate} 
-              onChange={(start, end) => setDateRange({ startDate: start, endDate: end })} 
-            />
-
-            <SyncButton startDate={dateRange.startDate} endDate={dateRange.endDate} />
-            
-            {/* NOVO: Botão Gerar Relatório */}
-            <button 
-              onClick={() => navigate({ to: "/relatorios" })}
-              className="group relative flex items-center gap-2 overflow-hidden rounded-xl bg-primary/10 px-5 py-2.5 text-xs font-black uppercase tracking-widest text-primary transition-all hover:bg-primary hover:text-primary-foreground hover:shadow-[0_0_20px_rgba(var(--primary),0.4)]"
-            >
-              <div className="absolute inset-0 flex h-full w-full justify-center [transform:skew(-12deg)_translateX(-100%)] group-hover:duration-1000 group-hover:[transform:skew(-12deg)_translateX(100%)]">
-                <div className="relative h-full w-8 bg-white/20" />
+                      <button 
+                        onClick={() => { setSelectedAccountId("all"); setShowAccounts(false); }}
+                        className={`flex w-full items-center gap-3 rounded-xl px-4 py-3 text-left text-[11px] font-bold uppercase tracking-widest transition ${selectedAccountId === "all" ? "bg-primary/20 text-primary" : "hover:bg-white/5 text-muted-foreground"}`}
+                      >
+                        <Globe className="h-4 w-4" /> Todas as Contas
+                      </button>
+                      <div className="my-2 h-px bg-white/5" />
+                      <div className="max-h-[300px] overflow-y-auto custom-scrollbar">
+                        {accounts.map(acc => (
+                          <button 
+                            key={acc.id}
+                            onClick={() => { setSelectedAccountId(acc.id); setShowAccounts(false); }}
+                            className={`flex w-full items-center gap-3 rounded-xl px-4 py-3 text-left text-[11px] font-bold uppercase tracking-widest transition ${selectedAccountId === acc.id ? "bg-primary/20 text-primary" : "hover:bg-white/5 text-muted-foreground"}`}
+                          >
+                            <div className={`h-1.5 w-1.5 rounded-full ${selectedAccountId === acc.id ? 'bg-primary animate-pulse' : 'bg-white/10'}`} />
+                            {acc.name}
+                          </button>
+                        ))}
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
               </div>
-              <FileText className="h-4 w-4" />
-              Gerar Relatório
-            </button>
+
+              {/* 📅 SELETOR DE PERÍODO PERSONALIZADO PREMIUM */}
+              <DateRangePicker 
+                startDate={dateRange.startDate} 
+                endDate={dateRange.endDate} 
+                onChange={(start, end) => setDateRange({ startDate: start, endDate: end })} 
+              />
+
+              <SyncButton startDate={dateRange.startDate} endDate={dateRange.endDate} />
+              
+              {/* NOVO: Botão Gerar Relatório */}
+              <button 
+                onClick={() => navigate({ to: "/relatorios" })}
+                className="group relative flex items-center gap-2 overflow-hidden rounded-xl bg-primary/10 px-5 py-2.5 text-xs font-black uppercase tracking-widest text-primary transition-all hover:bg-primary hover:text-primary-foreground hover:shadow-[0_0_20px_rgba(var(--primary),0.4)]"
+              >
+                <div className="absolute inset-0 flex h-full w-full justify-center [transform:skew(-12deg)_translateX(-100%)] group-hover:duration-1000 group-hover:[transform:skew(-12deg)_translateX(100%)]">
+                  <div className="relative h-full w-8 bg-white/20" />
+                </div>
+                <FileText className="h-4 w-4" />
+                Gerar Relatório
+              </button>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-4">
+            {config ? (
+              <span className="inline-flex items-center rounded-full bg-success/20 px-2 py-0.5 text-[10px] font-black uppercase tracking-widest text-success border border-success/30 shadow-glow-sm">
+                Ads Conectado
+              </span>
+            ) : (
+              <span className="inline-flex items-center rounded-full bg-amber-500/20 px-2 py-0.5 text-[10px] font-black uppercase tracking-widest text-amber-500 border border-amber-500/30">
+                Sem Integração Ads
+              </span>
+            )}
           </div>
         </div>
 
-        <div className="flex items-center gap-4">
-          {config ? (
-            <span className="inline-flex items-center rounded-full bg-success/20 px-2 py-0.5 text-[10px] font-black uppercase tracking-widest text-success border border-success/30 shadow-glow-sm">
-              Ads Conectado
-            </span>
-          ) : (
-            <span className="inline-flex items-center rounded-full bg-amber-500/20 px-2 py-0.5 text-[10px] font-black uppercase tracking-widest text-amber-500 border border-amber-500/30">
-              Sem Integração Ads
-            </span>
-          )}
-        </div>
-      </div>
-
-      {/* Stats Layer (Dinâmico) */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        {/* Stats Layer (Dinâmico) */}
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard 
           label="Investimento (30d)" 
           value={performanceData?.totals?.cost ?? 0} 
@@ -296,6 +299,8 @@ function Dashboard() {
           sparklineData={performanceData?.chartData.map(d => d.clicks) || []}
         />
       </div>
+      
+      <div className="pt-4 space-y-6">
 
       {/* HUB DE FUNÇÕES */}
       <section className="space-y-6">
@@ -448,6 +453,8 @@ function Dashboard() {
             </div>
           </div>
         </motion.div>
+      </div>
+      </div>
       </div>
 
     </div>
