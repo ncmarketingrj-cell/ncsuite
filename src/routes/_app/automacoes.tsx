@@ -141,7 +141,8 @@ function AutomationsPage() {
                   <div className="flex items-center gap-5">
                     <div className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-xl transition ${th.is_active ? 'bg-primary/10 text-primary shadow-glow-sm' : 'bg-white/5 text-muted-foreground'}`}>
                       <AlertTriangle className={`h-6 w-6 ${th.is_active ? 'animate-pulse' : ''}`} />
-                        <div>
+                    </div>
+                    <div>
                       <h4 className="font-bold text-base text-foreground/90">
                         {th.ad_accounts?.name || (th.ad_account_id === null ? 'Todas as Contas Meta' : 'Conta Desconhecida')}
                       </h4>
