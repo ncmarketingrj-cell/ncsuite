@@ -365,6 +365,7 @@ function ThresholdModal({ onClose, accounts, userId, qc }: any) {
           <button onClick={handleSave} disabled={isSubmitting} className="rounded-full bg-primary px-6 py-2 text-xs font-black text-background hover:scale-105 active:scale-95 transition flex items-center gap-2">
             {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldAlert className="h-4 w-4" />} SALVAR ALERTA
           </button>
+        </div>
       </motion.div>
     </motion.div>
   );
