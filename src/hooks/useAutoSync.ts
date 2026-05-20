@@ -74,31 +74,29 @@ export function useAutoSync() {
       
       if (syncScope === "realtime") {
         const today = new Date();
-        const yesterday = new Date();
-        yesterday.setDate(today.getDate() - 1);
         
         const timeRange = {
-          since: getLocalDateString(yesterday),
+          since: getLocalDateString(today),
           until: getLocalDateString(today)
         };
-        console.log(`[AUTO-SYNC] Iniciando sync em tempo real ontem/hoje (${triggeredBy} | range: ${timeRange.since} até ${timeRange.until})...`);
+        console.log(`[AUTO-SYNC] Iniciando sync em tempo real apenas HOJE (${triggeredBy} | range: ${timeRange.since} até ${timeRange.until})...`);
         bodyPayload.time_range = timeRange;
       } else if (overridePreset || triggeredBy === "manual") {
         const preset = overridePreset || "maximum";
-        console.log(`[AUTO-SYNC] Iniciando sync manual/override (${triggeredBy} | preset: ${preset})...`);
+        console.log(`[AUTO-SYNC] Sincronização manual profunda de histórico (${triggeredBy} | preset: ${preset})...`);
         bodyPayload.date_preset = preset;
       } else {
-        // Preset 'last_7d' do Meta exclui o dia de hoje (D0).
-        // Passamos um 'time_range' explícito desde 7 dias atrás até hoje usando a data local segura.
-        const until = new Date();
-        const since = new Date();
-        since.setDate(until.getDate() - 7);
+        // Sync periódico de 30 minutos: Busca dos últimos 7 dias até ONTEM (excluindo hoje)
+        const yesterday = new Date();
+        yesterday.setDate(yesterday.getDate() - 1);
+        const sevenDaysAgo = new Date();
+        sevenDaysAgo.setDate(yesterday.getDate() - 7);
         
         const timeRange = {
-          since: getLocalDateString(since),
-          until: getLocalDateString(until)
+          since: getLocalDateString(sevenDaysAgo),
+          until: getLocalDateString(yesterday)
         };
-        console.log(`[AUTO-SYNC] Iniciando sync completo 7 dias (${triggeredBy} | range: ${timeRange.since} até ${timeRange.until})...`);
+        console.log(`[AUTO-SYNC] Sincronização periódica de 30 minutos (Ontem até 7 dias atrás) | range: ${timeRange.since} até ${timeRange.until}...`);
         bodyPayload.time_range = timeRange;
       }
 

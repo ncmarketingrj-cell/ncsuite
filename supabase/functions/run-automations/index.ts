@@ -38,23 +38,28 @@ serve(async (req) => {
 
     for (const threshold of thresholds) {
       const accountId = threshold.ad_account_id
-      const accountName = (threshold.ad_accounts as any)?.name || accountId
+      const accountName = (threshold.ad_accounts as any)?.name || (accountId === null ? "Todas as Contas Meta (Global)" : accountId)
       const userId = threshold.user_id
       const maxCpl = threshold.max_cpl
       const maxBudgetPct = threshold.max_budget_pct
 
       console.log(`[AUTO] Avaliando conta ${accountName} | Max CPL: ${maxCpl ? `R$${maxCpl}` : 'OFF'} | Max Budget: ${maxBudgetPct ? `${maxBudgetPct}%` : 'OFF'}`)
 
-      // 2. Buscar campanhas ativas desta conta com orçamentos
-      const { data: campaigns } = await supabase
+      // 2. Buscar campanhas ativas desta conta com orçamentos (ou todas se for global)
+      let campQuery = supabase
         .from("campaigns")
-        .select("id, name, external_id, daily_budget, budget_currency")
-        .eq("ad_account_id", accountId)
+        .select("id, name, external_id, daily_budget, budget_currency, ad_account_id")
         .eq("status", "active")
         .gt("daily_budget", 0)
 
+      if (accountId) {
+        campQuery = campQuery.eq("ad_account_id", accountId)
+      }
+
+      const { data: campaigns } = await campQuery
+
       if (!campaigns?.length) {
-        console.log(`[AUTO] Nenhuma campanha ativa com orçamento na conta ${accountId}`)
+        console.log(`[AUTO] Nenhuma campanha ativa com orçamento na conta ${accountId || 'global'}`)
         continue
       }
 
@@ -86,7 +91,8 @@ serve(async (req) => {
 
         // ── Alerta de CPL elevado ─────────────────────────────────────────────
         if (maxCpl && cpl !== null && cpl > maxCpl) {
-          const link = `/metricas?account=${accountId}&campaign=${campaign.external_id}`
+          const targetAccId = campaign.ad_account_id || accountId || ""
+          const link = `/metricas?account=${targetAccId}&campaign=${campaign.external_id}`
           alertsToInsert.push({
             user_id: userId,
             title: `🚨 CPL Alto: ${campaign.name}`,
@@ -95,7 +101,7 @@ serve(async (req) => {
             is_critical: true,
             link,
             metadata: {
-              account_id: accountId,
+              account_id: targetAccId,
               campaign_id: campaign.external_id,
               campaign_name: campaign.name,
               current_cpl: cpl,
@@ -110,7 +116,8 @@ serve(async (req) => {
 
         // ── Alerta de orçamento quase esgotado ────────────────────────────────
         if (maxBudgetPct !== null && dailyBudget > 0 && budgetUsedPct >= maxBudgetPct) {
-          const link = `/metricas?account=${accountId}&campaign=${campaign.external_id}`
+          const targetAccId = campaign.ad_account_id || accountId || ""
+          const link = `/metricas?account=${targetAccId}&campaign=${campaign.external_id}`
           alertsToInsert.push({
             user_id: userId,
             title: `💸 Orçamento ${budgetUsedPct.toFixed(0)}%: ${campaign.name}`,
@@ -119,7 +126,7 @@ serve(async (req) => {
             is_critical: true,
             link,
             metadata: {
-              account_id: accountId,
+              account_id: targetAccId,
               campaign_id: campaign.external_id,
               campaign_name: campaign.name,
               spend_today: spend,

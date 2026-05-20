@@ -141,9 +141,10 @@ function AutomationsPage() {
                   <div className="flex items-center gap-5">
                     <div className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-xl transition ${th.is_active ? 'bg-primary/10 text-primary shadow-glow-sm' : 'bg-white/5 text-muted-foreground'}`}>
                       <AlertTriangle className={`h-6 w-6 ${th.is_active ? 'animate-pulse' : ''}`} />
-                    </div>
-                    <div>
-                      <h4 className="font-bold text-base text-foreground/90">{th.ad_accounts?.name || 'Conta Desconhecida'}</h4>
+                        <div>
+                      <h4 className="font-bold text-base text-foreground/90">
+                        {th.ad_accounts?.name || (th.ad_account_id === null ? 'Todas as Contas Meta' : 'Conta Desconhecida')}
+                      </h4>
                       <div className="flex flex-wrap items-center gap-2 sm:gap-3 mt-1.5">
                         {th.max_cpl !== null && (
                           <span className="inline-flex items-center gap-1 rounded bg-white/5 px-2 py-1 text-[10px] font-mono text-muted-foreground">
@@ -244,31 +245,31 @@ function AutomationsPage() {
                 ) : !syncHistory.length ? (
                    <tr><td colSpan={5} className="p-12 text-center text-muted-foreground italic text-xs">Nenhuma sincronização registrada.</td></tr>
                 ) : syncHistory.map((log: any, i: number) => (
-                  <motion.tr 
-                    key={log.id} 
-                    initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: i * 0.02 }}
-                    className="hover:bg-white/[0.03] transition group"
-                  >
-                    <td className="p-4 font-mono text-xs text-muted-foreground">{new Date(log.created_at).toLocaleString('pt-BR')}</td>
-                    <td className="p-4">
-                      <span className={`inline-flex rounded-full px-3 py-1 text-[9px] font-black tracking-tighter ${
-                        log.status === 'success' ? 'bg-success/20 text-success' : 
-                        log.status === 'running' ? 'bg-primary/20 text-primary animate-pulse' : 
-                        log.status === 'partial_success' ? 'bg-orange-500/20 text-orange-400' :
-                        'bg-destructive/20 text-destructive'
-                      }`}>
-                        {log.status.toUpperCase()}
-                      </span>
-                      {log.error_message && <p className="text-[9px] text-destructive mt-1 max-w-xs truncate" title={log.error_message}>{log.error_message}</p>}
-                    </td>
-                    <td className="p-4 text-center font-mono font-bold">{log.accounts_synced || 0}</td>
-                    <td className="p-4 text-center font-mono font-bold">{log.campaigns_synced || 0}</td>
-                    <td className="p-4">
-                       <span className="text-[10px] font-bold text-muted-foreground uppercase bg-white/5 px-2 py-1 rounded">
-                         {log.triggered_by === 'auto' ? 'BACKGROUND' : 'MANUAL'}
+                   <motion.tr 
+                     key={log.id} 
+                     initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: i * 0.02 }}
+                     className="hover:bg-white/[0.03] transition group"
+                   >
+                     <td className="p-4 font-mono text-xs text-muted-foreground">{new Date(log.created_at).toLocaleString('pt-BR')}</td>
+                     <td className="p-4">
+                       <span className={`inline-flex rounded-full px-3 py-1 text-[9px] font-black tracking-tighter ${
+                         log.status === 'success' ? 'bg-success/20 text-success' : 
+                         log.status === 'running' ? 'bg-primary/20 text-primary animate-pulse' : 
+                         log.status === 'partial_success' ? 'bg-orange-500/20 text-orange-400' :
+                         'bg-destructive/20 text-destructive'
+                       }`}>
+                         {log.status.toUpperCase()}
                        </span>
-                    </td>
-                  </motion.tr>
+                       {log.error_message && <p className="text-[9px] text-destructive mt-1 max-w-xs truncate" title={log.error_message}>{log.error_message}</p>}
+                     </td>
+                     <td className="p-4 text-center font-mono font-bold">{log.accounts_synced || 0}</td>
+                     <td className="p-4 text-center font-mono font-bold">{log.campaigns_synced || 0}</td>
+                     <td className="p-4">
+                        <span className="text-[10px] font-bold text-muted-foreground uppercase bg-white/5 px-2 py-1 rounded">
+                          {log.triggered_by === 'auto' ? 'BACKGROUND' : 'MANUAL'}
+                        </span>
+                     </td>
+                   </motion.tr>
                 ))}
               </tbody>
             </table>
@@ -290,20 +291,20 @@ function AutomationsPage() {
 }
 
 function ThresholdModal({ onClose, accounts, userId, qc }: any) {
-  const [accountId, setAccountId] = useState(accounts[0]?.id || "");
+  const [accountId, setAccountId] = useState("all");
   const [maxCpl, setMaxCpl] = useState("");
   const [maxBudgetPct, setMaxBudgetPct] = useState("90");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleSave = async () => {
-    if (!accountId) return toast.error("Selecione uma conta de anúncios");
+    const targetAccountId = accountId === "all" ? null : accountId;
     if (!maxCpl && !maxBudgetPct) return toast.error("Preencha pelo menos um alerta (CPL ou Orçamento)");
     
     setIsSubmitting(true);
     try {
       const { error } = await supabase.from("alert_thresholds").insert({
         user_id: userId,
-        ad_account_id: accountId,
+        ad_account_id: targetAccountId,
         max_cpl: maxCpl ? parseFloat(maxCpl) : null,
         max_budget_pct: maxBudgetPct ? parseInt(maxBudgetPct) : null,
         is_active: true
@@ -339,6 +340,7 @@ function ThresholdModal({ onClose, accounts, userId, qc }: any) {
           <div className="space-y-1.5">
             <label className="text-[10px] font-bold text-muted-foreground uppercase">Conta de Anúncios</label>
             <select value={accountId} onChange={(e) => setAccountId(e.target.value)} className="w-full rounded-lg border border-white/10 bg-background px-3 py-3 text-sm focus:border-primary focus:outline-none cursor-pointer">
+              <option value="all">Todas as Contas Meta (Alerta Global)</option>
               {accounts.map((a: any) => <option key={a.id} value={a.id}>{a.name}</option>)}
             </select>
           </div>
@@ -362,7 +364,6 @@ function ThresholdModal({ onClose, accounts, userId, qc }: any) {
           <button onClick={handleSave} disabled={isSubmitting} className="rounded-full bg-primary px-6 py-2 text-xs font-black text-background hover:scale-105 active:scale-95 transition flex items-center gap-2">
             {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldAlert className="h-4 w-4" />} SALVAR ALERTA
           </button>
-        </div>
       </motion.div>
     </motion.div>
   );
