@@ -289,6 +289,25 @@ function TabIntegracoes() {
         </button>
       </div>
 
+      {/* Sync por Mês */}
+      <div className="rounded-2xl border border-violet-500/20 bg-violet-500/5 p-4 space-y-3">
+        <div className="flex items-start gap-3">
+          <Database className="h-5 w-5 text-violet-400 shrink-0 mt-0.5" />
+          <div>
+            <p className="text-sm font-bold text-foreground">Sincronização por Mês</p>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Busca o mês completo de cada período. Use para preencher dados do mês passado,
+              2 meses atrás ou 3 meses atrás sem precisar rodar o sync máximo.
+            </p>
+          </div>
+        </div>
+        <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+          <SyncButton mode="month1" />
+          <SyncButton mode="month2" />
+          <SyncButton mode="month3" />
+        </div>
+      </div>
+
       {/* Sync Máximo */}
       <div className="rounded-2xl border border-red-500/20 bg-red-500/5 p-4 space-y-3">
         <div className="flex items-start gap-3">
