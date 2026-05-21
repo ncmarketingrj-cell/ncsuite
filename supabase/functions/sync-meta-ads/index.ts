@@ -157,16 +157,29 @@ async function fetchDemographicBreakdowns(adAccountId: string, token: string, ti
 
 // ─── Extrair conversões (Resultados) do array de actions ───────────────────────
 function extractConversions(actions: any[] = []): number {
+  // Ordem de prioridade — match EXATO apenas para evitar falsos positivos
+  // (ex: "conversion" não pode casar com "onsite_conversion.messaging_...")
   const priorityTypes = [
-    "purchase", "lead", "complete_registration", "submit_application", "conversion",
-    "messaging_conversation_started_7d", "onsite_conversion.messaging_conversation_started_7d",
-    "landing_page_view", "link_click",
-    "video_view", "thruplay", "video_view_thruplay",
-    "post_engagement", "page_engagement"
+    "purchase",
+    "lead",
+    "complete_registration",
+    "submit_application",
+    "messaging_conversation_started_7d",
+    "onsite_conversion.messaging_conversation_started_7d",
+    "onsite_conversion.lead",
+    "onsite_conversion.purchase",
+    "landing_page_view",
+    "link_click",
+    "video_view",
+    "thruplay",
+    "video_view_thruplay",
+    "post_engagement",
+    "page_engagement",
+    "conversion",  // genérico — sempre por último
   ];
-  
+
   for (const type of priorityTypes) {
-    const action = actions.find(a => a.action_type === type || a.action_type?.includes(type));
+    const action = actions.find((a: any) => a.action_type === type);
     if (action) return parseInt(action.value || "0") || 0;
   }
   return 0;
