@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   Zap, Loader2, Play, Pause, Clock, History, AlertTriangle,
   ShieldAlert, Plus, X, Server, CheckCircle2, RefreshCw,
-  Bell, TrendingUp, DollarSign, AlertCircle, Timer
+  Bell, TrendingUp, DollarSign, AlertCircle, Timer, Pencil
 } from "lucide-react";
 import { PageHeader } from "@/components/PageHeader";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -26,6 +26,7 @@ export const Route = createFileRoute("/_app/automacoes")({
 function AutomationsPage() {
   const [activeTab, setActiveTab] = useState<"thresholds" | "sync" | "logs">("thresholds");
   const [modal, setModal] = useState(false);
+  const [editingThreshold, setEditingThreshold] = useState<any | null>(null);
   const { user } = useAuth();
   const qc = useQueryClient();
   const syncStatus = getSyncStatus();
@@ -406,8 +407,16 @@ function AutomationsPage() {
                         : <><Play className="h-3.5 w-3.5 mr-1 fill-current" /> ATIVAR</>}
                     </button>
                     <button
+                      onClick={() => { setEditingThreshold(th); setModal(true); }}
+                      className="h-9 w-9 flex items-center justify-center rounded-lg bg-blue-500/10 text-blue-400 transition hover:bg-blue-500/20"
+                      title="Editar regra"
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                    </button>
+                    <button
                       onClick={() => deleteThreshold.mutate(th.id)}
                       className="h-9 w-9 flex items-center justify-center rounded-lg bg-destructive/10 text-destructive transition hover:bg-destructive/20"
+                      title="Excluir regra"
                     >
                       <X className="h-4 w-4" />
                     </button>
@@ -527,14 +536,15 @@ function AutomationsPage() {
         </motion.div>
       )}
 
-      {/* Modal Novo Threshold */}
+      {/* Modal Novo / Editar Threshold */}
       <AnimatePresence>
         {modal && (
           <ThresholdModal
-            onClose={() => setModal(false)}
+            onClose={() => { setModal(false); setEditingThreshold(null); }}
             accounts={accounts}
             userId={user?.id}
             qc={qc}
+            editing={editingThreshold}
           />
         )}
       </AnimatePresence>
@@ -542,11 +552,23 @@ function AutomationsPage() {
   );
 }
 
-function ThresholdModal({ onClose, accounts, userId, qc }: any) {
-  const [accountId, setAccountId] = useState("all");
-  const [excludedIds, setExcludedIds] = useState<Set<string>>(new Set());
-  const [maxCpl, setMaxCpl] = useState("");
-  const [maxBudgetPct, setMaxBudgetPct] = useState("90");
+function ThresholdModal({ onClose, accounts, userId, qc, editing }: any) {
+  const isEditing = !!editing;
+
+  const [accountId, setAccountId] = useState<string>(
+    isEditing ? (editing.ad_account_id ?? "all") : "all"
+  );
+  const [excludedIds, setExcludedIds] = useState<Set<string>>(
+    isEditing && editing.excluded_account_ids
+      ? new Set<string>(editing.excluded_account_ids)
+      : new Set<string>()
+  );
+  const [maxCpl, setMaxCpl] = useState(
+    isEditing && editing.max_cpl != null ? String(editing.max_cpl) : ""
+  );
+  const [maxBudgetPct, setMaxBudgetPct] = useState(
+    isEditing && editing.max_budget_pct != null ? String(editing.max_budget_pct) : "90"
+  );
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const toggleExclusion = (id: string) => {
@@ -565,18 +587,33 @@ function ThresholdModal({ onClose, accounts, userId, qc }: any) {
 
     setIsSubmitting(true);
     try {
-      const { error } = await (supabase as any).from("alert_thresholds").insert({
-        user_id:              userId,
-        ad_account_id:        targetAccountId,
-        max_cpl:              maxCpl ? parseFloat(maxCpl) : null,
-        max_budget_pct:       maxBudgetPct ? parseInt(maxBudgetPct) : null,
-        is_active:            true,
-        excluded_account_ids: accountId === "all" && excludedIds.size > 0 ? Array.from(excludedIds) : [],
-      });
-      if (error) throw error;
-      toast.success("Regra de alerta configurada! O sistema avaliará campanhas a cada 5 min.");
+      if (isEditing) {
+        // ── UPDATE ──────────────────────────────────────────────────────────
+        const { error } = await (supabase as any)
+          .from("alert_thresholds")
+          .update({
+            ad_account_id:        targetAccountId,
+            max_cpl:              maxCpl ? parseFloat(maxCpl) : null,
+            max_budget_pct:       maxBudgetPct ? parseInt(maxBudgetPct) : null,
+            excluded_account_ids: accountId === "all" && excludedIds.size > 0 ? Array.from(excludedIds) : [],
+          })
+          .eq("id", editing.id);
+        if (error) throw error;
+        toast.success("Regra atualizada com sucesso!");
+      } else {
+        // ── INSERT ──────────────────────────────────────────────────────────
+        const { error } = await (supabase as any).from("alert_thresholds").insert({
+          user_id:              userId,
+          ad_account_id:        targetAccountId,
+          max_cpl:              maxCpl ? parseFloat(maxCpl) : null,
+          max_budget_pct:       maxBudgetPct ? parseInt(maxBudgetPct) : null,
+          is_active:            true,
+          excluded_account_ids: accountId === "all" && excludedIds.size > 0 ? Array.from(excludedIds) : [],
+        });
+        if (error) throw error;
+        toast.success("Regra de alerta configurada! O sistema avaliará campanhas a cada 5 min.");
+      }
       qc.invalidateQueries({ queryKey: ["alert_thresholds"] });
-      // Trigger immediate evaluation so user sees feedback right away
       triggerEvaluation();
       onClose();
     } catch (e: any) {
@@ -597,13 +634,17 @@ function ThresholdModal({ onClose, accounts, userId, qc }: any) {
       >
         <div className="flex items-center justify-between border-b border-white/5 p-6 bg-white/5">
           <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-xl bg-primary/20 flex items-center justify-center text-primary">
-              <ShieldAlert className="h-5 w-5 fill-current" />
+            <div className={`h-10 w-10 rounded-xl flex items-center justify-center ${
+              isEditing ? "bg-blue-500/20 text-blue-400" : "bg-primary/20 text-primary"
+            }`}>
+              {isEditing ? <Pencil className="h-5 w-5" /> : <ShieldAlert className="h-5 w-5 fill-current" />}
             </div>
             <div>
-              <h3 className="font-display text-lg font-bold">Novo Alerta de Conta</h3>
+              <h3 className="font-display text-lg font-bold">
+                {isEditing ? "Editar Regra de Alerta" : "Novo Alerta de Conta"}
+              </h3>
               <p className="text-[10px] text-muted-foreground uppercase tracking-widest font-bold">
-                Monitoramento de CPL e Orçamento
+                {isEditing ? "Altere os parâmetros da regra" : "Monitoramento de CPL e Orçamento"}
               </p>
             </div>
           </div>
@@ -708,10 +749,16 @@ function ThresholdModal({ onClose, accounts, userId, qc }: any) {
           <button
             onClick={handleSave}
             disabled={isSubmitting}
-            className="rounded-full bg-primary px-6 py-2 text-xs font-black text-background hover:scale-105 active:scale-95 transition flex items-center gap-2"
+            className={`rounded-full px-6 py-2 text-xs font-black text-background hover:scale-105 active:scale-95 transition flex items-center gap-2 ${
+              isEditing ? "bg-blue-500 hover:bg-blue-400" : "bg-primary"
+            }`}
           >
-            {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldAlert className="h-4 w-4" />}
-            SALVAR E ATIVAR
+            {isSubmitting
+              ? <Loader2 className="h-4 w-4 animate-spin" />
+              : isEditing
+              ? <Pencil className="h-4 w-4" />
+              : <ShieldAlert className="h-4 w-4" />}
+            {isEditing ? "SALVAR ALTERAÇÕES" : "SALVAR E ATIVAR"}
           </button>
         </div>
       </motion.div>
