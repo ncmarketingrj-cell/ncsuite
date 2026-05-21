@@ -141,23 +141,6 @@ function AddRuleModal({ accounts, onClose, onSave }: { accounts: any[], onClose:
   );
 }
 
-function TabContaOld() {
-  const [agency, setAgency] = useState(() => typeof window !== "undefined" ? localStorage.getItem("nc_agency_name") ?? "" : "");
-  const [email, setEmail] = useState(() => typeof window !== "undefined" ? localStorage.getItem("nc_agency_email") ?? "" : "");
-  const [whatsapp, setWhatsapp] = useState(() => typeof window !== "undefined" ? localStorage.getItem("nc_agency_whatsapp") ?? "" : "");
-  const save = () => { localStorage.setItem("nc_agency_name", agency); localStorage.setItem("nc_agency_email", email); localStorage.setItem("nc_agency_whatsapp", whatsapp); toast.success("Dados salvos"); };
-  return (
-    <div className="space-y-4">
-      <h3 className="font-display text-lg font-semibold">Dados da Conta</h3>
-      <div className="grid gap-4 sm:grid-cols-3">
-        <div><label className="label-mono mb-1 block text-muted-foreground">Nome da agência</label><input value={agency} onChange={(e) => setAgency(e.target.value)} className="w-full rounded-lg border border-white/10 bg-background/50 px-3 py-2 text-sm focus:border-primary focus:outline-none" /></div>
-        <div><label className="label-mono mb-1 block text-muted-foreground">Email</label><input value={email} onChange={(e) => setEmail(e.target.value)} type="email" className="w-full rounded-lg border border-white/10 bg-background/50 px-3 py-2 text-sm focus:border-primary focus:outline-none" /></div>
-        <div><label className="label-mono mb-1 block text-muted-foreground">WhatsApp de Envio Padrão</label><input value={whatsapp} onChange={(e) => setWhatsapp(e.target.value)} placeholder="Ex: 5521999999999" className="w-full rounded-lg border border-white/10 bg-background/50 px-3 py-2 text-sm focus:border-primary focus:outline-none" /></div>
-      </div>
-      <button onClick={save} className="inline-flex items-center gap-2 rounded-full bg-primary px-4 py-2 text-xs font-medium text-primary-foreground hover:shadow-glow"><Check className="h-3.5 w-3.5" /> Salvar</button>
-    </div>
-  );
-}
 
 function TabClientes() {
   const { clients, isLoading, addClient, removeClient } = useClients();
@@ -197,9 +180,6 @@ function TabClientes() {
 
 function TabIntegracoes() {
   const [token, setToken] = useState("");
-  const [webhook, setWebhook] = useState("");
-  const [whatsappPhone, setWhatsappPhone] = useState("");
-  const [whatsappGatewayUrl, setWhatsappGatewayUrl] = useState("http://localhost:3001");
   const [testing, setTesting] = useState(false);
   const [connected, setConnected] = useState<boolean | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -211,9 +191,6 @@ function TabIntegracoes() {
       const { data } = await (supabase as any).from("meta_ads_configs").select("*").maybeSingle();
       if (data) {
         setToken(data.access_token || "");
-        setWebhook(data.webhook_url || "");
-        setWhatsappPhone(data.whatsapp_phone || "");
-        setWhatsappGatewayUrl(data.whatsapp_gateway_url || "http://localhost:3001");
         setOpenaiConfigured(data.openai_key_configured || false);
       }
       setIsLoading(false);
@@ -228,9 +205,6 @@ function TabIntegracoes() {
       const { error } = await (supabase as any).from("meta_ads_configs").upsert({
         user_id: u.user?.id,
         access_token: token,
-        webhook_url: webhook,
-        whatsapp_phone: whatsappPhone,
-        whatsapp_gateway_url: whatsappGatewayUrl,
         ad_account_id: "ALL_ACCOUNTS"
       }, { onConflict: "user_id" });
 
@@ -284,41 +258,6 @@ function TabIntegracoes() {
             placeholder="EAANmoU71vRU..."
             className="w-full rounded-lg border border-white/10 bg-background/50 px-3 py-2 text-sm focus:border-primary focus:outline-none font-mono"
           />
-        </div>
-
-        <div className="space-y-2">
-          <label className="label-mono text-[10px] text-muted-foreground uppercase">WhatsApp Webhook URL (Evolution / Z-API)</label>
-          <input
-            value={webhook}
-            onChange={(e) => setWebhook(e.target.value)}
-            type="text"
-            placeholder="https://api.sua-instancia.com/message/send"
-            className="w-full rounded-lg border border-white/10 bg-background/50 px-3 py-2 text-sm focus:border-primary focus:outline-none"
-          />
-        </div>
-
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div className="space-y-2">
-            <label className="label-mono text-[10px] text-muted-foreground uppercase">WhatsApp de Destino para Alertas</label>
-            <input
-              value={whatsappPhone}
-              onChange={(e) => setWhatsappPhone(e.target.value)}
-              type="text"
-              placeholder="Ex: 5521999999999"
-              className="w-full rounded-lg border border-white/10 bg-background/50 px-3 py-2 text-sm focus:border-primary focus:outline-none"
-            />
-          </div>
-
-          <div className="space-y-2">
-            <label className="label-mono text-[10px] text-muted-foreground uppercase">WhatsApp Gateway URL (Sessão Baileys)</label>
-            <input
-              value={whatsappGatewayUrl}
-              onChange={(e) => setWhatsappGatewayUrl(e.target.value)}
-              type="text"
-              placeholder="http://localhost:3001"
-              className="w-full rounded-lg border border-white/10 bg-background/50 px-3 py-2 text-sm focus:border-primary focus:outline-none"
-            />
-          </div>
         </div>
 
         <div className="rounded-xl border border-white/5 bg-white/[0.02] p-4">
