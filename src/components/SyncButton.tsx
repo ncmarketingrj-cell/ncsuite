@@ -126,6 +126,8 @@ export function SyncButton({ mode = "quick" }: SyncButtonProps) {
     }
   };
 
+  const monthRelativeLabel = isMonth1 ? "MÊS PASSADO" : isMonth2 ? "2 MESES ATRÁS" : "3 MESES ATRÁS";
+
   const buttonLabel = syncing
     ? "SINCRONIZANDO..."
     : isQuick
@@ -133,7 +135,7 @@ export function SyncButton({ mode = "quick" }: SyncButtonProps) {
     : isMax
     ? "SYNC MÁXIMO"
     : isMonthMode
-    ? `SYNC ${monthRange!.labelShort}`
+    ? `SYNC ${monthRelativeLabel}`
     : "SYNC COMPLETO (60 DIAS)";
 
   const Icon = isMonthMode ? CalendarDays : isQuick ? Zap : Database;
