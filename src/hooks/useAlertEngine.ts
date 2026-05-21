@@ -96,7 +96,7 @@ async function runThresholdEvaluation() {
       // 2. Buscar campanhas ATIVAS — para a conta específica ou todas
       let q = (supabase as any)
         .from("campaigns")
-        .select("id, name, status, budget, ad_account_id, metrics(cost, conversions, date)")
+        .select("id, name, status, budget, ad_account_id, created_at, ad_accounts(name), metrics(cost, conversions, date)")
         .ilike("status", "ACTIVE");
 
       if (threshold.ad_account_id) {
@@ -134,10 +134,15 @@ async function runThresholdEvaluation() {
               .limit(1);
 
             if (!dup?.length) {
+              const accountName = (campaign.ad_accounts as any)?.name ?? `Conta ${String(campaign.ad_account_id).slice(-6)}`;
+              const daysSince = campaign.created_at
+                ? Math.floor((Date.now() - new Date(campaign.created_at).getTime()) / 86_400_000)
+                : null;
+              const duration = daysSince === null ? "" : daysSince === 0 ? " • iniciou hoje" : ` • ${daysSince}d de campanha`;
               await (supabase as any).from("notifications").insert({
                 user_id:         user?.id ?? null,
-                title:           `🚨 CPL Alto — ${campaign.name.slice(0, 50)}`,
-                message:         `CPL hoje R$ ${cpl.toFixed(2)} ultrapassou o limite de R$ ${(threshold.max_cpl as number).toFixed(2)}. Intervenha imediatamente.`,
+                title:           `🚨 CPL Alto — ${campaign.name.slice(0, 45)}`,
+                message:         `[${accountName}${duration}] CPL hoje R$ ${cpl.toFixed(2)} ultrapassou o limite de R$ ${(threshold.max_cpl as number).toFixed(2)}. Intervenha imediatamente.`,
                 is_critical:     true,
                 is_read:         false,
                 type:            "alert_cpl",
@@ -314,6 +319,16 @@ export function useAlertEngine() {
       .eq("id", alertId);
   }, []);
 
+  const acknowledgeAll = useCallback(async () => {
+    for (const [id] of activeOscillators) stopAlertSound(id);
+    firedAlerts.clear();
+    await (supabase as any)
+      .from("notifications")
+      .update({ is_read: true, acknowledged_at: new Date().toISOString() })
+      .eq("is_read", false)
+      .eq("is_critical", true);
+  }, []);
+
   // Buscar alertas críticos não lidos a cada 15 s
   const { data: criticalAlerts = [] } = useQuery({
     queryKey: ["critical_alerts"],
@@ -360,6 +375,7 @@ export function useAlertEngine() {
   return {
     criticalAlerts,
     acknowledge,
+    acknowledgeAll,
     activeSoundCount: activeOscillators.size,
   };
 }

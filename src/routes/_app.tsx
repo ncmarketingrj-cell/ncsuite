@@ -98,7 +98,7 @@ function Shell() {
   const { runSync } = useAutoSync();
 
   // ── Motor de Alertas Sonoros ──────────────────────────────────────────────────
-  useAlertEngine();
+  const { acknowledgeAll } = useAlertEngine();
 
   // Ouvir mudanças de status do sync
   useEffect(() => {
@@ -324,11 +324,11 @@ function Shell() {
 
             {/* Notifications */}
             <div className="relative">
-              <button 
-                onClick={() => setShowNotifications(!showNotifications)}
+              <button
+                onClick={() => { setShowNotifications(!showNotifications); acknowledgeAll(); }}
                 className={`relative flex h-9 w-9 items-center justify-center rounded-xl border transition-all active:scale-95 ${
-                  showNotifications 
-                    ? "border-primary bg-primary/10 text-primary" 
+                  showNotifications
+                    ? "border-primary bg-primary/10 text-primary"
                     : "border-border bg-card text-muted-foreground hover:text-foreground hover:border-primary/30"
                 }`}
               >
