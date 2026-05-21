@@ -4,12 +4,13 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useQuery } from "@tanstack/react-query";
 import {
   Users, FileText, Video, Table2, Link2, Upload, ExternalLink,
-  Trash2, Plus, ChevronDown, X, Maximize2, Minimize2,
+  Trash2, Plus, ChevronDown, X, Maximize2,
   TrendingUp, DollarSign, Target, Megaphone, LayoutGrid,
   Image as ImageIcon, Loader2, RefreshCw, Lock, Unlock,
-  Globe, FileSpreadsheet, Layers, Search, CheckSquare, Square,
+  Globe, FileSpreadsheet, Search, CheckSquare, Square,
   PanelLeft, PanelRight, Columns2, Play, Presentation,
-  PenLine, GripVertical, LayoutPanelLeft, Monitor, SlidersHorizontal
+  PenLine, GripVertical, Monitor, Download, FileImage,
+  AlignLeft
 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
@@ -27,11 +28,24 @@ const ADMIN_EMAILS = ["nc.marketingrj@gmail.com", "hc.marketing.dgt@gmail.com"];
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
+type MediaType =
+  | "pdf"         // .pdf
+  | "video"       // .mp4 .webm .mov .avi .mkv
+  | "image"       // .png .jpg .gif .svg .webp .avif
+  | "text"        // .txt .md .csv (rendered inline)
+  | "google"      // Google Docs / Sheets / Slides / Drive
+  | "office-online" // Office Online viewer (OneDrive / public .docx/.xlsx/.pptx URL)
+  | "office-local"  // local Office file — download only
+  | "url";        // generic embed / iframe
+
 type MediaItem = {
   id: string;
-  type: "pdf" | "video" | "spreadsheet" | "powerpoint" | "url" | "google";
+  type: MediaType;
   name: string;
-  src: string;
+  src: string;          // original URL or blob:
+  embedSrc?: string;    // processed embed URL (Office viewer, etc.)
+  textContent?: string; // content for text/csv files
+  ext?: string;         // original extension for display
   size?: string;
 };
 
@@ -269,38 +283,94 @@ function ReunioesPage() {
 
   // ═══ MEDIA HANDLERS ══════════════════════════════════════════════════════════
 
-  const mediaTypeIcon = (type: MediaItem["type"], size = "h-3.5 w-3.5") => {
+  const mediaTypeIcon = (item: Pick<MediaItem, "type" | "ext">, size = "h-3.5 w-3.5") => {
+    const { type, ext } = item;
     if (type === "pdf") return <FileText className={`${size} text-red-400`} />;
     if (type === "video") return <Video className={`${size} text-purple-400`} />;
-    if (type === "spreadsheet") return <FileSpreadsheet className={`${size} text-green-400`} />;
-    if (type === "powerpoint") return <Presentation className={`${size} text-orange-400`} />;
+    if (type === "image") return <FileImage className={`${size} text-pink-400`} />;
+    if (type === "text") return <AlignLeft className={`${size} text-slate-400`} />;
     if (type === "google") return <Globe className={`${size} text-blue-400`} />;
+    if (type === "office-online" || type === "office-local") {
+      if (ext === "xlsx" || ext === "xls" || ext === "csv") return <FileSpreadsheet className={`${size} text-green-500`} />;
+      if (ext === "pptx" || ext === "ppt") return <Presentation className={`${size} text-orange-400`} />;
+      return <FileText className={`${size} text-blue-500`} />; // word
+    }
     return <Link2 className={`${size} text-muted-foreground`} />;
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
-    const newItems: MediaItem[] = files.map(f => {
+    const pending: Promise<MediaItem>[] = files.map(f => new Promise(resolve => {
       const ext = f.name.split(".").pop()?.toLowerCase() || "";
-      const type: MediaItem["type"] =
-        ext === "pdf" ? "pdf"
-        : ["mp4", "webm", "mov", "avi"].includes(ext) ? "video"
-        : ["xlsx", "xls", "csv"].includes(ext) ? "spreadsheet"
-        : ["pptx", "ppt"].includes(ext) ? "powerpoint"
-        : "url";
-      return { id: crypto.randomUUID(), type, name: f.name, src: URL.createObjectURL(f), size: (f.size / 1024 / 1024).toFixed(1) + " MB" };
+      const size = (f.size / 1024 / 1024).toFixed(1) + " MB";
+      const src = URL.createObjectURL(f);
+      const base = { id: crypto.randomUUID(), name: f.name, src, size, ext };
+
+      if (ext === "pdf") return resolve({ ...base, type: "pdf" });
+      if (["mp4", "webm", "mov", "avi", "mkv", "m4v"].includes(ext)) return resolve({ ...base, type: "video" });
+      if (["png", "jpg", "jpeg", "gif", "svg", "webp", "bmp", "avif"].includes(ext)) return resolve({ ...base, type: "image" });
+      if (["txt", "md", "markdown"].includes(ext)) {
+        const reader = new FileReader();
+        reader.onload = ev => resolve({ ...base, type: "text", textContent: ev.target?.result as string || "" });
+        reader.readAsText(f, "UTF-8");
+        return;
+      }
+      if (["csv"].includes(ext)) {
+        const reader = new FileReader();
+        reader.onload = ev => resolve({ ...base, type: "text", textContent: ev.target?.result as string || "" });
+        reader.readAsText(f, "UTF-8");
+        return;
+      }
+      if (["pptx", "ppt", "docx", "doc", "xlsx", "xls"].includes(ext)) return resolve({ ...base, type: "office-local" });
+      resolve({ ...base, type: "url" });
+    }));
+
+    Promise.all(pending).then(newItems => {
+      setMediaItems(prev => [...newItems, ...prev]);
+      if (newItems[0]) setActiveMedia(newItems[0]);
+      toast.success(`${newItems.length} arquivo(s) adicionado(s)`);
     });
-    setMediaItems(prev => [...newItems, ...prev]);
-    if (newItems[0]) setActiveMedia(newItems[0]);
-    toast.success(`${newItems.length} arquivo(s) adicionado(s)`);
     e.target.value = "";
   };
 
   const handleAddUrl = () => {
-    if (!urlInput.trim()) return;
-    const ext = urlInput.split(".").pop()?.split("?")[0].toLowerCase() || "";
-    const type: MediaItem["type"] = urlInput.includes("docs.google.com") ? "google" : ext === "pdf" ? "pdf" : ["mp4", "webm"].includes(ext) ? "video" : "url";
-    const item: MediaItem = { id: crypto.randomUUID(), type, name: urlName.trim() || urlInput.split("/").pop()?.slice(0, 40) || "Link", src: urlInput.trim() };
+    const raw = urlInput.trim();
+    if (!raw) return;
+
+    const ext = raw.split("?")[0].split(".").pop()?.toLowerCase() || "";
+    const autoName = urlName.trim() || decodeURIComponent(raw.split("/").pop()?.split("?")[0] || "").slice(0, 50) || "Link";
+
+    let type: MediaType = "url";
+    let embedSrc: string | undefined;
+
+    // Google Workspace
+    if (raw.includes("docs.google.com") || raw.includes("drive.google.com")) {
+      type = "google";
+    }
+    // PDF
+    else if (ext === "pdf") {
+      type = "pdf";
+    }
+    // Images
+    else if (["png", "jpg", "jpeg", "gif", "svg", "webp", "avif"].includes(ext)) {
+      type = "image";
+    }
+    // Video
+    else if (["mp4", "webm", "mov", "avi", "mkv"].includes(ext)) {
+      type = "video";
+    }
+    // Office files from OneDrive / SharePoint / public URL
+    else if (
+      ["docx", "doc", "pptx", "ppt", "xlsx", "xls"].includes(ext) ||
+      raw.includes("onedrive.live.com") ||
+      raw.includes("sharepoint.com") ||
+      raw.includes("1drv.ms")
+    ) {
+      type = "office-online";
+      embedSrc = `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(raw)}`;
+    }
+
+    const item: MediaItem = { id: crypto.randomUUID(), type, name: autoName, src: raw, embedSrc, ext };
     setMediaItems(prev => [item, ...prev]);
     setActiveMedia(item);
     setUrlInput(""); setUrlName(""); setAddingType(null);
@@ -308,36 +378,121 @@ function ReunioesPage() {
   };
 
   const handleAddGoogle = () => {
-    if (!googleInput.trim()) return;
-    let src = googleInput.trim();
-    if (src.includes("docs.google.com/spreadsheets") && !src.includes("/pubhtml"))
-      src = src.replace(/\/edit.*$/, "/pubhtml?widget=true&headers=false");
-    else if (src.includes("docs.google.com/presentation") && !src.includes("/embed"))
-      src = src.replace(/\/edit.*$/, "/embed?start=false&loop=false&delayms=3000");
-    else if (src.includes("docs.google.com/document") && !src.includes("/pub"))
-      src = src.replace(/\/edit.*$/, "/pub?embedded=true");
-    const item: MediaItem = {
-      id: crypto.randomUUID(), type: "google",
-      name: googleInput.includes("spreadsheets") ? "Google Sheets" : googleInput.includes("presentation") ? "Google Slides" : "Google Docs",
-      src,
-    };
+    const raw = googleInput.trim();
+    if (!raw) return;
+
+    let src = raw;
+    let name = "Google Drive";
+
+    if (raw.includes("docs.google.com/spreadsheets")) {
+      src = raw.replace(/\/(edit|view|preview).*$/, "/pubhtml?widget=true&headers=false");
+      name = "Google Sheets";
+    } else if (raw.includes("docs.google.com/presentation")) {
+      src = raw.replace(/\/(edit|view|preview).*$/, "/embed?start=false&loop=false&delayms=3000");
+      name = "Google Slides";
+    } else if (raw.includes("docs.google.com/document")) {
+      src = raw.replace(/\/(edit|view|preview).*$/, "/pub?embedded=true");
+      name = "Google Docs";
+    } else if (raw.includes("docs.google.com/forms")) {
+      src = raw.replace(/\/(edit|view|preview|viewform).*$/, "/viewform?embedded=true");
+      name = "Google Forms";
+    } else if (raw.includes("drive.google.com/file/d/")) {
+      // Convert Drive file viewer to preview iframe
+      const match = raw.match(/\/file\/d\/([^/]+)/);
+      if (match) {
+        src = `https://drive.google.com/file/d/${match[1]}/preview`;
+        name = "Google Drive";
+      }
+    }
+
+    const item: MediaItem = { id: crypto.randomUUID(), type: "google", name, src };
     setMediaItems(prev => [item, ...prev]);
     setActiveMedia(item);
     setGoogleInput(""); setAddingType(null);
-    toast.success("Google vinculado");
+    toast.success(`${name} vinculado`);
   };
 
   const renderPreview = (item: MediaItem) => {
+    // ── Video ──────────────────────────────────────────────
     if (item.type === "video")
       return <video src={item.src} controls className="w-full h-full object-contain bg-black" />;
-    const isSrc = item.src.startsWith("blob:") ? null : item.src;
-    if (isSrc)
-      return <iframe src={isSrc} title={item.name} className="w-full h-full border-0" allow="fullscreen" />;
+
+    // ── Image ──────────────────────────────────────────────
+    if (item.type === "image")
+      return (
+        <div className="w-full h-full flex items-center justify-center bg-muted/20 p-4">
+          <img src={item.src} alt={item.name} className="max-w-full max-h-full object-contain rounded-xl shadow-lg" />
+        </div>
+      );
+
+    // ── Text / Markdown / CSV (inline) ─────────────────────
+    if (item.type === "text")
+      return (
+        <div className="w-full h-full overflow-auto p-5 bg-card">
+          <pre className="text-xs leading-relaxed text-foreground/80 whitespace-pre-wrap font-mono break-words">
+            {item.textContent || "(vazio)"}
+          </pre>
+        </div>
+      );
+
+    // ── Office Online viewer (OneDrive / public URL) ────────
+    if (item.type === "office-online" && item.embedSrc)
+      return <iframe src={item.embedSrc} title={item.name} className="w-full h-full border-0" allow="fullscreen" />;
+
+    // ── Local Office file — cannot render, show info card ──
+    if (item.type === "office-local") {
+      const extColor: Record<string, string> = {
+        docx: "text-blue-400", doc: "text-blue-400",
+        xlsx: "text-green-400", xls: "text-green-400",
+        pptx: "text-orange-400", ppt: "text-orange-400",
+      };
+      const color = extColor[item.ext || ""] || "text-muted-foreground";
+      const label = item.ext === "docx" || item.ext === "doc" ? "Word"
+        : item.ext === "xlsx" || item.ext === "xls" ? "Excel"
+        : "PowerPoint";
+      return (
+        <div className="flex flex-col items-center justify-center h-full gap-5 text-muted-foreground p-6">
+          <div className={`h-20 w-20 rounded-3xl bg-muted/50 border border-border flex items-center justify-center ${color}`}>
+            {item.ext === "docx" || item.ext === "doc"
+              ? <FileText className="h-10 w-10" />
+              : item.ext === "xlsx" || item.ext === "xls"
+              ? <FileSpreadsheet className="h-10 w-10" />
+              : <Presentation className="h-10 w-10" />}
+          </div>
+          <div className="text-center">
+            <p className="font-bold text-foreground mb-1">{item.name}</p>
+            <p className="text-xs text-muted-foreground mb-0.5">{label} · {item.size}</p>
+            <p className="text-[11px] text-muted-foreground/60 max-w-xs leading-relaxed mt-2">
+              Arquivos Office locais não podem ser visualizados diretamente no navegador.
+              Suba para o <strong>OneDrive</strong> ou <strong>Google Drive</strong> e cole o link de compartilhamento para visualizar aqui.
+            </p>
+          </div>
+          <div className="flex gap-3">
+            <a href={item.src} download={item.name}
+              className="flex items-center gap-2 rounded-xl bg-primary/10 border border-primary/20 px-4 py-2 text-xs font-semibold text-primary hover:bg-primary/20 transition-all">
+              <Download className="h-3.5 w-3.5" /> Baixar arquivo
+            </a>
+            <button onClick={() => setAddingType("url")}
+              className="flex items-center gap-2 rounded-xl border border-border px-4 py-2 text-xs font-semibold hover:bg-muted/50 transition-all">
+              <Link2 className="h-3.5 w-3.5" /> Colar link embed
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    // ── PDF / Google / Office Online URL / generic iframe ──
+    const embedUrl = item.embedSrc || (!item.src.startsWith("blob:") ? item.src : null);
+    if (embedUrl)
+      return <iframe src={embedUrl} title={item.name} className="w-full h-full border-0" allow="fullscreen" />;
+
+    // ── Fallback ───────────────────────────────────────────
     return (
       <div className="flex flex-col items-center justify-center gap-3 h-full text-muted-foreground">
-        <FileSpreadsheet className="h-10 w-10 opacity-20" />
-        <p className="text-xs">Pré-visualização indisponível para este formato local.</p>
-        <a href={item.src} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 text-primary hover:underline text-xs">
+        <FileText className="h-10 w-10 opacity-20" />
+        <p className="text-xs">Pré-visualização indisponível.</p>
+        <a href={item.src} target="_blank" rel="noopener noreferrer"
+          className="flex items-center gap-2 text-primary hover:underline text-xs">
           <ExternalLink className="h-3.5 w-3.5" /> Abrir externamente
         </a>
       </div>
@@ -404,7 +559,7 @@ function ReunioesPage() {
               <Play className="h-3.5 w-3.5" /> Apresentar
             </button>
             <input ref={fileInputRef} type="file" multiple
-              accept=".pdf,.mp4,.webm,.mov,.avi,.xlsx,.xls,.csv,.pptx,.ppt"
+              accept=".pdf,.mp4,.webm,.mov,.avi,.mkv,.m4v,.png,.jpg,.jpeg,.gif,.svg,.webp,.avif,.bmp,.pptx,.ppt,.docx,.doc,.xlsx,.xls,.csv,.txt,.md"
               className="hidden" onChange={handleFileUpload} />
           </div>
         </div>
@@ -458,7 +613,7 @@ function ReunioesPage() {
                       : "text-muted-foreground hover:bg-background/60 hover:text-foreground"
                   }`}
                 >
-                  {mediaTypeIcon(item.type)}
+                  {mediaTypeIcon(item)}
                   <span className="max-w-[110px] truncate">{item.name}</span>
                   <button onClick={e => { e.stopPropagation(); setMediaItems(p => p.filter(m => m.id !== item.id)); if (activeMedia?.id === item.id) setActiveMedia(null); }}
                     className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-all ml-0.5">
