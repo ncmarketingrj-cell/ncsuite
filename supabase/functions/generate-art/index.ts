@@ -46,8 +46,10 @@ serve(async (req) => {
 
     if (!res.ok) {
       const body = await res.text();
-      console.error("[GENERATE-ART] OpenAI error:", res.status, body.slice(0, 300));
-      throw new Error(`DALL-E 3 retornou erro ${res.status}`);
+      console.error("[GENERATE-ART] OpenAI error:", res.status, body.slice(0, 500));
+      let msg = `DALL-E 3 erro ${res.status}`;
+      try { const j = JSON.parse(body); msg = j.error?.message || msg; } catch {}
+      throw new Error(msg);
     }
 
     const data = await res.json();
@@ -67,7 +69,7 @@ serve(async (req) => {
     console.error("[GENERATE-ART] Erro:", e.message);
     return new Response(
       JSON.stringify({ error: e.message }),
-      { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }
 });
