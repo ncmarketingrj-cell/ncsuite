@@ -5,7 +5,7 @@ import {
   Palette, Plus, Trash2, Tag, Image as ImageIcon, Loader2, Search,
   Sparkles, Check, AlertTriangle, AlertCircle, TrendingUp, Gauge, FileSearch,
   Layers, Lightbulb, Compass, MapPin, Upload, X, ChevronRight, Zap,
-  Wand2, Download, ImagePlus
+  Wand2, Download, ImagePlus, Car, Paintbrush, LayoutTemplate, Flame
 } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/PageHeader";
@@ -83,9 +83,9 @@ function CriativosPage() {
           <div className="flex items-center gap-3">
             <button
               onClick={() => setShowCreateArt(true)}
-              className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-violet-600 to-purple-600 px-5 py-3 text-xs font-black uppercase tracking-widest text-white shadow-lg transition hover:scale-102 active:scale-98"
+              className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-orange-600 to-rose-600 px-5 py-3 text-xs font-black uppercase tracking-widest text-white shadow-lg transition hover:scale-102 active:scale-98"
             >
-              <Wand2 className="h-4 w-4" /> CRIAR ARTE COM IA
+              <Car className="h-4 w-4" /> CRIADOR DE ARTE AUTO
             </button>
             <button
               onClick={() => setShowModal(true)}
@@ -774,23 +774,69 @@ function AIAnalysisModal({ item, onClose }: { item: SwipeFile; onClose: () => vo
 }
 
 // ==========================================
-// MODAL CRIAR ARTE COM IA
+// CRIADOR DE ARTE AUTOMOTIVA
 // ==========================================
+const TEMPLATES = [
+  { label: "Feirão de Veículos", icon: "🏷️", prompt: "Feirão de veículos com grande estoque exposto em pátio iluminado, bandeiras coloridas, destaque em preços especiais e parcelas, clima de evento" },
+  { label: "Test Drive VIP", icon: "🏁", prompt: "Test drive em estrada aberta ao entardecer, motorista com expressão de satisfação, carro em movimento com efeito de velocidade, sensação de liberdade e performance" },
+  { label: "Lançamento do Modelo", icon: "🚀", prompt: "Lançamento de novo modelo em showroom premium, iluminação dramática em spotlight, veículo sobre pedestal, ambiente luxuoso de concessionária" },
+  { label: "Seminovo Destaque", icon: "⭐", prompt: "Seminovo em excelente estado em fundo branco clean, reflexo no chão espelhado, badge de garantia e procedência visível, estilo fotografia publicitária" },
+  { label: "Financiamento Fácil", icon: "💳", prompt: "Família feliz recebendo chave de carro novo em frente à concessionária, celebração de conquista, banner com parcelas acessíveis ao fundo" },
+  { label: "Black Friday Auto", icon: "🔥", prompt: "Promoção Black Friday automotiva, fundo preto dramático, veículo com iluminação neon vermelha, texto de desconto em destaque, clima de urgência" },
+];
+
+const VEHICLE_TYPES = ["SUV", "Sedan", "Hatch", "Pickup", "Esportivo", "Elétrico", "Van/Utilitário", "Crossover"];
+
+const VISUAL_STYLES = [
+  { value: "fotorrealista", label: "Fotorrealista", desc: "Foto profissional de alta definição" },
+  { value: "cinematografico", label: "Cinematográfico", desc: "Luz dramática, clima de filme" },
+  { value: "colorido", label: "Colorido/Festivo", desc: "Vibrante, cores saturadas, feirão" },
+  { value: "clean", label: "Clean/Luxo", desc: "Minimalista, elegante, premium" },
+];
+
+const ASPECT_OPTIONS: { value: "1:1" | "16:9" | "9:16"; label: string; desc: string }[] = [
+  { value: "1:1", label: "Quadrado", desc: "Feed" },
+  { value: "9:16", label: "Vertical", desc: "Stories/Reels" },
+  { value: "16:9", label: "Horizontal", desc: "Banner/YouTube" },
+];
+
 function CreateArtModal({ onClose }: { onClose: () => void }) {
   const generateImage = useServerFn(generateCreativeImageFn);
-  const [prompt, setPrompt] = useState("");
+  const [vehicleType, setVehicleType] = useState("SUV");
+  const [visualStyle, setVisualStyle] = useState("fotorrealista");
   const [aspectRatio, setAspectRatio] = useState<"1:1" | "16:9" | "9:16">("1:1");
+  const [customPrompt, setCustomPrompt] = useState("");
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<string | null>(null);
+  const [usedPrompt, setUsedPrompt] = useState("");
+
+  const applyTemplate = (tpl: typeof TEMPLATES[0]) => {
+    setCustomPrompt(tpl.prompt);
+  };
+
+  const buildFinalPrompt = () => {
+    const styleMap: Record<string, string> = {
+      fotorrealista: "ultra-realistic professional automotive photography, sharp details, studio lighting",
+      cinematografico: "cinematic lighting, dramatic shadows, movie-quality, widescreen atmosphere",
+      colorido: "vibrant saturated colors, festive atmosphere, high contrast, eye-catching advertising",
+      clean: "minimalist clean background, luxury premium feel, elegant composition, white or dark studio",
+    };
+    return `${vehicleType} vehicle, ${customPrompt}, ${styleMap[visualStyle]}, Brazilian automotive dealership advertising material, commercial quality`;
+  };
 
   const handleGenerate = async () => {
-    if (!prompt.trim()) { toast.warning("Descreva o que quer criar!"); return; }
+    if (!customPrompt.trim()) {
+      toast.warning("Descreva a arte ou escolha um template acima!");
+      return;
+    }
+    const finalPrompt = buildFinalPrompt();
+    setUsedPrompt(finalPrompt);
     setLoading(true);
     setResult(null);
     try {
-      const res = await generateImage({ data: { prompt, aspectRatio } });
+      const res = await generateImage({ data: { prompt: finalPrompt, aspectRatio } });
       setResult(`data:${res.mimeType};base64,${res.imageBase64}`);
-      toast.success("Arte gerada com sucesso!");
+      toast.success("Arte automotiva gerada!");
     } catch (e: any) {
       toast.error(e.message || "Erro ao gerar arte");
     } finally {
@@ -802,15 +848,9 @@ function CreateArtModal({ onClose }: { onClose: () => void }) {
     if (!result) return;
     const a = document.createElement("a");
     a.href = result;
-    a.download = `arte-ia-${Date.now()}.png`;
+    a.download = `arte-auto-ia-${Date.now()}.png`;
     a.click();
   };
-
-  const ASPECT_OPTIONS: { value: "1:1" | "16:9" | "9:16"; label: string; desc: string }[] = [
-    { value: "1:1", label: "Quadrado", desc: "Feed Instagram" },
-    { value: "16:9", label: "Paisagem", desc: "Stories / Reels" },
-    { value: "9:16", label: "Retrato", desc: "YouTube / Banner" },
-  ];
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/90 backdrop-blur-md p-4">
@@ -823,70 +863,141 @@ function CreateArtModal({ onClose }: { onClose: () => void }) {
         {/* HEADER */}
         <div className="flex items-center justify-between border-b border-white/10 p-5 bg-card/50">
           <div>
-            <h3 className="font-display text-lg font-black flex items-center gap-2 text-violet-400">
-              <Wand2 className="h-5 w-5" /> Criar Arte com IA
+            <h3 className="font-display text-lg font-black flex items-center gap-2">
+              <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-br from-orange-500 to-rose-500 shadow-lg">
+                <Car className="h-4.5 w-4.5 text-white" />
+              </span>
+              <span className="text-gradient">Criador de Arte Automotiva</span>
             </h3>
-            <p className="text-xs text-muted-foreground mt-1">Descreva a arte desejada e o Imagen 3 irá criá-la.</p>
+            <p className="text-xs text-muted-foreground mt-1">IA especializada em criativos para concessionárias e lojas de veículos.</p>
           </div>
           <button onClick={onClose} className="p-2 rounded-full hover:bg-white/5 text-muted-foreground transition">✕</button>
         </div>
 
         <div className="flex-1 overflow-y-auto custom-scrollbar p-6 space-y-6">
-          {/* PROMPT */}
+
+          {/* TEMPLATES RÁPIDOS */}
+          <div className="space-y-3">
+            <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground flex items-center gap-2">
+              <LayoutTemplate className="h-3.5 w-3.5" /> Templates Rápidos
+            </label>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+              {TEMPLATES.map((tpl) => (
+                <button
+                  key={tpl.label}
+                  onClick={() => applyTemplate(tpl)}
+                  className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-left hover:border-orange-500/40 hover:bg-orange-500/5 transition group"
+                >
+                  <span className="text-base">{tpl.icon}</span>
+                  <span className="text-[10px] font-black uppercase tracking-wider text-muted-foreground group-hover:text-foreground transition line-clamp-1">{tpl.label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* TIPO DE VEÍCULO */}
+          <div className="space-y-3">
+            <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground flex items-center gap-2">
+              <Car className="h-3.5 w-3.5" /> Tipo de Veículo
+            </label>
+            <div className="flex flex-wrap gap-2">
+              {VEHICLE_TYPES.map((v) => (
+                <button
+                  key={v}
+                  onClick={() => setVehicleType(v)}
+                  className={`rounded-xl border px-3 py-1.5 text-[10px] font-black uppercase tracking-wider transition ${
+                    vehicleType === v
+                      ? "border-orange-500/60 bg-orange-500/10 text-orange-400"
+                      : "border-white/10 bg-white/5 text-muted-foreground hover:border-white/20 hover:text-foreground"
+                  }`}
+                >
+                  {v}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* ESTILO VISUAL */}
+          <div className="space-y-3">
+            <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground flex items-center gap-2">
+              <Paintbrush className="h-3.5 w-3.5" /> Estilo Visual
+            </label>
+            <div className="grid grid-cols-2 gap-2">
+              {VISUAL_STYLES.map((s) => (
+                <button
+                  key={s.value}
+                  onClick={() => setVisualStyle(s.value)}
+                  className={`flex flex-col items-start gap-0.5 rounded-xl border px-4 py-3 text-left transition ${
+                    visualStyle === s.value
+                      ? "border-orange-500/60 bg-orange-500/10"
+                      : "border-white/10 bg-white/5 hover:border-white/20"
+                  }`}
+                >
+                  <span className={`text-[11px] font-black uppercase tracking-wider ${visualStyle === s.value ? "text-orange-400" : "text-foreground"}`}>{s.label}</span>
+                  <span className="text-[9px] text-muted-foreground">{s.desc}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* PROMPT PERSONALIZADO */}
           <div className="space-y-2">
-            <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Descrição da Arte</label>
+            <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground flex items-center gap-2">
+              <Flame className="h-3.5 w-3.5" /> Descreva a Cena
+            </label>
             <textarea
-              value={prompt}
-              onChange={(e) => setPrompt(e.target.value)}
-              rows={4}
-              placeholder="Ex: Carro SUV branco em estrada à noite com iluminação dramática, texto 'FEIRÃO MAIO' em destaque, cores azul e branco, estilo publicitário automotivo..."
-              className="w-full rounded-xl border border-white/10 bg-background/50 px-4 py-3 text-sm font-medium focus:border-violet-500/50 focus:outline-none resize-none placeholder:text-muted-foreground/40"
+              value={customPrompt}
+              onChange={(e) => setCustomPrompt(e.target.value)}
+              rows={3}
+              placeholder="Ex: SUV prata em estrada no pôr do sol, família feliz, texto OFERTA ESPECIAL em destaque, fundo de montanhas..."
+              className="w-full rounded-xl border border-white/10 bg-background/50 px-4 py-3 text-sm font-medium focus:border-orange-500/40 focus:outline-none resize-none placeholder:text-muted-foreground/40"
             />
-            <p className="text-[9px] text-muted-foreground/60 ml-1">Seja específico: modelo do carro, cores, texto, cenário, estilo visual, emoção desejada.</p>
+            <p className="text-[9px] text-muted-foreground/60 ml-1">Descreva cenário, cores, texto desejado, emoção. Use um template acima como ponto de partida.</p>
           </div>
 
           {/* PROPORÇÃO */}
           <div className="space-y-2">
-            <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Proporção da Imagem</label>
-            <div className="grid grid-cols-3 gap-3">
-              {ASPECT_OPTIONS.map(opt => (
+            <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Proporção</label>
+            <div className="grid grid-cols-3 gap-2">
+              {ASPECT_OPTIONS.map((opt) => (
                 <button
                   key={opt.value}
                   onClick={() => setAspectRatio(opt.value)}
                   className={`flex flex-col items-center gap-1 rounded-xl border p-3 text-center transition ${
                     aspectRatio === opt.value
-                      ? "border-violet-500/60 bg-violet-500/10 text-violet-400"
+                      ? "border-orange-500/60 bg-orange-500/10 text-orange-400"
                       : "border-white/10 bg-white/5 text-muted-foreground hover:border-white/20"
                   }`}
                 >
                   <span className="text-xs font-black uppercase">{opt.label}</span>
-                  <span className="text-[9px] font-mono">{opt.value}</span>
+                  <span className="text-[9px] font-mono opacity-60">{opt.value}</span>
                   <span className="text-[9px] text-muted-foreground">{opt.desc}</span>
                 </button>
               ))}
             </div>
           </div>
 
-          {/* RESULTADO */}
+          {/* GERANDO */}
           {loading && (
-            <div className="flex flex-col items-center gap-4 py-10">
+            <div className="flex flex-col items-center gap-4 py-8">
               <div className="relative h-16 w-16">
-                <div className="absolute inset-0 rounded-full border-4 border-violet-500/20 animate-pulse" />
+                <div className="absolute inset-0 rounded-full border-4 border-orange-500/20 animate-pulse" />
                 <div className="absolute inset-0 flex items-center justify-center">
-                  <Wand2 className="h-7 w-7 text-violet-400 animate-spin" />
+                  <Car className="h-7 w-7 text-orange-400 animate-bounce" />
                 </div>
               </div>
-              <p className="text-xs font-black uppercase tracking-widest text-violet-400 animate-pulse">Imagen 3 gerando sua arte...</p>
-              <p className="text-[10px] text-muted-foreground">Pode levar de 10 a 30 segundos</p>
+              <p className="text-xs font-black uppercase tracking-widest text-orange-400 animate-pulse">Imagen 3 criando sua arte automotiva...</p>
+              <p className="text-[10px] text-muted-foreground text-center max-w-xs">Aguarde de 10 a 30 segundos. A IA está compondo a cena com precisão visual.</p>
             </div>
           )}
 
+          {/* RESULTADO */}
           {result && !loading && (
             <div className="space-y-4">
-              <div className="relative rounded-xl overflow-hidden border border-violet-500/20 shadow-2xl">
-                <img src={result} alt="Arte gerada pela IA" className="w-full" />
+              <div className="relative rounded-xl overflow-hidden border border-orange-500/20 shadow-2xl">
+                <img src={result} alt="Arte automotiva gerada" className="w-full" />
                 <div className="absolute top-3 right-3">
-                  <span className="inline-flex items-center gap-1 rounded-lg bg-black/60 backdrop-blur px-2.5 py-1 text-[9px] font-black uppercase tracking-widest text-violet-400 border border-violet-500/20">
+                  <span className="inline-flex items-center gap-1 rounded-lg bg-black/70 backdrop-blur px-2.5 py-1 text-[9px] font-black uppercase tracking-widest text-orange-400 border border-orange-500/20">
                     <Sparkles className="h-3 w-3" /> Imagen 3
                   </span>
                 </div>
@@ -894,12 +1005,12 @@ function CreateArtModal({ onClose }: { onClose: () => void }) {
               <div className="flex gap-3">
                 <button
                   onClick={handleDownload}
-                  className="flex-1 inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-violet-600 to-purple-600 px-4 py-3 text-xs font-black uppercase tracking-widest text-white hover:brightness-110 transition shadow-lg"
+                  className="flex-1 inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-orange-600 to-rose-600 px-4 py-3 text-xs font-black uppercase tracking-widest text-white hover:brightness-110 transition shadow-lg"
                 >
                   <Download className="h-4 w-4" /> BAIXAR ARTE
                 </button>
                 <button
-                  onClick={() => setResult(null)}
+                  onClick={() => { setResult(null); }}
                   className="rounded-xl border border-white/10 px-4 py-3 text-xs font-black uppercase tracking-widest text-muted-foreground hover:text-white hover:border-white/20 transition"
                 >
                   Nova Arte
@@ -920,10 +1031,10 @@ function CreateArtModal({ onClose }: { onClose: () => void }) {
           {!result && (
             <button
               onClick={handleGenerate}
-              disabled={!prompt.trim() || loading}
-              className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-violet-600 to-purple-600 px-6 py-3 text-xs font-black uppercase tracking-widest text-white hover:brightness-110 transition disabled:opacity-40 disabled:pointer-events-none shadow-lg"
+              disabled={!customPrompt.trim() || loading}
+              className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-orange-600 to-rose-600 px-6 py-3 text-xs font-black uppercase tracking-widest text-white hover:brightness-110 transition disabled:opacity-40 disabled:pointer-events-none shadow-lg"
             >
-              <Wand2 className="h-4 w-4" /> GERAR ARTE
+              <Car className="h-4 w-4" /> GERAR ARTE
             </button>
           )}
         </div>
