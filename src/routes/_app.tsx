@@ -395,15 +395,30 @@ function Shell() {
                                 {!notif.is_read && (
                                   <span className="absolute top-3 right-3 h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />
                                 )}
-                                <div className="flex items-center justify-between">
-                                  <span className="text-[10px] font-black uppercase tracking-wider text-primary truncate max-w-[200px]">
+                                <div className="flex items-start justify-between gap-2">
+                                  <span className="text-[10px] font-black uppercase tracking-wider text-primary leading-tight">
                                     {notif.title}
                                   </span>
-                                  <span className="text-[9px] text-muted-foreground font-mono">{timeAgo}</span>
+                                  <span className="text-[9px] text-muted-foreground font-mono shrink-0">{timeAgo}</span>
                                 </div>
-                                <p className="text-[11px] text-foreground leading-relaxed font-medium pr-4">
-                                  {notif.message}
-                                </p>
+                                {(() => {
+                                  const sep = notif.message?.indexOf(" — ");
+                                  const hasSep = sep > 0 && sep < 60;
+                                  const account = hasSep ? notif.message.slice(0, sep) : null;
+                                  const detail  = hasSep ? notif.message.slice(sep + 3) : notif.message;
+                                  return (
+                                    <>
+                                      {account && (
+                                        <span className="inline-flex rounded bg-white/10 px-1.5 py-0.5 text-[9px] font-bold text-muted-foreground">
+                                          {account}
+                                        </span>
+                                      )}
+                                      <p className="text-[11px] text-foreground leading-relaxed font-medium pr-4">
+                                        {detail}
+                                      </p>
+                                    </>
+                                  );
+                                })()}
                               </Link>
                             );
                           })}
