@@ -16,17 +16,89 @@ serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
-    const { prompt, aspectRatio = "1:1" } = await req.json();
-    const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY");
+    const {
+      prompt,
+      aspectRatio = "1:1",
+      imageBase64,
+      imageMimeType,
+      vehicleType,
+      background,
+      cameraAngle,
+      lighting,
+      overlayText,
+    } = await req.json();
 
+    const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY");
     if (!OPENAI_API_KEY) throw new Error("OPENAI_API_KEY não configurada");
-    if (!prompt?.trim()) throw new Error("Prompt não pode estar vazio");
 
     const size = SIZE_MAP[aspectRatio] || "1024x1024";
+    let baseDescription = "";
 
-    const enhancedPrompt = `Professional Brazilian automotive advertising image. ${prompt}. High quality commercial photography, sharp details, vibrant colors, marketing material suitable for social media ads.`;
+    // Se foto foi enviada — analisa com GPT-4o Vision
+    if (imageBase64 && imageMimeType) {
+      console.log("[GENERATE-ART] Analisando foto com GPT-4o...");
+      const visionRes = await fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${OPENAI_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: "gpt-4o",
+          messages: [
+            {
+              role: "user",
+              content: [
+                {
+                  type: "image_url",
+                  image_url: {
+                    url: `data:${imageMimeType};base64,${imageBase64}`,
+                    detail: "high",
+                  },
+                },
+                {
+                  type: "text",
+                  text: "Describe this automotive image in detail for DALL-E 3 generation. Include: vehicle type, color, model if visible, setting/background, lighting, mood, composition, visible text or branding. Be specific. Reply in English.",
+                },
+              ],
+            },
+          ],
+          max_tokens: 600,
+        }),
+      });
 
-    console.log("[GENERATE-ART] DALL-E 3 | size:", size, "| prompt:", enhancedPrompt.slice(0, 80));
+      if (visionRes.ok) {
+        const visionData = await visionRes.json();
+        baseDescription = visionData.choices?.[0]?.message?.content || "";
+        console.log("[GENERATE-ART] Análise GPT-4o:", baseDescription.slice(0, 100));
+      } else {
+        console.error("[GENERATE-ART] GPT-4o vision falhou, continuando sem análise...");
+      }
+    }
+
+    // Montar prompt final com todas as personalizações
+    const parts: string[] = [
+      "Professional Brazilian automotive advertising image, commercial quality, ultra-realistic.",
+    ];
+
+    if (baseDescription) {
+      parts.push(`Based on this reference: ${baseDescription}.`);
+      parts.push("Reimagine and enhance this as a professional advertisement.");
+    }
+
+    if (vehicleType) parts.push(`Vehicle type: ${vehicleType}.`);
+    if (prompt?.trim()) parts.push(prompt.trim());
+    if (background) parts.push(`Setting/background: ${background}.`);
+    if (cameraAngle) parts.push(`Camera angle: ${cameraAngle}.`);
+    if (lighting) parts.push(`Lighting and atmosphere: ${lighting}.`);
+    if (overlayText?.trim()) {
+      parts.push(`Include this text prominently and legibly in the image: "${overlayText}".`);
+    }
+
+    parts.push("High quality marketing material, vibrant colors, sharp details, suitable for social media ads.");
+
+    const finalPrompt = parts.join(" ");
+    console.log("[GENERATE-ART] DALL-E 3 | size:", size, "| prompt:", finalPrompt.slice(0, 120));
 
     const res = await fetch("https://api.openai.com/v1/images/generations", {
       method: "POST",
@@ -36,7 +108,7 @@ serve(async (req) => {
       },
       body: JSON.stringify({
         model: "dall-e-3",
-        prompt: enhancedPrompt,
+        prompt: finalPrompt,
         n: 1,
         size,
         quality: "hd",
@@ -48,13 +120,15 @@ serve(async (req) => {
       const body = await res.text();
       console.error("[GENERATE-ART] OpenAI error:", res.status, body.slice(0, 500));
       let msg = `DALL-E 3 erro ${res.status}`;
-      try { const j = JSON.parse(body); msg = j.error?.message || msg; } catch {}
+      try {
+        const j = JSON.parse(body);
+        msg = j.error?.message || msg;
+      } catch {}
       throw new Error(msg);
     }
 
     const data = await res.json();
     const image = data.data?.[0];
-
     if (!image?.b64_json) throw new Error("Nenhuma imagem foi gerada");
 
     return new Response(

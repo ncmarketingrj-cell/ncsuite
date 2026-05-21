@@ -776,7 +776,7 @@ function AIAnalysisModal({ item, onClose }: { item: SwipeFile; onClose: () => vo
 }
 
 // ==========================================
-// CRIADOR DE ARTE AUTOMOTIVA
+// CRIADOR DE ARTE AUTOMOTIVA — dados estáticos
 // ==========================================
 const TEMPLATES = [
   { label: "Feirão de Veículos", icon: "🏷️", prompt: "Feirão de veículos com grande estoque exposto em pátio iluminado, bandeiras coloridas, destaque em preços especiais e parcelas, clima de evento" },
@@ -796,6 +796,32 @@ const VISUAL_STYLES = [
   { value: "clean", label: "Clean/Luxo", desc: "Minimalista, elegante, premium" },
 ];
 
+const BACKGROUNDS = [
+  { value: "showroom premium, marble floor, spotlights", label: "Showroom" },
+  { value: "open road through mountains, dramatic sky", label: "Estrada Aberta" },
+  { value: "city at night, neon lights, urban", label: "Cidade Noturna" },
+  { value: "nature, green fields, clear sky", label: "Natureza" },
+  { value: "neutral studio background, seamless white", label: "Estúdio" },
+  { value: "beach sunset, golden hour, coastal", label: "Praia/Pôr do Sol" },
+];
+
+const CAMERA_ANGLES = [
+  { value: "front view, symmetrical composition", label: "Frontal" },
+  { value: "3/4 front side angle", label: "¾ Frente" },
+  { value: "dramatic low angle, wide lens", label: "Plano Baixo" },
+  { value: "aerial drone shot from above", label: "Aéreo (Drone)" },
+  { value: "rear 3/4 angle", label: "¾ Traseiro" },
+  { value: "close-up details, macro photography", label: "Close Detalhes" },
+];
+
+const LIGHTING_OPTIONS = [
+  { value: "bright sunny day, natural sunlight, blue sky", label: "Dia Ensolarado" },
+  { value: "golden hour sunset, warm orange tones", label: "Entardecer Dourado" },
+  { value: "night scene, city lights, dramatic neon glow", label: "Noite com Neon" },
+  { value: "professional studio lighting, controlled shadows", label: "Estúdio Pro" },
+  { value: "overcast dramatic sky, moody atmosphere", label: "Dramático/Nublado" },
+];
+
 const ASPECT_OPTIONS: { value: "1:1" | "16:9" | "9:16"; label: string; desc: string }[] = [
   { value: "1:1", label: "Quadrado", desc: "Feed" },
   { value: "9:16", label: "Vertical", desc: "Stories/Reels" },
@@ -803,48 +829,89 @@ const ASPECT_OPTIONS: { value: "1:1" | "16:9" | "9:16"; label: string; desc: str
 ];
 
 function CreateArtModal({ onClose }: { onClose: () => void }) {
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [mode, setMode] = useState<"scratch" | "photo">("scratch");
+  const [uploadedPhoto, setUploadedPhoto] = useState<{ base64: string; mimeType: string; preview: string } | null>(null);
   const [vehicleType, setVehicleType] = useState("SUV");
   const [visualStyle, setVisualStyle] = useState("fotorrealista");
+  const [background, setBackground] = useState("");
+  const [cameraAngle, setCameraAngle] = useState("");
+  const [lighting, setLighting] = useState("");
+  const [overlayText, setOverlayText] = useState("");
   const [aspectRatio, setAspectRatio] = useState<"1:1" | "16:9" | "9:16">("1:1");
   const [customPrompt, setCustomPrompt] = useState("");
   const [loading, setLoading] = useState(false);
+  const [loadingStep, setLoadingStep] = useState("");
   const [result, setResult] = useState<string | null>(null);
-  const [usedPrompt, setUsedPrompt] = useState("");
 
-  const applyTemplate = (tpl: typeof TEMPLATES[0]) => {
-    setCustomPrompt(tpl.prompt);
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = reader.result as string;
+      setUploadedPhoto({
+        base64: dataUrl.split(",")[1],
+        mimeType: file.type || "image/jpeg",
+        preview: dataUrl,
+      });
+    };
+    reader.readAsDataURL(file);
   };
 
-  const buildFinalPrompt = () => {
-    const styleMap: Record<string, string> = {
-      fotorrealista: "ultra-realistic professional automotive photography, sharp details, studio lighting",
-      cinematografico: "cinematic lighting, dramatic shadows, movie-quality, widescreen atmosphere",
-      colorido: "vibrant saturated colors, festive atmosphere, high contrast, eye-catching advertising",
-      clean: "minimalist clean background, luxury premium feel, elegant composition, white or dark studio",
-    };
-    return `${vehicleType} vehicle, ${customPrompt}, ${styleMap[visualStyle]}, Brazilian automotive dealership advertising material, commercial quality`;
+  const styleMap: Record<string, string> = {
+    fotorrealista: "ultra-realistic professional automotive photography, sharp details, studio lighting",
+    cinematografico: "cinematic lighting, dramatic shadows, movie-quality, widescreen atmosphere",
+    colorido: "vibrant saturated colors, festive atmosphere, high contrast, eye-catching advertising",
+    clean: "minimalist clean background, luxury premium feel, elegant composition",
   };
 
   const handleGenerate = async () => {
-    if (!customPrompt.trim()) {
-      toast.warning("Descreva a arte ou escolha um template acima!");
+    if (mode === "scratch" && !customPrompt.trim()) {
+      toast.warning("Descreva a arte ou escolha um template!");
       return;
     }
-    const finalPrompt = buildFinalPrompt();
-    setUsedPrompt(finalPrompt);
+    if (mode === "photo" && !uploadedPhoto) {
+      toast.warning("Suba uma foto para transformar!");
+      return;
+    }
+
     setLoading(true);
     setResult(null);
+
     try {
-      const { data, error } = await supabase.functions.invoke("generate-art", {
-        body: { prompt: finalPrompt, aspectRatio },
-      });
+      if (mode === "photo") setLoadingStep("Analisando sua foto com GPT-4o...");
+      else setLoadingStep("Gerando arte com DALL-E 3...");
+
+      const body: Record<string, string> = {
+        aspectRatio,
+        vehicleType,
+      };
+
+      if (customPrompt.trim()) body.prompt = `${customPrompt}. Style: ${styleMap[visualStyle]}`;
+      else body.prompt = `${vehicleType} vehicle, ${styleMap[visualStyle]}`;
+
+      if (background) body.background = background;
+      if (cameraAngle) body.cameraAngle = cameraAngle;
+      if (lighting) body.lighting = lighting;
+      if (overlayText.trim()) body.overlayText = overlayText;
+
+      if (mode === "photo" && uploadedPhoto) {
+        body.imageBase64 = uploadedPhoto.base64;
+        body.imageMimeType = uploadedPhoto.mimeType;
+        setLoadingStep("GPT-4o analisou a foto. Gerando arte com DALL-E 3...");
+      }
+
+      const { data, error } = await supabase.functions.invoke("generate-art", { body });
       if (error || data?.error) throw new Error(data?.error || error?.message || "Erro ao gerar arte");
+
       setResult(`data:${data.mimeType};base64,${data.imageBase64}`);
       toast.success("Arte automotiva gerada com DALL-E 3!");
     } catch (e: any) {
       toast.error(e.message || "Erro ao gerar arte");
     } finally {
       setLoading(false);
+      setLoadingStep("");
     }
   };
 
@@ -856,48 +923,114 @@ function CreateArtModal({ onClose }: { onClose: () => void }) {
     a.click();
   };
 
+  const pill = (active: boolean) =>
+    `rounded-xl border px-3 py-1.5 text-[10px] font-black uppercase tracking-wider transition cursor-pointer ${
+      active
+        ? "border-orange-500/60 bg-orange-500/10 text-orange-400"
+        : "border-white/10 bg-white/5 text-muted-foreground hover:border-white/20 hover:text-foreground"
+    }`;
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/90 backdrop-blur-md p-4">
       <motion.div
         initial={{ scale: 0.95, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
         exit={{ scale: 0.95, opacity: 0 }}
-        className="glass-panel w-full max-w-2xl border-white/10 bg-background flex flex-col max-h-[90vh] shadow-2xl overflow-hidden"
+        className="glass-panel w-full max-w-2xl border-white/10 bg-background flex flex-col max-h-[92vh] shadow-2xl overflow-hidden"
       >
         {/* HEADER */}
-        <div className="flex items-center justify-between border-b border-white/10 p-5 bg-card/50">
+        <div className="flex items-center justify-between border-b border-white/10 p-5 bg-card/50 flex-shrink-0">
           <div>
             <h3 className="font-display text-lg font-black flex items-center gap-2">
               <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-br from-orange-500 to-rose-500 shadow-lg">
-                <Car className="h-4.5 w-4.5 text-white" />
+                <Car className="h-4 w-4 text-white" />
               </span>
               <span className="text-gradient">Criador de Arte Automotiva</span>
             </h3>
-            <p className="text-xs text-muted-foreground mt-1">IA especializada em criativos para concessionárias e lojas de veículos.</p>
+            <p className="text-xs text-muted-foreground mt-1">GPT-4o Vision + DALL-E 3 HD — especializado em publicidade automotiva.</p>
           </div>
           <button onClick={onClose} className="p-2 rounded-full hover:bg-white/5 text-muted-foreground transition">✕</button>
         </div>
 
         <div className="flex-1 overflow-y-auto custom-scrollbar p-6 space-y-6">
 
-          {/* TEMPLATES RÁPIDOS */}
-          <div className="space-y-3">
-            <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground flex items-center gap-2">
-              <LayoutTemplate className="h-3.5 w-3.5" /> Templates Rápidos
-            </label>
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-              {TEMPLATES.map((tpl) => (
-                <button
-                  key={tpl.label}
-                  onClick={() => applyTemplate(tpl)}
-                  className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-left hover:border-orange-500/40 hover:bg-orange-500/5 transition group"
-                >
-                  <span className="text-base">{tpl.icon}</span>
-                  <span className="text-[10px] font-black uppercase tracking-wider text-muted-foreground group-hover:text-foreground transition line-clamp-1">{tpl.label}</span>
-                </button>
-              ))}
-            </div>
+          {/* MODO */}
+          <div className="grid grid-cols-2 gap-2 p-1 rounded-xl bg-white/5 border border-white/10">
+            {[
+              { key: "scratch", icon: "✨", label: "Do Zero" },
+              { key: "photo", icon: "📷", label: "Transformar Foto" },
+            ].map((m) => (
+              <button
+                key={m.key}
+                onClick={() => setMode(m.key as "scratch" | "photo")}
+                className={`flex items-center justify-center gap-2 rounded-lg py-2.5 text-xs font-black uppercase tracking-widest transition ${
+                  mode === m.key
+                    ? "bg-gradient-to-r from-orange-600 to-rose-600 text-white shadow-lg"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                <span>{m.icon}</span> {m.label}
+              </button>
+            ))}
           </div>
+
+          {/* UPLOAD DE FOTO (modo foto) */}
+          {mode === "photo" && (
+            <div className="space-y-3">
+              <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground flex items-center gap-2">
+                <Upload className="h-3.5 w-3.5" /> Foto de Referência
+              </label>
+              <input type="file" ref={fileInputRef} accept="image/*" onChange={handleFileChange} className="hidden" />
+              {!uploadedPhoto ? (
+                <div
+                  onClick={() => fileInputRef.current?.click()}
+                  className="flex cursor-pointer flex-col items-center gap-3 rounded-xl border-2 border-dashed border-orange-500/20 bg-orange-500/5 py-8 hover:border-orange-500/40 hover:bg-orange-500/10 transition"
+                >
+                  <Upload className="h-8 w-8 text-orange-400/60" />
+                  <div className="text-center">
+                    <p className="text-xs font-black uppercase tracking-wider text-orange-400">Clique para subir a foto</p>
+                    <p className="text-[9px] text-muted-foreground mt-1">JPG, PNG, WEBP — a IA vai analisar e transformar em arte</p>
+                  </div>
+                </div>
+              ) : (
+                <div className="relative rounded-xl overflow-hidden border border-orange-500/20">
+                  <img src={uploadedPhoto.preview} alt="Foto enviada" className="w-full max-h-48 object-cover" />
+                  <button
+                    onClick={() => setUploadedPhoto(null)}
+                    className="absolute top-2 right-2 rounded-full bg-background/80 p-1.5 text-muted-foreground hover:text-destructive transition"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                  <div className="absolute bottom-2 left-2">
+                    <span className="rounded-lg bg-black/70 backdrop-blur px-2 py-1 text-[9px] font-black uppercase text-orange-400">
+                      GPT-4o vai analisar esta foto
+                    </span>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* TEMPLATES (modo scratch) */}
+          {mode === "scratch" && (
+            <div className="space-y-3">
+              <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground flex items-center gap-2">
+                <LayoutTemplate className="h-3.5 w-3.5" /> Templates Rápidos
+              </label>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                {TEMPLATES.map((tpl) => (
+                  <button
+                    key={tpl.label}
+                    onClick={() => setCustomPrompt(tpl.prompt)}
+                    className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-left hover:border-orange-500/40 hover:bg-orange-500/5 transition group"
+                  >
+                    <span className="text-base shrink-0">{tpl.icon}</span>
+                    <span className="text-[10px] font-black uppercase tracking-wider text-muted-foreground group-hover:text-foreground transition line-clamp-1">{tpl.label}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* TIPO DE VEÍCULO */}
           <div className="space-y-3">
@@ -906,17 +1039,7 @@ function CreateArtModal({ onClose }: { onClose: () => void }) {
             </label>
             <div className="flex flex-wrap gap-2">
               {VEHICLE_TYPES.map((v) => (
-                <button
-                  key={v}
-                  onClick={() => setVehicleType(v)}
-                  className={`rounded-xl border px-3 py-1.5 text-[10px] font-black uppercase tracking-wider transition ${
-                    vehicleType === v
-                      ? "border-orange-500/60 bg-orange-500/10 text-orange-400"
-                      : "border-white/10 bg-white/5 text-muted-foreground hover:border-white/20 hover:text-foreground"
-                  }`}
-                >
-                  {v}
-                </button>
+                <button key={v} onClick={() => setVehicleType(v)} className={pill(vehicleType === v)}>{v}</button>
               ))}
             </div>
           </div>
@@ -932,9 +1055,7 @@ function CreateArtModal({ onClose }: { onClose: () => void }) {
                   key={s.value}
                   onClick={() => setVisualStyle(s.value)}
                   className={`flex flex-col items-start gap-0.5 rounded-xl border px-4 py-3 text-left transition ${
-                    visualStyle === s.value
-                      ? "border-orange-500/60 bg-orange-500/10"
-                      : "border-white/10 bg-white/5 hover:border-white/20"
+                    visualStyle === s.value ? "border-orange-500/60 bg-orange-500/10" : "border-white/10 bg-white/5 hover:border-white/20"
                   }`}
                 >
                   <span className={`text-[11px] font-black uppercase tracking-wider ${visualStyle === s.value ? "text-orange-400" : "text-foreground"}`}>{s.label}</span>
@@ -944,19 +1065,68 @@ function CreateArtModal({ onClose }: { onClose: () => void }) {
             </div>
           </div>
 
-          {/* PROMPT PERSONALIZADO */}
+          {/* PERSONALIZAÇÃO AVANÇADA */}
+          <div className="space-y-4 rounded-2xl border border-white/5 bg-white/[0.02] p-4">
+            <p className="text-[10px] font-black uppercase tracking-widest text-primary flex items-center gap-2">
+              <Sparkles className="h-3.5 w-3.5" /> Personalização Avançada
+            </p>
+
+            <div className="space-y-3">
+              <label className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Cenário / Fundo</label>
+              <div className="flex flex-wrap gap-2">
+                <button onClick={() => setBackground("")} className={pill(!background)}>Qualquer</button>
+                {BACKGROUNDS.map((b) => (
+                  <button key={b.label} onClick={() => setBackground(b.value)} className={pill(background === b.value)}>{b.label}</button>
+                ))}
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <label className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Ângulo de Câmera</label>
+              <div className="flex flex-wrap gap-2">
+                <button onClick={() => setCameraAngle("")} className={pill(!cameraAngle)}>Qualquer</button>
+                {CAMERA_ANGLES.map((c) => (
+                  <button key={c.label} onClick={() => setCameraAngle(c.value)} className={pill(cameraAngle === c.value)}>{c.label}</button>
+                ))}
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <label className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Iluminação / Hora</label>
+              <div className="flex flex-wrap gap-2">
+                <button onClick={() => setLighting("")} className={pill(!lighting)}>Qualquer</button>
+                {LIGHTING_OPTIONS.map((l) => (
+                  <button key={l.label} onClick={() => setLighting(l.value)} className={pill(lighting === l.value)}>{l.label}</button>
+                ))}
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Texto na Arte (opcional)</label>
+              <input
+                value={overlayText}
+                onChange={(e) => setOverlayText(e.target.value)}
+                placeholder='Ex: FEIRÃO MAIO • A PARTIR DE R$899/MÊS'
+                className="w-full rounded-xl border border-white/10 bg-background/50 px-4 py-2.5 text-sm font-medium focus:border-orange-500/40 focus:outline-none placeholder:text-muted-foreground/40"
+              />
+            </div>
+          </div>
+
+          {/* DESCRIÇÃO ADICIONAL */}
           <div className="space-y-2">
             <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground flex items-center gap-2">
-              <Flame className="h-3.5 w-3.5" /> Descreva a Cena
+              <Flame className="h-3.5 w-3.5" /> {mode === "photo" ? "Instruções de Transformação" : "Descreva a Cena"}
             </label>
             <textarea
               value={customPrompt}
               onChange={(e) => setCustomPrompt(e.target.value)}
               rows={3}
-              placeholder="Ex: SUV prata em estrada no pôr do sol, família feliz, texto OFERTA ESPECIAL em destaque, fundo de montanhas..."
+              placeholder={mode === "photo"
+                ? "Ex: Transforme em arte cinematográfica, adicione céu dramático, deixe mais premium..."
+                : "Ex: SUV prata com família feliz, pôr do sol dourado, texto OFERTA ESPECIAL em destaque..."
+              }
               className="w-full rounded-xl border border-white/10 bg-background/50 px-4 py-3 text-sm font-medium focus:border-orange-500/40 focus:outline-none resize-none placeholder:text-muted-foreground/40"
             />
-            <p className="text-[9px] text-muted-foreground/60 ml-1">Descreva cenário, cores, texto desejado, emoção. Use um template acima como ponto de partida.</p>
           </div>
 
           {/* PROPORÇÃO */}
@@ -968,9 +1138,7 @@ function CreateArtModal({ onClose }: { onClose: () => void }) {
                   key={opt.value}
                   onClick={() => setAspectRatio(opt.value)}
                   className={`flex flex-col items-center gap-1 rounded-xl border p-3 text-center transition ${
-                    aspectRatio === opt.value
-                      ? "border-orange-500/60 bg-orange-500/10 text-orange-400"
-                      : "border-white/10 bg-white/5 text-muted-foreground hover:border-white/20"
+                    aspectRatio === opt.value ? "border-orange-500/60 bg-orange-500/10 text-orange-400" : "border-white/10 bg-white/5 text-muted-foreground hover:border-white/20"
                   }`}
                 >
                   <span className="text-xs font-black uppercase">{opt.label}</span>
@@ -990,8 +1158,10 @@ function CreateArtModal({ onClose }: { onClose: () => void }) {
                   <Car className="h-7 w-7 text-orange-400 animate-bounce" />
                 </div>
               </div>
-              <p className="text-xs font-black uppercase tracking-widest text-orange-400 animate-pulse">DALL-E 3 criando sua arte automotiva...</p>
-              <p className="text-[10px] text-muted-foreground text-center max-w-xs">Aguarde de 10 a 30 segundos. A IA está compondo a cena com precisão visual.</p>
+              <p className="text-xs font-black uppercase tracking-widest text-orange-400 animate-pulse">
+                {loadingStep || "DALL-E 3 criando sua arte..."}
+              </p>
+              <p className="text-[10px] text-muted-foreground text-center max-w-xs">Aguarde de 15 a 40 segundos.</p>
             </div>
           )}
 
@@ -1002,7 +1172,7 @@ function CreateArtModal({ onClose }: { onClose: () => void }) {
                 <img src={result} alt="Arte automotiva gerada" className="w-full" />
                 <div className="absolute top-3 right-3">
                   <span className="inline-flex items-center gap-1 rounded-lg bg-black/70 backdrop-blur px-2.5 py-1 text-[9px] font-black uppercase tracking-widest text-orange-400 border border-orange-500/20">
-                    <Sparkles className="h-3 w-3" /> DALL-E 3
+                    <Sparkles className="h-3 w-3" /> DALL-E 3 HD
                   </span>
                 </div>
               </div>
@@ -1014,7 +1184,7 @@ function CreateArtModal({ onClose }: { onClose: () => void }) {
                   <Download className="h-4 w-4" /> BAIXAR ARTE
                 </button>
                 <button
-                  onClick={() => { setResult(null); }}
+                  onClick={() => setResult(null)}
                   className="rounded-xl border border-white/10 px-4 py-3 text-xs font-black uppercase tracking-widest text-muted-foreground hover:text-white hover:border-white/20 transition"
                 >
                   Nova Arte
@@ -1025,20 +1195,17 @@ function CreateArtModal({ onClose }: { onClose: () => void }) {
         </div>
 
         {/* RODAPÉ */}
-        <div className="flex items-center justify-end gap-3 border-t border-white/10 p-5 bg-card/50">
-          <button
-            onClick={onClose}
-            className="rounded-xl border border-white/10 px-5 py-3 text-xs font-black uppercase tracking-widest text-muted-foreground hover:text-white transition"
-          >
+        <div className="flex items-center justify-end gap-3 border-t border-white/10 p-5 bg-card/50 flex-shrink-0">
+          <button onClick={onClose} className="rounded-xl border border-white/10 px-5 py-3 text-xs font-black uppercase tracking-widest text-muted-foreground hover:text-white transition">
             Cancelar
           </button>
           {!result && (
             <button
               onClick={handleGenerate}
-              disabled={!customPrompt.trim() || loading}
+              disabled={loading || (mode === "scratch" && !customPrompt.trim()) || (mode === "photo" && !uploadedPhoto)}
               className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-orange-600 to-rose-600 px-6 py-3 text-xs font-black uppercase tracking-widest text-white hover:brightness-110 transition disabled:opacity-40 disabled:pointer-events-none shadow-lg"
             >
-              <Car className="h-4 w-4" /> GERAR ARTE
+              {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Car className="h-4 w-4" />} GERAR ARTE
             </button>
           )}
         </div>
