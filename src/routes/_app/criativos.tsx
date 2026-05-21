@@ -1,17 +1,18 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState, useRef, useEffect, type ChangeEvent } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { 
+import {
   Palette, Plus, Trash2, Tag, Image as ImageIcon, Loader2, Search,
-  Sparkles, Check, AlertTriangle, AlertCircle, TrendingUp, Gauge, FileSearch, 
-  Layers, Lightbulb, Compass, MapPin, Upload, X, ChevronRight, Zap
+  Sparkles, Check, AlertTriangle, AlertCircle, TrendingUp, Gauge, FileSearch,
+  Layers, Lightbulb, Compass, MapPin, Upload, X, ChevronRight, Zap,
+  Wand2, Download, ImagePlus
 } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/PageHeader";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useServerFn } from "@tanstack/react-start";
-import { analyzeCreativeFn, type CreativeAIAnalysis } from "@/lib/criativo.functions";
+import { analyzeCreativeFn, generateCreativeImageFn, type CreativeAIAnalysis, type GeneratedImage } from "@/lib/criativo.functions";
 
 export const Route = createFileRoute("/_app/criativos")({
   head: () => ({ meta: [{ title: "Criativos & IA — NC Suite" }] }),
@@ -30,6 +31,7 @@ type SwipeFile = {
 function CriativosPage() {
   const qc = useQueryClient();
   const [showModal, setShowModal] = useState(false);
+  const [showCreateArt, setShowCreateArt] = useState(false);
   const [search, setSearch] = useState("");
   const [analysisItem, setAnalysisItem] = useState<SwipeFile | null>(null);
 
@@ -78,12 +80,20 @@ function CriativosPage() {
         title="Criativos & Inteligência Visual" 
         description="Biblioteca de anúncios e inteligência visual preditiva para alta performance e neuro-marketing."
         actions={
-          <button 
-            onClick={() => setShowModal(true)} 
-            className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-primary to-secondary px-5 py-3 text-xs font-black uppercase tracking-widest text-background shadow-glow transition hover:scale-102 active:scale-98"
-          >
-            <Plus className="h-4.5 w-4.5 stroke-[3px]" /> ANALISAR NOVO ANÚNCIO
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setShowCreateArt(true)}
+              className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-violet-600 to-purple-600 px-5 py-3 text-xs font-black uppercase tracking-widest text-white shadow-lg transition hover:scale-102 active:scale-98"
+            >
+              <Wand2 className="h-4 w-4" /> CRIAR ARTE COM IA
+            </button>
+            <button
+              onClick={() => setShowModal(true)}
+              className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-primary to-secondary px-5 py-3 text-xs font-black uppercase tracking-widest text-background shadow-glow transition hover:scale-102 active:scale-98"
+            >
+              <Plus className="h-4.5 w-4.5 stroke-[3px]" /> ANALISAR NOVO ANÚNCIO
+            </button>
+          </div>
         }
       />
 
@@ -220,14 +230,19 @@ function CriativosPage() {
         )}
       </AnimatePresence>
       
-      {/* MODAL DE DIAGNÓSTICO COMPLETO "NÍVEL ABSURDO" DE IA */}
+      {/* MODAL DE DIAGNÓSTICO COMPLETO DE IA */}
       <AnimatePresence>
         {analysisItem && (
-          <AIAnalysisModal 
-            item={analysisItem} 
-            onClose={() => setAnalysisItem(null)} 
+          <AIAnalysisModal
+            item={analysisItem}
+            onClose={() => setAnalysisItem(null)}
           />
         )}
+      </AnimatePresence>
+
+      {/* MODAL CRIAR ARTE COM IA */}
+      <AnimatePresence>
+        {showCreateArt && <CreateArtModal onClose={() => setShowCreateArt(false)} />}
       </AnimatePresence>
     </div>
   );
@@ -495,19 +510,18 @@ function AddCreativeModal({ onClose, onSuccess }: AddModalProps) {
 }
 
 // ==========================================
-// MODAL DE DIAGNÓSTICO "NÍVEL ABSURDO" DE IA
+// MODAL DE DIAGNÓSTICO DE IA
 // ==========================================
 function AIAnalysisModal({ item, onClose }: { item: SwipeFile; onClose: () => void }) {
+  const generateImage = useServerFn(generateCreativeImageFn);
+  const [generating, setGenerating] = useState<number | null>(null);
+  const [generatedImages, setGeneratedImages] = useState<Record<number, string>>({});
+
   let report: CreativeAIAnalysis | null = null;
   try {
-    if (item.notes) {
-      report = JSON.parse(item.notes);
-    }
-  } catch (e) {
-    console.error("Erro ao ler JSON de notas de IA:", e);
-  }
+    if (item.notes) report = JSON.parse(item.notes);
+  } catch {}
 
-  // Fallback se não for JSON válido
   if (!report) {
     return (
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/90 backdrop-blur-md p-4">
@@ -521,42 +535,58 @@ function AIAnalysisModal({ item, onClose }: { item: SwipeFile; onClose: () => vo
     );
   }
 
+  const handleGenerateImage = async (index: number, idea: CreativeAIAnalysis["newCreativeIdeas"][0]) => {
+    setGenerating(index);
+    try {
+      const prompt = `${idea.visualDescription}. Headline: ${idea.hookText}. Style: ${idea.psychologicalTriggers.join(", ")}.`;
+      const result = await generateImage({ data: { prompt, aspectRatio: "1:1" } });
+      setGeneratedImages(prev => ({ ...prev, [index]: `data:${result.mimeType};base64,${result.imageBase64}` }));
+      toast.success("Criativo gerado com sucesso!");
+    } catch (e: any) {
+      toast.error(e.message || "Erro ao gerar imagem");
+    } finally {
+      setGenerating(null);
+    }
+  };
+
+  const handleDownload = (dataUrl: string, index: number) => {
+    const a = document.createElement("a");
+    a.href = dataUrl;
+    a.download = `criativo-ia-ideia-${index + 1}-${Date.now()}.png`;
+    a.click();
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/90 backdrop-blur-md p-4 sm:p-6 overflow-y-auto">
-      <motion.div 
-        initial={{ scale: 0.95, opacity: 0 }} 
-        animate={{ scale: 1, opacity: 1 }} 
-        exit={{ scale: 0.95, opacity: 0 }} 
+      <motion.div
+        initial={{ scale: 0.95, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        exit={{ scale: 0.95, opacity: 0 }}
         className="glass-panel w-full max-w-4xl max-h-[90vh] flex flex-col border-white/10 bg-background shadow-2xl overflow-hidden"
       >
-        
         {/* HEADER */}
         <div className="flex items-center justify-between border-b border-white/10 p-5 bg-card/50 flex-shrink-0">
           <div>
             <h3 className="font-display text-lg font-black text-gradient flex items-center gap-2">
               <Sparkles className="h-5 w-5 text-primary" /> Relatório de Inteligência Visual AI
             </h3>
-            <p className="text-xs text-muted-foreground mt-1">Análise baseada em princípios científicos de neuro-marketing e conversão.</p>
+            <p className="text-xs text-muted-foreground mt-1">Análise baseada em neuro-marketing automotivo e estratégia de conversão.</p>
           </div>
           <button onClick={onClose} className="p-2 rounded-full hover:bg-white/5 text-muted-foreground transition">✕</button>
         </div>
 
-        {/* CORPO DE CONTEÚDO SCROLLABLE */}
+        {/* CORPO SCROLLABLE */}
         <div className="flex-1 overflow-y-auto custom-scrollbar p-6 space-y-8">
-          
-          {/* PAINEL HOLOGRÁFICO DE PONTUAÇÃO */}
+
+          {/* PAINEL DE PONTUAÇÃO */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-center p-6 rounded-2xl border border-white/10 bg-white/5 relative overflow-hidden">
             <div className="absolute inset-0 bg-gradient-to-r from-primary/5 via-transparent to-secondary/5 pointer-events-none" />
-            
-            {/* Score Geral */}
             <div className="flex flex-col items-center text-center">
               <div className="h-28 w-28 rounded-full border-4 border-primary/20 flex flex-col items-center justify-center bg-background relative shadow-glow-sm">
                 <span className="text-3xl font-black tracking-tighter text-white font-mono">{report.score}</span>
                 <span className="text-[9px] font-black uppercase text-primary tracking-widest mt-0.5">SCORE GERAL</span>
               </div>
             </div>
-
-            {/* Persuasão & Atração */}
             <div className="flex flex-col justify-center space-y-4">
               <div className="space-y-1">
                 <div className="flex justify-between items-center text-[10px] font-black uppercase tracking-wider text-muted-foreground">
@@ -567,7 +597,6 @@ function AIAnalysisModal({ item, onClose }: { item: SwipeFile; onClose: () => vo
                   <div className="h-full bg-gradient-to-r from-primary to-secondary rounded-full" style={{ width: `${report.persuasionScore}%` }} />
                 </div>
               </div>
-
               <div className="space-y-1">
                 <div className="flex justify-between items-center text-[10px] font-black uppercase tracking-wider text-muted-foreground">
                   <span>Atração Visual</span>
@@ -578,8 +607,6 @@ function AIAnalysisModal({ item, onClose }: { item: SwipeFile; onClose: () => vo
                 </div>
               </div>
             </div>
-
-            {/* Probabilidade de Conversão */}
             <div className="flex flex-col items-center justify-center p-4 rounded-xl border border-white/5 bg-background/50 text-center">
               <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Probabilidade de Conversão</span>
               <span className={`text-2xl font-black uppercase tracking-tighter mt-1.5 ${
@@ -588,42 +615,37 @@ function AIAnalysisModal({ item, onClose }: { item: SwipeFile; onClose: () => vo
                 {report.conversionProbability}
               </span>
               <p className="text-[9px] text-muted-foreground/80 mt-1 font-semibold leading-relaxed">
-                Reflete o impacto no público das localizações e nichos avaliados.
+                Para o nicho e localização avaliados.
               </p>
             </div>
           </div>
 
-          {/* DIAGNÓSTICO DO NICHO E MERCADO */}
+          {/* NICHO E MERCADO */}
           <div className="space-y-4">
             <h4 className="text-sm font-black uppercase tracking-widest text-primary border-b border-white/5 pb-2 flex items-center gap-2">
-              <Compass className="h-4 w-4 text-primary" /> Análise do Mercado e Públicos locais
+              <Compass className="h-4 w-4 text-primary" /> Análise do Mercado Automotivo
             </h4>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              
               <div className="glass-panel p-5 border-white/5 bg-white/[0.02] space-y-2">
                 <h5 className="text-xs font-bold text-white uppercase tracking-wider">Avaliação no Nicho</h5>
                 <p className="text-xs text-muted-foreground leading-relaxed">{report.nicheEvaluation}</p>
               </div>
-
               <div className="glass-panel p-5 border-white/5 bg-white/[0.02] space-y-2">
-                <h5 className="text-xs font-bold text-white uppercase tracking-wider">Acoplamento de Técnicas</h5>
+                <h5 className="text-xs font-bold text-white uppercase tracking-wider">Estratégia de Funil</h5>
                 <p className="text-xs text-muted-foreground leading-relaxed">{report.marketingAlignment}</p>
               </div>
             </div>
           </div>
 
-          {/* ELEMENTOS DETECTADOS VISUALMENTE */}
-          {report.detectedElements && report.detectedElements.length > 0 && (
+          {/* ELEMENTOS DETECTADOS */}
+          {report.detectedElements?.length > 0 && (
             <div className="space-y-3">
               <h4 className="text-sm font-black uppercase tracking-widest text-primary border-b border-white/5 pb-2 flex items-center gap-2">
                 <Layers className="h-4 w-4 text-primary" /> Elementos Identificados por Visão Computacional
               </h4>
               <div className="flex flex-wrap gap-2">
-                {report.detectedElements.map((el, index) => (
-                  <span 
-                    key={index} 
-                    className="inline-flex rounded-lg bg-muted border border-border px-3 py-1.5 text-xs font-black uppercase tracking-wider text-foreground shadow-sm"
-                  >
+                {report.detectedElements.map((el, i) => (
+                  <span key={i} className="inline-flex rounded-lg bg-muted border border-border px-3 py-1.5 text-xs font-black uppercase tracking-wider text-foreground shadow-sm">
                     {el}
                   </span>
                 ))}
@@ -633,35 +655,27 @@ function AIAnalysisModal({ item, onClose }: { item: SwipeFile; onClose: () => vo
 
           {/* PONTOS FORTES E FRACOS */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            
-            {/* Pontos Fortes */}
             <div className="space-y-3">
               <h4 className="text-sm font-black uppercase tracking-widest text-success border-b border-white/5 pb-2 flex items-center gap-2">
-                <Check className="h-4 w-4 text-success" /> Pontos Fortes (Neuro-marketing)
+                <Check className="h-4 w-4 text-success" /> Pontos Fortes
               </h4>
               <ul className="space-y-2">
-                {report.strengths.map((str, index) => (
-                  <li key={index} className="flex gap-2.5 items-start p-3 rounded-xl bg-success/5 border border-success/20 text-xs text-foreground font-medium leading-relaxed">
-                    <span className="flex h-5 w-5 items-center justify-center rounded-full bg-success/20 text-success text-[10px] font-black font-mono mt-0.5">
-                      {index + 1}
-                    </span>
+                {report.strengths.map((str, i) => (
+                  <li key={i} className="flex gap-2.5 items-start p-3 rounded-xl bg-success/5 border border-success/20 text-xs text-foreground font-medium leading-relaxed">
+                    <span className="flex h-5 w-5 items-center justify-center rounded-full bg-success/20 text-success text-[10px] font-black font-mono mt-0.5">{i + 1}</span>
                     <span>{str}</span>
                   </li>
                 ))}
               </ul>
             </div>
-
-            {/* Pontos Fracos */}
             <div className="space-y-3">
               <h4 className="text-sm font-black uppercase tracking-widest text-warning border-b border-white/5 pb-2 flex items-center gap-2">
                 <AlertTriangle className="h-4 w-4 text-warning" /> Oportunidades Perdidas
               </h4>
               <ul className="space-y-2">
-                {report.weaknesses.map((wk, index) => (
-                  <li key={index} className="flex gap-2.5 items-start p-3 rounded-xl bg-warning/5 border border-warning/20 text-xs text-foreground font-medium leading-relaxed">
-                    <span className="flex h-5 w-5 items-center justify-center rounded-full bg-warning/20 text-warning text-[10px] font-black font-mono mt-0.5">
-                      {index + 1}
-                    </span>
+                {report.weaknesses.map((wk, i) => (
+                  <li key={i} className="flex gap-2.5 items-start p-3 rounded-xl bg-warning/5 border border-warning/20 text-xs text-foreground font-medium leading-relaxed">
+                    <span className="flex h-5 w-5 items-center justify-center rounded-full bg-warning/20 text-warning text-[10px] font-black font-mono mt-0.5">{i + 1}</span>
                     <span>{wk}</span>
                   </li>
                 ))}
@@ -669,14 +683,14 @@ function AIAnalysisModal({ item, onClose }: { item: SwipeFile; onClose: () => vo
             </div>
           </div>
 
-          {/* MELHORIAS ACIONÁVEIS (CHECKLIST INTERATIVO) */}
+          {/* CHECKLIST DE OTIMIZAÇÃO */}
           <div className="space-y-4 p-5 rounded-2xl border border-white/5 bg-white/[0.02]">
             <h4 className="text-sm font-black uppercase tracking-widest text-primary flex items-center gap-2">
               <TrendingUp className="h-4 w-4 text-primary" /> Checklist de Otimização Imediata
             </h4>
             <div className="grid grid-cols-1 gap-3">
-              {report.actionableImprovements.map((imp, index) => (
-                <div key={index} className="flex gap-3 items-center p-3 rounded-xl border border-white/5 bg-background/50">
+              {report.actionableImprovements.map((imp, i) => (
+                <div key={i} className="flex gap-3 items-center p-3 rounded-xl border border-white/5 bg-background/50">
                   <input type="checkbox" className="h-4.5 w-4.5 rounded border-white/20 bg-background text-primary focus:ring-primary/20 accent-primary" />
                   <p className="text-xs text-white/90 font-medium">{imp}</p>
                 </div>
@@ -684,36 +698,28 @@ function AIAnalysisModal({ item, onClose }: { item: SwipeFile; onClose: () => vo
             </div>
           </div>
 
-          {/* SUGESTÕES DE NOVOS CRIATIVOS (IA CRIATIVIDADE INFINITA) */}
+          {/* IDEIAS DE NOVOS CRIATIVOS + GERAÇÃO DE IMAGEM */}
           <div className="space-y-4">
-            <h4 className="text-sm font-black uppercase tracking-widest text-violet-600 dark:text-violet-400 border-b border-white/5 pb-2 flex items-center gap-2">
-              <Lightbulb className="h-4 w-4 text-violet-600 dark:text-violet-400" /> Próximas Ideias Criativas Recomendadas pela IA
+            <h4 className="text-sm font-black uppercase tracking-widest text-violet-400 border-b border-white/5 pb-2 flex items-center gap-2">
+              <Lightbulb className="h-4 w-4 text-violet-400" /> Novos Criativos Recomendados pela IA
+              <span className="ml-auto text-[9px] font-black uppercase tracking-widest text-muted-foreground border border-white/10 rounded px-2 py-0.5">Powered by Imagen 3</span>
             </h4>
-            
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               {report.newCreativeIdeas.map((idea, index) => (
                 <div key={index} className="glass-panel p-5 border-white/10 bg-white/5 space-y-4 hover:border-violet-500/30 transition-all duration-300">
-                  
-                  {/* Conceito */}
                   <div className="space-y-1">
-                    <span className="text-[9px] font-black uppercase tracking-widest text-violet-600 dark:text-violet-400">IDEIA RECOMENDADA #{index + 1}</span>
+                    <span className="text-[9px] font-black uppercase tracking-widest text-violet-400">IDEIA #{index + 1}</span>
                     <h5 className="text-sm font-black text-white uppercase tracking-wider">{idea.concept}</h5>
                   </div>
-                  
-                  {/* Hook Text */}
                   <div className="p-3.5 rounded-xl border border-dashed border-white/10 bg-background/40">
-                    <span className="text-[8px] font-black uppercase tracking-widest text-muted-foreground block mb-1">Headline/Gancho de Copy</span>
+                    <span className="text-[8px] font-black uppercase tracking-widest text-muted-foreground block mb-1">Headline / Gancho</span>
                     <p className="text-xs font-black text-primary italic">"{idea.hookText}"</p>
                   </div>
-
-                  {/* Descrição Visual */}
                   <div className="space-y-1.5">
-                    <span className="text-[8px] font-black uppercase tracking-widest text-muted-foreground block">Direção e Roteiro Visual</span>
+                    <span className="text-[8px] font-black uppercase tracking-widest text-muted-foreground block">Roteiro Visual</span>
                     <p className="text-[11px] text-muted-foreground leading-relaxed">{idea.visualDescription}</p>
                   </div>
-
-                  {/* Gatilhos */}
-                  <div className="flex flex-wrap gap-1.5 pt-2">
+                  <div className="flex flex-wrap gap-1.5">
                     {idea.psychologicalTriggers.map((trig, idx) => (
                       <span key={idx} className="inline-flex rounded-lg bg-muted border border-border px-2.5 py-1 text-[9px] font-black uppercase tracking-wider text-foreground">
                         🧠 {trig}
@@ -721,6 +727,30 @@ function AIAnalysisModal({ item, onClose }: { item: SwipeFile; onClose: () => vo
                     ))}
                   </div>
 
+                  {/* Imagem gerada ou botão de gerar */}
+                  {generatedImages[index] ? (
+                    <div className="space-y-2">
+                      <img src={generatedImages[index]} alt={`Criativo gerado ${index + 1}`} className="w-full rounded-xl border border-white/10 shadow-lg" />
+                      <button
+                        onClick={() => handleDownload(generatedImages[index], index)}
+                        className="w-full inline-flex items-center justify-center gap-2 rounded-xl border border-violet-500/30 bg-violet-500/10 px-4 py-2 text-xs font-black uppercase tracking-widest text-violet-400 hover:bg-violet-500/20 transition"
+                      >
+                        <Download className="h-3.5 w-3.5" /> BAIXAR CRIATIVO
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => handleGenerateImage(index, idea)}
+                      disabled={generating !== null}
+                      className="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-violet-600/80 to-purple-600/80 px-4 py-2.5 text-xs font-black uppercase tracking-widest text-white hover:from-violet-600 hover:to-purple-600 transition disabled:opacity-50 disabled:pointer-events-none shadow-lg"
+                    >
+                      {generating === index ? (
+                        <><Loader2 className="h-3.5 w-3.5 animate-spin" /> GERANDO...</>
+                      ) : (
+                        <><Wand2 className="h-3.5 w-3.5" /> GERAR CRIATIVO COM IA</>
+                      )}
+                    </button>
+                  )}
                 </div>
               ))}
             </div>
@@ -728,17 +758,175 @@ function AIAnalysisModal({ item, onClose }: { item: SwipeFile; onClose: () => vo
 
         </div>
 
-        {/* RODAPÉ DO RELATÓRIO */}
+        {/* RODAPÉ */}
         <div className="flex items-center justify-between border-t border-white/10 p-5 bg-card/50 flex-shrink-0">
-          <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Diagnóstico Processado pelo Modelo Gemini 2.5</p>
-          <button 
-            onClick={onClose} 
+          <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Diagnóstico via Gemini 2.5 · Geração via Imagen 3</p>
+          <button
+            onClick={onClose}
             className="rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 px-5 py-2.5 text-xs font-black uppercase tracking-widest text-white transition"
           >
             Fechar
           </button>
         </div>
+      </motion.div>
+    </div>
+  );
+}
 
+// ==========================================
+// MODAL CRIAR ARTE COM IA
+// ==========================================
+function CreateArtModal({ onClose }: { onClose: () => void }) {
+  const generateImage = useServerFn(generateCreativeImageFn);
+  const [prompt, setPrompt] = useState("");
+  const [aspectRatio, setAspectRatio] = useState<"1:1" | "16:9" | "9:16">("1:1");
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState<string | null>(null);
+
+  const handleGenerate = async () => {
+    if (!prompt.trim()) { toast.warning("Descreva o que quer criar!"); return; }
+    setLoading(true);
+    setResult(null);
+    try {
+      const res = await generateImage({ data: { prompt, aspectRatio } });
+      setResult(`data:${res.mimeType};base64,${res.imageBase64}`);
+      toast.success("Arte gerada com sucesso!");
+    } catch (e: any) {
+      toast.error(e.message || "Erro ao gerar arte");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDownload = () => {
+    if (!result) return;
+    const a = document.createElement("a");
+    a.href = result;
+    a.download = `arte-ia-${Date.now()}.png`;
+    a.click();
+  };
+
+  const ASPECT_OPTIONS: { value: "1:1" | "16:9" | "9:16"; label: string; desc: string }[] = [
+    { value: "1:1", label: "Quadrado", desc: "Feed Instagram" },
+    { value: "16:9", label: "Paisagem", desc: "Stories / Reels" },
+    { value: "9:16", label: "Retrato", desc: "YouTube / Banner" },
+  ];
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/90 backdrop-blur-md p-4">
+      <motion.div
+        initial={{ scale: 0.95, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        exit={{ scale: 0.95, opacity: 0 }}
+        className="glass-panel w-full max-w-2xl border-white/10 bg-background flex flex-col max-h-[90vh] shadow-2xl overflow-hidden"
+      >
+        {/* HEADER */}
+        <div className="flex items-center justify-between border-b border-white/10 p-5 bg-card/50">
+          <div>
+            <h3 className="font-display text-lg font-black flex items-center gap-2 text-violet-400">
+              <Wand2 className="h-5 w-5" /> Criar Arte com IA
+            </h3>
+            <p className="text-xs text-muted-foreground mt-1">Descreva a arte desejada e o Imagen 3 irá criá-la.</p>
+          </div>
+          <button onClick={onClose} className="p-2 rounded-full hover:bg-white/5 text-muted-foreground transition">✕</button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto custom-scrollbar p-6 space-y-6">
+          {/* PROMPT */}
+          <div className="space-y-2">
+            <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Descrição da Arte</label>
+            <textarea
+              value={prompt}
+              onChange={(e) => setPrompt(e.target.value)}
+              rows={4}
+              placeholder="Ex: Carro SUV branco em estrada à noite com iluminação dramática, texto 'FEIRÃO MAIO' em destaque, cores azul e branco, estilo publicitário automotivo..."
+              className="w-full rounded-xl border border-white/10 bg-background/50 px-4 py-3 text-sm font-medium focus:border-violet-500/50 focus:outline-none resize-none placeholder:text-muted-foreground/40"
+            />
+            <p className="text-[9px] text-muted-foreground/60 ml-1">Seja específico: modelo do carro, cores, texto, cenário, estilo visual, emoção desejada.</p>
+          </div>
+
+          {/* PROPORÇÃO */}
+          <div className="space-y-2">
+            <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Proporção da Imagem</label>
+            <div className="grid grid-cols-3 gap-3">
+              {ASPECT_OPTIONS.map(opt => (
+                <button
+                  key={opt.value}
+                  onClick={() => setAspectRatio(opt.value)}
+                  className={`flex flex-col items-center gap-1 rounded-xl border p-3 text-center transition ${
+                    aspectRatio === opt.value
+                      ? "border-violet-500/60 bg-violet-500/10 text-violet-400"
+                      : "border-white/10 bg-white/5 text-muted-foreground hover:border-white/20"
+                  }`}
+                >
+                  <span className="text-xs font-black uppercase">{opt.label}</span>
+                  <span className="text-[9px] font-mono">{opt.value}</span>
+                  <span className="text-[9px] text-muted-foreground">{opt.desc}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* RESULTADO */}
+          {loading && (
+            <div className="flex flex-col items-center gap-4 py-10">
+              <div className="relative h-16 w-16">
+                <div className="absolute inset-0 rounded-full border-4 border-violet-500/20 animate-pulse" />
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <Wand2 className="h-7 w-7 text-violet-400 animate-spin" />
+                </div>
+              </div>
+              <p className="text-xs font-black uppercase tracking-widest text-violet-400 animate-pulse">Imagen 3 gerando sua arte...</p>
+              <p className="text-[10px] text-muted-foreground">Pode levar de 10 a 30 segundos</p>
+            </div>
+          )}
+
+          {result && !loading && (
+            <div className="space-y-4">
+              <div className="relative rounded-xl overflow-hidden border border-violet-500/20 shadow-2xl">
+                <img src={result} alt="Arte gerada pela IA" className="w-full" />
+                <div className="absolute top-3 right-3">
+                  <span className="inline-flex items-center gap-1 rounded-lg bg-black/60 backdrop-blur px-2.5 py-1 text-[9px] font-black uppercase tracking-widest text-violet-400 border border-violet-500/20">
+                    <Sparkles className="h-3 w-3" /> Imagen 3
+                  </span>
+                </div>
+              </div>
+              <div className="flex gap-3">
+                <button
+                  onClick={handleDownload}
+                  className="flex-1 inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-violet-600 to-purple-600 px-4 py-3 text-xs font-black uppercase tracking-widest text-white hover:brightness-110 transition shadow-lg"
+                >
+                  <Download className="h-4 w-4" /> BAIXAR ARTE
+                </button>
+                <button
+                  onClick={() => setResult(null)}
+                  className="rounded-xl border border-white/10 px-4 py-3 text-xs font-black uppercase tracking-widest text-muted-foreground hover:text-white hover:border-white/20 transition"
+                >
+                  Nova Arte
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* RODAPÉ */}
+        <div className="flex items-center justify-end gap-3 border-t border-white/10 p-5 bg-card/50">
+          <button
+            onClick={onClose}
+            className="rounded-xl border border-white/10 px-5 py-3 text-xs font-black uppercase tracking-widest text-muted-foreground hover:text-white transition"
+          >
+            Cancelar
+          </button>
+          {!result && (
+            <button
+              onClick={handleGenerate}
+              disabled={!prompt.trim() || loading}
+              className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-violet-600 to-purple-600 px-6 py-3 text-xs font-black uppercase tracking-widest text-white hover:brightness-110 transition disabled:opacity-40 disabled:pointer-events-none shadow-lg"
+            >
+              <Wand2 className="h-4 w-4" /> GERAR ARTE
+            </button>
+          )}
+        </div>
       </motion.div>
     </div>
   );
