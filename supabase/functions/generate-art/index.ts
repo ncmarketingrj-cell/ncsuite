@@ -112,7 +112,6 @@ serve(async (req) => {
         n: 1,
         size,
         quality: "hd",
-        response_format: "b64_json",
       }),
     });
 
@@ -129,11 +128,21 @@ serve(async (req) => {
 
     const data = await res.json();
     const image = data.data?.[0];
-    if (!image?.b64_json) throw new Error("Nenhuma imagem foi gerada");
+    if (!image?.url) throw new Error("Nenhuma imagem foi gerada");
+
+    // Fetch image URL and convert to base64
+    const imgRes = await fetch(image.url);
+    const buffer = await imgRes.arrayBuffer();
+    const bytes = new Uint8Array(buffer);
+    let binary = "";
+    for (let i = 0; i < bytes.byteLength; i++) {
+      binary += String.fromCharCode(bytes[i]);
+    }
+    const imageBase64 = btoa(binary);
 
     return new Response(
       JSON.stringify({
-        imageBase64: image.b64_json,
+        imageBase64,
         mimeType: "image/png",
         revisedPrompt: image.revised_prompt || null,
       }),
