@@ -177,8 +177,21 @@ function MetaAdsManagerPage() {
       const isActive = currentStatus.toUpperCase() === "ACTIVE";
       const targetStatus = isActive ? "PAUSED" : "ACTIVE";
       setChangingId(id);
+
+      // 1. Alterar status real no Facebook Ads
+      const { data, error: apiErr } = await supabase.functions.invoke("sync-meta-ads", {
+        body: {
+          action: "toggle-status",
+          external_id: externalId,
+          status: targetStatus
+        }
+      });
+      if (apiErr) throw apiErr;
+      if (data?.error) throw new Error(data.error);
+
+      // 2. Alterar status local no banco de dados local
       const table = type === "campanhas" ? "campaigns" : type === "conjuntos" ? "ad_sets" : "ads";
-      await (supabase as any).from(table).update({ status: targetStatus }).eq("id", id);
+      await (supabase as any).from(table).update({ status: targetStatus.toLowerCase() }).eq("id", id);
       return { id, targetStatus, type };
     },
     onSuccess: ({ targetStatus }) => { 

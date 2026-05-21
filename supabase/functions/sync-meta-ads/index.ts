@@ -185,9 +185,18 @@ serve(async (req) => {
     let timeParams: Record<string, string> = { date_preset: "maximum" }
     let targetAccountId: string | null = null;
     let triggeredBy = "auto"
-    
+    let action = "sync"
+    let togglePayload: { external_id: string; status: string } | null = null
+
     try {
       const body = await req.json()
+      if (body.action === "toggle-status") {
+        action = "toggle-status"
+        togglePayload = {
+          external_id: body.external_id,
+          status: body.status
+        }
+      }
       if (body.time_range) {
         timeParams = { time_range: JSON.stringify(body.time_range) }
       } else if (body.date_preset) {
@@ -213,6 +222,37 @@ serve(async (req) => {
 
     const token = config.access_token
     const userId = config.user_id
+
+    // Se for ação de toggle de status, executa diretamente no Facebook Ads e encerra!
+    if (action === "toggle-status" && togglePayload) {
+      console.log(`[TOGGLE ${syncId}] Alterando status do objeto ${togglePayload.external_id} para ${togglePayload.status} no Meta...`)
+      
+      const res = await fetch(`${META_API_BASE}/${togglePayload.external_id}`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          status: togglePayload.status,
+          access_token: token
+        })
+      })
+      
+      const resData = await res.json()
+      if (resData.error) {
+        console.error(`[TOGGLE ${syncId}] Erro na API do Meta:`, resData.error)
+        throw new Error(`Erro na API do Meta: ${resData.error.message}`)
+      }
+      
+      console.log(`[TOGGLE ${syncId}] Status alterado no Meta com sucesso!`)
+      return new Response(JSON.stringify({
+        success: true,
+        external_id: togglePayload.external_id,
+        status: togglePayload.status
+      }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" }
+      })
+    }
 
     // 3. Registrar início do sync no histórico
     const { data: syncRecord } = await supabase.from("sync_history").insert({
@@ -262,6 +302,8 @@ serve(async (req) => {
         // NOVO: Buscar campanhas com orçamentos primeiro
         const campaignsWithBudgets = await fetchCampaignsWithBudgets(acc.id, token)
         const budgetMap = new Map(campaignsWithBudgets.map((c: any) => [c.id, {
+          name: c.name || "Campanha Meta",
+          status: c.status ? c.status.toLowerCase() : "active",
           daily_budget: c.daily_budget ? parseFloat(c.daily_budget) / 100 : 0, // Meta retorna em centavos
           lifetime_budget: c.lifetime_budget ? parseFloat(c.lifetime_budget) / 100 : 0,
           budget_currency: acc.currency || 'BRL'
@@ -273,7 +315,16 @@ serve(async (req) => {
           fetchAdSetInsights(acc.id, token, timeParams),
           fetchAdInsights(acc.id, token, timeParams)
         ])
-        syncResults.push({ accountId: acc.id, accountName: acc.name, insights, demographics, adsetInsights, adInsights, budgetMap })
+        syncResults.push({
+          accountId: acc.id,
+          accountName: acc.name,
+          insights,
+          demographics,
+          adsetInsights,
+          adInsights,
+          budgetMap,
+          campaignsWithBudgets
+        })
         
         await new Promise(r => setTimeout(r, 500))
       } catch (err: any) {
@@ -282,18 +333,32 @@ serve(async (req) => {
       }
     }
 
-    for (const { accountId, accountName, insights, demographics, adsetInsights, adInsights, budgetMap } of syncResults) {
-      if (insights.length === 0 && demographics.length === 0 && adsetInsights.length === 0 && adInsights.length === 0) continue
-
-      // Upsert campanhas com orçamentos
+    for (const { accountId, accountName, insights, demographics, adsetInsights, adInsights, budgetMap, campaignsWithBudgets = [] } of syncResults) {
+      // Upsert campanhas com status reais
       const campaignMap = new Map<string, any>()
+      
+      // 1. Alimentar o mapa primeiro com TODAS as campanhas retornadas na listagem real do Facebook Ads (status real)
+      for (const c of campaignsWithBudgets) {
+        campaignMap.set(c.id, {
+          name: c.name || "Campanha Meta",
+          platform: "Meta Ads",
+          status: c.status ? c.status.toLowerCase() : "active", // status real operacional (active, paused, etc) do Meta
+          external_id: c.id,
+          ad_account_id: accountId,
+          daily_budget: c.daily_budget ? parseFloat(c.daily_budget) / 100 : 0,
+          lifetime_budget: c.lifetime_budget ? parseFloat(c.lifetime_budget) / 100 : 0,
+          budget_currency: budgetMap.get(c.id)?.budget_currency || 'BRL'
+        })
+      }
+
+      // 2. Adicionar redundâncias vindas dos insights de histórico
       for (const row of [...insights, ...demographics]) {
         if (!campaignMap.has(row.campaign_id)) {
           const budget = budgetMap.get(row.campaign_id) || {}
           campaignMap.set(row.campaign_id, {
             name: row.campaign_name,
             platform: "Meta Ads",
-            status: "active",
+            status: budget.status || "active",
             external_id: row.campaign_id,
             ad_account_id: accountId,
             daily_budget: budget.daily_budget || 0,
@@ -308,7 +373,7 @@ serve(async (req) => {
           campaignMap.set(row.campaign_id, {
             name: `Campanha Desconhecida (${row.campaign_id})`,
             platform: "Meta Ads",
-            status: "active",
+            status: budget.status || "active",
             external_id: row.campaign_id,
             ad_account_id: accountId,
             daily_budget: budget.daily_budget || 0,

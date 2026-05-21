@@ -182,16 +182,22 @@ function MetricasAvancadasPage() {
     mutationFn: async ({ id, externalId, currentStatus, type }: any) => {
       if (!externalId) throw new Error("ID externo ausente.");
       const isActive = currentStatus.toUpperCase() === "ACTIVE";
-      const action = isActive ? "pause" : "start";
       const targetStatus = isActive ? "PAUSED" : "ACTIVE";
       setChangingId(id);
       
-      // In a real app we'd trigger a campaign-manager edge function updated for all levels
-      // Mas para o escopo local vamos apenas simular e atualizar o DB.
-      // const { data, error } = await supabase.functions.invoke("campaign-manager", { body: { action, payload: externalId, ad_account_id: "ALL", type } });
+      // 1. Alterar status real no Facebook Ads
+      const { data, error: apiErr } = await supabase.functions.invoke("sync-meta-ads", {
+        body: {
+          action: "toggle-status",
+          external_id: externalId,
+          status: targetStatus
+        }
+      });
+      if (apiErr) throw apiErr;
+      if (data?.error) throw new Error(data.error);
       
       const table = type === "campanhas" ? "campaigns" : type === "conjuntos" ? "ad_sets" : "ads";
-      await (supabase as any).from(table).update({ status: targetStatus }).eq("id", id);
+      await (supabase as any).from(table).update({ status: targetStatus.toLowerCase() }).eq("id", id);
       return { id, targetStatus, type };
     },
     onSuccess: ({ targetStatus }) => { 
