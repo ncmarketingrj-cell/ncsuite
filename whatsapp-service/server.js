@@ -4,7 +4,7 @@
 
 const express = require('express');
 const cors = require('cors');
-const { makeWASocket, useMultiFileAuthState, DisconnectReason } = require('@whiskeysockets/baileys');
+const { makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion } = require('@whiskeysockets/baileys');
 const qrcode = require('qrcode-terminal');
 const path = require('path');
 const fs = require('fs');
@@ -30,10 +30,22 @@ async function conectarWhatsApp() {
   // 1. Carregar as credenciais da sessão local
   const { state, saveCreds } = await useMultiFileAuthState(SESSION_DIR);
 
-  // 2. Instanciar o Baileys
+  // 1.5 Buscar a versão mais recente do WhatsApp Web suportada para evitar erro 405
+  let version = [2, 3000, 1017585097]; // fallback robusto
+  try {
+    const latest = await fetchLatestBaileysVersion();
+    version = latest.version;
+    console.log(`ℹ️ [WHATSAPP] Usando versão do WhatsApp Web: v${version.join('.')}`);
+  } catch (e) {
+    console.log('⚠️ [WHATSAPP] Falha ao buscar última versão, usando fallback estável.');
+  }
+
+  // 2. Instanciar o Baileys com cabeçalhos de navegador Chrome modernos para evitar detecção
   sock = makeWASocket({
+    version,
     auth: state,
     printQRInTerminal: false, // Desabilitamos padrão e fazemos manual para ter controle
+    browser: ['Mac OS', 'Chrome', '124.0.0.0'], // Evita erro 405 (Method Not Allowed) do WhatsApp Web
     defaultQueryTimeoutMs: undefined
   });
 
