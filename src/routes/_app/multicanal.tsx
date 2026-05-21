@@ -51,8 +51,16 @@ function MulticanalPage() {
   const { data: dashData, isLoading, refetch } = useQuery({
     queryKey: ["multicanal-performance-consolidated", clientId, accountId, dateRange.startDate.toISOString(), dateRange.endDate.toISOString()],
     queryFn: async () => {
-      const startStr = dateRange.startDate.toISOString().split("T")[0] + "T00:00:00Z";
-      const endStr = dateRange.endDate.toISOString().split("T")[0] + "T23:59:59Z";
+      // Helper para formatar a data local como YYYY-MM-DD de forma segura
+      const getLocalDateStr = (d: Date) => {
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, "0");
+        const day = String(d.getDate()).padStart(2, "0");
+        return `${y}-${m}-${day}`;
+      };
+
+      const startStr = getLocalDateStr(dateRange.startDate);
+      const endStr = getLocalDateStr(dateRange.endDate);
 
       // Puxa campanhas com métricas associadas filtradas por data
       let q = (supabase as any)
@@ -80,8 +88,9 @@ function MulticanalPage() {
 
       const campaignData = (campaignsRaw || []).map((c: any) => {
         const filteredMetrics = (c.metrics || []).filter((m: any) => {
-          const d = new Date(m.date);
-          return d >= new Date(startStr) && d <= new Date(endStr);
+          if (!m.date) return false;
+          // Comparação robusta de string ISO pura YYYY-MM-DD (livre de fuso horário do navegador)
+          return m.date >= startStr && m.date <= endStr;
         });
 
         const cost = filteredMetrics.reduce((s: number, m: any) => s + Number(m.cost || 0), 0);

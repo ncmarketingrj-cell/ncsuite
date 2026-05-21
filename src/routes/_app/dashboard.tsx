@@ -77,11 +77,17 @@ function Dashboard() {
       const diffTime = Math.abs(dateRange.endDate.getTime() - dateRange.startDate.getTime());
       const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
       
-      const startStr = dateRange.startDate.toISOString().split("T")[0] + "T00:00:00Z";
-      const endStr = dateRange.endDate.toISOString().split("T")[0] + "T23:59:59Z";
-      
-      // O período anterior terá a mesma duração exata em dias!
-      const prevStartStr = subDays(dateRange.startDate, diffDays).toISOString().split("T")[0] + "T00:00:00Z";
+      // Helper para formatar a data local como YYYY-MM-DD de forma segura
+      const getLocalDateStr = (d: Date) => {
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, "0");
+        const day = String(d.getDate()).padStart(2, "0");
+        return `${y}-${m}-${day}`;
+      };
+
+      const startStr = getLocalDateStr(dateRange.startDate);
+      const endStr = getLocalDateStr(dateRange.endDate);
+      const prevStartStr = getLocalDateStr(subDays(dateRange.startDate, diffDays));
 
       let metricsQuery = supabase.from("metrics").select(`
         *,
@@ -100,9 +106,10 @@ function Dashboard() {
 
       (metrics || []).forEach(m => {
         if (!m.date) return;
-        const d = new Date(m.date);
-        const isCurrent = d >= new Date(startStr) && d <= new Date(endStr);
-        const isPrevious = d >= new Date(prevStartStr) && d < new Date(startStr);
+        
+        // Comparação robusta de string ISO pura YYYY-MM-DD (livre de fuso horário do navegador)
+        const isCurrent = m.date >= startStr && m.date <= endStr;
+        const isPrevious = m.date >= prevStartStr && m.date < startStr;
         
         if (isCurrent) {
           const date = m.date;
