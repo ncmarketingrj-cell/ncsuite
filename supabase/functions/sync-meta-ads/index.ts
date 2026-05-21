@@ -182,7 +182,7 @@ serve(async (req) => {
 
   try {
     // 1. Ler parâmetros
-    let timeParams: Record<string, string> = { date_preset: "maximum" }
+    let timeParams: Record<string, string> = { date_preset: "last_30d" }
     let targetAccountId: string | null = null;
     let triggeredBy = "auto"
     let action = "sync"
@@ -299,7 +299,7 @@ serve(async (req) => {
       try {
         console.log(`[SYNC] Conta: ${acc.id}`)
         
-        // NOVO: Buscar campanhas com orçamentos primeiro
+        // Buscar campanhas com orçamentos primeiro
         const campaignsWithBudgets = await fetchCampaignsWithBudgets(acc.id, token)
         const budgetMap = new Map(campaignsWithBudgets.map((c: any) => [c.id, {
           name: c.name || "Campanha Meta",
@@ -309,12 +309,29 @@ serve(async (req) => {
           budget_currency: acc.currency || 'BRL'
         }]))
 
-        const [insights, demographics, adsetInsights, adInsights] = await Promise.all([
-          fetchCampaignInsights(acc.id, token, timeParams),
-          fetchDemographicBreakdowns(acc.id, token, timeParams),
-          fetchAdSetInsights(acc.id, token, timeParams),
-          fetchAdInsights(acc.id, token, timeParams)
-        ])
+        // ── MODO RÁPIDO (sync manual ou automático) ──────────────────────────
+        // Para sync manual (triggered_by=manual) buscamos só campaigns + insights de campanha
+        // Evita timeout de 60s da Supabase Edge Function
+        const isFastSync = triggeredBy === "manual" || triggeredBy === "auto"
+        
+        let demographics: any[] = []
+        let adsetInsights: any[] = []
+        let adInsights: any[] = []
+        
+        const insights = await fetchCampaignInsights(acc.id, token, timeParams)
+        
+        if (!isFastSync) {
+          // Sync profundo (ex: triggered_by=deep) busca tudo — para uso futuro
+          const [demo, adset, ads] = await Promise.all([
+            fetchDemographicBreakdowns(acc.id, token, timeParams),
+            fetchAdSetInsights(acc.id, token, timeParams),
+            fetchAdInsights(acc.id, token, timeParams)
+          ])
+          demographics = demo
+          adsetInsights = adset
+          adInsights = ads
+        }
+        
         syncResults.push({
           accountId: acc.id,
           accountName: acc.name,
@@ -326,7 +343,7 @@ serve(async (req) => {
           campaignsWithBudgets
         })
         
-        await new Promise(r => setTimeout(r, 500))
+        await new Promise(r => setTimeout(r, 300))
       } catch (err: any) {
         console.error(`[SYNC] Erro na conta ${acc.id}:`, err.message)
         apiErrors.push(`Conta ${acc.id}: ${err.message}`)
