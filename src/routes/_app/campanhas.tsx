@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
@@ -15,9 +15,10 @@ import { subDays } from "date-fns";
 
 export const Route = createFileRoute("/_app/campanhas")({
   head: () => ({ meta: [{ title: "Meta Ads Manager — NC Suite" }] }),
-  validateSearch: (search: Record<string, unknown>) => ({ 
+  validateSearch: (search: Record<string, unknown>) => ({
     accountId: search.accountId as string | undefined,
-    date: search.date as string | undefined
+    date: search.date as string | undefined,
+    campId: search.campId as string | undefined,
   }),
   component: MetaAdsManagerPage,
 });
@@ -31,7 +32,8 @@ const LEVEL_TABS: { id: Level; label: string; icon: any }[] = [
 ];
 
 function MetaAdsManagerPage() {
-  const { accountId: defaultAccountId, date: filterDate } = Route.useSearch();
+  const { accountId: defaultAccountId, date: filterDate, campId: alertCampId } = Route.useSearch();
+  const highlightRowRef = useRef<HTMLTableRowElement>(null);
   const navigate = useNavigate();
   const qc = useQueryClient();
 
@@ -69,6 +71,15 @@ function MetaAdsManagerPage() {
       }
     }
   }, [filterDate]);
+
+  // Scroll to + highlight alerted campaign once data renders
+  useEffect(() => {
+    if (!alertCampId) return;
+    const t = setTimeout(() => {
+      highlightRowRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 600);
+    return () => clearTimeout(t);
+  }, [alertCampId]);
 
 
   const { data: adAccounts = [] } = useQuery({
@@ -339,8 +350,17 @@ function MetaAdsManagerPage() {
                         const isActive = c.status?.toUpperCase() === "ACTIVE";
                         const isChanging = changingId === c.id;
                         const isSel = selSet.has(c.id);
+                        const isAlerted = alertCampId === c.id;
                         return (
-                          <tr key={c.id} className={`border-b border-white/[0.03] transition-colors ${isSel ? "bg-primary/5" : "hover:bg-white/[0.015]"}`}>
+                          <tr
+                            key={c.id}
+                            ref={isAlerted ? highlightRowRef : undefined}
+                            className={`border-b border-white/[0.03] transition-colors ${
+                              isAlerted
+                                ? "bg-destructive/10 ring-1 ring-inset ring-destructive/40"
+                                : isSel ? "bg-primary/5" : "hover:bg-white/[0.015]"
+                            }`}
+                          >
                             <td className="px-4 py-3 text-center">
                               <button onClick={() => toggleOne(c.id)} className="text-muted-foreground hover:text-primary transition">
                                 {isSel ? <CheckSquare className="h-4 w-4 text-primary" /> : <Square className="h-4 w-4" />}

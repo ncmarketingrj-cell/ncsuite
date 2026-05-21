@@ -130,7 +130,7 @@ async function runThresholdEvaluation() {
                 is_critical:     true,
                 is_read:         false,
                 type:            "alert_cpl",
-                link:            `/campanhas?ref=${campaign.id}`,
+                link:            `/campanhas?accountId=${campaign.ad_account_id}&date=${today}&campId=${campaign.id}`,
               });
               totalNew++;
             }
@@ -159,7 +159,7 @@ async function runThresholdEvaluation() {
                 is_critical:     isCritical,
                 is_read:         false,
                 type:            "alert_budget",
-                link:            `/campanhas?ref=${campaign.id}`,
+                link:            `/campanhas?accountId=${campaign.ad_account_id}&date=${today}&campId=${campaign.id}`,
               });
               totalNew++;
             }
