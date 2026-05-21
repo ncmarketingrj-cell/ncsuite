@@ -161,7 +161,25 @@ function ReunioesPage() {
     return () => { window.removeEventListener("touchmove", onTouch); window.removeEventListener("touchend", onEnd); };
   }, []);
 
-  // Keyboard
+  // Keyboard + presenting pill auto-hide
+  const [pillVisible, setPillVisible] = useState(true);
+  const pillTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const showPill = useCallback(() => {
+    setPillVisible(true);
+    if (pillTimerRef.current) clearTimeout(pillTimerRef.current);
+    pillTimerRef.current = setTimeout(() => setPillVisible(false), 3000);
+  }, []);
+
+  useEffect(() => {
+    if (!presenting) { setPillVisible(true); return; }
+    // Start auto-hide countdown when entering presenting mode
+    showPill();
+    const onMove = () => showPill();
+    window.addEventListener("mousemove", onMove);
+    return () => { window.removeEventListener("mousemove", onMove); if (pillTimerRef.current) clearTimeout(pillTimerRef.current); };
+  }, [presenting, showPill]);
+
   useEffect(() => {
     const h = (e: KeyboardEvent) => {
       if (e.key === "F5") { e.preventDefault(); setPresenting(p => !p); }
@@ -619,21 +637,28 @@ function ReunioesPage() {
         </div>
       )}
 
-      {/* ── Presenting mode bar ── */}
+      {/* ── Presenting: floating pill (no bar) ── */}
       <AnimatePresence>
-        {presenting && (
-          <motion.div initial={{ opacity: 0, y: -32 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -32 }}
-            className="shrink-0 flex items-center justify-between px-5 py-2.5 bg-black/95 border-b border-white/10 backdrop-blur z-50">
-            <div className="flex items-center gap-3">
-              <div className="h-7 w-7 rounded-lg bg-primary flex items-center justify-center">
-                <span className="font-black text-primary-foreground text-[10px]">NC</span>
-              </div>
-              <span className="text-white/70 text-xs font-semibold">Modo Apresentação</span>
-              <span className="text-white/30 text-[10px] hidden md:block">F5 para sair</span>
-            </div>
-            <button onClick={() => setPresenting(false)}
-              className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[11px] font-semibold text-white/60 hover:text-white hover:bg-white/10 transition-all">
-              <X className="h-3.5 w-3.5" /> Sair
+        {presenting && pillVisible && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.85, y: -8 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.85, y: -8 }}
+            transition={{ type: "spring", stiffness: 400, damping: 28 }}
+            className="fixed top-4 right-4 z-[100] flex items-center gap-2.5 rounded-full border border-white/10 bg-black/60 backdrop-blur-xl px-3.5 py-2 shadow-2xl"
+          >
+            <span className="relative flex h-2 w-2">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75" />
+              <span className="relative inline-flex h-2 w-2 rounded-full bg-primary" />
+            </span>
+            <span className="text-[11px] font-semibold text-white/80">Apresentando</span>
+            <span className="text-white/20 text-[10px]">·</span>
+            <span className="text-[10px] text-white/40">F5</span>
+            <button
+              onClick={() => setPresenting(false)}
+              className="ml-1 rounded-full h-5 w-5 flex items-center justify-center bg-white/10 hover:bg-white/25 transition-colors"
+            >
+              <X className="h-3 w-3 text-white/70" />
             </button>
           </motion.div>
         )}
