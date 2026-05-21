@@ -7,7 +7,7 @@ import { formatDistanceToNow, format, subDays } from "date-fns";
 import { ptBR } from "date-fns/locale";
 
 interface SyncButtonProps {
-  mode?: "quick" | "full";
+  mode?: "quick" | "full" | "max";
 }
 
 function getLocalDateStr(d: Date) {
@@ -37,6 +37,7 @@ export function SyncButton({ mode = "quick" }: SyncButtonProps) {
   });
 
   const isQuick = mode === "quick";
+  const isMax   = mode === "max";
 
   const triggerSync = async () => {
     setSyncing(true);
@@ -44,22 +45,29 @@ export function SyncButton({ mode = "quick" }: SyncButtonProps) {
 
     const loadingMsg = isQuick
       ? "🔄 Atualizando últimos 7 dias..."
+      : isMax
+      ? "🔄 Buscando máximo histórico possível (pode levar vários minutos)..."
       : "🔄 Sync completo em andamento (pode levar alguns minutos)...";
-    const t = toast.loading(loadingMsg, { duration: isQuick ? 30000 : 180000 });
+    const t = toast.loading(loadingMsg, { duration: isMax ? 600000 : isQuick ? 30000 : 180000 });
 
     try {
-      const today = new Date();
-      const since = isQuick ? subDays(today, 7) : subDays(today, 60);
-      const body = {
-        triggered_by: "manual",
-        time_range: { since: getLocalDateStr(since), until: getLocalDateStr(today) },
-      };
+      let body: Record<string, any> = { triggered_by: "manual" };
+
+      if (isQuick) {
+        const today = new Date();
+        body.time_range = { since: getLocalDateStr(subDays(today, 7)), until: getLocalDateStr(today) };
+      } else if (isMax) {
+        body.date_preset = "maximum";
+      } else {
+        const today = new Date();
+        body.time_range = { since: getLocalDateStr(subDays(today, 60)), until: getLocalDateStr(today) };
+      }
 
       const { data, error } = await supabase.functions.invoke("sync-meta-ads", { body });
       if (error) throw new Error(error.message);
       if (data?.error) throw new Error(data.error);
 
-      const msg = data?.message || (isQuick ? "7 dias atualizados!" : "Sync completo concluído!");
+      const msg = data?.message || (isQuick ? "7 dias atualizados!" : isMax ? "Histórico máximo sincronizado!" : "Sync completo concluído!");
       toast.success(msg, { id: t, duration: 8000 });
       setLastStatus("success");
       await qc.invalidateQueries();
@@ -96,6 +104,8 @@ export function SyncButton({ mode = "quick" }: SyncButtonProps) {
     ? "SINCRONIZANDO..."
     : isQuick
     ? "ATUALIZAR (7 DIAS)"
+    : isMax
+    ? "SYNC MÁXIMO"
     : "SYNC COMPLETO (60 DIAS)";
 
   const Icon = isQuick ? Zap : Database;
@@ -105,7 +115,7 @@ export function SyncButton({ mode = "quick" }: SyncButtonProps) {
       <div className="text-right">
         <p className="text-[10px] font-black uppercase tracking-[0.15em] text-primary flex items-center gap-1.5 justify-end">
           <Sparkles className="h-3 w-3 text-primary animate-pulse" />
-          {isQuick ? "Sync Rápido" : "Sync Histórico"}
+          {isQuick ? "Sync Rápido" : isMax ? "Sync Máximo" : "Sync Histórico"}
         </p>
         <p className="text-[9px] text-muted-foreground font-semibold mt-0.5">
           {getSyncLabel()}
@@ -125,6 +135,8 @@ export function SyncButton({ mode = "quick" }: SyncButtonProps) {
               ? "bg-destructive/15 border-destructive/30 text-destructive hover:border-destructive/50"
               : isQuick
               ? "bg-gradient-to-r from-primary to-secondary text-background hover:shadow-glow hover:brightness-110 border-transparent"
+              : isMax
+              ? "bg-gradient-to-r from-red-600 to-orange-500 text-background hover:brightness-110 border-transparent"
               : "bg-gradient-to-r from-orange-500 to-amber-500 text-background hover:brightness-110 border-transparent"
           }`}
         >
@@ -143,11 +155,13 @@ export function SyncButton({ mode = "quick" }: SyncButtonProps) {
         <div className="pointer-events-none absolute bottom-full right-0 z-50 mb-2 w-72 origin-bottom scale-95 rounded-xl border border-white/10 bg-background/95 p-3 text-[10px] leading-relaxed text-muted-foreground opacity-0 shadow-2xl transition-all duration-200 group-hover:scale-100 group-hover:opacity-100 backdrop-blur-md">
           <p className="font-bold text-foreground mb-1 flex items-center gap-1">
             <Info className="h-3 w-3 text-primary" />
-            {isQuick ? "Sync Rápido — 7 dias" : "Sync Completo — 60 dias"}
+            {isQuick ? "Sync Rápido — 7 dias" : isMax ? "Sync Máximo — tudo disponível" : "Sync Completo — 60 dias"}
           </p>
           {isQuick
-            ? "Busca os últimos 7 dias de dados de todas as contas, incluindo contas novas. Rápido e sem risco de timeout. Use para manter os dados do dia atualizados."
-            : "Busca o histórico completo de 60 dias. Use na carga inicial, ao adicionar uma conta nova ou ao começar um novo mês. Pode levar alguns minutos."}
+            ? "Busca os últimos 7 dias de todas as contas, incluindo contas novas. Rápido, sem risco de timeout. Use para manter os dados do dia atualizados."
+            : isMax
+            ? "Busca o máximo histórico disponível via date_preset=maximum. Use apenas na carga inicial ou ao adicionar contas novas. Pode levar vários minutos."
+            : "Busca 60 dias de histórico. Use na carga inicial ou ao começar um novo mês. Pode levar alguns minutos."}
         </div>
       </div>
     </div>

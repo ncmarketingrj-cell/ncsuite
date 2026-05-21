@@ -1,7 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Settings, User, Building2, Plug, BookOpen, Cpu, Plus, Trash2, Check, X, Loader2, Wifi, WifiOff, ChevronDown, Zap, Brain, LayoutDashboard, FileText, Target, Upload, Send, Users } from "lucide-react";
+import { Settings, User, Building2, Plug, BookOpen, Cpu, Plus, Trash2, Check, X, Loader2, Wifi, WifiOff, ChevronDown, Zap, Brain, LayoutDashboard, FileText, Target, Upload, Send, Users, Database } from "lucide-react";
+import { SyncButton } from "@/components/SyncButton";
 import { toast } from "sonner";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { PageHeader } from "@/components/PageHeader";
@@ -286,6 +287,21 @@ function TabIntegracoes() {
           {testing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : connected ? <Wifi className="h-3.5 w-3.5 text-success" /> : <WifiOff className="h-3.5 w-3.5" />}
           TESTAR HEARTBEAT
         </button>
+      </div>
+
+      {/* Sync Máximo */}
+      <div className="rounded-2xl border border-red-500/20 bg-red-500/5 p-4 space-y-3">
+        <div className="flex items-start gap-3">
+          <Database className="h-5 w-5 text-red-400 shrink-0 mt-0.5" />
+          <div>
+            <p className="text-sm font-bold text-foreground">Sincronização Máxima</p>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Busca o máximo de histórico disponível para todas as contas vinculadas ao token.
+              Use somente na carga inicial ou ao adicionar contas novas — não há necessidade de rodar novamente após o mês estar carregado.
+            </p>
+          </div>
+        </div>
+        <SyncButton mode="max" />
       </div>
     </div>
   );
