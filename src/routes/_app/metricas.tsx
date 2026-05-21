@@ -23,7 +23,7 @@ import {
 
 export const Route = createFileRoute("/_app/metricas")({
   head: () => ({ meta: [{ title: "Métricas Avançadas — NC Suite" }] }),
-  validateSearch: (search: Record<string, unknown>) => ({
+  validateSearch: (search: Record<string, unknown>): { account?: string; campaign?: string } => ({
     account: (search.account as string) || undefined,
     campaign: (search.campaign as string) || undefined,
   }),

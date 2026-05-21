@@ -15,7 +15,7 @@ import { subDays } from "date-fns";
 
 export const Route = createFileRoute("/_app/campanhas")({
   head: () => ({ meta: [{ title: "Meta Ads Manager — NC Suite" }] }),
-  validateSearch: (search: Record<string, unknown>) => ({
+  validateSearch: (search: Record<string, unknown>): { accountId?: string; date?: string; campId?: string } => ({
     accountId: search.accountId as string | undefined,
     date: search.date as string | undefined,
     campId: search.campId as string | undefined,
@@ -247,7 +247,7 @@ function MetaAdsManagerPage() {
             <div className="flex flex-wrap items-center gap-3">
               <DateRangePicker startDate={dateRange.startDate} endDate={dateRange.endDate} onChange={(s, e) => setDateRange({ startDate: s, endDate: e })} />
               <button
-                onClick={() => navigate({ to: "/campanhas/grafico" })}
+                onClick={() => navigate({ to: "/campanhas/grafico", search: (prev) => prev })}
                 className="flex items-center gap-2 rounded-xl border border-primary/30 bg-primary/10 px-4 py-2.5 text-xs font-bold text-primary hover:bg-primary/20 transition-all"
               >
                 <Pencil className="h-3.5 w-3.5" />
