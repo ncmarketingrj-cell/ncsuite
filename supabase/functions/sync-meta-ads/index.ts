@@ -315,7 +315,7 @@ serve(async (req) => {
       try {
         console.log(`[SYNC] Conta: ${acc.id}`)
         
-        // Buscar campanhas com orçamentos primeiro
+        // Buscar campanhas com orçamentos (sempre)
         const campaignsWithBudgets = await fetchCampaignsWithBudgets(acc.id, token)
         const budgetMap = new Map(campaignsWithBudgets.map((c: any) => [c.id, {
           name: c.name || "Campanha Meta",
@@ -325,13 +325,15 @@ serve(async (req) => {
           budget_currency: acc.currency || 'BRL'
         }]))
 
-        // Buscar tudo em paralelo — janela padrão é D0+D-1, então o volume é sempre pequeno
+        // Buscar TUDO em paralelo — manual usa 60 dias, auto usa D-1+D0 (ambos gerenciáveis)
         const [insights, demographics, adsetInsights, adInsights] = await Promise.all([
           fetchCampaignInsights(acc.id, token, timeParams),
           fetchDemographicBreakdowns(acc.id, token, timeParams),
           fetchAdSetInsights(acc.id, token, timeParams),
           fetchAdInsights(acc.id, token, timeParams)
         ])
+
+        console.log(`[SYNC] Conta ${acc.id} (${triggeredBy}): ${insights.length} insights + ${demographics.length} demographics + ${adsetInsights.length} adsets + ${adInsights.length} ads`)
 
         syncResults.push({
           accountId: acc.id,

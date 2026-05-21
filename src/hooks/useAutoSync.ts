@@ -1,14 +1,12 @@
 // src/hooks/useAutoSync.ts
-// NC Performance Suite — Worker de Sincronização Automática a cada 30 minutos (Full) e 3 minutos (Realtime)
+// NC Performance Suite — Worker de Sincronização Automática a cada 3 minutos (D-1+D0, todos os níveis)
 
 import { useEffect, useRef, useCallback } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 
-const SYNC_INTERVAL_MS = 30 * 60 * 1000; // 30 minutos (Sync Completo)
-const REALTIME_SYNC_INTERVAL_MS = 3 * 60 * 1000; // 3 minutos (Sync Tempo Real - Ontem/Hoje)
-const STORAGE_KEY = "nc_last_auto_sync";
+const REALTIME_SYNC_INTERVAL_MS = 3 * 60 * 1000; // 3 minutos
 const STORAGE_REALTIME_KEY = "nc_last_realtime_sync";
 const STORAGE_SYNC_STATUS = "nc_auto_sync_status";
 
@@ -19,7 +17,6 @@ export type SyncStatus = {
   lastResult: "success" | "error" | "partial" | null;
 };
 
-// Evento customizado para notificar o app sobre mudanças no status de sync
 export const SYNC_STATUS_EVENT = "nc_sync_status_changed";
 
 function dispatchSyncStatus(status: Partial<SyncStatus>) {
@@ -39,7 +36,6 @@ export function getSyncStatus(): SyncStatus {
   };
 }
 
-// Função auxiliar para formatar a data local de forma segura no formato YYYY-MM-DD
 function getLocalDateString(date: Date): string {
   const y = date.getFullYear();
   const m = String(date.getMonth() + 1).padStart(2, "0");
@@ -52,11 +48,7 @@ export function useAutoSync() {
   const isSyncingRef = useRef(false);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const runSync = useCallback(async (
-    triggeredBy: "auto" | "manual" = "auto",
-    syncScope: "full" | "realtime" = "full",
-    overridePreset?: "maximum" | "last_7d"
-  ) => {
+  const runSync = useCallback(async (triggeredBy: "auto" | "manual" = "auto") => {
     if (isSyncingRef.current) {
       console.log("[AUTO-SYNC] Já está sincronizando, ignorando...");
       return;
@@ -65,153 +57,70 @@ export function useAutoSync() {
     isSyncingRef.current = true;
     dispatchSyncStatus({ isSyncing: true });
 
-    if (triggeredBy === "manual") {
-      toast.loading("🔄 Sincronizando com Meta Ads...", { id: "manual-sync" });
-    }
-
     try {
-      let bodyPayload: any = { triggered_by: triggeredBy };
-      
-      if (syncScope === "realtime") {
-        const today = new Date();
-        
-        const timeRange = {
-          since: getLocalDateString(today),
-          until: getLocalDateString(today)
-        };
-        console.log(`[AUTO-SYNC] Iniciando sync em tempo real apenas HOJE (${triggeredBy} | range: ${timeRange.since} até ${timeRange.until})...`);
-        bodyPayload.time_range = timeRange;
-      } else if (overridePreset || triggeredBy === "manual") {
-        const preset = overridePreset || "maximum";
-        console.log(`[AUTO-SYNC] Sincronização manual profunda de histórico (${triggeredBy} | preset: ${preset})...`);
-        bodyPayload.date_preset = preset;
-      } else {
-        // Sync periódico de 30 minutos: Busca dos últimos 7 dias até ONTEM (excluindo hoje)
-        const yesterday = new Date();
-        yesterday.setDate(yesterday.getDate() - 1);
-        
-        const sevenDaysAgo = new Date(yesterday.getTime());
-        sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-        
-        const timeRange = {
-          since: getLocalDateString(sevenDaysAgo),
-          until: getLocalDateString(yesterday)
-        };
-        console.log(`[AUTO-SYNC] Sincronização periódica de 30 minutos (Ontem até 7 dias atrás) | range: ${timeRange.since} até ${timeRange.until}...`);
-        bodyPayload.time_range = timeRange;
-      }
+      // ── SYNC DE 3 MINUTOS: Ontem + Hoje (D-1 e D0), TODOS os níveis ─────
+      // Volume pequeno = nunca dá timeout. Mantém tudo sempre atualizado.
+      const today = new Date();
+      const yesterday = new Date(today.getTime() - 24 * 60 * 60 * 1000);
+      const timeRange = {
+        since: getLocalDateString(yesterday),
+        until: getLocalDateString(today)
+      };
 
-      // 1. Sincronizar dados do Meta Ads
+      console.log(`[AUTO-SYNC] ⚡ Sync 3min (D-1+D0) [${triggeredBy}]: ${timeRange.since} → ${timeRange.until}`);
+
       const { error: syncError } = await supabase.functions.invoke("sync-meta-ads", {
-        body: bodyPayload
+        body: { triggered_by: "auto", time_range: timeRange }
       });
 
       if (syncError) throw syncError;
 
-      // 2. Executar motor de alertas após sync
-      await supabase.functions.invoke("run-automations", {
-        body: {}
-      });
+      // Executar motor de alertas após sync
+      await supabase.functions.invoke("run-automations", { body: {} });
 
-      // 3. Registrar timestamps de sincronização
       const now = new Date().toISOString();
-      if (syncScope === "full") {
-        localStorage.setItem(STORAGE_KEY, now);
-        // O sync completo atualiza ontem e hoje também
-        localStorage.setItem(STORAGE_REALTIME_KEY, now);
-      } else {
-        localStorage.setItem(STORAGE_REALTIME_KEY, now);
-      }
+      localStorage.setItem(STORAGE_REALTIME_KEY, now);
 
-      // Calcular o próximo disparo esperado (o menor intervalo entre os dois timers)
-      const lastFull = localStorage.getItem(STORAGE_KEY);
-      const elapsedFull = lastFull ? Date.now() - new Date(lastFull).getTime() : 0;
-      const remainingFull = Math.max(0, SYNC_INTERVAL_MS - elapsedFull);
-      const remainingRealtime = REALTIME_SYNC_INTERVAL_MS;
+      const nextSync = new Date(Date.now() + REALTIME_SYNC_INTERVAL_MS).toISOString();
+      dispatchSyncStatus({ isSyncing: false, lastSync: now, nextSync, lastResult: "success" });
 
-      const nextEstimate = new Date(Date.now() + Math.min(remainingFull, remainingRealtime)).toISOString();
-
-      dispatchSyncStatus({
-        isSyncing: false,
-        lastSync: now,
-        nextSync: nextEstimate,
-        lastResult: "success"
-      });
-
-      // 4. Invalidar todas as queries do react-query para atualizar a UI imediatamente
+      // Atualizar toda a UI
       qc.invalidateQueries();
 
-      console.log(`[AUTO-SYNC] ✅ Sync (${syncScope}) concluído com sucesso em ${now}`);
-
-      if (triggeredBy === "manual") {
-        toast.success("✅ Dados sincronizados com sucesso!", { id: "manual-sync" });
-      }
+      console.log(`[AUTO-SYNC] ✅ Sync concluído em ${now}. Próximo em ${nextSync}`);
 
     } catch (error: any) {
-      console.error(`[AUTO-SYNC] ❌ Erro no sync (${syncScope}):`, error.message);
-      dispatchSyncStatus({
-        isSyncing: false,
-        lastResult: "error"
-      });
-
-      if (triggeredBy === "manual") {
-        toast.error(`❌ Erro na sincronização: ${error.message}`, { id: "manual-sync" });
-      }
+      console.error("[AUTO-SYNC] ❌ Erro:", error.message);
+      dispatchSyncStatus({ isSyncing: false, lastResult: "error" });
     } finally {
       isSyncingRef.current = false;
     }
   }, [qc]);
 
   useEffect(() => {
-    // Verificar se precisa sincronizar imediatamente
     const checkAndSync = () => {
-      const now = Date.now();
-      const lastFullSyncStr = localStorage.getItem(STORAGE_KEY);
       const lastRealtimeSyncStr = localStorage.getItem(STORAGE_REALTIME_KEY);
-
-      // 1. Primeira sincronização absoluta
-      if (!lastFullSyncStr) {
-        console.log("[AUTO-SYNC] Primeira sincronização: Buscando histórico completo...");
-        runSync("auto", "full", "maximum");
-        return;
-      }
-
-      // 2. Verificar sincronização completa (30 minutos)
-      const lastFullSync = new Date(lastFullSyncStr).getTime();
-      const elapsedFull = now - lastFullSync;
-
-      if (elapsedFull >= SYNC_INTERVAL_MS) {
-        console.log(`[AUTO-SYNC] ${Math.floor(elapsedFull / 60000)} min desde último sync completo. Executando...`);
-        runSync("auto", "full");
-        return;
-      }
-
-      // 3. Verificar sincronização de tempo real (3 minutos)
       const lastRealtimeSync = lastRealtimeSyncStr ? new Date(lastRealtimeSyncStr).getTime() : 0;
-      const elapsedRealtime = now - lastRealtimeSync;
+      const elapsed = Date.now() - lastRealtimeSync;
 
-      if (elapsedRealtime >= REALTIME_SYNC_INTERVAL_MS) {
-        console.log(`[AUTO-SYNC] ${Math.floor(elapsedRealtime / 60000)} min desde último sync de tempo real. Executando ontem/hoje...`);
-        runSync("auto", "realtime");
+      if (elapsed >= REALTIME_SYNC_INTERVAL_MS) {
+        console.log(`[AUTO-SYNC] ${Math.floor(elapsed / 60000)}min desde último sync. Executando...`);
+        runSync("auto");
       } else {
-        // Ainda dentro dos intervalos saudáveis, definir próximo agendamento
-        const remainingFull = SYNC_INTERVAL_MS - elapsedFull;
-        const remainingRealtime = REALTIME_SYNC_INTERVAL_MS - elapsedRealtime;
-        const nextSync = new Date(now + Math.min(remainingFull, remainingRealtime)).toISOString();
-
+        const remaining = REALTIME_SYNC_INTERVAL_MS - elapsed;
         dispatchSyncStatus({
-          lastSync: lastFullSyncStr,
-          nextSync,
+          lastSync: lastRealtimeSyncStr,
+          nextSync: new Date(Date.now() + remaining).toISOString(),
           isSyncing: false,
           lastResult: getSyncStatus().lastResult
         });
       }
     };
 
-    // Executar verificação imediata ao montar o app/hook
+    // Verificar imediatamente ao montar
     checkAndSync();
 
-    // Configurar checagem de intervalo periódica a cada 30 segundos
+    // Checar a cada 30 segundos se já passou os 3 minutos
     intervalRef.current = setInterval(checkAndSync, 30 * 1000);
 
     return () => {

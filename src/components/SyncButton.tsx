@@ -56,7 +56,7 @@ export function SyncButton({ startDate, endDate }: SyncButtonProps = {}) {
       }
 
       const { data, error } = await supabase.functions.invoke("sync-meta-ads", {
-        body: { ...bodyArgs, triggered_by: "manual" }
+        body: { ...bodyArgs, triggered_by: "manual", date_preset: bodyArgs.time_range ? undefined : "last_60d" }
       });
       
       if (error) throw new Error(error.message);
