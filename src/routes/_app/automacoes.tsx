@@ -544,9 +544,18 @@ function AutomationsPage() {
 
 function ThresholdModal({ onClose, accounts, userId, qc }: any) {
   const [accountId, setAccountId] = useState("all");
+  const [excludedIds, setExcludedIds] = useState<Set<string>>(new Set());
   const [maxCpl, setMaxCpl] = useState("");
   const [maxBudgetPct, setMaxBudgetPct] = useState("90");
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const toggleExclusion = (id: string) => {
+    setExcludedIds(prev => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  };
 
   const handleSave = async () => {
     const targetAccountId = accountId === "all" ? null : accountId;
@@ -557,11 +566,12 @@ function ThresholdModal({ onClose, accounts, userId, qc }: any) {
     setIsSubmitting(true);
     try {
       const { error } = await (supabase as any).from("alert_thresholds").insert({
-        user_id:        userId,
-        ad_account_id:  targetAccountId,
-        max_cpl:        maxCpl ? parseFloat(maxCpl) : null,
-        max_budget_pct: maxBudgetPct ? parseInt(maxBudgetPct) : null,
-        is_active:      true,
+        user_id:              userId,
+        ad_account_id:        targetAccountId,
+        max_cpl:              maxCpl ? parseFloat(maxCpl) : null,
+        max_budget_pct:       maxBudgetPct ? parseInt(maxBudgetPct) : null,
+        is_active:            true,
+        excluded_account_ids: accountId === "all" && excludedIds.size > 0 ? Array.from(excludedIds) : [],
       });
       if (error) throw error;
       toast.success("Regra de alerta configurada! O sistema avaliará campanhas a cada 5 min.");
@@ -622,6 +632,41 @@ function ThresholdModal({ onClose, accounts, userId, qc }: any) {
           {accountId !== "all" && (
             <div className="rounded-xl border border-secondary/30 bg-secondary/10 px-4 py-3 text-[11px] text-secondary leading-relaxed">
               <strong>Exceção de conta:</strong> esta regra substituirá o alerta global para a conta selecionada. A regra global não será avaliada para ela.
+            </div>
+          )}
+
+          {accountId === "all" && (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <label className="text-[10px] font-bold text-muted-foreground uppercase">
+                  Excluir Contas (opcional)
+                </label>
+                {excludedIds.size > 0 && (
+                  <span className="text-[9px] font-black text-primary bg-primary/10 px-2 py-0.5 rounded-full">
+                    {excludedIds.size} excluída{excludedIds.size > 1 ? "s" : ""}
+                  </span>
+                )}
+              </div>
+              <div className="max-h-40 overflow-y-auto rounded-lg border border-white/10 bg-background divide-y divide-white/5">
+                {accounts.map((a: any) => (
+                  <button
+                    key={a.id}
+                    type="button"
+                    onClick={() => toggleExclusion(a.id)}
+                    className={`w-full flex items-center gap-3 px-3 py-2.5 text-left text-xs transition hover:bg-white/5 ${excludedIds.has(a.id) ? "text-destructive" : "text-foreground"}`}
+                  >
+                    <span className={`h-4 w-4 rounded border flex items-center justify-center shrink-0 transition ${excludedIds.has(a.id) ? "bg-destructive/20 border-destructive text-destructive" : "border-white/20"}`}>
+                      {excludedIds.has(a.id) && <X className="h-2.5 w-2.5" />}
+                    </span>
+                    {a.name}
+                  </button>
+                ))}
+              </div>
+              {excludedIds.size > 0 && (
+                <p className="text-[9px] text-muted-foreground">
+                  O alerta global não será disparado para as contas marcadas acima.
+                </p>
+              )}
             </div>
           )}
 

@@ -131,6 +131,10 @@ async function runThresholdEvaluation() {
         if (!threshold.ad_account_id && accountsWithSpecificRules.has(campaign.ad_account_id)) {
           continue;
         }
+        // Regra global não avalia contas explicitamente excluídas
+        if (!threshold.ad_account_id && (threshold.excluded_account_ids || []).includes(campaign.ad_account_id)) {
+          continue;
+        }
         // 3. Métricas de HOJE apenas
         const todayMetrics = (campaign.metrics || []).filter(
           (m: any) => m.date?.split("T")[0] === today
