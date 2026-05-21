@@ -176,8 +176,8 @@ function RelatoriosPage() {
   const loadData = async () => {
     if (source === "upload") {
       try {
-        const stored = sessionStorage.getItem("nc_extracted_campaigns");
-        const storedPlat = sessionStorage.getItem("nc_extracted_platform") as "meta" | "google" || "meta";
+        const stored = localStorage.getItem("nc_extracted_campaigns");
+        const storedPlat = (localStorage.getItem("nc_extracted_platform") ?? "meta") as "meta" | "google";
         if (stored) {
           const parsed = JSON.parse(stored);
           const mapped: CampaignData[] = parsed.map((c: any, index: number) => {
