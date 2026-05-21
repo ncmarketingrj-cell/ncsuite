@@ -89,8 +89,9 @@ export function useAutoSync() {
         // Sync periódico de 30 minutos: Busca dos últimos 7 dias até ONTEM (excluindo hoje)
         const yesterday = new Date();
         yesterday.setDate(yesterday.getDate() - 1);
-        const sevenDaysAgo = new Date();
-        sevenDaysAgo.setDate(yesterday.getDate() - 7);
+        
+        const sevenDaysAgo = new Date(yesterday.getTime());
+        sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
         
         const timeRange = {
           since: getLocalDateString(sevenDaysAgo),

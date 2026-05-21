@@ -57,10 +57,18 @@ function AgentePage() {
     queryFn: async () => {
       const thirtyDaysAgo = new Date();
       thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+      const getLocalDateStr = (d: Date) => {
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, "0");
+        const day = String(d.getDate()).padStart(2, "0");
+        return `${y}-${m}-${day}`;
+      };
+
       const { data } = await (supabase as any)
         .from("demographic_metrics")
         .select("age_range, gender, spend, conversions, clicks, impressions")
-        .gte("date", thirtyDaysAgo.toISOString().split("T")[0]);
+        .gte("date", getLocalDateStr(thirtyDaysAgo));
       return data ?? [];
     },
   });

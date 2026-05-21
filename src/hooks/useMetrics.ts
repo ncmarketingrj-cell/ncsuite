@@ -24,7 +24,15 @@ export function useMetrics(filters?: { clientId?: string; days?: number }) {
       if (filters?.days) {
         const from = new Date();
         from.setDate(from.getDate() - filters.days);
-        q = q.gte("date", from.toISOString().split("T")[0]);
+        
+        const getLocalDateStr = (d: Date) => {
+          const y = d.getFullYear();
+          const m = String(d.getMonth() + 1).padStart(2, "0");
+          const day = String(d.getDate()).padStart(2, "0");
+          return `${y}-${m}-${day}`;
+        };
+        
+        q = q.gte("date", getLocalDateStr(from));
       }
       const { data, error } = await q;
       if (error) throw error;

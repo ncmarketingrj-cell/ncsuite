@@ -40,10 +40,17 @@ export function SyncButton({ startDate, endDate }: SyncButtonProps = {}) {
     try {
       let bodyArgs = {};
       if (startDate && endDate) {
+        const getLocalDateStr = (d: Date) => {
+          const y = d.getFullYear();
+          const m = String(d.getMonth() + 1).padStart(2, "0");
+          const day = String(d.getDate()).padStart(2, "0");
+          return `${y}-${m}-${day}`;
+        };
+
         bodyArgs = {
           time_range: {
-            since: startDate.toISOString().split("T")[0],
-            until: endDate.toISOString().split("T")[0],
+            since: getLocalDateStr(startDate),
+            until: getLocalDateStr(endDate),
           }
         };
       }

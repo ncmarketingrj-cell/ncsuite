@@ -210,8 +210,15 @@ function RelatoriosPage() {
     } else {
       // Buscar dados do Meta Ads integrado local
       try {
-        const startLimit = dateRange.startDate.toISOString().split("T")[0];
-        const endLimit = dateRange.endDate.toISOString().split("T")[0];
+        const getLocalDateStr = (d: Date) => {
+          const y = d.getFullYear();
+          const m = String(d.getMonth() + 1).padStart(2, "0");
+          const day = String(d.getDate()).padStart(2, "0");
+          return `${y}-${m}-${day}`;
+        };
+
+        const startLimit = getLocalDateStr(dateRange.startDate);
+        const endLimit = getLocalDateStr(dateRange.endDate);
         
         let qCampaigns = (supabase as any).from("campaigns").select("id, name, ad_account_id");
         if (selectedAccountId !== "all") {

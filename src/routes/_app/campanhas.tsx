@@ -78,11 +78,19 @@ function MetaAdsManagerPage() {
     }
   });
 
+  // Helper para formatar a data local como YYYY-MM-DD de forma segura
+  const getLocalDateStr = (d: Date) => {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${y}-${m}-${day}`;
+  };
+
   const { data: campaigns = [], isLoading: isLoadingCamps } = useQuery({
     queryKey: ["meta-manager-camps", accountFilter, statusFilter, dateRange.startDate.toISOString(), dateRange.endDate.toISOString()],
     queryFn: async () => {
-      const startStr = dateRange.startDate.toISOString().split("T")[0];
-      const endStr = dateRange.endDate.toISOString().split("T")[0];
+      const startStr = getLocalDateStr(dateRange.startDate);
+      const endStr = getLocalDateStr(dateRange.endDate);
       let q = (supabase as any)
         .from("campaigns").select(`id, name, status, budget, external_id, ad_account_id, ad_account:ad_accounts(name), metrics(cost, conversions, impressions, reach, date)`);
       if (accountFilter !== "all") q = q.eq("ad_account_id", accountFilter);
@@ -98,8 +106,8 @@ function MetaAdsManagerPage() {
     enabled: level === "conjuntos" || level === "anuncios",
     queryFn: async () => {
       if (selectedCamps.size === 0) return [];
-      const startStr = dateRange.startDate.toISOString().split("T")[0];
-      const endStr = dateRange.endDate.toISOString().split("T")[0];
+      const startStr = getLocalDateStr(dateRange.startDate);
+      const endStr = getLocalDateStr(dateRange.endDate);
       let q = (supabase as any).from("ad_sets").select(`
         id, name, status, budget, external_id, campaign_id,
         asset_metrics(cost, conversions, impressions, clicks, reach, date)
@@ -115,8 +123,8 @@ function MetaAdsManagerPage() {
     queryKey: ["meta-manager-ads", Array.from(selectedAdSets).join(","), Array.from(selectedCamps).join(","), statusFilter, dateRange.startDate.toISOString(), dateRange.endDate.toISOString()],
     enabled: level === "anuncios",
     queryFn: async () => {
-      const startStr = dateRange.startDate.toISOString().split("T")[0];
-      const endStr = dateRange.endDate.toISOString().split("T")[0];
+      const startStr = getLocalDateStr(dateRange.startDate);
+      const endStr = getLocalDateStr(dateRange.endDate);
       let q = (supabase as any).from("ads").select(`
         id, name, status, external_id, campaign_id, ad_set_id, creative_url,
         asset_metrics(cost, conversions, impressions, clicks, reach, date)
@@ -145,8 +153,8 @@ function MetaAdsManagerPage() {
 
   const syncMutation = useMutation({
     mutationFn: async () => {
-      const startStr = dateRange.startDate.toISOString().split("T")[0];
-      const endStr = dateRange.endDate.toISOString().split("T")[0];
+      const startStr = getLocalDateStr(dateRange.startDate);
+      const endStr = getLocalDateStr(dateRange.endDate);
       const payload: any = { time_range: { since: startStr, until: endStr } };
       if (accountFilter !== "all") payload.account_id = accountFilter;
       const { data, error } = await supabase.functions.invoke("sync-meta-ads", { body: payload });

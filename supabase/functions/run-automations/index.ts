@@ -33,7 +33,18 @@ serve(async (req) => {
       })
     }
 
-    const today = new Date().toISOString().split('T')[0] // YYYY-MM-DD
+    // Obter data de hoje YYYY-MM-DD segura no fuso horário de Brasília (BRT)
+    const formatter = new Intl.DateTimeFormat('pt-BR', {
+      timeZone: 'America/Sao_Paulo',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    })
+    const parts = formatter.formatToParts(new Date())
+    const day = parts.find(p => p.type === 'day')?.value
+    const month = parts.find(p => p.type === 'month')?.value
+    const year = parts.find(p => p.type === 'year')?.value
+    const today = `${year}-${month}-${day}` // YYYY-MM-DD
     let totalAlerts = 0
 
     for (const threshold of thresholds) {
