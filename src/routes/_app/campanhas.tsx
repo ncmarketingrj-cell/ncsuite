@@ -233,6 +233,7 @@ function MetaAdsManagerPage() {
   const totConv = sel.reduce((s: any, c: any) => s + c.t.conversions, 0);
   const totImpr = sel.reduce((s: any, c: any) => s + c.t.impressions, 0);
   const totReach = sel.reduce((s: any, c: any) => s + c.t.reach, 0);
+  const totCpl = totConv > 0 ? totCost / totConv : 0;
 
   return (
     <div className="mx-auto max-w-[1700px] p-1 pb-20">
@@ -342,6 +343,7 @@ function MetaAdsManagerPage() {
                         <th className="px-4 py-3 text-right text-[9px] font-black uppercase tracking-widest text-muted-foreground">Alcance</th>
                         <th className="px-4 py-3 text-right text-[9px] font-black uppercase tracking-widest text-muted-foreground">Impressões</th>
                         <th className="px-4 py-3 text-right text-[9px] font-black uppercase tracking-widest text-violet-600 dark:text-violet-400">Resultados</th>
+                        <th className="px-4 py-3 text-right text-[9px] font-black uppercase tracking-widest text-emerald-500">CPL</th>
                         <th className="px-4 py-3 text-right text-[9px] font-black uppercase tracking-widest text-primary">Gasto</th>
                       </tr>
                     </thead>
@@ -351,6 +353,7 @@ function MetaAdsManagerPage() {
                         const isChanging = changingId === c.id;
                         const isSel = selSet.has(c.id);
                         const isAlerted = alertCampId === c.id;
+                        const cpl = c.t.conversions > 0 ? c.t.cost / c.t.conversions : 0;
                         return (
                           <tr
                             key={c.id}
@@ -383,6 +386,7 @@ function MetaAdsManagerPage() {
                             <td className="px-4 py-3 text-right font-mono text-muted-foreground">{c.t.reach > 0 ? c.t.reach.toLocaleString("pt-BR") : "—"}</td>
                             <td className="px-4 py-3 text-right font-mono text-muted-foreground">{c.t.impressions.toLocaleString("pt-BR")}</td>
                             <td className="px-4 py-3 text-right font-mono font-bold text-violet-600 dark:text-violet-400">{c.t.conversions.toLocaleString("pt-BR")}</td>
+                            <td className="px-4 py-3 text-right font-mono font-bold text-emerald-500">R$ {cpl.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                             <td className="px-4 py-3 text-right font-mono font-bold text-primary">R$ {c.t.cost.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</td>
                           </tr>
                         );
@@ -395,6 +399,7 @@ function MetaAdsManagerPage() {
                         <td className="px-4 py-3 text-right font-mono font-bold text-[10px]">{totReach > 0 ? totReach.toLocaleString("pt-BR") : "—"}</td>
                         <td className="px-4 py-3 text-right font-mono font-bold text-[10px]">{totImpr.toLocaleString("pt-BR")}</td>
                         <td className="px-4 py-3 text-right font-mono font-bold text-violet-600 dark:text-violet-400 text-[10px]">{totConv.toLocaleString("pt-BR")}</td>
+                        <td className="px-4 py-3 text-right font-mono font-bold text-emerald-500 text-[10px]">R$ {totCpl.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                         <td className="px-4 py-3 text-right font-mono font-bold text-primary text-[10px]">R$ {totCost.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</td>
                       </tr>
                     </tfoot>
