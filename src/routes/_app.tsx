@@ -5,7 +5,7 @@ import {
   LayoutDashboard, FileText, Upload, Settings, Loader2,
   Bell, User, Bot, Sparkles, Activity, Zap,
   Sun, Moon, Menu, X, BarChart3, Megaphone, LineChart, Palette, Link2,
-  ChevronDown, RefreshCw, Wifi, WifiOff
+  ChevronDown, RefreshCw, Wifi, WifiOff, Users
 } from "lucide-react";
 import { AuthProvider, useAuth } from "@/lib/auth";
 import { supabase } from "@/integrations/supabase/client";
@@ -38,6 +38,7 @@ const NAV_ITEMS: NavItem[] = [
   { to: "/dashboard", icon: LayoutDashboard, label: "Dashboard" },
   { to: "/metricas", icon: LineChart, label: "Métricas" },
   { to: "/campanhas", icon: Megaphone, label: "Campanhas" },
+  { to: "/reunioes", icon: Users, label: "Reuniões" },
   { to: "/relatorios", icon: FileText, label: "Relatórios" },
   { to: "/upload", icon: Upload, label: "Upload" },
   { to: "/criativos", icon: Palette, label: "Criativos" },
@@ -70,6 +71,11 @@ function Shell() {
       return data;
     },
     enabled: !!user?.id,
+  });
+
+  const filteredNavItems = NAV_ITEMS.filter(item => {
+    if (item.to === "/metricas" && !isAdmin) return false;
+    return true;
   });
 
   const filteredMoreItems = MORE_ITEMS.filter(item => {
@@ -191,7 +197,7 @@ function Shell() {
 
           {/* CENTER: Navigation Links (Desktop) */}
           <nav className="hidden lg:flex items-center gap-1">
-            {NAV_ITEMS.map((item) => {
+            {filteredNavItems.map((item) => {
               const isActive = path === item.to || (item.to !== "/dashboard" && path.startsWith(item.to));
               return (
                 <Link
@@ -462,7 +468,7 @@ function Shell() {
               className="lg:hidden border-t border-border bg-card overflow-hidden"
             >
               <nav className="p-4 grid grid-cols-2 gap-2">
-                {[...NAV_ITEMS, ...filteredMoreItems].map((item) => {
+                {[...filteredNavItems, ...filteredMoreItems].map((item) => {
                   const isActive = path === item.to || path.startsWith(item.to);
                   return (
                     <Link

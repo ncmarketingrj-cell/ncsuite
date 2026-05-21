@@ -5,7 +5,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Megaphone, Search, Play, Pause, Loader2, RefreshCw,
   Layers, ChevronDown, LayoutGrid, Image as ImageIcon,
-  CheckSquare, Square
+  CheckSquare, Square, Pencil
 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
@@ -32,6 +32,7 @@ const LEVEL_TABS: { id: Level; label: string; icon: any }[] = [
 
 function MetaAdsManagerPage() {
   const { accountId: defaultAccountId, date: filterDate } = Route.useSearch();
+  const navigate = useNavigate();
   const qc = useQueryClient();
 
   const [accountFilter, setAccountFilter] = useState(defaultAccountId || "all");
@@ -234,6 +235,13 @@ function MetaAdsManagerPage() {
           actions={
             <div className="flex flex-wrap items-center gap-3">
               <DateRangePicker startDate={dateRange.startDate} endDate={dateRange.endDate} onChange={(s, e) => setDateRange({ startDate: s, endDate: e })} />
+              <button
+                onClick={() => navigate({ to: "/campanhas/grafico" })}
+                className="flex items-center gap-2 rounded-xl border border-primary/30 bg-primary/10 px-4 py-2.5 text-xs font-bold text-primary hover:bg-primary/20 transition-all"
+              >
+                <Pencil className="h-3.5 w-3.5" />
+                Editar Gráficos
+              </button>
             </div>
           }
         />

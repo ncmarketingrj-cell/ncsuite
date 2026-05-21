@@ -1,4 +1,4 @@
-import { createFileRoute, useSearch } from "@tanstack/react-router";
+import { createFileRoute, useSearch, useNavigate } from "@tanstack/react-router";
 import { useState, useMemo, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -6,10 +6,11 @@ import {
   Search, Play, Pause, Loader2, RefreshCw, Layers, ChevronDown,
   LayoutGrid, Image as ImageIcon, CheckSquare, Square, Sparkles,
   BarChart3, TrendingUp, DollarSign, Users, MousePointer2, Target, Zap,
-  PieChart, Activity, Eye, ArrowUpRight
+  PieChart, Activity, Eye, ArrowUpRight, Pencil, Lock
 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/lib/auth";
 import { PageHeader } from "@/components/PageHeader";
 import { DateRangePicker } from "@/components/DateRangePicker";
 import { subDays } from "date-fns";
@@ -36,9 +37,36 @@ const LEVEL_TABS: { id: Level; label: string; icon: any }[] = [
   { id: "anuncios", label: "Anúncios", icon: ImageIcon },
 ];
 
+const ADMIN_EMAILS = ["nc.marketingrj@gmail.com", "hc.marketing.dgt@gmail.com"];
+
 function MetricasAvancadasPage() {
+  const { user } = useAuth();
+  const isAdmin = user?.email ? ADMIN_EMAILS.includes(user.email) : false;
+  const navigate = useNavigate();
   const qc = useQueryClient();
   const searchParams = useSearch({ from: "/_app/metricas" });
+
+  if (!isAdmin) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[60vh] gap-6 text-center px-4">
+        <div className="h-16 w-16 rounded-2xl bg-destructive/10 border border-destructive/20 flex items-center justify-center">
+          <Lock className="h-7 w-7 text-destructive" />
+        </div>
+        <div className="space-y-2">
+          <h2 className="text-2xl font-black tracking-tight">Acesso Restrito</h2>
+          <p className="text-muted-foreground text-sm max-w-xs">
+            Métricas Avançadas é exclusivo para administradores da plataforma.
+          </p>
+        </div>
+        <button
+          onClick={() => navigate({ to: "/dashboard" })}
+          className="px-5 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-bold hover:opacity-90 transition-opacity"
+        >
+          Voltar ao Dashboard
+        </button>
+      </div>
+    );
+  }
   const [accountFilter, setAccountFilter] = useState(searchParams.account || "all");
   const [statusFilter, setStatusFilter] = useState<"all" | "active" | "paused">("all");
   const [search, setSearch] = useState("");
@@ -245,6 +273,13 @@ function MetricasAvancadasPage() {
           actions={
             <div className="flex flex-wrap items-center gap-3">
               <DateRangePicker startDate={dateRange.startDate} endDate={dateRange.endDate} onChange={(s, e) => setDateRange({ startDate: s, endDate: e })} />
+              <button
+                onClick={() => navigate({ to: "/metricas/grafico" })}
+                className="flex items-center gap-2 rounded-xl border border-primary/30 bg-primary/10 px-4 py-2.5 text-xs font-bold text-primary hover:bg-primary/20 transition-all"
+              >
+                <Pencil className="h-3.5 w-3.5" />
+                Editar Gráficos
+              </button>
             </div>
           }
         />

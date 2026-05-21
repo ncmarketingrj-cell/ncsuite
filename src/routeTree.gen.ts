@@ -19,6 +19,7 @@ import { Route as QSlugRouteImport } from './routes/q.$slug'
 import { Route as PSlugRouteImport } from './routes/p.$slug'
 import { Route as AppUtmsRouteImport } from './routes/_app/utms'
 import { Route as AppUploadRouteImport } from './routes/_app/upload'
+import { Route as AppReunioesRouteImport } from './routes/_app/reunioes'
 import { Route as AppRelatoriosRouteImport } from './routes/_app/relatorios'
 import { Route as AppOrganizadorRouteImport } from './routes/_app/organizador'
 import { Route as AppMulticanalRouteImport } from './routes/_app/multicanal'
@@ -30,6 +31,8 @@ import { Route as AppConfigRouteImport } from './routes/_app/config'
 import { Route as AppCampanhasRouteImport } from './routes/_app/campanhas'
 import { Route as AppAutomacoesRouteImport } from './routes/_app/automacoes'
 import { Route as AppAgenteRouteImport } from './routes/_app/agente'
+import { Route as AppMetricasGraficoRouteImport } from './routes/_app/metricas.grafico'
+import { Route as AppCampanhasGraficoRouteImport } from './routes/_app/campanhas.grafico'
 
 const TermsRoute = TermsRouteImport.update({
   id: '/terms',
@@ -78,6 +81,11 @@ const AppUtmsRoute = AppUtmsRouteImport.update({
 const AppUploadRoute = AppUploadRouteImport.update({
   id: '/upload',
   path: '/upload',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppReunioesRoute = AppReunioesRouteImport.update({
+  id: '/reunioes',
+  path: '/reunioes',
   getParentRoute: () => AppRoute,
 } as any)
 const AppRelatoriosRoute = AppRelatoriosRouteImport.update({
@@ -135,6 +143,16 @@ const AppAgenteRoute = AppAgenteRouteImport.update({
   path: '/agente',
   getParentRoute: () => AppRoute,
 } as any)
+const AppMetricasGraficoRoute = AppMetricasGraficoRouteImport.update({
+  id: '/grafico',
+  path: '/grafico',
+  getParentRoute: () => AppMetricasRoute,
+} as any)
+const AppCampanhasGraficoRoute = AppCampanhasGraficoRouteImport.update({
+  id: '/grafico',
+  path: '/grafico',
+  getParentRoute: () => AppCampanhasRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -144,19 +162,22 @@ export interface FileRoutesByFullPath {
   '/terms': typeof TermsRoute
   '/agente': typeof AppAgenteRoute
   '/automacoes': typeof AppAutomacoesRoute
-  '/campanhas': typeof AppCampanhasRoute
+  '/campanhas': typeof AppCampanhasRouteWithChildren
   '/config': typeof AppConfigRoute
   '/criativos': typeof AppCriativosRoute
   '/dashboard': typeof AppDashboardRoute
   '/integrations': typeof AppIntegrationsRoute
-  '/metricas': typeof AppMetricasRoute
+  '/metricas': typeof AppMetricasRouteWithChildren
   '/multicanal': typeof AppMulticanalRoute
   '/organizador': typeof AppOrganizadorRoute
   '/relatorios': typeof AppRelatoriosRoute
+  '/reunioes': typeof AppReunioesRoute
   '/upload': typeof AppUploadRoute
   '/utms': typeof AppUtmsRoute
   '/p/$slug': typeof PSlugRoute
   '/q/$slug': typeof QSlugRoute
+  '/campanhas/grafico': typeof AppCampanhasGraficoRoute
+  '/metricas/grafico': typeof AppMetricasGraficoRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -166,19 +187,22 @@ export interface FileRoutesByTo {
   '/terms': typeof TermsRoute
   '/agente': typeof AppAgenteRoute
   '/automacoes': typeof AppAutomacoesRoute
-  '/campanhas': typeof AppCampanhasRoute
+  '/campanhas': typeof AppCampanhasRouteWithChildren
   '/config': typeof AppConfigRoute
   '/criativos': typeof AppCriativosRoute
   '/dashboard': typeof AppDashboardRoute
   '/integrations': typeof AppIntegrationsRoute
-  '/metricas': typeof AppMetricasRoute
+  '/metricas': typeof AppMetricasRouteWithChildren
   '/multicanal': typeof AppMulticanalRoute
   '/organizador': typeof AppOrganizadorRoute
   '/relatorios': typeof AppRelatoriosRoute
+  '/reunioes': typeof AppReunioesRoute
   '/upload': typeof AppUploadRoute
   '/utms': typeof AppUtmsRoute
   '/p/$slug': typeof PSlugRoute
   '/q/$slug': typeof QSlugRoute
+  '/campanhas/grafico': typeof AppCampanhasGraficoRoute
+  '/metricas/grafico': typeof AppMetricasGraficoRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -190,19 +214,22 @@ export interface FileRoutesById {
   '/terms': typeof TermsRoute
   '/_app/agente': typeof AppAgenteRoute
   '/_app/automacoes': typeof AppAutomacoesRoute
-  '/_app/campanhas': typeof AppCampanhasRoute
+  '/_app/campanhas': typeof AppCampanhasRouteWithChildren
   '/_app/config': typeof AppConfigRoute
   '/_app/criativos': typeof AppCriativosRoute
   '/_app/dashboard': typeof AppDashboardRoute
   '/_app/integrations': typeof AppIntegrationsRoute
-  '/_app/metricas': typeof AppMetricasRoute
+  '/_app/metricas': typeof AppMetricasRouteWithChildren
   '/_app/multicanal': typeof AppMulticanalRoute
   '/_app/organizador': typeof AppOrganizadorRoute
   '/_app/relatorios': typeof AppRelatoriosRoute
+  '/_app/reunioes': typeof AppReunioesRoute
   '/_app/upload': typeof AppUploadRoute
   '/_app/utms': typeof AppUtmsRoute
   '/p/$slug': typeof PSlugRoute
   '/q/$slug': typeof QSlugRoute
+  '/_app/campanhas/grafico': typeof AppCampanhasGraficoRoute
+  '/_app/metricas/grafico': typeof AppMetricasGraficoRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -223,10 +250,13 @@ export interface FileRouteTypes {
     | '/multicanal'
     | '/organizador'
     | '/relatorios'
+    | '/reunioes'
     | '/upload'
     | '/utms'
     | '/p/$slug'
     | '/q/$slug'
+    | '/campanhas/grafico'
+    | '/metricas/grafico'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -245,10 +275,13 @@ export interface FileRouteTypes {
     | '/multicanal'
     | '/organizador'
     | '/relatorios'
+    | '/reunioes'
     | '/upload'
     | '/utms'
     | '/p/$slug'
     | '/q/$slug'
+    | '/campanhas/grafico'
+    | '/metricas/grafico'
   id:
     | '__root__'
     | '/'
@@ -268,10 +301,13 @@ export interface FileRouteTypes {
     | '/_app/multicanal'
     | '/_app/organizador'
     | '/_app/relatorios'
+    | '/_app/reunioes'
     | '/_app/upload'
     | '/_app/utms'
     | '/p/$slug'
     | '/q/$slug'
+    | '/_app/campanhas/grafico'
+    | '/_app/metricas/grafico'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -357,6 +393,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppUploadRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/reunioes': {
+      id: '/_app/reunioes'
+      path: '/reunioes'
+      fullPath: '/reunioes'
+      preLoaderRoute: typeof AppReunioesRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/relatorios': {
       id: '/_app/relatorios'
       path: '/relatorios'
@@ -434,21 +477,60 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppAgenteRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/metricas/grafico': {
+      id: '/_app/metricas/grafico'
+      path: '/grafico'
+      fullPath: '/metricas/grafico'
+      preLoaderRoute: typeof AppMetricasGraficoRouteImport
+      parentRoute: typeof AppMetricasRoute
+    }
+    '/_app/campanhas/grafico': {
+      id: '/_app/campanhas/grafico'
+      path: '/grafico'
+      fullPath: '/campanhas/grafico'
+      preLoaderRoute: typeof AppCampanhasGraficoRouteImport
+      parentRoute: typeof AppCampanhasRoute
+    }
   }
 }
+
+interface AppCampanhasRouteChildren {
+  AppCampanhasGraficoRoute: typeof AppCampanhasGraficoRoute
+}
+
+const AppCampanhasRouteChildren: AppCampanhasRouteChildren = {
+  AppCampanhasGraficoRoute: AppCampanhasGraficoRoute,
+}
+
+const AppCampanhasRouteWithChildren = AppCampanhasRoute._addFileChildren(
+  AppCampanhasRouteChildren,
+)
+
+interface AppMetricasRouteChildren {
+  AppMetricasGraficoRoute: typeof AppMetricasGraficoRoute
+}
+
+const AppMetricasRouteChildren: AppMetricasRouteChildren = {
+  AppMetricasGraficoRoute: AppMetricasGraficoRoute,
+}
+
+const AppMetricasRouteWithChildren = AppMetricasRoute._addFileChildren(
+  AppMetricasRouteChildren,
+)
 
 interface AppRouteChildren {
   AppAgenteRoute: typeof AppAgenteRoute
   AppAutomacoesRoute: typeof AppAutomacoesRoute
-  AppCampanhasRoute: typeof AppCampanhasRoute
+  AppCampanhasRoute: typeof AppCampanhasRouteWithChildren
   AppConfigRoute: typeof AppConfigRoute
   AppCriativosRoute: typeof AppCriativosRoute
   AppDashboardRoute: typeof AppDashboardRoute
   AppIntegrationsRoute: typeof AppIntegrationsRoute
-  AppMetricasRoute: typeof AppMetricasRoute
+  AppMetricasRoute: typeof AppMetricasRouteWithChildren
   AppMulticanalRoute: typeof AppMulticanalRoute
   AppOrganizadorRoute: typeof AppOrganizadorRoute
   AppRelatoriosRoute: typeof AppRelatoriosRoute
+  AppReunioesRoute: typeof AppReunioesRoute
   AppUploadRoute: typeof AppUploadRoute
   AppUtmsRoute: typeof AppUtmsRoute
 }
@@ -456,15 +538,16 @@ interface AppRouteChildren {
 const AppRouteChildren: AppRouteChildren = {
   AppAgenteRoute: AppAgenteRoute,
   AppAutomacoesRoute: AppAutomacoesRoute,
-  AppCampanhasRoute: AppCampanhasRoute,
+  AppCampanhasRoute: AppCampanhasRouteWithChildren,
   AppConfigRoute: AppConfigRoute,
   AppCriativosRoute: AppCriativosRoute,
   AppDashboardRoute: AppDashboardRoute,
   AppIntegrationsRoute: AppIntegrationsRoute,
-  AppMetricasRoute: AppMetricasRoute,
+  AppMetricasRoute: AppMetricasRouteWithChildren,
   AppMulticanalRoute: AppMulticanalRoute,
   AppOrganizadorRoute: AppOrganizadorRoute,
   AppRelatoriosRoute: AppRelatoriosRoute,
+  AppReunioesRoute: AppReunioesRoute,
   AppUploadRoute: AppUploadRoute,
   AppUtmsRoute: AppUtmsRoute,
 }
