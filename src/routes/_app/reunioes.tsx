@@ -344,37 +344,42 @@ function ReunioesPage() {
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
-    const pending: Promise<MediaItem>[] = files.map(f => new Promise(resolve => {
+    if (!files.length) return;
+
+    const newItems: MediaItem[] = files.map(f => {
       const ext = f.name.split(".").pop()?.toLowerCase() || "";
       const size = (f.size / 1024 / 1024).toFixed(1) + " MB";
       const src = URL.createObjectURL(f);
       const base = { id: crypto.randomUUID(), name: f.name, src, size, ext };
 
-      if (ext === "pdf") return resolve({ ...base, type: "pdf" });
-      if (["mp4", "webm", "mov", "avi", "mkv", "m4v"].includes(ext)) return resolve({ ...base, type: "video" });
-      if (["png", "jpg", "jpeg", "gif", "svg", "webp", "bmp", "avif"].includes(ext)) return resolve({ ...base, type: "image" });
-      if (["txt", "md", "markdown"].includes(ext)) {
-        const reader = new FileReader();
-        reader.onload = ev => resolve({ ...base, type: "text", textContent: ev.target?.result as string || "" });
-        reader.readAsText(f, "UTF-8");
-        return;
-      }
-      if (["csv"].includes(ext)) {
-        const reader = new FileReader();
-        reader.onload = ev => resolve({ ...base, type: "text", textContent: ev.target?.result as string || "" });
-        reader.readAsText(f, "UTF-8");
-        return;
-      }
-      if (["pptx", "ppt", "docx", "doc", "xlsx", "xls"].includes(ext)) return resolve({ ...base, type: "office-local" });
-      resolve({ ...base, type: "url" });
-    }));
-
-    Promise.all(pending).then(newItems => {
-      setMediaItems(prev => [...newItems, ...prev]);
-      if (newItems[0]) setActiveMedia(newItems[0]);
-      toast.success(`${newItems.length} arquivo(s) adicionado(s)`);
+      if (ext === "pdf") return { ...base, type: "pdf" as MediaType };
+      if (["mp4", "webm", "mov", "avi", "mkv", "m4v"].includes(ext)) return { ...base, type: "video" as MediaType };
+      if (["png", "jpg", "jpeg", "gif", "svg", "webp", "bmp", "avif"].includes(ext)) return { ...base, type: "image" as MediaType };
+      if (["txt", "md", "markdown", "csv"].includes(ext)) return { ...base, type: "text" as MediaType, textContent: "" };
+      if (["pptx", "ppt", "docx", "doc", "xlsx", "xls"].includes(ext)) return { ...base, type: "office-local" as MediaType };
+      return { ...base, type: "url" as MediaType };
     });
+
+    // State updates synchronously — item appears immediately
+    setMediaItems(prev => [...newItems, ...prev]);
+    setActiveMedia(newItems[0]);
+    toast.success(`${newItems.length} arquivo(s) adicionado(s)`);
     e.target.value = "";
+
+    // Read text files asynchronously and patch content
+    newItems.forEach(item => {
+      if (item.type !== "text") return;
+      const file = files.find(f => f.name === item.name);
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = ev => {
+        setMediaItems(prev => prev.map(m =>
+          m.id === item.id ? { ...m, textContent: ev.target?.result as string || "" } : m
+        ));
+        setActiveMedia(prev => prev?.id === item.id ? { ...prev, textContent: ev.target?.result as string || "" } : prev);
+      };
+      reader.readAsText(file, "UTF-8");
+    });
   };
 
   const handleAddUrl = () => {
@@ -714,7 +719,21 @@ function ReunioesPage() {
           {/* Media viewer */}
           <div className="flex-1 min-h-0 bg-black/5 relative">
             {activeMedia ? (
-              renderPreview(activeMedia)
+              <>
+                {renderPreview(activeMedia)}
+                {/* Overlay X — remove from library */}
+                <button
+                  onClick={() => {
+                    const remaining = mediaItems.filter(m => m.id !== activeMedia.id);
+                    setMediaItems(remaining);
+                    setActiveMedia(remaining[0] ?? null);
+                  }}
+                  className="absolute top-3 right-3 z-20 h-8 w-8 rounded-full bg-black/60 backdrop-blur border border-white/15 flex items-center justify-center text-white/70 hover:text-white hover:bg-black/80 hover:border-white/40 transition-all shadow-lg"
+                  title="Remover da biblioteca"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </>
             ) : (
               <div className="flex flex-col items-center justify-center h-full gap-5 text-muted-foreground">
                 <div className="relative">
