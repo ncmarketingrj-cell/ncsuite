@@ -182,7 +182,22 @@ serve(async (req) => {
 
   try {
     // 1. Ler parâmetros
-    let timeParams: Record<string, string> = { date_preset: "last_30d" }
+    // Padrão: últimos 2 dias (hoje + ontem) no fuso de Brasília
+    const brtFormatter = new Intl.DateTimeFormat('pt-BR', {
+      timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit'
+    })
+    const brtParts = brtFormatter.formatToParts(new Date())
+    const brtDay = brtParts.find(p => p.type === 'day')?.value
+    const brtMonth = brtParts.find(p => p.type === 'month')?.value
+    const brtYear = brtParts.find(p => p.type === 'year')?.value
+    const todayStr = `${brtYear}-${brtMonth}-${brtDay}`
+    const yesterdayDate = new Date(new Date().getTime() - 3 * 60 * 60 * 1000 - 24 * 60 * 60 * 1000)
+    const yParts = brtFormatter.formatToParts(yesterdayDate)
+    const yesterdayStr = `${yParts.find(p => p.type === 'year')?.value}-${yParts.find(p => p.type === 'month')?.value}-${yParts.find(p => p.type === 'day')?.value}`
+    
+    let timeParams: Record<string, string> = {
+      time_range: JSON.stringify({ since: yesterdayStr, until: todayStr })
+    }
     let targetAccountId: string | null = null;
     let triggeredBy = "auto"
     let action = "sync"
@@ -197,6 +212,7 @@ serve(async (req) => {
           status: body.status
         }
       }
+      // Se veio um range explícito do frontend (seletor de datas), respeitar
       if (body.time_range) {
         timeParams = { time_range: JSON.stringify(body.time_range) }
       } else if (body.date_preset) {
@@ -207,7 +223,7 @@ serve(async (req) => {
       }
       if (body.triggered_by) triggeredBy = body.triggered_by
     } catch (_) {
-      console.log(`[SYNC ${syncId}] Usando preset padrão: maximum`)
+      console.log(`[SYNC ${syncId}] Body vazio — usando janela padrão D0+D-1 (${yesterdayStr} → ${todayStr})`)
     }
 
     // 2. Buscar configuração (token master)
@@ -304,34 +320,19 @@ serve(async (req) => {
         const budgetMap = new Map(campaignsWithBudgets.map((c: any) => [c.id, {
           name: c.name || "Campanha Meta",
           status: c.status ? c.status.toLowerCase() : "active",
-          daily_budget: c.daily_budget ? parseFloat(c.daily_budget) / 100 : 0, // Meta retorna em centavos
+          daily_budget: c.daily_budget ? parseFloat(c.daily_budget) / 100 : 0,
           lifetime_budget: c.lifetime_budget ? parseFloat(c.lifetime_budget) / 100 : 0,
           budget_currency: acc.currency || 'BRL'
         }]))
 
-        // ── MODO RÁPIDO (sync manual ou automático) ──────────────────────────
-        // Para sync manual (triggered_by=manual) buscamos só campaigns + insights de campanha
-        // Evita timeout de 60s da Supabase Edge Function
-        const isFastSync = triggeredBy === "manual" || triggeredBy === "auto"
-        
-        let demographics: any[] = []
-        let adsetInsights: any[] = []
-        let adInsights: any[] = []
-        
-        const insights = await fetchCampaignInsights(acc.id, token, timeParams)
-        
-        if (!isFastSync) {
-          // Sync profundo (ex: triggered_by=deep) busca tudo — para uso futuro
-          const [demo, adset, ads] = await Promise.all([
-            fetchDemographicBreakdowns(acc.id, token, timeParams),
-            fetchAdSetInsights(acc.id, token, timeParams),
-            fetchAdInsights(acc.id, token, timeParams)
-          ])
-          demographics = demo
-          adsetInsights = adset
-          adInsights = ads
-        }
-        
+        // Buscar tudo em paralelo — janela padrão é D0+D-1, então o volume é sempre pequeno
+        const [insights, demographics, adsetInsights, adInsights] = await Promise.all([
+          fetchCampaignInsights(acc.id, token, timeParams),
+          fetchDemographicBreakdowns(acc.id, token, timeParams),
+          fetchAdSetInsights(acc.id, token, timeParams),
+          fetchAdInsights(acc.id, token, timeParams)
+        ])
+
         syncResults.push({
           accountId: acc.id,
           accountName: acc.name,
