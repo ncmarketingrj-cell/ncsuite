@@ -138,11 +138,11 @@ async function runThresholdEvaluation() {
               const daysSince = campaign.created_at
                 ? Math.floor((Date.now() - new Date(campaign.created_at).getTime()) / 86_400_000)
                 : null;
-              const duration = daysSince === null ? "" : daysSince === 0 ? " • iniciou hoje" : ` • ${daysSince}d de campanha`;
+              const duration = daysSince === null ? "campanha ativa" : daysSince === 0 ? "iniciou hoje" : `${daysSince}d de campanha`;
               await (supabase as any).from("notifications").insert({
                 user_id:         user?.id ?? null,
-                title:           `🚨 CPL Alto — ${campaign.name.slice(0, 45)}`,
-                message:         `[${accountName}${duration}] CPL hoje R$ ${cpl.toFixed(2)} ultrapassou o limite de R$ ${(threshold.max_cpl as number).toFixed(2)}. Intervenha imediatamente.`,
+                title:           `🚨 CPL Alto — ${accountName}`,
+                message:         `"${campaign.name.slice(0, 50)}" (${duration}) — CPL hoje R$ ${cpl.toFixed(2)} ultrapassou o limite de R$ ${(threshold.max_cpl as number).toFixed(2)}. Intervenha imediatamente.`,
                 is_critical:     true,
                 is_read:         false,
                 type:            "alert_cpl",
@@ -168,10 +168,11 @@ async function runThresholdEvaluation() {
 
             if (!dup?.length) {
               const isCritical = pct >= 95;
+              const accountNameBudget = (campaign.ad_accounts as any)?.name ?? `Conta ${String(campaign.ad_account_id).slice(-6)}`;
               await (supabase as any).from("notifications").insert({
                 user_id:         user?.id ?? null,
-                title:           `⚠️ Orçamento ${pct >= 100 ? "Esgotado" : "Crítico"} — ${campaign.name.slice(0, 45)}`,
-                message:         `${pct.toFixed(0)}% do orçamento diário utilizado${pct >= 100 ? " — campanha pausou automaticamente" : " — prestes a esgotar"}. (Limite: ${threshold.max_budget_pct}%)`,
+                title:           `⚠️ Orçamento ${pct >= 100 ? "Esgotado" : "Crítico"} — ${accountNameBudget}`,
+                message:         `"${campaign.name.slice(0, 50)}" — ${pct.toFixed(0)}% do orçamento diário utilizado${pct >= 100 ? " — campanha pausou automaticamente" : " — prestes a esgotar"}. (Limite: ${threshold.max_budget_pct}%)`,
                 is_critical:     isCritical,
                 is_read:         false,
                 type:            "alert_budget",
