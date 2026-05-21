@@ -56,12 +56,11 @@ serve(async (req) => {
 
       console.log(`[AUTO] Avaliando conta ${accountName} | Max CPL: ${maxCpl ? `R$${maxCpl}` : 'OFF'} | Max Budget: ${maxBudgetPct ? `${maxBudgetPct}%` : 'OFF'}`)
 
-      // 2. Buscar campanhas ativas desta conta com orçamentos (ou todas se for global)
+      // 2. Buscar campanhas ativas desta conta (tolerante a case e sem restrição de orçamento para o CPL funcionar sempre)
       let campQuery = supabase
         .from("campaigns")
-        .select("id, name, external_id, daily_budget, budget_currency, ad_account_id")
-        .eq("status", "active")
-        .gt("daily_budget", 0)
+        .select("id, name, status, external_id, daily_budget, budget_currency, ad_account_id")
+        .in("status", ["active", "ACTIVE"])
 
       if (accountId) {
         campQuery = campQuery.eq("ad_account_id", accountId)
@@ -70,7 +69,7 @@ serve(async (req) => {
       const { data: campaigns } = await campQuery
 
       if (!campaigns?.length) {
-        console.log(`[AUTO] Nenhuma campanha ativa com orçamento na conta ${accountId || 'global'}`)
+        console.log(`[AUTO] Nenhuma campanha ativa na conta ${accountId || 'global'}`)
         continue
       }
 
