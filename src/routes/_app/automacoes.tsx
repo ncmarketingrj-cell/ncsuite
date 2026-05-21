@@ -355,9 +355,16 @@ function AutomationsPage() {
                       <AlertTriangle className={`h-6 w-6 ${th.is_active ? "animate-pulse" : ""}`} />
                     </div>
                     <div>
-                      <h4 className="font-bold text-base text-foreground/90">
-                        {th.ad_accounts?.name || (th.ad_account_id === null ? "Todas as Contas Meta" : "Conta Desconhecida")}
-                      </h4>
+                      <div className="flex items-center gap-2">
+                        <h4 className="font-bold text-base text-foreground/90">
+                          {th.ad_accounts?.name || (th.ad_account_id === null ? "Todas as Contas Meta" : "Conta Desconhecida")}
+                        </h4>
+                        {th.ad_account_id !== null && (
+                          <span className="inline-flex rounded px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider bg-secondary/20 text-secondary border border-secondary/30">
+                            EXCEÇÃO
+                          </span>
+                        )}
+                      </div>
                       <div className="flex flex-wrap items-center gap-2 sm:gap-3 mt-1.5">
                         {th.max_cpl !== null && th.max_cpl !== undefined && (
                           <span className="inline-flex items-center gap-1 rounded bg-white/5 px-2 py-1 text-[10px] font-mono text-muted-foreground">
@@ -611,6 +618,12 @@ function ThresholdModal({ onClose, accounts, userId, qc }: any) {
               ))}
             </select>
           </div>
+
+          {accountId !== "all" && (
+            <div className="rounded-xl border border-secondary/30 bg-secondary/10 px-4 py-3 text-[11px] text-secondary leading-relaxed">
+              <strong>Exceção de conta:</strong> esta regra substituirá o alerta global para a conta selecionada. A regra global não será avaliada para ela.
+            </div>
+          )}
 
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">

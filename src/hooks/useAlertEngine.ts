@@ -85,6 +85,13 @@ async function runThresholdEvaluation() {
     const dedupSince = new Date(Date.now() - DEDUP_WINDOW_MS).toISOString();
     const { data: { user } } = await supabase.auth.getUser();
 
+    // Contas com regra específica — a regra global não se aplica a elas
+    const accountsWithSpecificRules = new Set(
+      (thresholds as any[])
+        .filter((t: any) => t.ad_account_id !== null)
+        .map((t: any) => t.ad_account_id)
+    );
+
     for (const threshold of thresholds as any[]) {
       // 2. Buscar campanhas ATIVAS — para a conta específica ou todas
       let q = (supabase as any)
@@ -100,6 +107,10 @@ async function runThresholdEvaluation() {
       if (!campaigns?.length) continue;
 
       for (const campaign of campaigns as any[]) {
+        // Regra global não avalia contas que têm regra própria (a regra específica tem prioridade)
+        if (!threshold.ad_account_id && accountsWithSpecificRules.has(campaign.ad_account_id)) {
+          continue;
+        }
         // 3. Métricas de HOJE apenas
         const todayMetrics = (campaign.metrics || []).filter(
           (m: any) => m.date?.split("T")[0] === today
