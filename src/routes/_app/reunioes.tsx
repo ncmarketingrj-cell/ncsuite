@@ -346,40 +346,31 @@ function ReunioesPage() {
     const files = Array.from(e.target.files || []);
     if (!files.length) return;
 
-    const newItems: MediaItem[] = files.map(f => {
+    const pending: Promise<MediaItem>[] = files.map(f => new Promise(resolve => {
       const ext = f.name.split(".").pop()?.toLowerCase() || "";
       const size = (f.size / 1024 / 1024).toFixed(1) + " MB";
       const src = URL.createObjectURL(f);
       const base = { id: crypto.randomUUID(), name: f.name, src, size, ext };
 
-      if (ext === "pdf") return { ...base, type: "pdf" as MediaType };
-      if (["mp4", "webm", "mov", "avi", "mkv", "m4v"].includes(ext)) return { ...base, type: "video" as MediaType };
-      if (["png", "jpg", "jpeg", "gif", "svg", "webp", "bmp", "avif"].includes(ext)) return { ...base, type: "image" as MediaType };
-      if (["txt", "md", "markdown", "csv"].includes(ext)) return { ...base, type: "text" as MediaType, textContent: "" };
-      if (["pptx", "ppt", "docx", "doc", "xlsx", "xls"].includes(ext)) return { ...base, type: "office-local" as MediaType };
-      return { ...base, type: "url" as MediaType };
-    });
+      if (ext === "pdf") return resolve({ ...base, type: "pdf" });
+      if (["mp4", "webm", "mov", "avi", "mkv", "m4v"].includes(ext)) return resolve({ ...base, type: "video" });
+      if (["png", "jpg", "jpeg", "gif", "svg", "webp", "bmp", "avif"].includes(ext)) return resolve({ ...base, type: "image" });
+      if (["txt", "md", "markdown", "csv"].includes(ext)) {
+        const reader = new FileReader();
+        reader.onload = ev => resolve({ ...base, type: "text", textContent: ev.target?.result as string || "" });
+        reader.readAsText(f, "UTF-8");
+        return;
+      }
+      if (["pptx", "ppt", "docx", "doc", "xlsx", "xls"].includes(ext)) return resolve({ ...base, type: "office-local" });
+      resolve({ ...base, type: "url" });
+    }));
 
-    // State updates synchronously — item appears immediately
-    setMediaItems(prev => [...newItems, ...prev]);
-    setActiveMedia(newItems[0]);
-    toast.success(`${newItems.length} arquivo(s) adicionado(s)`);
+    Promise.all(pending).then(newItems => {
+      setMediaItems(prev => [...newItems, ...prev]);
+      if (newItems[0]) setActiveMedia(newItems[0]);
+      toast.success(`${newItems.length} arquivo(s) adicionado(s)`);
+    });
     e.target.value = "";
-
-    // Read text files asynchronously and patch content
-    newItems.forEach(item => {
-      if (item.type !== "text") return;
-      const file = files.find(f => f.name === item.name);
-      if (!file) return;
-      const reader = new FileReader();
-      reader.onload = ev => {
-        setMediaItems(prev => prev.map(m =>
-          m.id === item.id ? { ...m, textContent: ev.target?.result as string || "" } : m
-        ));
-        setActiveMedia(prev => prev?.id === item.id ? { ...prev, textContent: ev.target?.result as string || "" } : prev);
-      };
-      reader.readAsText(file, "UTF-8");
-    });
   };
 
   const handleAddUrl = () => {
@@ -558,7 +549,11 @@ function ReunioesPage() {
       );
     }
 
-    // ── PDF / Google / Office Online URL / generic iframe ──
+    // ── PDF (local blob: ou URL remota) ───────────────────
+    if (item.type === "pdf")
+      return <iframe src={item.src} title={item.name} className="w-full h-full border-0" allow="fullscreen" />;
+
+    // ── Google / Office Online URL / generic iframe ────────
     const embedUrl = item.embedSrc || (!item.src.startsWith("blob:") ? item.src : null);
     if (embedUrl)
       return <iframe src={embedUrl} title={item.name} className="w-full h-full border-0" allow="fullscreen" />;
