@@ -12,8 +12,28 @@ let isCurrentlyEvaluating = false;
 
 // ─── Eval status (persisted in localStorage) ──────────────────────────────────
 const EVAL_STATUS_KEY  = "nc_alert_eval_status";
+const DEDUP_CACHE_KEY  = "nc_alert_dedup_v2";
 const EVAL_INTERVAL_MS = 5 * 60 * 1000;  // 5 minutos
 const DEDUP_WINDOW_MS  = 60 * 60 * 1000; // 1 hora — não re-alertar mesma campanha
+
+// Dedup por localStorage — primário, síncrono, sem dependência de rede
+function isDedupBlocked(key: string): boolean {
+  try {
+    const cache: Record<string, string> = JSON.parse(localStorage.getItem(DEDUP_CACHE_KEY) || "{}");
+    const last = cache[key];
+    return !!last && (Date.now() - new Date(last).getTime()) < DEDUP_WINDOW_MS;
+  } catch { return false; }
+}
+
+function markDedupFired(key: string): void {
+  try {
+    const cache: Record<string, string> = JSON.parse(localStorage.getItem(DEDUP_CACHE_KEY) || "{}");
+    const cutoff = Date.now() - 2 * DEDUP_WINDOW_MS;
+    for (const k in cache) { if (new Date(cache[k]).getTime() < cutoff) delete cache[k]; }
+    cache[key] = new Date().toISOString();
+    localStorage.setItem(DEDUP_CACHE_KEY, JSON.stringify(cache));
+  } catch {}
+}
 
 export const EVAL_REQUEST_EVENT = "nc:eval-request";
 export const EVAL_STATUS_EVENT  = "nc:eval-status";
@@ -124,31 +144,37 @@ async function runThresholdEvaluation() {
           const cpl = todayCost / todayConv;
 
           if (cpl > threshold.max_cpl) {
-            // Dedup: já alertei essa campanha por CPL na última hora?
-            const { data: dup } = await (supabase as any)
-              .from("notifications")
-              .select("id")
-              .eq("type", "alert_cpl")
-              .gte("created_at", dedupSince)
-              .ilike("link", `%${campaign.id}%`)
-              .limit(1);
+            const cplKey = `cpl_${campaign.id}`;
+            if (!isDedupBlocked(cplKey)) {
+              // DB dedup como verificação secundária (com user_id e tratamento de erro)
+              const { data: dup, error: dupErr } = await (supabase as any)
+                .from("notifications")
+                .select("id")
+                .eq("type", "alert_cpl")
+                .eq("user_id", user?.id)
+                .gte("created_at", dedupSince)
+                .ilike("link", `%${campaign.id}%`)
+                .limit(1);
 
-            if (!dup?.length) {
-              const accountName = (campaign.ad_accounts as any)?.name ?? `Conta ${String(campaign.ad_account_id).slice(-6)}`;
-              const daysSince = campaign.created_at
-                ? Math.floor((Date.now() - new Date(campaign.created_at).getTime()) / 86_400_000)
-                : null;
-              const duration = daysSince === null ? "campanha ativa" : daysSince === 0 ? "iniciou hoje" : `${daysSince}d de campanha`;
-              await (supabase as any).from("notifications").insert({
-                user_id:         user?.id ?? null,
-                title:           `🚨 CPL Alto — ${campaign.name.slice(0, 35)}`,
-                message:         `${accountName} • ${duration} — CPL hoje R$ ${cpl.toFixed(2)} ultrapassou o limite de R$ ${(threshold.max_cpl as number).toFixed(2)}. Intervenha imediatamente.`,
-                is_critical:     true,
-                is_read:         false,
-                type:            "alert_cpl",
-                link:            `/campanhas?accountId=${campaign.ad_account_id}&date=${today}&campId=${campaign.id}`,
-              });
-              totalNew++;
+              // Se erro na query de dedup → tratar como "já alertado" (seguro)
+              if (!dupErr && !dup?.length) {
+                const accountName = (campaign.ad_accounts as any)?.name ?? `Conta ${String(campaign.ad_account_id).slice(-6)}`;
+                const daysSince = campaign.created_at
+                  ? Math.floor((Date.now() - new Date(campaign.created_at).getTime()) / 86_400_000)
+                  : null;
+                const duration = daysSince === null ? "campanha ativa" : daysSince === 0 ? "iniciou hoje" : `${daysSince}d de campanha`;
+                await (supabase as any).from("notifications").insert({
+                  user_id:         user?.id ?? null,
+                  title:           `🚨 CPL Alto — ${campaign.name.slice(0, 35)}`,
+                  message:         `${accountName} • ${duration} — CPL hoje R$ ${cpl.toFixed(2)} ultrapassou o limite de R$ ${(threshold.max_cpl as number).toFixed(2)}. Intervenha imediatamente.`,
+                  is_critical:     true,
+                  is_read:         false,
+                  type:            "alert_cpl",
+                  link:            `/campanhas?accountId=${campaign.ad_account_id}&date=${today}&campId=${campaign.id}`,
+                });
+                markDedupFired(cplKey);
+                totalNew++;
+              }
             }
           }
         }
@@ -158,27 +184,32 @@ async function runThresholdEvaluation() {
           const pct = (todayCost / campaign.budget) * 100;
 
           if (pct >= (threshold.max_budget_pct as number)) {
-            const { data: dup } = await (supabase as any)
-              .from("notifications")
-              .select("id")
-              .eq("type", "alert_budget")
-              .gte("created_at", dedupSince)
-              .ilike("link", `%${campaign.id}%`)
-              .limit(1);
+            const budgetKey = `budget_${campaign.id}`;
+            if (!isDedupBlocked(budgetKey)) {
+              const { data: dup, error: dupErr } = await (supabase as any)
+                .from("notifications")
+                .select("id")
+                .eq("type", "alert_budget")
+                .eq("user_id", user?.id)
+                .gte("created_at", dedupSince)
+                .ilike("link", `%${campaign.id}%`)
+                .limit(1);
 
-            if (!dup?.length) {
-              const isCritical = pct >= 95;
-              const accountNameBudget = (campaign.ad_accounts as any)?.name ?? `Conta ${String(campaign.ad_account_id).slice(-6)}`;
-              await (supabase as any).from("notifications").insert({
-                user_id:         user?.id ?? null,
-                title:           `⚠️ Orçamento ${pct >= 100 ? "Esgotado" : "Crítico"} — ${campaign.name.slice(0, 35)}`,
-                message:         `${accountNameBudget} — ${pct.toFixed(0)}% do orçamento diário utilizado${pct >= 100 ? " — campanha pausou automaticamente" : " — prestes a esgotar"}. (Limite: ${threshold.max_budget_pct}%)`,
-                is_critical:     isCritical,
-                is_read:         false,
-                type:            "alert_budget",
-                link:            `/campanhas?accountId=${campaign.ad_account_id}&date=${today}&campId=${campaign.id}`,
-              });
-              totalNew++;
+              if (!dupErr && !dup?.length) {
+                const isCritical = pct >= 95;
+                const accountNameBudget = (campaign.ad_accounts as any)?.name ?? `Conta ${String(campaign.ad_account_id).slice(-6)}`;
+                await (supabase as any).from("notifications").insert({
+                  user_id:         user?.id ?? null,
+                  title:           `⚠️ Orçamento ${pct >= 100 ? "Esgotado" : "Crítico"} — ${campaign.name.slice(0, 35)}`,
+                  message:         `${accountNameBudget} — ${pct.toFixed(0)}% do orçamento diário utilizado${pct >= 100 ? " — campanha pausou automaticamente" : " — prestes a esgotar"}. (Limite: ${threshold.max_budget_pct}%)`,
+                  is_critical:     isCritical,
+                  is_read:         false,
+                  type:            "alert_budget",
+                  link:            `/campanhas?accountId=${campaign.ad_account_id}&date=${today}&campId=${campaign.id}`,
+                });
+                markDedupFired(budgetKey);
+                totalNew++;
+              }
             }
           }
         }
