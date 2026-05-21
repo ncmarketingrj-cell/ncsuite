@@ -1,0 +1,16 @@
+{
+  "name": "nc-whatsapp-gateway",
+  "version": "1.0.0",
+  "description": "Gateway de Envio de Alertas do WhatsApp para NC Performance Suite usando Baileys",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "@whiskeysockets/baileys": "^6.6.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "qrcode-terminal": "^0.12.0"
+  }
+}

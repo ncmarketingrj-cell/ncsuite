@@ -14,12 +14,61 @@ const supabase = createClient(
   Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
 )
 
+// Helper sênior para disparo de mensagens via Gateway WhatsApp (Baileys)
+async function sendWhatsAppMessage(gatewayUrl: string, phone: string, text: string) {
+  if (!phone || !gatewayUrl) return;
+  try {
+    console.log(`[WHATSAPP] Tentando disparar alerta para ${phone} via gateway ${gatewayUrl}...`)
+    
+    // Formatar telefone mantendo apenas números
+    let cleanPhone = phone.replace(/\D/g, "");
+    if (!cleanPhone.endsWith("@c.us")) {
+      cleanPhone = `${cleanPhone}@c.us`;
+    }
+
+    const res = await fetch(`${gatewayUrl}/send-message`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        phone: cleanPhone,
+        message: text
+      })
+    });
+    
+    if (!res.ok) {
+      throw new Error(`HTTP Status ${res.status}`);
+    }
+    const data = await res.json();
+    console.log(`[WHATSAPP] Sucesso no envio:`, data);
+  } catch (err: any) {
+    console.error(`[WHATSAPP] Erro no gateway ao enviar para ${phone}:`, err.message);
+  }
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
 
   console.log("[AUTO] Motor de alertas CPL/Budget iniciado...")
 
   try {
+    // 0. Carregar configurações globais do WhatsApp
+    const { data: configMaster } = await supabase
+      .from("meta_ads_configs")
+      .select("whatsapp_phone, whatsapp_gateway_url")
+      .limit(1)
+      .maybeSingle()
+
+    const whatsappPhone = configMaster?.whatsapp_phone || ""
+    const whatsappGateway = configMaster?.whatsapp_gateway_url || "http://localhost:3001"
+
+    if (whatsappPhone) {
+      console.log(`[AUTO] Alertas WhatsApp ATIVOS para o número ${whatsappPhone} via ${whatsappGateway}`)
+    } else {
+      console.log("[AUTO] Alertas WhatsApp inativos (número não configurado).")
+    }
+
     // 1. Buscar todas as configurações de alertas ativas (CPL máx e % budget)
     const { data: thresholds, error: thErr } = await supabase
       .from("alert_thresholds")
@@ -165,6 +214,17 @@ serve(async (req) => {
           if (!existing?.length) {
             await supabase.from("notifications").insert(alert)
             totalAlerts++
+
+            // Disparar WhatsApp em tempo real se cadastrado!
+            if (whatsappPhone) {
+              let text = ""
+              if (alertType === "HIGH_CPL") {
+                text = `🚨 *ALERTA CPL ALTO - NC PERFORMANCE*\n\n📈 *Campanha:* ${alert.metadata?.campaign_name}\n🔴 *CPL Atual:* R$ ${alert.metadata?.current_cpl?.toFixed(2)}\n🎯 *Limite:* R$ ${alert.metadata?.max_cpl?.toFixed(2)}\n💸 *Gasto hoje:* R$ ${alert.metadata?.spend_today?.toFixed(2)}\n👥 *Resultados:* ${alert.metadata?.conversions_today} leads`
+              } else {
+                text = `💸 *ALERTA ORÇAMENTO - NC PERFORMANCE*\n\n📈 *Campanha:* ${alert.metadata?.campaign_name}\n🔴 *Uso:* ${alert.metadata?.budget_used_pct?.toFixed(0)}%\n💵 *Gasto:* R$ ${alert.metadata?.spend_today?.toFixed(2)} de R$ ${alert.metadata?.daily_budget?.toFixed(2)}`
+              }
+              await sendWhatsAppMessage(whatsappGateway, whatsappPhone, text)
+            }
           } else {
             console.log(`[AUTO] Alerta duplicado ignorado para ${campaign.name} (${alertType})`)
           }
@@ -282,6 +342,12 @@ serve(async (req) => {
                   link: `/dashboard`,
                   metadata: { alert_type: "DAILY_SUMMARY_D1", summary_date: yesterdayStr, spend: totalSpend, conversions: totalConv }
                 })
+
+                // Enviar por WhatsApp!
+                if (whatsappPhone) {
+                  const whatsappMsg = `🌅 *FECHAMENTO DIÁRIO - NC PERFORMANCE*\n\n📅 *Período:* Ontem (${day} de ${monthPT})\n💸 *Total Investido:* R$ ${totalSpend.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}\n🎯 *Resultados Totais:* ${totalConv}\n👥 *Alcance Total:* ${totalReach.toLocaleString("pt-BR")}\n\nBom dia e ótimas campanhas! 🚀`;
+                  await sendWhatsAppMessage(whatsappGateway, whatsappPhone, whatsappMsg);
+                }
                 
                 totalAlerts++
                 console.log(`[AUTO] ✅ Resumo D-1 (${yesterdayStr}) gerado com sucesso às 08h.`)

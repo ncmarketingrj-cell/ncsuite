@@ -198,6 +198,8 @@ function TabClientes() {
 function TabIntegracoes() {
   const [token, setToken] = useState("");
   const [webhook, setWebhook] = useState("");
+  const [whatsappPhone, setWhatsappPhone] = useState("");
+  const [whatsappGatewayUrl, setWhatsappGatewayUrl] = useState("http://localhost:3001");
   const [testing, setTesting] = useState(false);
   const [connected, setConnected] = useState<boolean | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -210,6 +212,8 @@ function TabIntegracoes() {
       if (data) {
         setToken(data.access_token || "");
         setWebhook(data.webhook_url || "");
+        setWhatsappPhone(data.whatsapp_phone || "");
+        setWhatsappGatewayUrl(data.whatsapp_gateway_url || "http://localhost:3001");
         setOpenaiConfigured(data.openai_key_configured || false);
       }
       setIsLoading(false);
@@ -225,6 +229,8 @@ function TabIntegracoes() {
         user_id: u.user?.id,
         access_token: token,
         webhook_url: webhook,
+        whatsapp_phone: whatsappPhone,
+        whatsapp_gateway_url: whatsappGatewayUrl,
         ad_account_id: "ALL_ACCOUNTS"
       }, { onConflict: "user_id" });
 
@@ -289,6 +295,30 @@ function TabIntegracoes() {
             placeholder="https://api.sua-instancia.com/message/send"
             className="w-full rounded-lg border border-white/10 bg-background/50 px-3 py-2 text-sm focus:border-primary focus:outline-none"
           />
+        </div>
+
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div className="space-y-2">
+            <label className="label-mono text-[10px] text-muted-foreground uppercase">WhatsApp de Destino para Alertas</label>
+            <input
+              value={whatsappPhone}
+              onChange={(e) => setWhatsappPhone(e.target.value)}
+              type="text"
+              placeholder="Ex: 5521999999999"
+              className="w-full rounded-lg border border-white/10 bg-background/50 px-3 py-2 text-sm focus:border-primary focus:outline-none"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <label className="label-mono text-[10px] text-muted-foreground uppercase">WhatsApp Gateway URL (Sessão Baileys)</label>
+            <input
+              value={whatsappGatewayUrl}
+              onChange={(e) => setWhatsappGatewayUrl(e.target.value)}
+              type="text"
+              placeholder="http://localhost:3001"
+              className="w-full rounded-lg border border-white/10 bg-background/50 px-3 py-2 text-sm focus:border-primary focus:outline-none"
+            />
+          </div>
         </div>
 
         <div className="rounded-xl border border-white/5 bg-white/[0.02] p-4">
