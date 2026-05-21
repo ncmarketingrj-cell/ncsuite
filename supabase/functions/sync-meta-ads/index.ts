@@ -59,10 +59,10 @@ async function metaGetPaginated(path: string, token: string, params: Record<stri
 
 // ─── Buscar todas as contas vinculadas ao token ───────────────────────────────
 async function fetchAdAccounts(token: string) {
-  const data = await metaGet("/me/adaccounts", token, {
-    fields: "name,currency,account_status,id,timezone_name"
+  return await metaGetPaginated("/me/adaccounts", token, {
+    fields: "name,currency,account_status,id,timezone_name",
+    limit: "50"
   })
-  return data.data || []
 }
 
 // ─── NOVO: Buscar campanhas com orçamentos ────────────────────────────────────
