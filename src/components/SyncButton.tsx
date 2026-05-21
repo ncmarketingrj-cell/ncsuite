@@ -1,22 +1,27 @@
 import { useState } from "react";
 import { useQueryClient, useQuery } from "@tanstack/react-query";
-import { Zap, Loader2, CheckCircle2, AlertCircle, Info, Sparkles } from "lucide-react";
+import { Zap, Loader2, CheckCircle2, AlertCircle, Info, Sparkles, Database } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { formatDistanceToNow, format } from "date-fns";
+import { formatDistanceToNow, format, subDays } from "date-fns";
 import { ptBR } from "date-fns/locale";
 
 interface SyncButtonProps {
-  startDate?: Date;
-  endDate?: Date;
+  mode?: "quick" | "full";
 }
 
-export function SyncButton({ startDate, endDate }: SyncButtonProps = {}) {
+function getLocalDateStr(d: Date) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+export function SyncButton({ mode = "quick" }: SyncButtonProps) {
   const qc = useQueryClient();
   const [syncing, setSyncing] = useState(false);
   const [lastStatus, setLastStatus] = useState<"idle" | "success" | "error">("idle");
 
-  // Query inteligente para buscar a sincronização global mais recente
   const { data: lastSyncData, refetch: refetchSyncDate } = useQuery({
     queryKey: ["last-sync-date"],
     queryFn: async () => {
@@ -25,48 +30,38 @@ export function SyncButton({ startDate, endDate }: SyncButtonProps = {}) {
         .select("last_sync")
         .order("last_sync", { ascending: false, nullsFirst: false })
         .limit(1);
-      
-      if (error || !data || data.length === 0) return null;
+      if (error || !data?.length) return null;
       return data[0].last_sync ? new Date(data[0].last_sync) : null;
     },
-    refetchInterval: 30000, // Atualiza a cada 30 segundos
+    refetchInterval: 30000,
   });
+
+  const isQuick = mode === "quick";
 
   const triggerSync = async () => {
     setSyncing(true);
     setLastStatus("idle");
-    const t = toast.loading("🔄 Conectando à Graph API da Meta Ads...", { duration: 60000 });
-    
+
+    const loadingMsg = isQuick
+      ? "🔄 Atualizando últimos 7 dias..."
+      : "🔄 Sync completo em andamento (pode levar alguns minutos)...";
+    const t = toast.loading(loadingMsg, { duration: isQuick ? 30000 : 180000 });
+
     try {
-      let bodyArgs = {};
-      if (startDate && endDate) {
-        const getLocalDateStr = (d: Date) => {
-          const y = d.getFullYear();
-          const m = String(d.getMonth() + 1).padStart(2, "0");
-          const day = String(d.getDate()).padStart(2, "0");
-          return `${y}-${m}-${day}`;
-        };
+      const today = new Date();
+      const since = isQuick ? subDays(today, 7) : subDays(today, 60);
+      const body = {
+        triggered_by: "manual",
+        time_range: { since: getLocalDateStr(since), until: getLocalDateStr(today) },
+      };
 
-        bodyArgs = {
-          time_range: {
-            since: getLocalDateStr(startDate),
-            until: getLocalDateStr(endDate),
-          }
-        };
-      }
-
-      const { data, error } = await supabase.functions.invoke("sync-meta-ads", {
-        body: { ...bodyArgs, triggered_by: "manual", date_preset: bodyArgs.time_range ? undefined : "last_60d" }
-      });
-      
+      const { data, error } = await supabase.functions.invoke("sync-meta-ads", { body });
       if (error) throw new Error(error.message);
       if (data?.error) throw new Error(data.error);
 
-      const msg = data?.message || "Sincronização concluída com sucesso!";
+      const msg = data?.message || (isQuick ? "7 dias atualizados!" : "Sync completo concluído!");
       toast.success(msg, { id: t, duration: 8000 });
       setLastStatus("success");
-      
-      // Invalida todas as chaves do React Query para recarregar todos os dados do banco imediatamente em todo o app!
       await qc.invalidateQueries();
       await refetchSyncDate();
     } catch (err: any) {
@@ -85,38 +80,40 @@ export function SyncButton({ startDate, endDate }: SyncButtonProps = {}) {
     }
   };
 
-  // Formata o tempo transcorrido de forma amigável e legível
   const getSyncLabel = () => {
     if (!lastSyncData) return "Sem registros";
-    
     try {
       const distance = formatDistanceToNow(lastSyncData, { locale: ptBR, addSuffix: true });
       const exactTime = format(lastSyncData, "HH:mm", { locale: ptBR });
-      
-      // Se for menos de um minuto
-      if (distance.includes("menos de um minuto")) {
-        return "Atualizado agora mesmo";
-      }
-      
-      return `Último Sync: ${distance} (às ${exactTime})`;
-    } catch (e) {
+      if (distance.includes("menos de um minuto")) return "Atualizado agora mesmo";
+      return `Último sync: ${distance} (às ${exactTime})`;
+    } catch {
       return "Dados sincronizados";
     }
   };
+
+  const buttonLabel = syncing
+    ? "SINCRONIZANDO..."
+    : isQuick
+    ? "ATUALIZAR (7 DIAS)"
+    : "SYNC COMPLETO (60 DIAS)";
+
+  const Icon = isQuick ? Zap : Database;
 
   return (
     <div className="flex flex-col items-end gap-1.5 md:flex-row md:items-center md:gap-4 bg-white/[0.02] border border-white/5 rounded-2xl p-2.5 px-4 shadow-inner">
       <div className="text-right">
         <p className="text-[10px] font-black uppercase tracking-[0.15em] text-primary flex items-center gap-1.5 justify-end">
-          <Sparkles className="h-3 w-3 text-primary animate-pulse" /> Sincronização Global
+          <Sparkles className="h-3 w-3 text-primary animate-pulse" />
+          {isQuick ? "Sync Rápido" : "Sync Histórico"}
         </p>
-        <p className="text-[9px] text-muted-foreground font-semibold mt-0.5" title="Os dados sincronizados aqui são salvos centralizados no Supabase e atualizam todas as páginas do sistema instantaneamente.">
+        <p className="text-[9px] text-muted-foreground font-semibold mt-0.5">
           {getSyncLabel()}
         </p>
       </div>
 
       <div className="relative group">
-        <button 
+        <button
           onClick={triggerSync}
           disabled={syncing}
           className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-xs font-black uppercase tracking-wider transition-all duration-300 hover:scale-105 active:scale-95 disabled:opacity-50 shadow-glow-sm border ${
@@ -126,7 +123,9 @@ export function SyncButton({ startDate, endDate }: SyncButtonProps = {}) {
               ? "bg-success/15 border-success/30 text-success hover:border-success/50"
               : lastStatus === "error"
               ? "bg-destructive/15 border-destructive/30 text-destructive hover:border-destructive/50"
-              : "bg-gradient-to-r from-primary to-secondary text-background hover:shadow-glow hover:brightness-110 border-transparent font-black"
+              : isQuick
+              ? "bg-gradient-to-r from-primary to-secondary text-background hover:shadow-glow hover:brightness-110 border-transparent"
+              : "bg-gradient-to-r from-orange-500 to-amber-500 text-background hover:brightness-110 border-transparent"
           }`}
         >
           {syncing ? (
@@ -134,19 +133,21 @@ export function SyncButton({ startDate, endDate }: SyncButtonProps = {}) {
           ) : lastStatus === "success" ? (
             <CheckCircle2 className="h-3.5 w-3.5 animate-bounce" />
           ) : lastStatus === "error" ? (
-            <AlertCircle className="h-3.5 w-3.5 animate-shake" />
+            <AlertCircle className="h-3.5 w-3.5" />
           ) : (
-            <Zap className="h-3.5 w-3.5 fill-current" />
+            <Icon className="h-3.5 w-3.5 fill-current" />
           )}
-          {syncing ? "SINCRONIZANDO..." : "SINCRONIZAR AGORA"}
+          {buttonLabel}
         </button>
 
-        {/* Tooltip informativo explicativo */}
-        <div className="pointer-events-none absolute bottom-full right-0 z-50 mb-2 w-64 origin-bottom scale-95 rounded-xl border border-white/10 bg-background/95 p-3 text-[10px] leading-relaxed text-muted-foreground opacity-0 shadow-2xl transition-all duration-200 group-hover:scale-100 group-hover:opacity-100 backdrop-blur-md">
+        <div className="pointer-events-none absolute bottom-full right-0 z-50 mb-2 w-72 origin-bottom scale-95 rounded-xl border border-white/10 bg-background/95 p-3 text-[10px] leading-relaxed text-muted-foreground opacity-0 shadow-2xl transition-all duration-200 group-hover:scale-100 group-hover:opacity-100 backdrop-blur-md">
           <p className="font-bold text-foreground mb-1 flex items-center gap-1">
-            <Info className="h-3 w-3 text-primary" /> Como funciona o Sync?
+            <Info className="h-3 w-3 text-primary" />
+            {isQuick ? "Sync Rápido — 7 dias" : "Sync Completo — 60 dias"}
           </p>
-          Conecta via Graph API da Meta, sincroniza todas as contas de anúncios, campanhas, orçamentos, demográficos e métricas no Supabase e atualiza o dashboard globalmente de uma só vez.
+          {isQuick
+            ? "Busca os últimos 7 dias de dados de todas as contas, incluindo contas novas. Rápido e sem risco de timeout. Use para manter os dados do dia atualizados."
+            : "Busca o histórico completo de 60 dias. Use na carga inicial, ao adicionar uma conta nova ou ao começar um novo mês. Pode levar alguns minutos."}
         </div>
       </div>
     </div>

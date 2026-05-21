@@ -240,7 +240,7 @@ function Dashboard() {
                 onChange={(start, end) => setDateRange({ startDate: start, endDate: end })} 
               />
 
-              <SyncButton startDate={dateRange.startDate} endDate={dateRange.endDate} />
+              <SyncButton mode="quick" />
               
               {/* NOVO: Botão Gerar Relatório */}
               <button 
