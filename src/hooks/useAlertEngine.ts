@@ -1,72 +1,247 @@
 // src/hooks/useAlertEngine.ts
-// NC Performance Suite — Motor de Alertas Sonoros com Browser Notifications
+// NC Performance Suite — Motor de Alertas: Avaliação de Thresholds + Som + Browser Notifications
 
 import { useEffect, useRef, useCallback } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 
-// IDs de alertas já disparados nesta sessão (evita loop de duplicatas)
+// ─── Module-level singletons (shared across React instances) ──────────────────
 const firedAlerts = new Set<string>();
-// Osciladores em execução (para parar o som quando necessário)
 const activeOscillators = new Map<string, { stop: () => void }>();
+let isCurrentlyEvaluating = false;
 
-// ─── Web Audio API: Gerar som de alerta urgente ───────────────────────────────
-function playAlertSound(alertId: string) {
-  if (activeOscillators.has(alertId)) return; // já está tocando
+// ─── Eval status (persisted in localStorage) ──────────────────────────────────
+const EVAL_STATUS_KEY  = "nc_alert_eval_status";
+const EVAL_INTERVAL_MS = 5 * 60 * 1000;  // 5 minutos
+const DEDUP_WINDOW_MS  = 60 * 60 * 1000; // 1 hora — não re-alertar mesma campanha
+
+export const EVAL_REQUEST_EVENT = "nc:eval-request";
+export const EVAL_STATUS_EVENT  = "nc:eval-status";
+
+export type EvalStatus = {
+  isEvaluating:    boolean;
+  lastEval:        string | null;
+  nextEval:        string | null;
+  violationsFound: number;
+  error:           string | null;
+};
+
+export function getEvalStatus(): EvalStatus {
+  try {
+    const s = localStorage.getItem(EVAL_STATUS_KEY);
+    return s ? JSON.parse(s) : {
+      isEvaluating: false, lastEval: null, nextEval: null, violationsFound: 0, error: null,
+    };
+  } catch {
+    return { isEvaluating: false, lastEval: null, nextEval: null, violationsFound: 0, error: null };
+  }
+}
+
+function saveEvalStatus(update: Partial<EvalStatus>) {
+  const next = { ...getEvalStatus(), ...update };
+  try { localStorage.setItem(EVAL_STATUS_KEY, JSON.stringify(next)); } catch {}
+  window.dispatchEvent(new CustomEvent(EVAL_STATUS_EVENT, { detail: next }));
+}
+
+export function triggerEvaluation() {
+  window.dispatchEvent(new Event(EVAL_REQUEST_EVENT));
+}
+
+function todayStr(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+// ─── Core Evaluation Engine ───────────────────────────────────────────────────
+// Avalia CPL e orçamento de todas as campanhas ativas contra as regras configuradas.
+// Cria notificações no banco quando viola — o sino e o som disparam automaticamente.
+async function runThresholdEvaluation() {
+  if (isCurrentlyEvaluating) return;
+  isCurrentlyEvaluating = true;
+  saveEvalStatus({ isEvaluating: true, error: null });
+
+  let totalNew = 0;
 
   try {
-    const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
-    if (!AudioContext) return;
+    // 1. Buscar regras ativas (tabela fora do schema gerado → cast any)
+    const { data: thresholds, error: thErr } = await (supabase as any)
+      .from("alert_thresholds")
+      .select("*")
+      .eq("is_active", true);
 
-    const ctx = new AudioContext();
+    if (thErr) throw thErr;
+
+    if (!thresholds?.length) {
+      saveEvalStatus({
+        isEvaluating: false,
+        lastEval: new Date().toISOString(),
+        nextEval: new Date(Date.now() + EVAL_INTERVAL_MS).toISOString(),
+        violationsFound: 0,
+      });
+      return;
+    }
+
+    const today      = todayStr();
+    const dedupSince = new Date(Date.now() - DEDUP_WINDOW_MS).toISOString();
+    const { data: { user } } = await supabase.auth.getUser();
+
+    for (const threshold of thresholds as any[]) {
+      // 2. Buscar campanhas ATIVAS — para a conta específica ou todas
+      let q = (supabase as any)
+        .from("campaigns")
+        .select("id, name, status, budget, ad_account_id, metrics(cost, conversions, date)")
+        .ilike("status", "ACTIVE");
+
+      if (threshold.ad_account_id) {
+        q = q.eq("ad_account_id", threshold.ad_account_id);
+      }
+
+      const { data: campaigns } = await q;
+      if (!campaigns?.length) continue;
+
+      for (const campaign of campaigns as any[]) {
+        // 3. Métricas de HOJE apenas
+        const todayMetrics = (campaign.metrics || []).filter(
+          (m: any) => m.date?.split("T")[0] === today
+        );
+
+        const todayCost = todayMetrics.reduce((s: number, m: any) => s + Number(m.cost || 0), 0);
+        const todayConv = todayMetrics.reduce((s: number, m: any) => s + Number(m.conversions || 0), 0);
+
+        // ── Violação de CPL ──────────────────────────────────────────────────
+        if (threshold.max_cpl !== null && threshold.max_cpl !== undefined && todayCost > 0 && todayConv > 0) {
+          const cpl = todayCost / todayConv;
+
+          if (cpl > threshold.max_cpl) {
+            // Dedup: já alertei essa campanha por CPL na última hora?
+            const { data: dup } = await (supabase as any)
+              .from("notifications")
+              .select("id")
+              .eq("type", "alert_cpl")
+              .gte("created_at", dedupSince)
+              .ilike("link", `%${campaign.id}%`)
+              .limit(1);
+
+            if (!dup?.length) {
+              await (supabase as any).from("notifications").insert({
+                user_id:         user?.id ?? null,
+                title:           `🚨 CPL Alto — ${campaign.name.slice(0, 50)}`,
+                message:         `CPL hoje R$ ${cpl.toFixed(2)} ultrapassou o limite de R$ ${(threshold.max_cpl as number).toFixed(2)}. Intervenha imediatamente.`,
+                is_critical:     true,
+                is_read:         false,
+                type:            "alert_cpl",
+                link:            `/campanhas?ref=${campaign.id}`,
+              });
+              totalNew++;
+            }
+          }
+        }
+
+        // ── Violação de Orçamento ────────────────────────────────────────────
+        if (threshold.max_budget_pct !== null && threshold.max_budget_pct !== undefined && todayCost > 0 && campaign.budget > 0) {
+          const pct = (todayCost / campaign.budget) * 100;
+
+          if (pct >= (threshold.max_budget_pct as number)) {
+            const { data: dup } = await (supabase as any)
+              .from("notifications")
+              .select("id")
+              .eq("type", "alert_budget")
+              .gte("created_at", dedupSince)
+              .ilike("link", `%${campaign.id}%`)
+              .limit(1);
+
+            if (!dup?.length) {
+              const isCritical = pct >= 95;
+              await (supabase as any).from("notifications").insert({
+                user_id:         user?.id ?? null,
+                title:           `⚠️ Orçamento ${pct >= 100 ? "Esgotado" : "Crítico"} — ${campaign.name.slice(0, 45)}`,
+                message:         `${pct.toFixed(0)}% do orçamento diário utilizado${pct >= 100 ? " — campanha pausou automaticamente" : " — prestes a esgotar"}. (Limite: ${threshold.max_budget_pct}%)`,
+                is_critical:     isCritical,
+                is_read:         false,
+                type:            "alert_budget",
+                link:            `/campanhas?ref=${campaign.id}`,
+              });
+              totalNew++;
+            }
+          }
+        }
+      }
+    }
+
+    saveEvalStatus({
+      isEvaluating:    false,
+      lastEval:        new Date().toISOString(),
+      nextEval:        new Date(Date.now() + EVAL_INTERVAL_MS).toISOString(),
+      violationsFound: totalNew,
+      error:           null,
+    });
+
+    console.log(
+      totalNew > 0
+        ? `[ALERT-ENGINE] 🔔 ${totalNew} nova(s) violação(ões) detectada(s)`
+        : "[ALERT-ENGINE] ✅ Avaliação concluída — sem violações"
+    );
+  } catch (e: any) {
+    console.error("[ALERT-ENGINE] ❌ Erro:", e.message);
+    saveEvalStatus({ isEvaluating: false, error: e.message ?? "Erro desconhecido" });
+  } finally {
+    isCurrentlyEvaluating = false;
+  }
+}
+
+// ─── Web Audio API ────────────────────────────────────────────────────────────
+function playAlertSound(alertId: string) {
+  if (activeOscillators.has(alertId)) return;
+
+  try {
+    const Ctx = window.AudioContext || (window as any).webkitAudioContext;
+    if (!Ctx) return;
+    const ctx = new Ctx();
     let stopped = false;
 
-    const playBeep = (frequency: number, startTime: number, duration: number) => {
-      const osc = ctx.createOscillator();
+    const beep = (freq: number, t: number, dur: number) => {
+      const osc  = ctx.createOscillator();
       const gain = ctx.createGain();
       osc.connect(gain);
       gain.connect(ctx.destination);
       osc.type = "sine";
-      osc.frequency.value = frequency;
-      gain.gain.setValueAtTime(0, startTime);
-      gain.gain.linearRampToValueAtTime(0.4, startTime + 0.01);
-      gain.gain.linearRampToValueAtTime(0, startTime + duration);
-      osc.start(startTime);
-      osc.stop(startTime + duration + 0.05);
+      osc.frequency.value = freq;
+      gain.gain.setValueAtTime(0, t);
+      gain.gain.linearRampToValueAtTime(0.4, t + 0.01);
+      gain.gain.linearRampToValueAtTime(0, t + dur);
+      osc.start(t);
+      osc.stop(t + dur + 0.05);
     };
 
-    const playSequence = () => {
+    const seq = () => {
       if (stopped) return;
       const t = ctx.currentTime;
-      // 3 bipes urgentes: 880Hz, 880Hz, 1100Hz
-      playBeep(880, t + 0.0, 0.12);
-      playBeep(880, t + 0.18, 0.12);
-      playBeep(1100, t + 0.36, 0.22);
+      beep(880,  t + 0.00, 0.12);
+      beep(880,  t + 0.18, 0.12);
+      beep(1100, t + 0.36, 0.22);
     };
 
-    // Toca imediatamente e repete a cada 5 segundos
-    playSequence();
-    const loopInterval = setInterval(() => {
-      if (stopped) { clearInterval(loopInterval); return; }
-      playSequence();
+    seq();
+    const loop = setInterval(() => {
+      if (stopped) { clearInterval(loop); return; }
+      seq();
     }, 5000);
 
     activeOscillators.set(alertId, {
       stop: () => {
         stopped = true;
-        clearInterval(loopInterval);
+        clearInterval(loop);
         try { ctx.close(); } catch (_) {}
         activeOscillators.delete(alertId);
-      }
+      },
     });
   } catch (e) {
-    console.warn("[ALERT-ENGINE] Web Audio API indisponível:", e);
+    console.warn("[ALERT-ENGINE] Web Audio indisponível:", e);
   }
 }
 
 function stopAlertSound(alertId: string) {
-  const osc = activeOscillators.get(alertId);
-  if (osc) osc.stop();
+  activeOscillators.get(alertId)?.stop();
 }
 
 // ─── Browser Notifications API ────────────────────────────────────────────────
@@ -74,40 +249,28 @@ async function requestNotificationPermission(): Promise<boolean> {
   if (!("Notification" in window)) return false;
   if (Notification.permission === "granted") return true;
   if (Notification.permission === "denied") return false;
-  const perm = await Notification.requestPermission();
-  return perm === "granted";
+  return (await Notification.requestPermission()) === "granted";
 }
 
 function showBrowserNotification(
-  alertId: string,
-  title: string,
-  body: string,
-  link: string,
-  onAcknowledge: () => void
+  alertId: string, title: string, body: string, link: string, onAck: () => void
 ) {
   if (!("Notification" in window) || Notification.permission !== "granted") return;
 
   const notif = new Notification(title, {
     body,
     icon: "/favicon.ico",
-    tag: alertId, // evita duplicar notificações com mesmo ID
-    requireInteraction: true, // fica visível até o usuário interagir
-    silent: false, // permite o som do sistema também
+    tag: alertId,
+    requireInteraction: true,
+    silent: false,
   });
 
   notif.onclick = () => {
     window.focus();
     stopAlertSound(alertId);
-    onAcknowledge();
-    // Navegar para o link da campanha
-    if (link && link.startsWith("/")) {
-      window.location.href = link;
-    }
+    onAck();
+    if (link?.startsWith("/")) window.location.href = link;
     notif.close();
-  };
-
-  notif.onclose = () => {
-    // Se fechar sem clicar, o som continua (só para com clique)
   };
 }
 
@@ -115,32 +278,36 @@ function showBrowserNotification(
 export function useAlertEngine() {
   const permissionGranted = useRef(false);
 
-  // Solicitar permissão na inicialização
   useEffect(() => {
-    requestNotificationPermission().then(granted => {
-      permissionGranted.current = granted;
-      if (!granted) {
-        console.warn("[ALERT-ENGINE] Permissão de notificações não concedida.");
-      } else {
-        console.log("[ALERT-ENGINE] Notificações ativadas ✅");
-      }
-    });
+    requestNotificationPermission().then(ok => { permissionGranted.current = ok; });
+  }, []);
+
+  // Motor de avaliação: roda ao montar + a cada 5 min + sob demanda (triggerEvaluation)
+  useEffect(() => {
+    runThresholdEvaluation();
+    const interval = setInterval(runThresholdEvaluation, EVAL_INTERVAL_MS);
+    const onRequest = () => runThresholdEvaluation();
+    window.addEventListener(EVAL_REQUEST_EVENT, onRequest);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener(EVAL_REQUEST_EVENT, onRequest);
+    };
   }, []);
 
   const acknowledge = useCallback(async (alertId: string) => {
     stopAlertSound(alertId);
-    firedAlerts.delete(alertId); // permite re-disparo se o problema persistir
-    // Marcar como lida no banco
-    await supabase.from("notifications")
+    firedAlerts.delete(alertId);
+    await (supabase as any)
+      .from("notifications")
       .update({ is_read: true, acknowledged_at: new Date().toISOString() })
       .eq("id", alertId);
   }, []);
 
-  // Buscar alertas críticos não lidos a cada 15 segundos
+  // Buscar alertas críticos não lidos a cada 15 s
   const { data: criticalAlerts = [] } = useQuery({
     queryKey: ["critical_alerts"],
     queryFn: async () => {
-      const { data, error } = await supabase
+      const { data } = await (supabase as any)
         .from("notifications")
         .select("*")
         .eq("is_critical", true)
@@ -148,39 +315,31 @@ export function useAlertEngine() {
         .is("acknowledged_at", null)
         .order("created_at", { ascending: false })
         .limit(10);
-      if (error) return [];
-      return data || [];
+      return (data as any[]) || [];
     },
     refetchInterval: 15000,
   });
 
-  // Processar alertas críticos
+  // Disparar som + browser notification para cada alerta novo
   useEffect(() => {
-    for (const alert of criticalAlerts) {
-      if (firedAlerts.has(alert.id)) continue; // já disparado
+    for (const alert of criticalAlerts as any[]) {
+      if (firedAlerts.has(alert.id)) continue;
       firedAlerts.add(alert.id);
 
-      console.log(`[ALERT-ENGINE] 🚨 Alerta crítico detectado: ${alert.title}`);
-
-      // 1. Tocar som em loop
       playAlertSound(alert.id);
 
-      // 2. Mostrar notificação do browser
       if (permissionGranted.current) {
         showBrowserNotification(
-          alert.id,
-          alert.title,
-          alert.message,
-          alert.link || "/metricas",
+          alert.id, alert.title, alert.message,
+          alert.link || "/automacoes",
           () => acknowledge(alert.id)
         );
       }
     }
 
-    // Parar sons de alertas que foram reconhecidos (não estão mais na lista)
+    // Parar sons de alertas resolvidos
     for (const [alertId] of activeOscillators) {
-      const stillActive = criticalAlerts.some(a => a.id === alertId);
-      if (!stillActive) {
+      if (!(criticalAlerts as any[]).some((a: any) => a.id === alertId)) {
         stopAlertSound(alertId);
         firedAlerts.delete(alertId);
       }
