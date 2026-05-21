@@ -265,7 +265,7 @@ function MetricasAvancadasPage() {
     <div className="mx-auto max-w-[1700px] p-1 pb-20">
       
       {/* ─── STICKY HEADER AREA ─── */}
-      <div className="sticky top-0 z-40 -mx-1 px-1 bg-background/95 backdrop-blur-xl border-b border-white/5 pb-4 pt-2 space-y-5">
+      <div className="sticky top-0 z-40 -mx-1 px-1 bg-background/95 backdrop-blur-xl pt-2 space-y-4">
         <PageHeader
           eyebrow="Hub de Análise Técnica"
           title="Métricas Avançadas"
@@ -330,11 +330,8 @@ function MetricasAvancadasPage() {
           </div>
         </div>
 
-      </div>
-
-      <div className="pt-4 space-y-5">
         {/* ABAS */}
-        <div className="flex gap-1 border-b border-white/5 pb-4 -mx-1 px-1">
+        <div className="flex gap-1 border-b border-white/5 -mx-1 px-1">
           {LEVEL_TABS.map(tab => (
             <button key={tab.id} onClick={() => setLevel(tab.id)} className={`flex items-center gap-2 px-5 py-3 text-[11px] font-black uppercase tracking-widest border-b-2 transition-all ${level === tab.id ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground hover:border-white/20"}`}>
               <tab.icon className="h-3.5 w-3.5" />
@@ -346,6 +343,9 @@ function MetricasAvancadasPage() {
           ))}
         </div>
 
+      </div>
+
+      <div className="pt-4 space-y-5">
       <AnimatePresence mode="wait">
         <motion.div key={level} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
           
