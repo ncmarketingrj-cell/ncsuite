@@ -12,7 +12,7 @@ import { PageHeader } from "@/components/PageHeader";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useServerFn } from "@tanstack/react-start";
-import { analyzeCreativeFn, generateCreativeImageFn, type CreativeAIAnalysis, type GeneratedImage } from "@/lib/criativo.functions";
+import { analyzeCreativeFn, type CreativeAIAnalysis } from "@/lib/criativo.functions";
 
 export const Route = createFileRoute("/_app/criativos")({
   head: () => ({ meta: [{ title: "Criativos & IA — NC Suite" }] }),
@@ -513,7 +513,6 @@ function AddCreativeModal({ onClose, onSuccess }: AddModalProps) {
 // MODAL DE DIAGNÓSTICO DE IA
 // ==========================================
 function AIAnalysisModal({ item, onClose }: { item: SwipeFile; onClose: () => void }) {
-  const generateImage = useServerFn(generateCreativeImageFn);
   const [generating, setGenerating] = useState<number | null>(null);
   const [generatedImages, setGeneratedImages] = useState<Record<number, string>>({});
 
@@ -538,10 +537,13 @@ function AIAnalysisModal({ item, onClose }: { item: SwipeFile; onClose: () => vo
   const handleGenerateImage = async (index: number, idea: CreativeAIAnalysis["newCreativeIdeas"][0]) => {
     setGenerating(index);
     try {
-      const prompt = `${idea.visualDescription}. Headline: ${idea.hookText}. Style: ${idea.psychologicalTriggers.join(", ")}.`;
-      const result = await generateImage({ data: { prompt, aspectRatio: "1:1" } });
-      setGeneratedImages(prev => ({ ...prev, [index]: `data:${result.mimeType};base64,${result.imageBase64}` }));
-      toast.success("Criativo gerado com sucesso!");
+      const prompt = `${idea.visualDescription}. Headline: ${idea.hookText}. Triggers: ${idea.psychologicalTriggers.join(", ")}.`;
+      const { data, error } = await supabase.functions.invoke("generate-art", {
+        body: { prompt, aspectRatio: "1:1" },
+      });
+      if (error || data?.error) throw new Error(data?.error || error?.message || "Erro ao gerar imagem");
+      setGeneratedImages(prev => ({ ...prev, [index]: `data:${data.mimeType};base64,${data.imageBase64}` }));
+      toast.success("Criativo gerado com DALL-E 3!");
     } catch (e: any) {
       toast.error(e.message || "Erro ao gerar imagem");
     } finally {
@@ -760,7 +762,7 @@ function AIAnalysisModal({ item, onClose }: { item: SwipeFile; onClose: () => vo
 
         {/* RODAPÉ */}
         <div className="flex items-center justify-between border-t border-white/10 p-5 bg-card/50 flex-shrink-0">
-          <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Diagnóstico via Gemini 2.5 · Geração via Imagen 3</p>
+          <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Diagnóstico via Gemini 2.5 · Geração via DALL-E 3</p>
           <button
             onClick={onClose}
             className="rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 px-5 py-2.5 text-xs font-black uppercase tracking-widest text-white transition"
@@ -801,7 +803,6 @@ const ASPECT_OPTIONS: { value: "1:1" | "16:9" | "9:16"; label: string; desc: str
 ];
 
 function CreateArtModal({ onClose }: { onClose: () => void }) {
-  const generateImage = useServerFn(generateCreativeImageFn);
   const [vehicleType, setVehicleType] = useState("SUV");
   const [visualStyle, setVisualStyle] = useState("fotorrealista");
   const [aspectRatio, setAspectRatio] = useState<"1:1" | "16:9" | "9:16">("1:1");
@@ -834,9 +835,12 @@ function CreateArtModal({ onClose }: { onClose: () => void }) {
     setLoading(true);
     setResult(null);
     try {
-      const res = await generateImage({ data: { prompt: finalPrompt, aspectRatio } });
-      setResult(`data:${res.mimeType};base64,${res.imageBase64}`);
-      toast.success("Arte automotiva gerada!");
+      const { data, error } = await supabase.functions.invoke("generate-art", {
+        body: { prompt: finalPrompt, aspectRatio },
+      });
+      if (error || data?.error) throw new Error(data?.error || error?.message || "Erro ao gerar arte");
+      setResult(`data:${data.mimeType};base64,${data.imageBase64}`);
+      toast.success("Arte automotiva gerada com DALL-E 3!");
     } catch (e: any) {
       toast.error(e.message || "Erro ao gerar arte");
     } finally {
@@ -986,7 +990,7 @@ function CreateArtModal({ onClose }: { onClose: () => void }) {
                   <Car className="h-7 w-7 text-orange-400 animate-bounce" />
                 </div>
               </div>
-              <p className="text-xs font-black uppercase tracking-widest text-orange-400 animate-pulse">Imagen 3 criando sua arte automotiva...</p>
+              <p className="text-xs font-black uppercase tracking-widest text-orange-400 animate-pulse">DALL-E 3 criando sua arte automotiva...</p>
               <p className="text-[10px] text-muted-foreground text-center max-w-xs">Aguarde de 10 a 30 segundos. A IA está compondo a cena com precisão visual.</p>
             </div>
           )}
@@ -998,7 +1002,7 @@ function CreateArtModal({ onClose }: { onClose: () => void }) {
                 <img src={result} alt="Arte automotiva gerada" className="w-full" />
                 <div className="absolute top-3 right-3">
                   <span className="inline-flex items-center gap-1 rounded-lg bg-black/70 backdrop-blur px-2.5 py-1 text-[9px] font-black uppercase tracking-widest text-orange-400 border border-orange-500/20">
-                    <Sparkles className="h-3 w-3" /> Imagen 3
+                    <Sparkles className="h-3 w-3" /> DALL-E 3
                   </span>
                 </div>
               </div>

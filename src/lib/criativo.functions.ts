@@ -8,10 +8,6 @@ const AnalyzeInput = z.object({
   location: z.string().default("Rio de Janeiro"),
 });
 
-const GenerateInput = z.object({
-  prompt: z.string().min(1),
-  aspectRatio: z.enum(["1:1", "16:9", "9:16", "4:3"]).default("1:1"),
-});
 
 export type CreativeAIAnalysis = {
   nicheEvaluation: string;
@@ -30,11 +26,6 @@ export type CreativeAIAnalysis = {
     visualDescription: string;
     psychologicalTriggers: string[];
   }[];
-};
-
-export type GeneratedImage = {
-  imageBase64: string;
-  mimeType: string;
 };
 
 export const analyzeCreativeFn = createServerFn({ method: "POST" })
@@ -155,44 +146,3 @@ Análise rigorosa, profissional e de altíssima qualidade técnica. Em portuguê
     return parsed;
   });
 
-export const generateCreativeImageFn = createServerFn({ method: "POST" })
-  .inputValidator((d: unknown) => GenerateInput.parse(d))
-  .handler(async ({ data }) => {
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) throw new Error("GEMINI_API_KEY não configurada");
-
-    const enhancedPrompt = `Professional Brazilian automotive advertisement, high quality commercial photography, ${data.prompt}, modern dealership marketing material, ultra-realistic, vibrant colors, sharp focus, 4K quality`;
-
-    const res = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-002:predict?key=${apiKey}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          instances: [{ prompt: enhancedPrompt }],
-          parameters: {
-            sampleCount: 1,
-            aspectRatio: data.aspectRatio,
-            safetyFilterLevel: "block_few",
-          },
-        }),
-      }
-    );
-
-    if (!res.ok) {
-      const body = await res.text();
-      console.error("Imagen API error:", res.status, body);
-      throw new Error(`Falha na geração de imagem (${res.status})`);
-    }
-
-    const json = await res.json();
-    const prediction = json.predictions?.[0];
-    if (!prediction?.bytesBase64Encoded) {
-      throw new Error("Nenhuma imagem foi gerada pela IA");
-    }
-
-    return {
-      imageBase64: prediction.bytesBase64Encoded,
-      mimeType: prediction.mimeType || "image/png",
-    } as GeneratedImage;
-  });
