@@ -29,25 +29,34 @@ const ADMIN_EMAILS = ["nc.marketingrj@gmail.com", "hc.marketing.dgt@gmail.com"];
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type MediaType =
-  | "pdf"         // .pdf
-  | "video"       // .mp4 .webm .mov .avi .mkv
-  | "image"       // .png .jpg .gif .svg .webp .avif
-  | "text"        // .txt .md .csv (rendered inline)
-  | "google"      // Google Docs / Sheets / Slides / Drive
+  | "youtube"       // YouTube (embed via /embed/ID)
+  | "pdf"           // .pdf
+  | "video"         // .mp4 .webm .mov .avi .mkv
+  | "image"         // .png .jpg .gif .svg .webp .avif
+  | "text"          // .txt .md .csv (rendered inline)
+  | "google"        // Google Docs / Sheets / Slides / Drive
   | "office-online" // Office Online viewer (OneDrive / public .docx/.xlsx/.pptx URL)
   | "office-local"  // local Office file — download only
-  | "url";        // generic embed / iframe
+  | "url";          // generic embed / iframe
 
 type MediaItem = {
   id: string;
   type: MediaType;
   name: string;
-  src: string;          // original URL or blob:
-  embedSrc?: string;    // processed embed URL (Office viewer, etc.)
-  textContent?: string; // content for text/csv files
-  ext?: string;         // original extension for display
+  src: string;            // original URL or blob:
+  embedSrc?: string;      // processed embed URL (YouTube /embed, Office viewer, etc.)
+  thumbnail?: string;     // cover image URL (YouTube thumb, user image preview, etc.)
+  textContent?: string;   // content for text/csv files
+  ext?: string;           // original extension for display
   size?: string;
 };
+
+// ─── YouTube helpers ──────────────────────────────────────────────────────────
+
+function extractYouTubeId(url: string): string | null {
+  const m = url.match(/(?:youtube\.com\/(?:watch\?v=|shorts\/|embed\/)|youtu\.be\/)([A-Za-z0-9_-]{11})/);
+  return m ? m[1] : null;
+}
 
 type RightTab = "data" | "notes";
 type CampLevel = "campanhas" | "conjuntos" | "anuncios";
@@ -285,6 +294,7 @@ function ReunioesPage() {
 
   const mediaTypeIcon = (item: Pick<MediaItem, "type" | "ext">, size = "h-3.5 w-3.5") => {
     const { type, ext } = item;
+    if (type === "youtube") return <Play className={`${size} text-red-500`} />;
     if (type === "pdf") return <FileText className={`${size} text-red-400`} />;
     if (type === "video") return <Video className={`${size} text-purple-400`} />;
     if (type === "image") return <FileImage className={`${size} text-pink-400`} />;
@@ -293,9 +303,25 @@ function ReunioesPage() {
     if (type === "office-online" || type === "office-local") {
       if (ext === "xlsx" || ext === "xls" || ext === "csv") return <FileSpreadsheet className={`${size} text-green-500`} />;
       if (ext === "pptx" || ext === "ppt") return <Presentation className={`${size} text-orange-400`} />;
-      return <FileText className={`${size} text-blue-500`} />; // word
+      return <FileText className={`${size} text-blue-500`} />;
     }
     return <Link2 className={`${size} text-muted-foreground`} />;
+  };
+
+  // Netflix card background gradient per type
+  const cardGradient = (item: MediaItem) => {
+    if (item.type === "youtube") return "from-red-950 via-red-900 to-red-800";
+    if (item.type === "pdf") return "from-red-950 via-rose-900 to-rose-800";
+    if (item.type === "video") return "from-purple-950 via-purple-900 to-violet-800";
+    if (item.type === "image") return "from-pink-950 via-pink-900 to-fuchsia-800";
+    if (item.type === "google") return "from-blue-950 via-blue-900 to-sky-800";
+    if (item.type === "office-online" || item.type === "office-local") {
+      if (item.ext === "xlsx" || item.ext === "xls") return "from-green-950 via-green-900 to-emerald-800";
+      if (item.ext === "pptx" || item.ext === "ppt") return "from-orange-950 via-orange-900 to-amber-800";
+      return "from-blue-950 via-blue-900 to-indigo-800";
+    }
+    if (item.type === "text") return "from-slate-800 via-slate-700 to-slate-600";
+    return "from-zinc-800 via-zinc-700 to-zinc-600";
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -343,6 +369,22 @@ function ReunioesPage() {
     let type: MediaType = "url";
     let embedSrc: string | undefined;
 
+    // YouTube
+    const ytId = extractYouTubeId(raw);
+    if (ytId) {
+      type = "youtube";
+      embedSrc = `https://www.youtube.com/embed/${ytId}?rel=0&modestbranding=1&autoplay=0`;
+      const item: MediaItem = {
+        id: crypto.randomUUID(), type, name: urlName.trim() || "YouTube",
+        src: raw, embedSrc,
+        thumbnail: `https://img.youtube.com/vi/${ytId}/hqdefault.jpg`,
+      };
+      setMediaItems(prev => [item, ...prev]);
+      setActiveMedia(item);
+      setUrlInput(""); setUrlName(""); setAddingType(null);
+      toast.success("YouTube adicionado");
+      return;
+    }
     // Google Workspace
     if (raw.includes("docs.google.com") || raw.includes("drive.google.com")) {
       type = "google";
@@ -413,6 +455,18 @@ function ReunioesPage() {
   };
 
   const renderPreview = (item: MediaItem) => {
+    // ── YouTube ────────────────────────────────────────────
+    if (item.type === "youtube" && item.embedSrc)
+      return (
+        <iframe
+          src={item.embedSrc}
+          title={item.name}
+          className="w-full h-full border-0"
+          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+          allowFullScreen
+        />
+      );
+
     // ── Video ──────────────────────────────────────────────
     if (item.type === "video")
       return <video src={item.src} controls className="w-full h-full object-contain bg-black" />;
@@ -600,96 +654,141 @@ function ReunioesPage() {
           className="flex flex-col min-h-0 min-w-0 border-r border-border"
           style={{ width: hideRight ? "100%" : `${splitPct}%` }}
         >
-          {/* Media header */}
-          <div className="shrink-0 flex items-center gap-2 px-3 py-2 border-b border-border bg-muted/30">
-            <div className="flex items-center gap-1.5 flex-1 min-w-0 overflow-x-auto">
-              {/* File tabs */}
-              {mediaItems.map(item => (
-                <button key={item.id}
-                  onClick={() => setActiveMedia(item)}
-                  className={`group flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[11px] font-semibold transition-all shrink-0 ${
-                    activeMedia?.id === item.id
-                      ? "bg-background border border-border text-foreground shadow-sm"
-                      : "text-muted-foreground hover:bg-background/60 hover:text-foreground"
-                  }`}
-                >
-                  {mediaTypeIcon(item)}
-                  <span className="max-w-[110px] truncate">{item.name}</span>
-                  <button onClick={e => { e.stopPropagation(); setMediaItems(p => p.filter(m => m.id !== item.id)); if (activeMedia?.id === item.id) setActiveMedia(null); }}
-                    className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-all ml-0.5">
-                    <X className="h-2.5 w-2.5" />
-                  </button>
-                </button>
-              ))}
-
-              {/* Add tab */}
+          {/* Slim top bar — actions only */}
+          <div className="shrink-0 flex items-center justify-between px-3 py-1.5 border-b border-border/50 bg-black/20">
+            <div className="flex items-center gap-1.5">
               <button onClick={() => fileInputRef.current?.click()}
-                className="flex items-center gap-1 rounded-lg border border-dashed border-border/70 px-2 py-1.5 text-[11px] text-muted-foreground hover:border-primary/40 hover:text-primary transition-all shrink-0">
-                <Plus className="h-3 w-3" />
-                <span className="hidden sm:block">Arquivo</span>
+                className="flex items-center gap-1 rounded-lg px-2.5 py-1 text-[10px] font-semibold text-muted-foreground hover:text-foreground hover:bg-white/10 transition-all">
+                <Upload className="h-3 w-3" /> Upload
               </button>
               <button onClick={() => setAddingType("url")}
-                className="flex items-center gap-1 rounded-lg border border-dashed border-border/70 px-2 py-1.5 text-[11px] text-muted-foreground hover:border-primary/40 hover:text-primary transition-all shrink-0">
-                <Link2 className="h-3 w-3" />
-                <span className="hidden sm:block">URL</span>
+                className="flex items-center gap-1 rounded-lg px-2.5 py-1 text-[10px] font-semibold text-muted-foreground hover:text-foreground hover:bg-white/10 transition-all">
+                <Play className="h-3 w-3 text-red-400" /> YouTube / URL
               </button>
               <button onClick={() => setAddingType("google")}
-                className="flex items-center gap-1 rounded-lg border border-dashed border-blue-400/30 px-2 py-1.5 text-[11px] text-blue-400 hover:border-blue-400/50 hover:bg-blue-400/5 transition-all shrink-0">
-                <Globe className="h-3 w-3" />
-                <span className="hidden sm:block">Google</span>
+                className="flex items-center gap-1 rounded-lg px-2.5 py-1 text-[10px] font-semibold text-blue-400 hover:bg-blue-400/10 transition-all">
+                <Globe className="h-3 w-3" /> Google Drive
               </button>
             </div>
-
-            {/* Stage actions */}
-            {activeMedia && (
-              <a href={activeMedia.src} target="_blank" rel="noopener noreferrer"
-                className="shrink-0 rounded-lg p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-all">
-                <ExternalLink className="h-3.5 w-3.5" />
-              </a>
-            )}
-            {hideRight && (
-              <button onClick={() => { setHideRight(false); setSplitPct(64); setLayoutPreset("stage"); }}
-                className="shrink-0 rounded-lg p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-all" title="Mostrar painel lateral">
-                <PanelRight className="h-3.5 w-3.5" />
-              </button>
-            )}
+            <div className="flex items-center gap-1">
+              {activeMedia && (
+                <a href={activeMedia.src} target="_blank" rel="noopener noreferrer"
+                  className="rounded-lg p-1 text-muted-foreground hover:text-foreground hover:bg-white/10 transition-all" title="Abrir em nova aba">
+                  <ExternalLink className="h-3.5 w-3.5" />
+                </a>
+              )}
+              {hideRight && (
+                <button onClick={() => { setHideRight(false); setSplitPct(64); setLayoutPreset("stage"); }}
+                  className="rounded-lg p-1 text-muted-foreground hover:text-foreground hover:bg-white/10 transition-all" title="Mostrar painel lateral">
+                  <PanelRight className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </div>
           </div>
 
           {/* Media viewer */}
-          <div className="flex-1 min-h-0 bg-muted/10 relative">
+          <div className="flex-1 min-h-0 bg-black/5 relative">
             {activeMedia ? (
               renderPreview(activeMedia)
             ) : (
-              /* Empty state */
               <div className="flex flex-col items-center justify-center h-full gap-5 text-muted-foreground">
                 <div className="relative">
                   <div className="absolute inset-0 rounded-3xl bg-primary/5 blur-2xl scale-150" />
-                  <div className="relative grid grid-cols-2 gap-3 p-2">
-                    {[FileText, Video, FileSpreadsheet, Presentation].map((Icon, i) => (
-                      <div key={i} className="h-14 w-14 rounded-2xl bg-muted/60 border border-border/60 flex items-center justify-center">
-                        <Icon className="h-6 w-6 opacity-30" />
+                  <div className="relative grid grid-cols-3 gap-3 p-2">
+                    {[{ Icon: Play, color: "text-red-400" }, { Icon: FileText, color: "text-red-400" }, { Icon: Presentation, color: "text-orange-400" }, { Icon: FileSpreadsheet, color: "text-green-400" }, { Icon: Globe, color: "text-blue-400" }, { Icon: Video, color: "text-purple-400" }].map(({ Icon, color }, i) => (
+                      <div key={i} className="h-12 w-12 rounded-xl bg-muted/60 border border-border/60 flex items-center justify-center">
+                        <Icon className={`h-5 w-5 opacity-40 ${color}`} />
                       </div>
                     ))}
                   </div>
                 </div>
                 <div className="text-center">
-                  <p className="text-sm font-bold mb-1.5">Palco vazio</p>
-                  <p className="text-xs opacity-60 max-w-[220px] leading-relaxed">
-                    Adicione um PDF, vídeo, apresentação ou link para exibir aqui durante a reunião
-                  </p>
-                </div>
-                <div className="flex flex-wrap justify-center gap-2">
-                  <button onClick={() => fileInputRef.current?.click()}
-                    className="flex items-center gap-2 rounded-xl bg-primary/10 border border-primary/20 px-4 py-2 text-xs font-semibold text-primary hover:bg-primary/20 transition-all">
-                    <Upload className="h-3.5 w-3.5" /> Upload
-                  </button>
-                  <button onClick={() => setAddingType("google")}
-                    className="flex items-center gap-2 rounded-xl border border-blue-400/30 bg-blue-400/5 px-4 py-2 text-xs font-semibold text-blue-400 hover:bg-blue-400/10 transition-all">
-                    <Globe className="h-3.5 w-3.5" /> Google Drive
-                  </button>
+                  <p className="text-sm font-bold mb-1">Palco vazio</p>
+                  <p className="text-xs opacity-50 max-w-[200px] leading-relaxed">Adicione conteúdo pela barra acima ou escolha uma mídia abaixo</p>
                 </div>
               </div>
             )}
+          </div>
+
+          {/* ══ NETFLIX STRIP ══════════════════════════════════ */}
+          <div className={`shrink-0 border-t border-border/50 bg-black/60 backdrop-blur transition-all ${mediaItems.length === 0 ? "h-0 overflow-hidden" : "h-[110px]"}`}>
+            <div className="h-full flex items-center gap-3 px-3 overflow-x-auto">
+
+              {mediaItems.map(item => {
+                const isActive = activeMedia?.id === item.id;
+                const hasCover = item.thumbnail || item.type === "image";
+                return (
+                  <motion.div
+                    key={item.id}
+                    layout
+                    initial={{ opacity: 0, scale: 0.85 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    className="group relative shrink-0 cursor-pointer"
+                    style={{ width: 128, height: 80 }}
+                    onClick={() => setActiveMedia(item)}
+                  >
+                    {/* Card */}
+                    <div className={`w-full h-full rounded-xl overflow-hidden border-2 transition-all duration-200 ${
+                      isActive
+                        ? "border-primary shadow-[0_0_14px_rgba(var(--primary-rgb),0.6)] scale-105"
+                        : "border-transparent group-hover:border-white/30 group-hover:scale-105"
+                    }`}>
+                      {/* Cover image (YouTube thumb or image file) */}
+                      {hasCover ? (
+                        <img
+                          src={item.thumbnail || item.src}
+                          alt={item.name}
+                          className="w-full h-full object-cover"
+                          onError={e => { (e.target as HTMLImageElement).style.display = "none"; }}
+                        />
+                      ) : (
+                        <div className={`w-full h-full bg-gradient-to-br ${cardGradient(item)} flex items-center justify-center`}>
+                          <div className="opacity-60">
+                            {mediaTypeIcon(item, "h-7 w-7")}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Bottom overlay */}
+                      <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent px-2 pb-1.5 pt-4">
+                        <p className="text-[10px] text-white font-semibold truncate leading-tight">{item.name}</p>
+                      </div>
+
+                      {/* Active play indicator */}
+                      {isActive && (
+                        <div className="absolute top-1.5 right-1.5 h-4 w-4 rounded-full bg-primary flex items-center justify-center">
+                          <Play className="h-2 w-2 text-primary-foreground fill-current" />
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Remove button */}
+                    <button
+                      onClick={e => {
+                        e.stopPropagation();
+                        setMediaItems(p => p.filter(m => m.id !== item.id));
+                        if (activeMedia?.id === item.id) setActiveMedia(null);
+                      }}
+                      className="absolute -top-1.5 -right-1.5 h-5 w-5 rounded-full bg-destructive text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow-lg z-10"
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </motion.div>
+                );
+              })}
+
+              {/* Add card */}
+              <motion.div layout className="shrink-0" style={{ width: 128, height: 80 }}>
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  className="w-full h-full rounded-xl border-2 border-dashed border-white/15 hover:border-white/40 hover:bg-white/5 transition-all flex flex-col items-center justify-center gap-1 group"
+                >
+                  <Plus className="h-5 w-5 text-white/30 group-hover:text-white/60 transition-colors" />
+                  <span className="text-[9px] text-white/30 group-hover:text-white/50 font-semibold transition-colors">Adicionar</span>
+                </button>
+              </motion.div>
+
+            </div>
           </div>
 
           {/* Presenting KPI overlay (bottom of stage) */}
