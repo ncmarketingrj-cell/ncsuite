@@ -4,7 +4,6 @@
 import { useEffect, useRef, useCallback } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { toast } from "sonner";
 
 const REALTIME_SYNC_INTERVAL_MS = 3 * 60 * 1000; // 3 minutos
 const STORAGE_REALTIME_KEY = "nc_last_realtime_sync";
@@ -20,20 +19,26 @@ export type SyncStatus = {
 export const SYNC_STATUS_EVENT = "nc_sync_status_changed";
 
 function dispatchSyncStatus(status: Partial<SyncStatus>) {
-  const stored = localStorage.getItem(STORAGE_SYNC_STATUS);
-  const current: SyncStatus = stored ? JSON.parse(stored) : {
-    lastSync: null, nextSync: null, isSyncing: false, lastResult: null
-  };
-  const updated = { ...current, ...status };
-  localStorage.setItem(STORAGE_SYNC_STATUS, JSON.stringify(updated));
-  window.dispatchEvent(new CustomEvent(SYNC_STATUS_EVENT, { detail: updated }));
+  try {
+    const current = getSyncStatus();
+    const updated = { ...current, ...status };
+    localStorage.setItem(STORAGE_SYNC_STATUS, JSON.stringify(updated));
+    window.dispatchEvent(new CustomEvent(SYNC_STATUS_EVENT, { detail: updated }));
+  } catch {
+    // localStorage indisponível — dispara apenas o evento
+    window.dispatchEvent(new CustomEvent(SYNC_STATUS_EVENT, { detail: status }));
+  }
 }
 
 export function getSyncStatus(): SyncStatus {
-  const stored = localStorage.getItem(STORAGE_SYNC_STATUS);
-  return stored ? JSON.parse(stored) : {
-    lastSync: null, nextSync: null, isSyncing: false, lastResult: null
-  };
+  try {
+    const stored = localStorage.getItem(STORAGE_SYNC_STATUS);
+    return stored ? JSON.parse(stored) : {
+      lastSync: null, nextSync: null, isSyncing: false, lastResult: null
+    };
+  } catch {
+    return { lastSync: null, nextSync: null, isSyncing: false, lastResult: null };
+  }
 }
 
 function getLocalDateString(date: Date): string {

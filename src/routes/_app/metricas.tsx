@@ -46,6 +46,13 @@ function MetricasAvancadasPage() {
   const qc = useQueryClient();
   const searchParams = useSearch({ from: "/_app/metricas" });
 
+  // Todos os hooks ANTES de qualquer early return (regra do React)
+  const [accountFilter, setAccountFilter] = useState(searchParams.account || "all");
+  const [statusFilter, setStatusFilter] = useState<"all" | "active" | "paused">("all");
+  const [search, setSearch] = useState("");
+  const [level, setLevel] = useState<Level>("campanhas");
+  const [highlightCampaign, setHighlightCampaign] = useState<string | undefined>(searchParams.campaign);
+
   if (!isAdmin) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] gap-6 text-center px-4">
@@ -67,11 +74,6 @@ function MetricasAvancadasPage() {
       </div>
     );
   }
-  const [accountFilter, setAccountFilter] = useState(searchParams.account || "all");
-  const [statusFilter, setStatusFilter] = useState<"all" | "active" | "paused">("all");
-  const [search, setSearch] = useState("");
-  const [level, setLevel] = useState<Level>("campanhas");
-  const [highlightCampaign, setHighlightCampaign] = useState<string | undefined>(searchParams.campaign);
 
   // Aplicar filtros vindos da URL (ex: clique em notificação de alerta)
   useEffect(() => {

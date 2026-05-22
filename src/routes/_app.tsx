@@ -19,12 +19,41 @@ import { toast } from "sonner";
 import { useAutoSync, getSyncStatus, SYNC_STATUS_EVENT, type SyncStatus } from "@/hooks/useAutoSync";
 import { useAlertEngine } from "@/hooks/useAlertEngine";
 
+function AppErrorFallback({ error, reset }: { error: Error; reset: () => void }) {
+  return (
+    <div className="flex min-h-screen flex-col items-center justify-center gap-6 bg-background px-4 text-center">
+      <div className="h-14 w-14 rounded-2xl bg-destructive/10 border border-destructive/20 flex items-center justify-center">
+        <span className="font-display font-black text-destructive text-xl">!</span>
+      </div>
+      <div className="space-y-2 max-w-sm">
+        <h2 className="text-xl font-black tracking-tight">Algo deu errado</h2>
+        <p className="text-xs text-muted-foreground font-mono break-all">{error?.message || "Erro desconhecido"}</p>
+      </div>
+      <div className="flex gap-3">
+        <button
+          onClick={() => { reset(); window.location.href = "/dashboard"; }}
+          className="rounded-full bg-primary px-5 py-2.5 text-sm font-bold text-primary-foreground hover:opacity-90"
+        >
+          Voltar ao Dashboard
+        </button>
+        <button
+          onClick={() => window.location.reload()}
+          className="rounded-full border border-white/10 px-5 py-2.5 text-sm font-medium hover:bg-white/5"
+        >
+          Recarregar
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export const Route = createFileRoute("/_app")({
   component: () => (
     <AuthProvider>
       <Shell />
     </AuthProvider>
   ),
+  errorComponent: AppErrorFallback,
 });
 
 type NavItem = {
