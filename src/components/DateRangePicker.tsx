@@ -34,39 +34,23 @@ export function DateRangePicker({ startDate, endDate, onChange, className = "" }
   const [currentMonth, setCurrentMonth] = useState(new Date(startDate));
   const [tempStart, setTempStart] = useState<Date | null>(startDate);
   const [tempEnd, setTempEnd] = useState<Date | null>(endDate);
-  
-  const containerRef = useRef<HTMLDivElement>(null);
-  const [dropdownAlign, setDropdownAlign] = useState<"left" | "right">("right");
 
-  // Fecha o popup ao clicar fora
+  const containerRef = useRef<HTMLDivElement>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  // Fecha o popup ao clicar fora — considera tanto o trigger quanto o conteúdo do portal
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
-      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+      const target = event.target as Node;
+      const insideTrigger = containerRef.current?.contains(target);
+      const insideDropdown = dropdownRef.current?.contains(target);
+      if (!insideTrigger && !insideDropdown) {
         setIsOpen(false);
       }
     }
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
-
-  const [dropdownStyles, setDropdownStyles] = useState<React.CSSProperties>({});
-
-  // Decide se abre para direita (left-0) ou para esquerda (right-0) conforme espaço disponível
-  useEffect(() => {
-    if (isOpen && containerRef.current) {
-      const rect = containerRef.current.getBoundingClientRect();
-      const dropdownWidth = window.innerWidth < 768 ? 300 : 550;
-      const spaceOnRight = window.innerWidth - rect.left;
-      const alignLeft = spaceOnRight >= dropdownWidth;
-      
-      setDropdownStyles({
-        position: 'fixed',
-        top: `${rect.bottom + 8}px`,
-        left: alignLeft ? `${rect.left}px` : 'auto',
-        right: !alignLeft ? `${window.innerWidth - rect.right}px` : 'auto',
-      });
-    }
-  }, [isOpen]);
 
   // Mantém em sincronia se as datas externas mudarem
   useEffect(() => {
@@ -76,6 +60,21 @@ export function DateRangePicker({ startDate, endDate, onChange, className = "" }
       setCurrentMonth(new Date(startDate));
     }
   }, [isOpen, startDate, endDate]);
+
+  // Calcula a posição do dropdown com base no botão — executado no render para evitar flash de posição errada
+  const getDropdownStyles = (): React.CSSProperties => {
+    if (!containerRef.current) return { position: "fixed", top: 0, left: 0, visibility: "hidden" };
+    const rect = containerRef.current.getBoundingClientRect();
+    const dropdownWidth = window.innerWidth < 768 ? 300 : 550;
+    const spaceOnRight = window.innerWidth - rect.left;
+    const alignLeft = spaceOnRight >= dropdownWidth;
+    return {
+      position: "fixed",
+      top: `${rect.bottom + 8}px`,
+      left: alignLeft ? `${rect.left}px` : "auto",
+      right: !alignLeft ? `${window.innerWidth - rect.right}px` : "auto",
+    };
+  };
 
   const handlePresetClick = (preset: typeof PRESETS[0]) => {
     const { start, end } = preset.getValue();
@@ -96,18 +95,15 @@ export function DateRangePicker({ startDate, endDate, onChange, className = "" }
       } else {
         setTempEnd(day);
         onChange(tempStart, day);
-        setIsOpen(false); // Fecha ao escolher o range completo
+        setIsOpen(false);
       }
     }
   };
 
-  // Funções auxiliares de renderização do calendário
   const year = currentMonth.getFullYear();
   const month = currentMonth.getMonth();
-  
   const daysInMonth = new Date(year, month + 1, 0).getDate();
   const firstDayIndex = new Date(year, month, 1).getDay();
-  
   const daysArray = Array.from({ length: daysInMonth }, (_, i) => new Date(year, month, i + 1));
   const blanksArray = Array.from({ length: firstDayIndex }, (_, i) => null);
 
@@ -138,14 +134,16 @@ export function DateRangePicker({ startDate, endDate, onChange, className = "" }
         <span>{formattedLabel()}</span>
       </button>
 
-      <AnimatePresence>
-        {isOpen && createPortal(
+      {isOpen && createPortal(
+        <AnimatePresence>
           <motion.div
+            ref={dropdownRef}
+            key="datepicker-dropdown"
             initial={{ opacity: 0, y: -10, scale: 0.95 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -10, scale: 0.95 }}
             transition={{ duration: 0.15 }}
-            style={dropdownStyles}
+            style={getDropdownStyles()}
             className="z-[9999] flex flex-col md:flex-row rounded-2xl border border-white/10 bg-background/95 p-4 shadow-2xl backdrop-blur-2xl gap-4 w-[300px] sm:w-[350px] md:w-[550px] max-w-[calc(100vw-2rem)]"
           >
             {/* Atalhos Rápidos */}
@@ -166,7 +164,6 @@ export function DateRangePicker({ startDate, endDate, onChange, className = "" }
 
             {/* Calendário */}
             <div className="flex-1 flex flex-col">
-              {/* Controles Mês/Ano */}
               <div className="flex items-center justify-between mb-4">
                 <button
                   onClick={prevMonth}
@@ -185,7 +182,6 @@ export function DateRangePicker({ startDate, endDate, onChange, className = "" }
                 </button>
               </div>
 
-              {/* Dias da Semana */}
               <div className="grid grid-cols-7 gap-1 text-center mb-2">
                 {["D", "S", "T", "Q", "Q", "S", "S"].map((d, i) => (
                   <span key={i} className="text-[9px] font-black text-muted-foreground/60 w-8 py-1">
@@ -194,7 +190,6 @@ export function DateRangePicker({ startDate, endDate, onChange, className = "" }
                 ))}
               </div>
 
-              {/* Grid dos Dias */}
               <div className="grid grid-cols-7 gap-1">
                 {blanksArray.map((_, i) => (
                   <div key={`blank-${i}`} className="w-8 h-8" />
@@ -203,7 +198,7 @@ export function DateRangePicker({ startDate, endDate, onChange, className = "" }
                 {daysArray.map((day) => {
                   const selectState = isSelected(day);
                   const isFutureDay = isAfter(day, new Date());
-                  
+
                   return (
                     <button
                       key={day.toISOString()}
@@ -229,7 +224,7 @@ export function DateRangePicker({ startDate, endDate, onChange, className = "" }
                   );
                 })}
               </div>
-              
+
               <div className="mt-4 border-t border-white/5 pt-3 flex items-center justify-between text-[9px] text-muted-foreground">
                 <span className="flex items-center gap-1">
                   <AlertCircle className="h-3 w-3 text-muted-foreground/60" /> Sincronize antes para dados de hoje.
@@ -237,10 +232,10 @@ export function DateRangePicker({ startDate, endDate, onChange, className = "" }
                 <span className="font-bold text-primary/80 uppercase">Victoria AI Engine</span>
               </div>
             </div>
-          </motion.div>,
-          document.body
-        )}
-      </AnimatePresence>
+          </motion.div>
+        </AnimatePresence>,
+        document.body
+      )}
     </div>
   );
 }
