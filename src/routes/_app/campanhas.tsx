@@ -252,11 +252,11 @@ function MetaAdsManagerPage() {
             <div className="flex flex-wrap items-center gap-3">
               <DateRangePicker startDate={dateRange.startDate} endDate={dateRange.endDate} onChange={(s, e) => setDateRange({ startDate: s, endDate: e })} />
               <button
-                onClick={() => navigate({ to: "/campanhas/grafico", search: (prev) => prev })}
+                onClick={() => navigate({ to: "/metricas/grafico" })}
                 className="flex items-center gap-2 rounded-xl border border-primary/30 bg-primary/10 px-4 py-2.5 text-xs font-bold text-primary hover:bg-primary/20 transition-all"
               >
                 <Pencil className="h-3.5 w-3.5" />
-                Editar Gráficos
+                Gráficos Demográficos
               </button>
             </div>
           }

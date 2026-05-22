@@ -31,7 +31,7 @@ const BASE_KEY = "nc_metricas_grafico_v2";
 const userKey = (uid: string) => `${BASE_KEY}_${uid}`;
 
 // ─── MODOS ESTRATÉGICOS ─────────────────────────────────────────────────────
-type ModoId = "geral" | "eficiencia" | "budget" | "audiencia" | "comparativo";
+type ModoId = "geral" | "eficiencia" | "budget" | "audiencia" | "comparativo" | "demograficos";
 
 const MODOS: Record<ModoId, {
   label: string;
@@ -80,6 +80,14 @@ const MODOS: Record<ModoId, {
     color: "text-blue-400",
     charts: ["comparativo", "treemap-cliques", "pie-share"],
     foco: "Descobrir quais campanhas dominam cada métrica e onde há gaps de performance.",
+  },
+  demograficos: {
+    label: "Demografia & Breakdowns",
+    desc: "Análise avançada de público (idade, sexo, região, horas)",
+    icon: Users,
+    color: "text-pink-400",
+    charts: ["pie-gender", "bar-age", "bar-region", "line-hourly", "bar-platform"],
+    foco: "Entender examente QUEM converte, ONDE estão e a QUE HORAS compram.",
   },
 };
 
@@ -264,12 +272,14 @@ function MetricasGraficoPage() {
     queryKey: ["gm-camps", accountFilter, dateRange.startDate.toISOString(), dateRange.endDate.toISOString()],
     queryFn: async () => {
       const s = getD(dateRange.startDate), e = getD(dateRange.endDate);
-      let q = (supabase as any).from("campaigns").select(`id, name, status, ad_account_id, metrics(cost, conversions, impressions, clicks, reach, date)`);
+      let q = (supabase as any).from("campaigns").select(`id, name, status, ad_account_id, ads(asset_metrics(cost, conversions, impressions, clicks, reach, date))`);
       if (accountFilter !== "all") q = q.eq("ad_account_id", accountFilter);
       const { data, error } = await q.order("name");
       if (error) throw error;
       return (data || []).map((c: any) => {
-        const m = (c.metrics || []).filter((x: any) => { const d = (x.date || "").split("T")[0]; return d >= s && d <= e; });
+        let m = c.ads || [];
+        if (m.length > 0 && m[0]?.asset_metrics !== undefined) m = m.flatMap((ad: any) => ad.asset_metrics || []);
+        m = m.filter((x: any) => { const d = (x.date || "").split("T")[0]; return d >= s && d <= e; });
         const cost = m.reduce((a: number, x: any) => a + Number(x.cost || 0), 0);
         const conversions = m.reduce((a: number, x: any) => a + Number(x.conversions || 0), 0);
         const clicks = m.reduce((a: number, x: any) => a + Number(x.clicks || 0), 0);
@@ -282,6 +292,72 @@ function MetricasGraficoPage() {
         return { ...c, t: { cost, conversions, clicks, impressions, reach, cpl, ctr, cpm, freq } };
       });
     },
+  });
+
+  const { data: breakdowns, isLoading: loadingBreakdowns } = useQuery({
+    queryKey: ["gm-breakdowns", accountFilter, dateRange.startDate.toISOString(), dateRange.endDate.toISOString()],
+    queryFn: async () => {
+      const s = getD(dateRange.startDate), e = getD(dateRange.endDate);
+      const filterAccount = accountFilter !== "all" ? `ad_account_id.eq.${accountFilter},` : "";
+      
+      const [demo, hourly, region] = await Promise.all([
+        (supabase as any).from("demographic_metrics").select("age_range, gender, platform, conversions, spend").gte("date", s).lte("date", e).filter(accountFilter !== "all" ? "ad_account_id" : "id", "neq", "null"),
+        (supabase as any).from("hourly_metrics").select("hour, conversions, spend").gte("date", s).lte("date", e).filter(accountFilter !== "all" ? "ad_account_id" : "id", "neq", "null"),
+        (supabase as any).from("region_metrics").select("region, conversions, spend").gte("date", s).lte("date", e).filter(accountFilter !== "all" ? "ad_account_id" : "id", "neq", "null")
+      ]);
+
+      // Process Age
+      const ageMap: Record<string, any> = {};
+      (demo.data || []).forEach((r: any) => {
+        if (!ageMap[r.age_range]) ageMap[r.age_range] = { name: r.age_range, conv: 0, cost: 0 };
+        ageMap[r.age_range].conv += Number(r.conversions || 0);
+        ageMap[r.age_range].cost += Number(r.spend || 0);
+      });
+      const ageData = Object.values(ageMap).filter(v => v.name !== "unknown").sort((a, b) => a.name.localeCompare(b.name));
+
+      // Process Gender
+      const genderMap: Record<string, any> = {};
+      (demo.data || []).forEach((r: any) => {
+        if (!genderMap[r.gender]) genderMap[r.gender] = { name: r.gender, value: 0, cost: 0 };
+        genderMap[r.gender].value += Number(r.conversions || 0);
+        genderMap[r.gender].cost += Number(r.spend || 0);
+      });
+      const genderData = Object.values(genderMap).filter(v => v.name !== "unknown").map(g => ({ ...g, name: g.name === "male" ? "Masculino" : g.name === "female" ? "Feminino" : g.name }));
+
+      // Process Platform
+      const platMap: Record<string, any> = {};
+      (demo.data || []).forEach((r: any) => {
+        if (!platMap[r.platform]) platMap[r.platform] = { name: r.platform, conv: 0, cost: 0 };
+        platMap[r.platform].conv += Number(r.conversions || 0);
+        platMap[r.platform].cost += Number(r.spend || 0);
+      });
+      const platData = Object.values(platMap).filter(v => v.name !== "unknown").sort((a, b) => b.conv - a.conv);
+
+      // Process Hourly
+      const hourMap: Record<string, any> = {};
+      for(let i=0; i<24; i++) {
+        const hh = String(i).padStart(2, '0') + ":00:00 - " + String(i).padStart(2, '0') + ":59:59";
+        hourMap[hh] = { name: `${i}h`, conv: 0, cost: 0 };
+      }
+      (hourly.data || []).forEach((r: any) => {
+        if (hourMap[r.hour]) {
+          hourMap[r.hour].conv += Number(r.conversions || 0);
+          hourMap[r.hour].cost += Number(r.spend || 0);
+        }
+      });
+      const hourlyData = Object.values(hourMap);
+
+      // Process Region
+      const regMap: Record<string, any> = {};
+      (region.data || []).forEach((r: any) => {
+        if (!regMap[r.region]) regMap[r.region] = { name: r.region, conv: 0, cost: 0 };
+        regMap[r.region].conv += Number(r.conversions || 0);
+        regMap[r.region].cost += Number(r.spend || 0);
+      });
+      const regionData = Object.values(regMap).filter(v => v.name !== "unknown").sort((a, b) => b.conv - a.conv).slice(0, 10);
+
+      return { ageData, genderData, platData, hourlyData, regionData };
+    }
   });
 
   const totCost = campaigns.reduce((s: number, c: any) => s + c.t.cost, 0);
@@ -724,6 +800,87 @@ function MetricasGraficoPage() {
                       <Bar dataKey="CTR" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} {...animProps} />
                       <Bar dataKey="CPL/10" fill="#8b5cf6" radius={[4, 4, 0, 0]} {...animProps} />
                       <Bar dataKey="Freq×10" fill="#f97316" radius={[4, 4, 0, 0]} {...animProps} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </ChartCard>
+              )}
+
+              {/* ── GÊNERO ── */}
+              {isVis("pie-gender") && !loadingBreakdowns && (
+                <ChartCard key={`pg-${dataUpdatedAt}`} icon={<Users className="h-4 w-4 text-pink-400" />} title="Conversões por Gênero" badge="PIE · GENDER" context="Entenda qual sexo mais converte para otimizar os criativos e copys.">
+                  <ResponsiveContainer width="100%" height={280}>
+                    <RechartsPieChart>
+                      <Pie data={breakdowns?.genderData || []} cx="50%" cy="50%" innerRadius={60} outerRadius={100} paddingAngle={3} dataKey="value" label={({ name, percent }: any) => `${name} ${(percent * 100).toFixed(0)}%`} labelLine={false} {...animProps}>
+                        {(breakdowns?.genderData || []).map((entry: any, i: number) => <Cell key={i} fill={entry.name === "Masculino" ? "#3b82f6" : entry.name === "Feminino" ? "#ec4899" : "#8b5cf6"} opacity={0.85} />)}
+                      </Pie>
+                      <Tooltip contentStyle={{ background: "var(--color-card)", border: "1px solid var(--color-border)", borderRadius: 12, fontSize: 11 }} formatter={(v: any) => [v, "Conversões"]} />
+                      <Legend iconType="circle" iconSize={8} formatter={(v) => <span className="text-[10px] text-muted-foreground">{v}</span>} />
+                    </RechartsPieChart>
+                  </ResponsiveContainer>
+                </ChartCard>
+              )}
+
+              {/* ── IDADE ── */}
+              {isVis("bar-age") && !loadingBreakdowns && (
+                <ChartCard key={`ba-${dataUpdatedAt}`} icon={<Activity className="h-4 w-4 text-violet-400" />} title="Faixa Etária (Volume vs Gasto)" badge="BAR · AGE" context="Mostra a relação entre investimento e conversão por faixa de idade.">
+                  <ResponsiveContainer width="100%" height={280}>
+                    <BarChart data={breakdowns?.ageData || []} margin={{ left: -10 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" opacity={0.3} />
+                      <XAxis dataKey="name" tick={{ fill: "var(--color-muted-foreground)", fontSize: 9 }} />
+                      <YAxis yAxisId="left" tick={{ fill: "var(--color-muted-foreground)", fontSize: 10 }} tickFormatter={(v) => `R$${(v / 1000).toFixed(1)}k`} />
+                      <YAxis yAxisId="right" orientation="right" tick={{ fill: "var(--color-muted-foreground)", fontSize: 10 }} />
+                      <Tooltip contentStyle={{ background: "var(--color-card)", border: "1px solid var(--color-border)", borderRadius: 12, fontSize: 11 }} formatter={(v: any, n: string) => [n === "cost" ? `R$ ${Number(v).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}` : v, n === "cost" ? "Gasto" : "Conversões"]} />
+                      <Legend iconType="circle" iconSize={8} formatter={(v) => <span className="text-[10px] text-muted-foreground">{v === "cost" ? "Gasto" : "Conversões"}</span>} />
+                      <Bar yAxisId="left" dataKey="cost" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} {...animProps} />
+                      <Bar yAxisId="right" dataKey="conv" fill="#ec4899" radius={[4, 4, 0, 0]} {...animProps} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </ChartCard>
+              )}
+
+              {/* ── REGIÃO ── */}
+              {isVis("bar-region") && !loadingBreakdowns && (
+                <ChartCard key={`br-${dataUpdatedAt}`} icon={<Target className="h-4 w-4 text-blue-400" />} title="Top 10 Regiões (Conversões)" badge="BAR · REGION" context="Os estados/regiões que mais trazem leads.">
+                  <ResponsiveContainer width="100%" height={280}>
+                    <BarChart data={breakdowns?.regionData || []} layout="vertical" margin={{ left: 10, right: 20 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" opacity={0.3} />
+                      <XAxis type="number" tick={{ fill: "var(--color-muted-foreground)", fontSize: 10 }} />
+                      <YAxis type="category" dataKey="name" tick={{ fill: "var(--color-foreground)", fontSize: 9 }} width={120} />
+                      <Tooltip contentStyle={{ background: "var(--color-card)", border: "1px solid var(--color-border)", borderRadius: 12, fontSize: 11 }} formatter={(v: any, n: string) => [n === "cost" ? `R$ ${Number(v).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}` : v, n === "cost" ? "Gasto" : "Conversões"]} />
+                      <Bar dataKey="conv" fill="#3b82f6" radius={[0, 6, 6, 0]} {...animProps} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </ChartCard>
+              )}
+
+              {/* ── HORÁRIO ── */}
+              {isVis("line-hourly") && !loadingBreakdowns && (
+                <ChartCard key={`lh-${dataUpdatedAt}`} icon={<Activity className="h-4 w-4 text-orange-400" />} title="Mapa de Calor Horário (Conversões)" badge="AREA · HOURLY" context="Mostra a curva de resultados longo do dia.">
+                  <ResponsiveContainer width="100%" height={250}>
+                    <AreaChart data={breakdowns?.hourlyData || []} margin={{ left: -10 }}>
+                      <defs>
+                        <linearGradient id="hourGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#f97316" stopOpacity={0.3} /><stop offset="95%" stopColor="#f97316" stopOpacity={0} /></linearGradient>
+                      </defs>
+                      <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" opacity={0.3} />
+                      <XAxis dataKey="name" tick={{ fill: "var(--color-muted-foreground)", fontSize: 9 }} />
+                      <YAxis tick={{ fill: "var(--color-muted-foreground)", fontSize: 10 }} />
+                      <Tooltip contentStyle={{ background: "var(--color-card)", border: "1px solid var(--color-border)", borderRadius: 12, fontSize: 11 }} />
+                      <Area type="monotone" dataKey="conv" name="Conversões" stroke="#f97316" fill="url(#hourGrad)" strokeWidth={2} dot={false} {...animProps} />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                </ChartCard>
+              )}
+
+              {/* ── PLATAFORMA ── */}
+              {isVis("bar-platform") && !loadingBreakdowns && (
+                <ChartCard key={`bp-${dataUpdatedAt}`} icon={<Layers className="h-4 w-4 text-green-400" />} title="Performance por Plataforma" badge="BAR · PLATFORM" context="Instagram vs Facebook vs Messenger vs Audience Network.">
+                  <ResponsiveContainer width="100%" height={250}>
+                     <BarChart data={breakdowns?.platData || []} margin={{ left: -10 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" opacity={0.3} />
+                      <XAxis dataKey="name" tick={{ fill: "var(--color-muted-foreground)", fontSize: 9 }} />
+                      <YAxis tick={{ fill: "var(--color-muted-foreground)", fontSize: 10 }} />
+                      <Tooltip contentStyle={{ background: "var(--color-card)", border: "1px solid var(--color-border)", borderRadius: 12, fontSize: 11 }} />
+                      <Bar dataKey="conv" name="Conversões" fill="#22c55e" radius={[4, 4, 0, 0]} {...animProps} />
                     </BarChart>
                   </ResponsiveContainer>
                 </ChartCard>

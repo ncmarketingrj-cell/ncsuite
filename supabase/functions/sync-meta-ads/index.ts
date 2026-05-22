@@ -127,31 +127,51 @@ async function fetchAdInsights(adAccountId: string, token: string, timeParams: R
   }
 }
 
-// ─── Buscar breakdowns demográficos ─────────────────────────────────────────
-async function fetchDemographicBreakdowns(adAccountId: string, token: string, timeParams: Record<string, string>): Promise<any[]> {
+async function fetchDemographicBreakdowns(adAccountId: string, token: string, timeParams: Record<string, string>) {
   try {
-    const dataAgeGender = await metaGetPaginated(`/${adAccountId}/insights`, token, {
-      level: "campaign",
-      fields: "campaign_id,campaign_name,spend,actions,reach,impressions,inline_link_clicks,date_start",
-      breakdowns: "age,gender",
-      time_increment: "1",
-      limit: "500",
-      ...timeParams
-    })
-    
-    const dataPlatform = await metaGetPaginated(`/${adAccountId}/insights`, token, {
-      level: "campaign",
-      fields: "campaign_id,campaign_name,spend,actions,reach,impressions,inline_link_clicks,date_start",
-      breakdowns: "publisher_platform",
-      time_increment: "1",
-      limit: "500",
-      ...timeParams
-    })
+    const [dataAgeGender, dataPlatform, dataHourly, dataRegion] = await Promise.all([
+      metaGetPaginated(`/${adAccountId}/insights`, token, {
+        level: "campaign",
+        fields: "campaign_id,campaign_name,spend,actions,reach,impressions,inline_link_clicks,date_start",
+        breakdowns: "age,gender",
+        time_increment: "1",
+        limit: "500",
+        ...timeParams
+      }),
+      metaGetPaginated(`/${adAccountId}/insights`, token, {
+        level: "campaign",
+        fields: "campaign_id,campaign_name,spend,actions,reach,impressions,inline_link_clicks,date_start",
+        breakdowns: "publisher_platform",
+        time_increment: "1",
+        limit: "500",
+        ...timeParams
+      }),
+      metaGetPaginated(`/${adAccountId}/insights`, token, {
+        level: "campaign",
+        fields: "campaign_id,campaign_name,spend,actions,reach,impressions,inline_link_clicks,date_start",
+        breakdowns: "hourly_stats_aggregated_by_advertiser_time_zone",
+        time_increment: "1",
+        limit: "500",
+        ...timeParams
+      }),
+      metaGetPaginated(`/${adAccountId}/insights`, token, {
+        level: "campaign",
+        fields: "campaign_id,campaign_name,spend,actions,reach,impressions,inline_link_clicks,date_start",
+        breakdowns: "region",
+        time_increment: "1",
+        limit: "500",
+        ...timeParams
+      })
+    ]);
 
-    return [...dataAgeGender, ...dataPlatform]
+    return { 
+      demographics: [...dataAgeGender, ...dataPlatform], 
+      hourly: dataHourly, 
+      region: dataRegion 
+    }
   } catch (e: any) {
     console.error(`[SYNC-DEMO] Erro ao buscar breakdowns de ${adAccountId}:`, e.message)
-    return []
+    return { demographics: [], hourly: [], region: [] }
   }
 }
 
@@ -365,20 +385,24 @@ serve(async (req) => {
         const campaignObjectiveMap = new Map(campaignsWithBudgets.map((c: any) => [c.id, c.objective as string | undefined]))
 
         // Buscar TUDO em paralelo — manual usa 60 dias, auto usa D-1+D0 (ambos gerenciáveis)
-        const [insights, demographics, adsetInsights, adInsights] = await Promise.all([
+        const [insights, breakDownsData, adsetInsights, adInsights] = await Promise.all([
           fetchCampaignInsights(acc.id, token, timeParams),
           fetchDemographicBreakdowns(acc.id, token, timeParams),
           fetchAdSetInsights(acc.id, token, timeParams),
           fetchAdInsights(acc.id, token, timeParams)
         ])
 
-        console.log(`[SYNC] Conta ${acc.id} (${triggeredBy}): ${insights.length} insights + ${demographics.length} demographics + ${adsetInsights.length} adsets + ${adInsights.length} ads`)
+        const { demographics = [], hourly = [], region = [] } = breakDownsData;
+
+        console.log(`[SYNC] Conta ${acc.id} (${triggeredBy}): ${insights.length} insights + ${demographics.length} demo + ${hourly.length} hourly + ${region.length} region + ${adInsights.length} ads`)
 
         syncResults.push({
           accountId: acc.id,
           accountName: acc.name,
           insights,
           demographics,
+          hourly,
+          region,
           adsetInsights,
           adInsights,
           budgetMap,
@@ -393,7 +417,7 @@ serve(async (req) => {
       }
     }
 
-    for (const { accountId, insights, demographics, adsetInsights, adInsights, budgetMap, campaignsWithBudgets = [], campaignObjectiveMap = new Map() } of syncResults) {
+    for (const { accountId, insights, demographics, hourly, region, adsetInsights, adInsights, budgetMap, campaignsWithBudgets = [], campaignObjectiveMap = new Map() } of syncResults) {
       // Upsert campanhas com status reais
       const campaignMap = new Map<string, any>()
       
@@ -412,7 +436,7 @@ serve(async (req) => {
       }
 
       // 2. Adicionar redundâncias vindas dos insights de histórico
-      for (const row of [...insights, ...demographics]) {
+      for (const row of [...insights, ...demographics, ...hourly, ...region]) {
         if (!campaignMap.has(row.campaign_id)) {
           const budget = budgetMap.get(row.campaign_id) || {}
           campaignMap.set(row.campaign_id, {
@@ -565,6 +589,54 @@ serve(async (req) => {
           .upsert(demoToUpsert, { onConflict: "campaign_id,date,age_range,gender,platform" })
         if (error) console.error(`[SYNC] Erro demographics ${accountId}:`, error.message)
         else totalDemographics += demoToUpsert.length
+      }
+
+      // Upsert hourly metrics
+      const hourlyToUpsert = (hourly || []).map(row => {
+        const campaign_id = idMap.get(row.campaign_id)
+        if (!campaign_id) return null
+        return {
+          campaign_id,
+          ad_account_id: accountId,
+          date: row.date_start,
+          hour: row.hourly_stats_aggregated_by_advertiser_time_zone || "unknown",
+          impressions: parseInt(row.impressions) || 0,
+          clicks: parseInt(row.inline_link_clicks || "0") || 0,
+          spend: parseFloat(row.spend) || 0,
+          conversions: extractConversions(row.actions, campaignObjectiveMap.get(row.campaign_id)),
+          reach: parseInt(row.reach) || 0
+        }
+      }).filter(Boolean)
+
+      if (hourlyToUpsert.length > 0) {
+        const { error } = await supabase
+          .from("hourly_metrics")
+          .upsert(hourlyToUpsert, { onConflict: "campaign_id,date,hour" })
+        if (error) console.error(`[SYNC] Erro hourly_metrics ${accountId}:`, error.message)
+      }
+
+      // Upsert region metrics
+      const regionToUpsert = (region || []).map(row => {
+        const campaign_id = idMap.get(row.campaign_id)
+        if (!campaign_id) return null
+        return {
+          campaign_id,
+          ad_account_id: accountId,
+          date: row.date_start,
+          region: row.region || "unknown",
+          impressions: parseInt(row.impressions) || 0,
+          clicks: parseInt(row.inline_link_clicks || "0") || 0,
+          spend: parseFloat(row.spend) || 0,
+          conversions: extractConversions(row.actions, campaignObjectiveMap.get(row.campaign_id)),
+          reach: parseInt(row.reach) || 0
+        }
+      }).filter(Boolean)
+
+      if (regionToUpsert.length > 0) {
+        const { error } = await supabase
+          .from("region_metrics")
+          .upsert(regionToUpsert, { onConflict: "campaign_id,date,region" })
+        if (error) console.error(`[SYNC] Erro region_metrics ${accountId}:`, error.message)
       }
 
       // Upsert asset_metrics (AdSets e Ads)
