@@ -155,30 +155,53 @@ async function fetchDemographicBreakdowns(adAccountId: string, token: string, ti
   }
 }
 
-// ─── Extrair conversões (Resultados) do array de actions ───────────────────────
-function extractConversions(actions: any[] = []): number {
-  // Ordem de prioridade — match EXATO apenas para evitar falsos positivos
-  // (ex: "conversion" não pode casar com "onsite_conversion.messaging_...")
-  const priorityTypes = [
+// ─── Extrair conversões (Resultados) — espelha o "Resultados" do Gerenciador Meta ──
+// O Meta Ads Manager usa o objective da campanha para definir o action_type primário.
+// Ex: campanha MESSAGES → onsite_conversion.messaging_conversation_started_7d
+//     campanha LEAD_GENERATION → lead
+//     campanha CONVERSIONS → purchase
+function extractConversions(actions: any[] = [], objective?: string): number {
+  if (!Array.isArray(actions) || actions.length === 0) return 0;
+
+  // Mapeamento objetivo → action_types primários (mesma lógica do Gerenciador Meta)
+  const byObjective: Record<string, string[]> = {
+    "MESSAGES":          ["onsite_conversion.messaging_conversation_started_7d", "messaging_conversation_started_7d"],
+    "LEAD_GENERATION":   ["lead", "onsite_conversion.lead", "leadgen_grouped"],
+    "OUTCOME_LEADS":     ["lead", "onsite_conversion.lead"],
+    "CONVERSIONS":       ["purchase", "onsite_conversion.purchase", "offsite_conversion.fb_pixel_purchase"],
+    "OUTCOME_SALES":     ["purchase", "onsite_conversion.purchase"],
+    "APP_INSTALLS":      ["app_install", "mobile_app_install"],
+    "OUTCOME_APP_PROMOTION": ["app_install", "mobile_app_install"],
+    "VIDEO_VIEWS":       ["video_view", "thruplay"],
+    "OUTCOME_AWARENESS": ["reach", "video_view", "post_engagement"],
+    "LINK_CLICKS":       ["link_click", "landing_page_view"],
+    "POST_ENGAGEMENT":   ["post_engagement", "page_engagement"],
+  };
+
+  // Montar lista de tipos: começa pelos do objetivo (se houver), depois fallback geral
+  const objectiveTypes: string[] = (objective && byObjective[objective]) ? byObjective[objective] : [];
+  const fallbackTypes = [
     "purchase",
     "lead",
+    "onsite_conversion.lead",
     "complete_registration",
     "submit_application",
-    "messaging_conversation_started_7d",
     "onsite_conversion.messaging_conversation_started_7d",
-    "onsite_conversion.lead",
-    "onsite_conversion.purchase",
+    "messaging_conversation_started_7d",
     "landing_page_view",
     "link_click",
     "video_view",
     "thruplay",
-    "video_view_thruplay",
     "post_engagement",
     "page_engagement",
-    "conversion",  // genérico — sempre por último
+    "conversion",
   ];
 
-  for (const type of priorityTypes) {
+  // Percorre sem duplicatas: objetivo-específicos primeiro, depois fallback
+  const seen = new Set<string>();
+  for (const type of [...objectiveTypes, ...fallbackTypes]) {
+    if (seen.has(type)) continue;
+    seen.add(type);
     const action = actions.find((a: any) => a.action_type === type);
     if (action) return parseInt(action.value || "0") || 0;
   }
@@ -335,8 +358,11 @@ serve(async (req) => {
           status: c.status ? c.status.toLowerCase() : "active",
           daily_budget: c.daily_budget ? parseFloat(c.daily_budget) / 100 : 0,
           lifetime_budget: c.lifetime_budget ? parseFloat(c.lifetime_budget) / 100 : 0,
-          budget_currency: acc.currency || 'BRL'
+          budget_currency: acc.currency || 'BRL',
+          objective: c.objective || null,
         }]))
+        // Mapa de objective por external_id para usar em adsets e ads
+        const campaignObjectiveMap = new Map(campaignsWithBudgets.map((c: any) => [c.id, c.objective as string | undefined]))
 
         // Buscar TUDO em paralelo — manual usa 60 dias, auto usa D-1+D0 (ambos gerenciáveis)
         const [insights, demographics, adsetInsights, adInsights] = await Promise.all([
@@ -356,7 +382,8 @@ serve(async (req) => {
           adsetInsights,
           adInsights,
           budgetMap,
-          campaignsWithBudgets
+          campaignsWithBudgets,
+          campaignObjectiveMap,
         })
         
         await new Promise(r => setTimeout(r, 300))
@@ -366,7 +393,7 @@ serve(async (req) => {
       }
     }
 
-    for (const { accountId, accountName, insights, demographics, adsetInsights, adInsights, budgetMap, campaignsWithBudgets = [] } of syncResults) {
+    for (const { accountId, insights, demographics, adsetInsights, adInsights, budgetMap, campaignsWithBudgets = [], campaignObjectiveMap = new Map() } of syncResults) {
       // Upsert campanhas com status reais
       const campaignMap = new Map<string, any>()
       
@@ -500,7 +527,7 @@ serve(async (req) => {
           clicks: parseInt(row.inline_link_clicks || "0") || 0,
           cost: parseFloat(row.spend) || 0,
           reach: parseInt(row.reach) || 0,
-          conversions: extractConversions(row.actions),
+          conversions: extractConversions(row.actions, row.objective),  // objective do próprio insight
           result_type: row.objective
         }
       }).filter(Boolean)
@@ -527,7 +554,7 @@ serve(async (req) => {
           impressions: parseInt(row.impressions) || 0,
           clicks: parseInt(row.inline_link_clicks || "0") || 0,
           spend: parseFloat(row.spend) || 0,
-          conversions: extractConversions(row.actions),
+          conversions: extractConversions(row.actions, campaignObjectiveMap.get(row.campaign_id)),
           reach: parseInt(row.reach) || 0
         }
       }).filter(Boolean)
@@ -552,7 +579,7 @@ serve(async (req) => {
             impressions: parseInt(row.impressions) || 0,
             clicks: parseInt(row.inline_link_clicks || "0") || 0,
             cost: parseFloat(row.spend) || 0,
-            conversions: extractConversions(row.actions),
+            conversions: extractConversions(row.actions, campaignObjectiveMap.get(row.campaign_id)),
             reach: parseInt(row.reach) || 0
           })
         }
@@ -567,7 +594,7 @@ serve(async (req) => {
             impressions: parseInt(row.impressions) || 0,
             clicks: parseInt(row.inline_link_clicks || "0") || 0,
             cost: parseFloat(row.spend) || 0,
-            conversions: extractConversions(row.actions),
+            conversions: extractConversions(row.actions, campaignObjectiveMap.get(row.campaign_id)),
             reach: parseInt(row.reach) || 0
           })
         }
