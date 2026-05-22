@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
-import { format, subDays, startOfMonth, endOfMonth, startOfYear, endOfYear, isSameDay, isAfter, isBefore, addMonths, subMonths } from "date-fns";
+import { createPortal } from "react-dom";
+import { format, subDays, startOfMonth, endOfMonth, startOfYear, endOfYear, isSameDay, isAfter, isBefore, addMonths, subMonths, startOfQuarter, endOfQuarter } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, Sparkles, AlertCircle } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -19,12 +20,13 @@ interface DateRangePickerProps {
 const PRESETS = [
   { label: "Hoje", getValue: () => ({ start: new Date(), end: new Date() }) },
   { label: "Ontem", getValue: () => ({ start: subDays(new Date(), 1), end: subDays(new Date(), 1) }) },
-  { label: "Últimos 3 Dias", getValue: () => ({ start: subDays(new Date(), 2), end: new Date() }) },
   { label: "Últimos 7 Dias", getValue: () => ({ start: subDays(new Date(), 6), end: new Date() }) },
-  { label: "Últimos 30 Dias", getValue: () => ({ start: subDays(new Date(), 29), end: new Date() }) },
   { label: "Este Mês", getValue: () => ({ start: startOfMonth(new Date()), end: new Date() }) },
+  { label: "Mês Passado", getValue: () => ({ start: startOfMonth(subMonths(new Date(), 1)), end: endOfMonth(subMonths(new Date(), 1)) }) },
+  { label: "Último Trimestre", getValue: () => ({ start: startOfQuarter(subMonths(new Date(), 3)), end: endOfQuarter(subMonths(new Date(), 3)) }) },
+  { label: "Último Semestre", getValue: () => ({ start: startOfMonth(subMonths(new Date(), 6)), end: endOfMonth(subMonths(new Date(), 1)) }) },
   { label: "Este Ano", getValue: () => ({ start: startOfYear(new Date()), end: new Date() }) },
-  { label: "Último Ano", getValue: () => ({ start: subDays(new Date(), 365), end: new Date() }) },
+  { label: "Últimos 12 Meses", getValue: () => ({ start: subDays(new Date(), 365), end: new Date() }) },
 ];
 
 export function DateRangePicker({ startDate, endDate, onChange, className = "" }: DateRangePickerProps) {
@@ -47,13 +49,22 @@ export function DateRangePicker({ startDate, endDate, onChange, className = "" }
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
+  const [dropdownStyles, setDropdownStyles] = useState<React.CSSProperties>({});
+
   // Decide se abre para direita (left-0) ou para esquerda (right-0) conforme espaço disponível
   useEffect(() => {
     if (isOpen && containerRef.current) {
       const rect = containerRef.current.getBoundingClientRect();
-      const dropdownWidth = 550;
+      const dropdownWidth = window.innerWidth < 768 ? 300 : 550;
       const spaceOnRight = window.innerWidth - rect.left;
-      setDropdownAlign(spaceOnRight >= dropdownWidth ? "left" : "right");
+      const alignLeft = spaceOnRight >= dropdownWidth;
+      
+      setDropdownStyles({
+        position: 'fixed',
+        top: `${rect.bottom + 8}px`,
+        left: alignLeft ? `${rect.left}px` : 'auto',
+        right: !alignLeft ? `${window.innerWidth - rect.right}px` : 'auto',
+      });
     }
   }, [isOpen]);
 
@@ -128,13 +139,14 @@ export function DateRangePicker({ startDate, endDate, onChange, className = "" }
       </button>
 
       <AnimatePresence>
-        {isOpen && (
+        {isOpen && createPortal(
           <motion.div
-            initial={{ opacity: 0, y: 10, scale: 0.95 }}
+            initial={{ opacity: 0, y: -10, scale: 0.95 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 10, scale: 0.95 }}
+            exit={{ opacity: 0, y: -10, scale: 0.95 }}
             transition={{ duration: 0.15 }}
-            className={`absolute ${dropdownAlign === "left" ? "left-0 origin-top-left" : "right-0 origin-top-right"} top-full z-[100] mt-2 flex flex-col md:flex-row rounded-2xl border border-white/10 bg-background/95 p-4 shadow-2xl backdrop-blur-2xl gap-4 w-[300px] sm:w-[350px] md:w-[550px] max-w-[calc(100vw-2rem)]`}
+            style={dropdownStyles}
+            className="z-[9999] flex flex-col md:flex-row rounded-2xl border border-white/10 bg-background/95 p-4 shadow-2xl backdrop-blur-2xl gap-4 w-[300px] sm:w-[350px] md:w-[550px] max-w-[calc(100vw-2rem)]"
           >
             {/* Atalhos Rápidos */}
             <div className="flex flex-col gap-1.5 border-b md:border-b-0 md:border-r border-white/5 pb-3 md:pb-0 md:pr-4 min-w-[130px]">
@@ -225,7 +237,8 @@ export function DateRangePicker({ startDate, endDate, onChange, className = "" }
                 <span className="font-bold text-primary/80 uppercase">Victoria AI Engine</span>
               </div>
             </div>
-          </motion.div>
+          </motion.div>,
+          document.body
         )}
       </AnimatePresence>
     </div>
