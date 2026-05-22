@@ -122,12 +122,12 @@ function MetricasAvancadasPage() {
     queryFn: async () => {
       const startStr = getLocalDateStr(dateRange.startDate);
       const endStr = getLocalDateStr(dateRange.endDate);
-      let q = (supabase as any).from("campaigns").select(`id, name, status, budget, external_id, ad_account_id, platform, ad_account:ad_accounts(name), metrics(cost, conversions, impressions, clicks, reach, date)`);
+      let q = (supabase as any).from("campaigns").select(`id, name, status, budget, external_id, ad_account_id, platform, ad_account:ad_accounts(name), ads(asset_metrics(cost, conversions, impressions, clicks, reach, date))`);
       if (accountFilter !== "all") q = q.eq("ad_account_id", accountFilter);
       if (statusFilter !== "all") q = q.ilike("status", statusFilter === "active" ? "ACTIVE" : "PAUSED");
       const { data, error } = await q.order("name");
       if (error) throw error;
-      return (data || []).map((c: any) => processMetrics(c, c.metrics, startStr, endStr));
+      return (data || []).map((c: any) => processMetrics(c, c.ads, startStr, endStr));
     },
   });
 
@@ -168,8 +168,12 @@ function MetricasAvancadasPage() {
     },
   });
 
-  function processMetrics(item: any, metrics: any[], startStr: string, endStr: string) {
-    const m = (metrics || []).filter((x: any) => {
+  function processMetrics(item: any, rawData: any[], startStr: string, endStr: string) {
+    let m = rawData || [];
+    if (m.length > 0 && m[0]?.asset_metrics !== undefined) {
+      m = m.flatMap((ad: any) => ad.asset_metrics || []);
+    }
+    m = m.filter((x: any) => {
       if (!x.date) return true;
       const d = x.date.split("T")[0];
       return d >= startStr && d <= endStr;

@@ -67,7 +67,7 @@ function MulticanalPage() {
         .from("campaigns")
         .select(`
           id, name, status, budget, client_id, platform, ad_account_id,
-          metrics(cost, conversions, impressions, clicks, date)
+          ads(asset_metrics(cost, conversions, impressions, clicks, date))
         `);
 
       if (clientId !== "all") {
@@ -87,7 +87,8 @@ function MulticanalPage() {
       let totalClicks = 0;
 
       const campaignData = (campaignsRaw || []).map((c: any) => {
-        const filteredMetrics = (c.metrics || []).filter((m: any) => {
+        const flattenedMetrics = (c.ads || []).flatMap((ad: any) => ad.asset_metrics || []);
+        const filteredMetrics = flattenedMetrics.filter((m: any) => {
           if (!m.date) return false;
           // Comparação robusta de string ISO pura YYYY-MM-DD (livre de fuso horário do navegador)
           return m.date >= startStr && m.date <= endStr;
