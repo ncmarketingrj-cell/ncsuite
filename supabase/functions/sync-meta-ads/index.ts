@@ -551,8 +551,8 @@ serve(async (req) => {
           clicks: parseInt(row.inline_link_clicks || "0") || 0,
           cost: parseFloat(row.spend) || 0,
           reach: parseInt(row.reach) || 0,
-          conversions: extractConversions(row.actions, row.objective),  // objective do próprio insight
-          result_type: row.objective
+          conversions: extractConversions(row.actions, campaignObjectiveMap.get(row.campaign_id)),
+          result_type: campaignObjectiveMap.get(row.campaign_id)
         }
       }).filter(Boolean)
 

@@ -123,21 +123,31 @@ serve(async (req) => {
       }
 
       for (const campaign of campaigns) {
-        // 3. Buscar métricas de HOJE desta campanha
-        const { data: metrics } = await supabase
-          .from("metrics")
-          .select("cost, conversions, clicks, impressions")
-          .eq("campaign_id", campaign.id)
-          .eq("date", today)
-          .maybeSingle()
+        // 3. Buscar métricas de HOJE somando de todos os anúncios (asset_metrics) para refletir 100% a interface
+        const { data: adsData } = await supabase.from("ads").select("id").eq("campaign_id", campaign.id)
+        const adIds = adsData?.map((a: any) => a.id) || []
+        
+        let spend = 0
+        let conversions = 0
+        
+        if (adIds.length > 0) {
+          const { data: adMetrics } = await supabase
+            .from("asset_metrics")
+            .select("cost, conversions")
+            .eq("date", today)
+            .in("ad_id", adIds)
+            
+          if (adMetrics) {
+            spend = adMetrics.reduce((acc: number, m: any) => acc + (m.cost || 0), 0)
+            conversions = adMetrics.reduce((acc: number, m: any) => acc + (m.conversions || 0), 0)
+          }
+        }
 
-        if (!metrics) {
+        if (spend === 0 && conversions === 0) {
           console.log(`[AUTO] Sem dados de hoje para campanha ${campaign.name}`)
           continue
         }
 
-        const spend = metrics.cost || 0
-        const conversions = metrics.conversions || 0
         const dailyBudget = campaign.daily_budget || 0
 
         // 4. Calcular CPL do dia (ou custo atual se gastou e tem zero leads para alertar CPL de gasto sem conversão!)
