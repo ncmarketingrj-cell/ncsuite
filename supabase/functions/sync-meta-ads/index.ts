@@ -189,31 +189,30 @@ function extractConversions(actions: any[] = [], objective?: string): number {
     "LEAD_GENERATION":   ["lead", "onsite_conversion.lead", "leadgen_grouped"],
     "OUTCOME_LEADS":     ["lead", "onsite_conversion.lead"],
     "CONVERSIONS":       ["purchase", "onsite_conversion.purchase", "offsite_conversion.fb_pixel_purchase"],
-    "OUTCOME_SALES":     ["purchase", "onsite_conversion.purchase"],
+    "OUTCOME_SALES":     ["purchase", "onsite_conversion.purchase", "offsite_conversion.fb_pixel_purchase"],
     "APP_INSTALLS":      ["app_install", "mobile_app_install"],
     "OUTCOME_APP_PROMOTION": ["app_install", "mobile_app_install"],
     "VIDEO_VIEWS":       ["video_view", "thruplay"],
     "OUTCOME_AWARENESS": ["reach", "video_view", "post_engagement"],
     "LINK_CLICKS":       ["link_click", "landing_page_view"],
+    "OUTCOME_TRAFFIC":   ["link_click", "landing_page_view", "outbound_clicks"],
     "POST_ENGAGEMENT":   ["post_engagement", "page_engagement"],
+    "OUTCOME_ENGAGEMENT": ["onsite_conversion.messaging_conversation_started_7d", "messaging_conversation_started_7d", "post_engagement", "page_engagement"],
   };
 
-  // Montar lista de tipos: começa pelos do objetivo (se houver), depois fallback geral
+  // Montar lista de tipos: começa pelos do objetivo (se houver), depois fallback geral rigoroso (apenas conversões reais)
   const objectiveTypes: string[] = (objective && byObjective[objective]) ? byObjective[objective] : [];
   const fallbackTypes = [
     "purchase",
+    "onsite_conversion.purchase",
+    "offsite_conversion.fb_pixel_purchase",
     "lead",
     "onsite_conversion.lead",
+    "leadgen_grouped",
     "complete_registration",
     "submit_application",
     "onsite_conversion.messaging_conversation_started_7d",
     "messaging_conversation_started_7d",
-    "landing_page_view",
-    "link_click",
-    "video_view",
-    "thruplay",
-    "post_engagement",
-    "page_engagement",
     "conversion",
   ];
 
@@ -223,7 +222,7 @@ function extractConversions(actions: any[] = [], objective?: string): number {
     if (seen.has(type)) continue;
     seen.add(type);
     const action = actions.find((a: any) => a.action_type === type);
-    if (action) return parseInt(action.value || "0") || 0;
+    if (action && action.value) return parseInt(action.value) || 0;
   }
   return 0;
 }
