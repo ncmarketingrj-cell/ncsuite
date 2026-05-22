@@ -479,7 +479,7 @@ function ReunioesPage() {
         <iframe
           src={item.embedSrc}
           title={item.name}
-          className="w-full h-full border-0"
+          className="absolute inset-0 w-full h-full border-0"
           allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
           allowFullScreen
         />
@@ -487,12 +487,12 @@ function ReunioesPage() {
 
     // ── Video ──────────────────────────────────────────────
     if (item.type === "video")
-      return <video src={item.src} controls className="w-full h-full object-contain bg-black" />;
+      return <video src={item.src} controls className="absolute inset-0 w-full h-full object-contain bg-black" />;
 
     // ── Image ──────────────────────────────────────────────
     if (item.type === "image")
       return (
-        <div className="w-full h-full flex items-center justify-center bg-muted/20 p-4">
+        <div className="absolute inset-0 flex items-center justify-center bg-muted/20 p-4 overflow-hidden">
           <img src={item.src} alt={item.name} className="max-w-full max-h-full object-contain rounded-xl shadow-lg" />
         </div>
       );
@@ -500,7 +500,7 @@ function ReunioesPage() {
     // ── Text / Markdown / CSV (inline) ─────────────────────
     if (item.type === "text")
       return (
-        <div className="w-full h-full overflow-auto p-5 bg-card">
+        <div className="absolute inset-0 overflow-auto p-5 bg-card">
           <pre className="text-xs leading-relaxed text-foreground/80 whitespace-pre-wrap font-mono break-words">
             {item.textContent || "(vazio)"}
           </pre>
@@ -509,7 +509,7 @@ function ReunioesPage() {
 
     // ── Office Online viewer (OneDrive / public URL) ────────
     if (item.type === "office-online" && item.embedSrc)
-      return <iframe src={item.embedSrc} title={item.name} className="w-full h-full border-0" allow="fullscreen" />;
+      return <iframe src={item.embedSrc} title={item.name} className="absolute inset-0 w-full h-full border-0" allow="fullscreen" />;
 
     // ── Local Office file — cannot render, show info card ──
     if (item.type === "office-local") {
@@ -555,12 +555,12 @@ function ReunioesPage() {
 
     // ── PDF (local blob: ou URL remota) ───────────────────
     if (item.type === "pdf")
-      return <iframe src={item.src} title={item.name} className="w-full h-full border-0" allow="fullscreen" />;
+      return <iframe src={item.src} title={item.name} className="absolute inset-0 w-full h-full border-0" allow="fullscreen" />;
 
     // ── Google / Office Online URL / generic iframe ────────
     const embedUrl = item.embedSrc || (!item.src.startsWith("blob:") ? item.src : null);
     if (embedUrl)
-      return <iframe src={embedUrl} title={item.name} className="w-full h-full border-0" allow="fullscreen" />;
+      return <iframe src={embedUrl} title={item.name} className="absolute inset-0 w-full h-full border-0" allow="fullscreen" />;
 
     // ── Fallback ───────────────────────────────────────────
     return (
@@ -1032,17 +1032,17 @@ function ReunioesPage() {
                           <th className="px-3 py-2.5 text-left text-[9px] font-black uppercase tracking-widest text-muted-foreground">Nome</th>
                           <th className="px-3 py-2.5 text-right text-[9px] font-black uppercase tracking-widest text-muted-foreground">Alcance</th>
                           <th className="px-3 py-2.5 text-right text-[9px] font-black uppercase tracking-widest text-purple-400">Conv.</th>
+                          <th className="px-3 py-2.5 text-right text-[9px] font-black uppercase tracking-widest text-emerald-500">CPL</th>
                           <th className="px-3 py-2.5 text-right text-[9px] font-black uppercase tracking-widest text-primary">Gasto</th>
                           {showAdvanced && isAdmin && <>
                             <th className="px-3 py-2.5 text-right text-[9px] font-black uppercase tracking-widest text-amber-400">CTR</th>
-                            <th className="px-3 py-2.5 text-right text-[9px] font-black uppercase tracking-widest text-amber-400">CPL</th>
                             <th className="px-3 py-2.5 text-right text-[9px] font-black uppercase tracking-widest text-amber-400">CPM</th>
                           </>}
                         </tr>
                       </thead>
                       <tbody>
                         {filtered.length === 0 ? (
-                          <tr><td colSpan={showAdvanced && isAdmin ? 9 : 6} className="text-center py-10 text-muted-foreground text-xs">Nenhum resultado.</td></tr>
+                          <tr><td colSpan={showAdvanced && isAdmin ? 9 : 7} className="text-center py-10 text-muted-foreground text-xs">Nenhum resultado.</td></tr>
                         ) : filtered.map((c: any, i: number) => {
                           const isActive = c.status?.toUpperCase() === "ACTIVE";
                           const isSel = selSet.has(c.id);
@@ -1069,10 +1069,10 @@ function ReunioesPage() {
                               </td>
                               <td className="px-3 py-2.5 text-right font-mono text-muted-foreground">{c.t.reach > 0 ? fmtNum(c.t.reach) : "—"}</td>
                               <td className="px-3 py-2.5 text-right font-mono font-bold text-purple-400">{c.t.conversions > 0 ? c.t.conversions : "—"}</td>
+                              <td className="px-3 py-2.5 text-right font-mono font-bold text-emerald-500">{c.t.cpl > 0 ? fmtBRL(c.t.cpl) : "—"}</td>
                               <td className="px-3 py-2.5 text-right font-mono font-bold text-primary">{fmtBRL(c.t.cost)}</td>
                               {showAdvanced && isAdmin && <>
                                 <td className="px-3 py-2.5 text-right font-mono text-amber-400 text-[10px]">{c.t.ctr > 0 ? c.t.ctr.toFixed(2) + "%" : "—"}</td>
-                                <td className="px-3 py-2.5 text-right font-mono text-amber-400 text-[10px]">{c.t.cpl > 0 ? fmtBRL(c.t.cpl) : "—"}</td>
                                 <td className="px-3 py-2.5 text-right font-mono text-amber-400 text-[10px]">{c.t.cpm > 0 ? fmtBRL(c.t.cpm) : "—"}</td>
                               </>}
                             </motion.tr>
@@ -1085,8 +1085,9 @@ function ReunioesPage() {
                           <td className="px-3 py-2" />
                           <td className="px-3 py-2 text-right font-mono font-bold text-[10px]">{totals.reach > 0 ? fmtNum(totals.reach) : "—"}</td>
                           <td className="px-3 py-2 text-right font-mono font-bold text-purple-400 text-[10px]">{totals.conv > 0 ? totals.conv : "—"}</td>
+                          <td className="px-3 py-2 text-right font-mono font-bold text-emerald-500 text-[10px]">{totals.conv > 0 ? fmtBRL(totals.cost / totals.conv) : "—"}</td>
                           <td className="px-3 py-2 text-right font-mono font-bold text-primary text-[10px]">{fmtBRL(totals.cost)}</td>
-                          {showAdvanced && isAdmin && <td colSpan={3} />}
+                          {showAdvanced && isAdmin && <td colSpan={2} />}
                         </tr>
                       </tfoot>
                     </table>

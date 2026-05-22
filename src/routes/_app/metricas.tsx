@@ -1,4 +1,4 @@
-import { createFileRoute, useSearch, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, useSearch, useNavigate, Outlet, useLocation } from "@tanstack/react-router";
 import { useState, useMemo, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -45,6 +45,7 @@ function MetricasAvancadasPage() {
   const navigate = useNavigate();
   const qc = useQueryClient();
   const searchParams = useSearch({ from: "/_app/metricas" });
+  const location = useLocation();
 
   // Todos os hooks ANTES de qualquer early return (regra do React)
   const [accountFilter, setAccountFilter] = useState(searchParams.account || "all");
@@ -267,6 +268,10 @@ function MetricasAvancadasPage() {
   const avgCtr = totImpr > 0 ? (totClicks / totImpr) * 100 : 0;
   const avgCpm = totImpr > 0 ? (totCost / totImpr) * 1000 : 0;
 
+  if (location.pathname !== "/metricas") {
+    return <Outlet />;
+  }
+
   return (
     <div className="mx-auto max-w-[1700px] p-1 pb-20">
       
@@ -280,7 +285,7 @@ function MetricasAvancadasPage() {
             <div className="flex flex-wrap items-center gap-3">
               <DateRangePicker startDate={dateRange.startDate} endDate={dateRange.endDate} onChange={(s, e) => setDateRange({ startDate: s, endDate: e })} />
               <button
-                onClick={() => navigate({ to: "/metricas/grafico" })}
+                onClick={() => navigate({ to: "/metricas/grafico", search: (prev) => prev })}
                 className="flex items-center gap-2 rounded-xl border border-primary/30 bg-primary/10 px-4 py-2.5 text-xs font-bold text-primary hover:bg-primary/20 transition-all"
               >
                 <Pencil className="h-3.5 w-3.5" />
