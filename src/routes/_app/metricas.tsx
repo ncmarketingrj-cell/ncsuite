@@ -21,7 +21,7 @@ import {
   ScatterChart, Scatter, ZAxis, ReferenceLine
 } from "recharts";
 
-const METRICAS_ROLES = ["admin", "ceo", "gerente", "gestor_trafego"];
+const METRICAS_ROLES = ["admin", "gestor_trafego"];
 
 export const Route = createFileRoute("/_app/metricas")({
   head: () => ({ meta: [{ title: "Métricas Avançadas — NC Suite" }] }),

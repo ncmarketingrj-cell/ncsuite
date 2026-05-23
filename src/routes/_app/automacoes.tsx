@@ -28,7 +28,7 @@ export const Route = createFileRoute("/_app/automacoes")({
       .select("role")
       .eq("id", sessionData.session.user.id)
       .maybeSingle();
-    if (profile?.role !== "admin") throw redirect({ to: "/dashboard" });
+    if (!["admin", "ceo", "gerente"].includes(profile?.role ?? "")) throw redirect({ to: "/dashboard" });
   },
   component: AutomationsPage,
 });

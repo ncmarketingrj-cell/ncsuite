@@ -101,15 +101,18 @@ function Shell() {
 
   const isAdmin = profile?.role === "admin";
   const role = profile?.role ?? "";
-  const canSeeMetricas = ["admin", "ceo", "gerente", "gestor_trafego"].includes(role);
+  const canSeeMetricas = ["admin", "gestor_trafego"].includes(role);
 
   const filteredNavItems = NAV_ITEMS.filter(item => {
     if (item.to === "/metricas" && !canSeeMetricas) return false;
     return true;
   });
 
+  const canSeeAutomacoes = ["admin", "ceo", "gerente"].includes(role);
+
   const filteredMoreItems = MORE_ITEMS.filter(item => {
-    if ((item.to === "/agente" || item.to === "/automacoes") && !isAdmin) return false;
+    if (item.to === "/agente" && !isAdmin) return false;
+    if (item.to === "/automacoes" && !canSeeAutomacoes) return false;
     return true;
   });
 
