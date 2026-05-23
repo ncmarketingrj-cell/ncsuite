@@ -104,12 +104,12 @@ function MetaAdsManagerPage() {
       const startStr = getLocalDateStr(dateRange.startDate);
       const endStr = getLocalDateStr(dateRange.endDate);
       let q = (supabase as any)
-        .from("campaigns").select(`id, name, status, budget, external_id, ad_account_id, ad_account:ad_accounts(name), ads(asset_metrics(cost, conversions, impressions, reach, date))`);
+        .from("campaigns").select(`id, name, status, daily_budget, lifetime_budget, budget_currency, external_id, ad_account_id, ad_account:ad_accounts(name), metrics(cost, conversions, impressions, clicks, reach, date)`);
       if (accountFilter !== "all") q = q.eq("ad_account_id", accountFilter);
       if (statusFilter !== "all") q = q.ilike("status", statusFilter === "active" ? "ACTIVE" : "PAUSED");
       const { data, error } = await q.order("name");
       if (error) throw error;
-      return (data || []).map((c: any) => processMetrics(c, c.ads, startStr, endStr));
+      return (data || []).map((c: any) => processMetrics(c, c.metrics, startStr, endStr));
     }
   });
 
@@ -151,11 +151,7 @@ function MetaAdsManagerPage() {
   });
 
   function processMetrics(item: any, rawData: any[], startStr: string, endStr: string) {
-    let m = rawData || [];
-    if (m.length > 0 && m[0]?.asset_metrics !== undefined) {
-      m = m.flatMap((ad: any) => ad.asset_metrics || []);
-    }
-    m = m.filter((x: any) => {
+    const m = (rawData || []).filter((x: any) => {
       if (!x.date) return true;
       const d = x.date.split("T")[0];
       return d >= startStr && d <= endStr;
@@ -164,7 +160,8 @@ function MetaAdsManagerPage() {
     const conversions = m.reduce((s: number, x: any) => s + Number(x.conversions || 0), 0);
     const impressions = m.reduce((s: number, x: any) => s + Number(x.impressions || 0), 0);
     const reach = m.reduce((s: number, x: any) => s + Number(x.reach || 0), 0);
-    return { ...item, t: { cost, conversions, impressions, reach } };
+    const clicks = m.reduce((s: number, x: any) => s + Number(x.clicks || 0), 0);
+    return { ...item, t: { cost, conversions, impressions, reach, clicks } };
   }
 
   const syncMutation = useMutation({
@@ -385,7 +382,7 @@ function MetaAdsManagerPage() {
                               <p className="font-bold text-foreground/90 truncate uppercase tracking-tight" title={c.name}>{c.name}</p>
                               {level === "campanhas" && <p className="text-[9px] text-muted-foreground/60 font-mono mt-0.5">{(c as any).ad_account?.name || "—"}</p>}
                             </td>
-                            <td className="px-4 py-3 text-right font-mono text-muted-foreground">{(c.budget > 0) ? `R$ ${c.budget.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}` : "—"}</td>
+                            <td className="px-4 py-3 text-right font-mono text-muted-foreground">{c.daily_budget > 0 ? `R$ ${c.daily_budget.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}/dia` : c.lifetime_budget > 0 ? `R$ ${c.lifetime_budget.toLocaleString("pt-BR", { minimumFractionDigits: 2 })} total` : "—"}</td>
                             <td className="px-4 py-3 text-right font-mono text-muted-foreground">{c.t.reach > 0 ? c.t.reach.toLocaleString("pt-BR") : "—"}</td>
                             <td className="px-4 py-3 text-right font-mono text-muted-foreground">{c.t.impressions.toLocaleString("pt-BR")}</td>
                             <td className="px-4 py-3 text-right font-mono font-bold text-violet-600 dark:text-violet-400">{c.t.conversions.toLocaleString("pt-BR")}</td>

@@ -127,6 +127,34 @@ async function fetchAdInsights(adAccountId: string, token: string, timeParams: R
   }
 }
 
+// ─── Buscar status real de todos os conjuntos de anúncios da conta ────────────
+// Necessário pois o endpoint de insights não retorna status — fixa "active" sem isso
+async function fetchAdSetsWithStatus(adAccountId: string, token: string): Promise<any[]> {
+  try {
+    return await metaGetPaginated(`/${adAccountId}/adsets`, token, {
+      fields: "id,name,status,campaign_id",
+      limit: "500"
+    })
+  } catch (e: any) {
+    console.error(`[SYNC] Erro ao buscar status de adsets de ${adAccountId}:`, e.message)
+    return []
+  }
+}
+
+// ─── Buscar status real de todos os anúncios da conta ────────────────────────
+// Necessário pois o endpoint de insights não retorna status — fixa "active" sem isso
+async function fetchAdsWithStatus(adAccountId: string, token: string): Promise<any[]> {
+  try {
+    return await metaGetPaginated(`/${adAccountId}/ads`, token, {
+      fields: "id,name,status,adset_id,campaign_id",
+      limit: "500"
+    })
+  } catch (e: any) {
+    console.error(`[SYNC] Erro ao buscar status de ads de ${adAccountId}:`, e.message)
+    return []
+  }
+}
+
 async function fetchDemographicBreakdowns(adAccountId: string, token: string, timeParams: Record<string, string>) {
   try {
     const [dataAgeGender, dataPlatform, dataHourly, dataRegion] = await Promise.all([
@@ -464,12 +492,14 @@ serve(async (req) => {
         // Mapa de objective por external_id para usar em adsets e ads
         const campaignObjectiveMap = new Map(campaignsWithBudgets.map((c: any) => [c.id, c.objective as string | undefined]))
 
-        // Buscar TUDO em paralelo — manual usa 60 dias, auto usa D-1+D0 (ambos gerenciáveis)
-        const [insights, breakDownsData, adsetInsights, adInsights] = await Promise.all([
+        // Buscar TUDO em paralelo — insights (range selecionado) + status completo (toda a conta)
+        const [insights, breakDownsData, adsetInsights, adInsights, adsetsWithStatus, adsWithStatus] = await Promise.all([
           fetchCampaignInsights(acc.id, token, timeParams),
           fetchDemographicBreakdowns(acc.id, token, timeParams),
           fetchAdSetInsights(acc.id, token, timeParams),
-          fetchAdInsights(acc.id, token, timeParams)
+          fetchAdInsights(acc.id, token, timeParams),
+          fetchAdSetsWithStatus(acc.id, token),
+          fetchAdsWithStatus(acc.id, token)
         ])
 
         const { demographics = [], hourly = [], region = [] } = breakDownsData;
@@ -485,6 +515,8 @@ serve(async (req) => {
           region,
           adsetInsights,
           adInsights,
+          adsetsWithStatus,
+          adsWithStatus,
           budgetMap,
           campaignsWithBudgets,
           campaignObjectiveMap,
@@ -497,7 +529,7 @@ serve(async (req) => {
       }
     }
 
-    for (const { accountId, insights, demographics, hourly, region, adsetInsights, adInsights, budgetMap, campaignsWithBudgets = [], campaignObjectiveMap = new Map() } of syncResults) {
+    for (const { accountId, insights, demographics, hourly, region, adsetInsights, adInsights, adsetsWithStatus = [], adsWithStatus = [], budgetMap, campaignsWithBudgets = [], campaignObjectiveMap = new Map() } of syncResults) {
       // Upsert campanhas com status reais
       const campaignMap = new Map<string, any>()
       
@@ -564,8 +596,23 @@ serve(async (req) => {
       totalCampaigns += syncedCamps.length
       const idMap = new Map(syncedCamps.map(c => [c.external_id, c.id]))
 
-      // Upsert AdSets
+      // Upsert AdSets — status real via fetchAdSetsWithStatus (não mais "active" fixo)
+      const adsetStatusMap = new Map(adsetsWithStatus.map((a: any) => [a.id, a.status?.toLowerCase() || "active"]))
       const adsetMap = new Map<string, any>()
+
+      // 1. Todos os adsets da conta (inclui pausados que não aparecem em insights)
+      for (const a of adsetsWithStatus) {
+        const campaign_id = idMap.get(a.campaign_id)
+        if (campaign_id) {
+          adsetMap.set(a.id, {
+            campaign_id,
+            name: a.name || `Conjunto ${a.id}`,
+            external_id: a.id,
+            status: a.status?.toLowerCase() || "active"
+          })
+        }
+      }
+      // 2. Complementa com adsets que aparecem em insights mas não na lista de status
       for (const row of [...adsetInsights, ...adInsights]) {
         if (row.adset_id && !adsetMap.has(row.adset_id)) {
           const campaign_id = idMap.get(row.campaign_id)
@@ -574,7 +621,7 @@ serve(async (req) => {
               campaign_id,
               name: row.adset_name || `Conjunto ${row.adset_id}`,
               external_id: row.adset_id,
-              status: "active"
+              status: adsetStatusMap.get(row.adset_id) || "active"
             })
           }
         }
@@ -591,8 +638,25 @@ serve(async (req) => {
       
       const adsetIdMap = new Map((syncedAdsets || []).map(a => [a.external_id, a.id]))
 
-      // Upsert Ads
+      // Upsert Ads — status real via fetchAdsWithStatus (não mais "active" fixo)
+      const adStatusMap = new Map(adsWithStatus.map((a: any) => [a.id, a.status?.toLowerCase() || "active"]))
       const adMap = new Map<string, any>()
+
+      // 1. Todos os anúncios da conta (inclui pausados que não aparecem em insights)
+      for (const a of adsWithStatus) {
+        const ad_set_id = adsetIdMap.get(a.adset_id)
+        const campaign_id = idMap.get(a.campaign_id)
+        if (ad_set_id && campaign_id) {
+          adMap.set(a.id, {
+            ad_set_id,
+            campaign_id,
+            name: a.name || `Anúncio ${a.id}`,
+            external_id: a.id,
+            status: a.status?.toLowerCase() || "active"
+          })
+        }
+      }
+      // 2. Complementa com ads que aparecem em insights mas não na lista de status
       for (const row of adInsights) {
         if (row.ad_id && !adMap.has(row.ad_id)) {
           const ad_set_id = adsetIdMap.get(row.adset_id)
@@ -603,7 +667,7 @@ serve(async (req) => {
               campaign_id,
               name: row.ad_name || `Anúncio ${row.ad_id}`,
               external_id: row.ad_id,
-              status: "active"
+              status: adStatusMap.get(row.ad_id) || "active"
             })
           }
         }
