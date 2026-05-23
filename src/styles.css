@@ -84,42 +84,42 @@
 }
 
 /* ═══════════════════════════════════════════
-   LIGHT MODE — Clean & Airy
-   Fundo cinza-azulado suave (#F0F2F5 estilo Facebook).
-   Cards brancos nítidos — hierarquia visual clara.
-   Bordas visíveis. Zero neon. Zero glow. Zero blur desnecessário.
-   Texto escuro legível sem agredir a vista.
+   LIGHT MODE — Professional & Clean
+   Referência: Linear, Vercel, Apple.
+   Fundo quasi-branco (#F4F6F9).
+   Profundidade via sombras reais, não cor de fundo.
+   Neon NC preservado — só em interação.
    ═══════════════════════════════════════════ */
 html.light {
-  --background: 220 22% 86%;       /* #D4D9E4 — fundo mais contrastado, cards brancos saltam */
-  --foreground: 218 25% 9%;        /* #101318 — texto muito escuro, máxima legibilidade */
-  --card: 0 0% 100%;               /* branco puro — separação clara do fundo */
-  --card-foreground: 218 25% 9%;
+  --background: 220 18% 96%;       /* #F2F4F8 — quasi-branco frio, barely-there */
+  --foreground: 220 28% 10%;       /* #131620 — quase-preto azulado, leitura perfeita */
+  --card: 0 0% 100%;               /* branco puro */
+  --card-foreground: 220 28% 10%;
   --popover: 0 0% 100%;
-  --popover-foreground: 218 25% 9%;
-  --primary: 0 78% 40%;            /* vermelho NC calibrado para fundo claro */
+  --popover-foreground: 220 28% 10%;
+  --primary: 0 82% 42%;            /* vermelho NC — satura bem em fundo claro */
   --primary-foreground: 0 0% 100%;
-  --secondary: 220 16% 88%;        /* cinza médio — elementos secundários */
-  --secondary-foreground: 218 22% 14%;
-  --accent: 0 65% 34%;
+  --secondary: 220 14% 93%;
+  --secondary-foreground: 220 20% 18%;
+  --accent: 0 70% 36%;
   --accent-foreground: 0 0% 100%;
-  --success: 142 60% 32%;
+  --success: 142 58% 32%;
   --success-foreground: 0 0% 100%;
-  --muted: 220 16% 90%;            /* cinza suave para badges, thead */
-  --muted-foreground: 218 14% 36%; /* texto secundário com contraste adequado */
-  --destructive: 0 82% 42%;
+  --muted: 220 14% 93%;            /* cinza suave para áreas internas de card */
+  --muted-foreground: 220 12% 42%; /* secundário legível — não some, não domina */
+  --destructive: 0 82% 44%;
   --destructive-foreground: 0 0% 100%;
-  --border: 220 16% 74%;           /* borda bem visível — separação clara entre blocos */
-  --input: 0 0% 100%;              /* inputs brancos em destaque */
-  --ring: 0 78% 40%;
-  --sidebar: 0 0% 100%;            /* sidebar branca com separação do fundo */
-  --sidebar-foreground: 218 25% 9%;
-  --sidebar-primary: 0 78% 40%;
+  --border: 220 14% 88%;           /* borda discreta mas presente — separação limpa */
+  --input: 0 0% 100%;
+  --ring: 0 82% 42%;
+  --sidebar: 0 0% 100%;
+  --sidebar-foreground: 220 28% 10%;
+  --sidebar-primary: 0 82% 42%;
   --sidebar-primary-foreground: 0 0% 100%;
-  --sidebar-accent: 220 16% 93%;
-  --sidebar-accent-foreground: 218 25% 9%;
-  --sidebar-border: 220 16% 80%;
-  --sidebar-ring: 0 78% 40%;
+  --sidebar-accent: 220 14% 95%;
+  --sidebar-accent-foreground: 220 28% 10%;
+  --sidebar-border: 220 14% 90%;
+  --sidebar-ring: 0 82% 42%;
 }
 
 /* ═══════════════════════════════════════════
@@ -158,9 +158,10 @@ html.light {
     background-attachment: fixed;
   }
 
-  /* ── LIGHT: fundo liso sem padrões — estilo Facebook limpo ── */
+  /* ── LIGHT: fundo quasi-branco sem padrão de ruído — profundidade vem das sombras ── */
   html.light body {
     background-image: none;
+    background-color: hsl(var(--background));
   }
 }
 
@@ -206,20 +207,22 @@ html.light {
   html.light .glass-panel {
     background: hsl(var(--card));
     backdrop-filter: none;
-    border-color: hsl(var(--border));
+    border: 1px solid hsl(var(--border));
+    /* Sombra tripartida — profundidade realista como Apple/Linear */
     box-shadow:
-      0 1px 4px hsl(220 25% 20% / 0.10),
-      0 4px 16px hsl(220 25% 20% / 0.09),
-      0 16px 40px hsl(220 25% 20% / 0.06);
+      0 0 0 1px hsl(220 20% 60% / 0.06),
+      0 1px 3px hsl(220 25% 15% / 0.07),
+      0 4px 16px hsl(220 25% 15% / 0.06),
+      0 12px 40px hsl(220 25% 15% / 0.04);
   }
 
   html.light .glass-panel:hover {
-    border-color: hsl(var(--primary) / 0.45);
+    border-color: hsl(var(--primary) / 0.4);
     box-shadow:
-      0 2px 8px hsl(220 25% 20% / 0.12),
-      0 8px 28px hsl(220 25% 20% / 0.10),
-      0 0 0 1px hsl(var(--primary) / 0.18),
-      0 0 20px hsl(var(--primary) / 0.18);
+      0 0 0 1px hsl(var(--primary) / 0.10),
+      0 2px 6px hsl(220 25% 15% / 0.09),
+      0 8px 28px hsl(220 25% 15% / 0.08),
+      0 0 24px hsl(var(--primary) / 0.12);
     transform: translateY(-1px);
   }
 
@@ -564,10 +567,13 @@ html.light {
   html.light .bg-white\/5,
   html.light .bg-white\/10,
   html.light .bg-white\/20,
-  html.light .bg-white\/30,
+  html.light .bg-white\/30 {
+    background-color: hsl(220 14% 96%) !important;
+    backdrop-filter: none;
+  }
   html.light .bg-slate-900\/50,
   html.light .bg-background\/50 {
-    background-color: hsl(var(--muted)) !important;
+    background-color: hsl(220 14% 92% / 0.85) !important;
     backdrop-filter: none;
   }
 
@@ -603,8 +609,9 @@ html.light {
   }
 
   html.light table tr th {
-    background-color: hsl(var(--muted)) !important;
+    background-color: hsl(220 14% 90%) !important;
     color: hsl(var(--muted-foreground)) !important;
+    border-bottom: 1px solid hsl(var(--border)) !important;
   }
 
   html.light .bg-secondary,
@@ -620,18 +627,21 @@ html.light {
     background-color: hsl(var(--muted)) !important;
   }
 
-  /* Garantir que divs de fundo escuro não sumam no light */
+  /* Divs escuras em sobreposição — converte para overlay neutro no light */
   html.light .bg-black\/40,
   html.light .bg-black\/50,
   html.light .bg-black\/60,
   html.light .bg-black\/70,
   html.light .bg-black\/80 {
-    background-color: hsl(220 16% 82% / 0.8) !important;
+    background-color: hsl(220 20% 88% / 0.9) !important;
   }
 
-  /* Elementos com bg-card ganham sombra sutil para separação do fundo */
+  /* bg-card e rounded com bg-card recebem sombra profissional */
   html.light .bg-card {
-    box-shadow: 0 1px 4px hsl(220 25% 20% / 0.10), 0 4px 16px hsl(220 25% 20% / 0.07);
+    box-shadow:
+      0 0 0 1px hsl(220 14% 88%),
+      0 1px 4px hsl(220 25% 15% / 0.08),
+      0 4px 16px hsl(220 25% 15% / 0.06);
   }
 
   /* ══════════════════════════════════════════════
@@ -769,7 +779,7 @@ html.light {
     user-select: none;
   }
   html.light .nc-watermark-text {
-    color: hsl(var(--primary) / 0.045);
+    color: hsl(var(--primary) / 0.075);
   }
 
   /* NC corner badge — marcador de canto de elemento */
