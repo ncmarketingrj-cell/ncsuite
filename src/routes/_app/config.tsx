@@ -28,21 +28,36 @@ type Tab = typeof TABS[number]["id"];
 
 function ConfigPage() {
   const { user } = useAuth();
-  const ADMIN_EMAILS = ["nc.marketingrj@gmail.com", "hc.marketing.dgt@gmail.com"];
-  const isAdmin = user?.email ? ADMIN_EMAILS.includes(user.email) : false;
   const [tab, setTab] = useState<Tab>("tutorial");
 
-  const visibleTabs = TABS.filter(t => !t.adminOnly || isAdmin);
+  const { data: profile } = useQuery({
+    queryKey: ["current_user_profile", user?.id],
+    queryFn: async () => {
+      if (!user?.id) return null;
+      const { data } = await supabase.from("profiles").select("role").eq("id", user.id).maybeSingle();
+      return data;
+    },
+    enabled: !!user?.id,
+  });
+
+  const isAdmin = profile?.role === "admin";
+  const canManageUsers = ["admin", "ceo", "gerente"].includes(profile?.role ?? "");
+
+  const visibleTabs = TABS.filter(t => {
+    if (!t.adminOnly) return true;
+    if (t.id === "usuarios") return canManageUsers;
+    return isAdmin;
+  });
 
   return (
     <div className="mx-auto max-w-5xl space-y-8">
       <PageHeader eyebrow="Sistema" title="Configurações" description="Gerencie sua experiência e aprenda a usar a NC Suite." />
-      
+
       <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
         {visibleTabs.map((t) => (
-          <button 
-            key={t.id} 
-            onClick={() => setTab(t.id)} 
+          <button
+            key={t.id}
+            onClick={() => setTab(t.id)}
             className={`relative flex items-center gap-2 whitespace-nowrap rounded-full px-5 py-2.5 text-xs font-bold transition-all ${tab === t.id ? "bg-primary text-primary-foreground shadow-glow-sm" : "text-muted-foreground hover:bg-white/[0.05]"}`}
           >
             <t.icon className="h-3.5 w-3.5" /> {t.label}
@@ -50,14 +65,14 @@ function ConfigPage() {
         ))}
       </div>
 
-      <motion.div 
-        key={tab} 
-        initial={{ opacity: 0, y: 8 }} 
-        animate={{ opacity: 1, y: 0 }} 
+      <motion.div
+        key={tab}
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
         className="glass-panel p-8"
       >
         {tab === "conta" && <TabConta />}
-        {tab === "usuarios" && isAdmin && <TabUsuarios />}
+        {tab === "usuarios" && canManageUsers && <TabUsuarios />}
         {tab === "tutorial" && <TabTutorial />}
         {tab === "clientes" && isAdmin && <TabClientes />}
         {tab === "integracoes" && isAdmin && <TabIntegracoes />}
