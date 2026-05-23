@@ -175,56 +175,137 @@ async function fetchDemographicBreakdowns(adAccountId: string, token: string, ti
   }
 }
 
-// ─── Extrair conversões (Resultados) — espelha o "Resultados" do Gerenciador Meta ──
-// O Meta Ads Manager usa o objective da campanha para definir o action_type primário.
-// Ex: campanha MESSAGES → onsite_conversion.messaging_conversation_started_7d
-//     campanha LEAD_GENERATION → lead
-//     campanha CONVERSIONS → purchase
+// ─── Extrair conversões — espelha exatamente a coluna "Resultados" do Gerenciador Meta ──
+//
+// REGRA DO META ADS MANAGER:
+//   O Gerenciador mostra o "evento de otimização primário" da campanha.
+//   Cada objective tem seu action_type principal. A ordem dentro de cada lista importa:
+//   o primeiro que tiver valor > 0 vence (sem somar, para não duplicar).
+//
+// ATENÇÃO: campanhas com Pixel de website retornam "offsite_conversion.fb_pixel_lead"
+//   — NÃO retornam "lead" puro. Sem esse mapeamento conversões aparecem como 0 no app.
+//
+// DEBUG: cada sync loga todos os action_types recebidos → comparar com Gerenciador Meta
+//   nos logs da Edge Function no Supabase Dashboard → Logs → Edge Functions → sync-meta-ads
 function extractConversions(actions: any[] = [], objective?: string): number {
   if (!Array.isArray(actions) || actions.length === 0) return 0;
 
-  // Mapeamento objetivo → action_types primários (mesma lógica do Gerenciador Meta)
-  const byObjective: Record<string, string[]> = {
-    "MESSAGES":          ["onsite_conversion.messaging_conversation_started_7d", "messaging_conversation_started_7d"],
-    "LEAD_GENERATION":   ["lead", "onsite_conversion.lead", "leadgen_grouped"],
-    "OUTCOME_LEADS":     ["lead", "onsite_conversion.lead"],
-    "CONVERSIONS":       ["purchase", "onsite_conversion.purchase", "offsite_conversion.fb_pixel_purchase"],
-    "OUTCOME_SALES":     ["purchase", "onsite_conversion.purchase", "offsite_conversion.fb_pixel_purchase"],
-    "APP_INSTALLS":      ["app_install", "mobile_app_install"],
-    "OUTCOME_APP_PROMOTION": ["app_install", "mobile_app_install"],
-    "VIDEO_VIEWS":       ["video_view", "thruplay"],
-    "OUTCOME_AWARENESS": ["reach", "video_view", "post_engagement"],
-    "LINK_CLICKS":       ["link_click", "landing_page_view"],
-    "OUTCOME_TRAFFIC":   ["link_click", "landing_page_view", "outbound_clicks"],
-    "POST_ENGAGEMENT":   ["post_engagement", "page_engagement"],
-    "OUTCOME_ENGAGEMENT": ["onsite_conversion.messaging_conversation_started_7d", "messaging_conversation_started_7d", "post_engagement", "page_engagement"],
+  const getVal = (type: string): number => {
+    const a = actions.find((x: any) => x.action_type === type);
+    return a?.value ? (parseInt(a.value) || 0) : 0;
   };
 
-  // Montar lista de tipos: começa pelos do objetivo (se houver), depois fallback geral rigoroso (apenas conversões reais)
-  const objectiveTypes: string[] = (objective && byObjective[objective]) ? byObjective[objective] : [];
-  const fallbackTypes = [
-    "purchase",
-    "onsite_conversion.purchase",
-    "offsite_conversion.fb_pixel_purchase",
+  // Log diagnóstico — visível em Supabase Dashboard → Logs → Edge Functions
+  const available = actions.map((a: any) => `${a.action_type}:${a.value}`).join(" | ");
+  console.log(`[CONV] obj=${objective ?? "none"} | ${available}`);
+
+  // Mapeamento objetivo → action_types primários (ordem de prioridade dentro de cada lista)
+  const byObjective: Record<string, string[]> = {
+    // Campanhas de Mensagens: Meta Ads Manager usa "first_reply" como resultado padrão desde 2024
+    "MESSAGES": [
+      "onsite_conversion.messaging_first_reply",
+      "onsite_conversion.messaging_conversation_started_7d",
+      "messaging_conversation_started_7d",
+      "onsite_conversion.total_messaging_connection",
+    ],
+    // Campanhas de Geração de Leads via formulário instantâneo do Facebook
+    "LEAD_GENERATION": [
+      "lead",
+      "leadgen_grouped",
+      "onsite_conversion.lead",
+    ],
+    // Campanhas de Leads (Advantage+) — inclui pixel de website, o mais comum para sites de concessionárias
+    "OUTCOME_LEADS": [
+      "lead",
+      "offsite_conversion.fb_pixel_lead",           // Leads via Pixel no site — ausente antes, causa principal de zeros
+      "offsite_conversion.fb_pixel_custom.LEAD",    // Evento customizado "LEAD" no pixel
+      "onsite_conversion.lead",
+      "leadgen_grouped",
+      "complete_registration",
+      "offsite_conversion.fb_pixel_complete_registration",
+    ],
+    // Campanhas de Vendas / Conversões no site
+    "CONVERSIONS": [
+      "purchase",
+      "offsite_conversion.fb_pixel_purchase",
+      "onsite_conversion.purchase",
+      "offsite_conversion.fb_pixel_custom.PURCHASE",
+    ],
+    "OUTCOME_SALES": [
+      "purchase",
+      "offsite_conversion.fb_pixel_purchase",
+      "onsite_conversion.purchase",
+      "offsite_conversion.fb_pixel_custom.PURCHASE",
+    ],
+    // Instalações de App
+    "APP_INSTALLS":          ["app_install", "mobile_app_install"],
+    "OUTCOME_APP_PROMOTION": ["app_install", "mobile_app_install"],
+    // Visualizações de Vídeo — Meta Ads Manager mostra ThruPlays como resultado principal
+    "VIDEO_VIEWS":       ["thruplay", "video_view"],
+    "OUTCOME_AWARENESS": ["thruplay", "video_view", "post_engagement"],
+    // Tráfego — Meta Ads Manager mostra Landing Page Views por padrão
+    "LINK_CLICKS":    ["landing_page_view", "link_click"],
+    "OUTCOME_TRAFFIC": ["landing_page_view", "link_click", "outbound_clicks"],
+    // Engajamento
+    "POST_ENGAGEMENT":  ["post_engagement", "page_engagement"],
+    "OUTCOME_ENGAGEMENT": [
+      "onsite_conversion.messaging_first_reply",
+      "onsite_conversion.messaging_conversation_started_7d",
+      "post_engagement",
+      "page_engagement",
+    ],
+  };
+
+  const priority: string[] = objective ? (byObjective[objective] ?? []) : [];
+
+  // 1ª passagem: tipos do objetivo da campanha (match exato com Gerenciador Meta)
+  for (const type of priority) {
+    const v = getVal(type);
+    if (v > 0) return v;
+  }
+
+  // 2ª passagem: fallback geral — apenas conversões reais, sem engajamento superficial
+  const fallback = [
     "lead",
+    "offsite_conversion.fb_pixel_lead",
+    "offsite_conversion.fb_pixel_custom.LEAD",
     "onsite_conversion.lead",
     "leadgen_grouped",
+    "purchase",
+    "offsite_conversion.fb_pixel_purchase",
+    "onsite_conversion.purchase",
+    "offsite_conversion.fb_pixel_custom.PURCHASE",
     "complete_registration",
+    "offsite_conversion.fb_pixel_complete_registration",
     "submit_application",
+    "onsite_conversion.messaging_first_reply",
     "onsite_conversion.messaging_conversation_started_7d",
     "messaging_conversation_started_7d",
-    "conversion",
+    "app_install",
+    "mobile_app_install",
+    "thruplay",
+    "landing_page_view",
   ];
 
-  // Percorre sem duplicatas: objetivo-específicos primeiro, depois fallback
-  const seen = new Set<string>();
-  for (const type of [...objectiveTypes, ...fallbackTypes]) {
-    if (seen.has(type)) continue;
-    seen.add(type);
-    const action = actions.find((a: any) => a.action_type === type);
-    if (action && action.value) return parseInt(action.value) || 0;
+  for (const type of fallback) {
+    if (priority.includes(type)) continue; // já tentou na 1ª passagem
+    const v = getVal(type);
+    if (v > 0) return v;
   }
+
   return 0;
+}
+
+// ─── Extrair cliques — espelha "Cliques no link" do Gerenciador Meta ─────────
+//
+// O campo inline_link_clicks usa janela fixa de 1 dia.
+// O Gerenciador usa action_type "link_click" com a janela de atribuição da campanha
+// (padrão: 7 dias clique + 1 dia visualização). A diferença pode ser 10–30%.
+// Usamos link_click da array actions como primário, com fallback para inline_link_clicks.
+function extractClicks(actions: any[] = [], inlineLinkClicks: string | number = 0): number {
+  const linkClickAction = actions?.find((a: any) => a.action_type === "link_click");
+  if (linkClickAction?.value) return parseInt(linkClickAction.value) || 0;
+  return parseInt(String(inlineLinkClicks) || "0") || 0;
 }
 
 // ─── Sync principal ───────────────────────────────────────────────────────────
@@ -547,7 +628,7 @@ serve(async (req) => {
           campaign_id,
           date: row.date_start,
           impressions: parseInt(row.impressions) || 0,
-          clicks: parseInt(row.inline_link_clicks || "0") || 0,
+          clicks: extractClicks(row.actions, row.inline_link_clicks),
           cost: parseFloat(row.spend) || 0,
           reach: parseInt(row.reach) || 0,
           conversions: extractConversions(row.actions, campaignObjectiveMap.get(row.campaign_id)),
@@ -575,7 +656,7 @@ serve(async (req) => {
           gender: row.gender || "unknown",
           platform: row.publisher_platform || "facebook",
           impressions: parseInt(row.impressions) || 0,
-          clicks: parseInt(row.inline_link_clicks || "0") || 0,
+          clicks: extractClicks(row.actions, row.inline_link_clicks),
           spend: parseFloat(row.spend) || 0,
           conversions: extractConversions(row.actions, campaignObjectiveMap.get(row.campaign_id)),
           reach: parseInt(row.reach) || 0
@@ -600,7 +681,7 @@ serve(async (req) => {
           date: row.date_start,
           hour: row.hourly_stats_aggregated_by_advertiser_time_zone || "unknown",
           impressions: parseInt(row.impressions) || 0,
-          clicks: parseInt(row.inline_link_clicks || "0") || 0,
+          clicks: extractClicks(row.actions, row.inline_link_clicks),
           spend: parseFloat(row.spend) || 0,
           conversions: extractConversions(row.actions, campaignObjectiveMap.get(row.campaign_id)),
           reach: parseInt(row.reach) || 0
@@ -624,7 +705,7 @@ serve(async (req) => {
           date: row.date_start,
           region: row.region || "unknown",
           impressions: parseInt(row.impressions) || 0,
-          clicks: parseInt(row.inline_link_clicks || "0") || 0,
+          clicks: extractClicks(row.actions, row.inline_link_clicks),
           spend: parseFloat(row.spend) || 0,
           conversions: extractConversions(row.actions, campaignObjectiveMap.get(row.campaign_id)),
           reach: parseInt(row.reach) || 0
@@ -648,7 +729,7 @@ serve(async (req) => {
             ad_set_id,
             date: row.date_start,
             impressions: parseInt(row.impressions) || 0,
-            clicks: parseInt(row.inline_link_clicks || "0") || 0,
+            clicks: extractClicks(row.actions, row.inline_link_clicks),
             cost: parseFloat(row.spend) || 0,
             conversions: extractConversions(row.actions, campaignObjectiveMap.get(row.campaign_id)),
             reach: parseInt(row.reach) || 0
@@ -663,7 +744,7 @@ serve(async (req) => {
             ad_id,
             date: row.date_start,
             impressions: parseInt(row.impressions) || 0,
-            clicks: parseInt(row.inline_link_clicks || "0") || 0,
+            clicks: extractClicks(row.actions, row.inline_link_clicks),
             cost: parseFloat(row.spend) || 0,
             conversions: extractConversions(row.actions, campaignObjectiveMap.get(row.campaign_id)),
             reach: parseInt(row.reach) || 0
