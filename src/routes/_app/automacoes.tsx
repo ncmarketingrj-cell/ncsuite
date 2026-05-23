@@ -23,12 +23,13 @@ export const Route = createFileRoute("/_app/automacoes")({
   beforeLoad: async () => {
     const { data: sessionData } = await supabase.auth.getSession();
     if (!sessionData.session) throw redirect({ to: "/login" });
-    const { data: profile } = await supabase
+    const { data: profile } = await (supabase as any)
       .from("profiles")
-      .select("role")
+      .select("role, permissions")
       .eq("id", sessionData.session.user.id)
       .maybeSingle();
-    if (!["admin", "ceo", "gerente"].includes(profile?.role ?? "")) throw redirect({ to: "/dashboard" });
+    if (profile?.role === "admin") return;
+    if (!profile?.permissions?.automacoes) throw redirect({ to: "/dashboard" });
   },
   component: AutomationsPage,
 });

@@ -28,12 +28,13 @@ export const Route = createFileRoute("/_app/metricas")({
   beforeLoad: async () => {
     const { data: sessionData } = await supabase.auth.getSession();
     if (!sessionData.session) throw redirect({ to: "/login" });
-    const { data: profile } = await supabase
+    const { data: profile } = await (supabase as any)
       .from("profiles")
-      .select("role")
+      .select("role, permissions")
       .eq("id", sessionData.session.user.id)
       .maybeSingle();
-    if (!METRICAS_ROLES.includes(profile?.role ?? "")) throw redirect({ to: "/dashboard" });
+    if (profile?.role === "admin") return;
+    if (!profile?.permissions?.metricas) throw redirect({ to: "/dashboard" });
   },
   validateSearch: (search: Record<string, unknown>): { account?: string; campaign?: string } => ({
     account: (search.account as string) || undefined,

@@ -41,7 +41,8 @@ function ConfigPage() {
   });
 
   const isAdmin = profile?.role === "admin";
-  const canManageUsers = ["admin", "ceo", "gerente"].includes(profile?.role ?? "");
+  const perms = (profile as any)?.permissions ?? {};
+  const canManageUsers = isAdmin || !!perms.criar_usuarios;
 
   const visibleTabs = TABS.filter(t => {
     if (!t.adminOnly) return true;
@@ -701,6 +702,23 @@ function TabConta() {
   );
 }
 
+const PERMISSION_PAGES = [
+  { key: "metricas",       label: "Métricas"       },
+  { key: "automacoes",     label: "Automações"     },
+  { key: "criar_usuarios", label: "Criar Usuários" },
+  { key: "agente",         label: "Agente IA"      },
+] as const;
+
+const ROLE_LABEL: Record<string, string> = {
+  admin:         "ADMIN",
+  ceo:           "CEO",
+  gerente:       "GERENTE",
+  gestor_trafego:"TRÁFEGO",
+  social_media:  "SOCIAL",
+  videomaker:    "VIDEO",
+  outro:         "MEMBRO",
+};
+
 function TabUsuarios() {
   const qc = useQueryClient();
   const [search, setSearch] = useState("");
@@ -711,7 +729,6 @@ function TabUsuarios() {
   const [editPassword, setEditPassword] = useState("");
   const [saving, setSaving] = useState(false);
 
-  // States for user creation
   const [showAddModal, setShowAddModal] = useState(false);
   const [newEmail, setNewEmail] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -719,6 +736,20 @@ function TabUsuarios() {
   const [newPosition, setNewPosition] = useState("Gestor de Tráfego");
   const [newRole, setNewRole] = useState("outro");
   const [creating, setCreating] = useState(false);
+
+  const handleTogglePermission = async (userId: string, key: string, currentPerms: any) => {
+    const updated = { ...(currentPerms ?? {}), [key]: !currentPerms?.[key] };
+    try {
+      const { error } = await (supabase as any).rpc("admin_set_user_permissions", {
+        target_user_id: userId,
+        new_permissions: updated,
+      });
+      if (error) throw error;
+      qc.invalidateQueries({ queryKey: ["admin_users_list"] });
+    } catch (err: any) {
+      toast.error(err.message || "Erro ao alterar permissão");
+    }
+  };
 
   const POSITIONS_LIST = [
     "Gestor de Tráfego",
@@ -846,51 +877,74 @@ function TabUsuarios() {
         <p className="py-8 text-center text-sm text-muted-foreground">Nenhum usuário encontrado.</p>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2">
-          {filteredUsers.map((u: any) => {
-            return (
-              <div key={u.id} className="flex items-center justify-between rounded-xl border border-white/5 bg-background/40 p-4 hover:border-primary/20 transition duration-300">
+          {filteredUsers.map((u: any) => (
+            <div key={u.id} className="rounded-xl border border-white/5 bg-background/40 p-4 hover:border-primary/20 transition duration-300 space-y-3">
+
+              {/* Linha superior: avatar + info + ações */}
+              <div className="flex items-center justify-between gap-3">
                 <div className="flex items-center gap-3 min-w-0">
                   <div className="h-10 w-10 rounded-full bg-primary/10 border border-primary/20 overflow-hidden flex items-center justify-center shrink-0">
-                    {u.avatar_url ? (
-                      <img src={u.avatar_url} alt="Avatar" className="h-full w-full object-cover" />
-                    ) : (
-                      <User className="h-5 w-5 text-primary" />
-                    )}
+                    {u.avatar_url
+                      ? <img src={u.avatar_url} alt="Avatar" className="h-full w-full object-cover" />
+                      : <User className="h-5 w-5 text-primary" />}
                   </div>
                   <div className="min-w-0">
                     <p className="text-sm font-semibold truncate flex items-center gap-1.5">
                       {u.full_name || "Membro Sem Nome"}
                       <span className={`rounded-full px-2 py-0.5 text-[8px] font-black tracking-widest ${u.role === "admin" ? "bg-red-500/20 text-red-400" : "bg-white/5 text-muted-foreground"}`}>
-                        {u.role === "admin" ? "ADMIN" : u.role === "ceo" ? "CEO" : u.role === "gerente" ? "GERENTE" : u.role === "gestor_trafego" ? "TRÁFEGO" : u.role === "social_media" ? "SOCIAL" : u.role === "videomaker" ? "VIDEO" : "MEMBRO"}
+                        {ROLE_LABEL[u.role] ?? "MEMBRO"}
                       </span>
                     </p>
-                    <p className="text-[10px] text-muted-foreground/80 mt-0.5 uppercase font-bold tracking-tighter">Cargo: {u.position || "Não Definido"}</p>
+                    <p className="text-[10px] text-muted-foreground/60 mt-0.5">{u.position || "Sem cargo"}</p>
                   </div>
                 </div>
-
-                <div className="flex items-center gap-2">
-                  <button 
-                    onClick={() => {
-                      setEditingUser(u);
-                      setEditRole(u.role || "outro");
-                      setEditPosition(u.position || POSITIONS_LIST[0]);
-                      setEditName(u.full_name || "");
-                      setEditPassword("");
-                    }} 
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <button
+                    onClick={() => { setEditingUser(u); setEditRole(u.role || "outro"); setEditPosition(u.position || POSITIONS_LIST[0]); setEditName(u.full_name || ""); setEditPassword(""); }}
                     className="rounded-full border border-white/10 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider hover:bg-white/5 transition"
                   >
                     Editar
                   </button>
-                  <button 
-                    onClick={() => handleDelete(u.id)} 
-                    className="rounded-full border border-red-500/20 bg-red-500/5 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-red-400 hover:bg-red-500/10 transition"
+                  <button
+                    onClick={() => handleDelete(u.id)}
+                    className="rounded-full border border-red-500/20 bg-red-500/5 px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-wider text-red-400 hover:bg-red-500/10 transition"
                   >
                     Excluir
                   </button>
                 </div>
               </div>
-            );
-          })}
+
+              {/* Linha de permissões */}
+              <div className="border-t border-white/5 pt-3">
+                {u.role === "admin" ? (
+                  <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground/40 font-bold uppercase tracking-wider">
+                    <Lock className="h-3 w-3" /> Acesso total — permissões bloqueadas
+                  </div>
+                ) : (
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/40 mr-0.5">Acesso:</span>
+                    {PERMISSION_PAGES.map(({ key, label }) => {
+                      const active = !!(u.permissions?.[key]);
+                      return (
+                        <button
+                          key={key}
+                          onClick={() => handleTogglePermission(u.id, key, u.permissions)}
+                          className={`rounded-full px-2.5 py-1 text-[9px] font-black uppercase tracking-wide border transition-all ${
+                            active
+                              ? "bg-primary/15 text-primary border-primary/30 hover:bg-primary/25"
+                              : "bg-white/[0.03] text-muted-foreground/40 border-white/5 hover:bg-white/8 hover:text-muted-foreground"
+                          }`}
+                        >
+                          {active ? "✓ " : "+ "}{label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+            </div>
+          ))}
         </div>
       )}
 
