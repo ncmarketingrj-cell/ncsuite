@@ -7,12 +7,14 @@ import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { PageHeader } from "@/components/PageHeader";
 
+const ADMIN_EMAILS = ["nc.marketingrj@gmail.com", "hc.marketing.dgt@gmail.com"];
+
 export const Route = createFileRoute("/_app/agente")({
   head: () => ({ meta: [{ title: "Agente IA — NC Performance Suite" }] }),
   beforeLoad: async () => {
     const { data } = await supabase.auth.getSession();
     if (!data.session) throw redirect({ to: "/login" });
-    if (data.session.user.email !== "nc.marketingrj@gmail.com") {
+    if (!ADMIN_EMAILS.includes(data.session.user.email ?? "")) {
       throw redirect({ to: "/dashboard" });
     }
   },

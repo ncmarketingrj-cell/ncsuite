@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, redirect } from "@tanstack/react-router";
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -20,6 +20,16 @@ import { ptBR } from "date-fns/locale";
 
 export const Route = createFileRoute("/_app/automacoes")({
   head: () => ({ meta: [{ title: "Automações e Alertas — NC Suite" }] }),
+  beforeLoad: async () => {
+    const { data: sessionData } = await supabase.auth.getSession();
+    if (!sessionData.session) throw redirect({ to: "/login" });
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("role")
+      .eq("id", sessionData.session.user.id)
+      .maybeSingle();
+    if (profile?.role !== "admin") throw redirect({ to: "/dashboard" });
+  },
   component: AutomationsPage,
 });
 

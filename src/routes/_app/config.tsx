@@ -690,7 +690,7 @@ function TabUsuarios() {
   const qc = useQueryClient();
   const [search, setSearch] = useState("");
   const [editingUser, setEditingUser] = useState<any | null>(null);
-  const [editRole, setEditRole] = useState("employee");
+  const [editRole, setEditRole] = useState("outro");
   const [editPosition, setEditPosition] = useState("Gestor de Tráfego");
   const [editName, setEditName] = useState("");
   const [editPassword, setEditPassword] = useState("");
@@ -702,7 +702,7 @@ function TabUsuarios() {
   const [newPassword, setNewPassword] = useState("");
   const [newName, setNewName] = useState("");
   const [newPosition, setNewPosition] = useState("Gestor de Tráfego");
-  const [newRole, setNewRole] = useState("employee");
+  const [newRole, setNewRole] = useState("outro");
   const [creating, setCreating] = useState(false);
 
   const POSITIONS_LIST = [
@@ -846,7 +846,7 @@ function TabUsuarios() {
                     <p className="text-sm font-semibold truncate flex items-center gap-1.5">
                       {u.full_name || "Membro Sem Nome"}
                       <span className={`rounded-full px-2 py-0.5 text-[8px] font-black tracking-widest ${u.role === "admin" ? "bg-red-500/20 text-red-400" : "bg-white/5 text-muted-foreground"}`}>
-                        {u.role === "admin" ? "ADMIN" : "MEMBRO"}
+                        {u.role === "admin" ? "ADMIN" : u.role === "ceo" ? "CEO" : u.role === "gerente" ? "GERENTE" : u.role === "gestor_trafego" ? "TRÁFEGO" : u.role === "social_media" ? "SOCIAL" : u.role === "videomaker" ? "VIDEO" : "MEMBRO"}
                       </span>
                     </p>
                     <p className="text-[10px] text-muted-foreground/80 mt-0.5 uppercase font-bold tracking-tighter">Cargo: {u.position || "Não Definido"}</p>
@@ -857,7 +857,7 @@ function TabUsuarios() {
                   <button 
                     onClick={() => {
                       setEditingUser(u);
-                      setEditRole(u.role || "employee");
+                      setEditRole(u.role || "outro");
                       setEditPosition(u.position || POSITIONS_LIST[0]);
                       setEditName(u.full_name || "");
                       setEditPassword("");
@@ -919,7 +919,12 @@ function TabUsuarios() {
                 <div className="space-y-1.5">
                   <label className="label-mono text-[10px] text-muted-foreground uppercase">Acesso</label>
                   <select value={newRole} onChange={(e) => setNewRole(e.target.value)} className="w-full rounded-lg border border-white/10 bg-background px-3 py-2 text-xs text-foreground focus:outline-none">
-                    <option value="employee">Membro (Employee)</option>
+                    <option value="gestor_trafego">Gestor de Tráfego</option>
+                    <option value="social_media">Social Media / Gestora de Projeto</option>
+                    <option value="gerente">Gerente</option>
+                    <option value="ceo">CEO</option>
+                    <option value="videomaker">Videomaker / Filmmaker</option>
+                    <option value="outro">Outros</option>
                     <option value="admin">Administrador (Admin)</option>
                   </select>
                 </div>
@@ -978,7 +983,12 @@ function TabUsuarios() {
                 <div className="space-y-1.5">
                   <label className="label-mono text-[10px] text-muted-foreground uppercase">Nível de Acesso</label>
                   <select value={editRole} onChange={(e) => setEditRole(e.target.value)} className="w-full rounded-lg border border-white/10 bg-background px-3 py-2 text-xs text-foreground focus:outline-none">
-                    <option value="employee">Membro (Employee)</option>
+                    <option value="gestor_trafego">Gestor de Tráfego</option>
+                    <option value="social_media">Social Media / Gestora de Projeto</option>
+                    <option value="gerente">Gerente</option>
+                    <option value="ceo">CEO</option>
+                    <option value="videomaker">Videomaker / Filmmaker</option>
+                    <option value="outro">Outros</option>
                     <option value="admin">Administrador (Admin)</option>
                   </select>
                 </div>

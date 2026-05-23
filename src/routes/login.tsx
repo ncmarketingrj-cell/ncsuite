@@ -1,27 +1,15 @@
 import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { useEffect, useState, type FormEvent } from "react";
 import { motion } from "framer-motion";
-import { Loader2, Mail, Lock, User as UserIcon, Briefcase, ArrowRight, ArrowLeft } from "lucide-react";
+import { Loader2, Mail, Lock, ArrowRight, ArrowLeft } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 
 export const Route = createFileRoute("/login")({
   head: () => ({ meta: [{ title: "Entrar — NC Performance Suite" }] }),
-  validateSearch: (search: Record<string, unknown>) => ({
-    signup: search.signup === "true" || search.signup === true,
-  }),
+  validateSearch: (_: Record<string, unknown>) => ({}),
   component: LoginPage,
 });
-
-const POSITIONS = [
-  "Gestor de Tráfego",
-  "Social Media",
-  "Gerente",
-  "Diretor",
-  "Videomaker",
-  "Designer",
-  "Outros",
-];
 
 const BRAND_FEATURES = [
   { label: "Victoria AI", desc: "Agente autônomo de otimização" },
@@ -30,7 +18,6 @@ const BRAND_FEATURES = [
 ];
 
 function LoginPage() {
-  const { signup: allowSignup } = Route.useSearch();
   const nav = useNavigate();
 
   useEffect(() => {
@@ -39,11 +26,9 @@ function LoginPage() {
     });
   }, [nav]);
 
-  const [mode, setMode] = useState<"login" | "signup" | "forgot">("login");
+  const [mode, setMode] = useState<"login" | "forgot">("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [fullName, setFullName] = useState("");
-  const [position, setPosition] = useState(POSITIONS[0]);
   const [loading, setLoading] = useState(false);
 
   const submit = async (e: FormEvent) => {
@@ -55,23 +40,6 @@ function LoginPage() {
         if (error) throw error;
         toast.success("Bem-vindo de volta");
         nav({ to: "/dashboard" });
-      } else if (mode === "signup") {
-        const isSuperAdmin = ["nc.marketingrj@gmail.com", "hc.marketing.dgt@gmail.com"].includes(email.trim().toLowerCase());
-        const { error } = await supabase.auth.signUp({
-          email,
-          password,
-          options: {
-            emailRedirectTo: window.location.origin,
-            data: {
-              full_name: fullName,
-              position,
-              role: isSuperAdmin ? "admin" : "employee",
-            },
-          },
-        });
-        if (error) throw error;
-        toast.success("Conta criada. Você já pode entrar.");
-        setMode("login");
       } else {
         const { error } = await supabase.auth.resetPasswordForEmail(email, {
           redirectTo: window.location.origin + "/login",
@@ -207,36 +175,16 @@ function LoginPage() {
               <div className="text-center">
                 <p className="label-mono text-primary">Acesso da Equipe</p>
                 <h1 className="mt-2 font-display text-2xl font-black text-foreground">
-                  {mode === "login" && "Entrar na Suite"}
-                  {mode === "signup" && "Criar conta"}
-                  {mode === "forgot" && "Recuperar senha"}
+                  {mode === "login" ? "Entrar na Suite" : "Recuperar senha"}
                 </h1>
               </div>
             </div>
 
             {/* ── Formulário ── */}
             <form onSubmit={submit} className="space-y-3.5">
-              {mode === "signup" && (
-                <>
-                  <Field icon={UserIcon} type="text" placeholder="Nome completo" value={fullName} onChange={setFullName} required />
-                  <div className="relative">
-                    <Briefcase className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground/55" />
-                    <select
-                      value={position}
-                      onChange={(e) => setPosition(e.target.value)}
-                      className="w-full appearance-none rounded-xl border border-border bg-muted/40 py-3 pl-12 pr-4 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary transition-colors"
-                    >
-                      {POSITIONS.map((p) => (
-                        <option key={p} value={p} className="bg-card text-foreground">{p}</option>
-                      ))}
-                    </select>
-                  </div>
-                </>
-              )}
-
               <Field icon={Mail} type="email" placeholder="email@agencia.com" value={email} onChange={setEmail} required />
 
-              {mode !== "forgot" && (
+              {mode === "login" && (
                 <Field icon={Lock} type="password" placeholder="Senha" value={password} onChange={setPassword} required />
               )}
 
@@ -263,9 +211,7 @@ function LoginPage() {
                   <Loader2 className="h-4 w-4 animate-spin" />
                 ) : (
                   <>
-                    {mode === "login" && "Entrar na Suite"}
-                    {mode === "signup" && "Criar conta"}
-                    {mode === "forgot" && "Enviar link de recuperação"}
+                    {mode === "login" ? "Entrar na Suite" : "Enviar link de recuperação"}
                     <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
                   </>
                 )}
@@ -273,44 +219,18 @@ function LoginPage() {
             </form>
 
             {/* ── Mode toggle ── */}
-            <div className="mt-6 text-center text-xs text-muted-foreground/80">
-              {mode === "login" && (
-                <>
-                  Sem conta?{" "}
-                  <button
-                    type="button"
-                    onClick={() => setMode("signup")}
-                    className="font-semibold text-primary hover:text-primary/80 transition-colors"
-                  >
-                    Cadastre-se
-                  </button>
-                </>
-              )}
-              {mode === "signup" && (
-                <>
-                  Já tem conta?{" "}
-                  <button
-                    type="button"
-                    onClick={() => setMode("login")}
-                    className="font-semibold text-primary hover:text-primary/80 transition-colors"
-                  >
-                    Entrar
-                  </button>
-                </>
-              )}
-              {mode === "forgot" && (
-                <>
-                  Lembrou a senha?{" "}
-                  <button
-                    type="button"
-                    onClick={() => setMode("login")}
-                    className="font-semibold text-primary hover:text-primary/80 transition-colors"
-                  >
-                    Voltar para o login
-                  </button>
-                </>
-              )}
-            </div>
+            {mode === "forgot" && (
+              <div className="mt-6 text-center text-xs text-muted-foreground/80">
+                Lembrou a senha?{" "}
+                <button
+                  type="button"
+                  onClick={() => setMode("login")}
+                  className="font-semibold text-primary hover:text-primary/80 transition-colors"
+                >
+                  Voltar para o login
+                </button>
+              </div>
+            )}
 
             {/* ── Footer do card ── */}
             <div className="mt-5 border-t border-border pt-4 flex items-center justify-between">

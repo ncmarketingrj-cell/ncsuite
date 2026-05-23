@@ -84,9 +84,6 @@ const MORE_ITEMS: NavItem[] = [
 function Shell() {
   const { loading, user, signOut } = useAuth();
   
-  const ADMIN_EMAILS = ["nc.marketingrj@gmail.com", "hc.marketing.dgt@gmail.com"];
-  const isAdmin = user?.email ? ADMIN_EMAILS.includes(user.email) : false;
-
   const { data: profile } = useQuery({
     queryKey: ["current_user_profile", user?.id],
     queryFn: async () => {
@@ -102,13 +99,12 @@ function Shell() {
     enabled: !!user?.id,
   });
 
-  const filteredNavItems = NAV_ITEMS.filter(item => {
-    if (item.to === "/metricas" && !isAdmin) return false;
-    return true;
-  });
+  const isAdmin = profile?.role === "admin";
+
+  const filteredNavItems = NAV_ITEMS;
 
   const filteredMoreItems = MORE_ITEMS.filter(item => {
-    if (item.to === "/agente" && !isAdmin) return false;
+    if ((item.to === "/agente" || item.to === "/automacoes") && !isAdmin) return false;
     return true;
   });
 
