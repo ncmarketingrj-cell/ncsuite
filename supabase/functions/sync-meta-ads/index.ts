@@ -353,6 +353,23 @@ async function fetchPlacementBreakdowns(adAccountId: string, token: string, time
   }
 }
 
+// ─── Buscar breakdown por dispositivo (mobile/desktop) ───────────────────────
+async function fetchDeviceBreakdowns(adAccountId: string, token: string, timeParams: Record<string, string>) {
+  try {
+    return await metaGetPaginated(`/${adAccountId}/insights`, token, {
+      level: "campaign",
+      fields: "campaign_id,campaign_name,spend,actions,reach,impressions,inline_link_clicks,date_start",
+      breakdowns: "publisher_platform,impression_device",
+      time_increment: "1",
+      limit: "500",
+      ...timeParams
+    })
+  } catch (e: any) {
+    console.error(`[SYNC] Erro device breakdown de ${adAccountId}:`, e.message)
+    return []
+  }
+}
+
 // ─── Extrair cliques — espelha "Cliques no link" do Gerenciador Meta ─────────
 //
 // O campo inline_link_clicks usa janela fixa de 1 dia.
@@ -566,14 +583,15 @@ serve(async (req) => {
         const campaignObjectiveMap = new Map(campaignsWithBudgets.map((c: any) => [c.id, c.objective as string | undefined]))
 
         // Buscar TUDO em paralelo — insights (range selecionado) + status completo (toda a conta)
-        const [insights, breakDownsData, adsetInsights, adInsights, adsetsWithStatus, adsWithStatus, placementData] = await Promise.all([
+        const [insights, breakDownsData, adsetInsights, adInsights, adsetsWithStatus, adsWithStatus, placementData, deviceData] = await Promise.all([
           fetchCampaignInsights(acc.id, token, timeParams),
           fetchDemographicBreakdowns(acc.id, token, timeParams),
           fetchAdSetInsights(acc.id, token, timeParams),
           fetchAdInsights(acc.id, token, timeParams),
           fetchAdSetsWithStatus(acc.id, token),
           fetchAdsWithStatus(acc.id, token),
-          fetchPlacementBreakdowns(acc.id, token, timeParams)
+          fetchPlacementBreakdowns(acc.id, token, timeParams),
+          fetchDeviceBreakdowns(acc.id, token, timeParams)
         ])
 
         const { demographics = [], hourly = [], region = [] } = breakDownsData;
@@ -588,6 +606,7 @@ serve(async (req) => {
           hourly,
           region,
           placementData,
+          deviceData,
           adsetInsights,
           adInsights,
           adsetsWithStatus,
@@ -604,7 +623,7 @@ serve(async (req) => {
       }
     }
 
-    for (const { accountId, insights, demographics, hourly, region, placementData = [], adsetInsights, adInsights, adsetsWithStatus = [], adsWithStatus = [], budgetMap, campaignsWithBudgets = [], campaignObjectiveMap = new Map() } of syncResults) {
+    for (const { accountId, insights, demographics, hourly, region, placementData = [], deviceData = [], adsetInsights, adInsights, adsetsWithStatus = [], adsWithStatus = [], budgetMap, campaignsWithBudgets = [], campaignObjectiveMap = new Map() } of syncResults) {
       // Upsert campanhas com status reais
       const campaignMap = new Map<string, any>()
 
@@ -627,7 +646,7 @@ serve(async (req) => {
       }
 
       // 2. Adicionar redundâncias vindas dos insights de histórico
-      for (const row of [...insights, ...demographics, ...hourly, ...region, ...placementData]) {
+      for (const row of [...insights, ...demographics, ...hourly, ...region, ...placementData, ...deviceData]) {
         if (!campaignMap.has(row.campaign_id)) {
           const budget = budgetMap.get(row.campaign_id) || {}
           campaignMap.set(row.campaign_id, {
@@ -951,6 +970,31 @@ serve(async (req) => {
           .from("placement_metrics")
           .upsert(placementToUpsert, { onConflict: "campaign_id,date,placement,publisher" })
         if (error) console.error(`[SYNC] Erro placement_metrics ${accountId}:`, error.message)
+      }
+
+      // Upsert device_metrics (mobile vs desktop por plataforma)
+      const deviceToUpsert = (deviceData || []).map((row: any) => {
+        const campaign_id = idMap.get(row.campaign_id)
+        if (!campaign_id) return null
+        return {
+          campaign_id,
+          ad_account_id: accountId,
+          date: row.date_start,
+          device: row.impression_device || "unknown",
+          platform: row.publisher_platform || "unknown",
+          impressions: parseInt(row.impressions) || 0,
+          clicks: extractClicks(row.actions, row.inline_link_clicks),
+          spend: parseFloat(row.spend) || 0,
+          conversions: extractConversions(row.actions, campaignObjectiveMap.get(row.campaign_id)),
+          reach: parseInt(row.reach) || 0
+        }
+      }).filter(Boolean)
+
+      if (deviceToUpsert.length > 0) {
+        const { error } = await supabase
+          .from("device_metrics" as any)
+          .upsert(deviceToUpsert, { onConflict: "campaign_id,date,device,platform" })
+        if (error) console.error(`[SYNC] Erro device_metrics ${accountId}:`, error.message)
       }
 
       // Antiga notificação diária por conta foi removida daqui e transferida para o run-automations (Resumo D-1 unificado às 08h).

@@ -86,8 +86,8 @@ const MODOS: Record<ModoId, {
     desc: "Análise avançada de público (idade, sexo, região, horas)",
     icon: Users,
     color: "text-pink-400",
-    charts: ["pie-gender", "bar-age", "bar-region", "heatmap-temporal", "line-hourly", "bar-platform", "video-funnel"],
-    foco: "Entender examente QUEM converte, ONDE estão e a QUE HORAS compram.",
+    charts: ["demo-summary", "bar-gender-detail", "bar-age-cpl", "grouped-age-gender", "bar-dayofweek", "bar-region-cpl", "bar-platform-cpl", "bar-device", "heatmap-temporal", "video-funnel"],
+    foco: "Perfil completo do lead: QUEM é (gênero+idade), ONDE está (região+plataforma), COMO acessa (dispositivo), QUANDO converte (hora+dia).",
   },
 };
 
@@ -298,39 +298,82 @@ function MetricasGraficoPage() {
       const s = getD(dateRange.startDate), e = getD(dateRange.endDate);
       const filterAccount = accountFilter !== "all" ? `ad_account_id.eq.${accountFilter},` : "";
       
-      const [demo, hourlyRaw, region, videoRaw] = await Promise.all([
-        (supabase as any).from("demographic_metrics").select("age_range, gender, platform, conversions, spend").gte("date", s).lte("date", e).filter(accountFilter !== "all" ? "ad_account_id" : "id", "neq", "null"),
+      const [demo, hourlyRaw, region, videoRaw, deviceRaw] = await Promise.all([
+        (supabase as any).from("demographic_metrics").select("age_range, gender, platform, conversions, spend, impressions, clicks, reach").gte("date", s).lte("date", e).filter(accountFilter !== "all" ? "ad_account_id" : "id", "neq", "null"),
         (supabase as any).from("hourly_metrics").select("hour, conversions, spend, date").gte("date", s).lte("date", e).filter(accountFilter !== "all" ? "ad_account_id" : "id", "neq", "null"),
-        (supabase as any).from("region_metrics").select("region, conversions, spend").gte("date", s).lte("date", e).filter(accountFilter !== "all" ? "ad_account_id" : "id", "neq", "null"),
-        (supabase as any).from("asset_metrics").select("video_views, video_p25, video_p50, video_p75, video_p95, spend").gte("date", s).lte("date", e).filter(accountFilter !== "all" ? "ad_account_id" : "id", "neq", "null")
+        (supabase as any).from("region_metrics").select("region, conversions, spend, impressions, clicks, reach").gte("date", s).lte("date", e).filter(accountFilter !== "all" ? "ad_account_id" : "id", "neq", "null"),
+        (supabase as any).from("asset_metrics").select("video_views, video_p25, video_p50, video_p75, video_p95, spend").gte("date", s).lte("date", e).filter(accountFilter !== "all" ? "ad_account_id" : "id", "neq", "null"),
+        (supabase as any).from("device_metrics" as any).select("device, platform, conversions, spend, impressions, clicks, reach").gte("date", s).lte("date", e).filter(accountFilter !== "all" ? "ad_account_id" : "id", "neq", "null")
       ]);
 
-      // Process Age
+      const demoRows = demo.data || [];
+
+      // Process Age (with CPL + CTR)
       const ageMap: Record<string, any> = {};
-      (demo.data || []).forEach((r: any) => {
-        if (!ageMap[r.age_range]) ageMap[r.age_range] = { name: r.age_range, conv: 0, cost: 0 };
-        ageMap[r.age_range].conv += Number(r.conversions || 0);
-        ageMap[r.age_range].cost += Number(r.spend || 0);
+      demoRows.forEach((r: any) => {
+        if (!ageMap[r.age_range]) ageMap[r.age_range] = { name: r.age_range, conv: 0, cost: 0, impr: 0, clicks: 0 };
+        ageMap[r.age_range].conv  += Number(r.conversions || 0);
+        ageMap[r.age_range].cost  += Number(r.spend || 0);
+        ageMap[r.age_range].impr  += Number(r.impressions || 0);
+        ageMap[r.age_range].clicks += Number(r.clicks || 0);
       });
-      const ageData = Object.values(ageMap).filter(v => v.name !== "unknown").sort((a, b) => a.name.localeCompare(b.name));
+      const ageData = Object.values(ageMap).filter((v: any) => v.name !== "unknown")
+        .map((v: any) => ({ ...v, cpl: v.conv > 0 ? v.cost / v.conv : 0, ctr: v.impr > 0 ? (v.clicks / v.impr * 100) : 0 }))
+        .sort((a: any, b: any) => a.name.localeCompare(b.name));
 
-      // Process Gender
+      // Process Gender (with CPL)
       const genderMap: Record<string, any> = {};
-      (demo.data || []).forEach((r: any) => {
-        if (!genderMap[r.gender]) genderMap[r.gender] = { name: r.gender, value: 0, cost: 0 };
-        genderMap[r.gender].value += Number(r.conversions || 0);
-        genderMap[r.gender].cost += Number(r.spend || 0);
+      demoRows.forEach((r: any) => {
+        if (!genderMap[r.gender]) genderMap[r.gender] = { name: r.gender, value: 0, cost: 0, impr: 0, clicks: 0 };
+        genderMap[r.gender].value  += Number(r.conversions || 0);
+        genderMap[r.gender].cost   += Number(r.spend || 0);
+        genderMap[r.gender].impr   += Number(r.impressions || 0);
+        genderMap[r.gender].clicks += Number(r.clicks || 0);
       });
-      const genderData = Object.values(genderMap).filter(v => v.name !== "unknown").map(g => ({ ...g, name: g.name === "male" ? "Masculino" : g.name === "female" ? "Feminino" : g.name }));
+      const genderData = Object.values(genderMap).filter((v: any) => v.name !== "unknown")
+        .map((g: any) => ({
+          ...g,
+          name: g.name === "male" ? "Masculino" : g.name === "female" ? "Feminino" : g.name,
+          cpl: g.value > 0 ? g.cost / g.value : 0,
+          ctr: g.impr > 0 ? (g.clicks / g.impr * 100) : 0,
+        }));
 
-      // Process Platform
+      // Process Platform (with CPL + CTR)
       const platMap: Record<string, any> = {};
-      (demo.data || []).forEach((r: any) => {
-        if (!platMap[r.platform]) platMap[r.platform] = { name: r.platform, conv: 0, cost: 0 };
-        platMap[r.platform].conv += Number(r.conversions || 0);
-        platMap[r.platform].cost += Number(r.spend || 0);
+      demoRows.forEach((r: any) => {
+        if (!platMap[r.platform]) platMap[r.platform] = { name: r.platform, conv: 0, cost: 0, impr: 0, clicks: 0 };
+        platMap[r.platform].conv   += Number(r.conversions || 0);
+        platMap[r.platform].cost   += Number(r.spend || 0);
+        platMap[r.platform].impr   += Number(r.impressions || 0);
+        platMap[r.platform].clicks += Number(r.clicks || 0);
       });
-      const platData = Object.values(platMap).filter(v => v.name !== "unknown").sort((a, b) => b.conv - a.conv);
+      const platData = Object.values(platMap).filter((v: any) => v.name !== "unknown")
+        .map((v: any) => ({
+          ...v,
+          name: v.name === "facebook" ? "Facebook" : v.name === "instagram" ? "Instagram" : v.name === "audience_network" ? "Audience Net." : v.name === "messenger" ? "Messenger" : v.name,
+          cpl: v.conv > 0 ? v.cost / v.conv : 0,
+          ctr: v.impr > 0 ? (v.clicks / v.impr * 100) : 0,
+        }))
+        .sort((a: any, b: any) => b.conv - a.conv);
+
+      // Cross Age × Gender analysis (best converting segments)
+      const crossMap: Record<string, any> = {};
+      demoRows.forEach((r: any) => {
+        if (r.age_range === "unknown" || r.gender === "unknown") return;
+        const key = r.age_range;
+        if (!crossMap[key]) crossMap[key] = { name: r.age_range };
+        const gKey = r.gender === "male" ? "M" : r.gender === "female" ? "F" : "O";
+        crossMap[key][gKey] = (crossMap[key][gKey] || 0) + Number(r.conversions || 0);
+        crossMap[key][`${gKey}_cost`] = (crossMap[key][`${gKey}_cost`] || 0) + Number(r.spend || 0);
+      });
+      const crossAgeGender = Object.values(crossMap)
+        .filter((v: any) => v.name !== "unknown")
+        .sort((a: any, b: any) => a.name.localeCompare(b.name))
+        .map((v: any) => ({
+          ...v,
+          cplM: v.M > 0 ? (v.M_cost || 0) / v.M : 0,
+          cplF: v.F > 0 ? (v.F_cost || 0) / v.F : 0,
+        }));
 
       // Process Hourly
       const hourMap: Record<string, any> = {};
@@ -346,14 +389,54 @@ function MetricasGraficoPage() {
       });
       const hourlyData = Object.values(hourMap);
 
-      // Process Region
+      // Day of Week from hourly data
+      const DOW_LABELS = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+      const dowMap: Record<number, { name: string; conv: number; cost: number }> = {};
+      for (let d = 0; d < 7; d++) dowMap[d] = { name: DOW_LABELS[d], conv: 0, cost: 0 };
+      (hourlyRaw.data || []).forEach((r: any) => {
+        if (r.date) {
+          const dow = new Date(r.date + 'T12:00:00').getDay();
+          if (dowMap[dow]) { dowMap[dow].conv += Number(r.conversions || 0); dowMap[dow].cost += Number(r.spend || 0); }
+        }
+      });
+      const dowData = [1, 2, 3, 4, 5, 6, 0].map(d => ({
+        ...dowMap[d],
+        cpl: dowMap[d].conv > 0 ? dowMap[d].cost / dowMap[d].conv : 0,
+      }));
+
+      // Process Region (with CPL + CTR)
       const regMap: Record<string, any> = {};
       (region.data || []).forEach((r: any) => {
-        if (!regMap[r.region]) regMap[r.region] = { name: r.region, conv: 0, cost: 0 };
-        regMap[r.region].conv += Number(r.conversions || 0);
-        regMap[r.region].cost += Number(r.spend || 0);
+        if (!regMap[r.region]) regMap[r.region] = { name: r.region, conv: 0, cost: 0, impr: 0, clicks: 0 };
+        regMap[r.region].conv   += Number(r.conversions || 0);
+        regMap[r.region].cost   += Number(r.spend || 0);
+        regMap[r.region].impr   += Number(r.impressions || 0);
+        regMap[r.region].clicks += Number(r.clicks || 0);
       });
-      const regionData = Object.values(regMap).filter(v => v.name !== "unknown").sort((a, b) => b.conv - a.conv).slice(0, 10);
+      const regionData = Object.values(regMap).filter((v: any) => v.name !== "unknown")
+        .map((v: any) => ({ ...v, cpl: v.conv > 0 ? v.cost / v.conv : 0, ctr: v.impr > 0 ? (v.clicks / v.impr * 100) : 0 }))
+        .sort((a: any, b: any) => b.conv - a.conv).slice(0, 12);
+
+      // Process Device (mobile/desktop/tablet)
+      const DEVICE_LABEL: Record<string, string> = { mobile: "Mobile", desktop: "Desktop", tablet: "Tablet", connected_tv: "Smart TV", unknown: "Outros" };
+      const PLATFORM_LABEL: Record<string, string> = { facebook: "FB", instagram: "IG", audience_network: "AN", messenger: "MSN" };
+      const deviceMap: Record<string, any> = {};
+      (deviceRaw.data || []).forEach((r: any) => {
+        const key = `${r.device}|${r.platform}`;
+        if (!deviceMap[key]) deviceMap[key] = { device: r.device, platform: r.platform, conv: 0, cost: 0, impr: 0, clicks: 0, reach: 0 };
+        deviceMap[key].conv   += Number(r.conversions || 0);
+        deviceMap[key].cost   += Number(r.spend || 0);
+        deviceMap[key].impr   += Number(r.impressions || 0);
+        deviceMap[key].clicks += Number(r.clicks || 0);
+        deviceMap[key].reach  += Number(r.reach || 0);
+      });
+      const deviceData = Object.values(deviceMap).map((g: any) => ({
+        ...g,
+        name: `${DEVICE_LABEL[g.device] || g.device} · ${PLATFORM_LABEL[g.platform] || g.platform}`,
+        deviceLabel: DEVICE_LABEL[g.device] || g.device,
+        cpl: g.conv > 0 ? g.cost / g.conv : 0,
+        ctr: g.impr > 0 ? (g.clicks / g.impr * 100) : 0,
+      })).sort((a: any, b: any) => b.conv - a.conv);
 
       // Process Temporal Heatmap: day-of-week (Mon→Sun) × hour (0–23)
       const WEEK_LABELS = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
@@ -394,7 +477,7 @@ function MetricasGraficoPage() {
         ];
       })() : null;
 
-      return { ageData, genderData, platData, hourlyData, regionData, heatmapData, videoFunnel };
+      return { ageData, genderData, platData, hourlyData, regionData, heatmapData, videoFunnel, crossAgeGender, dowData, deviceData };
     }
   });
 
@@ -503,6 +586,14 @@ function MetricasGraficoPage() {
                     { id: "heatmap", label: "Mapa de Calor" },
                     { id: "heatmap-temporal", label: "Heatmap Hora×Dia" },
                     { id: "video-funnel", label: "Funil de Vídeo" },
+                    { id: "demo-summary", label: "Resumo Demo" },
+                    { id: "bar-gender-detail", label: "Gênero com CPL" },
+                    { id: "bar-age-cpl", label: "Idade × CPL" },
+                    { id: "grouped-age-gender", label: "Idade×Gênero Cross" },
+                    { id: "bar-dayofweek", label: "Dia da Semana" },
+                    { id: "bar-region-cpl", label: "Região com CPL" },
+                    { id: "bar-platform-cpl", label: "Plataforma com CPL" },
+                    { id: "bar-device", label: "Dispositivo" },
                     { id: "scatter-cpl", label: "Scatter CPL×Gasto" },
                     { id: "scatter-freq", label: "Scatter Freq×CTR" },
                     { id: "pie-share", label: "Share de Gasto" },
@@ -843,6 +934,211 @@ function MetricasGraficoPage() {
                     </BarChart>
                   </ResponsiveContainer>
                 </ChartCard>
+              )}
+
+              {/* ── RESUMO DEMOGRÁFICO (cards de topo) ── */}
+              {isVis("demo-summary") && !loadingBreakdowns && (() => {
+                const gd = breakdowns?.genderData || [];
+                const ad = breakdowns?.ageData || [];
+                const rd = breakdowns?.regionData || [];
+                const dd = breakdowns?.dowData || [];
+                const topGender = [...gd].sort((a: any, b: any) => b.value - a.value)[0];
+                const topAge = [...ad].sort((a: any, b: any) => b.conv - a.conv)[0];
+                const topRegion = rd[0];
+                const topDay = [...dd].sort((a: any, b: any) => b.conv - a.conv)[0];
+                const bestCplAge = [...ad].filter((v: any) => v.cpl > 0).sort((a: any, b: any) => a.cpl - b.cpl)[0];
+                return (
+                  <ChartCard key={`ds-${dataUpdatedAt}`} icon={<Users className="h-4 w-4 text-pink-400" />} title="Perfil do Lead — Resumo" badge="SUMMARY · DEMO" context="Cards de síntese demográfica: quem é, onde está, quando converte. Use como ponto de partida antes de entrar nos gráficos detalhados.">
+                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+                      {[
+                        { label: "Gênero líder", value: topGender?.name || "—", sub: topGender ? `${topGender.value} conv. | R$ ${topGender.cpl?.toFixed(2)}/conv.` : "sem dados", color: "border-pink-500/30 bg-pink-500/5 text-pink-400" },
+                        { label: "Faixa etária top", value: topAge?.name || "—", sub: topAge ? `${topAge.conv} conv. | CTR ${topAge.ctr?.toFixed(2)}%` : "sem dados", color: "border-violet-500/30 bg-violet-500/5 text-violet-400" },
+                        { label: "Melhor CPL etário", value: bestCplAge?.name || "—", sub: bestCplAge ? `R$ ${bestCplAge.cpl.toFixed(2)}/conv.` : "sem dados", color: "border-green-500/30 bg-green-500/5 text-green-400" },
+                        { label: "Região principal", value: (topRegion?.name || "—").substring(0, 12), sub: topRegion ? `${topRegion.conv} conv. | CPL R$ ${topRegion.cpl?.toFixed(2)}` : "sem dados", color: "border-blue-500/30 bg-blue-500/5 text-blue-400" },
+                        { label: "Melhor dia", value: topDay?.name || "—", sub: topDay ? `${topDay.conv} conv. | CPL R$ ${topDay.cpl?.toFixed(2)}` : "sem dados", color: "border-orange-500/30 bg-orange-500/5 text-orange-400" },
+                      ].map((card) => (
+                        <div key={card.label} className={`rounded-xl border px-4 py-3 ${card.color}`}>
+                          <p className="text-[8px] font-black uppercase tracking-widest opacity-60 mb-1">{card.label}</p>
+                          <p className="text-lg font-black leading-none mb-1">{card.value}</p>
+                          <p className="text-[8px] opacity-70 leading-snug">{card.sub}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </ChartCard>
+                );
+              })()}
+
+              {/* ── GÊNERO DETALHADO com CPL ── */}
+              {isVis("bar-gender-detail") && !loadingBreakdowns && (
+                <ChartCard key={`bgd-${dataUpdatedAt}`} icon={<Users className="h-4 w-4 text-pink-400" />} title="Gênero: Conversões, Gasto e CPL" badge="BAR · GENDER · CPL" context="Compare masculino vs feminino em volume de conversões, investimento e custo por resultado. O gênero com menor CPL deve receber maior share de budget — mas valide volume mínimo (>20 conv).">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                    <ResponsiveContainer width="100%" height={240}>
+                      <BarChart data={breakdowns?.genderData || []} margin={{ left: -10 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" opacity={0.3} />
+                        <XAxis dataKey="name" tick={{ fill: "var(--color-muted-foreground)", fontSize: 10 }} />
+                        <YAxis tick={{ fill: "var(--color-muted-foreground)", fontSize: 10 }} />
+                        <Tooltip contentStyle={{ background: "var(--color-card)", border: "1px solid var(--color-border)", borderRadius: 12, fontSize: 11 }} formatter={(v: any, n: string) => [n === "cost" ? `R$ ${Number(v).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}` : v, n === "value" ? "Conversões" : "Gasto"]} />
+                        <Bar dataKey="value" name="Conversões" fill="#ec4899" radius={[4,4,0,0]} {...animProps} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                    <div className="space-y-3">
+                      {(breakdowns?.genderData || []).map((g: any) => (
+                        <div key={g.name} className="rounded-xl border border-white/5 bg-white/[0.02] p-4 space-y-2">
+                          <div className="flex justify-between items-center">
+                            <span className="font-black text-sm text-foreground">{g.name}</span>
+                            <span className="text-[9px] font-black text-muted-foreground bg-white/5 px-2 py-0.5 rounded">{g.value} conv.</span>
+                          </div>
+                          <div className="grid grid-cols-3 gap-2 text-center">
+                            <div><p className="text-[8px] text-muted-foreground/50 uppercase tracking-wider">Gasto</p><p className="text-xs font-mono font-bold text-primary">R$ {g.cost?.toLocaleString("pt-BR", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</p></div>
+                            <div><p className="text-[8px] text-muted-foreground/50 uppercase tracking-wider">CPL</p><p className={`text-xs font-mono font-bold ${g.cpl > 0 && g.cpl < 50 ? "text-green-400" : "text-orange-400"}`}>R$ {g.cpl?.toFixed(2)}</p></div>
+                            <div><p className="text-[8px] text-muted-foreground/50 uppercase tracking-wider">CTR</p><p className="text-xs font-mono font-bold text-blue-400">{g.ctr?.toFixed(2)}%</p></div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </ChartCard>
+              )}
+
+              {/* ── IDADE × CPL (ComposedChart) ── */}
+              {isVis("bar-age-cpl") && !loadingBreakdowns && (
+                <ChartCard key={`bac-${dataUpdatedAt}`} icon={<TrendingUp className="h-4 w-4 text-violet-400" />} title="Faixa Etária: Conversões e CPL" badge="COMPOSED · AGE × CPL" context="Barras = volume de conversões por faixa etária. Linha laranja = CPL. O segmento ideal tem ALTO volume de conversões E BAIXO CPL. Se uma faixa tem muitas conv. mas CPL alto, o criativo funciona mas o público é caro.">
+                  <ResponsiveContainer width="100%" height={280}>
+                    <ComposedChart data={breakdowns?.ageData || []} margin={{ left: -5, right: 30 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" opacity={0.3} />
+                      <XAxis dataKey="name" tick={{ fill: "var(--color-muted-foreground)", fontSize: 9 }} />
+                      <YAxis yAxisId="left" tick={{ fill: "var(--color-muted-foreground)", fontSize: 10 }} />
+                      <YAxis yAxisId="right" orientation="right" tick={{ fill: "var(--color-muted-foreground)", fontSize: 10 }} tickFormatter={(v) => `R$${v.toFixed(0)}`} />
+                      <Tooltip contentStyle={{ background: "var(--color-card)", border: "1px solid var(--color-border)", borderRadius: 12, fontSize: 11 }}
+                        formatter={(v: any, n: string) => [n === "cpl" ? `R$ ${Number(v).toFixed(2)}` : n === "cost" ? `R$ ${Number(v).toLocaleString("pt-BR", {minimumFractionDigits:2})}` : v, n === "conv" ? "Conversões" : n === "cpl" ? "CPL" : "Gasto"]} />
+                      <Bar yAxisId="left" dataKey="conv" name="Conversões" fill="hsl(var(--primary))" radius={[4,4,0,0]} {...animProps} />
+                      <Bar yAxisId="left" dataKey="cost" name="Gasto" fill="#8b5cf6" radius={[4,4,0,0]} opacity={0.5} {...animProps} />
+                      <Line yAxisId="right" type="monotone" dataKey="cpl" name="CPL" stroke="#f97316" strokeWidth={2.5} dot={{ fill: "#f97316", r: 4 }} {...animProps} />
+                    </ComposedChart>
+                  </ResponsiveContainer>
+                </ChartCard>
+              )}
+
+              {/* ── CROSS IDADE × GÊNERO ── */}
+              {isVis("grouped-age-gender") && !loadingBreakdowns && (
+                <ChartCard key={`gag-${dataUpdatedAt}`} icon={<Users className="h-4 w-4 text-cyan-400" />} title="Segmento Ouro: Idade × Gênero" badge="GROUPED BAR · CROSS-SEGMENT" context="Onde estão os melhores leads? Encontre a combinação de faixa etária + gênero com maior volume de conversões. O segmento com mais conversões deve receber criativos customizados e maior orçamento.">
+                  <ResponsiveContainer width="100%" height={280}>
+                    <BarChart data={breakdowns?.crossAgeGender || []} margin={{ left: -10 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" opacity={0.3} />
+                      <XAxis dataKey="name" tick={{ fill: "var(--color-muted-foreground)", fontSize: 9 }} />
+                      <YAxis tick={{ fill: "var(--color-muted-foreground)", fontSize: 10 }} />
+                      <Tooltip contentStyle={{ background: "var(--color-card)", border: "1px solid var(--color-border)", borderRadius: 12, fontSize: 11 }}
+                        formatter={(v: any, n: string, props: any) => {
+                          const d = props.payload;
+                          const cpl = n === "M" ? d?.cplM : d?.cplF;
+                          return [`${v} conv.${cpl > 0 ? ` (CPL R$ ${cpl.toFixed(2)})` : ""}`, n === "M" ? "Masculino" : "Feminino"];
+                        }} />
+                      <Legend iconType="circle" iconSize={8} formatter={(v: string) => <span className="text-[10px] text-muted-foreground">{v === "M" ? "Masculino" : "Feminino"}</span>} />
+                      <Bar dataKey="M" name="M" fill="#3b82f6" radius={[4,4,0,0]} {...animProps} />
+                      <Bar dataKey="F" name="F" fill="#ec4899" radius={[4,4,0,0]} {...animProps} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </ChartCard>
+              )}
+
+              {/* ── DIA DA SEMANA ── */}
+              {isVis("bar-dayofweek") && !loadingBreakdowns && (
+                <ChartCard key={`dow-${dataUpdatedAt}`} icon={<Activity className="h-4 w-4 text-orange-400" />} title="Performance por Dia da Semana" badge="BAR · DAY OF WEEK" context="Qual dia da semana traz mais conversões? Use para concentrar budget nos dias de maior retorno e considere schedule de anúncios. CPL em laranja — dias com baixo CPL + alto volume são os dias ideais.">
+                  <ResponsiveContainer width="100%" height={260}>
+                    <ComposedChart data={breakdowns?.dowData || []} margin={{ left: -5, right: 25 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" opacity={0.3} />
+                      <XAxis dataKey="name" tick={{ fill: "var(--color-muted-foreground)", fontSize: 10 }} />
+                      <YAxis yAxisId="left" tick={{ fill: "var(--color-muted-foreground)", fontSize: 10 }} />
+                      <YAxis yAxisId="right" orientation="right" tick={{ fill: "var(--color-muted-foreground)", fontSize: 10 }} tickFormatter={(v) => `R$${v.toFixed(0)}`} />
+                      <Tooltip contentStyle={{ background: "var(--color-card)", border: "1px solid var(--color-border)", borderRadius: 12, fontSize: 11 }}
+                        formatter={(v: any, n: string) => [n === "cpl" ? `R$ ${Number(v).toFixed(2)}` : n === "cost" ? `R$ ${Number(v).toLocaleString("pt-BR", {minimumFractionDigits:2})}` : v, n === "conv" ? "Conversões" : n === "cpl" ? "CPL" : "Gasto"]} />
+                      <Bar yAxisId="left" dataKey="conv" name="Conversões" fill="hsl(var(--primary))" radius={[4,4,0,0]} {...animProps} />
+                      <Line yAxisId="right" type="monotone" dataKey="cpl" name="CPL" stroke="#f97316" strokeWidth={2.5} dot={{ fill: "#f97316", r: 4 }} {...animProps} />
+                    </ComposedChart>
+                  </ResponsiveContainer>
+                </ChartCard>
+              )}
+
+              {/* ── REGIÃO COM CPL ── */}
+              {isVis("bar-region-cpl") && !loadingBreakdowns && (
+                <ChartCard key={`brc-${dataUpdatedAt}`} icon={<Target className="h-4 w-4 text-blue-400" />} title="Top Regiões: Volume e Custo por Lead" badge="COMPOSED · REGION × CPL" context="Barras azuis = conversões por estado/cidade. Linha = CPL. Regiões com ALTA conversão e BAIXO CPL são os mercados de excelência — aumente budget e criativos locais. Regiões com alto CPL e baixo volume: testar criativos regionais ou reduzir investimento.">
+                  <ResponsiveContainer width="100%" height={Math.max(260, (breakdowns?.regionData?.length || 8) * 32)}>
+                    <BarChart data={breakdowns?.regionData || []} layout="vertical" margin={{ left: 10, right: 50 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" opacity={0.3} />
+                      <XAxis type="number" tick={{ fill: "var(--color-muted-foreground)", fontSize: 9 }} />
+                      <YAxis type="category" dataKey="name" tick={{ fill: "var(--color-foreground)", fontSize: 9 }} width={130} />
+                      <Tooltip contentStyle={{ background: "var(--color-card)", border: "1px solid var(--color-border)", borderRadius: 12, fontSize: 11 }}
+                        formatter={(v: any, n: string) => [n === "cpl" ? `R$ ${Number(v).toFixed(2)}` : n === "cost" ? `R$ ${Number(v).toLocaleString("pt-BR", {minimumFractionDigits:2})}` : v, n === "conv" ? "Conversões" : n === "cpl" ? "CPL" : "CTR %"]} />
+                      <Bar dataKey="conv" name="Conversões" fill="#3b82f6" radius={[0,6,6,0]} {...animProps}>
+                        {(breakdowns?.regionData || []).map((_: any, i: number) => (
+                          <Cell key={i} fill={`hsl(217 91% ${Math.round(50 - i * 3)}%)`} />
+                        ))}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                  {/* CPL por Região — tabela complementar */}
+                  <div className="mt-3 grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+                    {(breakdowns?.regionData || []).slice(0, 6).map((r: any) => (
+                      <div key={r.name} className="flex items-center justify-between rounded-lg bg-white/[0.02] border border-white/5 px-2.5 py-1.5">
+                        <span className="text-[9px] font-bold text-foreground/80 truncate max-w-[80px]">{r.name}</span>
+                        <span className={`text-[9px] font-mono font-black ml-2 shrink-0 ${r.cpl > 0 && r.cpl < 80 ? "text-green-400" : "text-orange-400"}`}>R${r.cpl.toFixed(0)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </ChartCard>
+              )}
+
+              {/* ── PLATAFORMA COM CPL ── */}
+              {isVis("bar-platform-cpl") && !loadingBreakdowns && (
+                <ChartCard key={`bpc-${dataUpdatedAt}`} icon={<Layers className="h-4 w-4 text-green-400" />} title="Plataforma: Facebook vs Instagram vs Outros" badge="COMPOSED · PLATFORM × CPL" context="Onde o seu público converte melhor? Instagram tende a ter CPL mais alto porém leads mais qualificados para certos mercados. Facebook Audience Network tem CPM mais baixo mas qualidade variável. Teste ambos com criativos adaptados ao formato.">
+                  <ResponsiveContainer width="100%" height={260}>
+                    <ComposedChart data={breakdowns?.platData || []} margin={{ left: -5, right: 30 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" opacity={0.3} />
+                      <XAxis dataKey="name" tick={{ fill: "var(--color-muted-foreground)", fontSize: 9 }} />
+                      <YAxis yAxisId="left" tick={{ fill: "var(--color-muted-foreground)", fontSize: 10 }} />
+                      <YAxis yAxisId="right" orientation="right" tick={{ fill: "var(--color-muted-foreground)", fontSize: 10 }} tickFormatter={(v) => `R$${v.toFixed(0)}`} />
+                      <Tooltip contentStyle={{ background: "var(--color-card)", border: "1px solid var(--color-border)", borderRadius: 12, fontSize: 11 }}
+                        formatter={(v: any, n: string) => [n === "cpl" ? `R$ ${Number(v).toFixed(2)}` : n === "cost" ? `R$ ${Number(v).toLocaleString("pt-BR", {minimumFractionDigits:2})}` : v, n === "conv" ? "Conversões" : n === "cpl" ? "CPL" : "Gasto"]} />
+                      <Bar yAxisId="left" dataKey="conv" name="Conversões" fill="#22c55e" radius={[4,4,0,0]} {...animProps} />
+                      <Bar yAxisId="left" dataKey="cost" name="Gasto" fill="#84cc16" radius={[4,4,0,0]} opacity={0.4} {...animProps} />
+                      <Line yAxisId="right" type="monotone" dataKey="cpl" name="CPL" stroke="#f97316" strokeWidth={2.5} dot={{ fill: "#f97316", r: 4 }} {...animProps} />
+                    </ComposedChart>
+                  </ResponsiveContainer>
+                </ChartCard>
+              )}
+
+              {/* ── DISPOSITIVO ── */}
+              {isVis("bar-device") && !loadingBreakdowns && (
+                breakdowns?.deviceData?.length ? (
+                  <ChartCard key={`bd-${dataUpdatedAt}`} icon={<Eye className="h-4 w-4 text-cyan-400" />} title="Dispositivo de Acesso: Mobile vs Desktop" badge="BAR · DEVICE × PLATFORM" context="Como o seu lead acessa os anúncios? Mobile domina no Brasil (90%+). Se Desktop tem CPL muito menor, pode ser um público diferente (decisores B2B). Otimize landing pages e criativos para o dispositivo dominante.">
+                    <ResponsiveContainer width="100%" height={280}>
+                      <BarChart data={breakdowns.deviceData} layout="vertical" margin={{ left: 10, right: 20 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" opacity={0.3} />
+                        <XAxis type="number" tick={{ fill: "var(--color-muted-foreground)", fontSize: 9 }} />
+                        <YAxis type="category" dataKey="name" tick={{ fill: "var(--color-foreground)", fontSize: 9 }} width={130} />
+                        <Tooltip contentStyle={{ background: "var(--color-card)", border: "1px solid var(--color-border)", borderRadius: 12, fontSize: 11 }}
+                          formatter={(v: any, n: string) => [n === "cpl" ? `R$ ${Number(v).toFixed(2)}` : n === "cost" ? `R$ ${Number(v).toLocaleString("pt-BR", {minimumFractionDigits:2})}` : `${Number(v).toFixed(2)}%`, n === "conv" ? "Conversões" : n === "cpl" ? "CPL" : "CTR"]} />
+                        <Bar dataKey="conv" name="Conversões" fill="hsl(189 100% 50% / 0.7)" radius={[0,6,6,0]} {...animProps} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                    <div className="mt-3 grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+                      {breakdowns.deviceData.slice(0, 6).map((d: any) => (
+                        <div key={d.name} className="rounded-lg border border-white/5 bg-white/[0.02] px-2.5 py-2 space-y-0.5">
+                          <p className="text-[9px] font-bold text-foreground/80 truncate">{d.name}</p>
+                          <div className="flex gap-2 text-[8px] font-mono">
+                            <span className="text-green-400">{d.conv} conv.</span>
+                            {d.cpl > 0 && <span className="text-orange-400">R${d.cpl.toFixed(0)}/lead</span>}
+                            <span className="text-muted-foreground/60">{d.ctr.toFixed(1)}% CTR</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </ChartCard>
+                ) : (
+                  <ChartCard key={`bd-empty-${dataUpdatedAt}`} icon={<Eye className="h-4 w-4 text-cyan-400" />} title="Dispositivo de Acesso" badge="BAR · DEVICE" context="Dados sincronizados após próxima execução do sync.">
+                    <div className="text-center py-8 text-muted-foreground/50 text-xs">Dados de dispositivo serão populados na próxima sincronização com a Meta API.<br />Execute "Forçar Sincronização" em Automações.</div>
+                  </ChartCard>
+                )
               )}
 
               {/* ── GÊNERO ── */}
