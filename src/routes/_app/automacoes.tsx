@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   Zap, Loader2, Play, Pause, Clock, History, AlertTriangle,
   ShieldAlert, Plus, X, Server, CheckCircle2, RefreshCw,
-  Bell, TrendingUp, DollarSign, AlertCircle, Timer, Pencil
+  Bell, TrendingUp, DollarSign, AlertCircle, Timer, Pencil, Radio
 } from "lucide-react";
 import { PageHeader } from "@/components/PageHeader";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -69,7 +69,7 @@ function AutomationsPage() {
       const { data } = await (supabase as any)
         .from("notifications")
         .select("*")
-        .in("type", ["alert_cpl", "alert_budget"])
+        .in("type", ["alert_cpl", "alert_budget", "alert_frequency"])
         .eq("is_read", false)
         .order("created_at", { ascending: false })
         .limit(20);
@@ -275,10 +275,14 @@ function AutomationsPage() {
                       <div className={`mt-0.5 shrink-0 h-8 w-8 rounded-xl flex items-center justify-center ${
                         v.type === "alert_cpl"
                           ? "bg-red-500/15 text-red-400"
-                          : "bg-orange-500/15 text-orange-400"
+                          : v.type === "alert_frequency"
+                          ? "bg-orange-500/15 text-orange-400"
+                          : "bg-yellow-500/15 text-yellow-400"
                       }`}>
                         {v.type === "alert_cpl"
                           ? <TrendingUp className="h-4 w-4" />
+                          : v.type === "alert_frequency"
+                          ? <Radio className="h-4 w-4" />
                           : <DollarSign className="h-4 w-4" />}
                       </div>
 
@@ -379,6 +383,12 @@ function AutomationsPage() {
                           <span className="inline-flex items-center gap-1 rounded bg-white/5 px-2 py-1 text-[10px] font-mono text-muted-foreground">
                             ALERTA BUDGET:{" "}
                             <strong className="text-orange-400 text-[11px]">{th.max_budget_pct}%</strong>
+                          </span>
+                        )}
+                        {th.max_frequency !== null && th.max_frequency !== undefined && (
+                          <span className="inline-flex items-center gap-1 rounded bg-white/5 px-2 py-1 text-[10px] font-mono text-muted-foreground">
+                            FREQ MAX:{" "}
+                            <strong className="text-orange-400 text-[11px]">{Number(th.max_frequency).toFixed(1)}×</strong>
                           </span>
                         )}
                         <span className={`inline-flex items-center gap-1 rounded px-2 py-1 text-[10px] font-bold ${
@@ -569,6 +579,9 @@ function ThresholdModal({ onClose, accounts, userId, qc, editing }: any) {
   const [maxBudgetPct, setMaxBudgetPct] = useState(
     isEditing && editing.max_budget_pct != null ? String(editing.max_budget_pct) : "90"
   );
+  const [maxFrequency, setMaxFrequency] = useState(
+    isEditing && editing.max_frequency != null ? String(editing.max_frequency) : "3.5"
+  );
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const toggleExclusion = (id: string) => {
@@ -581,8 +594,8 @@ function ThresholdModal({ onClose, accounts, userId, qc, editing }: any) {
 
   const handleSave = async () => {
     const targetAccountId = accountId === "all" ? null : accountId;
-    if (!maxCpl && !maxBudgetPct) {
-      return toast.error("Preencha pelo menos um alerta (CPL ou Orçamento)");
+    if (!maxCpl && !maxBudgetPct && !maxFrequency) {
+      return toast.error("Preencha pelo menos um alerta (CPL, Orçamento ou Frequência)");
     }
 
     setIsSubmitting(true);
@@ -595,6 +608,7 @@ function ThresholdModal({ onClose, accounts, userId, qc, editing }: any) {
             ad_account_id:        targetAccountId,
             max_cpl:              maxCpl ? parseFloat(maxCpl) : null,
             max_budget_pct:       maxBudgetPct ? parseInt(maxBudgetPct) : null,
+            max_frequency:        maxFrequency ? parseFloat(maxFrequency) : null,
             excluded_account_ids: accountId === "all" && excludedIds.size > 0 ? Array.from(excludedIds) : [],
           })
           .eq("id", editing.id);
@@ -607,6 +621,7 @@ function ThresholdModal({ onClose, accounts, userId, qc, editing }: any) {
           ad_account_id:        targetAccountId,
           max_cpl:              maxCpl ? parseFloat(maxCpl) : null,
           max_budget_pct:       maxBudgetPct ? parseInt(maxBudgetPct) : null,
+          max_frequency:        maxFrequency ? parseFloat(maxFrequency) : null,
           is_active:            true,
           excluded_account_ids: accountId === "all" && excludedIds.size > 0 ? Array.from(excludedIds) : [],
         });
@@ -736,6 +751,23 @@ function ThresholdModal({ onClose, accounts, userId, qc, editing }: any) {
               />
               <p className="text-[9px] text-muted-foreground">Alerta quando orçamento diário atingir este %</p>
             </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="text-[10px] font-bold text-muted-foreground uppercase flex items-center gap-2">
+              Frequência Máxima
+              <span className="px-1.5 py-0.5 rounded bg-orange-500/15 text-orange-400 text-[9px] font-black">NOVO</span>
+            </label>
+            <div className="flex items-center gap-3">
+              <input
+                type="number" step="0.1" min="1" max="10" value={maxFrequency}
+                onChange={(e) => setMaxFrequency(e.target.value)}
+                placeholder="3.5"
+                className="w-full rounded-lg border border-white/10 bg-background px-3 py-3 text-sm focus:border-orange-400 focus:outline-none"
+              />
+              <span className="text-sm font-bold text-muted-foreground shrink-0">×</span>
+            </div>
+            <p className="text-[9px] text-muted-foreground">Alerta quando qualquer campanha ultrapassar esta frequência média. Padrão 3.5× para automotivo (público limitado).</p>
           </div>
         </div>
 

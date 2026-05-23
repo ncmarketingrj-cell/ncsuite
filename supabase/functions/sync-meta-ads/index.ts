@@ -65,11 +65,11 @@ async function fetchAdAccounts(token: string) {
   })
 }
 
-// ─── NOVO: Buscar campanhas com orçamentos ────────────────────────────────────
+// ─── NOVO: Buscar campanhas com orçamentos + objetivo + status de entrega ─────
 async function fetchCampaignsWithBudgets(adAccountId: string, token: string): Promise<any[]> {
   try {
     const data = await metaGet(`/${adAccountId}/campaigns`, token, {
-      fields: "id,name,status,daily_budget,lifetime_budget,objective",
+      fields: "id,name,status,effective_status,daily_budget,lifetime_budget,objective",
       limit: "500"
     })
     return data.data || []
@@ -84,7 +84,7 @@ async function fetchCampaignInsights(adAccountId: string, token: string, timePar
   try {
     return await metaGetPaginated(`/${adAccountId}/insights`, token, {
       level: "campaign",
-      fields: "campaign_id,campaign_name,objective,spend,actions,reach,impressions,inline_link_clicks,date_start,date_stop",
+      fields: "campaign_id,campaign_name,objective,spend,actions,reach,impressions,frequency,inline_link_clicks,date_start,date_stop",
       time_increment: "1",
       limit: "500",
       ...timeParams
@@ -100,7 +100,7 @@ async function fetchAdSetInsights(adAccountId: string, token: string, timeParams
   try {
     return await metaGetPaginated(`/${adAccountId}/insights`, token, {
       level: "adset",
-      fields: "adset_id,adset_name,campaign_id,spend,actions,reach,impressions,inline_link_clicks,date_start",
+      fields: "adset_id,adset_name,campaign_id,spend,actions,reach,impressions,frequency,inline_link_clicks,video_p25_watched_actions,video_p50_watched_actions,video_p75_watched_actions,video_p95_watched_actions,date_start",
       time_increment: "1",
       limit: "500",
       ...timeParams
@@ -116,7 +116,7 @@ async function fetchAdInsights(adAccountId: string, token: string, timeParams: R
   try {
     return await metaGetPaginated(`/${adAccountId}/insights`, token, {
       level: "ad",
-      fields: "ad_id,ad_name,adset_id,campaign_id,spend,actions,reach,impressions,inline_link_clicks,date_start",
+      fields: "ad_id,ad_name,adset_id,campaign_id,spend,actions,reach,impressions,frequency,inline_link_clicks,video_p25_watched_actions,video_p50_watched_actions,video_p75_watched_actions,video_p95_watched_actions,date_start",
       time_increment: "1",
       limit: "500",
       ...timeParams
@@ -324,6 +324,33 @@ function extractConversions(actions: any[] = [], objective?: string): number {
   }
 
   return 0;
+}
+
+// ─── Extrair métrica de vídeo (p25/p50/p75/p95) de actions ou campo dedicado ─
+function extractVideoMetric(row: any, fieldName: string): number {
+  // Meta retorna video_pXX_watched_actions como array de { action_type, value }
+  const arr = row[fieldName];
+  if (Array.isArray(arr) && arr.length > 0) {
+    return parseInt(arr[0]?.value || "0") || 0;
+  }
+  return 0;
+}
+
+// ─── Buscar placement breakdown (Feed vs Stories vs Reels vs Marketplace) ────
+async function fetchPlacementBreakdowns(adAccountId: string, token: string, timeParams: Record<string, string>) {
+  try {
+    return await metaGetPaginated(`/${adAccountId}/insights`, token, {
+      level: "campaign",
+      fields: "campaign_id,campaign_name,spend,actions,reach,impressions,inline_link_clicks,date_start",
+      breakdowns: "publisher_platform,placement",
+      time_increment: "1",
+      limit: "500",
+      ...timeParams
+    })
+  } catch (e: any) {
+    console.error(`[SYNC] Erro placement breakdown de ${adAccountId}:`, e.message)
+    return []
+  }
 }
 
 // ─── Extrair cliques — espelha "Cliques no link" do Gerenciador Meta ─────────
@@ -539,13 +566,14 @@ serve(async (req) => {
         const campaignObjectiveMap = new Map(campaignsWithBudgets.map((c: any) => [c.id, c.objective as string | undefined]))
 
         // Buscar TUDO em paralelo — insights (range selecionado) + status completo (toda a conta)
-        const [insights, breakDownsData, adsetInsights, adInsights, adsetsWithStatus, adsWithStatus] = await Promise.all([
+        const [insights, breakDownsData, adsetInsights, adInsights, adsetsWithStatus, adsWithStatus, placementData] = await Promise.all([
           fetchCampaignInsights(acc.id, token, timeParams),
           fetchDemographicBreakdowns(acc.id, token, timeParams),
           fetchAdSetInsights(acc.id, token, timeParams),
           fetchAdInsights(acc.id, token, timeParams),
           fetchAdSetsWithStatus(acc.id, token),
-          fetchAdsWithStatus(acc.id, token)
+          fetchAdsWithStatus(acc.id, token),
+          fetchPlacementBreakdowns(acc.id, token, timeParams)
         ])
 
         const { demographics = [], hourly = [], region = [] } = breakDownsData;
@@ -559,6 +587,7 @@ serve(async (req) => {
           demographics,
           hourly,
           region,
+          placementData,
           adsetInsights,
           adInsights,
           adsetsWithStatus,
@@ -575,16 +604,20 @@ serve(async (req) => {
       }
     }
 
-    for (const { accountId, insights, demographics, hourly, region, adsetInsights, adInsights, adsetsWithStatus = [], adsWithStatus = [], budgetMap, campaignsWithBudgets = [], campaignObjectiveMap = new Map() } of syncResults) {
+    for (const { accountId, insights, demographics, hourly, region, placementData = [], adsetInsights, adInsights, adsetsWithStatus = [], adsWithStatus = [], budgetMap, campaignsWithBudgets = [], campaignObjectiveMap = new Map() } of syncResults) {
       // Upsert campanhas com status reais
       const campaignMap = new Map<string, any>()
-      
+
       // 1. Alimentar o mapa primeiro com TODAS as campanhas retornadas na listagem real do Facebook Ads (status real)
       for (const c of campaignsWithBudgets) {
+        // effective_status = LEARNING | ELIGIBLE | LIMITED | ACTIVE | PAUSED (estado real de entrega)
+        const deliveryStatus = c.effective_status ? c.effective_status.toUpperCase() : null
         campaignMap.set(c.id, {
           name: c.name || "Campanha Meta",
           platform: "Meta Ads",
-          status: c.status ? c.status.toLowerCase() : "active", // status real operacional (active, paused, etc) do Meta
+          status: c.status ? c.status.toLowerCase() : "active",
+          delivery_status: deliveryStatus,
+          objective: c.objective || null,
           external_id: c.id,
           ad_account_id: accountId,
           daily_budget: c.daily_budget ? parseFloat(c.daily_budget) / 100 : 0,
@@ -594,13 +627,15 @@ serve(async (req) => {
       }
 
       // 2. Adicionar redundâncias vindas dos insights de histórico
-      for (const row of [...insights, ...demographics, ...hourly, ...region]) {
+      for (const row of [...insights, ...demographics, ...hourly, ...region, ...placementData]) {
         if (!campaignMap.has(row.campaign_id)) {
           const budget = budgetMap.get(row.campaign_id) || {}
           campaignMap.set(row.campaign_id, {
             name: row.campaign_name,
             platform: "Meta Ads",
             status: budget.status || "active",
+            delivery_status: null,
+            objective: row.objective || budget.objective || null,
             external_id: row.campaign_id,
             ad_account_id: accountId,
             daily_budget: budget.daily_budget || 0,
@@ -616,6 +651,8 @@ serve(async (req) => {
             name: `Campanha Desconhecida (${row.campaign_id})`,
             platform: "Meta Ads",
             status: budget.status || "active",
+            delivery_status: null,
+            objective: budget.objective || null,
             external_id: row.campaign_id,
             ad_account_id: accountId,
             daily_budget: budget.daily_budget || 0,
@@ -741,6 +778,7 @@ serve(async (req) => {
           clicks: extractClicks(row.actions, row.inline_link_clicks),
           cost: parseFloat(row.spend) || 0,
           reach: parseInt(row.reach) || 0,
+          frequency: parseFloat(row.frequency || "0") || 0,
           conversions: extractConversions(row.actions, campaignObjectiveMap.get(row.campaign_id)),
           result_type: campaignObjectiveMap.get(row.campaign_id)
         }
@@ -842,7 +880,12 @@ serve(async (req) => {
             clicks: extractClicks(row.actions, row.inline_link_clicks),
             cost: parseFloat(row.spend) || 0,
             conversions: extractConversions(row.actions, campaignObjectiveMap.get(row.campaign_id)),
-            reach: parseInt(row.reach) || 0
+            reach: parseInt(row.reach) || 0,
+            video_p25: extractVideoMetric(row, "video_p25_watched_actions"),
+            video_p50: extractVideoMetric(row, "video_p50_watched_actions"),
+            video_p75: extractVideoMetric(row, "video_p75_watched_actions"),
+            video_p95: extractVideoMetric(row, "video_p95_watched_actions"),
+            video_views: extractVideoMetric(row, "video_view")
           })
         }
       }
@@ -857,7 +900,12 @@ serve(async (req) => {
             clicks: extractClicks(row.actions, row.inline_link_clicks),
             cost: parseFloat(row.spend) || 0,
             conversions: extractConversions(row.actions, campaignObjectiveMap.get(row.campaign_id)),
-            reach: parseInt(row.reach) || 0
+            reach: parseInt(row.reach) || 0,
+            video_p25: extractVideoMetric(row, "video_p25_watched_actions"),
+            video_p50: extractVideoMetric(row, "video_p50_watched_actions"),
+            video_p75: extractVideoMetric(row, "video_p75_watched_actions"),
+            video_p95: extractVideoMetric(row, "video_p95_watched_actions"),
+            video_views: extractVideoMetric(row, "video_view")
           })
         }
       }
@@ -878,6 +926,31 @@ serve(async (req) => {
              if (error) console.error(`[SYNC] Erro ad_metrics ${accountId}:`, error.message)
           }
         }
+      }
+
+      // Upsert placement_metrics (Feed vs Stories vs Reels vs Marketplace)
+      const placementToUpsert = (placementData || []).map((row: any) => {
+        const campaign_id = idMap.get(row.campaign_id)
+        if (!campaign_id) return null
+        return {
+          campaign_id,
+          ad_account_id: accountId,
+          date: row.date_start,
+          placement: row.placement || "unknown",
+          publisher: row.publisher_platform || "facebook",
+          impressions: parseInt(row.impressions) || 0,
+          clicks: extractClicks(row.actions, row.inline_link_clicks),
+          spend: parseFloat(row.spend) || 0,
+          conversions: extractConversions(row.actions, campaignObjectiveMap.get(row.campaign_id)),
+          reach: parseInt(row.reach) || 0
+        }
+      }).filter(Boolean)
+
+      if (placementToUpsert.length > 0) {
+        const { error } = await supabase
+          .from("placement_metrics")
+          .upsert(placementToUpsert, { onConflict: "campaign_id,date,placement,publisher" })
+        if (error) console.error(`[SYNC] Erro placement_metrics ${accountId}:`, error.message)
       }
 
       // Antiga notificação diária por conta foi removida daqui e transferida para o run-automations (Resumo D-1 unificado às 08h).

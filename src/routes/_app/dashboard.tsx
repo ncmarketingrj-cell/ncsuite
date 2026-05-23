@@ -6,7 +6,8 @@ import {
   Upload, FileText, BarChart3, Settings, ArrowUpRight, Activity,
   Sparkles, Layers, Cpu, Link2, Megaphone, LineChart, Palette, Zap,
   ChevronDown, Globe, Target, TrendingUp, TrendingDown, DollarSign, MousePointer2, Users, Trophy,
-  Loader2, Bot, Brain, Clock, ChevronRight, Download, Calendar
+  Loader2, Bot, Brain, Clock, ChevronRight, Download, Calendar,
+  AlertTriangle, BookOpen, Rocket, GaugeCircle
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
@@ -162,6 +163,104 @@ function Dashboard() {
     },
   });
 
+  // ─── Query: Painel de Situação Operacional ───────────────────────────────────
+  const { data: situacao } = useQuery({
+    queryKey: ["dash-situacao", selectedAccountId],
+    staleTime: 5 * 60 * 1000,
+    queryFn: async () => {
+      const today = new Date();
+      const todayStr = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`;
+      const yesterdayDate = new Date(today); yesterdayDate.setDate(today.getDate()-1);
+      const yesterdayStr = `${yesterdayDate.getFullYear()}-${String(yesterdayDate.getMonth()+1).padStart(2,'0')}-${String(yesterdayDate.getDate()).padStart(2,'0')}`;
+
+      // Campanhas ativas com delivery_status e orçamento
+      let campQuery = (supabase as any).from("campaigns").select("id, name, delivery_status, objective, daily_budget, lifetime_budget, budget_currency, ad_account_id").eq("status", "active");
+      if (selectedAccountId !== "all") campQuery = campQuery.eq("ad_account_id", selectedAccountId);
+      const { data: campaigns = [] } = await campQuery;
+
+      // Métricas de ontem + hoje para frequência e spend do dia
+      let metricsQuery = (supabase as any).from("metrics").select("campaign_id, frequency, cost, date, conversions").gte("date", yesterdayStr).lte("date", todayStr);
+      const { data: recentMetrics = [] } = await metricsQuery;
+
+      // Threshold de frequência configurado
+      let threshQuery = (supabase as any).from("alert_thresholds").select("max_frequency, max_cpl").maybeSingle();
+      const { data: threshold } = await threshQuery;
+      const maxFreq = threshold?.max_frequency ?? 3.5;
+
+      // Agregar métricas por campanha (média de frequência dos últimos 2 dias)
+      const metricsByCampaign = new Map<string, { freq: number[], spend: number, conversions: number }>();
+      for (const m of recentMetrics) {
+        const existing = metricsByCampaign.get(m.campaign_id) || { freq: [], spend: 0, conversions: 0 };
+        if (m.frequency > 0) existing.freq.push(Number(m.frequency));
+        existing.spend += Number(m.cost || 0);
+        existing.conversions += Number(m.conversions || 0);
+        metricsByCampaign.set(m.campaign_id, existing);
+      }
+
+      // Campanhas em Aprendizado
+      const aprendendo = campaigns.filter((c: any) => c.delivery_status === 'LEARNING');
+
+      // Campanhas com frequência alta
+      const freqAlta = campaigns.filter((c: any) => {
+        const m = metricsByCampaign.get(c.id);
+        if (!m || m.freq.length === 0) return false;
+        const avgFreq = m.freq.reduce((a: number, b: number) => a + b, 0) / m.freq.length;
+        return avgFreq > maxFreq;
+      });
+
+      // Budget Pacing — hora atual do dia (0-23) → % do dia decorrida
+      const hour = today.getHours();
+      const minutesFrac = today.getMinutes() / 60;
+      const pctDia = ((hour + minutesFrac) / 24) * 100;
+
+      const pacingDetails = campaigns.filter((c: any) => c.daily_budget > 0).map((c: any) => {
+        const m = metricsByCampaign.get(c.id);
+        const spendHoje = m?.spend || 0;
+        const budget = Number(c.daily_budget);
+        const pctGasto = budget > 0 ? (spendHoje / budget) * 100 : 0;
+        const diff = pctGasto - pctDia;
+        const status = diff > 15 ? "acelerado" : diff < -15 ? "abaixo" : "ritmo";
+        return { name: c.name, spendHoje, budget, pctGasto, pctDia, status };
+      });
+
+      const emRitmo = pacingDetails.filter((p: any) => p.status === "ritmo").length;
+      const acelerado = pacingDetails.filter((p: any) => p.status === "acelerado").length;
+      const abaixo = pacingDetails.filter((p: any) => p.status === "abaixo").length;
+
+      // Prontas para escalar: CPL abaixo da média geral + conversões relevantes
+      const totalMetricas = Array.from(metricsByCampaign.values());
+      const avgCpl = (() => {
+        const withConv = totalMetricas.filter(m => m.conversions > 0);
+        if (withConv.length === 0) return 0;
+        const totalSpend = withConv.reduce((a, m) => a + m.spend, 0);
+        const totalConv = withConv.reduce((a, m) => a + m.conversions, 0);
+        return totalConv > 0 ? totalSpend / totalConv : 0;
+      })();
+
+      const prontas = campaigns.filter((c: any) => {
+        const m = metricsByCampaign.get(c.id);
+        if (!m || m.conversions < 5) return false;
+        const cpl = m.conversions > 0 ? m.spend / m.conversions : Infinity;
+        return avgCpl > 0 && cpl < avgCpl * 0.8;
+      });
+
+      return {
+        aprendendo: aprendendo.length,
+        aprendendoNomes: aprendendo.slice(0,3).map((c: any) => c.name),
+        freqAlta: freqAlta.length,
+        freqAltaNomes: freqAlta.slice(0,3).map((c: any) => c.name),
+        pacingOk: emRitmo,
+        pacingAcelerado: acelerado,
+        pacingAbaixo: abaixo,
+        pacingTotal: pacingDetails.length,
+        prontas: prontas.length,
+        prontasNomes: prontas.slice(0,3).map((c: any) => c.name),
+        totalAtivas: campaigns.length,
+        pctDia: Math.round(pctDia),
+      };
+    },
+  });
+
   const { data: config } = useQuery({
     queryKey: ["agent-config"],
     queryFn: async () => {
@@ -269,6 +368,122 @@ function Dashboard() {
             )}
           </div>
         </div>
+
+        {/* ─── PAINEL DE SITUAÇÃO OPERACIONAL ─── */}
+        {situacao && situacao.totalAtivas > 0 && (
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+            {/* Campanhas Aprendendo */}
+            <motion.div
+              initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }}
+              className={`group relative flex items-center gap-3 rounded-2xl border px-4 py-3 transition-all cursor-pointer hover:scale-[1.02] ${
+                situacao.aprendendo > 0
+                  ? "border-amber-500/30 bg-amber-500/[0.07] hover:bg-amber-500/[0.12]"
+                  : "border-border/50 bg-card/50"
+              }`}
+              title={situacao.aprendendoNomes.join(", ") || "Nenhuma campanha em aprendizado"}
+              onClick={() => navigate({ to: "/campanhas" })}
+            >
+              <div className={`h-9 w-9 shrink-0 rounded-xl flex items-center justify-center ${situacao.aprendendo > 0 ? "bg-amber-500/20" : "bg-muted"}`}>
+                <BookOpen className={`h-4 w-4 ${situacao.aprendendo > 0 ? "text-amber-500" : "text-muted-foreground"}`} />
+              </div>
+              <div className="min-w-0">
+                <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Aprendendo</p>
+                <p className={`text-xl font-black tabular-nums leading-none mt-0.5 ${situacao.aprendendo > 0 ? "text-amber-500" : "text-foreground"}`}>
+                  {situacao.aprendendo}
+                </p>
+                <p className="text-[9px] text-muted-foreground mt-0.5">
+                  {situacao.aprendendo > 0 ? "Não otimizar ainda" : "Tudo estável"}
+                </p>
+              </div>
+              {situacao.aprendendo > 0 && (
+                <div className="absolute top-2 right-2 h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse" />
+              )}
+            </motion.div>
+
+            {/* Frequência Alta */}
+            <motion.div
+              initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}
+              className={`group relative flex items-center gap-3 rounded-2xl border px-4 py-3 transition-all cursor-pointer hover:scale-[1.02] ${
+                situacao.freqAlta > 0
+                  ? "border-destructive/30 bg-destructive/[0.06] hover:bg-destructive/[0.10]"
+                  : "border-border/50 bg-card/50"
+              }`}
+              title={situacao.freqAltaNomes.join(", ") || "Frequência dentro do limite"}
+              onClick={() => navigate({ to: "/campanhas" })}
+            >
+              <div className={`h-9 w-9 shrink-0 rounded-xl flex items-center justify-center ${situacao.freqAlta > 0 ? "bg-destructive/15" : "bg-muted"}`}>
+                <AlertTriangle className={`h-4 w-4 ${situacao.freqAlta > 0 ? "text-destructive" : "text-muted-foreground"}`} />
+              </div>
+              <div className="min-w-0">
+                <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Freq. Alta</p>
+                <p className={`text-xl font-black tabular-nums leading-none mt-0.5 ${situacao.freqAlta > 0 ? "text-destructive" : "text-foreground"}`}>
+                  {situacao.freqAlta}
+                </p>
+                <p className="text-[9px] text-muted-foreground mt-0.5">
+                  {situacao.freqAlta > 0 ? "Saturação iminente" : "Audiência saudável"}
+                </p>
+              </div>
+              {situacao.freqAlta > 0 && (
+                <div className="absolute top-2 right-2 h-1.5 w-1.5 rounded-full bg-destructive animate-pulse" />
+              )}
+            </motion.div>
+
+            {/* Budget Pacing */}
+            <motion.div
+              initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }}
+              className="group relative flex items-center gap-3 rounded-2xl border border-border/50 bg-card/50 px-4 py-3 transition-all cursor-pointer hover:scale-[1.02] hover:bg-card"
+              title={`${situacao.pctDia}% do dia — ${situacao.pacingOk} no ritmo, ${situacao.pacingAcelerado} acelerado, ${situacao.pacingAbaixo} abaixo`}
+              onClick={() => navigate({ to: "/campanhas" })}
+            >
+              <div className="h-9 w-9 shrink-0 rounded-xl flex items-center justify-center bg-success/15">
+                <GaugeCircle className="h-4 w-4 text-success" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Budget Pacing</p>
+                <div className="flex items-baseline gap-1.5 mt-0.5">
+                  <p className="text-xl font-black tabular-nums leading-none text-foreground">{situacao.pctDia}%</p>
+                  <span className="text-[9px] text-muted-foreground">do dia</span>
+                </div>
+                <div className="flex gap-2 mt-1.5">
+                  <div className="flex-1 h-1 rounded-full bg-muted overflow-hidden">
+                    <div className="h-full rounded-full bg-success transition-all" style={{ width: `${Math.min(situacao.pctDia, 100)}%` }} />
+                  </div>
+                </div>
+                <p className="text-[9px] text-muted-foreground mt-0.5">
+                  {situacao.pacingOk} ritmo · {situacao.pacingAcelerado} acelerado · {situacao.pacingAbaixo} abaixo
+                </p>
+              </div>
+            </motion.div>
+
+            {/* Prontas para Escalar */}
+            <motion.div
+              initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}
+              className={`group relative flex items-center gap-3 rounded-2xl border px-4 py-3 transition-all cursor-pointer hover:scale-[1.02] ${
+                situacao.prontas > 0
+                  ? "border-primary/30 bg-primary/[0.06] hover:bg-primary/[0.10]"
+                  : "border-border/50 bg-card/50"
+              }`}
+              title={situacao.prontasNomes.join(", ") || "Nenhuma campanha com CPL ótimo ainda"}
+              onClick={() => navigate({ to: "/campanhas" })}
+            >
+              <div className={`h-9 w-9 shrink-0 rounded-xl flex items-center justify-center ${situacao.prontas > 0 ? "bg-primary/15" : "bg-muted"}`}>
+                <Rocket className={`h-4 w-4 ${situacao.prontas > 0 ? "text-primary" : "text-muted-foreground"}`} />
+              </div>
+              <div className="min-w-0">
+                <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Escalar</p>
+                <p className={`text-xl font-black tabular-nums leading-none mt-0.5 ${situacao.prontas > 0 ? "text-primary" : "text-foreground"}`}>
+                  {situacao.prontas}
+                </p>
+                <p className="text-[9px] text-muted-foreground mt-0.5">
+                  {situacao.prontas > 0 ? "CPL abaixo da média" : "Monitorar mais"}
+                </p>
+              </div>
+              {situacao.prontas > 0 && (
+                <div className="absolute top-2 right-2 h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />
+              )}
+            </motion.div>
+          </div>
+        )}
 
         {/* Stats Layer (Dinâmico) */}
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">

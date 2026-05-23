@@ -5,7 +5,8 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Megaphone, Search, Play, Pause, Loader2, RefreshCw,
   Layers, ChevronDown, LayoutGrid, Image as ImageIcon,
-  CheckSquare, Square, Pencil, FlaskConical, X
+  CheckSquare, Square, Pencil, FlaskConical, X,
+  BookOpen, MessageCircle, Car, Target, Video, Users, Zap
 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
@@ -24,6 +25,57 @@ export const Route = createFileRoute("/_app/campanhas")({
 });
 
 type Level = "campanhas" | "conjuntos" | "anuncios";
+
+const OBJECTIVE_MAP: Record<string, { label: string; color: string; icon: any }> = {
+  OUTCOME_LEADS:      { label: "Leads",      color: "text-violet-500 bg-violet-500/10 border-violet-500/20", icon: Target },
+  LEAD_GENERATION:    { label: "Leads",      color: "text-violet-500 bg-violet-500/10 border-violet-500/20", icon: Target },
+  MESSAGES:           { label: "Mensagens",  color: "text-blue-500 bg-blue-500/10 border-blue-500/20",       icon: MessageCircle },
+  OUTCOME_ENGAGEMENT: { label: "Engaj.",     color: "text-pink-500 bg-pink-500/10 border-pink-500/20",       icon: Zap },
+  OUTCOME_TRAFFIC:    { label: "Tráfego",    color: "text-amber-500 bg-amber-500/10 border-amber-500/20",   icon: Car },
+  LINK_CLICKS:        { label: "Tráfego",    color: "text-amber-500 bg-amber-500/10 border-amber-500/20",   icon: Car },
+  VIDEO_VIEWS:        { label: "Vídeo",      color: "text-cyan-500 bg-cyan-500/10 border-cyan-500/20",      icon: Video },
+  OUTCOME_AWARENESS:  { label: "Awareness",  color: "text-emerald-500 bg-emerald-500/10 border-emerald-500/20", icon: Users },
+  OUTCOME_SALES:      { label: "Vendas",     color: "text-primary bg-primary/10 border-primary/20",         icon: Target },
+  CONVERSIONS:        { label: "Conversões", color: "text-primary bg-primary/10 border-primary/20",         icon: Target },
+};
+
+const PLACEMENT_MAP: Record<string, string> = {
+  feed: "Feed", story: "Stories", reels: "Reels", marketplace: "Marketplace",
+  search: "Busca", video_feeds: "Video Feeds", profile_feed: "Perfil",
+  right_hand_column: "Coluna Direita", instant_article: "Instant Article",
+};
+const PUBLISHER_MAP: Record<string, string> = {
+  facebook: "Facebook", instagram: "Instagram",
+  audience_network: "Audience Network", messenger: "Messenger",
+};
+const PUBLISHER_COLOR: Record<string, string> = {
+  facebook: "bg-blue-600/15 text-blue-400 border border-blue-600/20",
+  instagram: "bg-pink-500/15 text-pink-400 border border-pink-500/20",
+  audience_network: "bg-emerald-500/15 text-emerald-400 border border-emerald-500/20",
+  messenger: "bg-violet-500/15 text-violet-400 border border-violet-500/20",
+};
+
+function ObjectiveBadge({ objective }: { objective?: string }) {
+  if (!objective) return null;
+  const def = OBJECTIVE_MAP[objective];
+  if (!def) return <span className="text-[8px] font-mono text-muted-foreground/60 uppercase">{objective.replace("OUTCOME_", "")}</span>;
+  const Icon = def.icon;
+  return (
+    <span className={`inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[8px] font-black uppercase tracking-wider ${def.color}`}>
+      <Icon className="h-2.5 w-2.5" />
+      {def.label}
+    </span>
+  );
+}
+
+function LearningBadge() {
+  return (
+    <span className="inline-flex items-center gap-1 rounded border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 text-[8px] font-black uppercase tracking-wider text-amber-500 animate-pulse">
+      <BookOpen className="h-2.5 w-2.5" />
+      Aprendendo
+    </span>
+  );
+}
 
 const LEVEL_TABS: { id: Level; label: string; icon: any }[] = [
   { id: "campanhas", label: "Campanhas", icon: Megaphone },
@@ -104,7 +156,7 @@ function MetaAdsManagerPage() {
       const startStr = getLocalDateStr(dateRange.startDate);
       const endStr = getLocalDateStr(dateRange.endDate);
       let q = (supabase as any)
-        .from("campaigns").select(`id, name, status, daily_budget, lifetime_budget, budget_currency, external_id, ad_account_id, ad_account:ad_accounts(name), metrics(cost, conversions, impressions, clicks, reach, date)`);
+        .from("campaigns").select(`id, name, status, delivery_status, objective, daily_budget, lifetime_budget, budget_currency, external_id, ad_account_id, ad_account:ad_accounts(name), metrics(cost, conversions, impressions, clicks, reach, frequency, date)`);
       if (accountFilter !== "all") q = q.eq("ad_account_id", accountFilter);
       if (statusFilter !== "all") q = q.ilike("status", statusFilter === "active" ? "ACTIVE" : "PAUSED");
       const { data, error } = await q.order("name");
@@ -150,6 +202,38 @@ function MetaAdsManagerPage() {
     }
   });
 
+  const { data: placementData = [] } = useQuery({
+    queryKey: ["placement-breakdown", accountFilter, Array.from(selectedCamps).sort().join(","), dateRange.startDate.toISOString(), dateRange.endDate.toISOString()],
+    enabled: level === "campanhas",
+    queryFn: async () => {
+      const startStr = getLocalDateStr(dateRange.startDate);
+      const endStr = getLocalDateStr(dateRange.endDate);
+      let q = (supabase as any).from("placement_metrics")
+        .select("placement, publisher, impressions, clicks, spend, conversions, reach")
+        .gte("date", startStr).lte("date", endStr);
+      if (accountFilter !== "all") q = q.eq("ad_account_id", accountFilter);
+      if (selectedCamps.size > 0) q = q.in("campaign_id", Array.from(selectedCamps));
+      const { data } = await q;
+      const grouped: Record<string, any> = {};
+      (data || []).forEach((r: any) => {
+        const key = `${r.placement}|${r.publisher}`;
+        if (!grouped[key]) grouped[key] = { placement: r.placement, publisher: r.publisher, impressions: 0, clicks: 0, spend: 0, conversions: 0, reach: 0 };
+        grouped[key].impressions += Number(r.impressions || 0);
+        grouped[key].clicks += Number(r.clicks || 0);
+        grouped[key].spend += Number(r.spend || 0);
+        grouped[key].conversions += Number(r.conversions || 0);
+        grouped[key].reach += Number(r.reach || 0);
+      });
+      return Object.values(grouped)
+        .sort((a: any, b: any) => b.spend - a.spend)
+        .map((g: any) => ({
+          ...g,
+          cpl: g.conversions > 0 ? g.spend / g.conversions : 0,
+          ctr: g.impressions > 0 ? (g.clicks / g.impressions * 100) : 0,
+        }));
+    }
+  });
+
   function processMetrics(item: any, rawData: any[], startStr: string, endStr: string) {
     const m = (rawData || []).filter((x: any) => {
       if (!x.date) return true;
@@ -161,7 +245,12 @@ function MetaAdsManagerPage() {
     const impressions = m.reduce((s: number, x: any) => s + Number(x.impressions || 0), 0);
     const reach = m.reduce((s: number, x: any) => s + Number(x.reach || 0), 0);
     const clicks = m.reduce((s: number, x: any) => s + Number(x.clicks || 0), 0);
-    return { ...item, t: { cost, conversions, impressions, reach, clicks } };
+    // Frequência: média ponderada dos dias (ou fallback impressions/reach)
+    const freqRows = m.filter((x: any) => Number(x.frequency) > 0);
+    const frequency = freqRows.length > 0
+      ? freqRows.reduce((s: number, x: any) => s + Number(x.frequency), 0) / freqRows.length
+      : reach > 0 ? impressions / reach : 0;
+    return { ...item, t: { cost, conversions, impressions, reach, clicks, frequency } };
   }
 
   const syncMutation = useMutation({
@@ -368,7 +457,9 @@ function MetaAdsManagerPage() {
                         </th>
                         <th className="px-2 py-3 w-16 text-[9px] font-black uppercase tracking-widest text-muted-foreground text-center">Status</th>
                         <th className="px-4 py-3 text-left text-[9px] font-black uppercase tracking-widest text-muted-foreground">Nome ({level})</th>
+                        {level === "campanhas" && <th className="px-3 py-3 text-center text-[9px] font-black uppercase tracking-widest text-muted-foreground">Objetivo</th>}
                         <th className="px-4 py-3 text-right text-[9px] font-black uppercase tracking-widest text-muted-foreground">Orçamento</th>
+                        <th className="px-4 py-3 text-right text-[9px] font-black uppercase tracking-widest text-amber-500">Freq.</th>
                         <th className="px-4 py-3 text-right text-[9px] font-black uppercase tracking-widest text-muted-foreground">Alcance</th>
                         <th className="px-4 py-3 text-right text-[9px] font-black uppercase tracking-widest text-muted-foreground">Impressões</th>
                         <th className="px-4 py-3 text-right text-[9px] font-black uppercase tracking-widest text-violet-600 dark:text-violet-400">Resultados</th>
@@ -379,10 +470,13 @@ function MetaAdsManagerPage() {
                     <tbody>
                       {filtered.map((c: any) => {
                         const isActive = c.status?.toUpperCase() === "ACTIVE";
+                        const isLearning = c.delivery_status === "LEARNING";
                         const isChanging = changingId === c.id;
                         const isSel = selSet.has(c.id);
                         const isAlerted = alertCampId === c.id;
                         const cpl = c.t.conversions > 0 ? c.t.cost / c.t.conversions : 0;
+                        const freq = c.t.frequency ?? 0;
+                        const freqHigh = freq >= 3.5;
                         return (
                           <tr
                             key={c.id}
@@ -407,11 +501,26 @@ function MetaAdsManagerPage() {
                                 {isChanging ? <Loader2 className="h-3 w-3 animate-spin" /> : isActive ? <Pause className="h-3 w-3 fill-current" /> : <Play className="h-3 w-3 fill-current" />}
                               </button>
                             </td>
-                            <td className="px-4 py-3 max-w-[220px]">
-                              <p className="font-bold text-foreground/90 truncate uppercase tracking-tight" title={c.name}>{c.name}</p>
+                            <td className="px-4 py-3 max-w-[260px]">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <p className="font-bold text-foreground/90 truncate uppercase tracking-tight" title={c.name}>{c.name}</p>
+                                {isLearning && <LearningBadge />}
+                              </div>
                               {level === "campanhas" && <p className="text-[9px] text-muted-foreground/60 font-mono mt-0.5">{(c as any).ad_account?.name || "—"}</p>}
                             </td>
+                            {level === "campanhas" && (
+                              <td className="px-3 py-3 text-center">
+                                <ObjectiveBadge objective={c.objective} />
+                              </td>
+                            )}
                             <td className="px-4 py-3 text-right font-mono text-muted-foreground">{c.daily_budget > 0 ? `R$ ${c.daily_budget.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}/dia` : c.lifetime_budget > 0 ? `R$ ${c.lifetime_budget.toLocaleString("pt-BR", { minimumFractionDigits: 2 })} total` : "—"}</td>
+                            <td className={`px-4 py-3 text-right font-mono font-bold ${freqHigh ? "text-destructive" : freq > 0 ? "text-amber-500" : "text-muted-foreground"}`}>
+                              {freq > 0 ? (
+                                <span title={freqHigh ? "⚠ Frequência alta — risco de saturação" : undefined}>
+                                  {freqHigh && "⚠ "}{freq.toFixed(1)}×
+                                </span>
+                              ) : "—"}
+                            </td>
                             <td className="px-4 py-3 text-right font-mono text-muted-foreground">{c.t.reach > 0 ? c.t.reach.toLocaleString("pt-BR") : "—"}</td>
                             <td className="px-4 py-3 text-right font-mono text-muted-foreground">{c.t.impressions.toLocaleString("pt-BR")}</td>
                             <td className="px-4 py-3 text-right font-mono font-bold text-violet-600 dark:text-violet-400">{c.t.conversions.toLocaleString("pt-BR")}</td>
@@ -424,6 +533,8 @@ function MetaAdsManagerPage() {
                     <tfoot>
                       <tr className="border-t border-white/10 bg-white/[0.02]">
                         <td colSpan={3} className="px-4 py-3 text-[9px] font-black uppercase tracking-widest text-muted-foreground">Total ({filtered.length})</td>
+                        {level === "campanhas" && <td className="px-3 py-3" />}
+                        <td className="px-4 py-3 text-right font-mono font-bold text-[10px]">—</td>
                         <td className="px-4 py-3 text-right font-mono font-bold text-[10px]">—</td>
                         <td className="px-4 py-3 text-right font-mono font-bold text-[10px]">{totReach > 0 ? totReach.toLocaleString("pt-BR") : "—"}</td>
                         <td className="px-4 py-3 text-right font-mono font-bold text-[10px]">{totImpr.toLocaleString("pt-BR")}</td>
@@ -486,6 +597,66 @@ function MetaAdsManagerPage() {
             </table>
           </div>
           <p className="px-5 py-3 text-[9px] text-muted-foreground/60">Compare a coluna "App conta" com a coluna "Resultados" do Meta Ads Manager. O action_type correto deve ter o mesmo número.</p>
+        </motion.div>
+      )}
+      {/* ─── PLACEMENT BREAKDOWN ─── */}
+      {level === "campanhas" && placementData.length > 0 && (
+        <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="glass-panel card-sport overflow-hidden">
+          <div className="flex items-center gap-3 border-b border-white/5 px-5 py-3">
+            <Layers className="h-4 w-4 text-violet-400" />
+            <p className="text-xs font-black uppercase tracking-widest header-sport">Breakdown por Placement</p>
+            <span className="ml-auto text-[9px] text-muted-foreground/50">
+              {selectedCamps.size > 0 ? `${selectedCamps.size} campanha(s) selecionada(s)` : "Todas as campanhas no período"}
+            </span>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="border-b border-white/5 bg-white/[0.02]">
+                  <th className="px-4 py-2.5 text-left text-[9px] font-black uppercase tracking-widest text-muted-foreground">Placement</th>
+                  <th className="px-4 py-2.5 text-left text-[9px] font-black uppercase tracking-widest text-muted-foreground">Plataforma</th>
+                  <th className="px-4 py-2.5 text-right text-[9px] font-black uppercase tracking-widest text-muted-foreground">Impressões</th>
+                  <th className="px-4 py-2.5 text-right text-[9px] font-black uppercase tracking-widest text-muted-foreground">CTR</th>
+                  <th className="px-4 py-2.5 text-right text-[9px] font-black uppercase tracking-widest text-violet-400">Conv.</th>
+                  <th className="px-4 py-2.5 text-right text-[9px] font-black uppercase tracking-widest text-emerald-500">CPL</th>
+                  <th className="px-4 py-2.5 text-right text-[9px] font-black uppercase tracking-widest text-primary">Gasto</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(() => {
+                  const maxSpend = Math.max(...placementData.map((r: any) => r.spend), 1);
+                  return placementData.map((p: any, i: number) => {
+                    const spendPct = (p.spend / maxSpend) * 100;
+                    return (
+                      <tr key={i} className="border-b border-white/[0.03] hover:bg-white/[0.015] transition-colors">
+                        <td className="px-4 py-2.5 font-bold capitalize">{PLACEMENT_MAP[p.placement] || p.placement}</td>
+                        <td className="px-4 py-2.5">
+                          <span className={`inline-flex items-center rounded px-2 py-0.5 text-[9px] font-bold ${PUBLISHER_COLOR[p.publisher] || "bg-white/5 text-muted-foreground"}`}>
+                            {PUBLISHER_MAP[p.publisher] || p.publisher}
+                          </span>
+                        </td>
+                        <td className="px-4 py-2.5 text-right font-mono text-muted-foreground">{p.impressions.toLocaleString("pt-BR")}</td>
+                        <td className={`px-4 py-2.5 text-right font-mono ${p.ctr >= 2 ? "text-emerald-500 font-bold" : p.ctr >= 1 ? "text-foreground" : "text-muted-foreground"}`}>{p.ctr.toFixed(2)}%</td>
+                        <td className="px-4 py-2.5 text-right font-mono font-bold text-violet-400">{p.conversions}</td>
+                        <td className="px-4 py-2.5 text-right font-mono font-bold text-emerald-500">{p.cpl > 0 ? `R$ ${p.cpl.toFixed(2)}` : "—"}</td>
+                        <td className="px-4 py-2.5 text-right">
+                          <div className="flex items-center justify-end gap-2">
+                            <div className="h-1.5 w-16 rounded-full bg-white/5 overflow-hidden">
+                              <div className="h-full rounded-full bg-primary" style={{ width: `${spendPct}%` }} />
+                            </div>
+                            <span className="font-mono font-bold text-primary">R$ {p.spend.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</span>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  });
+                })()}
+              </tbody>
+            </table>
+          </div>
+          <p className="px-5 py-2.5 text-[9px] text-muted-foreground/40 border-t border-white/5">
+            Dados atualizados a cada sincronização · Selecione campanhas acima para filtrar por campanha específica
+          </p>
         </motion.div>
       )}
       </div>

@@ -86,7 +86,7 @@ const MODOS: Record<ModoId, {
     desc: "Análise avançada de público (idade, sexo, região, horas)",
     icon: Users,
     color: "text-pink-400",
-    charts: ["pie-gender", "bar-age", "bar-region", "line-hourly", "bar-platform"],
+    charts: ["pie-gender", "bar-age", "bar-region", "heatmap-temporal", "line-hourly", "bar-platform", "video-funnel"],
     foco: "Entender examente QUEM converte, ONDE estão e a QUE HORAS compram.",
   },
 };
@@ -298,10 +298,11 @@ function MetricasGraficoPage() {
       const s = getD(dateRange.startDate), e = getD(dateRange.endDate);
       const filterAccount = accountFilter !== "all" ? `ad_account_id.eq.${accountFilter},` : "";
       
-      const [demo, hourly, region] = await Promise.all([
+      const [demo, hourlyRaw, region, videoRaw] = await Promise.all([
         (supabase as any).from("demographic_metrics").select("age_range, gender, platform, conversions, spend").gte("date", s).lte("date", e).filter(accountFilter !== "all" ? "ad_account_id" : "id", "neq", "null"),
-        (supabase as any).from("hourly_metrics").select("hour, conversions, spend").gte("date", s).lte("date", e).filter(accountFilter !== "all" ? "ad_account_id" : "id", "neq", "null"),
-        (supabase as any).from("region_metrics").select("region, conversions, spend").gte("date", s).lte("date", e).filter(accountFilter !== "all" ? "ad_account_id" : "id", "neq", "null")
+        (supabase as any).from("hourly_metrics").select("hour, conversions, spend, date").gte("date", s).lte("date", e).filter(accountFilter !== "all" ? "ad_account_id" : "id", "neq", "null"),
+        (supabase as any).from("region_metrics").select("region, conversions, spend").gte("date", s).lte("date", e).filter(accountFilter !== "all" ? "ad_account_id" : "id", "neq", "null"),
+        (supabase as any).from("asset_metrics").select("video_views, video_p25, video_p50, video_p75, video_p95, spend").gte("date", s).lte("date", e).filter(accountFilter !== "all" ? "ad_account_id" : "id", "neq", "null")
       ]);
 
       // Process Age
@@ -337,7 +338,7 @@ function MetricasGraficoPage() {
         const hh = String(i).padStart(2, '0') + ":00:00 - " + String(i).padStart(2, '0') + ":59:59";
         hourMap[hh] = { name: `${i}h`, conv: 0, cost: 0 };
       }
-      (hourly.data || []).forEach((r: any) => {
+      (hourlyRaw.data || []).forEach((r: any) => {
         if (hourMap[r.hour]) {
           hourMap[r.hour].conv += Number(r.conversions || 0);
           hourMap[r.hour].cost += Number(r.spend || 0);
@@ -354,7 +355,46 @@ function MetricasGraficoPage() {
       });
       const regionData = Object.values(regMap).filter(v => v.name !== "unknown").sort((a, b) => b.conv - a.conv).slice(0, 10);
 
-      return { ageData, genderData, platData, hourlyData, regionData };
+      // Process Temporal Heatmap: day-of-week (Mon→Sun) × hour (0–23)
+      const WEEK_LABELS = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+      const hmMatrix: Record<string, { conv: number; cost: number }> = {};
+      for (let d = 0; d < 7; d++) for (let h = 0; h < 24; h++) hmMatrix[`${d}-${h}`] = { conv: 0, cost: 0 };
+      (hourlyRaw.data || []).forEach((r: any) => {
+        const hourNum = parseInt((r.hour || '').substring(0, 2));
+        if (!isNaN(hourNum) && r.date) {
+          const dow = new Date(r.date + 'T12:00:00').getDay();
+          const cell = hmMatrix[`${dow}-${hourNum}`];
+          if (cell) { cell.conv += Number(r.conversions || 0); cell.cost += Number(r.spend || 0); }
+        }
+      });
+      const heatmapData = [1, 2, 3, 4, 5, 6, 0].map(d => ({
+        day: WEEK_LABELS[d],
+        cells: Array.from({ length: 24 }, (_, h) => {
+          const c = hmMatrix[`${d}-${h}`];
+          return { h, conv: c.conv, cost: c.cost, cpl: c.conv > 0 ? c.cost / c.conv : 0 };
+        })
+      }));
+
+      // Process Video Funnel (p25/p50/p75/p95)
+      const vRows = (videoRaw.data || []).filter((r: any) => Number(r.video_views || 0) > 0);
+      const videoFunnel = vRows.length > 0 ? (() => {
+        const views = vRows.reduce((s: number, r: any) => s + Number(r.video_views || 0), 0);
+        const p25   = vRows.reduce((s: number, r: any) => s + Number(r.video_p25  || 0), 0);
+        const p50   = vRows.reduce((s: number, r: any) => s + Number(r.video_p50  || 0), 0);
+        const p75   = vRows.reduce((s: number, r: any) => s + Number(r.video_p75  || 0), 0);
+        const p95   = vRows.reduce((s: number, r: any) => s + Number(r.video_p95  || 0), 0);
+        const totalSpend = vRows.reduce((s: number, r: any) => s + Number(r.spend || 0), 0);
+        const costPer = (n: number) => n > 0 && totalSpend > 0 ? totalSpend / n : 0;
+        return [
+          { name: 'Visualizações', value: views, pct: 100, color: '#3b82f6', spend: totalSpend, cpa: costPer(views) },
+          { name: '25% assistido', value: p25,   pct: views > 0 ? (p25 / views * 100) : 0, color: '#8b5cf6', spend: 0, cpa: costPer(p25) },
+          { name: '50% assistido', value: p50,   pct: views > 0 ? (p50 / views * 100) : 0, color: '#a855f7', spend: 0, cpa: costPer(p50) },
+          { name: '75% assistido', value: p75,   pct: views > 0 ? (p75 / views * 100) : 0, color: '#ec4899', spend: 0, cpa: costPer(p75) },
+          { name: '95% assistido', value: p95,   pct: views > 0 ? (p95 / views * 100) : 0, color: '#f97316', spend: 0, cpa: costPer(p95) },
+        ];
+      })() : null;
+
+      return { ageData, genderData, platData, hourlyData, regionData, heatmapData, videoFunnel };
     }
   });
 
@@ -461,6 +501,8 @@ function MetricasGraficoPage() {
                   <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground">Adicionar ao modo atual</p>
                   {[
                     { id: "heatmap", label: "Mapa de Calor" },
+                    { id: "heatmap-temporal", label: "Heatmap Hora×Dia" },
+                    { id: "video-funnel", label: "Funil de Vídeo" },
                     { id: "scatter-cpl", label: "Scatter CPL×Gasto" },
                     { id: "scatter-freq", label: "Scatter Freq×CTR" },
                     { id: "pie-share", label: "Share de Gasto" },
@@ -869,6 +911,62 @@ function MetricasGraficoPage() {
                 </ChartCard>
               )}
 
+              {/* ── HEATMAP TEMPORAL ── */}
+              {isVis("heatmap-temporal") && !loadingBreakdowns && (
+                <ChartCard key={`ht-${dataUpdatedAt}`} icon={<Activity className="h-4 w-4 text-green-400" />} title="Heatmap: Hora × Dia da Semana" badge="HEATMAP · TEMPORAL" context="Matriz de calor mostrando conversões por hora e dia da semana. Verde escuro = alto volume de conversões. Use para programar horários de entrega do anúncio (ad scheduling) e concentrar budget nos slots mais rentáveis.">
+                  <HeatmapTemporal data={breakdowns?.heatmapData || []} />
+                </ChartCard>
+              )}
+
+              {/* ── FUNIL DE VÍDEO ── */}
+              {isVis("video-funnel") && !loadingBreakdowns && (
+                breakdowns?.videoFunnel ? (
+                  <ChartCard key={`vf-${dataUpdatedAt}`} icon={<Eye className="h-4 w-4 text-blue-400" />} title="Funil de Retenção de Vídeo" badge="FUNNEL · VIDEO · p25/p50/p75/p95" context="Mostra o drop-off de retenção em cada etapa do vídeo. Quedas bruscas nos primeiros 25% indicam hook fraco. Quedas entre 75–95% indicam que o CTA está no final — considere adiantar. Ideal: curva suave com alta retenção até 75%.">
+                    <div className="space-y-3">
+                      {breakdowns.videoFunnel.map((step: any, i: number) => {
+                        const prev = i > 0 ? breakdowns.videoFunnel![i - 1] : null;
+                        const dropOff = prev ? prev.pct - step.pct : 0;
+                        return (
+                          <div key={step.name}>
+                            <div className="flex justify-between items-center mb-1">
+                              <span className="text-[10px] font-bold text-muted-foreground">{step.name}</span>
+                              <div className="flex items-center gap-3">
+                                {dropOff > 0 && (
+                                  <span className={`text-[9px] font-mono ${dropOff > 30 ? "text-destructive" : dropOff > 15 ? "text-orange-400" : "text-muted-foreground/50"}`}>
+                                    -{dropOff.toFixed(1)}%
+                                  </span>
+                                )}
+                                {step.cpa > 0 && <span className="text-[9px] text-muted-foreground/50">R$ {step.cpa.toFixed(2)}/view</span>}
+                                <span className="text-[11px] font-black font-mono" style={{ color: step.color }}>
+                                  {step.pct.toFixed(1)}%
+                                </span>
+                                <span className="text-[10px] text-muted-foreground font-mono">{step.value.toLocaleString("pt-BR")}</span>
+                              </div>
+                            </div>
+                            <div className="h-5 w-full bg-white/5 rounded-lg overflow-hidden">
+                              <motion.div
+                                initial={{ width: 0 }}
+                                animate={{ width: `${step.pct}%` }}
+                                transition={{ duration: config.animated ? 0.8 : 0, delay: i * 0.1, ease: "easeOut" }}
+                                className="h-full rounded-lg"
+                                style={{ backgroundColor: step.color, opacity: 0.75 }}
+                              />
+                            </div>
+                          </div>
+                        );
+                      })}
+                      <p className="text-[9px] text-muted-foreground/40 mt-2 text-right">
+                        Total gasto nos vídeos: R$ {breakdowns.videoFunnel[0]?.spend?.toLocaleString("pt-BR", { minimumFractionDigits: 2 }) || "—"}
+                      </p>
+                    </div>
+                  </ChartCard>
+                ) : (
+                  <ChartCard key={`vf-empty-${dataUpdatedAt}`} icon={<Eye className="h-4 w-4 text-blue-400" />} title="Funil de Retenção de Vídeo" badge="FUNNEL · VIDEO" context="Requer anúncios em vídeo com métricas sincronizadas.">
+                    <div className="text-center py-8 text-muted-foreground/50 text-xs">Nenhum dado de vídeo encontrado no período.<br />Verifique se há campanhas com anúncios em vídeo e execute a sincronização.</div>
+                  </ChartCard>
+                )
+              )}
+
               {/* ── PLATAFORMA ── */}
               {isVis("bar-platform") && !loadingBreakdowns && (
                 <ChartCard key={`bp-${dataUpdatedAt}`} icon={<Layers className="h-4 w-4 text-green-400" />} title="Performance por Plataforma" badge="BAR · PLATFORM" context="Instagram vs Facebook vs Messenger vs Audience Network.">
@@ -973,6 +1071,79 @@ function MetricasGraficoPage() {
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+// ─── HEATMAP TEMPORAL ───────────────────────────────────────────────────────
+function HeatmapTemporal({ data }: { data: any[] }) {
+  const [tooltip, setTooltip] = useState<{ day: string; hour: number; conv: number; cost: number; cpl: number; x: number; y: number } | null>(null);
+
+  if (!data.length) return <div className="text-center text-muted-foreground/50 text-xs py-8">Sem dados de horário no período selecionado.</div>;
+
+  const maxConv = Math.max(...data.flatMap((d: any) => d.cells.map((c: any) => c.conv)), 1);
+
+  return (
+    <div className="relative select-none">
+      {/* Hour axis labels */}
+      <div className="flex gap-px mb-1 ml-10">
+        {Array.from({ length: 24 }, (_, h) => (
+          <div key={h} style={{ flex: 1 }} className="text-center text-[8px] text-muted-foreground/40 font-mono leading-none">
+            {h % 4 === 0 ? `${h}h` : ''}
+          </div>
+        ))}
+      </div>
+
+      {/* Rows: Mon→Sun */}
+      {data.map((row: any) => (
+        <div key={row.day} className="flex items-center gap-px mb-px">
+          <div className="w-9 text-[9px] font-bold text-muted-foreground/60 text-right pr-2 shrink-0 leading-none">{row.day}</div>
+          {row.cells.map((cell: any) => {
+            const intensity = cell.conv > 0 ? cell.conv / maxConv : 0;
+            const style = cell.conv > 0
+              ? { backgroundColor: `hsl(142 65% ${Math.round(52 - intensity * 32)}% / ${0.2 + intensity * 0.8})` }
+              : undefined;
+            return (
+              <div
+                key={cell.h}
+                style={{ flex: 1, height: 22, borderRadius: 3, ...style, backgroundColor: style ? style.backgroundColor : 'hsl(220 14% 60% / 0.06)' }}
+                className="cursor-pointer transition-transform hover:scale-110 hover:z-10 hover:ring-1 hover:ring-green-400/60"
+                onMouseEnter={(e) => {
+                  const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                  setTooltip({ day: row.day, hour: cell.h, conv: cell.conv, cost: cell.cost, cpl: cell.cpl, x: r.left + r.width / 2, y: r.top });
+                }}
+                onMouseLeave={() => setTooltip(null)}
+              />
+            );
+          })}
+        </div>
+      ))}
+
+      {/* Legend */}
+      <div className="flex items-center gap-2 mt-3">
+        <span className="text-[8px] text-muted-foreground/40">0</span>
+        <div className="flex h-2 flex-1 rounded overflow-hidden">
+          {Array.from({ length: 16 }, (_, i) => (
+            <div key={i} style={{ flex: 1, backgroundColor: `hsl(142 65% ${Math.round(52 - (i / 15) * 32)}% / ${0.2 + (i / 15) * 0.8})` }} />
+          ))}
+        </div>
+        <span className="text-[8px] text-muted-foreground/40">{maxConv} conv.</span>
+      </div>
+
+      {/* Tooltip */}
+      {tooltip && (
+        <div
+          className="fixed z-50 pointer-events-none bg-card border border-border rounded-xl px-3 py-2.5 shadow-2xl text-[10px] space-y-1 -translate-x-1/2 -translate-y-full"
+          style={{ left: tooltip.x, top: tooltip.y - 8 }}
+        >
+          <p className="font-black text-foreground">{tooltip.day} · {tooltip.hour}h–{tooltip.hour + 1}h</p>
+          <p style={{ color: tooltip.conv > 0 ? 'hsl(142 65% 40%)' : undefined }} className="text-muted-foreground">
+            {tooltip.conv > 0 ? `${tooltip.conv} conversão${tooltip.conv > 1 ? 'ões' : ''}` : 'Sem conversões'}
+          </p>
+          {tooltip.cost > 0 && <p className="text-primary">Gasto: R$ {tooltip.cost.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>}
+          {tooltip.cpl > 0 && <p className="text-muted-foreground/70">CPL: R$ {tooltip.cpl.toFixed(2)}</p>}
+        </div>
+      )}
     </div>
   );
 }

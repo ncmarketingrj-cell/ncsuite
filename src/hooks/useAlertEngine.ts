@@ -116,7 +116,7 @@ async function runThresholdEvaluation() {
       // 2. Buscar campanhas ATIVAS — para a conta específica ou todas
       let q = (supabase as any)
         .from("campaigns")
-        .select("id, name, status, budget, ad_account_id, created_at, ad_accounts(name), metrics(cost, conversions, date)")
+        .select("id, name, status, budget, ad_account_id, created_at, ad_accounts(name), metrics(cost, conversions, date, frequency)")
         .ilike("status", "ACTIVE");
 
       if (threshold.ad_account_id) {
@@ -212,6 +212,41 @@ async function runThresholdEvaluation() {
                   link:            `/campanhas?accountId=${campaign.ad_account_id}&date=${today}&campId=${campaign.id}`,
                 });
                 markDedupFired(budgetKey);
+                totalNew++;
+              }
+            }
+          }
+        }
+
+        // ── Violação de Frequência ───────────────────────────────────────────
+        if (threshold.max_frequency !== null && threshold.max_frequency !== undefined) {
+          const freqValues = todayMetrics.map((m: any) => Number(m.frequency || 0)).filter((f: number) => f > 0);
+          const avgFreq = freqValues.length > 0 ? freqValues.reduce((s: number, f: number) => s + f, 0) / freqValues.length : 0;
+
+          if (avgFreq > (threshold.max_frequency as number)) {
+            const freqKey = `freq_${campaign.id}`;
+            if (!isDedupBlocked(freqKey)) {
+              const { data: dup, error: dupErr } = await (supabase as any)
+                .from("notifications")
+                .select("id")
+                .eq("type", "alert_frequency")
+                .eq("user_id", user?.id)
+                .gte("created_at", dedupSince)
+                .ilike("link", `%${campaign.id}%`)
+                .limit(1);
+
+              if (!dupErr && !dup?.length) {
+                const accountNameFreq = (campaign.ad_accounts as any)?.name ?? `Conta ${String(campaign.ad_account_id).slice(-6)}`;
+                await (supabase as any).from("notifications").insert({
+                  user_id:     user?.id ?? null,
+                  title:       `📡 Frequência Alta — ${campaign.name.slice(0, 35)}`,
+                  message:     `${accountNameFreq} — Frequência ${avgFreq.toFixed(1)}× ultrapassou o limite de ${(threshold.max_frequency as number).toFixed(1)}×. Audiência saturando — expanda o público ou renove os criativos.`,
+                  is_critical: false,
+                  is_read:     false,
+                  type:        "alert_frequency",
+                  link:        `/campanhas?accountId=${campaign.ad_account_id}&date=${today}&campId=${campaign.id}`,
+                });
+                markDedupFired(freqKey);
                 totalNew++;
               }
             }
