@@ -1,4 +1,4 @@
-import { createFileRoute, useSearch, useNavigate, Outlet, useLocation } from "@tanstack/react-router";
+import { createFileRoute, redirect, useSearch, useNavigate, Outlet, useLocation } from "@tanstack/react-router";
 import { useState, useMemo, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -21,8 +21,20 @@ import {
   ScatterChart, Scatter, ZAxis, ReferenceLine
 } from "recharts";
 
+const METRICAS_ROLES = ["admin", "ceo", "gerente", "gestor_trafego"];
+
 export const Route = createFileRoute("/_app/metricas")({
   head: () => ({ meta: [{ title: "Métricas Avançadas — NC Suite" }] }),
+  beforeLoad: async () => {
+    const { data: sessionData } = await supabase.auth.getSession();
+    if (!sessionData.session) throw redirect({ to: "/login" });
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("role")
+      .eq("id", sessionData.session.user.id)
+      .maybeSingle();
+    if (!METRICAS_ROLES.includes(profile?.role ?? "")) throw redirect({ to: "/dashboard" });
+  },
   validateSearch: (search: Record<string, unknown>): { account?: string; campaign?: string } => ({
     account: (search.account as string) || undefined,
     campaign: (search.campaign as string) || undefined,
