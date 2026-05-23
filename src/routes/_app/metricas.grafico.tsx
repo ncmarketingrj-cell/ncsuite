@@ -272,14 +272,12 @@ function MetricasGraficoPage() {
     queryKey: ["gm-camps", accountFilter, dateRange.startDate.toISOString(), dateRange.endDate.toISOString()],
     queryFn: async () => {
       const s = getD(dateRange.startDate), e = getD(dateRange.endDate);
-      let q = (supabase as any).from("campaigns").select(`id, name, status, ad_account_id, ads(asset_metrics(cost, conversions, impressions, clicks, reach, date))`);
+      let q = (supabase as any).from("campaigns").select(`id, name, status, ad_account_id, metrics(cost, conversions, impressions, clicks, reach, date)`);
       if (accountFilter !== "all") q = q.eq("ad_account_id", accountFilter);
       const { data, error } = await q.order("name");
       if (error) throw error;
       return (data || []).map((c: any) => {
-        let m = c.ads || [];
-        if (m.length > 0 && m[0]?.asset_metrics !== undefined) m = m.flatMap((ad: any) => ad.asset_metrics || []);
-        m = m.filter((x: any) => { const d = (x.date || "").split("T")[0]; return d >= s && d <= e; });
+        const m = (c.metrics || []).filter((x: any) => { const d = (x.date || "").split("T")[0]; return d >= s && d <= e; });
         const cost = m.reduce((a: number, x: any) => a + Number(x.cost || 0), 0);
         const conversions = m.reduce((a: number, x: any) => a + Number(x.conversions || 0), 0);
         const clicks = m.reduce((a: number, x: any) => a + Number(x.clicks || 0), 0);

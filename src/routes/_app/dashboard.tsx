@@ -89,25 +89,17 @@ function Dashboard() {
       const endStr = getLocalDateStr(dateRange.endDate);
       const prevStartStr = getLocalDateStr(subDays(dateRange.startDate, diffDays));
 
-      let adsQuery = supabase.from("ads").select(`
-        campaign_id,
-        campaigns!inner(ad_account_id, name),
-        asset_metrics!inner(cost, conversions, impressions, clicks, reach, date)
-      `).gte('asset_metrics.date', prevStartStr).lte('asset_metrics.date', endStr);
+      let metricsQuery = (supabase as any).from("metrics").select(`
+        campaign_id, cost, conversions, impressions, clicks, reach, date,
+        campaigns!inner(ad_account_id, name)
+      `).gte('date', prevStartStr).lte('date', endStr);
 
       if (selectedAccountId !== "all") {
-        adsQuery = adsQuery.eq("campaigns.ad_account_id", selectedAccountId);
+        metricsQuery = metricsQuery.eq("campaigns.ad_account_id", selectedAccountId);
       }
 
-      const { data: adsData } = await adsQuery;
-      
-      const metrics = (adsData || []).flatMap((ad: any) => 
-        (ad.asset_metrics || []).map((am: any) => ({
-          ...am,
-          campaign_id: ad.campaign_id,
-          campaigns: ad.campaigns
-        }))
-      );
+      const { data: metricsData } = await metricsQuery;
+      const metrics = metricsData || [];
 
       const chartMap = new Map();
       let currentPeriod = { cost: 0, conversions: 0, clicks: 0, impressions: 0 };
