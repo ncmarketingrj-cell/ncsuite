@@ -84,41 +84,42 @@
 }
 
 /* ═══════════════════════════════════════════
-   LIGHT MODE — Crystal Premium
-   Branco puro com profundidade sutil.
-   Sombras construtivas, não agressivas.
-   Vermelho Ferrari vibrante com contraste preciso.
+   LIGHT MODE — Clean & Airy
+   Fundo cinza-azulado suave (#F0F2F5 estilo Facebook).
+   Cards brancos nítidos — hierarquia visual clara.
+   Bordas visíveis. Zero neon. Zero glow. Zero blur desnecessário.
+   Texto escuro legível sem agredir a vista.
    ═══════════════════════════════════════════ */
 html.light {
-  --background: 220 25% 97%;
-  --foreground: 220 22% 9%;
-  --card: 0 0% 100%;
-  --card-foreground: 220 22% 9%;
+  --background: 220 22% 86%;       /* #D4D9E4 — fundo mais contrastado, cards brancos saltam */
+  --foreground: 218 25% 9%;        /* #101318 — texto muito escuro, máxima legibilidade */
+  --card: 0 0% 100%;               /* branco puro — separação clara do fundo */
+  --card-foreground: 218 25% 9%;
   --popover: 0 0% 100%;
-  --popover-foreground: 220 22% 9%;
-  --primary: 0 76% 44%;
+  --popover-foreground: 218 25% 9%;
+  --primary: 0 78% 40%;            /* vermelho NC calibrado para fundo claro */
   --primary-foreground: 0 0% 100%;
-  --secondary: 220 16% 93%;
-  --secondary-foreground: 220 22% 16%;
-  --accent: 0 62% 36%;
+  --secondary: 220 16% 88%;        /* cinza médio — elementos secundários */
+  --secondary-foreground: 218 22% 14%;
+  --accent: 0 65% 34%;
   --accent-foreground: 0 0% 100%;
-  --success: 142 71% 37%;
+  --success: 142 60% 32%;
   --success-foreground: 0 0% 100%;
-  --muted: 220 18% 93%;
-  --muted-foreground: 220 12% 38%;
-  --destructive: 0 84% 48%;
+  --muted: 220 16% 90%;            /* cinza suave para badges, thead */
+  --muted-foreground: 218 14% 36%; /* texto secundário com contraste adequado */
+  --destructive: 0 82% 42%;
   --destructive-foreground: 0 0% 100%;
-  --border: 220 16% 84%;
-  --input: 220 16% 88%;
-  --ring: 0 76% 44%;
-  --sidebar: 220 22% 98%;
-  --sidebar-foreground: 220 22% 9%;
-  --sidebar-primary: 0 76% 44%;
+  --border: 220 16% 74%;           /* borda bem visível — separação clara entre blocos */
+  --input: 0 0% 100%;              /* inputs brancos em destaque */
+  --ring: 0 78% 40%;
+  --sidebar: 0 0% 100%;            /* sidebar branca com separação do fundo */
+  --sidebar-foreground: 218 25% 9%;
+  --sidebar-primary: 0 78% 40%;
   --sidebar-primary-foreground: 0 0% 100%;
-  --sidebar-accent: 220 18% 94%;
-  --sidebar-accent-foreground: 220 22% 9%;
-  --sidebar-border: 220 16% 86%;
-  --sidebar-ring: 0 76% 44%;
+  --sidebar-accent: 220 16% 93%;
+  --sidebar-accent-foreground: 218 25% 9%;
+  --sidebar-border: 220 16% 80%;
+  --sidebar-ring: 0 78% 40%;
 }
 
 /* ═══════════════════════════════════════════
@@ -157,13 +158,9 @@ html.light {
     background-attachment: fixed;
   }
 
-  /* ── LIGHT: Grid suave azulada + orbs discretas ── */
+  /* ── LIGHT: fundo liso sem padrões — estilo Facebook limpo ── */
   html.light body {
-    background-image:
-      radial-gradient(circle at 1px 1px, hsl(220 30% 55% / 0.08) 1px, transparent 0),
-      radial-gradient(ellipse 100% 70% at -5% -5%, hsl(var(--primary) / 0.06) 0%, transparent 50%),
-      radial-gradient(ellipse 70% 55% at 105% 105%, hsl(220 80% 65% / 0.05) 0%, transparent 50%);
-    background-size: 32px 32px, 100% 100%, 100% 100%;
+    background-image: none;
   }
 }
 
@@ -208,23 +205,22 @@ html.light {
 
   html.light .glass-panel {
     background: hsl(var(--card));
-    backdrop-filter: blur(16px);
+    backdrop-filter: none;
+    border-color: hsl(var(--border));
     box-shadow:
-      0 1px 2px hsl(220 20% 25% / 0.06),
-      0 4px 12px hsl(220 20% 25% / 0.07),
-      0 16px 40px hsl(220 20% 25% / 0.05),
-      inset 0 1px 0 hsl(0 0% 100%),
-      inset 0 -1px 0 hsl(220 20% 90% / 0.5);
+      0 1px 4px hsl(220 25% 20% / 0.10),
+      0 4px 16px hsl(220 25% 20% / 0.09),
+      0 16px 40px hsl(220 25% 20% / 0.06);
   }
 
   html.light .glass-panel:hover {
+    border-color: hsl(var(--primary) / 0.45);
     box-shadow:
-      0 2px 6px hsl(220 20% 25% / 0.08),
-      0 8px 24px hsl(220 20% 25% / 0.08),
+      0 2px 8px hsl(220 25% 20% / 0.12),
+      0 8px 28px hsl(220 25% 20% / 0.10),
       0 0 0 1px hsl(var(--primary) / 0.18),
-      0 0 20px hsl(var(--primary) / 0.08),
-      inset 0 1px 0 hsl(0 0% 100%);
-    transform: translateY(-2px);
+      0 0 20px hsl(var(--primary) / 0.18);
+    transform: translateY(-1px);
   }
 
   /* ──────────────────────────────────────────
@@ -239,9 +235,13 @@ html.light {
   .shadow-glow-sm { box-shadow: 0 0 16px hsl(var(--primary) / 0.30); }
   .ring-glow      { box-shadow: 0 0 0 1px hsl(var(--primary) / 0.5), 0 0 20px hsl(var(--primary) / 0.3); }
 
-  html.light .shadow-glow    { box-shadow: 0 0 24px hsl(var(--primary) / 0.22); }
-  html.light .shadow-glow-sm { box-shadow: 0 0 12px hsl(var(--primary) / 0.16); }
-  html.light .ring-glow      { box-shadow: 0 0 0 1px hsl(var(--primary) / 0.3), 0 0 14px hsl(var(--primary) / 0.15); }
+  html.light .shadow-glow    { box-shadow: 0 2px 16px hsl(var(--primary) / 0.28); }
+  html.light .shadow-glow-sm { box-shadow: 0 1px 10px hsl(var(--primary) / 0.22); }
+  html.light .ring-glow      { box-shadow: 0 0 0 1px hsl(var(--primary) / 0.4), 0 0 14px hsl(var(--primary) / 0.22); }
+  html.light .glow-xs        { box-shadow: 0 0 8px  hsl(var(--primary) / 0.22); }
+  html.light .glow-sm        { box-shadow: 0 0 16px hsl(var(--primary) / 0.26); }
+  html.light .glow-md        { box-shadow: 0 0 28px hsl(var(--primary) / 0.28); }
+  html.light .glow-lg        { box-shadow: 0 0 48px hsl(var(--primary) / 0.30); }
 
   /* ──────────────────────────────────────────
      NEON BORDER — borda brilhante neon
@@ -255,10 +255,10 @@ html.light {
   }
 
   html.light .neon-border {
-    border-color: hsl(var(--primary) / 0.42) !important;
+    border-color: hsl(var(--primary) / 0.55) !important;
     box-shadow:
-      0 0 0 1px hsl(var(--primary) / 0.12),
-      0 0 10px hsl(var(--primary) / 0.14);
+      0 0 0 1px hsl(var(--primary) / 0.18),
+      0 0 14px hsl(var(--primary) / 0.25);
   }
 
   /* ──────────────────────────────────────────
@@ -545,10 +545,13 @@ html.light {
   html.light .text-muted-foreground,
   html.light .text-slate-400,
   html.light .text-slate-500,
+  html.light .text-slate-600,
   html.light .text-gray-400,
   html.light .text-gray-500,
+  html.light .text-gray-600,
   html.light .text-zinc-400,
-  html.light .text-zinc-500 {
+  html.light .text-zinc-500,
+  html.light .text-zinc-600 {
     color: hsl(var(--muted-foreground)) !important;
   }
 
@@ -564,8 +567,8 @@ html.light {
   html.light .bg-white\/30,
   html.light .bg-slate-900\/50,
   html.light .bg-background\/50 {
-    background-color: hsl(var(--muted) / 0.7) !important;
-    backdrop-filter: blur(10px);
+    background-color: hsl(var(--muted)) !important;
+    backdrop-filter: none;
   }
 
   html.light input,
@@ -617,6 +620,20 @@ html.light {
     background-color: hsl(var(--muted)) !important;
   }
 
+  /* Garantir que divs de fundo escuro não sumam no light */
+  html.light .bg-black\/40,
+  html.light .bg-black\/50,
+  html.light .bg-black\/60,
+  html.light .bg-black\/70,
+  html.light .bg-black\/80 {
+    background-color: hsl(220 16% 82% / 0.8) !important;
+  }
+
+  /* Elementos com bg-card ganham sombra sutil para separação do fundo */
+  html.light .bg-card {
+    box-shadow: 0 1px 4px hsl(220 25% 20% / 0.10), 0 4px 16px hsl(220 25% 20% / 0.07);
+  }
+
   /* ══════════════════════════════════════════════
      AUTOMOTIVO & BRANDING — NC Performance Suite
      Detalhes de cockpit, chassi e identidade visual
@@ -653,6 +670,10 @@ html.light {
     border-radius: 999px;
     background: linear-gradient(to bottom, hsl(var(--primary)), hsl(var(--primary) / 0.45));
     box-shadow: 0 0 10px hsl(var(--primary) / 0.55);
+  }
+
+  html.light .header-sport::before {
+    box-shadow: none;
   }
 
   /* Chassis line — título com linhas de chassi laterais */
@@ -702,6 +723,17 @@ html.light {
   }
   .card-sport:hover::after {
     opacity: 1;
+  }
+
+  html.light .card-sport::after {
+    background: linear-gradient(
+      90deg,
+      transparent 0%,
+      hsl(var(--primary) / 0.22) 25%,
+      hsl(var(--primary) / 0.45) 50%,
+      hsl(var(--primary) / 0.22) 75%,
+      transparent 100%
+    );
   }
 
   /* Badge esportivo — etiqueta de pit lane */
@@ -822,5 +854,23 @@ html.light {
     background: hsl(var(--primary));
     box-shadow: 0 0 6px hsl(var(--primary) / 0.6);
     flex-shrink: 0;
+  }
+
+  html.light .kpi-tag::before {
+    box-shadow: none;
+  }
+
+  /* ── LIGHT: scrollbar visível com thumb cinza médio ── */
+  html.light ::-webkit-scrollbar-thumb {
+    background: hsl(220 14% 70%);
+  }
+  html.light ::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--primary) / 0.55);
+  }
+  html.light .custom-scrollbar::-webkit-scrollbar-thumb {
+    background: hsl(220 14% 72%);
+  }
+  html.light .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--primary) / 0.6);
   }
 }
