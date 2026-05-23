@@ -274,11 +274,13 @@ function extractConversions(actions: any[] = [], objective?: string): number {
     // Tráfego — Meta Ads Manager mostra Landing Page Views por padrão
     "LINK_CLICKS":    ["landing_page_view", "link_click"],
     "OUTCOME_TRAFFIC": ["landing_page_view", "link_click", "outbound_clicks"],
-    // Engajamento
+    // Engajamento / Mensagens (OUTCOME_ENGAGEMENT cobre WhatsApp, DM, curtidas, etc.)
     "POST_ENGAGEMENT":  ["post_engagement", "page_engagement"],
     "OUTCOME_ENGAGEMENT": [
+      "onsite_conversion.total_messaging_connection",      // WhatsApp + DM agrupado — mais comum no Brasil para automotive
       "onsite_conversion.messaging_first_reply",
       "onsite_conversion.messaging_conversation_started_7d",
+      "messaging_conversation_started_7d",
       "post_engagement",
       "page_engagement",
     ],
@@ -386,6 +388,7 @@ serve(async (req) => {
         targetAccountId = body.account_id;
       }
       if (body.triggered_by) triggeredBy = body.triggered_by
+      if (body.action === "audit") action = "audit"
     } catch (_) {
       console.log(`[SYNC ${syncId}] Body vazio — usando janela padrão D0+D-1 (${yesterdayStr} → ${todayStr})`)
     }
@@ -402,6 +405,49 @@ serve(async (req) => {
 
     const token = config.access_token
     const userId = config.user_id
+
+    // ─── MODO AUDITORIA — retorna o que o Meta está enviando sem salvar nada ─────
+    // Útil para diagnosticar divergências: mostra todos os action_types recebidos por
+    // campanha e o que o extractConversions escolheria — comparar com Meta Ads Manager
+    if (action === "audit") {
+      console.log(`[AUDIT ${syncId}] Iniciando auditoria de action_types...`)
+      let auditAccounts = await fetchAdAccounts(token)
+      if (targetAccountId) auditAccounts = auditAccounts.filter((a: any) => a.id === targetAccountId)
+
+      const auditResult: any[] = []
+      for (const acc of auditAccounts) {
+        const campaignsData = await fetchCampaignsWithBudgets(acc.id, token)
+        const objectiveMap = new Map(campaignsData.map((c: any) => [c.id, c.objective as string | undefined]))
+        const insights = await fetchCampaignInsights(acc.id, token, timeParams)
+
+        for (const row of insights) {
+          const actions: any[] = row.actions || []
+          const objective = objectiveMap.get(row.campaign_id)
+          const pickedConversions = extractConversions(actions, objective)
+          auditResult.push({
+            account: acc.name,
+            account_id: acc.id,
+            campaign_id: row.campaign_id,
+            campaign_name: row.campaign_name,
+            objective: objective ?? null,
+            date: row.date_start,
+            spend: parseFloat(row.spend) || 0,
+            impressions: parseInt(row.impressions) || 0,
+            app_conversions: pickedConversions,
+            all_actions: actions.map((a: any) => ({
+              action_type: a.action_type,
+              value: a.value,
+              "7d_click": a["7d_click"],
+              "1d_view": a["1d_view"],
+            })),
+          })
+        }
+      }
+
+      return new Response(JSON.stringify({ audit: auditResult, time_range: timeParams }, null, 2), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" }
+      })
+    }
 
     // Se for ação de toggle de status, executa diretamente no Facebook Ads e encerra!
     if (action === "toggle-status" && togglePayload) {

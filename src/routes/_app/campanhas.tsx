@@ -5,7 +5,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Megaphone, Search, Play, Pause, Loader2, RefreshCw,
   Layers, ChevronDown, LayoutGrid, Image as ImageIcon,
-  CheckSquare, Square, Pencil
+  CheckSquare, Square, Pencil, FlaskConical, X
 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
@@ -217,6 +217,26 @@ function MetaAdsManagerPage() {
     onSettled: () => setChangingId(null),
   });
 
+  const [auditData, setAuditData] = useState<any[] | null>(null);
+  const [isAuditing, setIsAuditing] = useState(false);
+
+  const runAudit = async () => {
+    setIsAuditing(true);
+    try {
+      const startStr = getLocalDateStr(dateRange.startDate);
+      const endStr = getLocalDateStr(dateRange.endDate);
+      const payload: any = { action: "audit", time_range: { since: startStr, until: endStr } };
+      if (accountFilter !== "all") payload.account_id = accountFilter;
+      const { data, error } = await supabase.functions.invoke("sync-meta-ads", { body: payload });
+      if (error) throw new Error(error.message);
+      setAuditData(data?.audit || []);
+    } catch (e: any) {
+      toast.error(`Auditoria falhou: ${e.message}`);
+    } finally {
+      setIsAuditing(false);
+    }
+  };
+
   const listData = level === "campanhas" ? campaigns : level === "conjuntos" ? adSets : ads;
   const filtered = useMemo(() => listData.filter((c: any) => !search || c.name?.toLowerCase().includes(search.toLowerCase())), [listData, search]);
 
@@ -254,6 +274,15 @@ function MetaAdsManagerPage() {
               >
                 <Pencil className="h-3.5 w-3.5" />
                 Gráficos Demográficos
+              </button>
+              <button
+                onClick={runAudit}
+                disabled={isAuditing}
+                className="flex items-center gap-2 rounded-xl border border-orange-400/30 bg-orange-400/10 px-4 py-2.5 text-xs font-bold text-orange-400 hover:bg-orange-400/20 transition-all disabled:opacity-50"
+                title="Mostra o que o Meta está retornando por campanha sem salvar dados — use para diagnosticar divergências"
+              >
+                {isAuditing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FlaskConical className="h-3.5 w-3.5" />}
+                Diagnóstico Meta
               </button>
             </div>
           }
@@ -411,6 +440,54 @@ function MetaAdsManagerPage() {
 
         </motion.div>
       </AnimatePresence>
+
+      {/* ─── PAINEL DE DIAGNÓSTICO ─── */}
+      {auditData && (
+        <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="mt-6 glass-panel card-sport overflow-hidden">
+          <div className="flex items-center justify-between border-b border-border/50 px-5 py-3">
+            <p className="header-sport text-xs font-black uppercase tracking-widest text-orange-400">Diagnóstico Meta — Action Types Recebidos por Campanha</p>
+            <button onClick={() => setAuditData(null)} className="rounded-lg p-1 text-muted-foreground hover:text-foreground"><X className="h-4 w-4" /></button>
+          </div>
+          <div className="overflow-x-auto max-h-[500px] overflow-y-auto">
+            <table className="w-full text-[10px]">
+              <thead className="sticky top-0 bg-background/90 backdrop-blur">
+                <tr className="border-b border-border/50">
+                  <th className="px-3 py-2 text-left font-black uppercase tracking-wider text-muted-foreground">Campanha</th>
+                  <th className="px-3 py-2 text-left font-black uppercase tracking-wider text-muted-foreground">Objetivo</th>
+                  <th className="px-3 py-2 text-left font-black uppercase tracking-wider text-muted-foreground">Data</th>
+                  <th className="px-3 py-2 text-right font-black uppercase tracking-wider text-orange-400">App conta</th>
+                  <th className="px-3 py-2 text-left font-black uppercase tracking-wider text-muted-foreground">Todos action_types (compare com Gerenciador)</th>
+                </tr>
+              </thead>
+              <tbody>
+                {auditData.map((row: any, i: number) => (
+                  <tr key={i} className="border-b border-border/20 hover:bg-white/[0.015]">
+                    <td className="px-3 py-2 font-semibold max-w-[200px] truncate" title={row.campaign_name}>{row.campaign_name}</td>
+                    <td className="px-3 py-2 font-mono text-primary">{row.objective ?? "—"}</td>
+                    <td className="px-3 py-2 font-mono text-muted-foreground">{row.date}</td>
+                    <td className="px-3 py-2 text-right font-mono font-black text-orange-400">{row.app_conversions}</td>
+                    <td className="px-3 py-2">
+                      <div className="flex flex-wrap gap-1.5">
+                        {(row.all_actions || []).filter((a: any) => parseFloat(a.value) > 0).map((a: any, j: number) => (
+                          <span key={j} className="rounded-md border border-white/10 bg-white/5 px-2 py-0.5 font-mono text-[9px]">
+                            <span className="text-primary">{a.action_type}</span>
+                            <span className="text-foreground font-black ml-1">{a.value}</span>
+                            {a["7d_click"] && a["7d_click"] !== a.value && <span className="text-muted-foreground ml-1">(7d:{a["7d_click"]})</span>}
+                          </span>
+                        ))}
+                        {(row.all_actions || []).filter((a: any) => parseFloat(a.value) > 0).length === 0 && (
+                          <span className="text-muted-foreground italic">nenhuma action com valor &gt; 0</span>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className="px-5 py-3 text-[9px] text-muted-foreground/60">Compare a coluna "App conta" com a coluna "Resultados" do Meta Ads Manager. O action_type correto deve ter o mesmo número.</p>
+        </motion.div>
+      )}
       </div>
     </div>
   );
