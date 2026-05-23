@@ -242,33 +242,43 @@ Atualmente, estamos gerenciando **${activeCount} campanhas ativas** com um inves
             className="fixed inset-0 bg-background/80 backdrop-blur-sm z-40 lg:hidden"
           />
           
-          <motion.aside 
+          <motion.aside
             initial={{ x: "100%" }}
             animate={{ x: 0 }}
             exit={{ x: "100%" }}
             transition={{ type: "spring", damping: 25, stiffness: 200 }}
-            className="fixed top-0 right-0 z-50 flex flex-col w-full sm:w-[380px] h-screen border-l border-white/5 bg-background/95 backdrop-blur-2xl overflow-hidden shadow-2xl"
+            className="fixed top-0 right-0 z-50 flex flex-col w-full sm:w-[390px] h-screen bg-background/96 backdrop-blur-2xl overflow-hidden shadow-2xl"
+            style={{ borderLeft: "1px solid hsl(var(--primary) / 0.18)" }}
           >
-            <div className="p-5 border-b border-white/5 flex flex-col gap-3 bg-background/40">
+            {/* NC Watermark no fundo do sidebar */}
+            <div className="pointer-events-none absolute bottom-[-2rem] right-[-1rem] select-none z-0" aria-hidden="true">
+              <span className="nc-watermark-text" style={{ fontSize: "11rem" }}>NC</span>
+            </div>
+            {/* Racing stripe topo do sidebar */}
+            <div className="absolute top-0 inset-x-0 h-[2px] bg-gradient-to-r from-transparent via-primary to-transparent z-10 pointer-events-none" />
+
+            <div className="relative z-10 p-5 flex flex-col gap-3" style={{ borderBottom: "1px solid hsl(var(--border))" }}>
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                  <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-primary/20 to-secondary/20 flex items-center justify-center ring-1 ring-white/10 shadow-glow-sm">
-                    <Bot className="h-5 w-5 text-primary" />
+                  {/* Victoria badge premium */}
+                  <div className="relative h-10 w-10 rounded-xl bg-primary/12 border border-primary/28 flex items-center justify-center shadow-glow-sm overflow-hidden">
+                    <div className="absolute inset-x-0 top-0 h-[3px] bg-white/18" />
+                    <Bot className="h-5 w-5 text-primary relative z-10" />
                   </div>
                   <div>
-                    <h3 className="font-display font-bold text-sm tracking-tight text-foreground">Victoria AI</h3>
-                    <p className="text-[10px] text-muted-foreground flex items-center gap-1.5 uppercase font-black tracking-widest">
-                      <span className="relative flex h-2 w-2">
+                    <h3 className="font-display font-black text-sm tracking-tight text-foreground">Victoria AI</h3>
+                    <p className="label-mono text-muted-foreground flex items-center gap-1.5 mt-0.5">
+                      <span className="relative flex h-1.5 w-1.5">
                         <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-success opacity-75"></span>
-                        <span className="relative inline-flex rounded-full h-2 w-2 bg-success"></span>
+                        <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-success"></span>
                       </span>
                       {selectedAccountId ? "Foco Travado" : "Aguardando Conta"}
                     </p>
                   </div>
                 </div>
-                <button 
-                  onClick={onClose} 
-                  className="p-2 text-muted-foreground hover:text-foreground hover:bg-white/10 rounded-lg transition-colors"
+                <button
+                  onClick={onClose}
+                  className="p-2 text-muted-foreground hover:text-foreground hover:bg-primary/10 hover:border-primary/20 border border-transparent rounded-xl transition-all active:scale-95"
                 >
                   <X className="h-4 w-4" />
                 </button>
@@ -292,7 +302,7 @@ Atualmente, estamos gerenciando **${activeCount} campanhas ativas** com um inves
               )}
             </div>
 
-      <div className="flex-1 overflow-y-auto p-5 custom-scrollbar flex flex-col gap-5">
+      <div className="relative z-10 flex-1 overflow-y-auto p-5 custom-scrollbar flex flex-col gap-5">
         {selectedAccountId === "" ? (
           <div className="flex flex-col gap-4 py-2">
             <div className="flex items-start gap-2.5">
@@ -312,7 +322,7 @@ Atualmente, estamos gerenciando **${activeCount} campanhas ativas** com um inves
                 <button
                   key={acc.id}
                   onClick={() => selectAccount(acc.id, acc.name)}
-                  className="w-full text-left rounded-xl px-4 py-3.5 bg-white/5 hover:bg-primary/10 border border-white/5 hover:border-primary/30 text-xs font-bold uppercase tracking-widest text-muted-foreground hover:text-foreground transition-all duration-200 active:scale-[0.98] shadow-sm flex items-center justify-between group"
+                  className="card-sport w-full text-left rounded-xl px-4 py-3.5 bg-white/[0.03] hover:bg-primary/10 border border-white/5 hover:border-primary/28 text-xs font-bold uppercase tracking-widest text-muted-foreground hover:text-foreground transition-all duration-200 active:scale-[0.98] flex items-center justify-between group"
                 >
                   <span className="truncate max-w-[220px]">{acc.name}</span>
                   <div className="h-1.5 w-1.5 rounded-full bg-primary/30 group-hover:bg-primary transition-colors" />
@@ -372,14 +382,14 @@ Atualmente, estamos gerenciando **${activeCount} campanhas ativas** com um inves
         )}
       </div>
 
-      <div className="p-4 border-t border-white/5 bg-background/60 backdrop-blur-md">
+      <div className="relative z-10 p-4 bg-background/70 backdrop-blur-md" style={{ borderTop: "1px solid hsl(var(--border))" }}>
         {selectedAccountId !== "" && (
           <div className="flex gap-2 flex-wrap mb-4">
             {quickActions.map((action, i) => (
               <button
                 key={i}
                 onClick={() => { setPrompt(action.prompt); }}
-                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-white/5 hover:bg-white/10 border border-white/5 transition-all text-[10px] font-bold text-muted-foreground hover:text-primary active:scale-95"
+                className="badge-sport hover:bg-primary/15 active:scale-95 transition-all"
               >
                 <action.icon className="h-3 w-3" />
                 {action.label}
@@ -406,9 +416,11 @@ Atualmente, estamos gerenciando **${activeCount} campanhas ativas** com um inves
             {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
           </button>
         </div>
-        <p className="text-[9px] text-center text-muted-foreground/30 mt-3 uppercase font-bold tracking-widest">
-          IA Especialista em Tráfego Pago Automotivo
-        </p>
+        <div className="flex items-center justify-center gap-2 mt-3">
+          <div className="h-px flex-1 bg-border/40" />
+          <p className="label-mono text-muted-foreground/35">NC · IA Automotiva</p>
+          <div className="h-px flex-1 bg-border/40" />
+        </div>
       </div>
           </motion.aside>
         </>

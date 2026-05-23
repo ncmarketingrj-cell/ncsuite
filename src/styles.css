@@ -46,206 +46,484 @@
 }
 
 /* ═══════════════════════════════════════════
-   DARK MODE (Padrão) — Vermelho Ferrari + Carvão Suave
-   Background 8% = cinza-carvão confortável (não preto puro)
-   Cards 11% = separação visual clara sem forçar a vista
-   Muted/Borders subiram para criar camadas visíveis
+   DARK MODE — Midnight Premium + Ferrari Neon
+   Preto profundo como cockpit esportivo.
+   Vermelho Ferrari como acento neon vivo.
    ═══════════════════════════════════════════ */
 :root {
   --radius: 0.75rem;
-  /* Fundo carvão suave — confortável para longas sessões */
-  --background: 220 10% 8%;
-  --foreground: 210 10% 93%;
-  /* Cards — claramente separados do fundo */
-  --card: 220 8% 12%;
-  --card-foreground: 210 10% 93%;
-  --popover: 220 8% 14%;
-  --popover-foreground: 210 10% 93%;
-  /* Vermelho Ferrari — Cor primária */
-  --primary: 0 84% 50%;
+  --background: 230 25% 4%;
+  --foreground: 210 20% 96%;
+  --card: 228 22% 7%;
+  --card-foreground: 210 20% 96%;
+  --popover: 228 22% 9%;
+  --popover-foreground: 210 20% 96%;
+  --primary: 0 92% 58%;
   --primary-foreground: 0 0% 100%;
-  /* Cinza quente — Secundária */
-  --secondary: 220 6% 20%;
-  --secondary-foreground: 210 10% 93%;
-  /* Vermelho escuro — Accent */
-  --accent: 0 72% 40%;
+  --secondary: 228 18% 13%;
+  --secondary-foreground: 210 14% 82%;
+  --accent: 0 78% 47%;
   --accent-foreground: 0 0% 100%;
-  /* Sucesso */
-  --success: 142 71% 45%;
+  --success: 142 76% 48%;
   --success-foreground: 0 0% 100%;
-  /* Muted — camadas internas e sub-fundos */
-  --muted: 220 6% 16%;
-  --muted-foreground: 215 8% 58%;
-  /* Destructive */
-  --destructive: 0 84% 60%;
+  --muted: 228 18% 9%;
+  --muted-foreground: 215 15% 48%;
+  --destructive: 0 92% 62%;
   --destructive-foreground: 0 0% 98%;
-  /* Bordas — visíveis sem ser agressivas */
-  --border: 220 6% 18%;
-  --input: 220 6% 18%;
-  --ring: 0 84% 50%;
-  /* Sidebar */
-  --sidebar: 220 10% 7%;
-  --sidebar-foreground: 210 10% 93%;
-  --sidebar-primary: 0 84% 50%;
+  --border: 228 18% 12%;
+  --input: 228 18% 11%;
+  --ring: 0 92% 58%;
+  --sidebar: 230 27% 3%;
+  --sidebar-foreground: 210 20% 94%;
+  --sidebar-primary: 0 92% 58%;
   --sidebar-primary-foreground: 0 0% 100%;
-  --sidebar-accent: 220 8% 12%;
-  --sidebar-accent-foreground: 210 10% 93%;
-  --sidebar-border: 220 6% 14%;
-  --sidebar-ring: 0 84% 50%;
+  --sidebar-accent: 228 22% 8%;
+  --sidebar-accent-foreground: 210 20% 94%;
+  --sidebar-border: 228 18% 10%;
+  --sidebar-ring: 0 92% 58%;
 }
 
 /* ═══════════════════════════════════════════
-   LIGHT MODE — Vermelho Ferrari + Off-White Confortável
-   Background 93% = cinza-gelo (não branco puro → menos cansaço)
-   Cards 100% = branco real → separação clara do fundo
-   Bordas mais escuras para delimitar os módulos
+   LIGHT MODE — Crystal Premium
+   Branco puro com profundidade sutil.
+   Sombras construtivas, não agressivas.
+   Vermelho Ferrari vibrante com contraste preciso.
    ═══════════════════════════════════════════ */
 html.light {
-  --background: 220 14% 93%;
-  --foreground: 220 15% 12%;
+  --background: 220 25% 97%;
+  --foreground: 220 22% 9%;
   --card: 0 0% 100%;
-  --card-foreground: 220 15% 12%;
+  --card-foreground: 220 22% 9%;
   --popover: 0 0% 100%;
-  --popover-foreground: 220 15% 12%;
-  /* Vermelho Ferrari ligeiramente mais escuro para contraste em fundo claro */
-  --primary: 0 72% 42%;
+  --popover-foreground: 220 22% 9%;
+  --primary: 0 76% 44%;
   --primary-foreground: 0 0% 100%;
-  --secondary: 220 12% 90%;
-  --secondary-foreground: 220 15% 18%;
-  --accent: 0 60% 35%;
+  --secondary: 220 16% 93%;
+  --secondary-foreground: 220 22% 16%;
+  --accent: 0 62% 36%;
   --accent-foreground: 0 0% 100%;
-  --success: 142 71% 40%;
+  --success: 142 71% 37%;
   --success-foreground: 0 0% 100%;
-  --muted: 220 10% 90%;
-  --muted-foreground: 220 8% 42%;
-  --destructive: 0 84% 50%;
+  --muted: 220 18% 93%;
+  --muted-foreground: 220 12% 38%;
+  --destructive: 0 84% 48%;
   --destructive-foreground: 0 0% 100%;
-  --border: 220 10% 82%;
-  --input: 220 10% 85%;
-  --ring: 0 72% 42%;
-  --sidebar: 220 14% 95%;
-  --sidebar-foreground: 220 15% 12%;
-  --sidebar-primary: 0 72% 42%;
+  --border: 220 16% 84%;
+  --input: 220 16% 88%;
+  --ring: 0 76% 44%;
+  --sidebar: 220 22% 98%;
+  --sidebar-foreground: 220 22% 9%;
+  --sidebar-primary: 0 76% 44%;
   --sidebar-primary-foreground: 0 0% 100%;
-  --sidebar-accent: 220 10% 90%;
-  --sidebar-accent-foreground: 220 15% 12%;
-  --sidebar-border: 220 10% 82%;
-  --sidebar-ring: 0 72% 42%;
+  --sidebar-accent: 220 18% 94%;
+  --sidebar-accent-foreground: 220 22% 9%;
+  --sidebar-border: 220 16% 86%;
+  --sidebar-ring: 0 76% 44%;
 }
 
+/* ═══════════════════════════════════════════
+   BASE LAYER
+   ═══════════════════════════════════════════ */
 @layer base {
-  * { border-color: hsl(var(--border)); }
+  * {
+    border-color: hsl(var(--border));
+  }
+
   html, body {
     background-color: hsl(var(--background));
     color: hsl(var(--foreground));
     font-family: var(--font-body);
     -webkit-font-smoothing: antialiased;
-    transition: background-color 0.3s ease, color 0.3s ease;
+    -moz-osx-font-smoothing: grayscale;
+    transition:
+      background-color 0.45s cubic-bezier(0.4, 0, 0.2, 1),
+      color 0.45s cubic-bezier(0.4, 0, 0.2, 1);
   }
-  h1, h2, h3, h4, h5 { font-family: var(--font-display); letter-spacing: -0.02em; }
 
-  /* Background sutil — Dark */
+  h1, h2, h3, h4, h5 {
+    font-family: var(--font-display);
+    letter-spacing: -0.025em;
+    font-weight: 700;
+  }
+
+  /* ── DARK: Fundo midnight com grid de pontos + orbs de gradiente ── */
   body {
     background-image:
-      radial-gradient(circle at 15% 15%, hsl(var(--primary) / 0.03), transparent 40%),
-      radial-gradient(circle at 85% 85%, hsl(220 40% 50% / 0.03), transparent 40%);
+      radial-gradient(circle at 1px 1px, hsl(var(--primary) / 0.055) 1px, transparent 0),
+      radial-gradient(ellipse 110% 80% at -8% -8%, hsl(var(--primary) / 0.13) 0%, transparent 55%),
+      radial-gradient(ellipse 70% 60% at 108% 112%, hsl(228 90% 55% / 0.07) 0%, transparent 50%),
+      radial-gradient(ellipse 50% 40% at 50% 105%, hsl(var(--primary) / 0.04) 0%, transparent 40%);
+    background-size: 32px 32px, 100% 100%, 100% 100%, 100% 100%;
     background-attachment: fixed;
   }
-  /* Background sutil — Light */
+
+  /* ── LIGHT: Grid suave azulada + orbs discretas ── */
   html.light body {
     background-image:
-      radial-gradient(circle at 15% 15%, hsl(var(--primary) / 0.04), transparent 40%),
-      radial-gradient(circle at 85% 85%, hsl(220 60% 60% / 0.04), transparent 40%);
+      radial-gradient(circle at 1px 1px, hsl(220 30% 55% / 0.08) 1px, transparent 0),
+      radial-gradient(ellipse 100% 70% at -5% -5%, hsl(var(--primary) / 0.06) 0%, transparent 50%),
+      radial-gradient(ellipse 70% 55% at 105% 105%, hsl(220 80% 65% / 0.05) 0%, transparent 50%);
+    background-size: 32px 32px, 100% 100%, 100% 100%;
   }
 }
 
+/* ═══════════════════════════════════════════
+   UTILITIES LAYER
+   ═══════════════════════════════════════════ */
 @layer utilities {
-  /* Glass Panel — adapta-se ao tema */
+
+  /* ──────────────────────────────────────────
+     GLASS PANEL — Dark: premium glass profundo
+     Light: branco cristalino com sombras reais
+  ────────────────────────────────────────── */
   .glass-panel {
     border-radius: 1.25rem;
     border: 1px solid hsl(var(--border));
-    background: hsl(var(--card));
-    backdrop-filter: blur(20px);
+    background: linear-gradient(
+      145deg,
+      hsl(var(--card) / 0.95) 0%,
+      hsl(var(--card) / 0.80) 100%
+    );
+    backdrop-filter: blur(28px) saturate(1.6);
     box-shadow:
-      0 1px 2px hsl(0 0% 0% / 0.08),
-      0 4px 16px -2px hsl(0 0% 0% / 0.12);
-    transition: all 0.3s ease;
+      inset 0 1px 0 hsl(255 100% 100% / 0.055),
+      inset 0 -1px 0 hsl(0 0% 0% / 0.06),
+      0 1px 2px hsl(0 0% 0% / 0.18),
+      0 4px 16px hsl(0 0% 0% / 0.22),
+      0 16px 48px hsl(0 0% 0% / 0.22);
+    transition: all 0.35s cubic-bezier(0.4, 0, 0.2, 1);
   }
+
   .glass-panel:hover {
-    border-color: hsl(var(--primary) / 0.3);
+    border-color: hsl(var(--primary) / 0.38);
     box-shadow:
-      0 2px 4px hsl(0 0% 0% / 0.08),
-      0 8px 24px -2px hsl(var(--primary) / 0.1);
+      inset 0 1px 0 hsl(255 100% 100% / 0.08),
+      inset 0 -1px 0 hsl(0 0% 0% / 0.06),
+      0 2px 4px hsl(0 0% 0% / 0.18),
+      0 8px 28px hsl(0 0% 0% / 0.22),
+      0 0 0 1px hsl(var(--primary) / 0.12),
+      0 0 28px hsl(var(--primary) / 0.14);
+    transform: translateY(-2px);
   }
+
   html.light .glass-panel {
+    background: hsl(var(--card));
+    backdrop-filter: blur(16px);
     box-shadow:
-      0 1px 3px hsl(220 20% 30% / 0.06),
-      0 4px 16px hsl(220 20% 30% / 0.06);
+      0 1px 2px hsl(220 20% 25% / 0.06),
+      0 4px 12px hsl(220 20% 25% / 0.07),
+      0 16px 40px hsl(220 20% 25% / 0.05),
+      inset 0 1px 0 hsl(0 0% 100%),
+      inset 0 -1px 0 hsl(220 20% 90% / 0.5);
   }
+
   html.light .glass-panel:hover {
     box-shadow:
-      0 2px 6px hsl(220 20% 30% / 0.08),
-      0 8px 28px hsl(var(--primary) / 0.08);
+      0 2px 6px hsl(220 20% 25% / 0.08),
+      0 8px 24px hsl(220 20% 25% / 0.08),
+      0 0 0 1px hsl(var(--primary) / 0.18),
+      0 0 20px hsl(var(--primary) / 0.08),
+      inset 0 1px 0 hsl(0 0% 100%);
+    transform: translateY(-2px);
+  }
+
+  /* ──────────────────────────────────────────
+     GLOW EFFECTS
+  ────────────────────────────────────────── */
+  .glow-xs  { box-shadow: 0 0 8px  hsl(var(--primary) / 0.28); }
+  .glow-sm  { box-shadow: 0 0 16px hsl(var(--primary) / 0.32); }
+  .glow-md  { box-shadow: 0 0 32px hsl(var(--primary) / 0.38); }
+  .glow-lg  { box-shadow: 0 0 64px hsl(var(--primary) / 0.42); }
+
+  .shadow-glow    { box-shadow: 0 0 32px hsl(var(--primary) / 0.38); }
+  .shadow-glow-sm { box-shadow: 0 0 16px hsl(var(--primary) / 0.30); }
+  .ring-glow      { box-shadow: 0 0 0 1px hsl(var(--primary) / 0.5), 0 0 20px hsl(var(--primary) / 0.3); }
+
+  html.light .shadow-glow    { box-shadow: 0 0 24px hsl(var(--primary) / 0.22); }
+  html.light .shadow-glow-sm { box-shadow: 0 0 12px hsl(var(--primary) / 0.16); }
+  html.light .ring-glow      { box-shadow: 0 0 0 1px hsl(var(--primary) / 0.3), 0 0 14px hsl(var(--primary) / 0.15); }
+
+  /* ──────────────────────────────────────────
+     NEON BORDER — borda brilhante neon
+  ────────────────────────────────────────── */
+  .neon-border {
+    border-color: hsl(var(--primary) / 0.55) !important;
+    box-shadow:
+      0 0 0 1px hsl(var(--primary) / 0.18),
+      0 0 12px hsl(var(--primary) / 0.22),
+      inset 0 0 8px hsl(var(--primary) / 0.06);
+  }
+
+  html.light .neon-border {
+    border-color: hsl(var(--primary) / 0.42) !important;
+    box-shadow:
+      0 0 0 1px hsl(var(--primary) / 0.12),
+      0 0 10px hsl(var(--primary) / 0.14);
+  }
+
+  /* ──────────────────────────────────────────
+     GRADIENT BORDER BOTTOM — linha degradê embaixo
+  ────────────────────────────────────────── */
+  .border-gradient-bottom {
+    position: relative;
+    border-bottom: none !important;
+  }
+
+  .border-gradient-bottom::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 1px;
+    background: linear-gradient(
+      90deg,
+      transparent 0%,
+      hsl(var(--primary) / 0.5) 25%,
+      hsl(var(--primary) / 0.9) 50%,
+      hsl(var(--primary) / 0.5) 75%,
+      transparent 100%
+    );
+    pointer-events: none;
+  }
+
+  html.light .border-gradient-bottom::after {
+    background: linear-gradient(
+      90deg,
+      transparent 0%,
+      hsl(var(--border)) 20%,
+      hsl(var(--primary) / 0.35) 50%,
+      hsl(var(--border)) 80%,
+      transparent 100%
+    );
+  }
+
+  /* ──────────────────────────────────────────
+     CARD SHINE — efeito de reflexo ao hover
+  ────────────────────────────────────────── */
+  .card-shine {
+    position: relative;
+    overflow: hidden;
+  }
+
+  .card-shine::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -75%;
+    width: 50%;
+    height: 100%;
+    background: linear-gradient(
+      105deg,
+      transparent 40%,
+      hsl(255 100% 100% / 0.045) 50%,
+      transparent 60%
+    );
+    transition: left 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+    pointer-events: none;
+    z-index: 1;
+  }
+
+  .card-shine:hover::before {
+    left: 125%;
+  }
+
+  /* ──────────────────────────────────────────
+     TEXT GRADIENT — Ferrari Red animado
+  ────────────────────────────────────────── */
+  .text-gradient {
+    background-image: linear-gradient(
+      100deg,
+      hsl(var(--primary)) 0%,
+      hsl(10 90% 72%) 30%,
+      hsl(20 95% 68%) 50%,
+      hsl(5 85% 65%) 70%,
+      hsl(var(--primary)) 100%
+    );
+    background-clip: text;
+    -webkit-background-clip: text;
+    color: transparent;
+    background-size: 300% auto;
+    animation: gradient-flow 5s linear infinite;
+  }
+
+  html.light .text-gradient {
+    background-image: linear-gradient(
+      100deg,
+      hsl(var(--primary)) 0%,
+      hsl(0 65% 38%) 40%,
+      hsl(10 70% 42%) 60%,
+      hsl(var(--primary)) 100%
+    );
   }
 
   .bg-card-gradient {
     background: linear-gradient(135deg, hsl(var(--card)), hsl(var(--background)));
   }
 
-  /* Text gradient — usa vermelho */
-  .text-gradient {
-    background-image: linear-gradient(90deg, hsl(var(--primary)), hsl(0 60% 65%), hsl(var(--primary)));
-    background-clip: text;
-    -webkit-background-clip: text;
-    color: transparent;
-    background-size: 200% auto;
-    animation: textGradient 4s linear infinite;
+  /* ──────────────────────────────────────────
+     LABEL MONO
+  ────────────────────────────────────────── */
+  .label-mono {
+    font-family: var(--font-mono);
+    text-transform: uppercase;
+    letter-spacing: 0.18em;
+    font-size: 0.6rem;
+    font-weight: 700;
   }
-  html.light .text-gradient {
-    background-image: linear-gradient(90deg, hsl(var(--primary)), hsl(0 50% 30%), hsl(var(--primary)));
+
+  /* ──────────────────────────────────────────
+     SCROLLBAR — global e local
+  ────────────────────────────────────────── */
+  ::-webkit-scrollbar { width: 5px; height: 5px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb {
+    background: hsl(var(--muted-foreground) / 0.2);
+    border-radius: 999px;
   }
+  ::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--primary) / 0.55);
+  }
+
+  .custom-scrollbar::-webkit-scrollbar { width: 4px; height: 4px; }
+  .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+  .custom-scrollbar::-webkit-scrollbar-thumb {
+    background: hsl(var(--muted-foreground) / 0.22);
+    border-radius: 999px;
+  }
+  .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--primary) / 0.6);
+  }
+
+  /* ──────────────────────────────────────────
+     KEYFRAMES & ANIMAÇÕES
+  ────────────────────────────────────────── */
+
+  /* Gradiente em movimento */
+  @keyframes gradient-flow {
+    0%   { background-position: 0% 50%; }
+    100% { background-position: 300% 50%; }
+  }
+
+  /* Legado */
   @keyframes textGradient {
-    0% { background-position: 0% 50%; }
+    0%   { background-position: 0% 50%; }
     100% { background-position: 200% 50%; }
   }
 
-  .shadow-glow { box-shadow: 0 0 32px hsl(var(--primary) / 0.35); }
-  .shadow-glow-sm { box-shadow: 0 0 16px hsl(var(--primary) / 0.25); }
-  .ring-glow { box-shadow: 0 0 0 1px hsl(var(--primary) / 0.4), 0 0 24px hsl(var(--primary) / 0.25); }
-
-  html.light .shadow-glow { box-shadow: 0 0 24px hsl(var(--primary) / 0.2); }
-  html.light .shadow-glow-sm { box-shadow: 0 0 12px hsl(var(--primary) / 0.15); }
-
-  .label-mono { font-family: var(--font-mono); text-transform: uppercase; letter-spacing: 0.2em; font-size: 0.625rem; }
-  .custom-scrollbar::-webkit-scrollbar { width: 4px; height: 4px; }
-  .custom-scrollbar::-webkit-scrollbar-thumb { background: hsl(var(--muted-foreground) / 0.3); border-radius: 4px; }
-  .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: hsl(var(--primary) / 0.5); }
-
+  /* Marquee */
   @keyframes marquee {
     from { transform: translateX(0); }
-    to { transform: translateX(-50%); }
+    to   { transform: translateX(-50%); }
   }
   .animate-marquee { animation: marquee 30s linear infinite; }
 
+  /* Pulse dot */
   @keyframes pulse-dot {
-    0%,100% { opacity: 1; transform: scale(1); }
-    50% { opacity: 0.5; transform: scale(1.4); }
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50%      { opacity: 0.5; transform: scale(1.55); }
   }
   .animate-pulse-dot { animation: pulse-dot 2s ease-in-out infinite; }
 
-  /* Transição suave para TODOS os elementos ao trocar tema */
+  /* Float suave */
+  @keyframes float {
+    0%, 100% { transform: translateY(0px); }
+    50%      { transform: translateY(-7px); }
+  }
+  .animate-float { animation: float 4s ease-in-out infinite; }
+
+  /* Glow respirando */
+  @keyframes glow-breathe {
+    0%, 100% {
+      box-shadow: 0 0 14px hsl(var(--primary) / 0.22),
+                  0 0 0 1px hsl(var(--primary) / 0.18);
+    }
+    50% {
+      box-shadow: 0 0 32px hsl(var(--primary) / 0.5),
+                  0 0 64px hsl(var(--primary) / 0.18),
+                  0 0 0 1px hsl(var(--primary) / 0.4);
+    }
+  }
+  .animate-glow-breathe { animation: glow-breathe 3s ease-in-out infinite; }
+
+  /* Neon pulse na borda */
+  @keyframes neon-pulse {
+    0%, 100% {
+      box-shadow: 0 0 4px  hsl(var(--primary) / 0.55),
+                  0 0 14px hsl(var(--primary) / 0.32);
+    }
+    50% {
+      box-shadow: 0 0 10px hsl(var(--primary) / 0.85),
+                  0 0 32px hsl(var(--primary) / 0.55),
+                  0 0 64px hsl(var(--primary) / 0.22);
+    }
+  }
+  .animate-neon-pulse { animation: neon-pulse 2.2s ease-in-out infinite; }
+
+  /* Shimmer slide (highlight) */
+  @keyframes shimmer-slide {
+    0%   { transform: translateX(-100%); }
+    100% { transform: translateX(250%); }
+  }
+
+  /* Entrada de baixo */
+  @keyframes entrance-up {
+    from { opacity: 0; transform: translateY(18px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  .animate-entrance-up {
+    animation: entrance-up 0.55s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+  }
+
+  /* Rotação lenta */
+  @keyframes spin-slow {
+    from { transform: rotate(0deg); }
+    to   { transform: rotate(360deg); }
+  }
+  .animate-spin-slow { animation: spin-slow 10s linear infinite; }
+
+  /* Ping ring para loading */
+  @keyframes ping-ring {
+    0%       { transform: scale(1);   opacity: 0.6; }
+    70%, 100% { transform: scale(1.8); opacity: 0; }
+  }
+  .animate-ping-ring { animation: ping-ring 1.8s cubic-bezier(0, 0, 0.2, 1) infinite; }
+
+  /* Bounce dots */
+  @keyframes bounce-dot {
+    0%, 80%, 100% { transform: translateY(0); }
+    40%           { transform: translateY(-8px); }
+  }
+  .animate-bounce-dot-1 { animation: bounce-dot 1.2s ease-in-out infinite; animation-delay: 0ms; }
+  .animate-bounce-dot-2 { animation: bounce-dot 1.2s ease-in-out infinite; animation-delay: 150ms; }
+  .animate-bounce-dot-3 { animation: bounce-dot 1.2s ease-in-out infinite; animation-delay: 300ms; }
+
+  /* Slide entrada lateral */
+  @keyframes slide-in-right {
+    from { opacity: 0; transform: translateX(24px); }
+    to   { opacity: 1; transform: translateX(0); }
+  }
+
+  /* ──────────────────────────────────────────
+     THEME TRANSITION — transição suave total
+  ────────────────────────────────────────── */
   .theme-transition,
   .theme-transition *,
   .theme-transition *::before,
   .theme-transition *::after {
-    transition: background-color 0.3s ease, border-color 0.3s ease, color 0.3s ease, box-shadow 0.3s ease, fill 0.3s ease, stroke 0.3s ease !important;
+    transition:
+      background-color 0.45s cubic-bezier(0.4, 0, 0.2, 1),
+      border-color 0.45s cubic-bezier(0.4, 0, 0.2, 1),
+      color 0.45s cubic-bezier(0.4, 0, 0.2, 1),
+      box-shadow 0.45s cubic-bezier(0.4, 0, 0.2, 1),
+      fill 0.45s cubic-bezier(0.4, 0, 0.2, 1),
+      stroke 0.45s cubic-bezier(0.4, 0, 0.2, 1) !important;
   }
 
-  /* ═══════════════════════════════════════════
-     AJUSTES DE LEGBILIDADE E ACESSIBILIDADE GLOBAL
-     ═══════════════════════════════════════════ */
+  /* ══════════════════════════════════════════════
+     LEGIBILIDADE E ACESSIBILIDADE — LIGHT MODE
+  ══════════════════════════════════════════════ */
 
-  /* MODO LIGHT: Forçar cores legíveis para textos e ícones que possuem classes fixas claras do Tailwind */
   html.light {
     color: hsl(var(--foreground));
   }
@@ -305,7 +583,7 @@ html.light {
     opacity: 0.7;
   }
 
-  /* MODO DARK: Forçar cores legíveis para textos escuros em elementos */
+  /* ── DARK: forçar cores legíveis em textos escuros ── */
   html:not(.light) .text-slate-800,
   html:not(.light) .text-slate-900,
   html:not(.light) .text-gray-800,
@@ -316,7 +594,6 @@ html.light {
     color: hsl(var(--foreground)) !important;
   }
 
-  /* Garante legibilidade nos títulos e textos dentro do card de logs no modo light */
   html.light table tr td,
   html.light table tr th {
     color: hsl(var(--foreground)) !important;
@@ -327,18 +604,223 @@ html.light {
     color: hsl(var(--muted-foreground)) !important;
   }
 
-  /* Ajustar botões secundários no modo light */
   html.light .bg-secondary,
   html.light .bg-white\/5 {
     background-color: hsl(var(--secondary)) !important;
     color: hsl(var(--secondary-foreground)) !important;
   }
 
-  /* Garante cor correta para o cabeçalho de modais no modo light */
   html.light .bg-white\/5.p-6,
   html.light .bg-white\/5.p-8,
   html.light .p-6.bg-white\/5,
   html.light .p-8.bg-white\/5 {
     background-color: hsl(var(--muted)) !important;
+  }
+
+  /* ══════════════════════════════════════════════
+     AUTOMOTIVO & BRANDING — NC Performance Suite
+     Detalhes de cockpit, chassi e identidade visual
+  ══════════════════════════════════════════════ */
+
+  /* Racing stripe horizontal — linha de corrida */
+  .racing-stripe {
+    height: 2px;
+    border: none;
+    background: linear-gradient(
+      90deg,
+      transparent 0%,
+      hsl(var(--primary) / 0.6) 15%,
+      hsl(var(--primary)) 40%,
+      hsl(var(--primary)) 60%,
+      hsl(var(--primary) / 0.6) 85%,
+      transparent 100%
+    );
+    border-radius: 999px;
+  }
+
+  /* Header esportivo com barra lateral vermelha neon */
+  .header-sport {
+    position: relative;
+    padding-left: 0.875rem;
+  }
+  .header-sport::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 0.1em;
+    bottom: 0.1em;
+    width: 3px;
+    border-radius: 999px;
+    background: linear-gradient(to bottom, hsl(var(--primary)), hsl(var(--primary) / 0.45));
+    box-shadow: 0 0 10px hsl(var(--primary) / 0.55);
+  }
+
+  /* Chassis line — título com linhas de chassi laterais */
+  .chassis-line {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.75rem;
+  }
+  .chassis-line::before,
+  .chassis-line::after {
+    content: '';
+    display: block;
+    height: 1px;
+    width: 2.5rem;
+    background: linear-gradient(90deg, transparent, hsl(var(--primary) / 0.55));
+    flex-shrink: 0;
+  }
+  .chassis-line::after {
+    background: linear-gradient(90deg, hsl(var(--primary) / 0.55), transparent);
+  }
+
+  /* Card esportivo — faixa neon no hover */
+  .card-sport {
+    position: relative;
+    overflow: hidden;
+  }
+  .card-sport::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 12%;
+    right: 12%;
+    height: 2px;
+    border-radius: 999px;
+    background: linear-gradient(
+      90deg,
+      transparent 0%,
+      hsl(var(--primary) / 0.55) 25%,
+      hsl(var(--primary) / 0.92) 50%,
+      hsl(var(--primary) / 0.55) 75%,
+      transparent 100%
+    );
+    opacity: 0;
+    transition: opacity 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+    pointer-events: none;
+  }
+  .card-sport:hover::after {
+    opacity: 1;
+  }
+
+  /* Badge esportivo — etiqueta de pit lane */
+  .badge-sport {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    border-radius: 999px;
+    padding: 0.22rem 0.7rem;
+    font-family: var(--font-mono);
+    font-size: 0.585rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.18em;
+    border: 1px solid hsl(var(--primary) / 0.32);
+    background: hsl(var(--primary) / 0.09);
+    color: hsl(var(--primary));
+    box-shadow: 0 0 12px hsl(var(--primary) / 0.13);
+  }
+  html.light .badge-sport {
+    background: hsl(var(--primary) / 0.06);
+    box-shadow: 0 0 8px hsl(var(--primary) / 0.09);
+  }
+
+  /* NC Watermark — identidade discreta de fundo */
+  .nc-watermark-text {
+    font-family: var(--font-display);
+    font-weight: 900;
+    letter-spacing: -0.04em;
+    line-height: 0.82;
+    color: hsl(var(--primary) / 0.024);
+    pointer-events: none;
+    user-select: none;
+  }
+  html.light .nc-watermark-text {
+    color: hsl(var(--primary) / 0.045);
+  }
+
+  /* NC corner badge — marcador de canto de elemento */
+  .nc-badge-corner {
+    position: relative;
+  }
+  .nc-badge-corner::after {
+    content: 'NC';
+    position: absolute;
+    bottom: 0.45rem;
+    right: 0.6rem;
+    font-family: var(--font-display);
+    font-weight: 900;
+    font-size: 0.55rem;
+    letter-spacing: 0.06em;
+    color: hsl(var(--primary) / 0.25);
+    pointer-events: none;
+    user-select: none;
+    line-height: 1;
+  }
+  html.light .nc-badge-corner::after {
+    color: hsl(var(--primary) / 0.2);
+  }
+
+  /* Separador de pit lane — divisor de seção */
+  .pit-divider {
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
+  }
+  .pit-divider::before,
+  .pit-divider::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, hsl(var(--border)));
+  }
+  .pit-divider::after {
+    background: linear-gradient(90deg, hsl(var(--border)), transparent);
+  }
+
+  /* Cockpit panel — card com textura sutil de cockpit */
+  .cockpit-panel {
+    background:
+      repeating-linear-gradient(
+        135deg,
+        transparent,
+        transparent 18px,
+        hsl(var(--primary) / 0.012) 18px,
+        hsl(var(--primary) / 0.012) 19px
+      );
+  }
+  html.light .cockpit-panel {
+    background:
+      repeating-linear-gradient(
+        135deg,
+        transparent,
+        transparent 18px,
+        hsl(var(--primary) / 0.025) 18px,
+        hsl(var(--primary) / 0.025) 19px
+      );
+  }
+
+  /* Performance indicator — tag de KPI */
+  .kpi-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    font-family: var(--font-mono);
+    font-size: 0.575rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.15em;
+    color: hsl(var(--muted-foreground));
+  }
+  .kpi-tag::before {
+    content: '';
+    display: block;
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: hsl(var(--primary));
+    box-shadow: 0 0 6px hsl(var(--primary) / 0.6);
+    flex-shrink: 0;
   }
 }

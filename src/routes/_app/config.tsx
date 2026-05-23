@@ -86,7 +86,7 @@ function TabAutomacoes() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h3 className="font-display text-lg font-semibold text-gradient">Automações Inteligentes</h3>
+        <h3 className="header-sport font-display text-lg font-semibold text-gradient">Automações Inteligentes</h3>
         <button onClick={() => setShowModal(true)} className="inline-flex items-center gap-1 rounded-full bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:shadow-glow"><Plus className="h-3 w-3" /> Nova Regra</button>
       </div>
 
@@ -236,7 +236,7 @@ function TabIntegracoes() {
   return (
     <div className="space-y-6">
       <div>
-        <h3 className="font-display text-lg font-semibold flex items-center gap-2 text-gradient">
+        <h3 className="header-sport font-display text-lg font-semibold flex items-center gap-2 text-gradient">
           <Zap className="h-5 w-5 text-primary" /> Núcleo Project Phoenix
         </h3>
         <p className="text-xs text-muted-foreground mt-1">
@@ -462,7 +462,7 @@ function TabTutorial() {
     <div className="space-y-8">
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between border-b border-white/5 pb-6">
         <div>
-          <h3 className="text-2xl font-black uppercase tracking-tight text-gradient">NC Academy</h3>
+          <h3 className="header-sport text-2xl font-black uppercase tracking-tight text-gradient">NC Academy</h3>
           <p className="text-xs text-muted-foreground font-medium">Aprenda a dominar o NC Performance Suite do zero.</p>
         </div>
         <div className="flex items-center gap-4">
@@ -554,7 +554,7 @@ function TabTutorial() {
 function TabSistema() {
   return (
     <div className="space-y-4">
-      <h3 className="font-display text-lg font-semibold">Informações do Sistema</h3>
+      <h3 className="header-sport font-display text-lg font-semibold">Informações do Sistema</h3>
       <div className="grid gap-3 sm:grid-cols-2">
         {[{ label: "Versão", value: "2.0.0" }, { label: "Plataforma", value: "NC Performance Suite" }, { label: "Stack", value: "React 18 + Vite + Supabase" }, { label: "Edge Runtime", value: "Supabase Edge Functions" }, { label: "DB", value: "PostgreSQL (Supabase)" }, { label: "Auth", value: "Supabase Auth" }].map((info) => (
           <div key={info.label} className="flex items-center justify-between rounded-lg border border-white/5 bg-background/40 p-3">
@@ -640,7 +640,7 @@ function TabConta() {
   return (
     <div className="space-y-6">
       <div>
-        <h3 className="font-display text-lg font-semibold flex items-center gap-2 text-gradient">Meu Perfil Profissional</h3>
+        <h3 className="header-sport font-display text-lg font-semibold flex items-center gap-2 text-gradient">Meu Perfil Profissional</h3>
         <p className="text-xs text-muted-foreground mt-1">Gerencie suas informações profissionais, cargo e foto de perfil na NC Suite.</p>
       </div>
 
@@ -806,7 +806,7 @@ function TabUsuarios() {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-white/5 pb-4">
         <div>
-          <h3 className="font-display text-lg font-semibold text-gradient">Gestão Completa de Usuários</h3>
+          <h3 className="header-sport font-display text-lg font-semibold text-gradient">Gestão Completa de Usuários</h3>
           <p className="text-xs text-muted-foreground mt-1">Gerencie permissões, cargos, atualize informações e exclua contas de equipe.</p>
         </div>
         <div className="flex items-center gap-3 w-full sm:w-auto">

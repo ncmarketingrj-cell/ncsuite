@@ -366,7 +366,7 @@ function MetricasAvancadasPage() {
                  {level === "conjuntos" ? <LayoutGrid className="h-8 w-8 text-muted-foreground" /> : <ImageIcon className="h-8 w-8 text-muted-foreground" />}
                </div>
                <div>
-                 <h3 className="text-lg font-display font-bold uppercase tracking-tight mb-2">Selecione o nível superior</h3>
+                 <h3 className="header-sport text-lg font-display font-bold uppercase tracking-tight mb-2">Selecione o nível superior</h3>
                  <p className="text-sm text-muted-foreground max-w-md mx-auto">Para ver {level}, volte à aba anterior e marque o checkbox dos itens que deseja analisar.</p>
                </div>
              </div>
@@ -502,7 +502,7 @@ function MetricasAvancadasPage() {
             </div>
             <div>
               <p className="text-[9px] font-black uppercase tracking-[0.3em] text-primary/70">Análise Visual Avançada</p>
-              <h2 className="text-lg font-black tracking-tight">Performance Charts — {sel.length} {level}</h2>
+              <h2 className="header-sport text-lg font-black tracking-tight">Performance Charts — {sel.length} {level}</h2>
             </div>
             <div className="ml-auto text-[9px] font-mono text-muted-foreground/50 uppercase tracking-widest">Recharts Engine v2</div>
           </div>

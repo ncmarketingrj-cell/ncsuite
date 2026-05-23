@@ -172,7 +172,7 @@ function MulticanalPage() {
       />
 
       {/* 🛠️ BARRA DE FILTROS EXECUTIVA PREMIUM */}
-      <div className="glass-panel p-4 flex flex-wrap items-center justify-between gap-4">
+      <div className="glass-panel card-sport p-4 flex flex-wrap items-center justify-between gap-4">
         <div className="flex items-center gap-3">
           <Layers className="h-4 w-4 text-primary" />
           <p className="text-xs font-black uppercase tracking-widest text-muted-foreground">Filtro de Carteira e Contas</p>
@@ -342,9 +342,9 @@ function MulticanalPage() {
 
 function KPI({ icon: Icon, label, value, desc }: { icon: any; label: string; value: string; desc: string }) {
   return (
-    <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="glass-panel p-5 relative overflow-hidden">
+    <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="glass-panel card-sport p-5 relative overflow-hidden">
       <div className="flex items-center justify-between">
-        <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/80">{label}</span>
+        <span className="kpi-tag text-muted-foreground/80">{label}</span>
         <div className="h-8 w-8 rounded-xl bg-primary/10 flex items-center justify-center text-primary">
           <Icon className="h-4 w-4" />
         </div>

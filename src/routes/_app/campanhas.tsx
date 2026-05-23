@@ -310,12 +310,12 @@ function MetaAdsManagerPage() {
                  {level === "conjuntos" ? <LayoutGrid className="h-8 w-8 text-muted-foreground" /> : <ImageIcon className="h-8 w-8 text-muted-foreground" />}
                </div>
                <div>
-                 <h3 className="text-lg font-display font-bold uppercase tracking-tight mb-2">Selecione o nível superior</h3>
+                 <h3 className="header-sport text-lg font-display font-bold uppercase tracking-tight mb-2">Selecione o nível superior</h3>
                  <p className="text-sm text-muted-foreground max-w-md mx-auto">Para ver {level}, volte à aba anterior e marque o checkbox dos itens que deseja analisar.</p>
                </div>
              </div>
           ) : (
-            <div className="glass-panel overflow-hidden">
+            <div className="glass-panel card-sport overflow-hidden">
               {selSet.size > 0 && (
                 <div className="border-b border-white/5 bg-primary/5 px-6 py-3 flex flex-wrap items-center gap-5 text-xs">
                   <span className="font-black text-primary uppercase tracking-widest">{selSet.size} selecionados</span>

@@ -39,7 +39,7 @@ function UtmPage() {
     <div className="mx-auto max-w-3xl space-y-8">
       <PageHeader eyebrow="Conversão" title="UTM Builder" description="Gere URLs rastreáveis com parâmetros UTM para suas campanhas." />
 
-      <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="glass-panel p-6 space-y-4">
+      <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="glass-panel card-sport p-6 space-y-4">
         <div>
           <label className="label-mono mb-1 block text-muted-foreground">URL base *</label>
           <div className="relative">
@@ -58,8 +58,8 @@ function UtmPage() {
       </motion.div>
 
       {finalUrl && (
-        <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="glass-panel p-6">
-          <p className="label-mono mb-3 text-primary">URL gerada</p>
+        <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="glass-panel card-sport p-6">
+          <p className="kpi-tag mb-3">URL gerada</p>
           <div className="rounded-lg border border-white/10 bg-background/60 p-4">
             <p className="break-all font-mono text-xs text-foreground">{finalUrl}</p>
           </div>

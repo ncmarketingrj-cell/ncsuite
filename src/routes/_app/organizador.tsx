@@ -114,11 +114,11 @@ function OrganizadorPage() {
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {items.map((item, i) => (
-            <motion.div key={item.id} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.03 }} className="glass-panel flex flex-col overflow-hidden group">
+            <motion.div key={item.id} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.03 }} className="glass-panel card-sport flex flex-col overflow-hidden group">
               <div className="p-5 flex-1 border-b border-border">
                 <div className="flex items-start justify-between">
                   <div>
-                    <h3 className="font-display text-base font-semibold text-foreground truncate max-w-[200px]">{item.title}</h3>
+                    <h3 className="header-sport font-display text-base font-semibold text-foreground truncate max-w-[200px]">{item.title}</h3>
                     <p className="label-mono mt-1 text-muted-foreground truncate max-w-[200px]">/{item.type === 'quiz' ? 'q' : 'p'}/{item.slug}</p>
                   </div>
                   
@@ -161,7 +161,7 @@ function OrganizadorPage() {
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm">
             <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="glass-panel p-6 max-w-lg w-full relative">
               <button onClick={() => setShowCreateModal(false)} className="absolute top-4 right-4 p-1 rounded-full hover:bg-muted"><X className="h-4 w-4" /></button>
-              <h3 className="font-display text-xl font-bold mb-2">Qual tipo de funil você quer criar?</h3>
+              <h3 className="header-sport font-display text-xl font-bold mb-2">Qual tipo de funil você quer criar?</h3>
               <p className="text-sm text-muted-foreground mb-6">Escolha a melhor estrutura para sua campanha automotiva.</p>
               
               <div className="grid gap-4">
@@ -348,7 +348,7 @@ function LinkBioEditorForm({ pageId, type }: { pageId: string, type: string }) {
     <div className="space-y-8 pb-10">
       {/* 1. Informações Básicas */}
       <div className="space-y-4">
-        <h3 className="text-sm font-bold flex items-center gap-2"><Settings className="h-4 w-4 text-primary" /> Informações Básicas</h3>
+        <h3 className="header-sport text-sm font-bold flex items-center gap-2"><Settings className="h-4 w-4 text-primary" /> Informações Básicas</h3>
         <div className="grid gap-3 sm:grid-cols-2">
           <div>
             <label className="text-[11px] font-bold text-muted-foreground uppercase mb-1 block">Título</label>
@@ -371,7 +371,7 @@ function LinkBioEditorForm({ pageId, type }: { pageId: string, type: string }) {
 
       {/* 2. Aparência */}
       <div className="space-y-4">
-        <h3 className="text-sm font-bold flex items-center gap-2"><Layout className="h-4 w-4 text-primary" /> Aparência</h3>
+        <h3 className="header-sport text-sm font-bold flex items-center gap-2"><Layout className="h-4 w-4 text-primary" /> Aparência</h3>
         <label className="text-[11px] font-bold text-muted-foreground uppercase mb-1 block">Tema Automotivo</label>
         <div className="grid grid-cols-3 gap-3">
           {TEMPLATES.map(t => (
@@ -407,7 +407,7 @@ function LinkBioEditorForm({ pageId, type }: { pageId: string, type: string }) {
           <hr className="border-border" />
           <div className="space-y-4">
             <div className="flex items-center justify-between">
-              <h3 className="text-sm font-bold flex items-center gap-2"><Link2 className="h-4 w-4 text-primary" /> Links & Botões</h3>
+              <h3 className="header-sport text-sm font-bold flex items-center gap-2"><Link2 className="h-4 w-4 text-primary" /> Links & Botões</h3>
               <div className="flex gap-1 flex-wrap justify-end">
                 <button onClick={() => addLinkMutation.mutate("link")} className="px-2 py-1 bg-white/5 hover:bg-white/10 rounded text-[10px] font-bold border border-border flex items-center gap-1"><Plus className="h-3 w-3" /> URL</button>
                 <button onClick={() => addLinkMutation.mutate("whatsapp")} className="px-2 py-1 bg-white/5 hover:bg-white/10 rounded text-[10px] font-bold border border-border flex items-center gap-1 text-green-500"><MessageSquare className="h-3 w-3" /> WPP</button>
@@ -510,7 +510,7 @@ function QuizEditorForm({ pageId }: { pageId: string }) {
   return (
     <div className="space-y-10 max-w-3xl mx-auto pb-10">
       <div className="glass-panel p-6 space-y-4">
-        <h3 className="text-sm font-bold flex items-center gap-2"><Settings className="h-4 w-4 text-primary" /> Configurações do Quiz</h3>
+        <h3 className="header-sport text-sm font-bold flex items-center gap-2"><Settings className="h-4 w-4 text-primary" /> Configurações do Quiz</h3>
         <div className="grid gap-3 sm:grid-cols-2">
           <div><label className="text-[11px] font-bold text-muted-foreground uppercase mb-1 block">Título</label><input defaultValue={quiz.title} onBlur={(e) => handleChange("title", e.target.value)} className="w-full rounded-lg border border-border bg-background/50 px-3 py-2 text-sm focus:border-primary focus:outline-none" /></div>
           <div><label className="text-[11px] font-bold text-muted-foreground uppercase mb-1 block">Slug (URL)</label><input defaultValue={quiz.slug} onBlur={(e) => handleChange("slug", e.target.value)} className="w-full rounded-lg border border-border bg-background/50 px-3 py-2 text-sm focus:border-primary focus:outline-none" /></div>
@@ -528,7 +528,7 @@ function QuizEditorForm({ pageId }: { pageId: string }) {
 
       <div className="space-y-4">
         <div className="flex items-center justify-between">
-          <h3 className="text-sm font-bold flex items-center gap-2"><Layers className="h-4 w-4 text-primary" /> Passos do Quiz</h3>
+          <h3 className="header-sport text-sm font-bold flex items-center gap-2"><Layers className="h-4 w-4 text-primary" /> Passos do Quiz</h3>
           <div className="flex gap-1">
             <button onClick={() => addStepMutation.mutate("choice")} className="px-2 py-1 bg-white/5 hover:bg-white/10 rounded text-[10px] font-bold border border-border flex items-center gap-1"><LayoutList className="h-3 w-3" /> Múltipla Escolha</button>
             <button onClick={() => addStepMutation.mutate("image_choice")} className="px-2 py-1 bg-white/5 hover:bg-white/10 rounded text-[10px] font-bold border border-border flex items-center gap-1 text-blue-400"><ImageIcon className="h-3 w-3" /> Imagens</button>

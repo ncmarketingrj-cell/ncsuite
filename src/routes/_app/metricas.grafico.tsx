@@ -407,7 +407,7 @@ function MetricasGraficoPage() {
           <div className="h-4 w-px bg-white/10" />
           <div>
             <p className="text-[9px] font-black uppercase tracking-[0.3em] text-primary/70">Admin · Análise Estratégica</p>
-            <h1 className="font-display text-xl font-bold leading-tight">Gráficos Inteligentes — Métricas</h1>
+            <h1 className="header-sport font-display text-xl font-bold leading-tight">Gráficos Inteligentes — Métricas</h1>
           </div>
           <div className="ml-auto flex flex-wrap items-center gap-2">
             <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
@@ -436,7 +436,7 @@ function MetricasGraficoPage() {
         <AnimatePresence>
           {showSettings && (
             <motion.aside initial={{ opacity: 0, width: 0 }} animate={{ opacity: 1, width: 256 }} exit={{ opacity: 0, width: 0 }} transition={{ duration: 0.2 }} className="shrink-0 overflow-hidden">
-              <div className="w-64 glass-panel p-4 sticky top-20 space-y-5">
+              <div className="w-64 glass-panel card-sport p-4 sticky top-20 space-y-5">
 
                 {/* Modo estratégico */}
                 <div className="space-y-2">
@@ -983,10 +983,10 @@ function MetricasGraficoPage() {
 function ChartCard({ icon, title, badge, context, children }: { icon: React.ReactNode; title: string; badge: string; context: string; children: React.ReactNode }) {
   const [showContext, setShowContext] = useState(false);
   return (
-    <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }} className="glass-panel p-5">
+    <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }} className="glass-panel card-sport p-5">
       <div className="flex items-center gap-2 mb-3">
         {icon}
-        <p className="text-xs font-black uppercase tracking-widest">{title}</p>
+        <p className="text-xs font-black uppercase tracking-widest header-sport">{title}</p>
         <div className="ml-auto flex items-center gap-2">
           <span className="text-[9px] text-muted-foreground/50 font-mono hidden sm:inline">{badge}</span>
           <button

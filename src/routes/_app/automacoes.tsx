@@ -347,7 +347,7 @@ function AutomationsPage() {
                   initial={{ opacity: 0, x: -10 }}
                   animate={{ opacity: 1, x: 0 }}
                   transition={{ delay: i * 0.05 }}
-                  className="glass-panel flex flex-col sm:flex-row sm:items-center justify-between p-5 hover:border-primary/30 gap-4"
+                  className="glass-panel card-sport flex flex-col sm:flex-row sm:items-center justify-between p-5 hover:border-primary/30 gap-4"
                 >
                   <div className="flex items-center gap-5">
                     <div className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-xl transition ${
@@ -433,7 +433,7 @@ function AutomationsPage() {
         <div className="space-y-6">
           <div className="glass-panel p-6 flex flex-col md:flex-row gap-6 items-center justify-between border-primary/20">
             <div className="space-y-2 text-center md:text-left">
-              <h3 className="text-lg font-bold flex items-center gap-2 justify-center md:justify-start">
+              <h3 className="header-sport text-lg font-bold flex items-center gap-2 justify-center md:justify-start">
                 <Server className="h-5 w-5 text-primary" /> Status do Motor de Auto-Sync
               </h3>
               <p className="text-sm text-muted-foreground max-w-xl">

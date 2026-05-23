@@ -153,10 +153,12 @@ function AgentePage() {
 
       <div className="grid gap-6 lg:grid-cols-2">
         {/* Mapa Demográfico (Idade × Gênero) */}
-        <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="glass-panel p-6">
-          <div className="mb-4 flex items-center gap-2">
-            <Users className="h-4 w-4 text-primary" />
-            <h3 className="font-display font-semibold">Mapa Demográfico — CPA por Segmento</h3>
+        <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="glass-panel card-sport p-6">
+          <div className="mb-4 flex items-center gap-3">
+            <div className="h-8 w-8 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center flex-shrink-0">
+              <Users className="h-4 w-4 text-primary" />
+            </div>
+            <h3 className="header-sport font-display font-bold">Mapa Demográfico — CPA por Segmento</h3>
           </div>
           <p className="mb-4 text-xs text-muted-foreground">Menor CPA = melhor conversão. Verde = eficiente, Vermelho = problemático.</p>
           {loadingDemo ? (
@@ -208,10 +210,12 @@ function AgentePage() {
         </motion.div>
 
         {/* Log de Ações do Agente */}
-        <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }} className="glass-panel p-6">
-          <div className="mb-4 flex items-center gap-2">
-            <Activity className="h-4 w-4 text-primary" />
-            <h3 className="font-display font-semibold">Log de Ações do Agente</h3>
+        <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }} className="glass-panel card-sport p-6">
+          <div className="mb-4 flex items-center gap-3">
+            <div className="h-8 w-8 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center flex-shrink-0">
+              <Activity className="h-4 w-4 text-primary" />
+            </div>
+            <h3 className="header-sport font-display font-bold">Log de Ações do Agente</h3>
           </div>
           <div className="space-y-2 max-h-[340px] overflow-y-auto custom-scrollbar">
             {actionLogs.length === 0 ? (
@@ -237,7 +241,7 @@ function AgentePage() {
 
       <div className="grid gap-6 lg:grid-cols-2">
         {/* Memória do Agente */}
-        <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="glass-panel p-6">
+        <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="glass-panel card-sport p-6">
           <div className="mb-4 flex items-center gap-2">
             <Brain className="h-4 w-4 text-violet-600 dark:text-violet-400" />
             <h3 className="font-display font-semibold">Memória Persistente do Agente</h3>
@@ -255,7 +259,7 @@ function AgentePage() {
         </motion.div>
 
         {/* Alertas Recentes */}
-        <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }} className="glass-panel p-6">
+        <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }} className="glass-panel card-sport p-6">
           <div className="mb-4 flex items-center gap-2">
             <AlertTriangle className="h-4 w-4 text-accent" />
             <h3 className="font-display font-semibold">Alertas Recentes</h3>

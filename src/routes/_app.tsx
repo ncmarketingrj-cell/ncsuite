@@ -189,12 +189,35 @@ function Shell() {
 
   if (loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-background">
-        <div className="flex flex-col items-center gap-4">
-          <div className="h-10 w-10 rounded-2xl bg-primary flex items-center justify-center">
-            <span className="font-display font-black text-primary-foreground text-lg">NC</span>
+      <div className="relative flex min-h-screen items-center justify-center bg-background overflow-hidden">
+        {/* NC Watermark de fundo */}
+        <div className="pointer-events-none absolute inset-0 flex items-center justify-center select-none" aria-hidden="true">
+          <span className="nc-watermark-text" style={{ fontSize: 'clamp(14rem, 38vw, 34rem)' }}>NC</span>
+        </div>
+        {/* Racing stripes decorativas */}
+        <div className="pointer-events-none absolute left-0 right-0 top-[38%] h-px bg-gradient-to-r from-transparent via-primary/20 to-transparent" aria-hidden="true" />
+        <div className="pointer-events-none absolute left-0 right-0 top-[62%] h-px bg-gradient-to-r from-transparent via-primary/10 to-transparent" aria-hidden="true" />
+
+        <div className="relative z-10 flex flex-col items-center gap-7">
+          {/* Logo com ping rings */}
+          <div className="relative">
+            <div className="absolute inset-0 rounded-2xl border-2 border-primary/45 animate-ping-ring" />
+            <div className="absolute inset-[-9px] rounded-2xl border border-primary/22 animate-ping-ring" style={{ animationDelay: '0.55s' }} />
+            <div className="relative h-16 w-16 rounded-2xl bg-primary flex flex-col items-center justify-center shadow-glow overflow-hidden">
+              <div className="absolute inset-x-0 top-0 h-[4px] bg-white/28 rounded-t-2xl" />
+              <span className="font-display font-black text-white text-2xl relative z-10 tracking-tight">NC</span>
+              <div className="absolute inset-x-0 bottom-0 h-[3px] bg-black/22 rounded-b-2xl" />
+            </div>
           </div>
-          <Loader2 className="h-5 w-5 animate-spin text-primary" />
+          <div className="text-center space-y-1.5">
+            <p className="font-display font-black text-sm tracking-tight text-foreground">NC Performance Suite</p>
+            <p className="label-mono text-primary">Motor de Tráfego Automotivo</p>
+          </div>
+          <div className="flex items-center gap-2.5">
+            <div className="h-1.5 w-1.5 rounded-full bg-primary animate-bounce-dot-1" />
+            <div className="h-1.5 w-1.5 rounded-full bg-primary/65 animate-bounce-dot-2" />
+            <div className="h-1.5 w-1.5 rounded-full bg-primary/35 animate-bounce-dot-3" />
+          </div>
         </div>
       </div>
     );
@@ -205,22 +228,39 @@ function Shell() {
   }
 
   return (
-    <div className="flex h-screen w-full flex-col bg-background overflow-hidden selection:bg-primary/30">
+    <div className="relative flex h-screen w-full flex-col bg-background overflow-hidden selection:bg-primary/30">
+      {/* ── NC Watermark — identidade permanente de fundo ── */}
+      <div
+        className="pointer-events-none absolute bottom-[-2.5rem] right-[-1.5rem] z-0 select-none"
+        aria-hidden="true"
+      >
+        <span className="nc-watermark-text" style={{ fontSize: 'clamp(12rem, 26vw, 34rem)' }}>NC</span>
+      </div>
       
       {/* ═══════════════════════════════════════
           TOP NAVIGATION BAR — Premium Horizontal
           ═══════════════════════════════════════ */}
-      <header className="sticky top-0 z-50 border-b border-border bg-background/80 backdrop-blur-xl">
+      <header className="sticky top-0 z-50 border-gradient-bottom bg-background/92 backdrop-blur-2xl">
         <div className="mx-auto flex h-16 max-w-[1600px] items-center justify-between px-4 md:px-8">
           
           {/* LEFT: Logo */}
-          <Link to="/dashboard" className="flex items-center gap-2.5 shrink-0">
-            <div className="h-9 w-9 rounded-xl bg-primary flex items-center justify-center shadow-glow-sm">
-              <span className="font-display font-black text-primary-foreground text-sm">NC</span>
+          <Link to="/dashboard" className="flex items-center gap-3 shrink-0 group">
+            {/* NC Badge automotivo com racing stripes */}
+            <div className="relative h-9 w-9 rounded-xl bg-primary flex items-center justify-center overflow-hidden shadow-glow-sm transition-all duration-300 group-hover:shadow-glow">
+              {/* Faixa superior (reflexo de vidro) */}
+              <div className="absolute inset-x-0 top-0 h-[3px] bg-white/28 rounded-t-xl pointer-events-none" />
+              <span className="font-display font-black text-white text-sm relative z-10 tracking-tight">NC</span>
+              {/* Faixa inferior (profundidade de cockpit) */}
+              <div className="absolute inset-x-0 bottom-0 h-[2px] bg-black/22 rounded-b-xl pointer-events-none" />
             </div>
-            <div className="hidden sm:flex flex-col leading-none">
-              <span className="font-display text-sm font-bold tracking-tight">Performance</span>
-              <span className="text-[8px] font-mono font-bold uppercase tracking-[0.25em] text-primary">Suite</span>
+            {/* Logotipo com tagline automotiva */}
+            <div className="hidden sm:flex flex-col leading-none gap-[5px]">
+              <span className="font-display text-[13px] font-black tracking-tight leading-none">NC Performance</span>
+              <div className="flex items-center gap-[5px]">
+                <div className="h-px w-3 bg-primary/65 rounded-full" />
+                <span className="text-[7px] font-mono font-bold uppercase tracking-[0.28em] text-primary leading-none">Suite Automotiva</span>
+                <div className="h-px w-3 bg-primary/65 rounded-full" />
+              </div>
             </div>
           </Link>
 
@@ -243,7 +283,7 @@ function Shell() {
                   {isActive && (
                     <motion.div
                       layoutId="nav-indicator"
-                      className="absolute inset-x-2 -bottom-[17px] h-[2px] bg-primary rounded-full"
+                      className="absolute inset-x-2 -bottom-[17px] h-[2px] bg-primary rounded-full shadow-glow-sm"
                       transition={{ type: "spring", stiffness: 500, damping: 35 }}
                     />
                   )}
@@ -528,6 +568,17 @@ function Shell() {
                   );
                 })}
               </nav>
+              {/* NC Brand footer no menu mobile */}
+              <div className="mx-4 mb-4 pt-3 border-t border-border flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="relative h-5 w-5 rounded-md bg-primary flex items-center justify-center overflow-hidden flex-shrink-0">
+                    <div className="absolute inset-x-0 top-0 h-[2px] bg-white/28" />
+                    <span className="font-display font-black text-white text-[8px] relative z-10">NC</span>
+                  </div>
+                  <span className="label-mono text-muted-foreground">NC Performance Suite</span>
+                </div>
+                <span className="label-mono text-primary">Automotivo</span>
+              </div>
             </motion.div>
           )}
         </AnimatePresence>
@@ -536,7 +587,7 @@ function Shell() {
       {/* ═══════════════════════════════════════
           MAIN CONTENT
           ═══════════════════════════════════════ */}
-      <main className="flex-1 overflow-y-auto custom-scrollbar">
+      <main className="relative z-[1] flex-1 overflow-y-auto custom-scrollbar">
         <div className="mx-auto max-w-[1600px] p-4 md:p-8 lg:p-10">
           
           {/* Notificação Flutuante de Ação Autônoma da IA */}
@@ -546,10 +597,12 @@ function Shell() {
                 initial={{ opacity: 0, y: 50, scale: 0.9 }}
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, y: 20, scale: 0.9 }}
-                className="fixed bottom-6 right-6 z-50 max-w-sm rounded-2xl border border-primary/30 bg-card p-4 shadow-2xl"
+                className="fixed bottom-6 right-6 z-50 max-w-sm rounded-2xl border border-primary/30 bg-card p-4 shadow-2xl overflow-hidden card-sport nc-badge-corner"
               >
+                {/* Racing stripe no topo da notificação */}
+                <div className="absolute top-0 inset-x-0 h-[2px] bg-gradient-to-r from-transparent via-primary to-transparent pointer-events-none" />
                 <div className="flex items-start gap-3">
-                  <div className="rounded-xl bg-primary/10 p-2 text-primary">
+                  <div className="rounded-xl bg-primary/12 border border-primary/25 p-2 text-primary">
                     <Sparkles className="h-4 w-4 animate-pulse" />
                   </div>
                   <div className="flex-1">

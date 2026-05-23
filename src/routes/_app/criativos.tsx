@@ -137,7 +137,7 @@ function CriativosPage() {
                 initial={{ opacity: 0, y: 12 }} 
                 animate={{ opacity: 1, y: 0 }} 
                 transition={{ delay: i * 0.03 }} 
-                className="glass-panel overflow-hidden group flex flex-col border-white/10 bg-white/5 hover:border-primary/20 hover:bg-white/[0.07] transition-all duration-300"
+                className="glass-panel card-sport overflow-hidden group flex flex-col border-white/10 bg-white/5 hover:border-primary/20 hover:bg-white/[0.07] transition-all duration-300"
               >
                 
                 {/* Imagem do Criativo */}
@@ -624,7 +624,7 @@ function AIAnalysisModal({ item, onClose }: { item: SwipeFile; onClose: () => vo
 
           {/* NICHO E MERCADO */}
           <div className="space-y-4">
-            <h4 className="text-sm font-black uppercase tracking-widest text-primary border-b border-white/5 pb-2 flex items-center gap-2">
+            <h4 className="header-sport text-sm font-black uppercase tracking-widest text-primary border-b border-border/50 pb-2 flex items-center gap-2">
               <Compass className="h-4 w-4 text-primary" /> Análise do Mercado Automotivo
             </h4>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -642,7 +642,7 @@ function AIAnalysisModal({ item, onClose }: { item: SwipeFile; onClose: () => vo
           {/* ELEMENTOS DETECTADOS */}
           {report.detectedElements?.length > 0 && (
             <div className="space-y-3">
-              <h4 className="text-sm font-black uppercase tracking-widest text-primary border-b border-white/5 pb-2 flex items-center gap-2">
+              <h4 className="header-sport text-sm font-black uppercase tracking-widest text-primary border-b border-border/50 pb-2 flex items-center gap-2">
                 <Layers className="h-4 w-4 text-primary" /> Elementos Identificados por Visão Computacional
               </h4>
               <div className="flex flex-wrap gap-2">
@@ -687,7 +687,7 @@ function AIAnalysisModal({ item, onClose }: { item: SwipeFile; onClose: () => vo
 
           {/* CHECKLIST DE OTIMIZAÇÃO */}
           <div className="space-y-4 p-5 rounded-2xl border border-white/5 bg-white/[0.02]">
-            <h4 className="text-sm font-black uppercase tracking-widest text-primary flex items-center gap-2">
+            <h4 className="header-sport text-sm font-black uppercase tracking-widest text-primary flex items-center gap-2">
               <TrendingUp className="h-4 w-4 text-primary" /> Checklist de Otimização Imediata
             </h4>
             <div className="grid grid-cols-1 gap-3">

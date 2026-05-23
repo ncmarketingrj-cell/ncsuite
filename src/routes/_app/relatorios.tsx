@@ -525,8 +525,8 @@ function RelatoriosPage() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 print:hidden">
         
         {/* Painel Esquerdo: Variáveis do Relatório */}
-        <div className="glass-panel p-6 space-y-6 lg:col-span-1 border-white/10 bg-white/5 relative z-20">
-          <h3 className="text-sm font-black uppercase tracking-widest text-primary border-b border-white/5 pb-3">Parâmetros de Customização</h3>
+        <div className="glass-panel card-sport p-6 space-y-6 lg:col-span-1 border-white/10 bg-white/5 relative z-20">
+          <h3 className="header-sport text-sm font-black uppercase tracking-widest text-primary border-b border-border/50 pb-3">Parâmetros de Customização</h3>
           
           <div className="space-y-4">
             <div className="space-y-2">
@@ -626,10 +626,10 @@ function RelatoriosPage() {
         </div>
 
         {/* Painel Direito: Lista de Campanhas e Mapeamento de Objetivos */}
-        <div className="glass-panel p-6 space-y-4 lg:col-span-2 border-white/10 bg-white/5 flex flex-col min-h-[400px]">
-          <div className="flex items-center justify-between border-b border-white/5 pb-3">
+        <div className="glass-panel card-sport p-6 space-y-4 lg:col-span-2 border-white/10 bg-white/5 flex flex-col min-h-[400px]">
+          <div className="flex items-center justify-between border-b border-border/50 pb-3">
             <div>
-              <h3 className="text-sm font-black uppercase tracking-widest text-primary">Selecione as Campanhas</h3>
+              <h3 className="header-sport text-sm font-black uppercase tracking-widest text-primary">Selecione as Campanhas</h3>
               <p className="text-[10px] text-muted-foreground">Marque quais deseja consolidar no relatório final.</p>
             </div>
             {campaignList.length > 0 && (
@@ -778,7 +778,7 @@ function RelatoriosPage() {
               <div>
                 <div className="border-b border-white/10 print:border-black/10 pb-6 mb-6 flex justify-between items-start">
                   <div>
-                    <h2 className="text-2xl font-black tracking-tighter uppercase print:text-black flex items-center gap-2">
+                    <h2 className="header-sport text-2xl font-black tracking-tighter uppercase print:text-black flex items-center gap-2">
                       <Award className="h-6 w-6 text-primary" />
                       Relatório de Performance
                     </h2>
@@ -860,10 +860,10 @@ function RelatoriosPage() {
       </AnimatePresence>
 
       {/* SEÇÃO DE RELATÓRIOS SALVOS ANTERIORMENTE */}
-      <div className="glass-panel p-6 border-white/10 bg-white/5 space-y-4 print:hidden">
-        <div className="flex items-center justify-between border-b border-white/5 pb-3">
+      <div className="glass-panel card-sport p-6 border-white/10 bg-white/5 space-y-4 print:hidden">
+        <div className="flex items-center justify-between border-b border-border/50 pb-3">
           <div>
-            <h3 className="text-sm font-black uppercase tracking-widest text-primary flex items-center gap-2">
+            <h3 className="header-sport text-sm font-black uppercase tracking-widest text-primary flex items-center gap-2">
               <FileText className="h-4 w-4" /> Relatórios Salvos anteriormente
             </h3>
             <p className="text-[10px] text-muted-foreground">Clique em um relatório para carregar suas configurações e reeditá-lo.</p>

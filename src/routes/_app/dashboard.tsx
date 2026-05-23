@@ -320,26 +320,28 @@ function Dashboard() {
 
       {/* HUB DE FUNÇÕES */}
       <section className="space-y-6">
+        {/* Divisor chassis-line */}
         <div className="flex items-center gap-4">
-          <div className="h-px flex-1 bg-white/5" />
-          <h2 className="text-[11px] font-black uppercase tracking-[0.4em] text-muted-foreground/40">Hub de Módulos Estratégicos</h2>
-          <div className="h-px flex-1 bg-white/5" />
+          <div className="h-px flex-1 bg-border/50" />
+          <span className="chassis-line label-mono text-muted-foreground/38">Hub de Módulos Estratégicos</span>
+          <div className="h-px flex-1 bg-border/50" />
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
           {HUB_GROUPS.map((group) => (
             <div key={group.label} className="space-y-4">
-              <h3 className={`text-[10px] font-black uppercase tracking-widest ${group.color} flex items-center gap-2`}>
-                <ChevronDown className="h-3 w-3" /> {group.label}
+              {/* Título de grupo com acento esportivo */}
+              <h3 className={`header-sport text-[10px] font-black uppercase tracking-widest ${group.color}`}>
+                {group.label}
               </h3>
               <div className="grid gap-3">
                 {group.items.map((item) => (
                   <Link
                     key={item.to}
                     to={item.to}
-                    className="group relative flex items-center gap-4 p-4 rounded-2xl bg-white/[0.02] border border-white/5 transition-all hover:bg-white/[0.05] hover:border-white/10 hover:translate-x-1"
+                    className="card-sport group relative flex items-center gap-4 p-4 rounded-2xl bg-white/[0.022] border border-white/5 transition-all hover:bg-white/[0.05] hover:border-primary/20 hover:translate-x-1"
                   >
-                    <div className={`h-10 w-10 rounded-xl flex items-center justify-center transition-all ${item.tagColor} ring-1 ring-white/10 group-hover:scale-110`}>
+                    <div className={`h-10 w-10 rounded-xl flex items-center justify-center transition-all ${item.tagColor} ring-1 ring-white/10 group-hover:scale-110 group-hover:shadow-glow-sm`}>
                       <item.icon className="h-5 w-5" />
                     </div>
                     <div className="min-w-0 flex-1">
@@ -349,7 +351,7 @@ function Dashboard() {
                       </div>
                       <p className="text-[10px] text-muted-foreground truncate">{item.desc}</p>
                     </div>
-                    <ArrowUpRight className="h-3 w-3 text-muted-foreground/30 group-hover:text-primary transition-colors" />
+                    <ArrowUpRight className="h-3 w-3 text-muted-foreground/30 group-hover:text-primary transition-all group-hover:scale-110" />
                   </Link>
                 ))}
               </div>
@@ -366,7 +368,7 @@ function Dashboard() {
         >
           <div className="mb-8 flex items-center justify-between">
             <div>
-              <h3 className="text-xl font-black tracking-tight uppercase">Performance Temporal</h3>
+              <h3 className="header-sport text-xl font-black tracking-tight uppercase">Performance Temporal</h3>
               <p className="text-xs text-muted-foreground font-medium mt-1">Análise volumétrica de investimento e conversão (30d)</p>
             </div>
             <div className="flex items-center gap-6">
@@ -427,7 +429,7 @@ function Dashboard() {
                <Brain className="h-5 w-5 text-primary" />
             </div>
             <div>
-               <h3 className="text-lg font-black tracking-tight uppercase">AI Synthesis</h3>
+               <h3 className="header-sport text-lg font-black tracking-tight uppercase">AI Synthesis</h3>
                <p className="text-[10px] text-muted-foreground font-black tracking-widest uppercase opacity-50">Victoria v2.1 Intelligence</p>
             </div>
           </div>
@@ -488,7 +490,8 @@ function StatCard({ label, value, prefix = "", icon: Icon, trend, isPositive, sp
   ).join(" ");
 
   return (
-    <div className="glass-panel p-5 relative overflow-hidden group transition hover:border-primary/30">
+    <div className="glass-panel card-sport p-5 relative overflow-hidden group transition hover:border-primary/30">
+      {/* Sparkline de fundo */}
       <div className="absolute inset-x-0 bottom-0 h-20 opacity-20 pointer-events-none">
         <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="w-full h-full">
           {points && (
@@ -499,20 +502,22 @@ function StatCard({ label, value, prefix = "", icon: Icon, trend, isPositive, sp
           )}
         </svg>
       </div>
+      {/* NC corner mark */}
+      <div className="absolute top-2.5 right-3 font-display font-black text-[8px] tracking-wider text-primary/18 select-none pointer-events-none">NC</div>
 
       <div className="flex items-center justify-between mb-4 relative z-10">
-        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/5 text-muted-foreground shadow-inner">
-          <Icon className="h-4 w-4 text-foreground" />
+        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10 border border-primary/15 text-primary shadow-inner group-hover:bg-primary/15 transition-colors">
+          <Icon className="h-4 w-4" />
         </div>
         {trend && (
-          <div className={`flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded-md bg-background/80 backdrop-blur-md border border-white/10 shadow-xl ${isPositive ? 'text-success border-success/20' : 'text-primary border-primary/20'}`}>
+          <div className={`flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded-md bg-background/80 backdrop-blur-md border shadow-xl ${isPositive ? 'text-success border-success/22' : 'text-primary border-primary/22'}`}>
             {isPositive ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
             {trend}
           </div>
         )}
       </div>
       <div className="relative z-10">
-        <p className="text-[10px] uppercase tracking-wider font-black text-muted-foreground/80 mb-1">{label}</p>
+        <p className="kpi-tag mb-2">{label}</p>
         <h4 className="text-3xl font-black font-mono tracking-tighter text-foreground drop-shadow-md">
           {prefix}{typeof value === 'number' ? value.toLocaleString('pt-BR', { minimumFractionDigits: value % 1 !== 0 ? 2 : 0 }) : value}
         </h4>

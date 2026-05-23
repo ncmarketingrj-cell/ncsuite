@@ -76,7 +76,7 @@ function UploadPage() {
         </p>
       </header>
 
-      <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="glass-panel p-1 border-white/10 bg-white/5 overflow-hidden">
+      <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="glass-panel card-sport p-1 border-white/10 bg-white/5 overflow-hidden">
         <div className="p-8">
           {!preview ? (
             <label className="group relative flex cursor-pointer flex-col items-center justify-center gap-6 rounded-2xl border-2 border-dashed border-white/10 bg-background/40 py-24 transition hover:border-primary/40 hover:bg-primary/[0.02]">
@@ -121,17 +121,17 @@ function UploadPage() {
 
       <AnimatePresence>
         {campaigns && (
-          <motion.section 
+          <motion.section
             initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
-            className="glass-panel overflow-hidden border-white/10 shadow-2xl"
+            className="glass-panel card-sport overflow-hidden border-white/10 shadow-2xl"
           >
-            <div className="flex items-center justify-between border-b border-white/5 bg-white/5 p-6">
+            <div className="flex items-center justify-between border-b border-border/50 bg-white/5 p-6">
               <div className="flex items-center gap-4">
                 <div className="h-10 w-10 rounded-full bg-success/20 flex items-center justify-center text-success">
                   <Check className="h-6 w-6" />
                 </div>
                 <div>
-                  <h2 className="font-display text-xl font-bold">{campaigns.length} Campanhas Identificadas</h2>
+                  <h2 className="header-sport font-display text-xl font-bold">{campaigns.length} Campanhas Identificadas</h2>
                   <div className="flex items-center gap-2 mt-1">
                     <p className="text-[10px] text-muted-foreground uppercase tracking-widest font-bold">Extração concluída com sucesso •</p>
                     <span className={`inline-flex rounded px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider ${detectedPlatform === 'meta' ? 'bg-primary/20 text-primary border border-primary/30' : 'bg-secondary/20 text-secondary border border-secondary/30'}`}>

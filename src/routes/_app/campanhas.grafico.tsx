@@ -195,7 +195,7 @@ function CampanhasGraficoPage() {
           <div className="h-4 w-px bg-white/10" />
           <div>
             <p className="text-[9px] font-black uppercase tracking-[0.3em] text-primary/70">Visual · Estratégico</p>
-            <h1 className="font-display text-xl font-bold leading-tight">Análise de Campanhas</h1>
+            <h1 className="header-sport font-display text-xl font-bold leading-tight">Análise de Campanhas</h1>
           </div>
           <div className="ml-auto flex flex-wrap items-center gap-2">
             <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
@@ -222,7 +222,7 @@ function CampanhasGraficoPage() {
         <AnimatePresence>
           {showSettings && (
             <motion.aside initial={{ opacity: 0, width: 0 }} animate={{ opacity: 1, width: 248 }} exit={{ opacity: 0, width: 0 }} transition={{ duration: 0.2 }} className="shrink-0 overflow-hidden">
-              <div className="w-62 glass-panel p-4 sticky top-20 space-y-5" style={{ width: 248 }}>
+              <div className="w-62 glass-panel card-sport p-4 sticky top-20 space-y-5" style={{ width: 248 }}>
 
                 {/* Objetivo */}
                 <div className="space-y-2">
@@ -308,9 +308,9 @@ function CampanhasGraficoPage() {
                 { label: "Conversões", value: totConv.toLocaleString("pt-BR"), icon: Target, color: "text-violet-500" },
                 { label: "CPL Médio", value: avgCpl > 0 ? `R$ ${avgCpl.toFixed(2)}` : "—", icon: Zap, color: "text-primary" },
               ].map((k, i) => (
-                <motion.div key={k.label} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }} className="glass-panel p-4">
+                <motion.div key={k.label} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }} className="glass-panel card-sport p-4">
                   <div className="flex items-center justify-between mb-2">
-                    <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/70">{k.label}</p>
+                    <p className="kpi-tag text-muted-foreground/70">{k.label}</p>
                     <k.icon className={`h-3.5 w-3.5 ${k.color}`} />
                   </div>
                   <p className={`font-mono font-black text-sm ${k.color}`}>{k.value}</p>
@@ -496,10 +496,10 @@ function CampanhasGraficoPage() {
 function ChartCard({ icon, title, badge, context, children }: { icon: React.ReactNode; title: string; badge: string; context: string; children: React.ReactNode }) {
   const [showCtx, setShowCtx] = useState(false);
   return (
-    <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }} className="glass-panel p-5">
+    <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }} className="glass-panel card-sport p-5">
       <div className="flex items-center gap-2 mb-3">
         {icon}
-        <p className="text-xs font-black uppercase tracking-widest">{title}</p>
+        <p className="text-xs font-black uppercase tracking-widest header-sport">{title}</p>
         <div className="ml-auto flex items-center gap-2">
           <span className="text-[9px] text-muted-foreground/50 font-mono hidden sm:inline">{badge}</span>
           <button onClick={() => setShowCtx(v => !v)} className={`rounded-md p-1 transition-colors ${showCtx ? "text-primary bg-primary/10" : "text-muted-foreground/40 hover:text-primary"}`} title="Por que este gráfico importa?">
