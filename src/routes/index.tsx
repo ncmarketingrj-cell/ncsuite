@@ -1,31 +1,41 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import {
-  motion, useScroll, useTransform, useMotionValue, useSpring, useInView,
-} from "framer-motion";
+import { motion, useScroll, useTransform, useInView } from "framer-motion";
 import {
   ArrowRight, Bot, BarChart3, Zap, Activity,
-  Target, Layers, TrendingUp, Shield, Bell, ChevronDown,
+  Target, Layers, TrendingUp, Shield, Bell,
 } from "lucide-react";
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef } from "react";
 
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
       { title: "NC Performance Suite — O Sistema Operacional da NC Agência" },
-      { name: "description", content: "Plataforma proprietária de BI e IA da NC Agência para gestão de tráfego pago de alta performance automotiva." },
+      {
+        name: "description",
+        content:
+          "Plataforma proprietária de BI e IA da NC Agência para gestão de tráfego pago de alta performance.",
+      },
     ],
   }),
   component: LandingPage,
 });
 
-/* ─── counter ─── */
-function Counter({ to, prefix = "", suffix = "" }: { to: number; prefix?: string; suffix?: string }) {
+function Counter({
+  to,
+  prefix = "",
+  suffix = "",
+}: {
+  to: number;
+  prefix?: string;
+  suffix?: string;
+}) {
   const [val, setVal] = useState(0);
   const ref = useRef<HTMLSpanElement>(null);
   const inView = useInView(ref, { once: true, margin: "-40px" });
   useEffect(() => {
     if (!inView) return;
-    const dur = 1800, t0 = performance.now();
+    const dur = 1600,
+      t0 = performance.now();
     const tick = (now: number) => {
       const p = Math.min((now - t0) / dur, 1);
       setVal(Math.floor((1 - Math.pow(1 - p, 3)) * to));
@@ -34,53 +44,85 @@ function Counter({ to, prefix = "", suffix = "" }: { to: number; prefix?: string
     };
     requestAnimationFrame(tick);
   }, [inView, to]);
-  return <span ref={ref}>{prefix}{val.toLocaleString("pt-BR")}{suffix}</span>;
-}
-
-/* ─── animation presets ─── */
-const up = {
-  hidden: { opacity: 0, y: 28 },
-  show: { opacity: 1, y: 0, transition: { duration: 0.7, ease: [0.16, 1, 0.3, 1] } },
-};
-const stagger = { hidden: {}, show: { transition: { staggerChildren: 0.08 } } };
-
-/* ─── speed lines ─── */
-function SpeedLines({ light = false, count = 7 }: { light?: boolean; count?: number }) {
-  const positions = [6, 17, 30, 43, 57, 70, 83, 92].slice(0, count);
   return (
-    <div className="absolute inset-0 overflow-hidden pointer-events-none" style={{ opacity: light ? 0.55 : 0.032 }}>
-      {positions.map((pct, i) => (
-        <div key={i} className="absolute h-full w-px"
-          style={{
-            left: `${pct}%`,
-            background: light
-              ? "linear-gradient(to bottom,transparent,rgba(0,0,0,0.10) 35%,rgba(0,0,0,0.10) 65%,transparent)"
-              : "linear-gradient(to bottom,transparent,#DC2626 35%,#DC2626 65%,transparent)",
-            transform: "skewX(-17deg)",
-            opacity: 0.20 + i * 0.06,
-          }}
-        />
-      ))}
-    </div>
+    <span ref={ref}>
+      {prefix}
+      {val.toLocaleString("pt-BR")}
+      {suffix}
+    </span>
   );
 }
 
-/* ─── data ─── */
+const fadeUp = {
+  hidden: { opacity: 0, y: 20 },
+  show: {
+    opacity: 1,
+    y: 0,
+    transition: { duration: 0.7, ease: [0.16, 1, 0.3, 1] },
+  },
+};
+const stagger = {
+  hidden: {},
+  show: { transition: { staggerChildren: 0.07 } },
+};
+
 const TICKER = [
-  "META ADS","BI EM TEMPO REAL","GESTÃO DE TRÁFEGO","AUTOMAÇÃO DE ALERTAS",
-  "VICTORIA AI","CPL TRACKING","BUDGET PACING","PERFORMANCE AUTOMOTIVA","NC AGÊNCIA",
+  "META ADS",
+  "BI EM TEMPO REAL",
+  "GESTÃO DE TRÁFEGO",
+  "AUTOMAÇÃO DE ALERTAS",
+  "VICTORIA AI",
+  "CPL TRACKING",
+  "BUDGET PACING",
+  "PERFORMANCE AUTOMOTIVA",
+  "NC AGÊNCIA",
 ];
 
 const MODULES = [
-  { icon: BarChart3, label: "Command Center",  desc: "Visão consolidada de investimento, CPL e KPIs de todas as contas em tempo real.", tag: "LIVE", accent: "#EF4444", size: "large" },
-  { icon: Activity,  label: "Métricas & KPIs", desc: "Análise granular com drill-down por conta, data e campanha.",                    tag: "DATA", accent: "#F97316", size: "tall"  },
-  { icon: Target,    label: "Gestão de Ads",   desc: "Controle total de campanhas — criativos, pacing e frequência real.",             tag: "OPS",  accent: "#A855F7", size: "small" },
-  { icon: Bot,       label: "Victoria AI",     desc: "IA que audita contas, identifica padrões e gera insights acionáveis.",          tag: "AI",   accent: "#06B6D4", size: "small" },
-  { icon: Zap,       label: "Automações",      desc: "Regras de alerta por CPL, frequência, budget e anomalias de entrega.",          tag: "AUTO", accent: "#EAB308", size: "small" },
-  { icon: Layers,    label: "Criativos",       desc: "Score de fadiga, ranking de performance e diagnóstico de criativos.",           tag: "LAB",  accent: "#EC4899", size: "small" },
+  {
+    icon: BarChart3,
+    label: "Command Center",
+    desc: "Dashboard consolidado. Todas as contas Meta Ads, KPIs e pacing em tempo real.",
+    tag: "LIVE",
+    accent: "#EF4444",
+  },
+  {
+    icon: Activity,
+    label: "Métricas & KPIs",
+    desc: "Análise granular com drill-down por conta, período e campanha.",
+    tag: "DATA",
+    accent: "#F97316",
+  },
+  {
+    icon: Target,
+    label: "Gestão de Ads",
+    desc: "Controle de campanhas, criativos, pacing e frequência real no Meta.",
+    tag: "OPS",
+    accent: "#A855F7",
+  },
+  {
+    icon: Bot,
+    label: "Victoria AI",
+    desc: "IA treinada com metodologia NC. Audita contas e gera insights acionáveis.",
+    tag: "AI",
+    accent: "#06B6D4",
+  },
+  {
+    icon: Zap,
+    label: "Automações",
+    desc: "Alertas por CPL, frequência, budget e anomalias de entrega.",
+    tag: "AUTO",
+    accent: "#EAB308",
+  },
+  {
+    icon: Layers,
+    label: "Criativos",
+    desc: "Score de fadiga, ranking de performance e diagnóstico por campanha.",
+    tag: "LAB",
+    accent: "#EC4899",
+  },
 ];
 
-/* ─── main ─── */
 function LandingPage() {
   const lightZoneRef = useRef<HTMLDivElement>(null);
   const [navLight, setNavLight] = useState(false);
@@ -96,207 +138,267 @@ function LandingPage() {
   }, []);
 
   useEffect(() => {
-    const fn = () => setScrolled(window.scrollY > 60);
+    const fn = () => setScrolled(window.scrollY > 20);
     window.addEventListener("scroll", fn, { passive: true });
     return () => window.removeEventListener("scroll", fn);
   }, []);
 
-  const mx = useMotionValue(0), my = useMotionValue(0);
-  const rX = useSpring(useTransform(my, [-500, 500], [3.5, -3.5]), { stiffness: 80, damping: 28 });
-  const rY = useSpring(useTransform(mx, [-700, 700], [-4.5, 4.5]), { stiffness: 80, damping: 28 });
-  const { scrollYProgress } = useScroll();
-  const heroOp = useTransform(scrollYProgress, [0, 0.12], [1, 0]);
-  const heroY  = useTransform(scrollYProgress, [0, 0.12], [0, 50]);
-
-  const onMM = useCallback((e: React.MouseEvent<HTMLElement>) => {
-    const r = e.currentTarget.getBoundingClientRect();
-    mx.set(e.clientX - r.left - r.width / 2);
-    my.set(e.clientY - r.top  - r.height / 2);
-  }, [mx, my]);
-  const onML = useCallback(() => { mx.set(0); my.set(0); }, [mx, my]);
+  const { scrollY } = useScroll();
+  const screenshotParallax = useTransform(scrollY, [0, 800], [0, 60]);
 
   return (
     <div className="relative overflow-x-hidden">
       <style>{`
-        @keyframes mq    { to { transform: translateX(-50%); } }
-        @keyframes shimx { 0%{background-position:-200% center}100%{background-position:200% center} }
-        @keyframes scp   { 0%,100%{opacity:0}50%{opacity:1} }
-        @keyframes flt   { 0%,100%{transform:translateY(0px)}50%{transform:translateY(-10px)} }
-        .mq { animation: mq 32s linear infinite; }
+        @keyframes marquee { to { transform: translateX(-50%); } }
+        @keyframes shimx   { 0%{background-position:-200% center}100%{background-position:200% center} }
+        @keyframes scanpulse { 0%,100%{opacity:0}50%{opacity:1} }
+        @keyframes floatY  { 0%,100%{transform:translateY(0)}50%{transform:translateY(-8px)} }
+
+        .ticker-wrap  { animation: marquee 36s linear infinite; }
+
         .shimmer-text {
           background: linear-gradient(90deg,#fff 20%,#ef4444 40%,#fff 60%,#ef4444 80%,#fff);
-          background-size:200% auto; -webkit-background-clip:text; -webkit-text-fill-color:transparent;
-          animation: shimx 5s linear infinite;
+          background-size: 200% auto;
+          -webkit-background-clip: text;
+          -webkit-text-fill-color: transparent;
+          animation: shimx 4.5s linear infinite;
         }
         .shimmer-dark {
-          background: linear-gradient(90deg,#0A0A08 20%,#DC2626 40%,#0A0A08 60%,#DC2626 80%,#0A0A08);
-          background-size:200% auto; -webkit-background-clip:text; -webkit-text-fill-color:transparent;
-          animation: shimx 5s linear infinite;
+          background: linear-gradient(90deg,#111 20%,#DC2626 40%,#111 60%,#DC2626 80%,#111);
+          background-size: 200% auto;
+          -webkit-background-clip: text;
+          -webkit-text-fill-color: transparent;
+          animation: shimx 4.5s linear infinite;
         }
-        .flt { animation: flt 7s ease-in-out infinite; }
-        .scan::after {
-          content:''; position:absolute; inset-x:0; height:2px;
-          background:linear-gradient(90deg,transparent,rgba(220,38,38,0.22),transparent);
-          animation: scp 3s ease-in-out infinite;
+
+        .screen-glow {
+          box-shadow:
+            0 0 0 1px rgba(255,255,255,0.06),
+            0 30px 80px rgba(0,0,0,0.70),
+            0 0 80px rgba(220,38,38,0.08),
+            0 0 160px rgba(139,92,246,0.05);
         }
+
+        .dot-grid {
+          background-image: radial-gradient(circle, rgba(255,255,255,0.06) 1px, transparent 1px);
+          background-size: 28px 28px;
+        }
+
+        .scan-line::before {
+          content: '';
+          position: absolute;
+          inset-x: 0;
+          top: 0;
+          height: 1px;
+          background: linear-gradient(90deg, transparent, rgba(239,68,68,0.5), transparent);
+          animation: scanpulse 3.5s ease-in-out infinite;
+        }
+
+        .card-hover:hover .card-line { opacity: 1; }
+        .card-line { opacity: 0; transition: opacity 0.35s; }
       `}</style>
 
-      {/* ══ NAVBAR ══ */}
-      <header className={`fixed inset-x-0 top-0 z-50 transition-all duration-500 ${
-        scrolled
-          ? navLight
-            ? "bg-[#F2F1EE]/92 backdrop-blur-2xl border-b border-black/[0.07] py-3"
-            : "bg-[#06060C]/92 backdrop-blur-2xl border-b border-white/[0.06] py-3"
-          : "bg-transparent py-5"
-      }`}>
+      {/* ── NAVBAR ── */}
+      <header
+        className={`fixed inset-x-0 top-0 z-50 transition-all duration-500 ${
+          scrolled
+            ? navLight
+              ? "bg-white/95 backdrop-blur-2xl border-b border-black/[0.08] py-3 shadow-sm"
+              : "bg-[#06060C]/95 backdrop-blur-2xl border-b border-white/[0.05] py-3"
+            : "bg-transparent py-5"
+        }`}
+      >
         <div className="mx-auto flex max-w-7xl items-center justify-between px-6">
           <div className="flex items-center gap-3">
-            <img src="/assets/nc-logo.png" alt="NC" className="h-9 w-9 object-contain transition-all duration-500"
-              style={{ filter: navLight ? "invert(1)" : "none" }} />
+            <img
+              src="/assets/nc-logo.png"
+              alt="NC"
+              className="h-9 w-9 object-contain"
+              style={{ filter: navLight ? "none" : "none" }}
+            />
             <div className="leading-none">
-              <div className={`font-black text-[15px] tracking-tight uppercase transition-colors duration-500 ${navLight ? "text-[#0A0A08]" : "text-white"}`}>
-                NC Agência
+              <div
+                className={`font-black text-[14px] tracking-tight uppercase transition-colors duration-500 ${navLight ? "text-[#0A0A08]" : "text-white"}`}
+              >
+                NC Performance
               </div>
-              <div className="text-[8px] font-mono font-bold uppercase tracking-[0.32em] text-red-500/80 mt-0.5">
-                Performance Suite
+              <div className="text-[7px] font-mono font-bold uppercase tracking-[0.35em] text-red-500 mt-0.5">
+                Suite
               </div>
             </div>
           </div>
-          <Link to="/login"
-            className={`group inline-flex items-center gap-2 rounded-full border px-6 py-2.5 text-[11px] font-black uppercase tracking-[0.18em] transition-all hover:bg-red-600 hover:text-white hover:border-red-600 hover:shadow-[0_0_28px_rgba(220,38,38,0.4)] ${
-              navLight ? "border-red-500/40 text-red-600" : "border-red-500/30 text-red-400"
-            }`}>
-            Acessar <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-1" />
+          <Link
+            to="/login"
+            className={`group inline-flex items-center gap-2 rounded-full border px-5 py-2 text-[10px] font-black uppercase tracking-[0.18em] transition-all hover:bg-red-600 hover:border-red-600 hover:text-white ${
+              navLight
+                ? "border-red-500/40 text-red-600"
+                : "border-red-500/25 text-red-400"
+            }`}
+          >
+            Acessar{" "}
+            <ArrowRight className="h-3 w-3 transition-transform group-hover:translate-x-0.5" />
           </Link>
         </div>
       </header>
 
-      {/* ══════════ DARK ZONE ══════════ */}
-      <div className="bg-[#06060C]">
+      {/* ════════════════════════════════════
+          ZONA ESCURA
+      ════════════════════════════════════ */}
+      <div className="bg-[#06060C] dot-grid">
 
-        {/* ── HERO: assimétrico — texto esquerda, mockup direita ── */}
-        <section
-          className="relative min-h-screen flex flex-col lg:flex-row items-center pt-24 lg:pt-0 overflow-hidden"
-          onMouseMove={onMM} onMouseLeave={onML}
-        >
-          {/* bg */}
-          <div className="absolute inset-0 -z-10 pointer-events-none">
-            <div className="absolute left-[45%] top-1/2 -translate-y-1/2 h-[900px] w-[900px] rounded-full bg-red-600/[0.09] blur-[200px]" />
-            <div className="absolute left-[5%] top-[20%] h-[300px] w-[300px] rounded-full bg-red-900/[0.06] blur-[120px]" />
-            <SpeedLines />
-            <div className="absolute inset-0 opacity-[0.11]"
-              style={{ backgroundImage: "url(\"data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E\")", backgroundSize: "180px" }} />
-            {/* gradient right side fade */}
-            <div className="absolute right-0 top-0 bottom-0 w-1/3 bg-gradient-to-l from-[#06060C] to-transparent hidden lg:block" />
-            <div className="absolute bottom-0 inset-x-0 h-40 bg-gradient-to-t from-[#06060C] to-transparent" />
+        {/* ── HERO ── */}
+        <section className="relative pt-36 pb-0 overflow-hidden min-h-screen flex flex-col">
+          {/* radial glows */}
+          <div className="absolute inset-0 pointer-events-none -z-10">
+            <div
+              className="absolute left-1/2 top-1/3 -translate-x-1/2 -translate-y-1/2 rounded-full"
+              style={{
+                width: 900,
+                height: 600,
+                background:
+                  "radial-gradient(ellipse at center, rgba(220,38,38,0.10) 0%, transparent 70%)",
+              }}
+            />
+            <div
+              className="absolute right-[15%] top-[20%] rounded-full"
+              style={{
+                width: 300,
+                height: 300,
+                background:
+                  "radial-gradient(ellipse at center, rgba(139,92,246,0.07) 0%, transparent 70%)",
+              }}
+            />
           </div>
 
-          {/* LEFT — text (55%) */}
-          <motion.div
-            style={{ opacity: heroOp, y: heroY }}
-            className="relative z-10 w-full lg:w-[55%] px-6 lg:pl-16 xl:pl-24 lg:pr-0 py-24 lg:py-0 text-left"
-          >
+          {/* hero text — centered */}
+          <div className="relative mx-auto max-w-4xl px-6 text-center z-10">
             <motion.div
-              initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.7, ease: [0.16, 1, 0.3, 1] }}
-              className="mb-7 inline-flex items-center gap-2.5 rounded-full border border-red-500/[0.18] bg-black/50 px-5 py-2 text-[9px] font-black uppercase tracking-[0.28em] text-red-400/80 backdrop-blur-xl"
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.6 }}
+              className="mb-8 inline-flex items-center gap-2.5 rounded-full border border-white/[0.09] bg-white/[0.03] px-4 py-1.5 text-[8.5px] font-black uppercase tracking-[0.32em] text-white/35"
             >
               <span className="relative flex h-1.5 w-1.5">
-                <span className="animate-ping absolute h-full w-full rounded-full bg-red-400 opacity-60" />
+                <span className="animate-ping absolute h-full w-full rounded-full bg-red-400 opacity-75" />
                 <span className="relative h-1.5 w-1.5 rounded-full bg-red-500" />
               </span>
               Tecnologia proprietária · NC Agência
             </motion.div>
 
             <motion.h1
-              initial={{ opacity: 0, y: 50 }} animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 1, delay: 0.08, ease: [0.16, 1, 0.3, 1] }}
-              className="font-black leading-[0.85] tracking-[-0.04em] text-white"
-              style={{ fontSize: "clamp(46px, 6.5vw, 88px)" }}
+              initial={{ opacity: 0, y: 36 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 1.0, delay: 0.07, ease: [0.16, 1, 0.3, 1] }}
+              className="font-black leading-[0.87] tracking-[-0.045em] text-white"
+              style={{ fontSize: "clamp(48px, 7.5vw, 96px)" }}
             >
-              Dados que<br />dirigem.<br />
-              <span className="shimmer-text">Decisões que<br />aceleram.</span>
+              O sistema operacional<br />
+              <span className="shimmer-text">da alta performance.</span>
             </motion.h1>
 
             <motion.p
-              initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.9, delay: 0.24, ease: [0.16, 1, 0.3, 1] }}
-              className="mt-7 max-w-md text-base sm:text-[17px] font-medium leading-relaxed text-white/42"
+              initial={{ opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.8, delay: 0.2 }}
+              className="mt-6 text-[16px] sm:text-[18px] text-white/36 max-w-xl mx-auto leading-relaxed"
             >
-              Plataforma proprietária de BI e IA para centralizar operação,
-              tráfego pago e inteligência de dados com a velocidade que a performance exige.
+              BI proprietário + IA + automações. Tudo em um painel —
+              construído para quem opera no mais alto nível do tráfego pago.
             </motion.p>
 
             <motion.div
-              initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.8, delay: 0.38 }}
-              className="mt-10 flex flex-wrap items-center gap-4"
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.7, delay: 0.32 }}
+              className="mt-10 flex items-center justify-center gap-4 flex-wrap"
             >
               <button
-                onClick={() => document.getElementById("suite")?.scrollIntoView({ behavior: "smooth" })}
-                className="group inline-flex items-center gap-2 rounded-full bg-red-600 px-8 py-4 text-[11px] font-black uppercase tracking-[0.2em] text-white transition-all hover:bg-red-500 hover:shadow-[0_0_50px_rgba(220,38,38,0.5)] active:scale-[0.97]"
+                onClick={() =>
+                  document
+                    .getElementById("suite")
+                    ?.scrollIntoView({ behavior: "smooth" })
+                }
+                className="group inline-flex items-center gap-2 rounded-full bg-red-600 px-8 py-3.5 text-[10.5px] font-black uppercase tracking-[0.2em] text-white transition-all hover:bg-red-500 hover:shadow-[0_0_48px_rgba(220,38,38,0.50)] active:scale-[0.97]"
               >
-                Explorar Suite <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
+                Explorar Suite{" "}
+                <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
               </button>
-              <Link to="/login"
-                className="inline-flex items-center gap-2 rounded-full border border-white/[0.10] px-8 py-4 text-[11px] font-black uppercase tracking-[0.2em] text-white/45 transition-all hover:text-white hover:border-white/25 hover:bg-white/[0.06] active:scale-[0.97]"
+              <Link
+                to="/login"
+                className="text-[10.5px] font-black uppercase tracking-[0.2em] text-white/28 hover:text-white/55 transition-colors"
               >
-                Acesso Restrito
+                Acesso Restrito →
               </Link>
             </motion.div>
+          </div>
 
-            {/* scroll hint */}
-            <motion.div
-              initial={{ opacity: 0 }} animate={{ opacity: 1 }}
-              transition={{ delay: 1.8, duration: 0.6 }}
-              className="mt-16 flex items-center gap-2 text-white/20"
-            >
-              <ChevronDown className="h-4 w-4 animate-bounce" />
-              <span className="text-[9px] font-mono uppercase tracking-[0.3em]">scroll para explorar</span>
-            </motion.div>
-          </motion.div>
-
-          {/* RIGHT — 3D mockup (45%) */}
+          {/* dashboard screenshot — produto como herói */}
           <motion.div
-            initial={{ opacity: 0, x: 60, scale: 0.94 }}
-            animate={{ opacity: 1, x: 0, scale: 1 }}
-            transition={{ duration: 1.6, delay: 0.45, ease: [0.16, 1, 0.3, 1] }}
-            className="relative z-20 w-full lg:w-[45%] px-6 lg:px-8 pb-20 lg:pb-0 flt"
-            style={{ perspective: "2200px" }}
+            initial={{ opacity: 0, y: 56, scale: 0.96 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            transition={{ duration: 1.5, delay: 0.50, ease: [0.16, 1, 0.3, 1] }}
+            style={{ y: screenshotParallax }}
+            className="relative mt-16 mx-auto w-full max-w-6xl px-4 sm:px-8 lg:px-12 flex-1"
           >
-            <motion.div style={{ rotateX: rX, rotateY: rY }}>
-              <div className="absolute -inset-2 rounded-2xl bg-red-600/[0.08] blur-[60px]" />
-              <div className="relative rounded-[16px] overflow-hidden border border-white/[0.09]"
-                style={{ backgroundColor: "#0B0B10", boxShadow: "0 50px 100px rgba(0,0,0,0.75), 0 0 0 1px rgba(255,255,255,0.04)" }}>
-                {/* titlebar */}
-                <div className="flex items-center gap-2 px-4 py-2.5 border-b border-white/[0.05] bg-black/40">
-                  <div className="flex gap-1.5">
-                    <div className="h-2.5 w-2.5 rounded-full bg-[#FF5F57]" />
-                    <div className="h-2.5 w-2.5 rounded-full bg-[#FEBC2E]" />
-                    <div className="h-2.5 w-2.5 rounded-full bg-[#28C840]" />
-                  </div>
-                  <div className="flex-1 mx-4">
-                    <div className="mx-auto max-w-[220px] h-4.5 rounded bg-white/[0.05] border border-white/[0.04] flex items-center justify-center gap-1.5 px-2 py-0.5">
-                      <div className="h-1.5 w-1.5 rounded-full bg-green-500" />
-                      <span className="text-[8px] font-mono text-white/18">app.ncperformance.com.br</span>
-                    </div>
-                  </div>
+            {/* glow layers */}
+            <div
+              className="absolute -inset-8 rounded-3xl pointer-events-none"
+              style={{
+                background:
+                  "radial-gradient(ellipse at center 30%, rgba(220,38,38,0.09) 0%, transparent 60%)",
+              }}
+            />
+
+            {/* browser frame */}
+            <div
+              className="relative rounded-[14px] overflow-hidden screen-glow border border-white/[0.10]"
+            >
+              {/* title bar */}
+              <div className="flex items-center gap-2 h-9 px-4 bg-[#0E0E14] border-b border-white/[0.06]">
+                <div className="flex gap-1.5 flex-shrink-0">
+                  <div className="h-2.5 w-2.5 rounded-full bg-[#FF5F57]" />
+                  <div className="h-2.5 w-2.5 rounded-full bg-[#FEBC2E]" />
+                  <div className="h-2.5 w-2.5 rounded-full bg-[#28C840]" />
                 </div>
-                <div className="scan relative">
-                  <img src="/assets/mockup-dashboard.png" alt="NC Suite" className="w-full h-auto" />
-                  <div className="absolute inset-0"
-                    style={{ background: "linear-gradient(to bottom,transparent 50%,#06060C 100%)" }} />
+                <div className="flex-1 flex justify-center">
+                  <div className="flex items-center gap-1.5 bg-white/[0.04] border border-white/[0.05] rounded-md px-3 py-0.5">
+                    <div className="h-1.5 w-1.5 rounded-full bg-green-500" />
+                    <span className="text-[8.5px] font-mono text-white/18">
+                      app.ncperformance.com.br
+                    </span>
+                  </div>
                 </div>
               </div>
-            </motion.div>
+
+              {/* screenshot */}
+              <div className="scan-line relative bg-[#0A0A0E]">
+                <img
+                  src="/assets/mockup-dashboard.png"
+                  alt="NC Performance Suite — Command Center"
+                  className="w-full h-auto block"
+                  style={{ display: "block" }}
+                />
+                {/* bottom fade para o fundo */}
+                <div
+                  className="absolute bottom-0 inset-x-0 h-48 pointer-events-none"
+                  style={{
+                    background:
+                      "linear-gradient(to top, #06060C 0%, transparent 100%)",
+                  }}
+                />
+              </div>
+            </div>
           </motion.div>
         </section>
 
         {/* ── TICKER ── */}
         <div className="border-y border-white/[0.05] py-3 overflow-hidden select-none">
-          <div className="flex mq whitespace-nowrap gap-12">
+          <div className="ticker-wrap flex whitespace-nowrap gap-12">
             {[...TICKER, ...TICKER].map((item, i) => (
-              <span key={i} className="inline-flex items-center gap-3 text-[9px] font-black uppercase tracking-[0.32em] text-white/18">
+              <span
+                key={i}
+                className="inline-flex items-center gap-3 text-[8.5px] font-black uppercase tracking-[0.34em] text-white/16"
+              >
                 <span className="h-[3px] w-3 rounded-full bg-red-600 flex-shrink-0" />
                 {item}
               </span>
@@ -304,131 +406,120 @@ function LandingPage() {
           </div>
         </div>
 
-        {/* ── STATS — horizontal, sem bordas pesadas ── */}
+        {/* ── STATS ── */}
         <section className="py-20">
-          <div className="mx-auto max-w-6xl px-6">
+          <div className="mx-auto max-w-5xl px-6">
             <motion.div
-              variants={stagger} initial="hidden" whileInView="show"
+              variants={stagger}
+              initial="hidden"
+              whileInView="show"
               viewport={{ once: true, margin: "-50px" }}
-              className="grid grid-cols-2 lg:grid-cols-4 gap-0"
+              className="grid grid-cols-2 lg:grid-cols-4 divide-x divide-white/[0.06]"
             >
               {[
-                { to: 61,    pre: "R$", suf: "M+", label: "em mídia gerenciada"   },
-                { to: 25048, pre: "",   suf: "+",  label: "leads gerados"          },
-                { to: 150,   pre: "",   suf: "+",  label: "campanhas ativas"       },
-                { to: 99,    pre: "",   suf: ".9%",label: "disponibilidade"        },
+                { to: 61, pre: "R$", suf: "M+", label: "investimento gerenciado" },
+                { to: 25048, pre: "", suf: "+", label: "leads gerados" },
+                { to: 150, pre: "", suf: "+", label: "campanhas ativas" },
+                { to: 99, pre: "", suf: ".9%", label: "disponibilidade" },
               ].map((s, i) => (
-                <motion.div key={i} variants={up}
-                  className="px-6 py-8 border-r border-white/[0.06] last:border-r-0 first:pl-0">
-                  <div className="text-[42px] sm:text-[52px] font-black tracking-tight leading-none text-white mb-2">
+                <motion.div
+                  key={i}
+                  variants={fadeUp}
+                  className="px-8 py-10 first:pl-0 last:border-r-0"
+                >
+                  <div
+                    className="font-black tracking-tight leading-none text-white mb-2"
+                    style={{ fontSize: "clamp(36px, 5vw, 62px)" }}
+                  >
                     <Counter to={s.to} prefix={s.pre} suffix={s.suf} />
                   </div>
-                  <div className="text-[9px] font-mono uppercase tracking-[0.24em] text-white/22 mt-1">{s.label}</div>
+                  <div className="text-[8.5px] font-mono uppercase tracking-[0.26em] text-white/22 mt-1">
+                    {s.label}
+                  </div>
                 </motion.div>
               ))}
             </motion.div>
           </div>
         </section>
 
-        {/* ── MODULES — layout assimétrico ── */}
-        <section id="suite" className="pb-28 pt-6">
-          <div className="mx-auto max-w-7xl px-6">
-            <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-6 mb-12">
-              <div>
-                <span className="text-[9px] font-black uppercase tracking-[0.32em] text-red-500 mb-3 block">A SUITE</span>
-                <h2 className="font-black tracking-[-0.04em] leading-[0.88] text-white" style={{ fontSize: "clamp(32px,4.5vw,58px)" }}>
-                  Seis instrumentos.<br /><span className="text-white/22">Uma operação.</span>
-                </h2>
-              </div>
-              <p className="text-sm text-white/35 max-w-xs leading-relaxed">
-                Cada módulo foi construído sob demanda real — sem excessos, sem atalhos.
-              </p>
+        {/* ── MÓDULOS ── */}
+        <section id="suite" className="pb-32 pt-4">
+          <div className="mx-auto max-w-6xl px-6">
+            <div className="mb-14">
+              <span className="text-[8.5px] font-black uppercase tracking-[0.34em] text-red-500 mb-3 block">
+                A SUITE
+              </span>
+              <h2
+                className="font-black tracking-[-0.04em] leading-[0.88] text-white"
+                style={{ fontSize: "clamp(34px, 4.5vw, 60px)" }}
+              >
+                Seis módulos.
+                <br />
+                <span className="text-white/18">Uma operação completa.</span>
+              </h2>
             </div>
 
-            {/* asymmetric grid: featured card + 5 regular */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-              {/* FEATURED — Command Center (spans 2 cols) */}
-              <motion.div
-                initial={{ opacity: 0, y: 28 }} whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true, margin: "-60px" }}
-                transition={{ duration: 0.65, ease: [0.16, 1, 0.3, 1] }}
-                className="lg:col-span-2"
-              >
-                <motion.div
-                  className="group relative rounded-2xl border border-white/[0.08] bg-white/[0.03] p-8 h-full min-h-[220px] overflow-hidden cursor-default"
-                  whileHover={{ borderColor: "rgba(239,68,68,0.22)", boxShadow: "0 0 50px rgba(239,68,68,0.07)" }}
-                  transition={{ duration: 0.3 }}
-                >
-                  <div className="absolute top-0 left-8 right-8 h-px bg-red-500 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
-                  {/* bg graphic */}
-                  <div className="absolute right-0 bottom-0 h-48 w-48 bg-red-600/[0.05] rounded-full blur-[60px]" />
-                  <div className="relative z-10 flex flex-col h-full">
-                    <div className="flex items-start justify-between mb-auto">
-                      <div className="h-12 w-12 rounded-xl border border-white/[0.10] bg-white/[0.06] flex items-center justify-center">
-                        <BarChart3 className="h-5 w-5 text-red-400" />
-                      </div>
-                      <span className="text-[8px] font-black uppercase tracking-[0.28em] text-white/20 border border-white/[0.10] rounded-full px-2.5 py-1">
-                        LIVE
-                      </span>
-                    </div>
-                    <div className="mt-8">
-                      <h3 className="text-[22px] font-black text-white mb-2">Command Center</h3>
-                      <p className="text-[13px] text-white/38 leading-relaxed max-w-md">
-                        Dashboard consolidado de todas as contas Meta Ads — investimento, CPL, pacing de orçamento,
-                        alertas automáticos e KPIs operacionais em tempo real. O coração da operação.
-                      </p>
-                    </div>
-                  </div>
-                </motion.div>
-              </motion.div>
-
-              {/* Métricas */}
-              <motion.div
-                initial={{ opacity: 0, y: 28 }} whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true, margin: "-60px" }}
-                transition={{ duration: 0.65, delay: 0.07, ease: [0.16, 1, 0.3, 1] }}
-              >
-                <motion.div
-                  className="group relative rounded-2xl border border-white/[0.08] bg-white/[0.03] p-7 h-full min-h-[220px] overflow-hidden cursor-default"
-                  whileHover={{ borderColor: "rgba(249,115,22,0.22)", boxShadow: "0 0 40px rgba(249,115,22,0.06)" }}
-                  transition={{ duration: 0.3 }}
-                >
-                  <div className="absolute top-0 left-6 right-6 h-px bg-orange-400 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
-                  <div className="flex items-start justify-between mb-6">
-                    <div className="h-11 w-11 rounded-xl border border-white/[0.10] bg-white/[0.05] flex items-center justify-center">
-                      <Activity className="h-5 w-5 text-orange-400" />
-                    </div>
-                    <span className="text-[8px] font-black uppercase tracking-[0.28em] text-white/20 border border-white/[0.10] rounded-full px-2.5 py-1">DATA</span>
-                  </div>
-                  <h3 className="text-[17px] font-black text-white mb-2">Métricas & KPIs</h3>
-                  <p className="text-[12px] text-white/38 leading-relaxed">Análise granular com drill-down por conta, data e campanha.</p>
-                </motion.div>
-              </motion.div>
-
-              {/* 4 small cards */}
-              {MODULES.slice(2).map((mod, i) => {
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {MODULES.map((mod, i) => {
                 const Icon = mod.icon;
                 return (
-                  <motion.div key={i}
-                    initial={{ opacity: 0, y: 28 }} whileInView={{ opacity: 1, y: 0 }}
+                  <motion.div
+                    key={i}
+                    initial={{ opacity: 0, y: 18 }}
+                    whileInView={{ opacity: 1, y: 0 }}
                     viewport={{ once: true, margin: "-40px" }}
-                    transition={{ duration: 0.65, delay: (i + 2) * 0.07, ease: [0.16, 1, 0.3, 1] }}
+                    transition={{
+                      duration: 0.6,
+                      delay: i * 0.06,
+                      ease: [0.16, 1, 0.3, 1],
+                    }}
                   >
                     <motion.div
-                      className="group relative rounded-2xl border border-white/[0.08] bg-white/[0.03] p-6 h-full min-h-[160px] overflow-hidden cursor-default"
-                      whileHover={{ borderColor: `${mod.accent}38`, boxShadow: `0 0 35px ${mod.accent}0A` }}
-                      transition={{ duration: 0.3 }}
+                      className="card-hover group relative rounded-2xl border border-white/[0.07] bg-white/[0.025] p-7 h-full overflow-hidden cursor-default"
+                      whileHover={{
+                        borderColor: `${mod.accent}28`,
+                        backgroundColor: "rgba(255,255,255,0.035)",
+                      }}
+                      transition={{ duration: 0.25 }}
                     >
-                      <div className="absolute top-0 left-5 right-5 h-px opacity-0 group-hover:opacity-100 transition-opacity duration-500"
-                        style={{ backgroundColor: mod.accent }} />
-                      <div className="flex items-start justify-between mb-5">
-                        <div className="h-10 w-10 rounded-xl border border-white/[0.10] bg-white/[0.05] flex items-center justify-center">
-                          <Icon className="h-4 w-4" style={{ color: mod.accent }} />
+                      {/* top accent line */}
+                      <div
+                        className="card-line absolute top-0 inset-x-0 h-px"
+                        style={{
+                          background: `linear-gradient(90deg, transparent, ${mod.accent}90, transparent)`,
+                        }}
+                      />
+                      {/* glow blob */}
+                      <div
+                        className="absolute -top-4 -right-4 h-28 w-28 rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-500 blur-2xl pointer-events-none"
+                        style={{ backgroundColor: `${mod.accent}18` }}
+                      />
+
+                      <div className="relative z-10">
+                        <div className="flex items-start justify-between mb-6">
+                          <div
+                            className="h-10 w-10 rounded-xl flex items-center justify-center"
+                            style={{
+                              backgroundColor: `${mod.accent}10`,
+                              border: `1px solid ${mod.accent}20`,
+                            }}
+                          >
+                            <Icon
+                              className="h-[18px] w-[18px]"
+                              style={{ color: mod.accent }}
+                            />
+                          </div>
+                          <span className="text-[7px] font-black uppercase tracking-[0.3em] text-white/18 border border-white/[0.08] rounded-full px-2 py-0.5">
+                            {mod.tag}
+                          </span>
                         </div>
-                        <span className="text-[7px] font-black uppercase tracking-[0.28em] text-white/18 border border-white/[0.08] rounded-full px-2 py-0.5">{mod.tag}</span>
+                        <h3 className="text-[15.5px] font-black text-white mb-2">
+                          {mod.label}
+                        </h3>
+                        <p className="text-[12px] text-white/32 leading-relaxed">
+                          {mod.desc}
+                        </p>
                       </div>
-                      <h3 className="text-[15px] font-black text-white mb-1.5">{mod.label}</h3>
-                      <p className="text-[12px] text-white/35 leading-relaxed">{mod.desc}</p>
                     </motion.div>
                   </motion.div>
                 );
@@ -438,224 +529,360 @@ function LandingPage() {
         </section>
       </div>
 
-      {/* ══ BRIDGE dark → light ══ */}
-      <div className="relative h-[300px]"
-        style={{ background: "linear-gradient(to bottom, #06060C 0%, #F2F1EE 100%)" }}>
-        <SpeedLines />
-        {/* center marker */}
-        <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 flex items-center justify-center gap-4 pointer-events-none">
-          <div className="h-px flex-1 max-w-xs" style={{ background: "linear-gradient(to right,transparent,rgba(220,38,38,0.2))" }} />
+      {/* ════════ BRIDGE dark → light ════════ */}
+      <div
+        className="relative h-[260px] overflow-hidden"
+        style={{ background: "linear-gradient(to bottom, #06060C 0%, #EEEDE7 100%)" }}
+      >
+        {/* diagonal speed lines */}
+        {[8, 22, 38, 52, 65, 79, 92].map((p, i) => (
+          <div
+            key={i}
+            className="absolute h-full w-px pointer-events-none"
+            style={{
+              left: `${p}%`,
+              background:
+                "linear-gradient(to bottom, transparent, rgba(220,38,38,0.14), transparent)",
+              transform: "skewX(-20deg)",
+              opacity: 0.3 + i * 0.05,
+            }}
+          />
+        ))}
+        {/* center dot marker */}
+        <div className="absolute inset-x-0 bottom-8 flex items-center justify-center gap-2 pointer-events-none">
+          <div className="h-px w-24" style={{ background: "linear-gradient(to right, transparent, rgba(220,38,38,0.25))" }} />
           <div className="flex gap-1">
-            <div className="h-1 w-1 rounded-full bg-red-600/40" />
-            <div className="h-1 w-1 rounded-full bg-red-600/70" />
-            <div className="h-1 w-1 rounded-full bg-red-600/40" />
+            <div className="h-1 w-1 rounded-full bg-red-600/35" />
+            <div className="h-1 w-4 rounded-full bg-red-600/55" />
+            <div className="h-1 w-1 rounded-full bg-red-600/35" />
           </div>
-          <div className="h-px flex-1 max-w-xs" style={{ background: "linear-gradient(to left,transparent,rgba(220,38,38,0.2))" }} />
+          <div className="h-px w-24" style={{ background: "linear-gradient(to left, transparent, rgba(220,38,38,0.25))" }} />
         </div>
       </div>
 
-      {/* ══════════ LIGHT ZONE ══════════ */}
-      <div ref={lightZoneRef} className="bg-[#F2F1EE]">
+      {/* ════════════════════════════════════
+          ZONA CLARA
+      ════════════════════════════════════ */}
+      <div ref={lightZoneRef} className="bg-[#EEEDE7]">
 
-        {/* ── DASHBOARD SHOWCASE — full-bleed screenshot ── */}
-        <section className="relative overflow-hidden border-b border-black/[0.06]">
-          {/* full-bleed screenshot background */}
-          <div className="relative">
-            <img src="/assets/mockup-dashboard.png" alt="Command Center"
-              className="w-full h-[480px] sm:h-[560px] object-cover object-top" />
-            {/* overlay gradients */}
-            <div className="absolute inset-0"
-              style={{ background: "linear-gradient(to bottom, rgba(242,241,238,0.12) 0%, rgba(242,241,238,0.80) 65%, #F2F1EE 100%)" }} />
-            <div className="absolute inset-0"
-              style={{ background: "linear-gradient(to right, #F2F1EE 0%, transparent 50%)" }} />
-          </div>
-
-          {/* text overlay */}
-          <div className="absolute inset-0 flex items-center">
-            <div className="mx-auto max-w-7xl px-6 w-full">
+        {/* ── FEATURE: Command Center ── */}
+        <section className="pt-24 pb-24 border-b border-black/[0.07]">
+          <div className="mx-auto max-w-6xl px-6">
+            <div className="grid lg:grid-cols-2 gap-16 lg:gap-24 items-center">
               <motion.div
-                initial={{ opacity: 0, x: -40 }} whileInView={{ opacity: 1, x: 0 }}
-                viewport={{ once: true, margin: "-80px" }}
+                initial={{ opacity: 0, x: -20 }}
+                whileInView={{ opacity: 1, x: 0 }}
+                viewport={{ once: true }}
                 transition={{ duration: 0.9, ease: [0.16, 1, 0.3, 1] }}
-                className="max-w-lg"
               >
-                <span className="text-[9px] font-black uppercase tracking-[0.32em] text-red-500 mb-4 block">COMMAND CENTER</span>
-                <h2 className="font-black tracking-[-0.04em] leading-[0.88] text-[#0A0A08] mb-5"
-                  style={{ fontSize: "clamp(32px,4vw,52px)" }}>
-                  Visão completa.<br /><span className="text-[#0A0A08]/25">Zero dispersão.</span>
+                <span className="text-[8.5px] font-black uppercase tracking-[0.34em] text-red-500 mb-4 block">
+                  COMMAND CENTER
+                </span>
+                <h2
+                  className="font-black tracking-[-0.04em] leading-[0.88] text-[#0A0A08] mb-5"
+                  style={{ fontSize: "clamp(30px, 3.8vw, 50px)" }}
+                >
+                  Tudo que importa.
+                  <br />
+                  <span className="text-[#0A0A08]/20">Em um lugar.</span>
                 </h2>
-                <p className="text-[15px] leading-relaxed text-[#0A0A08]/55 mb-8">
-                  Todas as contas Meta Ads em um painel. Investimento, CPL, pacing e alertas inteligentes — em tempo real para toda a equipe.
+                <p className="text-[15px] leading-relaxed text-[#0A0A08]/52 mb-8">
+                  Todas as contas Meta Ads consolidadas. Investimento, CPL,
+                  pacing de orçamento, alertas inteligentes e KPIs operacionais
+                  — visibilidade total para toda a equipe, em tempo real.
                 </p>
-                <ul className="space-y-2.5">
+                <ul className="space-y-3">
                   {[
                     { icon: TrendingUp, text: "Sync automático com Meta Ads API" },
-                    { icon: Bell,       text: "Alertas de CPL por conta e limiar" },
-                    { icon: Shield,     text: "Permissões granulares por cargo" },
+                    { icon: Bell, text: "Alertas de CPL por conta e limiar" },
+                    { icon: Shield, text: "Permissões granulares por cargo" },
                   ].map((item, i) => (
-                    <li key={i} className="flex items-center gap-3 text-sm text-[#0A0A08]/55">
-                      <item.icon className="h-4 w-4 text-red-500 flex-shrink-0" />
+                    <li
+                      key={i}
+                      className="flex items-center gap-3 text-[13px] text-[#0A0A08]/50"
+                    >
+                      <div className="h-7 w-7 rounded-lg bg-red-500/[0.09] flex items-center justify-center flex-shrink-0">
+                        <item.icon className="h-3.5 w-3.5 text-red-500" />
+                      </div>
                       {item.text}
                     </li>
                   ))}
                 </ul>
               </motion.div>
+
+              <motion.div
+                initial={{ opacity: 0, x: 20 }}
+                whileInView={{ opacity: 1, x: 0 }}
+                viewport={{ once: true }}
+                transition={{ duration: 0.9, delay: 0.1, ease: [0.16, 1, 0.3, 1] }}
+                className="relative"
+              >
+                <div className="absolute -inset-4 rounded-3xl bg-black/[0.04] blur-[40px]" />
+                <div
+                  className="relative rounded-2xl overflow-hidden border border-black/[0.10]"
+                  style={{ boxShadow: "0 20px 60px rgba(0,0,0,0.10)" }}
+                >
+                  <img
+                    src="/assets/mockup-dashboard.png"
+                    alt="Command Center"
+                    className="w-full h-auto block"
+                  />
+                </div>
+              </motion.div>
             </div>
           </div>
         </section>
 
-        {/* ── VICTORIA AI — card branco com mockup ── */}
-        <section className="py-28 relative overflow-hidden border-b border-black/[0.06]">
-          <div className="absolute inset-0 -z-10 pointer-events-none">
-            <SpeedLines light />
-          </div>
-          <div className="mx-auto max-w-7xl px-6">
+        {/* ── VICTORIA AI — card escuro dentro da zona clara ── */}
+        <section className="py-24 border-b border-black/[0.07]">
+          <div className="mx-auto max-w-6xl px-6">
             <motion.div
-              initial={{ opacity: 0, y: 30 }} whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true, margin: "-80px" }} transition={{ duration: 0.9 }}
-              className="rounded-3xl bg-white border border-black/[0.07] shadow-[0_4px_50px_rgba(0,0,0,0.07)] overflow-hidden"
+              initial={{ opacity: 0, y: 24 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ duration: 0.9 }}
+              className="rounded-3xl overflow-hidden border border-black/[0.08]"
+              style={{
+                background: "#0A0A0E",
+                boxShadow: "0 8px 60px rgba(0,0,0,0.14)",
+              }}
             >
-              <div className="grid lg:grid-cols-2 gap-0">
-                {/* text side */}
-                <div className="p-10 lg:p-14 border-b lg:border-b-0 lg:border-r border-black/[0.06]">
-                  <span className="text-[9px] font-black uppercase tracking-[0.32em] text-cyan-600 mb-4 block">IA · MÓDULO EXCLUSIVO</span>
-                  <h2 className="font-black tracking-[-0.04em] leading-[0.88] mb-5 text-[#0A0A08]"
-                    style={{ fontSize: "clamp(30px,3.5vw,48px)" }}>
-                    Victoria AI.<br /><span className="text-[#0A0A08]/25">Decisões precisas.</span>
+              <div className="grid lg:grid-cols-2">
+                {/* text */}
+                <div className="p-10 lg:p-14 border-b lg:border-b-0 lg:border-r border-white/[0.05]">
+                  <span className="text-[8.5px] font-black uppercase tracking-[0.34em] text-cyan-400 mb-4 block">
+                    IA · MÓDULO EXCLUSIVO
+                  </span>
+                  <h2
+                    className="font-black tracking-[-0.04em] leading-[0.88] mb-5 text-white"
+                    style={{ fontSize: "clamp(28px, 3.2vw, 46px)" }}
+                  >
+                    Victoria AI.
+                    <br />
+                    <span className="text-white/20">Decisões precisas.</span>
                   </h2>
-                  <p className="text-[15px] leading-relaxed mb-8 text-[#0A0A08]/55">
-                    Treinada com a metodologia NC. Audita campanhas, identifica criativos vencedores e sugere ajustes antes que os problemas virem prejuízo.
+                  <p className="text-[14.5px] leading-relaxed mb-8 text-white/42">
+                    Treinada com a metodologia NC. Audita campanhas, identifica
+                    criativos vencedores e sugere ajustes antes que os problemas
+                    virem prejuízo.
                   </p>
-                  {/* capability pills */}
-                  <div className="flex flex-wrap gap-2">
-                    {["Análise Automática","Tempo Real","Relatórios Sob Demanda","Otimizações Com Dados"].map((label, i) => (
-                      <span key={i} className="text-[10px] font-black uppercase tracking-[0.18em] rounded-full px-3.5 py-1.5 bg-[#0A0A08]/[0.05] text-[#0A0A08]/55 border border-black/[0.07]">
+                  <div className="flex flex-wrap gap-2 mb-8">
+                    {[
+                      "Análise Automática",
+                      "Tempo Real",
+                      "Relatórios",
+                      "Otimizações",
+                    ].map((label, i) => (
+                      <span
+                        key={i}
+                        className="text-[9px] font-black uppercase tracking-[0.18em] rounded-full px-3.5 py-1.5 bg-white/[0.05] text-white/38 border border-white/[0.07]"
+                      >
                         {label}
                       </span>
                     ))}
                   </div>
-                  {/* online badge */}
-                  <div className="mt-8 inline-flex items-center gap-2 rounded-full border border-cyan-500/20 bg-cyan-500/[0.06] px-4 py-2">
+                  <div className="inline-flex items-center gap-2 rounded-full border border-cyan-500/20 bg-cyan-500/[0.07] px-4 py-2">
                     <span className="h-2 w-2 rounded-full bg-cyan-500 animate-pulse" />
-                    <span className="text-[9px] font-black uppercase tracking-[0.25em] text-cyan-600">Victoria Online</span>
+                    <span className="text-[8.5px] font-black uppercase tracking-[0.26em] text-cyan-400">
+                      Victoria Online
+                    </span>
                   </div>
                 </div>
-                {/* image side */}
-                <div className="relative min-h-[320px] overflow-hidden bg-[#0A0A0A]">
-                  <img src="/assets/mockup-victoria.png" alt="Victoria AI"
-                    className="absolute inset-0 w-full h-full object-cover object-left-top opacity-90" />
-                  <div className="absolute inset-0"
-                    style={{ background: "linear-gradient(to bottom, transparent 50%, #0A0A0A 100%)" }} />
+
+                {/* mockup */}
+                <div className="relative min-h-[300px] overflow-hidden">
+                  <img
+                    src="/assets/mockup-victoria.png"
+                    alt="Victoria AI"
+                    className="absolute inset-0 w-full h-full object-cover object-left-top"
+                  />
+                  <div
+                    className="absolute inset-0"
+                    style={{
+                      background:
+                        "linear-gradient(to right, #0A0A0E 0%, transparent 28%)",
+                    }}
+                  />
                 </div>
               </div>
             </motion.div>
           </div>
         </section>
 
-        {/* ── VICTORIA MAIA — foto full-bleed com texto overlay ── */}
-        <section className="relative overflow-hidden">
-          <div className="relative h-[600px] sm:h-[700px]">
-            <img src="/assets/victoria-maia.png" alt="Victoria Maia"
-              className="absolute inset-0 w-full h-full object-cover object-top grayscale"
-              style={{ objectPosition: "center 20%" }} />
-            {/* overlay */}
-            <div className="absolute inset-0"
-              style={{ background: "linear-gradient(to right, rgba(242,241,238,0.0) 0%, rgba(242,241,238,0.0) 40%, #F2F1EE 65%)" }} />
-            <div className="absolute inset-0"
-              style={{ background: "linear-gradient(to top, #F2F1EE 0%, transparent 40%)" }} />
-
-            {/* text overlay — right side */}
-            <div className="absolute inset-0 flex items-center">
-              <div className="mx-auto max-w-7xl px-6 w-full flex justify-end">
-                <motion.div
-                  initial={{ opacity: 0, x: 40 }} whileInView={{ opacity: 1, x: 0 }}
-                  viewport={{ once: true, margin: "-80px" }}
-                  transition={{ duration: 0.9, ease: [0.16, 1, 0.3, 1] }}
-                  className="w-full max-w-md"
+        {/* ── VICTORIA MAIA ── */}
+        <section className="py-28">
+          <div className="mx-auto max-w-6xl px-6">
+            <div className="grid lg:grid-cols-2 gap-16 lg:gap-24 items-center">
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true }}
+                transition={{ duration: 0.9 }}
+              >
+                <span className="text-[8.5px] font-black uppercase tracking-[0.34em] text-red-500 mb-4 block">
+                  A VISÃO POR TRÁS
+                </span>
+                <h2
+                  className="font-black tracking-[-0.04em] leading-[0.88] mb-6 text-[#0A0A08]"
+                  style={{ fontSize: "clamp(28px, 3.5vw, 48px)" }}
                 >
-                  <span className="text-[9px] font-black uppercase tracking-[0.32em] text-red-500 mb-4 block">A VISÃO POR TRÁS</span>
-                  <h2 className="font-black tracking-[-0.04em] leading-[0.88] mb-6 text-[#0A0A08]"
-                    style={{ fontSize: "clamp(30px,3.5vw,48px)" }}>
-                    Construída por<br />quem vive<br />
-                    <span className="shimmer-dark">a operação.</span>
-                  </h2>
-                  <p className="text-[14px] leading-relaxed text-[#0A0A08]/55 mb-6">
-                    Victoria Maia, fundadora da NC Agência, identificou que as ferramentas disponíveis não entregavam a velocidade que uma agência de alta performance exige. A solução foi construir a própria.
-                  </p>
-                  <blockquote className="border-l-2 border-red-600 pl-5 italic text-[13px] text-[#0A0A08]/65">
-                    "Não entregamos dados. Entregamos o ecossistema ideal para operar no mais alto nível — com precisão cirúrgica."
-                  </blockquote>
-                  <div className="mt-6 flex items-center gap-3">
-                    <img src="/assets/nc-logo.png" alt="NC" className="h-8 w-8 object-contain opacity-20"
-                      style={{ filter: "invert(1)" }} />
-                    <span className="text-[9px] font-mono uppercase tracking-[0.28em] text-[#0A0A08]/25">Victoria Maia · Fundadora & Estrategista</span>
-                  </div>
-                </motion.div>
-              </div>
+                  Construída por
+                  <br />
+                  quem vive
+                  <br />
+                  <span className="shimmer-dark">a operação.</span>
+                </h2>
+                <p className="text-[14px] leading-relaxed text-[#0A0A08]/52 mb-7">
+                  Victoria Maia, fundadora da NC Agência, identificou que as
+                  ferramentas disponíveis não entregavam a velocidade que uma
+                  agência de alta performance exige. A solução foi construir a
+                  própria.
+                </p>
+                <blockquote className="border-l-2 border-red-600 pl-5 italic text-[13.5px] text-[#0A0A08]/58 mb-8 leading-relaxed">
+                  "Não entregamos dados. Entregamos o ecossistema ideal para
+                  operar no mais alto nível — com precisão cirúrgica."
+                </blockquote>
+                <div className="flex items-center gap-3">
+                  <img
+                    src="/assets/nc-logo.png"
+                    alt="NC"
+                    className="h-7 w-7 object-contain"
+                    style={{ opacity: 0.22 }}
+                  />
+                  <span className="text-[8.5px] font-mono uppercase tracking-[0.28em] text-[#0A0A08]/28">
+                    Victoria Maia · Fundadora &amp; Estrategista
+                  </span>
+                </div>
+              </motion.div>
+
+              <motion.div
+                initial={{ opacity: 0, scale: 0.97 }}
+                whileInView={{ opacity: 1, scale: 1 }}
+                viewport={{ once: true }}
+                transition={{ duration: 0.9, delay: 0.1 }}
+                className="relative"
+              >
+                <div
+                  className="absolute -inset-4 rounded-3xl blur-[50px] pointer-events-none"
+                  style={{
+                    background:
+                      "radial-gradient(ellipse, rgba(220,38,38,0.06), transparent)",
+                  }}
+                />
+                <div
+                  className="relative rounded-3xl overflow-hidden"
+                  style={{ boxShadow: "0 24px 64px rgba(0,0,0,0.14)" }}
+                >
+                  <img
+                    src="/assets/victoria-maia.png"
+                    alt="Victoria Maia"
+                    className="w-full h-[520px] object-cover grayscale"
+                    style={{ objectPosition: "center 15%" }}
+                  />
+                  <div
+                    className="absolute inset-0"
+                    style={{
+                      background:
+                        "linear-gradient(to top, rgba(238,237,231,0.35) 0%, transparent 60%)",
+                    }}
+                  />
+                </div>
+              </motion.div>
             </div>
           </div>
         </section>
       </div>
 
-      {/* ══ BRIDGE light → dark ══ */}
-      <div className="relative h-[300px]"
-        style={{ background: "linear-gradient(to bottom, #F2F1EE 0%, #06060C 100%)" }}>
-        <SpeedLines />
-        <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 flex items-center justify-center gap-4 pointer-events-none">
-          <div className="h-px flex-1 max-w-xs" style={{ background: "linear-gradient(to right,transparent,rgba(220,38,38,0.2))" }} />
-          <div className="flex gap-1">
-            <div className="h-1 w-1 rounded-full bg-red-600/40" />
-            <div className="h-1 w-1 rounded-full bg-red-600/70" />
-            <div className="h-1 w-1 rounded-full bg-red-600/40" />
-          </div>
-          <div className="h-px flex-1 max-w-xs" style={{ background: "linear-gradient(to left,transparent,rgba(220,38,38,0.2))" }} />
-        </div>
+      {/* ════════ BRIDGE light → dark ════════ */}
+      <div
+        className="relative h-[260px] overflow-hidden"
+        style={{ background: "linear-gradient(to bottom, #EEEDE7 0%, #06060C 100%)" }}
+      >
+        {[8, 22, 38, 52, 65, 79, 92].map((p, i) => (
+          <div
+            key={i}
+            className="absolute h-full w-px pointer-events-none"
+            style={{
+              left: `${p}%`,
+              background:
+                "linear-gradient(to bottom, transparent, rgba(220,38,38,0.12), transparent)",
+              transform: "skewX(-20deg)",
+              opacity: 0.3 + i * 0.05,
+            }}
+          />
+        ))}
       </div>
 
-      {/* ══════════ DARK ZONE: CTA + FOOTER ══════════ */}
-      <div className="bg-[#06060C]">
+      {/* ════════════════════════════════════
+          ZONA ESCURA: CTA + FOOTER
+      ════════════════════════════════════ */}
+      <div className="bg-[#06060C] dot-grid">
         <section className="relative py-44 overflow-hidden">
-          <div className="absolute inset-0 -z-10 pointer-events-none">
-            <div className="absolute left-1/2 top-1/2 h-[700px] w-[900px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-red-700/[0.12] blur-[170px]" />
-            <SpeedLines />
-            <div className="absolute inset-0 opacity-[0.10]"
-              style={{ backgroundImage: "url(\"data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E\")", backgroundSize: "180px" }} />
+          <div className="absolute inset-0 pointer-events-none -z-10">
+            <div
+              className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full"
+              style={{
+                width: 900,
+                height: 600,
+                background:
+                  "radial-gradient(ellipse at center, rgba(220,38,38,0.12) 0%, transparent 65%)",
+              }}
+            />
           </div>
-          <div className="mx-auto max-w-4xl px-6 text-center relative z-10">
+          <div className="mx-auto max-w-3xl px-6 text-center relative z-10">
             <motion.div
-              initial={{ opacity: 0, y: 40 }} whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true, margin: "-60px" }} transition={{ duration: 0.9, ease: [0.16, 1, 0.3, 1] }}
+              initial={{ opacity: 0, y: 28 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ duration: 0.9, ease: [0.16, 1, 0.3, 1] }}
             >
-              <span className="text-[9px] font-black uppercase tracking-[0.32em] text-red-500 mb-6 block">ACESSO RESTRITO · SISTEMA OPERACIONAL</span>
-              <h2 className="font-black tracking-[-0.04em] leading-[0.86] mb-8 text-white"
-                style={{ fontSize: "clamp(48px,9vw,104px)" }}>
-                Operação em<br /><span className="shimmer-text">alta velocidade.</span>
+              <span className="text-[8.5px] font-black uppercase tracking-[0.34em] text-red-500/55 mb-6 block">
+                ACESSO RESTRITO · SISTEMA OPERACIONAL
+              </span>
+              <h2
+                className="font-black tracking-[-0.045em] leading-[0.86] mb-8 text-white"
+                style={{ fontSize: "clamp(48px, 8vw, 100px)" }}
+              >
+                Operação em<br />
+                <span className="shimmer-text">alta velocidade.</span>
               </h2>
-              <p className="text-lg mb-12 max-w-lg mx-auto text-white/40">
-                O acesso ao NC Performance Suite é restrito a colaboradores e parceiros autorizados da NC Agência.
+              <p className="text-[17px] mb-12 text-white/32 max-w-sm mx-auto leading-relaxed">
+                O acesso ao NC Performance Suite é restrito a colaboradores e
+                parceiros autorizados da NC Agência.
               </p>
-              <Link to="/login"
-                className="group inline-flex items-center gap-3 rounded-full bg-red-600 px-12 py-5 text-[11px] font-black uppercase tracking-[0.2em] text-white transition-all hover:bg-red-500 hover:shadow-[0_0_70px_rgba(220,38,38,0.55)] hover:scale-105 active:scale-[0.97] shadow-2xl"
+              <Link
+                to="/login"
+                className="group inline-flex items-center gap-3 rounded-full bg-red-600 px-12 py-5 text-[10.5px] font-black uppercase tracking-[0.2em] text-white transition-all hover:bg-red-500 hover:shadow-[0_0_70px_rgba(220,38,38,0.55)] hover:scale-[1.02] active:scale-[0.97]"
               >
                 Acessar Portal Operacional
-                <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1.5" />
+                <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
               </Link>
             </motion.div>
           </div>
         </section>
 
-        <footer className="border-t border-white/[0.06] py-10">
+        <footer className="border-t border-white/[0.05] py-8">
           <div className="mx-auto max-w-7xl px-6 flex flex-col sm:flex-row items-center justify-between gap-4">
             <div className="flex items-center gap-3">
-              <img src="/assets/nc-logo.png" alt="NC" className="h-7 w-7 object-contain opacity-28" />
-              <span className="text-xs font-black uppercase tracking-[0.22em] text-white/18">NC Agência</span>
+              <img
+                src="/assets/nc-logo.png"
+                alt="NC"
+                className="h-7 w-7 object-contain"
+                style={{ opacity: 0.28 }}
+              />
+              <span className="text-[11px] font-black uppercase tracking-[0.22em] text-white/18">
+                NC Agência
+              </span>
             </div>
-            <span className="text-[9px] font-mono uppercase tracking-[0.2em] text-white/14">
-              © {new Date().getFullYear()} NC Performance Suite · Todos os direitos reservados
+            <span className="text-[8.5px] font-mono uppercase tracking-[0.2em] text-white/14">
+              © {new Date().getFullYear()} NC Performance Suite · Todos os
+              direitos reservados
             </span>
             <div className="flex items-center gap-1.5">
               <span className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" />
-              <span className="text-[9px] font-mono uppercase tracking-widest text-white/18">Sistema Online</span>
+              <span className="text-[8.5px] font-mono uppercase tracking-widest text-white/18">
+                Sistema Online
+              </span>
             </div>
           </div>
         </footer>
