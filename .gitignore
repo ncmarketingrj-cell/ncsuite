@@ -35,3 +35,8 @@ dist-ssr
 *.sln
 *.sw?
 .claude/
+
+# Secrets
+.env
+.env.*
+*.env
