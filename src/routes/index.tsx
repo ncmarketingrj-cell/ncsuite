@@ -1,10 +1,10 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { motion, useScroll, useTransform, useInView } from "framer-motion";
+import { motion, useScroll, useTransform, useInView, useMotionValue, useSpring } from "framer-motion";
 import {
   ArrowRight, Bot, BarChart3, Zap, Activity,
   Target, Layers, TrendingUp, Shield, Bell,
 } from "lucide-react";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -146,13 +146,30 @@ function LandingPage() {
   const { scrollY } = useScroll();
   const screenshotParallax = useTransform(scrollY, [0, 800], [0, 60]);
 
+  // mouse parallax tilt
+  const mx = useMotionValue(0);
+  const my = useMotionValue(0);
+  const rotateX = useSpring(useTransform(my, [-300, 300], [6, -6]), { stiffness: 60, damping: 22 });
+  const rotateY = useSpring(useTransform(mx, [-500, 500], [-7, 7]), { stiffness: 60, damping: 22 });
+
+  const heroRef = useRef<HTMLElement>(null);
+  const onMouseMove = useCallback((e: React.MouseEvent<HTMLElement>) => {
+    const r = heroRef.current?.getBoundingClientRect();
+    if (!r) return;
+    mx.set(e.clientX - r.left - r.width / 2);
+    my.set(e.clientY - r.top  - r.height / 2);
+  }, [mx, my]);
+  const onMouseLeave = useCallback(() => { mx.set(0); my.set(0); }, [mx, my]);
+
   return (
     <div className="relative overflow-x-hidden">
       <style>{`
         @keyframes marquee { to { transform: translateX(-50%); } }
         @keyframes shimx   { 0%{background-position:-200% center}100%{background-position:200% center} }
         @keyframes scanpulse { 0%,100%{opacity:0}50%{opacity:1} }
-        @keyframes floatY  { 0%,100%{transform:translateY(0)}50%{transform:translateY(-8px)} }
+        @keyframes floatY  { 0%,100%{transform:translateY(0)}50%{transform:translateY(-10px)} }
+        @keyframes glowPulse { 0%,100%{opacity:0.55}50%{opacity:1} }
+        .float-screen { animation: floatY 6s ease-in-out infinite; }
 
         .ticker-wrap  { animation: marquee 36s linear infinite; }
 
@@ -247,7 +264,8 @@ function LandingPage() {
       <div className="bg-[#06060C] dot-grid">
 
         {/* ── HERO ── */}
-        <section className="relative pt-36 pb-0 overflow-hidden min-h-screen flex flex-col">
+        <section ref={heroRef} onMouseMove={onMouseMove} onMouseLeave={onMouseLeave}
+          className="relative pt-36 pb-0 overflow-hidden min-h-screen flex flex-col">
           {/* radial glows */}
           <div className="absolute inset-0 pointer-events-none -z-10">
             <div
@@ -337,57 +355,64 @@ function LandingPage() {
             initial={{ opacity: 0, y: 56, scale: 0.96 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             transition={{ duration: 1.5, delay: 0.50, ease: [0.16, 1, 0.3, 1] }}
-            style={{ y: screenshotParallax }}
+            style={{ y: screenshotParallax, perspective: 1800 }}
             className="relative mt-16 mx-auto w-full max-w-6xl px-4 sm:px-8 lg:px-12 flex-1"
           >
-            {/* glow layers */}
+            {/* glow pulsante */}
             <div
               className="absolute -inset-8 rounded-3xl pointer-events-none"
               style={{
-                background:
-                  "radial-gradient(ellipse at center 30%, rgba(220,38,38,0.09) 0%, transparent 60%)",
+                background: "radial-gradient(ellipse at center 30%, rgba(220,38,38,0.11) 0%, transparent 60%)",
+                animation: "glowPulse 3.5s ease-in-out infinite",
+              }}
+            />
+            <div
+              className="absolute -inset-4 rounded-2xl pointer-events-none"
+              style={{
+                background: "radial-gradient(ellipse at center, rgba(139,92,246,0.05) 0%, transparent 70%)",
+                animation: "glowPulse 5s ease-in-out infinite reverse",
               }}
             />
 
-            {/* browser frame */}
-            <div
-              className="relative rounded-[14px] overflow-hidden screen-glow border border-white/[0.10]"
+            {/* tilt 3D + float */}
+            <motion.div
+              className="float-screen"
+              style={{ rotateX, rotateY, transformStyle: "preserve-3d" }}
             >
-              {/* title bar */}
-              <div className="flex items-center gap-2 h-9 px-4 bg-[#0E0E14] border-b border-white/[0.06]">
-                <div className="flex gap-1.5 flex-shrink-0">
-                  <div className="h-2.5 w-2.5 rounded-full bg-[#FF5F57]" />
-                  <div className="h-2.5 w-2.5 rounded-full bg-[#FEBC2E]" />
-                  <div className="h-2.5 w-2.5 rounded-full bg-[#28C840]" />
-                </div>
-                <div className="flex-1 flex justify-center">
-                  <div className="flex items-center gap-1.5 bg-white/[0.04] border border-white/[0.05] rounded-md px-3 py-0.5">
-                    <div className="h-1.5 w-1.5 rounded-full bg-green-500" />
-                    <span className="text-[8.5px] font-mono text-white/18">
-                      app.ncperformance.com.br
-                    </span>
+              {/* browser frame */}
+              <div className="relative rounded-[14px] overflow-hidden screen-glow border border-white/[0.10]">
+                {/* title bar */}
+                <div className="flex items-center gap-2 h-9 px-4 bg-[#0E0E14] border-b border-white/[0.06]">
+                  <div className="flex gap-1.5 flex-shrink-0">
+                    <div className="h-2.5 w-2.5 rounded-full bg-[#FF5F57]" />
+                    <div className="h-2.5 w-2.5 rounded-full bg-[#FEBC2E]" />
+                    <div className="h-2.5 w-2.5 rounded-full bg-[#28C840]" />
+                  </div>
+                  <div className="flex-1 flex justify-center">
+                    <div className="flex items-center gap-1.5 bg-white/[0.04] border border-white/[0.05] rounded-md px-3 py-0.5">
+                      <div className="h-1.5 w-1.5 rounded-full bg-green-500" />
+                      <span className="text-[8.5px] font-mono text-white/18">
+                        app.ncperformance.com.br
+                      </span>
+                    </div>
                   </div>
                 </div>
-              </div>
 
-              {/* screenshot */}
-              <div className="scan-line relative bg-[#0A0A0E]">
-                <img
-                  src="/assets/mockup-dashboard.png"
-                  alt="NC Performance Suite — Command Center"
-                  className="w-full h-auto block"
-                  style={{ display: "block" }}
-                />
-                {/* bottom fade para o fundo */}
-                <div
-                  className="absolute bottom-0 inset-x-0 h-48 pointer-events-none"
-                  style={{
-                    background:
-                      "linear-gradient(to top, #06060C 0%, transparent 100%)",
-                  }}
-                />
+                {/* screenshot */}
+                <div className="scan-line relative bg-[#0A0A0E]">
+                  <img
+                    src="/assets/mockup-dashboard.png"
+                    alt="NC Performance Suite — Command Center"
+                    className="w-full h-auto block"
+                  />
+                  {/* bottom fade */}
+                  <div
+                    className="absolute bottom-0 inset-x-0 h-48 pointer-events-none"
+                    style={{ background: "linear-gradient(to top, #06060C 0%, transparent 100%)" }}
+                  />
+                </div>
               </div>
-            </div>
+            </motion.div>
           </motion.div>
         </section>
 
