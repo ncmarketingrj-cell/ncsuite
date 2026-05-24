@@ -104,6 +104,13 @@ function MetricasAvancadasPage() {
     }
   }, [searchParams.account, searchParams.campaign]);
   
+  const [scrolled, setScrolled] = useState(false);
+  useEffect(() => {
+    const onScroll = () => setScrolled(window.scrollY > 60);
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
+
   const [selectedCamps, setSelectedCamps] = useState<Set<string>>(new Set());
   const [selectedAdSets, setSelectedAdSets] = useState<Set<string>>(new Set());
   const [selectedAds, setSelectedAds] = useState<Set<string>>(new Set());
@@ -286,23 +293,27 @@ function MetricasAvancadasPage() {
       
       {/* ─── STICKY HEADER AREA ─── */}
       <div className="sticky top-0 z-40 -mx-1 px-1 bg-background/95 backdrop-blur-xl pt-2 space-y-4">
-        <PageHeader
-          eyebrow="Hub de Análise Técnica"
-          title="Métricas Avançadas"
-          description="Todos os KPIs técnicos de tráfego pago com gerenciamento em tempo real — CTR, CPM, CPC, Frequência, ROAS, CPL e mais."
-          actions={
-            <div className="flex flex-wrap items-center gap-3">
-              <DateRangePicker startDate={dateRange.startDate} endDate={dateRange.endDate} onChange={(s, e) => setDateRange({ startDate: s, endDate: e })} />
-              <button
-                onClick={() => navigate({ to: "/metricas/grafico", search: (prev) => prev })}
-                className="flex items-center gap-2 rounded-xl border border-primary/30 bg-primary/10 px-4 py-2.5 text-xs font-bold text-primary hover:bg-primary/20 transition-all"
-              >
-                <Pencil className="h-3.5 w-3.5" />
-                Gráficos Demográficos
-              </button>
-            </div>
-          }
-        />
+
+        {/* Título + ações — colapsa com scroll */}
+        <div className={`overflow-hidden transition-all duration-300 ease-in-out ${scrolled ? "max-h-0 opacity-0 pointer-events-none -mb-4" : "max-h-40 opacity-100"}`}>
+          <PageHeader
+            eyebrow="Hub de Análise Técnica"
+            title="Métricas Avançadas"
+            description="Todos os KPIs técnicos de tráfego pago com gerenciamento em tempo real — CTR, CPM, CPC, Frequência, ROAS, CPL e mais."
+            actions={
+              <div className="flex flex-wrap items-center gap-3">
+                <DateRangePicker startDate={dateRange.startDate} endDate={dateRange.endDate} onChange={(s, e) => setDateRange({ startDate: s, endDate: e })} />
+                <button
+                  onClick={() => navigate({ to: "/metricas/grafico", search: (prev) => prev })}
+                  className="flex items-center gap-2 rounded-xl border border-primary/30 bg-primary/10 px-4 py-2.5 text-xs font-bold text-primary hover:bg-primary/20 transition-all"
+                >
+                  <Pencil className="h-3.5 w-3.5" />
+                  Gráficos Demográficos
+                </button>
+              </div>
+            }
+          />
+        </div>
 
         {/* MINI KPI BAR */}
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-8">
