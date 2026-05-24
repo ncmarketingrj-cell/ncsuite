@@ -81,10 +81,12 @@ const MORE_ITEMS: NavItem[] = [
   { to: "/config", icon: Settings, label: "Configurações" },
 ];
 
+const ADMIN_EMAILS = ["nc.marketingrj@gmail.com", "hc.marketing.dgt@gmail.com"];
+
 function Shell() {
   const { loading, user, signOut } = useAuth();
-  
-  const { data: profile } = useQuery({
+
+  const { data: profile, isLoading: profileLoading } = useQuery({
     queryKey: ["current_user_profile", user?.id],
     queryFn: async () => {
       if (!user?.id) return null;
@@ -99,10 +101,12 @@ function Shell() {
     enabled: !!user?.id,
   });
 
-  const isAdmin = profile?.role === "admin";
+  // isAdmin: imediato via email (evita flash no carregamento) + confirmado via DB
+  const isAdmin = profile?.role === "admin" || (user?.email ? ADMIN_EMAILS.includes(user.email) : false);
   const perms = (profile as any)?.permissions ?? {};
-  const canSeeMetricas  = isAdmin || !!perms.metricas;
-  const canSeeAutomacoes = isAdmin || !!perms.automacoes;
+  // Durante carregamento do perfil, exibe tudo (otimista) — restrições aplicadas só após carregar
+  const canSeeMetricas  = profileLoading || isAdmin || !!perms.metricas;
+  const canSeeAutomacoes = profileLoading || isAdmin || !!perms.automacoes;
 
   const filteredNavItems = NAV_ITEMS.filter(item => {
     if (item.to === "/metricas" && !canSeeMetricas) return false;
