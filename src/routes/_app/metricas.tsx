@@ -137,6 +137,14 @@ function MetricasAvancadasPage() {
     },
   });
 
+  const { data: alertThresholds = [] } = useQuery({
+    queryKey: ["alert_thresholds"],
+    queryFn: async () => {
+      const { data } = await (supabase as any).from("alert_thresholds").select("ad_account_id, max_cpl, is_active").eq("is_active", true);
+      return (data as any[]) || [];
+    },
+  });
+
   // ─── CAMPANHAS ───
   const { data: campaigns = [], isLoading: isLoadingCamps } = useQuery({
     queryKey: ["metricas-camps", accountFilter, statusFilter, dateRange.startDate.toISOString(), dateRange.endDate.toISOString()],
@@ -435,13 +443,20 @@ function MetricasAvancadasPage() {
                         const isActive = c.status?.toUpperCase() === "ACTIVE";
                         const isChanging = changingId === c.id;
                         const isSel = selSet.has(c.id);
+                        const acctThreshold = alertThresholds.find((t: any) => t.ad_account_id === c.ad_account_id && t.max_cpl != null);
+                        const isCplExpensive = acctThreshold && c.t.cpl > 0 && c.t.cpl > acctThreshold.max_cpl;
+                        const isCplCheap    = acctThreshold && c.t.cpl > 0 && c.t.cpl <= acctThreshold.max_cpl;
                         return (
                           <tr
                             key={c.id}
                             id={`campaign-row-${c.external_id}`}
                             className={`border-b border-white/[0.03] transition-colors ${
-                              highlightCampaign && c.external_id === highlightCampaign
+                              isCplExpensive
+                                ? "bg-destructive/10 border-l-2 border-l-destructive"
+                                : highlightCampaign && c.external_id === highlightCampaign
                                 ? "bg-destructive/10 border-l-2 border-l-destructive animate-pulse"
+                                : isCplCheap
+                                ? "bg-success/[0.04] border-l-2 border-l-success/40"
                                 : isSel ? "bg-primary/5" : "hover:bg-white/[0.015]"
                             }`}
                           >
@@ -467,7 +482,11 @@ function MetricasAvancadasPage() {
                             <td className="px-3 py-3 text-right font-mono text-muted-foreground">{c.t.impressions.toLocaleString("pt-BR")}</td>
                             <td className="px-3 py-3 text-right font-mono text-muted-foreground">{c.t.freq.toFixed(2)}</td>
                             <td className="px-3 py-3 text-right font-mono font-bold text-violet-600 dark:text-violet-400">{c.t.conversions.toLocaleString("pt-BR")}</td>
-                            <td className="px-3 py-3 text-right font-mono font-bold text-primary">{c.t.cpl > 0 ? `R$ ${c.t.cpl.toFixed(2)}` : "—"}</td>
+                            <td className="px-3 py-3 text-right font-mono font-bold">
+                              <span className={isCplExpensive ? "text-destructive" : isCplCheap ? "text-success" : "text-primary"}>
+                                {c.t.cpl > 0 ? `R$ ${c.t.cpl.toFixed(2)}` : "—"}
+                              </span>
+                            </td>
                             <td className="px-3 py-3 text-right font-mono font-bold text-primary">R$ {c.t.cost.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</td>
                             <td className="px-3 py-3 text-right font-mono">
                               <span className={`rounded px-1.5 py-0.5 ${c.t.ctr >= 2 ? "bg-success/15 text-success" : c.t.ctr >= 1 ? "bg-primary/15 text-primary" : "text-muted-foreground"}`}>
