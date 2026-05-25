@@ -220,9 +220,9 @@ function LandingPage() {
         className={`fixed inset-x-0 top-0 z-50 transition-all duration-500 ${
           scrolled
             ? navLight
-              ? "bg-white/95 backdrop-blur-2xl border-b border-black/[0.08] py-3 shadow-sm"
-              : "bg-[#06060C]/95 backdrop-blur-2xl border-b border-white/[0.05] py-3"
-            : "bg-transparent py-5"
+              ? "bg-white/95 backdrop-blur-2xl border-b border-black/[0.08] py-2.5 shadow-sm"
+              : "bg-[#06060C]/95 backdrop-blur-2xl border-b border-white/[0.05] py-2.5"
+            : "bg-transparent py-4"
         }`}
       >
         <div className="mx-auto flex max-w-7xl items-center justify-between px-6">
@@ -265,7 +265,7 @@ function LandingPage() {
 
         {/* ── HERO ── */}
         <section ref={heroRef} onMouseMove={onMouseMove} onMouseLeave={onMouseLeave}
-          className="relative pt-36 pb-0 overflow-hidden min-h-screen flex flex-col">
+          className="relative pt-28 pb-0 overflow-hidden min-h-screen flex flex-col">
           {/* radial glows */}
           <div className="absolute inset-0 pointer-events-none -z-10">
             <div
@@ -318,7 +318,7 @@ function LandingPage() {
               initial={{ opacity: 0, y: 16 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.8, delay: 0.2 }}
-              className="mt-6 text-[16px] sm:text-[18px] text-white/36 max-w-xl mx-auto leading-relaxed"
+              className="mt-6 text-[16px] sm:text-[18px] text-zinc-400 max-w-xl mx-auto leading-relaxed"
             >
               BI proprietário + IA + automações. Tudo em um painel —
               construído para quem opera no mais alto nível do tráfego pago.
@@ -401,7 +401,7 @@ function LandingPage() {
                 {/* screenshot */}
                 <div className="scan-line relative bg-[#0A0A0E]">
                   <img
-                    src="/assets/mockup-dashboard.png"
+                    src="/assets/mockup-reports.png"
                     alt="NC Performance Suite — Command Center"
                     className="w-full h-auto block"
                   />
@@ -417,12 +417,12 @@ function LandingPage() {
         </section>
 
         {/* ── TICKER ── */}
-        <div className="border-y border-white/[0.05] py-3 overflow-hidden select-none">
+        <div className="border-y border-white/[0.05] py-2.5 overflow-hidden select-none">
           <div className="ticker-wrap flex whitespace-nowrap gap-12">
             {[...TICKER, ...TICKER].map((item, i) => (
               <span
                 key={i}
-                className="inline-flex items-center gap-3 text-[8.5px] font-black uppercase tracking-[0.34em] text-white/16"
+                className="inline-flex items-center gap-3 text-[9px] font-black uppercase tracking-[0.3em] text-white/16"
               >
                 <span className="h-[3px] w-3 rounded-full bg-red-600 flex-shrink-0" />
                 {item}
@@ -432,7 +432,7 @@ function LandingPage() {
         </div>
 
         {/* ── STATS ── */}
-        <section className="py-20">
+        <section className="py-16">
           <div className="mx-auto max-w-5xl px-6">
             <motion.div
               variants={stagger}
@@ -468,7 +468,7 @@ function LandingPage() {
         </section>
 
         {/* ── MÓDULOS ── */}
-        <section id="suite" className="pb-32 pt-4">
+        <section id="suite" className="pb-24 pt-4">
           <div className="mx-auto max-w-6xl px-6">
             <div className="mb-14">
               <span className="text-[8.5px] font-black uppercase tracking-[0.34em] text-red-500 mb-3 block">
@@ -500,7 +500,7 @@ function LandingPage() {
                     }}
                   >
                     <motion.div
-                      className="card-hover group relative rounded-2xl border border-white/[0.07] bg-white/[0.025] p-7 h-full overflow-hidden cursor-default"
+                      className="card-hover group relative rounded-2xl border border-white/[0.07] bg-white/[0.025] p-6 h-full overflow-hidden cursor-default"
                       whileHover={{
                         borderColor: `${mod.accent}28`,
                         backgroundColor: "rgba(255,255,255,0.035)",
@@ -541,7 +541,7 @@ function LandingPage() {
                         <h3 className="text-[15.5px] font-black text-white mb-2">
                           {mod.label}
                         </h3>
-                        <p className="text-[12px] text-white/32 leading-relaxed">
+                        <p className="text-[12px] text-white/50 leading-relaxed">
                           {mod.desc}
                         </p>
                       </div>
@@ -591,7 +591,7 @@ function LandingPage() {
       <div ref={lightZoneRef} className="bg-[#EEEDE7]">
 
         {/* ── FEATURE: Command Center ── */}
-        <section className="pt-24 pb-24 border-b border-black/[0.07]">
+        <section className="pt-20 pb-20 border-b border-black/[0.07]">
           <div className="mx-auto max-w-6xl px-6">
             <div className="grid lg:grid-cols-2 gap-16 lg:gap-24 items-center">
               <motion.div
@@ -611,7 +611,7 @@ function LandingPage() {
                   <br />
                   <span className="text-[#0A0A08]/20">Em um lugar.</span>
                 </h2>
-                <p className="text-[15px] leading-relaxed text-[#0A0A08]/52 mb-8">
+                <p className="text-[15px] leading-relaxed text-[#0A0A08]/70 mb-8">
                   Todas as contas Meta Ads consolidadas. Investimento, CPL,
                   pacing de orçamento, alertas inteligentes e KPIs operacionais
                   — visibilidade total para toda a equipe, em tempo real.
@@ -659,7 +659,7 @@ function LandingPage() {
         </section>
 
         {/* ── VICTORIA AI — card escuro dentro da zona clara ── */}
-        <section className="py-24 border-b border-black/[0.07]">
+        <section className="py-20 border-b border-black/[0.07]">
           <div className="mx-auto max-w-6xl px-6">
             <motion.div
               initial={{ opacity: 0, y: 24 }}
@@ -674,7 +674,7 @@ function LandingPage() {
             >
               <div className="grid lg:grid-cols-2">
                 {/* text */}
-                <div className="p-10 lg:p-14 border-b lg:border-b-0 lg:border-r border-white/[0.05]">
+                <div className="p-8 lg:p-12 border-b lg:border-b-0 lg:border-r border-white/[0.05]">
                   <span className="text-[8.5px] font-black uppercase tracking-[0.34em] text-cyan-400 mb-4 block">
                     IA · MÓDULO EXCLUSIVO
                   </span>
@@ -686,7 +686,7 @@ function LandingPage() {
                     <br />
                     <span className="text-white/20">Decisões precisas.</span>
                   </h2>
-                  <p className="text-[14.5px] leading-relaxed mb-8 text-white/42">
+                  <p className="text-[14.5px] leading-relaxed mb-8 text-white/60">
                     Treinada com a metodologia NC. Audita campanhas, identifica
                     criativos vencedores e sugere ajustes antes que os problemas
                     virem prejuízo.
@@ -735,7 +735,7 @@ function LandingPage() {
         </section>
 
         {/* ── VICTORIA MAIA ── */}
-        <section className="py-28">
+        <section className="py-24">
           <div className="mx-auto max-w-6xl px-6">
             <div className="grid lg:grid-cols-2 gap-16 lg:gap-24 items-center">
               <motion.div
@@ -842,7 +842,7 @@ function LandingPage() {
           ZONA ESCURA: CTA + FOOTER
       ════════════════════════════════════ */}
       <div className="bg-[#06060C] dot-grid">
-        <section className="relative py-44 overflow-hidden">
+        <section className="relative py-32 overflow-hidden">
           <div className="absolute inset-0 pointer-events-none -z-10">
             <div
               className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full"
@@ -871,7 +871,7 @@ function LandingPage() {
                 Operação em<br />
                 <span className="shimmer-text">alta velocidade.</span>
               </h2>
-              <p className="text-[17px] mb-12 text-white/32 max-w-sm mx-auto leading-relaxed">
+              <p className="text-[17px] mb-12 text-white/50 max-w-sm mx-auto leading-relaxed">
                 O acesso ao NC Performance Suite é restrito a colaboradores e
                 parceiros autorizados da NC Agência.
               </p>
