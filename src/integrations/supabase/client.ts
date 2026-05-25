@@ -3,10 +3,12 @@ import { createClient } from '@supabase/supabase-js';
 import type { Database } from './database.types';
 
 function createSupabaseClient() {
-  // Forçar as credenciais oficiais do Supabase do Trabalho (xudumzedcxuuhxokissm)
-  // para garantir a sincronização imediata no Lovable Cloud e local.
-  const SUPABASE_URL = "https://xudumzedcxuuhxokissm.supabase.co";
-  const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_KVptQYNLCFSjqmUYJcGmrQ_WurR5l_p";
+  const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
+  const SUPABASE_PUBLISHABLE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string;
+
+  if (!SUPABASE_URL || !SUPABASE_PUBLISHABLE_KEY) {
+    throw new Error("Variáveis VITE_SUPABASE_URL e VITE_SUPABASE_PUBLISHABLE_KEY não configuradas no .env");
+  }
 
   return createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
     auth: {

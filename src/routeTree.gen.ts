@@ -28,13 +28,13 @@ import { Route as AppIntegrationsRouteImport } from './routes/_app/integrations'
 import { Route as AppDashboardRouteImport } from './routes/_app/dashboard'
 import { Route as AppCriativosRouteImport } from './routes/_app/criativos'
 import { Route as AppConfigRouteImport } from './routes/_app/config'
+import { Route as AppClientesRouteImport } from './routes/_app/clientes'
 import { Route as AppCampanhasRouteImport } from './routes/_app/campanhas'
 import { Route as AppAutomacoesRouteImport } from './routes/_app/automacoes'
 import { Route as AppAgenteRouteImport } from './routes/_app/agente'
 import { Route as AppMetricasGraficoRouteImport } from './routes/_app/metricas.grafico'
-import { Route as AppCampanhasGraficoRouteImport } from './routes/_app/campanhas.grafico'
-import { Route as AppClientesRouteImport } from './routes/_app/clientes'
 import { Route as AppClientesClientIdRouteImport } from './routes/_app/clientes.$clientId'
+import { Route as AppCampanhasGraficoRouteImport } from './routes/_app/campanhas.grafico'
 
 const TermsRoute = TermsRouteImport.update({
   id: '/terms',
@@ -130,6 +130,11 @@ const AppConfigRoute = AppConfigRouteImport.update({
   path: '/config',
   getParentRoute: () => AppRoute,
 } as any)
+const AppClientesRoute = AppClientesRouteImport.update({
+  id: '/clientes',
+  path: '/clientes',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppCampanhasRoute = AppCampanhasRouteImport.update({
   id: '/campanhas',
   path: '/campanhas',
@@ -150,20 +155,15 @@ const AppMetricasGraficoRoute = AppMetricasGraficoRouteImport.update({
   path: '/grafico',
   getParentRoute: () => AppMetricasRoute,
 } as any)
+const AppClientesClientIdRoute = AppClientesClientIdRouteImport.update({
+  id: '/$clientId',
+  path: '/$clientId',
+  getParentRoute: () => AppClientesRoute,
+} as any)
 const AppCampanhasGraficoRoute = AppCampanhasGraficoRouteImport.update({
   id: '/grafico',
   path: '/grafico',
   getParentRoute: () => AppCampanhasRoute,
-} as any)
-const AppClientesRoute = AppClientesRouteImport.update({
-  id: '/_app/clientes',
-  path: '/clientes',
-  getParentRoute: () => AppRoute,
-} as any)
-const AppClientesClientIdRoute = AppClientesClientIdRouteImport.update({
-  id: '/_app/clientes/$clientId',
-  path: '/$clientId',
-  getParentRoute: () => AppClientesRoute,
 } as any)
 
 export interface FileRoutesByFullPath {
@@ -176,7 +176,6 @@ export interface FileRoutesByFullPath {
   '/automacoes': typeof AppAutomacoesRoute
   '/campanhas': typeof AppCampanhasRouteWithChildren
   '/clientes': typeof AppClientesRouteWithChildren
-  '/clientes/$clientId': typeof AppClientesClientIdRoute
   '/config': typeof AppConfigRoute
   '/criativos': typeof AppCriativosRoute
   '/dashboard': typeof AppDashboardRoute
@@ -191,6 +190,7 @@ export interface FileRoutesByFullPath {
   '/p/$slug': typeof PSlugRoute
   '/q/$slug': typeof QSlugRoute
   '/campanhas/grafico': typeof AppCampanhasGraficoRoute
+  '/clientes/$clientId': typeof AppClientesClientIdRoute
   '/metricas/grafico': typeof AppMetricasGraficoRoute
 }
 export interface FileRoutesByTo {
@@ -203,7 +203,6 @@ export interface FileRoutesByTo {
   '/automacoes': typeof AppAutomacoesRoute
   '/campanhas': typeof AppCampanhasRouteWithChildren
   '/clientes': typeof AppClientesRouteWithChildren
-  '/clientes/$clientId': typeof AppClientesClientIdRoute
   '/config': typeof AppConfigRoute
   '/criativos': typeof AppCriativosRoute
   '/dashboard': typeof AppDashboardRoute
@@ -218,6 +217,7 @@ export interface FileRoutesByTo {
   '/p/$slug': typeof PSlugRoute
   '/q/$slug': typeof QSlugRoute
   '/campanhas/grafico': typeof AppCampanhasGraficoRoute
+  '/clientes/$clientId': typeof AppClientesClientIdRoute
   '/metricas/grafico': typeof AppMetricasGraficoRoute
 }
 export interface FileRoutesById {
@@ -232,7 +232,6 @@ export interface FileRoutesById {
   '/_app/automacoes': typeof AppAutomacoesRoute
   '/_app/campanhas': typeof AppCampanhasRouteWithChildren
   '/_app/clientes': typeof AppClientesRouteWithChildren
-  '/_app/clientes/$clientId': typeof AppClientesClientIdRoute
   '/_app/config': typeof AppConfigRoute
   '/_app/criativos': typeof AppCriativosRoute
   '/_app/dashboard': typeof AppDashboardRoute
@@ -247,6 +246,7 @@ export interface FileRoutesById {
   '/p/$slug': typeof PSlugRoute
   '/q/$slug': typeof QSlugRoute
   '/_app/campanhas/grafico': typeof AppCampanhasGraficoRoute
+  '/_app/clientes/$clientId': typeof AppClientesClientIdRoute
   '/_app/metricas/grafico': typeof AppMetricasGraficoRoute
 }
 export interface FileRouteTypes {
@@ -261,7 +261,6 @@ export interface FileRouteTypes {
     | '/automacoes'
     | '/campanhas'
     | '/clientes'
-    | '/clientes/$clientId'
     | '/config'
     | '/criativos'
     | '/dashboard'
@@ -276,6 +275,7 @@ export interface FileRouteTypes {
     | '/p/$slug'
     | '/q/$slug'
     | '/campanhas/grafico'
+    | '/clientes/$clientId'
     | '/metricas/grafico'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -288,7 +288,6 @@ export interface FileRouteTypes {
     | '/automacoes'
     | '/campanhas'
     | '/clientes'
-    | '/clientes/$clientId'
     | '/config'
     | '/criativos'
     | '/dashboard'
@@ -303,6 +302,7 @@ export interface FileRouteTypes {
     | '/p/$slug'
     | '/q/$slug'
     | '/campanhas/grafico'
+    | '/clientes/$clientId'
     | '/metricas/grafico'
   id:
     | '__root__'
@@ -316,7 +316,6 @@ export interface FileRouteTypes {
     | '/_app/automacoes'
     | '/_app/campanhas'
     | '/_app/clientes'
-    | '/_app/clientes/$clientId'
     | '/_app/config'
     | '/_app/criativos'
     | '/_app/dashboard'
@@ -331,6 +330,7 @@ export interface FileRouteTypes {
     | '/p/$slug'
     | '/q/$slug'
     | '/_app/campanhas/grafico'
+    | '/_app/clientes/$clientId'
     | '/_app/metricas/grafico'
   fileRoutesById: FileRoutesById
 }
@@ -480,6 +480,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppConfigRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/clientes': {
+      id: '/_app/clientes'
+      path: '/clientes'
+      fullPath: '/clientes'
+      preLoaderRoute: typeof AppClientesRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/campanhas': {
       id: '/_app/campanhas'
       path: '/campanhas'
@@ -508,20 +515,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppMetricasGraficoRouteImport
       parentRoute: typeof AppMetricasRoute
     }
-    '/_app/campanhas/grafico': {
-      id: '/_app/campanhas/grafico'
-      path: '/grafico'
-      fullPath: '/campanhas/grafico'
-      preLoaderRoute: typeof AppCampanhasGraficoRouteImport
-      parentRoute: typeof AppCampanhasRoute
-    }
-    '/_app/clientes': {
-      id: '/_app/clientes'
-      path: '/clientes'
-      fullPath: '/clientes'
-      preLoaderRoute: typeof AppClientesRouteImport
-      parentRoute: typeof AppRoute
-    }
     '/_app/clientes/$clientId': {
       id: '/_app/clientes/$clientId'
       path: '/$clientId'
@@ -529,16 +522,15 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppClientesClientIdRouteImport
       parentRoute: typeof AppClientesRoute
     }
+    '/_app/campanhas/grafico': {
+      id: '/_app/campanhas/grafico'
+      path: '/grafico'
+      fullPath: '/campanhas/grafico'
+      preLoaderRoute: typeof AppCampanhasGraficoRouteImport
+      parentRoute: typeof AppCampanhasRoute
+    }
   }
 }
-
-interface AppClientesRouteChildren {
-  AppClientesClientIdRoute: typeof AppClientesClientIdRoute
-}
-const AppClientesRouteChildren: AppClientesRouteChildren = {
-  AppClientesClientIdRoute: AppClientesClientIdRoute,
-}
-const AppClientesRouteWithChildren = AppClientesRoute._addFileChildren(AppClientesRouteChildren)
 
 interface AppCampanhasRouteChildren {
   AppCampanhasGraficoRoute: typeof AppCampanhasGraficoRoute
@@ -550,6 +542,18 @@ const AppCampanhasRouteChildren: AppCampanhasRouteChildren = {
 
 const AppCampanhasRouteWithChildren = AppCampanhasRoute._addFileChildren(
   AppCampanhasRouteChildren,
+)
+
+interface AppClientesRouteChildren {
+  AppClientesClientIdRoute: typeof AppClientesClientIdRoute
+}
+
+const AppClientesRouteChildren: AppClientesRouteChildren = {
+  AppClientesClientIdRoute: AppClientesClientIdRoute,
+}
+
+const AppClientesRouteWithChildren = AppClientesRoute._addFileChildren(
+  AppClientesRouteChildren,
 )
 
 interface AppMetricasRouteChildren {
@@ -615,3 +619,13 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { startInstance } from './start.ts'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
+  }
+}
