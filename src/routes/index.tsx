@@ -58,7 +58,7 @@ const fadeUp = {
   show: {
     opacity: 1,
     y: 0,
-    transition: { duration: 0.7, ease: [0.16, 1, 0.3, 1] },
+    transition: { duration: 0.7, ease: [0.16, 1, 0.3, 1] as [number, number, number, number] },
   },
 };
 const stagger = {
@@ -260,7 +260,7 @@ function LandingPage() {
       {/* ════════════════════════════════════
           ZONA ESCURA
       ════════════════════════════════════ */}
-      <div className="bg-[#06060C] dot-grid">
+      <div className="bg-[#06060C] dot-grid" data-lp-zone="dark">
 
         {/* ── HERO ── */}
         <section ref={heroRef} onMouseMove={onMouseMove} onMouseLeave={onMouseLeave}
@@ -400,7 +400,7 @@ function LandingPage() {
                 {/* screenshot */}
                 <div className="scan-line relative bg-[#0A0A0E]">
                   <img
-                    src="/assets/mockup-reports.png"
+                    src="/assets/mockup-dashboard.png"
                     alt="NC Performance Suite — Command Center"
                     className="w-full h-auto block"
                   />
@@ -416,12 +416,12 @@ function LandingPage() {
         </section>
 
         {/* ── TICKER ── */}
-        <div className="border-y border-white/[0.05] py-2.5 overflow-hidden select-none">
+        <div className="border-y border-white/[0.10] py-3.5 overflow-hidden select-none bg-white/[0.018]">
           <div className="ticker-wrap flex whitespace-nowrap gap-12">
             {[...TICKER, ...TICKER].map((item, i) => (
               <span
                 key={i}
-                className="inline-flex items-center gap-3 text-[9px] font-black uppercase tracking-[0.3em] text-white/38"
+                className="inline-flex items-center gap-3 text-[10px] font-black uppercase tracking-[0.3em] text-white/55"
               >
                 <span className="h-[3px] w-3 rounded-full bg-red-600 flex-shrink-0" />
                 {item}
@@ -608,7 +608,7 @@ function LandingPage() {
                 >
                   Tudo que importa.
                   <br />
-                  <span className="text-[#0A0A08]/32">Em um lugar.</span>
+                  <span className="text-[#0A0A08]/45">Em um lugar.</span>
                 </h2>
                 <p className="text-[15px] leading-relaxed text-[#0A0A08]/70 mb-8">
                   Todas as contas Meta Ads consolidadas. Investimento, CPL,
@@ -637,9 +637,10 @@ function LandingPage() {
               <motion.div
                 initial={{ opacity: 0, x: 20 }}
                 whileInView={{ opacity: 1, x: 0 }}
+                whileHover={{ y: -8, scale: 1.01 }}
                 viewport={{ once: true }}
-                transition={{ duration: 0.9, delay: 0.1, ease: [0.16, 1, 0.3, 1] }}
-                className="relative"
+                transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
+                className="relative cursor-pointer"
               >
                 <div className="absolute -inset-4 rounded-3xl bg-black/[0.04] blur-[40px]" />
                 <div
@@ -647,7 +648,7 @@ function LandingPage() {
                   style={{ boxShadow: "0 20px 60px rgba(0,0,0,0.10)" }}
                 >
                   <img
-                    src="/assets/mockup-dashboard.png"
+                    src="/assets/mockup-reports.png"
                     alt="Command Center"
                     className="w-full h-auto block"
                   />
@@ -666,6 +667,7 @@ function LandingPage() {
               viewport={{ once: true }}
               transition={{ duration: 0.9 }}
               className="rounded-3xl overflow-hidden border border-black/[0.08]"
+              data-lp-zone="dark"
               style={{
                 background: "#0A0A0E",
                 boxShadow: "0 8px 60px rgba(0,0,0,0.14)",
@@ -793,14 +795,16 @@ function LandingPage() {
                       "radial-gradient(ellipse, rgba(220,38,38,0.06), transparent)",
                   }}
                 />
-                <div
-                  className="relative rounded-3xl overflow-hidden"
+                <motion.div
+                  className="relative rounded-3xl overflow-hidden cursor-pointer"
+                  whileHover={{ scale: 1.02, y: -6 }}
+                  transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
                   style={{ boxShadow: "0 24px 64px rgba(0,0,0,0.14)" }}
                 >
                   <img
                     src="/assets/victoria-maia.png"
                     alt="Victoria Maia"
-                    className="w-full h-[520px] object-cover grayscale"
+                    className="w-full h-[520px] object-cover transition-all duration-700 grayscale hover:grayscale-0"
                     style={{ objectPosition: "center 15%" }}
                   />
                   <div
@@ -810,7 +814,7 @@ function LandingPage() {
                         "linear-gradient(to top, rgba(238,237,231,0.35) 0%, transparent 60%)",
                     }}
                   />
-                </div>
+                </motion.div>
               </motion.div>
             </div>
           </div>
@@ -840,7 +844,7 @@ function LandingPage() {
       {/* ════════════════════════════════════
           ZONA ESCURA: CTA + FOOTER
       ════════════════════════════════════ */}
-      <div className="bg-[#06060C] dot-grid">
+      <div className="bg-[#06060C] dot-grid" data-lp-zone="dark">
         <section className="relative py-32 overflow-hidden">
           <div className="absolute inset-0 pointer-events-none -z-10">
             <div

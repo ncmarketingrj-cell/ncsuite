@@ -644,6 +644,10 @@ html.light {
       0 4px 16px hsl(220 25% 15% / 0.06);
   }
 
+  /* ── Landing page: zonas hardcoded escuras preservam texto branco em qualquer tema ── */
+  [data-lp-zone="dark"] .text-white { color: rgb(255 255 255) !important; }
+  [data-lp-zone="dark"] .text-zinc-400 { color: rgb(161 161 170) !important; }
+
   /* ══════════════════════════════════════════════
      AUTOMOTIVO & BRANDING — NC Performance Suite
      Detalhes de cockpit, chassi e identidade visual
