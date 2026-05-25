@@ -1,4 +1,6 @@
 -- Corrige handle_new_user: role default 'employee' violava constraint apos migracao rbac
+ALTER TABLE public.profiles ALTER COLUMN role SET DEFAULT 'outro';
+
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
 DECLARE
@@ -18,6 +20,8 @@ BEGIN
   )
   ON CONFLICT (id) DO NOTHING;
 
+  RETURN NEW;
+EXCEPTION WHEN OTHERS THEN
   RETURN NEW;
 END;
 $$;
