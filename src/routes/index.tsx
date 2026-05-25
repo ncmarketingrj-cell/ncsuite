@@ -416,14 +416,14 @@ function LandingPage() {
         </section>
 
         {/* ── TICKER ── */}
-        <div className="border-y border-white/[0.10] py-3.5 overflow-hidden select-none bg-white/[0.018]">
-          <div className="ticker-wrap flex whitespace-nowrap gap-12">
+        <div className="border-y border-white/[0.18] py-4 overflow-hidden select-none bg-white/[0.03]">
+          <div className="ticker-wrap flex whitespace-nowrap gap-14">
             {[...TICKER, ...TICKER].map((item, i) => (
               <span
                 key={i}
-                className="inline-flex items-center gap-3 text-[10px] font-black uppercase tracking-[0.3em] text-white/55"
+                className="inline-flex items-center gap-3.5 text-[11px] font-black uppercase tracking-[0.28em] text-white/65"
               >
-                <span className="h-[3px] w-3 rounded-full bg-red-600 flex-shrink-0" />
+                <span className="h-[4px] w-4 rounded-full bg-red-600 flex-shrink-0" />
                 {item}
               </span>
             ))}

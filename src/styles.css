@@ -644,9 +644,11 @@ html.light {
       0 4px 16px hsl(220 25% 15% / 0.06);
   }
 
-  /* ── Landing page: zonas hardcoded escuras preservam texto branco em qualquer tema ── */
-  [data-lp-zone="dark"] .text-white { color: rgb(255 255 255) !important; }
-  [data-lp-zone="dark"] .text-zinc-400 { color: rgb(161 161 170) !important; }
+  /* ── Landing page: zonas hardcoded escuras preservam texto em qualquer tema ──
+     Especificidade html + [attr] + .class = (0,2,1) — empata com html.light .text-white
+     mas vem depois no stylesheet, portanto ganha na cascata. ── */
+  html [data-lp-zone="dark"] .text-white  { color: rgb(255 255 255) !important; }
+  html [data-lp-zone="dark"] .text-zinc-400 { color: rgb(161 161 170) !important; }
 
   /* ══════════════════════════════════════════════
      AUTOMOTIVO & BRANDING — NC Performance Suite
