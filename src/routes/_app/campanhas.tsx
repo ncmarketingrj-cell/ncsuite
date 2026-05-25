@@ -245,11 +245,24 @@ function MetaAdsManagerPage() {
     const impressions = m.reduce((s: number, x: any) => s + Number(x.impressions || 0), 0);
     const reach = m.reduce((s: number, x: any) => s + Number(x.reach || 0), 0);
     const clicks = m.reduce((s: number, x: any) => s + Number(x.clicks || 0), 0);
-    // Frequência: média ponderada dos dias (ou fallback impressions/reach)
+
+    let frequency = 0;
     const freqRows = m.filter((x: any) => Number(x.frequency) > 0);
-    const frequency = freqRows.length > 0
-      ? freqRows.reduce((s: number, x: any) => s + Number(x.frequency), 0) / freqRows.length
-      : reach > 0 ? impressions / reach : 0;
+    if (freqRows.length > 0) {
+      // Campanhas: usa a frequência diária armazenada pelo sync (média dos dias)
+      frequency = freqRows.reduce((s: number, x: any) => s + Number(x.frequency), 0) / freqRows.length;
+    } else {
+      // Adsets/Anúncios (asset_metrics não tem coluna frequency):
+      // calcula freq por dia = impressions_dia / reach_dia e tira a média.
+      // SUM(impressions)/SUM(reach) é ERRADO porque reach diário != alcance único do período.
+      const dailyFreqs = m
+        .filter((x: any) => Number(x.reach) > 0 && Number(x.impressions) > 0)
+        .map((x: any) => Number(x.impressions) / Number(x.reach));
+      frequency = dailyFreqs.length > 0
+        ? dailyFreqs.reduce((s: number, f: number) => s + f, 0) / dailyFreqs.length
+        : 0;
+    }
+
     return { ...item, t: { cost, conversions, impressions, reach, clicks, frequency } };
   }
 
