@@ -5,7 +5,7 @@ import {
   LayoutDashboard, FileText, Upload, Settings, Loader2,
   Bell, User, Bot, Sparkles, Activity, Zap,
   Sun, Moon, Menu, X, BarChart3, Megaphone, LineChart, Palette, Link2,
-  ChevronDown, RefreshCw, Wifi, WifiOff, Users
+  ChevronDown, RefreshCw, Wifi, WifiOff, Users, Store
 } from "lucide-react";
 import { AuthProvider, useAuth } from "@/lib/auth";
 import { supabase } from "@/integrations/supabase/client";
@@ -66,6 +66,7 @@ type NavItem = {
 const NAV_ITEMS: NavItem[] = [
   { to: "/dashboard", icon: LayoutDashboard, label: "Dashboard" },
   { to: "/metricas", icon: LineChart, label: "Métricas" },
+  { to: "/clientes", icon: Store, label: "Clientes" },
   { to: "/campanhas", icon: Megaphone, label: "Campanhas" },
   { to: "/reunioes", icon: Users, label: "Reuniões" },
   { to: "/relatorios", icon: FileText, label: "Relatórios" },
