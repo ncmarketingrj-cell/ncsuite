@@ -291,7 +291,7 @@ function Shell() {
                   {isActive && (
                     <motion.div
                       layoutId="nav-indicator"
-                      className="absolute inset-x-2 -bottom-[17px] h-[2px] bg-primary rounded-full shadow-glow-sm"
+                      className="absolute inset-x-2 bottom-0 h-[2px] bg-primary rounded-full shadow-glow-sm"
                       transition={{ type: "spring", stiffness: 500, damping: 35 }}
                     />
                   )}
@@ -552,9 +552,6 @@ function Shell() {
 
       </header>
 
-      {/* Espaçador: ocupa o espaço do header fixed para o conteúdo não ficar atrás */}
-      <div className="h-16 shrink-0" />
-
       {/* ═══════════════════════════════════════
           MOBILE BOTTOM SHEET — Menu completo
           Só aparece em mobile (lg:hidden no overlay)
@@ -687,7 +684,7 @@ function Shell() {
       {/* ═══════════════════════════════════════
           MAIN CONTENT
           ═══════════════════════════════════════ */}
-      <main className="relative z-[1] flex-1 overflow-y-auto custom-scrollbar min-h-0">
+      <main className="relative z-[1] flex-1 overflow-y-auto custom-scrollbar min-h-0 pt-16">
         <div className="mx-auto max-w-[1600px] p-4 pb-24 md:pb-8 md:p-8 lg:p-10">
           
           {/* Notificação Flutuante de Ação Autônoma da IA */}
