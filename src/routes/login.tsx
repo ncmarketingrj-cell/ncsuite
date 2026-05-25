@@ -80,7 +80,6 @@ function LoginPage() {
         const { error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
         toast.success("Bem-vindo de volta");
-        nav({ to: "/dashboard" });
       } else {
         const { error } = await supabase.auth.resetPasswordForEmail(email, {
           redirectTo: window.location.origin + "/login",

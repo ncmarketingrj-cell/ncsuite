@@ -963,7 +963,8 @@ function ClientDetailPage() {
         .order("date", { ascending: true });
       return (data as MetricRow[]) ?? [];
     },
-    refetchInterval: 10 * 60 * 1000,
+    refetchInterval: 3 * 60 * 1000,
+    staleTime: 0,
   });
 
   const accountMap = Object.fromEntries(adAccounts.map(a => [a.id, a]));

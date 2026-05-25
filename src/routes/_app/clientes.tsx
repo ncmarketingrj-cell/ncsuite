@@ -449,7 +449,8 @@ function ClientesPage() {
       }
       return map;
     },
-    refetchInterval: 5 * 60 * 1000,
+    refetchInterval: 3 * 60 * 1000,
+    staleTime: 0,
   });
 
   const accountMap = Object.fromEntries(adAccounts.map(a => [a.id, a]));
