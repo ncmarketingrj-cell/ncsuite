@@ -5,18 +5,6 @@ import { Loader2, Mail, Lock, ArrowRight, ArrowLeft } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 
-// SVG inline do "G" do Google (sem dependência externa)
-function GoogleIcon() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <path d="M17.64 9.205c0-.638-.057-1.252-.164-1.841H9v3.481h4.844a4.14 4.14 0 01-1.796 2.716v2.259h2.908c1.702-1.567 2.684-3.875 2.684-6.615z" fill="#4285F4"/>
-      <path d="M9 18c2.43 0 4.467-.806 5.956-2.18l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 009 18z" fill="#34A853"/>
-      <path d="M3.964 10.71A5.41 5.41 0 013.682 9c0-.593.102-1.17.282-1.71V4.958H.957A8.996 8.996 0 000 9c0 1.452.348 2.827.957 4.042l3.007-2.332z" fill="#FBBC05"/>
-      <path d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 00.957 4.958L3.964 7.29C4.672 5.163 6.656 3.58 9 3.58z" fill="#EA4335"/>
-    </svg>
-  );
-}
-
 export const Route = createFileRoute("/login")({
   head: () => ({ meta: [{ title: "Entrar — NC Performance Suite" }] }),
   validateSearch: (_: Record<string, unknown>) => ({}),
@@ -42,35 +30,6 @@ function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
-  const [googleLoading, setGoogleLoading] = useState(false);
-
-  // Captura sessão OAuth ao voltar do redirect do Google
-  useEffect(() => {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
-      if (event === "SIGNED_IN") {
-        nav({ to: "/dashboard", replace: true });
-      }
-    });
-    return () => subscription.unsubscribe();
-  }, [nav]);
-
-  const loginWithGoogle = async () => {
-    setGoogleLoading(true);
-    try {
-      const { error } = await supabase.auth.signInWithOAuth({
-        provider: "google",
-        options: {
-          redirectTo: window.location.origin + "/login",
-          queryParams: { prompt: "select_account" },
-        },
-      });
-      if (error) throw error;
-      // O redirect acontece automaticamente — não precisa de nada aqui
-    } catch (err: any) {
-      toast.error(err.message ?? "Erro ao conectar com Google");
-      setGoogleLoading(false);
-    }
-  };
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
@@ -220,31 +179,6 @@ function LoginPage() {
               </div>
             </div>
 
-            {/* ── Google OAuth ── */}
-            {mode === "login" && (
-              <div className="mb-5">
-                <button
-                  type="button"
-                  onClick={loginWithGoogle}
-                  disabled={googleLoading || loading}
-                  className="group relative flex w-full items-center justify-center gap-3 rounded-xl border border-border bg-white/[0.04] hover:bg-white/[0.08] hover:border-white/20 py-3 text-sm font-semibold text-foreground transition-all active:scale-[0.98] disabled:opacity-50"
-                >
-                  {googleLoading ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <GoogleIcon />
-                  )}
-                  {googleLoading ? "Redirecionando..." : "Continuar com Google"}
-                </button>
-
-                {/* Separador */}
-                <div className="mt-5 flex items-center gap-3">
-                  <div className="h-px flex-1 bg-border" />
-                  <span className="text-[11px] font-medium text-muted-foreground/50 uppercase tracking-wider">ou</span>
-                  <div className="h-px flex-1 bg-border" />
-                </div>
-              </div>
-            )}
 
             {/* ── Formulário ── */}
             <form onSubmit={submit} className="space-y-3.5">

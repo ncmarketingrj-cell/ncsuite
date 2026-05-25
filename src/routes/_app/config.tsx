@@ -834,7 +834,7 @@ function TabUsuarios() {
       setNewPassword("");
       setNewName("");
       setNewPosition("Gestor de Tráfego");
-      setNewRole("employee");
+      setNewRole("outro");
       qc.invalidateQueries({ queryKey: ["admin_users_list"] });
     } catch (err: any) {
       toast.error(err.message || "Erro ao cadastrar usuário");
@@ -1023,7 +1023,14 @@ function TabUsuarios() {
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm p-4">
             <motion.div initial={{ scale: 0.95 }} animate={{ scale: 1 }} exit={{ scale: 0.95 }} className="glass-panel w-full max-w-md p-6 space-y-4 shadow-2xl">
               <h4 className="font-display text-base font-bold text-gradient">Alterar Dados do Usuário</h4>
-              
+
+              {editingUser?.email && (
+                <div className="space-y-1.5">
+                  <label className="label-mono text-[10px] text-muted-foreground uppercase">E-mail</label>
+                  <input value={editingUser.email} readOnly className="w-full rounded-lg border border-white/5 bg-background/20 px-3 py-2 text-sm text-muted-foreground cursor-not-allowed" />
+                </div>
+              )}
+
               <div className="space-y-1.5">
                 <label className="label-mono text-[10px] text-muted-foreground uppercase">Nome Completo</label>
                 <input value={editName} onChange={(e) => setEditName(e.target.value)} className="w-full rounded-lg border border-white/10 bg-background/50 px-3 py-2 text-sm focus:border-primary focus:outline-none" />
