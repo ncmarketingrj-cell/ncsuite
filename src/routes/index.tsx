@@ -231,7 +231,6 @@ function LandingPage() {
               src="/assets/nc-logo.png"
               alt="NC"
               className="h-9 w-9 object-contain"
-              style={{ filter: navLight ? "none" : "none" }}
             />
             <div className="leading-none">
               <div
@@ -239,7 +238,7 @@ function LandingPage() {
               >
                 NC Performance
               </div>
-              <div className="text-[7px] font-mono font-bold uppercase tracking-[0.35em] text-red-500 mt-0.5">
+              <div className="text-[9px] font-mono font-bold uppercase tracking-[0.35em] text-red-500 mt-0.5">
                 Suite
               </div>
             </div>
@@ -343,7 +342,7 @@ function LandingPage() {
               </button>
               <Link
                 to="/login"
-                className="text-[10.5px] font-black uppercase tracking-[0.2em] text-white/28 hover:text-white/55 transition-colors"
+                className="text-[10.5px] font-black uppercase tracking-[0.2em] text-white/48 hover:text-white/70 transition-colors"
               >
                 Acesso Restrito →
               </Link>
@@ -391,7 +390,7 @@ function LandingPage() {
                   <div className="flex-1 flex justify-center">
                     <div className="flex items-center gap-1.5 bg-white/[0.04] border border-white/[0.05] rounded-md px-3 py-0.5">
                       <div className="h-1.5 w-1.5 rounded-full bg-green-500" />
-                      <span className="text-[8.5px] font-mono text-white/18">
+                      <span className="text-[8.5px] font-mono text-white/40">
                         app.ncperformance.com.br
                       </span>
                     </div>
@@ -422,7 +421,7 @@ function LandingPage() {
             {[...TICKER, ...TICKER].map((item, i) => (
               <span
                 key={i}
-                className="inline-flex items-center gap-3 text-[9px] font-black uppercase tracking-[0.3em] text-white/16"
+                className="inline-flex items-center gap-3 text-[9px] font-black uppercase tracking-[0.3em] text-white/38"
               >
                 <span className="h-[3px] w-3 rounded-full bg-red-600 flex-shrink-0" />
                 {item}
@@ -439,7 +438,7 @@ function LandingPage() {
               initial="hidden"
               whileInView="show"
               viewport={{ once: true, margin: "-50px" }}
-              className="grid grid-cols-2 lg:grid-cols-4 divide-x divide-white/[0.06]"
+              className="grid grid-cols-2 lg:grid-cols-4 gap-y-8 lg:gap-y-0 lg:divide-x lg:divide-white/[0.06]"
             >
               {[
                 { to: 61, pre: "R$", suf: "M+", label: "investimento gerenciado" },
@@ -450,7 +449,7 @@ function LandingPage() {
                 <motion.div
                   key={i}
                   variants={fadeUp}
-                  className="px-8 py-10 first:pl-0 last:border-r-0"
+                  className="px-6 py-8 lg:px-8 lg:py-10 first:pl-0"
                 >
                   <div
                     className="font-black tracking-tight leading-none text-white mb-2"
@@ -458,7 +457,7 @@ function LandingPage() {
                   >
                     <Counter to={s.to} prefix={s.pre} suffix={s.suf} />
                   </div>
-                  <div className="text-[8.5px] font-mono uppercase tracking-[0.26em] text-white/22 mt-1">
+                  <div className="text-[8.5px] font-mono uppercase tracking-[0.26em] text-white/48 mt-1">
                     {s.label}
                   </div>
                 </motion.div>
@@ -480,7 +479,7 @@ function LandingPage() {
               >
                 Seis módulos.
                 <br />
-                <span className="text-white/18">Uma operação completa.</span>
+                <span className="text-white/38">Uma operação completa.</span>
               </h2>
             </div>
 
@@ -534,14 +533,14 @@ function LandingPage() {
                               style={{ color: mod.accent }}
                             />
                           </div>
-                          <span className="text-[7px] font-black uppercase tracking-[0.3em] text-white/18 border border-white/[0.08] rounded-full px-2 py-0.5">
+                          <span className="text-[9px] font-black uppercase tracking-[0.3em] text-white/42 border border-white/[0.14] rounded-full px-2 py-0.5">
                             {mod.tag}
                           </span>
                         </div>
                         <h3 className="text-[15.5px] font-black text-white mb-2">
                           {mod.label}
                         </h3>
-                        <p className="text-[12px] text-white/50 leading-relaxed">
+                        <p className="text-[13px] text-white/62 leading-relaxed">
                           {mod.desc}
                         </p>
                       </div>
@@ -609,7 +608,7 @@ function LandingPage() {
                 >
                   Tudo que importa.
                   <br />
-                  <span className="text-[#0A0A08]/20">Em um lugar.</span>
+                  <span className="text-[#0A0A08]/32">Em um lugar.</span>
                 </h2>
                 <p className="text-[15px] leading-relaxed text-[#0A0A08]/70 mb-8">
                   Todas as contas Meta Ads consolidadas. Investimento, CPL,
@@ -624,7 +623,7 @@ function LandingPage() {
                   ].map((item, i) => (
                     <li
                       key={i}
-                      className="flex items-center gap-3 text-[13px] text-[#0A0A08]/50"
+                      className="flex items-center gap-3 text-[13px] text-[#0A0A08]/68"
                     >
                       <div className="h-7 w-7 rounded-lg bg-red-500/[0.09] flex items-center justify-center flex-shrink-0">
                         <item.icon className="h-3.5 w-3.5 text-red-500" />
@@ -700,7 +699,7 @@ function LandingPage() {
                     ].map((label, i) => (
                       <span
                         key={i}
-                        className="text-[9px] font-black uppercase tracking-[0.18em] rounded-full px-3.5 py-1.5 bg-white/[0.05] text-white/38 border border-white/[0.07]"
+                        className="text-[9px] font-black uppercase tracking-[0.18em] rounded-full px-3.5 py-1.5 bg-white/[0.06] text-white/55 border border-white/[0.12]"
                       >
                         {label}
                       </span>
@@ -757,13 +756,13 @@ function LandingPage() {
                   <br />
                   <span className="shimmer-dark">a operação.</span>
                 </h2>
-                <p className="text-[14px] leading-relaxed text-[#0A0A08]/52 mb-7">
+                <p className="text-[14px] leading-relaxed text-[#0A0A08]/68 mb-7">
                   Victoria Maia, fundadora da NC Agência, identificou que as
                   ferramentas disponíveis não entregavam a velocidade que uma
                   agência de alta performance exige. A solução foi construir a
                   própria.
                 </p>
-                <blockquote className="border-l-2 border-red-600 pl-5 italic text-[13.5px] text-[#0A0A08]/58 mb-8 leading-relaxed">
+                <blockquote className="border-l-2 border-red-600 pl-5 italic text-[13.5px] text-[#0A0A08]/72 mb-8 leading-relaxed">
                   "Não entregamos dados. Entregamos o ecossistema ideal para
                   operar no mais alto nível — com precisão cirúrgica."
                 </blockquote>
@@ -774,7 +773,7 @@ function LandingPage() {
                     className="h-7 w-7 object-contain"
                     style={{ opacity: 0.22 }}
                   />
-                  <span className="text-[8.5px] font-mono uppercase tracking-[0.28em] text-[#0A0A08]/28">
+                  <span className="text-[8.5px] font-mono uppercase tracking-[0.28em] text-[#0A0A08]/52">
                     Victoria Maia · Fundadora &amp; Estrategista
                   </span>
                 </div>
@@ -895,17 +894,17 @@ function LandingPage() {
                 className="h-7 w-7 object-contain"
                 style={{ opacity: 0.28 }}
               />
-              <span className="text-[11px] font-black uppercase tracking-[0.22em] text-white/18">
+              <span className="text-[11px] font-black uppercase tracking-[0.22em] text-white/40">
                 NC Agência
               </span>
             </div>
-            <span className="text-[8.5px] font-mono uppercase tracking-[0.2em] text-white/14">
+            <span className="text-[8.5px] font-mono uppercase tracking-[0.2em] text-white/32">
               © {new Date().getFullYear()} NC Performance Suite · Todos os
               direitos reservados
             </span>
             <div className="flex items-center gap-1.5">
               <span className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" />
-              <span className="text-[8.5px] font-mono uppercase tracking-widest text-white/18">
+              <span className="text-[8.5px] font-mono uppercase tracking-widest text-white/40">
                 Sistema Online
               </span>
             </div>
