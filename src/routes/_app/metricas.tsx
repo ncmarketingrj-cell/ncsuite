@@ -11,7 +11,6 @@ import {
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
-import { PageHeader } from "@/components/PageHeader";
 import { DateRangePicker } from "@/components/DateRangePicker";
 import { subDays } from "date-fns";
 import {
@@ -313,27 +312,6 @@ function MetricasAvancadasPage() {
       {/* ─── STICKY HEADER AREA ─── */}
       <div className="sticky top-0 z-40 -mx-1 px-1 bg-background/95 backdrop-blur-xl pt-2 space-y-2">
 
-        {/* Título + ações — colapsa com scroll */}
-        <div className={`overflow-hidden transition-all duration-300 ease-in-out ${scrolled ? "max-h-0 opacity-0 pointer-events-none -mb-4" : "max-h-40 opacity-100"}`}>
-          <PageHeader
-            eyebrow="Hub de Análise Técnica"
-            title="Métricas Avançadas"
-            description="Todos os KPIs técnicos de tráfego pago com gerenciamento em tempo real — CTR, CPM, CPC, Frequência, ROAS, CPL e mais."
-            actions={
-              <div className="flex flex-wrap items-center gap-3">
-                <DateRangePicker startDate={dateRange.startDate} endDate={dateRange.endDate} onChange={(s, e) => setDateRange({ startDate: s, endDate: e })} />
-                <button
-                  onClick={() => navigate({ to: "/metricas/grafico", search: (prev) => prev })}
-                  className="flex items-center gap-2 rounded-xl border border-primary/30 bg-primary/10 px-4 py-2.5 text-xs font-bold text-primary hover:bg-primary/20 transition-all"
-                >
-                  <Pencil className="h-3.5 w-3.5" />
-                  Gráficos Demográficos
-                </button>
-              </div>
-            }
-          />
-        </div>
-
         {/* KPI BAR — barra com 2 linhas no topo, afina para 1 linha no scroll */}
         <motion.div
           className="flex items-stretch overflow-x-auto rounded-xl border border-white/[0.09] bg-white/[0.03] backdrop-blur-sm divide-x divide-white/[0.07]"
@@ -367,27 +345,37 @@ function MetricasAvancadasPage() {
           ))}
         </motion.div>
 
-        {/* FILTROS */}
-        <div className={`glass-panel flex flex-wrap items-center gap-3 transition-all duration-300 ${scrolled ? "px-3 py-2" : "p-3"}`}>
-          <div className="relative min-w-[200px]">
+        {/* FILTROS + AÇÕES */}
+        <div className={`glass-panel flex flex-wrap items-center gap-2 transition-all duration-300 ${scrolled ? "px-3 py-2" : "p-3"}`}>
+          <div className="relative min-w-[170px]">
             <Layers className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-            <select value={accountFilter} onChange={(e) => setAccountFilter(e.target.value)} className="w-full appearance-none rounded-xl border border-white/10 bg-background/40 py-2.5 pl-9 pr-8 text-xs font-bold focus:border-primary/50 focus:outline-none transition-all">
+            <select value={accountFilter} onChange={(e) => setAccountFilter(e.target.value)} className="w-full appearance-none rounded-xl border border-white/10 bg-background/40 py-2 pl-9 pr-8 text-xs font-bold focus:border-primary/50 focus:outline-none transition-all">
               <option value="all" className="bg-background text-foreground">Todas as Contas</option>
               {adAccounts.map((a: any) => <option key={a.id} value={a.id} className="bg-background text-foreground">{a.name}</option>)}
             </select>
             <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
           </div>
           <div className="relative">
-            <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as any)} className="appearance-none rounded-xl border border-white/10 bg-background/40 px-4 py-2.5 pr-8 text-xs font-bold focus:border-primary/50 focus:outline-none transition-all">
+            <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as any)} className="appearance-none rounded-xl border border-white/10 bg-background/40 px-4 py-2 pr-8 text-xs font-bold focus:border-primary/50 focus:outline-none transition-all">
               <option value="all" className="bg-background text-foreground">Todos os Status</option>
               <option value="active" className="bg-background text-foreground">Ativos</option>
               <option value="paused" className="bg-background text-foreground">Pausados</option>
             </select>
             <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
           </div>
-          <div className="relative flex-1 min-w-[220px]">
+          <div className="relative flex-1 min-w-[180px]">
             <Search className="pointer-events-none absolute left-3.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-            <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder={`Buscar ${level}...`} className="w-full rounded-xl border border-white/10 bg-background/40 py-2.5 pl-10 pr-4 text-xs font-semibold focus:border-primary/50 focus:outline-none transition-all placeholder:text-muted-foreground/50" />
+            <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder={`Buscar ${level}...`} className="w-full rounded-xl border border-white/10 bg-background/40 py-2 pl-10 pr-4 text-xs font-semibold focus:border-primary/50 focus:outline-none transition-all placeholder:text-muted-foreground/50" />
+          </div>
+          <div className="ml-auto flex items-center gap-2 flex-shrink-0">
+            <DateRangePicker startDate={dateRange.startDate} endDate={dateRange.endDate} onChange={(s, e) => setDateRange({ startDate: s, endDate: e })} />
+            <button
+              onClick={() => navigate({ to: "/metricas/grafico", search: (prev: Record<string, unknown>) => prev })}
+              className="flex items-center gap-1.5 rounded-xl border border-primary/30 bg-primary/10 px-3.5 py-2 text-xs font-bold text-primary hover:bg-primary/20 transition-all whitespace-nowrap"
+            >
+              <Pencil className="h-3.5 w-3.5" />
+              Gráficos
+            </button>
           </div>
         </div>
 
