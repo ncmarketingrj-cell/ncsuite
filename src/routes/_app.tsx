@@ -552,6 +552,9 @@ function Shell() {
 
       </header>
 
+      {/* Espaço reservado para o header fixed — mantém altura correta do flex */}
+      <div className="h-16 shrink-0 pointer-events-none" aria-hidden="true" />
+
       {/* ═══════════════════════════════════════
           MOBILE BOTTOM SHEET — Menu completo
           Só aparece em mobile (lg:hidden no overlay)
@@ -684,7 +687,7 @@ function Shell() {
       {/* ═══════════════════════════════════════
           MAIN CONTENT
           ═══════════════════════════════════════ */}
-      <main className="relative z-[1] flex-1 overflow-y-auto custom-scrollbar min-h-0 pt-16">
+      <main className="relative z-[1] flex-1 overflow-y-auto custom-scrollbar min-h-0">
         <div className="mx-auto max-w-[1600px] p-4 pb-24 md:pb-8 md:p-8 lg:p-10">
           
           {/* Notificação Flutuante de Ação Autônoma da IA */}
