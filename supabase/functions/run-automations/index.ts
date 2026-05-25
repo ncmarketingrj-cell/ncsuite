@@ -123,6 +123,12 @@ serve(async (req) => {
       }
 
       for (const campaign of campaigns) {
+        // Regra global: pula contas marcadas como exceção pelo usuário
+        if (!accountId && (threshold.excluded_account_ids || []).includes(campaign.ad_account_id)) {
+          console.log(`[AUTO] Conta ${campaign.ad_account_id} excluída da regra global — ignorando ${campaign.name}`)
+          continue
+        }
+
         // 3. Buscar métricas de HOJE somando de todos os anúncios (asset_metrics) para refletir 100% a interface
         const { data: adsData } = await supabase.from("ads").select("id").eq("campaign_id", campaign.id)
         const adIds = adsData?.map((a: any) => a.id) || []
