@@ -5,7 +5,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Users, Plus, Search, Store, TrendingUp, TrendingDown,
   Minus, ChevronRight, Wifi, WifiOff, Package, Target,
-  Loader2, X, AlertCircle
+  Loader2, X, AlertCircle, Download
 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
@@ -404,9 +404,11 @@ function ClientCard({ client, metrics, account }: {
 // ─── Page ────────────────────────────────────────────────────────────────────
 
 function ClientesPage() {
+  const qc = useQueryClient();
   const [search, setSearch] = useState("");
   const [filterStatus, setFilterStatus] = useState<string>("todos");
   const [showNew, setShowNew] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
 
   // Busca clientes com todos os campos
   const { data: clients = [], isLoading } = useQuery({
@@ -455,6 +457,38 @@ function ClientesPage() {
 
   const accountMap = Object.fromEntries(adAccounts.map(a => [a.id, a]));
 
+  const handleImportFromMeta = async () => {
+    if (adAccounts.length === 0) {
+      toast.error("Nenhuma conta Meta Ads encontrada. Execute a sincronização primeiro.");
+      return;
+    }
+    const linkedIds = new Set(clients.filter(c => c.meta_ad_account_id).map(c => c.meta_ad_account_id));
+    const unlinked = adAccounts.filter(a => !linkedIds.has(a.id));
+    if (unlinked.length === 0) {
+      toast.info("Todas as contas Meta Ads já estão vinculadas a clientes.");
+      return;
+    }
+    setIsImporting(true);
+    try {
+      const { data: u } = await supabase.auth.getUser();
+      const inserts = unlinked.map(a => ({
+        name: a.name,
+        meta_ad_account_id: a.id,
+        status: "ativo",
+        niche: "Automotivo",
+        user_id: u.user?.id,
+      }));
+      const { error } = await (supabase as any).from("clients").insert(inserts);
+      if (error) throw error;
+      qc.invalidateQueries({ queryKey: ["clients_full"] });
+      toast.success(`${unlinked.length} cliente${unlinked.length > 1 ? "s" : ""} importado${unlinked.length > 1 ? "s" : ""} do Meta Ads!`);
+    } catch (err: any) {
+      toast.error(err.message || "Erro ao importar clientes");
+    } finally {
+      setIsImporting(false);
+    }
+  };
+
   const filtered = clients.filter(c => {
     const matchSearch = !search || c.name.toLowerCase().includes(search.toLowerCase())
       || (c.niche ?? "").toLowerCase().includes(search.toLowerCase());
@@ -479,12 +513,23 @@ function ClientesPage() {
             {counts.total} {counts.total === 1 ? "cliente" : "clientes"} cadastrados
           </p>
         </div>
-        <button
-          onClick={() => setShowNew(true)}
-          className="flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-black text-primary-foreground hover:opacity-90 transition-opacity active:scale-95 self-start sm:self-auto"
-        >
-          <Plus className="h-4 w-4" /> Novo Cliente
-        </button>
+        <div className="flex items-center gap-2 self-start sm:self-auto">
+          <button
+            onClick={handleImportFromMeta}
+            disabled={isImporting}
+            className="flex items-center gap-2 rounded-xl border border-primary/30 bg-primary/10 px-4 py-2.5 text-sm font-black text-primary hover:bg-primary/20 transition-colors active:scale-95 disabled:opacity-50"
+            title="Criar clientes automaticamente para cada conta Meta Ads ainda não vinculada"
+          >
+            {isImporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+            Importar do Meta
+          </button>
+          <button
+            onClick={() => setShowNew(true)}
+            className="flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-black text-primary-foreground hover:opacity-90 transition-opacity active:scale-95"
+          >
+            <Plus className="h-4 w-4" /> Novo Cliente
+          </button>
+        </div>
       </div>
 
       {/* Filtros */}

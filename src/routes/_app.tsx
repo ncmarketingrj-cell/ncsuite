@@ -248,7 +248,7 @@ function Shell() {
       {/* ═══════════════════════════════════════
           TOP NAVIGATION BAR — Premium Horizontal
           ═══════════════════════════════════════ */}
-      <header className="sticky top-0 z-50 border-gradient-bottom bg-background/92 backdrop-blur-2xl">
+      <header className="shrink-0 z-50 border-gradient-bottom bg-background/92 backdrop-blur-2xl">
         <div className="mx-auto flex h-16 max-w-[1600px] items-center justify-between px-4 md:px-8">
           
           {/* LEFT: Logo */}
