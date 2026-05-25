@@ -72,9 +72,31 @@ function todayStr(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
+// Classifica o objetivo da campanha em label legível + sigla de custo
+function getResultInfo(resultType: string | null | undefined): {
+  label: string; metricLabel: string; emoji: string
+} {
+  const t = (resultType || "").toUpperCase();
+  if (["OUTCOME_LEADS", "LEAD_GENERATION"].includes(t))
+    return { label: "Lead", metricLabel: "CPL", emoji: "👤" };
+  if (["MESSAGES", "OUTCOME_ENGAGEMENT", "MESSAGING_CONVERSATION_STARTED_BY_PERSON", "MESSAGING_FIRST_REPLY"].includes(t))
+    return { label: "Conversa", metricLabel: "Custo/Conversa", emoji: "💬" };
+  if (["CONVERSIONS", "OUTCOME_SALES"].includes(t))
+    return { label: "Compra", metricLabel: "CPA", emoji: "🛒" };
+  if (["OUTCOME_TRAFFIC", "LINK_CLICKS"].includes(t))
+    return { label: "Clique no Link", metricLabel: "CPC", emoji: "🖱️" };
+  if (["VIDEO_VIEWS", "OUTCOME_VIDEO_VIEWS", "THRUPLAY"].includes(t))
+    return { label: "Visualização", metricLabel: "CPV", emoji: "🎬" };
+  if (["OUTCOME_AWARENESS", "REACH", "POST_REACH", "BRAND_AWARENESS"].includes(t))
+    return { label: "Alcance", metricLabel: "CPM", emoji: "👁️" };
+  if (["POST_ENGAGEMENT", "PAGE_LIKES", "ENGAGED_USERS"].includes(t))
+    return { label: "Engajamento", metricLabel: "CPE", emoji: "❤️" };
+  if (["APP_INSTALLS", "OUTCOME_APP_PROMOTION"].includes(t))
+    return { label: "Instalação", metricLabel: "CPI", emoji: "📱" };
+  return { label: "Resultado", metricLabel: "Custo/Resultado", emoji: "📊" };
+}
+
 // ─── Core Evaluation Engine ───────────────────────────────────────────────────
-// Avalia CPL e orçamento de todas as campanhas ativas contra as regras configuradas.
-// Cria notificações no banco quando viola — o sino e o som disparam automaticamente.
 async function runThresholdEvaluation() {
   if (isCurrentlyEvaluating) return;
   isCurrentlyEvaluating = true;
@@ -116,7 +138,7 @@ async function runThresholdEvaluation() {
       // 2. Buscar campanhas ATIVAS — para a conta específica ou todas
       let q = (supabase as any)
         .from("campaigns")
-        .select("id, name, status, budget, ad_account_id, created_at, ad_accounts(name), metrics(cost, conversions, date, frequency)")
+        .select("id, name, status, budget, ad_account_id, created_at, ad_accounts(name), metrics(cost, conversions, date, frequency, result_type)")
         .ilike("status", "ACTIVE");
 
       if (threshold.ad_account_id) {
@@ -143,14 +165,22 @@ async function runThresholdEvaluation() {
         const todayCost = todayMetrics.reduce((s: number, m: any) => s + Number(m.cost || 0), 0);
         const todayConv = todayMetrics.reduce((s: number, m: any) => s + Number(m.conversions || 0), 0);
 
-        // ── Violação de CPL ──────────────────────────────────────────────────
-        if (threshold.max_cpl !== null && threshold.max_cpl !== undefined && todayCost > 0 && todayConv > 0) {
-          const cpl = todayCost / todayConv;
+        // Tipo de resultado: pega do primeiro registro de métrica
+        const rawType  = todayMetrics[0]?.result_type || null;
+        const result   = getResultInfo(rawType);
+        const accName  = (campaign.ad_accounts as any)?.name ?? `Conta ${String(campaign.ad_account_id).slice(-6)}`;
+        const daysSince = campaign.created_at
+          ? Math.floor((Date.now() - new Date(campaign.created_at).getTime()) / 86_400_000)
+          : null;
+        const duration = daysSince === null ? "campanha ativa" : daysSince === 0 ? "iniciou hoje" : `${daysSince}d de campanha`;
 
-          if (cpl > threshold.max_cpl) {
+        // ── Violação de custo por resultado ──────────────────────────────────
+        if (threshold.max_cpl !== null && threshold.max_cpl !== undefined && todayCost > 0 && todayConv > 0) {
+          const costPerResult = todayCost / todayConv;
+
+          if (costPerResult > threshold.max_cpl) {
             const cplKey = `cpl_${campaign.id}`;
             if (!isDedupBlocked(cplKey)) {
-              // DB dedup como verificação secundária (com user_id e tratamento de erro)
               const { data: dup, error: dupErr } = await (supabase as any)
                 .from("notifications")
                 .select("id")
@@ -160,21 +190,15 @@ async function runThresholdEvaluation() {
                 .ilike("link", `%${campaign.id}%`)
                 .limit(1);
 
-              // Se erro na query de dedup → tratar como "já alertado" (seguro)
               if (!dupErr && !dup?.length) {
-                const accountName = (campaign.ad_accounts as any)?.name ?? `Conta ${String(campaign.ad_account_id).slice(-6)}`;
-                const daysSince = campaign.created_at
-                  ? Math.floor((Date.now() - new Date(campaign.created_at).getTime()) / 86_400_000)
-                  : null;
-                const duration = daysSince === null ? "campanha ativa" : daysSince === 0 ? "iniciou hoje" : `${daysSince}d de campanha`;
                 await (supabase as any).from("notifications").insert({
-                  user_id:         user?.id ?? null,
-                  title:           `🚨 CPL Alto — ${campaign.name.slice(0, 35)}`,
-                  message:         `${accountName} • ${duration} — CPL hoje R$ ${cpl.toFixed(2)} ultrapassou o limite de R$ ${(threshold.max_cpl as number).toFixed(2)}. Intervenha imediatamente.`,
-                  is_critical:     true,
-                  is_read:         false,
-                  type:            "alert_cpl",
-                  link:            `/campanhas?accountId=${campaign.ad_account_id}&date=${today}&campId=${campaign.id}`,
+                  user_id:     user?.id ?? null,
+                  title:       `🚨 ${result.metricLabel} Alto — ${campaign.name.slice(0, 35)}`,
+                  message:     `${accName} • ${duration} — ${result.metricLabel} hoje R$ ${costPerResult.toFixed(2)} ultrapassou o limite de R$ ${(threshold.max_cpl as number).toFixed(2)}. ${todayConv} ${result.label}(s) gerados. Intervenha imediatamente.`,
+                  is_critical: true,
+                  is_read:     false,
+                  type:        "alert_cpl",
+                  link:        `/campanhas?accountId=${campaign.ad_account_id}&date=${today}&campId=${campaign.id}`,
                 });
                 markDedupFired(cplKey);
                 totalNew++;
@@ -200,16 +224,16 @@ async function runThresholdEvaluation() {
                 .limit(1);
 
               if (!dupErr && !dup?.length) {
-                const isCritical = pct >= 95;
-                const accountNameBudget = (campaign.ad_accounts as any)?.name ?? `Conta ${String(campaign.ad_account_id).slice(-6)}`;
+                const isCritical    = pct >= 95;
+                const semResultado  = todayConv === 0 ? ` sem nenhum(a) ${result.label.toLowerCase()}` : "";
                 await (supabase as any).from("notifications").insert({
-                  user_id:         user?.id ?? null,
-                  title:           `⚠️ Orçamento ${pct >= 100 ? "Esgotado" : "Crítico"} — ${campaign.name.slice(0, 35)}`,
-                  message:         `${accountNameBudget} — ${pct.toFixed(0)}% do orçamento diário utilizado${pct >= 100 ? " — campanha pausou automaticamente" : " — prestes a esgotar"}. (Limite: ${threshold.max_budget_pct}%)`,
-                  is_critical:     isCritical,
-                  is_read:         false,
-                  type:            "alert_budget",
-                  link:            `/campanhas?accountId=${campaign.ad_account_id}&date=${today}&campId=${campaign.id}`,
+                  user_id:     user?.id ?? null,
+                  title:       `⚠️ Orçamento ${pct >= 100 ? "Esgotado" : "Crítico"} — ${campaign.name.slice(0, 35)}`,
+                  message:     `${accName} — ${pct.toFixed(0)}% do orçamento diário utilizado${semResultado}${pct >= 100 ? " — campanha pausou automaticamente" : " — prestes a esgotar"}. (Limite: ${threshold.max_budget_pct}%)`,
+                  is_critical: isCritical,
+                  is_read:     false,
+                  type:        "alert_budget",
+                  link:        `/campanhas?accountId=${campaign.ad_account_id}&date=${today}&campId=${campaign.id}`,
                 });
                 markDedupFired(budgetKey);
                 totalNew++;
