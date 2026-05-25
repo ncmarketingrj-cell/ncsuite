@@ -106,7 +106,7 @@ function MetricasAvancadasPage() {
   
   const [scrolled, setScrolled] = useState(false);
   useEffect(() => {
-    const onScroll = () => setScrolled(window.scrollY > 60);
+    const onScroll = () => setScrolled(window.scrollY > 40);
     window.addEventListener("scroll", onScroll, { passive: true });
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
@@ -296,6 +296,17 @@ function MetricasAvancadasPage() {
     return <Outlet />;
   }
 
+  const kpiItems = [
+    { label: "Gasto",      value: `R$ ${totCost.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`, icon: DollarSign,    color: "text-primary" },
+    { label: "Resultados", value: totConv.toLocaleString("pt-BR"),                                       icon: Target,        color: "text-violet-600 dark:text-violet-400" },
+    { label: "CPL/CPA",    value: avgCpl > 0 ? `R$ ${avgCpl.toFixed(2)}` : "—",                         icon: Zap,           color: "text-primary" },
+    { label: "Impressões", value: totImpr.toLocaleString("pt-BR"),                                       icon: BarChart3,     color: "text-muted-foreground" },
+    { label: "Alcance",    value: totReach > 0 ? totReach.toLocaleString("pt-BR") : "—",                 icon: Users,        color: "text-muted-foreground" },
+    { label: "Cliques",    value: totClicks.toLocaleString("pt-BR"),                                     icon: MousePointer2, color: "text-muted-foreground" },
+    { label: "CTR Médio",  value: `${avgCtr.toFixed(2)}%`,                                               icon: TrendingUp,    color: avgCtr >= 1.5 ? "text-success" : "text-muted-foreground" },
+    { label: "CPM Médio",  value: avgCpm > 0 ? `R$ ${avgCpm.toFixed(2)}` : "—",                         icon: Layers,        color: "text-muted-foreground" },
+  ];
+
   return (
     <div className="mx-auto max-w-[1700px] p-1 pb-20">
       
@@ -323,30 +334,49 @@ function MetricasAvancadasPage() {
           />
         </div>
 
-        {/* MINI KPI BAR */}
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-8">
-          {[
-            { label: "Gasto", value: `R$ ${totCost.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`, icon: DollarSign, color: "text-primary" },
-            { label: "Resultados", value: totConv.toLocaleString("pt-BR"), icon: Target, color: "text-violet-600 dark:text-violet-400" },
-            { label: "CPL/CPA", value: avgCpl > 0 ? `R$ ${avgCpl.toFixed(2)}` : "—", icon: Zap, color: "text-primary" },
-            { label: "Impressões", value: totImpr.toLocaleString("pt-BR"), icon: BarChart3, color: "text-muted-foreground" },
-            { label: "Alcance", value: totReach > 0 ? totReach.toLocaleString("pt-BR") : "—", icon: Users, color: "text-muted-foreground" },
-            { label: "Cliques", value: totClicks.toLocaleString("pt-BR"), icon: MousePointer2, color: "text-muted-foreground" },
-            { label: "CTR Médio", value: `${avgCtr.toFixed(2)}%`, icon: TrendingUp, color: avgCtr >= 1.5 ? "text-success" : "text-muted-foreground" },
-            { label: "CPM Médio", value: avgCpm > 0 ? `R$ ${avgCpm.toFixed(2)}` : "—", icon: Layers, color: "text-muted-foreground" },
-          ].map(k => (
-            <div key={k.label} className="glass-panel p-4">
-              <div className="flex items-center justify-between mb-2">
-                <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/70">{k.label}</p>
-                <k.icon className={`h-3.5 w-3.5 ${k.color}`} />
-              </div>
-              <p className={`font-mono font-black text-sm ${k.color}`}>{k.value}</p>
-            </div>
-          ))}
-        </div>
+        {/* KPI BAR — grid expandido em topo, barra compacta no scroll */}
+        <AnimatePresence mode="wait" initial={false}>
+          {scrolled ? (
+            <motion.div
+              key="kpi-compact"
+              initial={{ opacity: 0, y: -6 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -6 }}
+              transition={{ duration: 0.18 }}
+              className="flex items-center overflow-x-auto rounded-xl border border-white/[0.09] bg-white/[0.03] backdrop-blur-sm divide-x divide-white/[0.07]"
+            >
+              {kpiItems.map(k => (
+                <div key={k.label} className="flex items-center gap-2 px-4 py-2 flex-shrink-0">
+                  <k.icon className={`h-3 w-3 flex-shrink-0 ${k.color}`} />
+                  <span className="text-[8px] font-black uppercase tracking-widest text-muted-foreground/55 whitespace-nowrap">{k.label}</span>
+                  <span className={`font-mono font-black text-[11px] whitespace-nowrap ${k.color}`}>{k.value}</span>
+                </div>
+              ))}
+            </motion.div>
+          ) : (
+            <motion.div
+              key="kpi-full"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.18 }}
+              className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-8"
+            >
+              {kpiItems.map(k => (
+                <div key={k.label} className="glass-panel p-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/70">{k.label}</p>
+                    <k.icon className={`h-3.5 w-3.5 ${k.color}`} />
+                  </div>
+                  <p className={`font-mono font-black text-sm ${k.color}`}>{k.value}</p>
+                </div>
+              ))}
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* FILTROS */}
-        <div className="glass-panel p-3 flex flex-wrap items-center gap-3">
+        <div className={`glass-panel flex flex-wrap items-center gap-3 transition-all duration-300 ${scrolled ? "px-3 py-2" : "p-3"}`}>
           <div className="relative min-w-[200px]">
             <Layers className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
             <select value={accountFilter} onChange={(e) => setAccountFilter(e.target.value)} className="w-full appearance-none rounded-xl border border-white/10 bg-background/40 py-2.5 pl-9 pr-8 text-xs font-bold focus:border-primary/50 focus:outline-none transition-all">
