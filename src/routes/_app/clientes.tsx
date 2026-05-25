@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, Outlet, useRouterState } from "@tanstack/react-router";
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -10,10 +10,9 @@ import {
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 
-// @ts-expect-error route will be registered on next TanStack Router codegen
 export const Route = createFileRoute("/_app/clientes")({
   head: () => ({ meta: [{ title: "Clientes — NC Suite" }] }),
-  component: ClientesPage,
+  component: ClientesLayout,
 });
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -563,4 +562,13 @@ function ClientesPage() {
       <NewClientModal open={showNew} onClose={() => setShowNew(false)} adAccounts={adAccounts} />
     </div>
   );
+}
+
+// Layout wrapper: redireciona para a página filha quando $clientId está ativo
+function ClientesLayout() {
+  const isDetail = useRouterState({
+    select: s => s.matches.some(m => (m as any).routeId === '/_app/clientes/$clientId'),
+  });
+  if (isDetail) return <Outlet />;
+  return <ClientesPage />;
 }

@@ -14,7 +14,6 @@ import { supabase } from "@/integrations/supabase/client";
 import { subDays, format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 
-// @ts-expect-error route will be registered on next TanStack Router codegen
 export const Route = createFileRoute("/_app/clientes/$clientId")({
   head: () => ({ meta: [{ title: "Cliente — NC Suite" }] }),
   component: ClientDetailPage,
