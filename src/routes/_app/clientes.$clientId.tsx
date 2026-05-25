@@ -7,7 +7,7 @@ import {
   Package, Users, Zap, FileText, Settings, Plus, Trash2, Edit3,
   Loader2, Save, CheckCircle2, AlertCircle, ExternalLink,
   DollarSign, BarChart3, ShoppingCart, MousePointer, Eye,
-  Phone, Globe, Clock, ChevronDown, ChevronUp, X
+  Phone, Globe, Clock, ChevronDown, ChevronUp, X, Calendar
 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
@@ -64,6 +64,7 @@ type MetricRow = {
   spend: number;
   leads: number;
   purchases: number;
+  results: number;
   impressions: number;
   clicks: number;
   roas: number;
@@ -237,14 +238,14 @@ function TabOverview({ client, metrics }: { client: ClientFull; metrics: MetricR
   const avgCtr = totals.impressions > 0 ? (totals.clicks / totals.impressions) * 100 : 0;
 
   const kpis = [
-    { label: "Gasto Total (30d)", value: fmtBRL(totals.spend), icon: DollarSign, color: "text-primary" },
-    { label: "Leads (30d)", value: fmtNum(totals.leads), icon: Target, color: "text-violet-400" },
-    { label: "Compras (30d)", value: fmtNum(totals.purchases), icon: ShoppingCart, color: "text-emerald-400" },
+    { label: "Gasto Total", value: fmtBRL(totals.spend), icon: DollarSign, color: "text-primary" },
+    { label: "Leads", value: fmtNum(totals.leads), icon: Target, color: "text-violet-400" },
+    { label: "Compras", value: fmtNum(totals.purchases), icon: ShoppingCart, color: "text-emerald-400" },
     { label: "ROAS Médio", value: avgRoas > 0 ? `${avgRoas.toFixed(2)}x` : "—", icon: TrendingUp, color: "text-blue-400" },
     { label: "CPA Médio", value: avgCpa > 0 ? fmtBRL(avgCpa, 2) : "—", icon: BarChart3, color: "text-amber-400" },
     { label: "CTR Médio", value: avgCtr > 0 ? `${avgCtr.toFixed(2)}%` : "—", icon: MousePointer, color: "text-cyan-400" },
-    { label: "Impressões (30d)", value: fmtNum(totals.impressions), icon: Eye, color: "text-rose-400" },
-    { label: "Cliques (30d)", value: fmtNum(totals.clicks), icon: MousePointer, color: "text-orange-400" },
+    { label: "Impressões", value: fmtNum(totals.impressions), icon: Eye, color: "text-rose-400" },
+    { label: "Cliques", value: fmtNum(totals.clicks), icon: MousePointer, color: "text-orange-400" },
   ];
 
   return (
@@ -281,7 +282,7 @@ function TabOverview({ client, metrics }: { client: ClientFull; metrics: MetricR
       {metrics.length > 0 && (
         <div className="rounded-xl border border-border bg-card overflow-hidden">
           <div className="px-4 py-3 border-b border-border">
-            <p className="text-xs font-black uppercase tracking-widest text-muted-foreground">Histórico Diário (últimos 30 dias)</p>
+            <p className="text-xs font-black uppercase tracking-widest text-muted-foreground">Histórico Diário — {metrics.length} dias</p>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-[11px]">
@@ -932,6 +933,8 @@ const TABS = [
 function ClientDetailPage() {
   const { clientId } = Route.useParams();
   const [activeTab, setActiveTab] = useState("overview");
+  const [dateFrom, setDateFrom] = useState(() => subDays(new Date(), 29).toISOString().slice(0, 10));
+  const [dateTo, setDateTo]     = useState(() => new Date().toISOString().slice(0, 10));
 
   const { data: client, isLoading: clientLoading } = useQuery({
     queryKey: ["client_detail", clientId],
@@ -950,14 +953,15 @@ function ClientDetailPage() {
     },
   });
 
+  // Busca 90 dias — filtro de datas é feito no frontend
   const { data: metrics = [] } = useQuery({
-    queryKey: ["client_metrics_30d", client?.meta_ad_account_id],
+    queryKey: ["client_metrics_90d", client?.meta_ad_account_id],
     enabled: !!client?.meta_ad_account_id,
     queryFn: async () => {
-      const since = subDays(new Date(), 30).toISOString().slice(0, 10);
+      const since = subDays(new Date(), 89).toISOString().slice(0, 10);
       const { data } = await (supabase as any)
         .from("daily_metrics")
-        .select("date, spend, leads, purchases, impressions, clicks, roas, ctr, cpm, cpa, reach")
+        .select("date, spend, leads, purchases, results, impressions, clicks, roas, ctr, cpm, cpa, reach")
         .eq("ad_account_id", client!.meta_ad_account_id!)
         .gte("date", since)
         .order("date", { ascending: true });
@@ -967,8 +971,17 @@ function ClientDetailPage() {
     staleTime: 0,
   });
 
+  // Métricas filtradas pelo range do calendário
+  const filteredMetrics = useMemo(
+    () => metrics.filter(r => r.date >= dateFrom && r.date <= dateTo),
+    [metrics, dateFrom, dateTo]
+  );
+
   const accountMap = Object.fromEntries(adAccounts.map(a => [a.id, a]));
   const linkedAccount = client?.meta_ad_account_id ? accountMap[client.meta_ad_account_id] : null;
+
+  const today = new Date().toISOString().slice(0, 10);
+  const isDefaultRange = dateFrom === subDays(new Date(), 29).toISOString().slice(0, 10) && dateTo === today;
 
   if (clientLoading) {
     return (
@@ -1057,31 +1070,65 @@ function ClientDetailPage() {
         </div>
       </div>
 
-      {/* Tabs */}
-      <div className="flex gap-1 border-b border-border pb-0 overflow-x-auto">
-        {TABS.map(tab => {
-          const Icon = tab.icon;
-          const isActive = activeTab === tab.id;
-          return (
+      {/* Tabs + filtro de datas */}
+      <div className="flex items-center justify-between border-b border-border">
+        <div className="flex gap-1 overflow-x-auto">
+          {TABS.map(tab => {
+            const Icon = tab.icon;
+            const isActive = activeTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={`relative flex items-center gap-2 px-4 py-2.5 text-[13px] font-bold whitespace-nowrap transition-colors ${
+                  isActive ? "text-primary" : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                <Icon className="h-3.5 w-3.5" />
+                {tab.label}
+                {isActive && (
+                  <motion.div
+                    layoutId="client-tab-indicator"
+                    className="absolute bottom-0 inset-x-2 h-[2px] rounded-full bg-primary"
+                    transition={{ type: "spring", stiffness: 500, damping: 35 }}
+                  />
+                )}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Filtro de datas */}
+        <div className="flex items-center gap-1.5 px-1 pb-1 shrink-0">
+          <Calendar className="h-3.5 w-3.5 text-muted-foreground/50 shrink-0" />
+          <input
+            type="date"
+            value={dateFrom}
+            max={dateTo}
+            onChange={e => setDateFrom(e.target.value)}
+            className="rounded-lg border border-border bg-card px-2 py-1 text-[11px] font-medium text-foreground focus:outline-none focus:border-primary/50 cursor-pointer"
+          />
+          <span className="text-[10px] text-muted-foreground">até</span>
+          <input
+            type="date"
+            value={dateTo}
+            min={dateFrom}
+            max={today}
+            onChange={e => setDateTo(e.target.value)}
+            className="rounded-lg border border-border bg-card px-2 py-1 text-[11px] font-medium text-foreground focus:outline-none focus:border-primary/50 cursor-pointer"
+          />
+          {!isDefaultRange && (
             <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={`relative flex items-center gap-2 px-4 py-2.5 text-[13px] font-bold whitespace-nowrap transition-colors ${
-                isActive ? "text-primary" : "text-muted-foreground hover:text-foreground"
-              }`}
+              onClick={() => {
+                setDateFrom(subDays(new Date(), 29).toISOString().slice(0, 10));
+                setDateTo(today);
+              }}
+              className="text-[10px] font-bold text-primary hover:text-primary/70 transition-colors"
             >
-              <Icon className="h-3.5 w-3.5" />
-              {tab.label}
-              {isActive && (
-                <motion.div
-                  layoutId="client-tab-indicator"
-                  className="absolute bottom-0 inset-x-2 h-[2px] rounded-full bg-primary"
-                  transition={{ type: "spring", stiffness: 500, damping: 35 }}
-                />
-              )}
+              30d
             </button>
-          );
-        })}
+          )}
+        </div>
       </div>
 
       {/* Tab Content */}
@@ -1093,8 +1140,8 @@ function ClientDetailPage() {
           exit={{ opacity: 0, y: -4 }}
           transition={{ duration: 0.18 }}
         >
-          {activeTab === "overview" && <TabOverview client={client} metrics={metrics} />}
-          {activeTab === "goals" && <TabGoals client={client} metrics={metrics} />}
+          {activeTab === "overview" && <TabOverview client={client} metrics={filteredMetrics} />}
+          {activeTab === "goals" && <TabGoals client={client} metrics={filteredMetrics} />}
           {activeTab === "cadastro" && <TabCadastro client={client} adAccounts={adAccounts} />}
           {activeTab === "notes" && <TabNotes client={client} />}
         </motion.div>

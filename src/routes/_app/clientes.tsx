@@ -5,7 +5,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Users, Plus, Search, Store, TrendingUp, TrendingDown,
   Minus, ChevronRight, Wifi, WifiOff, Package, Target,
-  Loader2, X, AlertCircle, Download
+  Loader2, X, AlertCircle, Download, Calendar
 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
@@ -45,6 +45,7 @@ type DayMetrics = {
   purchases: number;
   roas: number;
   impressions: number;
+  results: number;
 };
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -230,10 +231,11 @@ function NewClientModal({ open, onClose, adAccounts }: {
 
 // ─── Client Card ─────────────────────────────────────────────────────────────
 
-function ClientCard({ client, metrics, account }: {
+function ClientCard({ client, metrics, account, dateLabel }: {
   client: ClientRow;
   metrics: DayMetrics | null;
   account: { id: string; name: string } | null;
+  dateLabel: string;
 }) {
   const taxRate = client.meta_tax_rate ?? 0.1215;
   const weeklyBruto = client.weekly_budget_goal ?? 0;
@@ -317,7 +319,7 @@ function ClientCard({ client, metrics, account }: {
         {/* Gasto vs Orçamento */}
         <div>
           <div className="flex items-center justify-between mb-1">
-            <span className="text-[10px] text-muted-foreground font-semibold">Gasto hoje</span>
+            <span className="text-[10px] text-muted-foreground font-semibold">{dateLabel}</span>
             <div className="flex items-center gap-1">
               <span className="text-[10px] font-black text-foreground">
                 {metrics ? fmtBRL(metrics.spend) : "—"}
@@ -409,6 +411,7 @@ function ClientesPage() {
   const [filterStatus, setFilterStatus] = useState<string>("todos");
   const [showNew, setShowNew] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
+  const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().slice(0, 10));
 
   // Busca clientes com todos os campos
   const { data: clients = [], isLoading } = useQuery({
@@ -429,24 +432,24 @@ function ClientesPage() {
     },
   });
 
-  // Métricas de hoje por conta
+  // Métricas do dia selecionado por conta
   const { data: todayMetrics = {} } = useQuery({
-    queryKey: ["clients_today_metrics"],
+    queryKey: ["clients_today_metrics", selectedDate],
     queryFn: async () => {
-      const today = new Date().toISOString().slice(0, 10);
       const { data } = await (supabase as any)
         .from("daily_metrics")
-        .select("ad_account_id, spend, leads, purchases, roas, impressions")
-        .eq("date", today);
+        .select("ad_account_id, spend, leads, purchases, roas, impressions, results")
+        .eq("date", selectedDate);
       if (!data) return {};
       const map: Record<string, DayMetrics> = {};
       for (const row of data) {
         const key = row.ad_account_id;
-        if (!map[key]) map[key] = { spend: 0, leads: 0, purchases: 0, roas: 0, impressions: 0 };
-        map[key].spend      += row.spend ?? 0;
-        map[key].leads      += row.leads ?? 0;
-        map[key].purchases  += row.purchases ?? 0;
+        if (!map[key]) map[key] = { spend: 0, leads: 0, purchases: 0, roas: 0, impressions: 0, results: 0 };
+        map[key].spend       += row.spend ?? 0;
+        map[key].leads       += row.leads ?? 0;
+        map[key].purchases   += row.purchases ?? 0;
         map[key].impressions += row.impressions ?? 0;
+        map[key].results     += row.results ?? 0;
         if (map[key].spend > 0) map[key].roas = (row.roas ?? 0);
       }
       return map;
@@ -545,6 +548,26 @@ function ClientesPage() {
           />
         </div>
 
+        {/* Date picker */}
+        <div className="relative flex items-center gap-1.5 rounded-xl border border-border bg-card px-3 py-2 hover:border-primary/40 transition-colors">
+          <Calendar className="h-3.5 w-3.5 text-muted-foreground/60 shrink-0 pointer-events-none" />
+          <input
+            type="date"
+            value={selectedDate}
+            max={new Date().toISOString().slice(0, 10)}
+            onChange={e => setSelectedDate(e.target.value)}
+            className="bg-transparent text-sm font-medium text-foreground focus:outline-none cursor-pointer"
+          />
+          {selectedDate !== new Date().toISOString().slice(0, 10) && (
+            <button
+              onClick={() => setSelectedDate(new Date().toISOString().slice(0, 10))}
+              className="text-[10px] font-bold text-primary hover:text-primary/70 transition-colors ml-1"
+            >
+              Hoje
+            </button>
+          )}
+        </div>
+
         {/* Status filter pills */}
         <div className="flex items-center gap-1.5 flex-wrap">
           {[
@@ -594,14 +617,21 @@ function ClientesPage() {
           animate="visible"
           variants={{ hidden: {}, visible: { transition: { staggerChildren: 0.04 } } }}
         >
-          {filtered.map(client => (
-            <ClientCard
-              key={client.id}
-              client={client}
-              metrics={client.meta_ad_account_id ? (todayMetrics[client.meta_ad_account_id] ?? null) : null}
-              account={client.meta_ad_account_id ? (accountMap[client.meta_ad_account_id] ?? null) : null}
-            />
-          ))}
+          {filtered.map(client => {
+            const today = new Date().toISOString().slice(0, 10);
+            const dateLabel = selectedDate === today
+              ? "Gasto hoje"
+              : `Gasto ${new Date(selectedDate + "T12:00:00").toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })}`;
+            return (
+              <ClientCard
+                key={client.id}
+                client={client}
+                metrics={client.meta_ad_account_id ? (todayMetrics[client.meta_ad_account_id] ?? null) : null}
+                account={client.meta_ad_account_id ? (accountMap[client.meta_ad_account_id] ?? null) : null}
+                dateLabel={dateLabel}
+              />
+            );
+          })}
         </motion.div>
       )}
 
