@@ -311,7 +311,7 @@ function MetricasAvancadasPage() {
     <div className="mx-auto max-w-[1700px] p-1 pb-20">
       
       {/* ─── STICKY HEADER AREA ─── */}
-      <div className="sticky top-0 z-40 -mx-1 px-1 bg-background/95 backdrop-blur-xl pt-2 space-y-4">
+      <div className="sticky top-0 z-40 -mx-1 px-1 bg-background/95 backdrop-blur-xl pt-2 space-y-2">
 
         {/* Título + ações — colapsa com scroll */}
         <div className={`overflow-hidden transition-all duration-300 ease-in-out ${scrolled ? "max-h-0 opacity-0 pointer-events-none -mb-4" : "max-h-40 opacity-100"}`}>
@@ -334,46 +334,38 @@ function MetricasAvancadasPage() {
           />
         </div>
 
-        {/* KPI BAR — grid expandido em topo, barra compacta no scroll */}
-        <AnimatePresence mode="wait" initial={false}>
-          {scrolled ? (
+        {/* KPI BAR — barra com 2 linhas no topo, afina para 1 linha no scroll */}
+        <motion.div
+          className="flex items-stretch overflow-x-auto rounded-xl border border-white/[0.09] bg-white/[0.03] backdrop-blur-sm divide-x divide-white/[0.07]"
+          animate={{ height: scrolled ? "auto" : "auto" }}
+        >
+          {kpiItems.map(k => (
             <motion.div
-              key="kpi-compact"
-              initial={{ opacity: 0, y: -6 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -6 }}
-              transition={{ duration: 0.18 }}
-              className="flex items-center overflow-x-auto rounded-xl border border-white/[0.09] bg-white/[0.03] backdrop-blur-sm divide-x divide-white/[0.07]"
+              key={k.label}
+              className="flex flex-shrink-0 overflow-hidden"
+              animate={{ padding: scrolled ? "6px 14px" : "10px 20px" }}
+              transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
             >
-              {kpiItems.map(k => (
-                <div key={k.label} className="flex items-center gap-2 px-4 py-2 flex-shrink-0">
+              {scrolled ? (
+                /* MODO COMPACTO — 1 linha */
+                <div className="flex items-center gap-1.5">
                   <k.icon className={`h-3 w-3 flex-shrink-0 ${k.color}`} />
-                  <span className="text-[8px] font-black uppercase tracking-widest text-muted-foreground/55 whitespace-nowrap">{k.label}</span>
+                  <span className="text-[8px] font-black uppercase tracking-widest text-muted-foreground/50 whitespace-nowrap">{k.label}</span>
                   <span className={`font-mono font-black text-[11px] whitespace-nowrap ${k.color}`}>{k.value}</span>
                 </div>
-              ))}
-            </motion.div>
-          ) : (
-            <motion.div
-              key="kpi-full"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.18 }}
-              className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-8"
-            >
-              {kpiItems.map(k => (
-                <div key={k.label} className="glass-panel p-4">
-                  <div className="flex items-center justify-between mb-2">
-                    <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/70">{k.label}</p>
-                    <k.icon className={`h-3.5 w-3.5 ${k.color}`} />
+              ) : (
+                /* MODO EXPANDIDO — 2 linhas */
+                <div className="flex flex-col justify-center gap-0.5">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/60 whitespace-nowrap">{k.label}</span>
+                    <k.icon className={`h-3 w-3 flex-shrink-0 ${k.color}`} />
                   </div>
-                  <p className={`font-mono font-black text-sm ${k.color}`}>{k.value}</p>
+                  <span className={`font-mono font-black text-[13px] whitespace-nowrap ${k.color}`}>{k.value}</span>
                 </div>
-              ))}
+              )}
             </motion.div>
-          )}
-        </AnimatePresence>
+          ))}
+        </motion.div>
 
         {/* FILTROS */}
         <div className={`glass-panel flex flex-wrap items-center gap-3 transition-all duration-300 ${scrolled ? "px-3 py-2" : "p-3"}`}>
