@@ -248,7 +248,7 @@ function Shell() {
       {/* ═══════════════════════════════════════
           TOP NAVIGATION BAR — Premium Horizontal
           ═══════════════════════════════════════ */}
-      <header className="shrink-0 z-50 border-gradient-bottom bg-background/92 backdrop-blur-2xl">
+      <header className="fixed top-0 left-0 right-0 z-50 h-16 border-gradient-bottom bg-background/92 backdrop-blur-2xl">
         <div className="mx-auto flex h-16 max-w-[1600px] items-center justify-between px-4 md:px-8">
           
           {/* LEFT: Logo */}
@@ -552,6 +552,9 @@ function Shell() {
 
       </header>
 
+      {/* Espaçador: ocupa o espaço do header fixed para o conteúdo não ficar atrás */}
+      <div className="h-16 shrink-0" />
+
       {/* ═══════════════════════════════════════
           MOBILE BOTTOM SHEET — Menu completo
           Só aparece em mobile (lg:hidden no overlay)
@@ -684,7 +687,7 @@ function Shell() {
       {/* ═══════════════════════════════════════
           MAIN CONTENT
           ═══════════════════════════════════════ */}
-      <main className="relative z-[1] flex-1 overflow-y-auto custom-scrollbar">
+      <main className="relative z-[1] flex-1 overflow-y-auto custom-scrollbar min-h-0">
         <div className="mx-auto max-w-[1600px] p-4 pb-24 md:pb-8 md:p-8 lg:p-10">
           
           {/* Notificação Flutuante de Ação Autônoma da IA */}
