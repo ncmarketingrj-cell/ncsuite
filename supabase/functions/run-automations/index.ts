@@ -156,8 +156,8 @@ serve(async (req) => {
 
         const dailyBudget = campaign.daily_budget || 0
 
-        // 4. Calcular CPL do dia (ou custo atual se gastou e tem zero leads para alertar CPL de gasto sem conversão!)
-        const cpl = conversions > 0 ? spend / conversions : (conversions === 0 && spend > 0 ? spend : null)
+        // 4. Calcular CPL do dia — só faz sentido se houve ao menos 1 conversão
+        const cpl = conversions > 0 ? spend / conversions : null
         const budgetUsedPct = dailyBudget > 0 ? (spend / dailyBudget) * 100 : 0
 
         console.log(`[AUTO] ${campaign.name}: Gasto R$${spend.toFixed(2)} / Budget R$${dailyBudget} (${budgetUsedPct.toFixed(0)}%) | Leads: ${conversions} | CPL: ${cpl ? `R$${cpl.toFixed(2)}` : 'N/A'}`)
