@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { createFileRoute, Outlet, redirect, Link, useRouterState, Navigate } from "@tanstack/react-router";
+import { createFileRoute, Outlet, redirect, Link, useRouterState, Navigate, useNavigate } from "@tanstack/react-router";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   LayoutDashboard, FileText, Upload, Settings, Loader2,
@@ -87,6 +87,12 @@ const ADMIN_EMAILS = ["nc.marketingrj@gmail.com", "hc.marketing.dgt@gmail.com"];
 
 function Shell() {
   const { loading, user, signOut } = useAuth();
+  const nav = useNavigate();
+
+  const handleSignOut = async () => {
+    await signOut();
+    nav({ to: "/login", replace: true });
+  };
 
   const { data: profile, isLoading: profileLoading } = useQuery({
     queryKey: ["current_user_profile", user?.id],
@@ -540,7 +546,7 @@ function Shell() {
                 <p className="text-[11px] font-bold text-foreground">
                   {profile?.full_name || user?.email?.split('@')[0]}
                 </p>
-                <button onClick={signOut} className="text-[10px] text-muted-foreground hover:text-primary transition-colors font-semibold mt-0.5">
+                <button onClick={handleSignOut} className="text-[10px] text-muted-foreground hover:text-primary transition-colors font-semibold mt-0.5">
                   Sair
                 </button>
               </div>
@@ -640,7 +646,7 @@ function Shell() {
                     <p className="text-[10px] text-muted-foreground mt-0.5">{profile?.position || "NC Performance"}</p>
                   </div>
                 </div>
-                <button onClick={signOut} className="rounded-xl border border-border px-3 py-2 text-xs font-bold text-muted-foreground hover:text-destructive transition-colors">
+                <button onClick={handleSignOut} className="rounded-xl border border-border px-3 py-2 text-xs font-bold text-muted-foreground hover:text-destructive transition-colors">
                   Sair
                 </button>
               </div>
