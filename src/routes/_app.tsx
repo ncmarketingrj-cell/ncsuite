@@ -236,7 +236,7 @@ function Shell() {
   }
 
   return (
-    <div className="relative flex h-screen w-full flex-col bg-background overflow-hidden selection:bg-primary/30">
+    <div className="relative flex h-screen w-full flex-col bg-background overflow-x-hidden selection:bg-primary/30">
       {/* ── NC Watermark — identidade permanente de fundo ── */}
       <div
         className="pointer-events-none absolute bottom-[-2.5rem] right-[-1.5rem] z-0 select-none"
@@ -248,7 +248,7 @@ function Shell() {
       {/* ═══════════════════════════════════════
           TOP NAVIGATION BAR — Premium Horizontal
           ═══════════════════════════════════════ */}
-      <header className="fixed top-0 left-0 right-0 z-50 h-16 border-gradient-bottom bg-background/92 backdrop-blur-2xl">
+      <header className="sticky top-0 z-50 border-gradient-bottom bg-background/92 backdrop-blur-2xl">
         <div className="mx-auto flex h-16 max-w-[1600px] items-center justify-between px-4 md:px-8">
           
           {/* LEFT: Logo */}
@@ -552,9 +552,6 @@ function Shell() {
 
       </header>
 
-      {/* Espaço reservado para o header fixed — mantém altura correta do flex */}
-      <div className="h-16 shrink-0 pointer-events-none" aria-hidden="true" />
-
       {/* ═══════════════════════════════════════
           MOBILE BOTTOM SHEET — Menu completo
           Só aparece em mobile (lg:hidden no overlay)
@@ -687,7 +684,7 @@ function Shell() {
       {/* ═══════════════════════════════════════
           MAIN CONTENT
           ═══════════════════════════════════════ */}
-      <main className="relative z-[1] flex-1 overflow-y-auto custom-scrollbar min-h-0">
+      <main className="relative z-[1] flex-1 overflow-y-auto custom-scrollbar">
         <div className="mx-auto max-w-[1600px] p-4 pb-24 md:pb-8 md:p-8 lg:p-10">
           
           {/* Notificação Flutuante de Ação Autônoma da IA */}
