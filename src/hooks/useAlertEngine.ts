@@ -1,7 +1,7 @@
 // src/hooks/useAlertEngine.ts
 // NC Performance Suite — Motor de Alertas: Avaliação de Thresholds + Som + Browser Notifications
 
-import { useEffect, useRef, useCallback } from "react";
+import { useEffect, useRef, useCallback, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 
@@ -9,6 +9,19 @@ import { supabase } from "@/integrations/supabase/client";
 const firedAlerts = new Set<string>();
 const activeOscillators = new Map<string, { stop: () => void }>();
 let isCurrentlyEvaluating = false;
+
+// Preferência de som (persistida no localStorage, compartilhada entre instâncias)
+const SOUND_PREF_KEY = "nc_alert_sound_enabled";
+export const SOUND_CHANGED_EVENT = "nc:sound-pref-changed";
+
+export function getSoundEnabled(): boolean {
+  try { return localStorage.getItem(SOUND_PREF_KEY) !== "false"; } catch { return true; }
+}
+
+export function setSoundEnabled(enabled: boolean): void {
+  try { localStorage.setItem(SOUND_PREF_KEY, enabled ? "true" : "false"); } catch {}
+  window.dispatchEvent(new CustomEvent(SOUND_CHANGED_EVENT, { detail: enabled }));
+}
 
 // ─── Eval status (persisted in localStorage) ──────────────────────────────────
 const EVAL_STATUS_KEY  = "nc_alert_eval_status";
@@ -303,6 +316,7 @@ async function runThresholdEvaluation() {
 // ─── Web Audio API ────────────────────────────────────────────────────────────
 function playAlertSound(alertId: string) {
   if (activeOscillators.has(alertId)) return;
+  if (!getSoundEnabled()) return;
 
   try {
     const Ctx = window.AudioContext || (window as any).webkitAudioContext;
@@ -388,6 +402,21 @@ function showBrowserNotification(
 // ─── Hook Principal ───────────────────────────────────────────────────────────
 export function useAlertEngine() {
   const permissionGranted = useRef(false);
+  const [soundEnabled, setSoundEnabledState] = useState(getSoundEnabled);
+
+  // Sincroniza estado React quando outra instância ou aba muda a preferência
+  useEffect(() => {
+    const handler = (e: Event) => setSoundEnabledState((e as CustomEvent).detail);
+    window.addEventListener(SOUND_CHANGED_EVENT, handler);
+    return () => window.removeEventListener(SOUND_CHANGED_EVENT, handler);
+  }, []);
+
+  const toggleSound = useCallback(() => {
+    const next = !getSoundEnabled();
+    setSoundEnabled(next);
+    // Para todos os sons imediatamente se o usuário desativou
+    if (!next) for (const [id] of activeOscillators) stopAlertSound(id);
+  }, []);
 
   useEffect(() => {
     requestNotificationPermission().then(ok => { permissionGranted.current = ok; });
@@ -472,5 +501,7 @@ export function useAlertEngine() {
     acknowledge,
     acknowledgeAll,
     activeSoundCount: activeOscillators.size,
+    soundEnabled,
+    toggleSound,
   };
 }

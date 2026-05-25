@@ -5,7 +5,8 @@ import {
   LayoutDashboard, FileText, Upload, Settings, Loader2,
   Bell, User, Bot, Sparkles, Activity, Zap,
   Sun, Moon, Menu, X, BarChart3, Megaphone, LineChart, Palette, Link2,
-  ChevronDown, RefreshCw, Wifi, WifiOff, Users, Store
+  ChevronDown, RefreshCw, Wifi, WifiOff, Users, Store,
+  Volume2, VolumeX
 } from "lucide-react";
 import { AuthProvider, useAuth } from "@/lib/auth";
 import { supabase } from "@/integrations/supabase/client";
@@ -135,7 +136,7 @@ function Shell() {
   const { runSync } = useAutoSync();
 
   // ── Motor de Alertas Sonoros ──────────────────────────────────────────────────
-  const { acknowledgeAll } = useAlertEngine();
+  const { acknowledgeAll, soundEnabled, toggleSound } = useAlertEngine();
 
   // Ouvir mudanças de status do sync
   useEffect(() => {
@@ -430,18 +431,34 @@ function Shell() {
                           <Activity className="h-4 w-4 text-primary" />
                           <h4 className="text-xs font-black uppercase tracking-widest text-foreground">Alertas do Agente AI</h4>
                         </div>
-                        {hasUnread ? (
+                        <div className="flex items-center gap-2">
                           <button
-                            onClick={handleMarkAllAsRead}
-                            className="text-[9px] font-black text-primary hover:text-primary/80 transition-colors uppercase tracking-wider"
+                            onClick={toggleSound}
+                            title={soundEnabled ? "Desativar som dos alertas" : "Ativar som dos alertas"}
+                            className={`flex items-center gap-1 rounded-lg border px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider transition-all ${
+                              soundEnabled
+                                ? "border-primary/30 bg-primary/10 text-primary hover:bg-primary/20"
+                                : "border-border bg-muted/40 text-muted-foreground hover:border-primary/30 hover:text-foreground"
+                            }`}
                           >
-                            Lidas
+                            {soundEnabled
+                              ? <><Volume2 className="h-2.5 w-2.5" /> Som</>
+                              : <><VolumeX className="h-2.5 w-2.5" /> Mudo</>
+                            }
                           </button>
-                        ) : (
-                          <span className="rounded bg-primary/10 px-1.5 py-0.5 text-[9px] font-black text-primary uppercase">
-                            {recentNotifications.length} Alertas
-                          </span>
-                        )}
+                          {hasUnread ? (
+                            <button
+                              onClick={handleMarkAllAsRead}
+                              className="text-[9px] font-black text-primary hover:text-primary/80 transition-colors uppercase tracking-wider"
+                            >
+                              Lidas
+                            </button>
+                          ) : (
+                            <span className="rounded bg-primary/10 px-1.5 py-0.5 text-[9px] font-black text-primary uppercase">
+                              {recentNotifications.length} Alertas
+                            </span>
+                          )}
+                        </div>
                       </div>
 
                       {recentNotifications.length === 0 ? (
