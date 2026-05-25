@@ -4,7 +4,8 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   Zap, Loader2, Play, Pause, Clock, History, AlertTriangle,
   ShieldAlert, Plus, X, Server, CheckCircle2, RefreshCw,
-  Bell, TrendingUp, DollarSign, AlertCircle, Timer, Pencil, Radio
+  Bell, TrendingUp, DollarSign, AlertCircle, Timer, Pencil, Radio,
+  Settings2, Volume2, VolumeX, BellOff, BellRing, Moon, RotateCcw
 } from "lucide-react";
 import { PageHeader } from "@/components/PageHeader";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -14,6 +15,8 @@ import { toast } from "sonner";
 import { getSyncStatus, useAutoSync } from "@/hooks/useAutoSync";
 import {
   triggerEvaluation, getEvalStatus, EVAL_STATUS_EVENT, type EvalStatus,
+  getSoundEnabled, setSoundEnabled, SOUND_CHANGED_EVENT,
+  getNotifPrefs, setNotifPrefs, NOTIF_PREFS_CHANGED_EVENT, type NotifPrefs,
 } from "@/hooks/useAlertEngine";
 import { formatDistanceToNow, formatDistance } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -35,7 +38,7 @@ export const Route = createFileRoute("/_app/automacoes")({
 });
 
 function AutomationsPage() {
-  const [activeTab, setActiveTab] = useState<"thresholds" | "sync" | "logs">("thresholds");
+  const [activeTab, setActiveTab] = useState<"thresholds" | "sync" | "logs" | "prefs">("thresholds");
   const [modal, setModal] = useState(false);
   const [editingThreshold, setEditingThreshold] = useState<any | null>(null);
   const { user } = useAuth();
@@ -45,6 +48,24 @@ function AutomationsPage() {
 
   // ── Eval status ─────────────────────────────────────────────────────────────
   const [evalStatus, setEvalStatus] = useState<EvalStatus>(getEvalStatus);
+
+  // ── Preferências de notificação (localStorage) ───────────────────────────────
+  const [soundOn, setSoundOn]     = useState(getSoundEnabled);
+  const [prefs, setPrefsState]    = useState<NotifPrefs>(getNotifPrefs);
+
+  useEffect(() => {
+    const onSound = (e: Event) => setSoundOn((e as CustomEvent).detail);
+    const onPrefs = (e: Event) => setPrefsState((e as CustomEvent).detail);
+    window.addEventListener(SOUND_CHANGED_EVENT, onSound as EventListener);
+    window.addEventListener(NOTIF_PREFS_CHANGED_EVENT, onPrefs as EventListener);
+    return () => {
+      window.removeEventListener(SOUND_CHANGED_EVENT, onSound as EventListener);
+      window.removeEventListener(NOTIF_PREFS_CHANGED_EVENT, onPrefs as EventListener);
+    };
+  }, []);
+
+  const toggleSound = () => setSoundEnabled(!getSoundEnabled());
+  const updatePrefs = (patch: Partial<NotifPrefs>) => setNotifPrefs(patch);
 
   useEffect(() => {
     const handler = (e: CustomEvent) => setEvalStatus(e.detail);
@@ -166,7 +187,8 @@ function AutomationsPage() {
       {/* Tabs */}
       <div className="flex space-x-1 rounded-xl bg-background/50 p-1 w-fit border border-white/5 backdrop-blur-md">
         {[
-          { id: "thresholds", label: "Limites de Alerta (CPL)", icon: AlertTriangle },
+          { id: "thresholds", label: "Limites de Alerta",        icon: AlertTriangle },
+          { id: "prefs",      label: "Preferências",             icon: Settings2 },
           { id: "sync",       label: "Motor de Sincronização",  icon: Server },
           { id: "logs",       label: "Histórico de Sync",       icon: History },
         ].map((tab) => (
@@ -449,6 +471,118 @@ function AutomationsPage() {
         </div>
       )}
 
+      {/* ══ TAB: PREFERÊNCIAS ═══════════════════════════════════════════════════ */}
+      {activeTab === "prefs" && (
+        <div className="space-y-4 max-w-2xl">
+
+          {/* Som */}
+          <div className="glass-panel p-5 flex items-center justify-between gap-4">
+            <div className="flex items-start gap-3">
+              <div className={`h-10 w-10 rounded-xl flex items-center justify-center shrink-0 ${soundOn ? "bg-primary/15 text-primary" : "bg-muted/30 text-muted-foreground"}`}>
+                {soundOn ? <Volume2 className="h-5 w-5" /> : <VolumeX className="h-5 w-5" />}
+              </div>
+              <div>
+                <p className="text-sm font-bold text-foreground">Som dos alertas</p>
+                <p className="text-[11px] text-muted-foreground mt-0.5">Alertas críticos emitem beep contínuo até ser reconhecido.</p>
+              </div>
+            </div>
+            <button
+              onClick={toggleSound}
+              className={`relative h-6 w-11 rounded-full transition-colors shrink-0 ${soundOn ? "bg-primary" : "bg-white/10"}`}
+            >
+              <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${soundOn ? "left-5.5 translate-x-0.5" : "left-0.5"}`} />
+            </button>
+          </div>
+
+          {/* Notificações de browser */}
+          <div className="glass-panel p-5 flex items-center justify-between gap-4">
+            <div className="flex items-start gap-3">
+              <div className={`h-10 w-10 rounded-xl flex items-center justify-center shrink-0 ${prefs.browserEnabled ? "bg-primary/15 text-primary" : "bg-muted/30 text-muted-foreground"}`}>
+                {prefs.browserEnabled ? <BellRing className="h-5 w-5" /> : <BellOff className="h-5 w-5" />}
+              </div>
+              <div>
+                <p className="text-sm font-bold text-foreground">Notificações de browser</p>
+                <p className="text-[11px] text-muted-foreground mt-0.5">Popup na área de trabalho mesmo com o dashboard minimizado.</p>
+              </div>
+            </div>
+            <button
+              onClick={() => updatePrefs({ browserEnabled: !prefs.browserEnabled })}
+              className={`relative h-6 w-11 rounded-full transition-colors shrink-0 ${prefs.browserEnabled ? "bg-primary" : "bg-white/10"}`}
+            >
+              <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${prefs.browserEnabled ? "left-5.5 translate-x-0.5" : "left-0.5"}`} />
+            </button>
+          </div>
+
+          {/* Horário de silêncio */}
+          <div className="glass-panel p-5 space-y-4">
+            <div className="flex items-center justify-between gap-4">
+              <div className="flex items-start gap-3">
+                <div className={`h-10 w-10 rounded-xl flex items-center justify-center shrink-0 ${prefs.quietHoursEnabled ? "bg-orange-500/15 text-orange-400" : "bg-muted/30 text-muted-foreground"}`}>
+                  <Moon className="h-5 w-5" />
+                </div>
+                <div>
+                  <p className="text-sm font-bold text-foreground">Horário de silêncio</p>
+                  <p className="text-[11px] text-muted-foreground mt-0.5">Sem som e sem notificações de browser neste período. Alertas continuam gravados no sino.</p>
+                </div>
+              </div>
+              <button
+                onClick={() => updatePrefs({ quietHoursEnabled: !prefs.quietHoursEnabled })}
+                className={`relative h-6 w-11 rounded-full transition-colors shrink-0 ${prefs.quietHoursEnabled ? "bg-orange-400" : "bg-white/10"}`}
+              >
+                <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${prefs.quietHoursEnabled ? "left-5.5 translate-x-0.5" : "left-0.5"}`} />
+              </button>
+            </div>
+            {prefs.quietHoursEnabled && (
+              <div className="flex items-center gap-3 pl-13">
+                <div className="flex items-center gap-2">
+                  <label className="text-[10px] font-bold text-muted-foreground uppercase">Das</label>
+                  <input
+                    type="time" value={prefs.quietStart}
+                    onChange={e => updatePrefs({ quietStart: e.target.value })}
+                    className="rounded-lg border border-white/10 bg-background px-3 py-2 text-sm font-mono focus:border-orange-400 focus:outline-none"
+                  />
+                </div>
+                <span className="text-muted-foreground text-sm">até</span>
+                <input
+                  type="time" value={prefs.quietEnd}
+                  onChange={e => updatePrefs({ quietEnd: e.target.value })}
+                  className="rounded-lg border border-white/10 bg-background px-3 py-2 text-sm font-mono focus:border-orange-400 focus:outline-none"
+                />
+              </div>
+            )}
+          </div>
+
+          {/* Intervalo de re-alerta */}
+          <div className="glass-panel p-5 flex items-center justify-between gap-4">
+            <div className="flex items-start gap-3">
+              <div className="h-10 w-10 rounded-xl flex items-center justify-center shrink-0 bg-secondary/15 text-secondary">
+                <RotateCcw className="h-5 w-5" />
+              </div>
+              <div>
+                <p className="text-sm font-bold text-foreground">Intervalo entre re-alertas</p>
+                <p className="text-[11px] text-muted-foreground mt-0.5">Mesma campanha não será re-alertada antes deste período.</p>
+              </div>
+            </div>
+            <select
+              value={prefs.dedupWindowH}
+              onChange={e => updatePrefs({ dedupWindowH: Number(e.target.value) })}
+              className="rounded-lg border border-white/10 bg-background px-3 py-2 text-sm font-bold focus:border-primary focus:outline-none cursor-pointer shrink-0"
+            >
+              <option value={0.5}>30 min</option>
+              <option value={1}>1 hora</option>
+              <option value={2}>2 horas</option>
+              <option value={4}>4 horas</option>
+              <option value={8}>8 horas</option>
+              <option value={24}>1 dia</option>
+            </select>
+          </div>
+
+          <p className="text-[10px] text-muted-foreground/50 px-1">
+            Todas as preferências são salvas localmente neste dispositivo.
+          </p>
+        </div>
+      )}
+
       {/* ══ TAB: SYNC ════════════════════════════════════════════════════════════ */}
       {activeTab === "sync" && (
         <div className="space-y-6">
@@ -593,6 +727,12 @@ function ThresholdModal({ onClose, accounts, userId, qc, editing }: any) {
   const [maxFrequency, setMaxFrequency] = useState(
     isEditing && editing.max_frequency != null ? String(editing.max_frequency) : "3.5"
   );
+  const [minSpend, setMinSpend] = useState(
+    isEditing && editing.min_spend_threshold != null ? String(editing.min_spend_threshold) : "0"
+  );
+  const [alertCplEnabled,       setAlertCplEnabled]       = useState(isEditing ? editing.alert_cpl_enabled       !== false : true);
+  const [alertBudgetEnabled,    setAlertBudgetEnabled]    = useState(isEditing ? editing.alert_budget_enabled    !== false : true);
+  const [alertFrequencyEnabled, setAlertFrequencyEnabled] = useState(isEditing ? editing.alert_frequency_enabled !== false : true);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const toggleExclusion = (id: string) => {
@@ -611,30 +751,32 @@ function ThresholdModal({ onClose, accounts, userId, qc, editing }: any) {
 
     setIsSubmitting(true);
     try {
+      const commonFields = {
+        ad_account_id:           targetAccountId,
+        max_cpl:                 maxCpl ? parseFloat(maxCpl) : null,
+        max_budget_pct:          maxBudgetPct ? parseInt(maxBudgetPct) : null,
+        max_frequency:           maxFrequency ? parseFloat(maxFrequency) : null,
+        min_spend_threshold:     minSpend ? parseFloat(minSpend) : 0,
+        alert_cpl_enabled:       alertCplEnabled,
+        alert_budget_enabled:    alertBudgetEnabled,
+        alert_frequency_enabled: alertFrequencyEnabled,
+        excluded_account_ids:    accountId === "all" && excludedIds.size > 0 ? Array.from(excludedIds) : [],
+      };
+
       if (isEditing) {
         // ── UPDATE ──────────────────────────────────────────────────────────
         const { error } = await (supabase as any)
           .from("alert_thresholds")
-          .update({
-            ad_account_id:        targetAccountId,
-            max_cpl:              maxCpl ? parseFloat(maxCpl) : null,
-            max_budget_pct:       maxBudgetPct ? parseInt(maxBudgetPct) : null,
-            max_frequency:        maxFrequency ? parseFloat(maxFrequency) : null,
-            excluded_account_ids: accountId === "all" && excludedIds.size > 0 ? Array.from(excludedIds) : [],
-          })
+          .update(commonFields)
           .eq("id", editing.id);
         if (error) throw error;
         toast.success("Regra atualizada com sucesso!");
       } else {
         // ── INSERT ──────────────────────────────────────────────────────────
         const { error } = await (supabase as any).from("alert_thresholds").insert({
-          user_id:              userId,
-          ad_account_id:        targetAccountId,
-          max_cpl:              maxCpl ? parseFloat(maxCpl) : null,
-          max_budget_pct:       maxBudgetPct ? parseInt(maxBudgetPct) : null,
-          max_frequency:        maxFrequency ? parseFloat(maxFrequency) : null,
-          is_active:            true,
-          excluded_account_ids: accountId === "all" && excludedIds.size > 0 ? Array.from(excludedIds) : [],
+          user_id:   userId,
+          is_active: true,
+          ...commonFields,
         });
         if (error) throw error;
         toast.success("Regra de alerta configurada! O sistema avaliará campanhas a cada 5 min.");
@@ -779,6 +921,51 @@ function ThresholdModal({ onClose, accounts, userId, qc, editing }: any) {
               <span className="text-sm font-bold text-muted-foreground shrink-0">×</span>
             </div>
             <p className="text-[9px] text-muted-foreground">Alerta quando qualquer campanha ultrapassar esta frequência média. Padrão 3.5× para automotivo (público limitado).</p>
+          </div>
+
+          {/* ── Alertas ativos ─────────────────────────────────────────────── */}
+          <div className="space-y-2">
+            <label className="text-[10px] font-bold text-muted-foreground uppercase">
+              Tipos de alerta ativos nesta regra
+            </label>
+            <div className="flex flex-wrap gap-2">
+              {[
+                { label: "CPL / Custo",   active: alertCplEnabled,       toggle: () => setAlertCplEnabled(v => !v),       color: "red" },
+                { label: "Orçamento",     active: alertBudgetEnabled,    toggle: () => setAlertBudgetEnabled(v => !v),    color: "yellow" },
+                { label: "Frequência",    active: alertFrequencyEnabled, toggle: () => setAlertFrequencyEnabled(v => !v), color: "orange" },
+              ].map(({ label, active, toggle, color }) => (
+                <button
+                  key={label}
+                  type="button"
+                  onClick={toggle}
+                  className={`flex items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-bold transition-all ${
+                    active
+                      ? color === "red"    ? "border-red-500/40 bg-red-500/10 text-red-400"
+                      : color === "yellow" ? "border-yellow-500/40 bg-yellow-500/10 text-yellow-400"
+                      :                     "border-orange-500/40 bg-orange-500/10 text-orange-400"
+                      : "border-white/10 bg-white/5 text-muted-foreground"
+                  }`}
+                >
+                  <span className={`h-2 w-2 rounded-full ${active ? "bg-current" : "bg-white/20"}`} />
+                  {label}
+                </button>
+              ))}
+            </div>
+            <p className="text-[9px] text-muted-foreground">Desative tipos que não se aplicam a esta conta.</p>
+          </div>
+
+          {/* ── Gasto mínimo ───────────────────────────────────────────────── */}
+          <div className="space-y-1.5">
+            <label className="text-[10px] font-bold text-muted-foreground uppercase">
+              Gasto mínimo para alertar (R$)
+            </label>
+            <input
+              type="number" step="0.01" min="0" value={minSpend}
+              onChange={(e) => setMinSpend(e.target.value)}
+              placeholder="0 = sempre alertar"
+              className="w-full rounded-lg border border-white/10 bg-background px-3 py-3 text-sm focus:border-primary focus:outline-none"
+            />
+            <p className="text-[9px] text-muted-foreground">Ignora campanhas que gastaram menos que este valor no dia — evita alertas de campanhas com orçamento muito baixo.</p>
           </div>
         </div>
 

@@ -87,7 +87,7 @@ serve(async (req) => {
 
     const { data: thresholds, error: thErr } = await supabase
       .from("alert_thresholds")
-      .select("*, ad_accounts(name, currency)")
+      .select("*, ad_accounts(name, currency), min_spend_threshold, alert_cpl_enabled, alert_budget_enabled, alert_frequency_enabled")
       .eq("is_active", true)
 
     if (thErr || !thresholds?.length) {
@@ -114,6 +114,10 @@ serve(async (req) => {
       const maxCpl      = threshold.max_cpl
       const maxBudgetPct = threshold.max_budget_pct
       const maxFrequency = threshold.max_frequency
+      const minSpend    = Number(threshold.min_spend_threshold || 0)
+      const cplEnabled  = threshold.alert_cpl_enabled       !== false
+      const budgetEnabled = threshold.alert_budget_enabled  !== false
+      const freqEnabled = threshold.alert_frequency_enabled !== false
 
       console.log(`[AUTO] Conta: ${accountName} | MaxCusto: ${maxCpl ? `R$${maxCpl}` : 'OFF'} | MaxBudget: ${maxBudgetPct ? `${maxBudgetPct}%` : 'OFF'} | MaxFreq: ${maxFrequency ?? 'OFF'}`)
 
@@ -151,6 +155,10 @@ serve(async (req) => {
         const conversions = metricsRows.reduce((s, m) => s + Number(m.conversions || 0), 0)
 
         if (spend === 0) continue
+        if (spend < minSpend) {
+          console.log(`[AUTO] ${campaign.name}: gasto R$${spend.toFixed(2)} < mínimo R$${minSpend.toFixed(2)} — ignorando`)
+          continue
+        }
 
         // Frequência: média das linhas com valor registrado
         const freqRows  = metricsRows.filter(m => Number(m.frequency) > 0)
@@ -175,7 +183,7 @@ serve(async (req) => {
         const alertsToInsert: any[] = []
 
         // ── Alerta de custo por resultado elevado ─────────────────────────────
-        if (maxCpl && costPerResult !== null && costPerResult > maxCpl) {
+        if (cplEnabled && maxCpl && costPerResult !== null && costPerResult > maxCpl) {
           alertsToInsert.push({
             user_id:     userId,
             title:       `🚨 ${result.metricLabel} Alto — ${campaign.name}`,
@@ -201,7 +209,7 @@ serve(async (req) => {
         }
 
         // ── Alerta de orçamento ───────────────────────────────────────────────
-        if (maxBudgetPct !== null && dailyBudget > 0 && budgetUsedPct >= maxBudgetPct) {
+        if (budgetEnabled && maxBudgetPct !== null && dailyBudget > 0 && budgetUsedPct >= maxBudgetPct) {
           const semResultado = conversions === 0 ? ` sem nenhum(a) ${result.label.toLowerCase()}` : ""
           alertsToInsert.push({
             user_id:     userId,
@@ -227,7 +235,7 @@ serve(async (req) => {
         }
 
         // ── Alerta de frequência elevada ──────────────────────────────────────
-        if (maxFrequency && frequency > 0 && frequency > maxFrequency) {
+        if (freqEnabled && maxFrequency && frequency > 0 && frequency > maxFrequency) {
           alertsToInsert.push({
             user_id:     userId,
             title:       `🔁 Frequência Alta — ${campaign.name}`,

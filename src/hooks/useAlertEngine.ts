@@ -26,22 +26,72 @@ export function setSoundEnabled(enabled: boolean): void {
 // ─── Eval status (persisted in localStorage) ──────────────────────────────────
 const EVAL_STATUS_KEY  = "nc_alert_eval_status";
 const DEDUP_CACHE_KEY  = "nc_alert_dedup_v2";
-const EVAL_INTERVAL_MS = 5 * 60 * 1000;  // 5 minutos
-const DEDUP_WINDOW_MS  = 60 * 60 * 1000; // 1 hora — não re-alertar mesma campanha
+const EVAL_INTERVAL_MS = 5 * 60 * 1000; // 5 minutos
+
+// ─── Preferências globais de notificação ──────────────────────────────────────
+const NOTIF_PREFS_KEY = "nc_notif_prefs";
+export const NOTIF_PREFS_CHANGED_EVENT = "nc:notif-prefs-changed";
+
+export interface NotifPrefs {
+  browserEnabled:     boolean;  // mostrar notificação de browser
+  quietHoursEnabled:  boolean;  // silenciar em determinado horário
+  quietStart:         string;   // "HH:MM"
+  quietEnd:           string;   // "HH:MM"
+  dedupWindowH:       number;   // horas antes de re-alertar mesma campanha
+}
+
+const DEFAULT_NOTIF_PREFS: NotifPrefs = {
+  browserEnabled:    true,
+  quietHoursEnabled: false,
+  quietStart:        "22:00",
+  quietEnd:          "08:00",
+  dedupWindowH:      1,
+};
+
+export function getNotifPrefs(): NotifPrefs {
+  try {
+    const s = localStorage.getItem(NOTIF_PREFS_KEY);
+    return s ? { ...DEFAULT_NOTIF_PREFS, ...JSON.parse(s) } : { ...DEFAULT_NOTIF_PREFS };
+  } catch { return { ...DEFAULT_NOTIF_PREFS }; }
+}
+
+export function setNotifPrefs(patch: Partial<NotifPrefs>): void {
+  const next = { ...getNotifPrefs(), ...patch };
+  try { localStorage.setItem(NOTIF_PREFS_KEY, JSON.stringify(next)); } catch {}
+  window.dispatchEvent(new CustomEvent(NOTIF_PREFS_CHANGED_EVENT, { detail: next }));
+}
+
+function getDedupWindowMs(): number {
+  return getNotifPrefs().dedupWindowH * 60 * 60 * 1000;
+}
+
+function isQuietHours(): boolean {
+  const { quietHoursEnabled, quietStart, quietEnd } = getNotifPrefs();
+  if (!quietHoursEnabled) return false;
+  const now = new Date();
+  const nowMin = now.getHours() * 60 + now.getMinutes();
+  const [sh, sm] = quietStart.split(":").map(Number);
+  const [eh, em] = quietEnd.split(":").map(Number);
+  const startMin = sh * 60 + (sm || 0);
+  const endMin   = eh * 60 + (em || 0);
+  return startMin > endMin
+    ? (nowMin >= startMin || nowMin < endMin)
+    : (nowMin >= startMin && nowMin < endMin);
+}
 
 // Dedup por localStorage — primário, síncrono, sem dependência de rede
 function isDedupBlocked(key: string): boolean {
   try {
     const cache: Record<string, string> = JSON.parse(localStorage.getItem(DEDUP_CACHE_KEY) || "{}");
     const last = cache[key];
-    return !!last && (Date.now() - new Date(last).getTime()) < DEDUP_WINDOW_MS;
+    return !!last && (Date.now() - new Date(last).getTime()) < getDedupWindowMs();
   } catch { return false; }
 }
 
 function markDedupFired(key: string): void {
   try {
     const cache: Record<string, string> = JSON.parse(localStorage.getItem(DEDUP_CACHE_KEY) || "{}");
-    const cutoff = Date.now() - 2 * DEDUP_WINDOW_MS;
+    const cutoff = Date.now() - 2 * getDedupWindowMs();
     for (const k in cache) { if (new Date(cache[k]).getTime() < cutoff) delete cache[k]; }
     cache[key] = new Date().toISOString();
     localStorage.setItem(DEDUP_CACHE_KEY, JSON.stringify(cache));
@@ -137,7 +187,7 @@ async function runThresholdEvaluation() {
     }
 
     const today      = todayStr();
-    const dedupSince = new Date(Date.now() - DEDUP_WINDOW_MS).toISOString();
+    const dedupSince = new Date(Date.now() - getDedupWindowMs()).toISOString();
     const { data: { user } } = await supabase.auth.getUser();
 
     // Contas com regra específica — a regra global não se aplica a elas
@@ -403,19 +453,28 @@ function showBrowserNotification(
 export function useAlertEngine() {
   const permissionGranted = useRef(false);
   const [soundEnabled, setSoundEnabledState] = useState(getSoundEnabled);
+  const [notifPrefs, setNotifPrefsState] = useState<NotifPrefs>(getNotifPrefs);
 
-  // Sincroniza estado React quando outra instância ou aba muda a preferência
+  // Sincroniza estado React quando outra instância ou aba muda as preferências
   useEffect(() => {
-    const handler = (e: Event) => setSoundEnabledState((e as CustomEvent).detail);
-    window.addEventListener(SOUND_CHANGED_EVENT, handler);
-    return () => window.removeEventListener(SOUND_CHANGED_EVENT, handler);
+    const onSound = (e: Event) => setSoundEnabledState((e as CustomEvent).detail);
+    const onPrefs = (e: Event) => setNotifPrefsState((e as CustomEvent).detail);
+    window.addEventListener(SOUND_CHANGED_EVENT, onSound);
+    window.addEventListener(NOTIF_PREFS_CHANGED_EVENT, onPrefs);
+    return () => {
+      window.removeEventListener(SOUND_CHANGED_EVENT, onSound);
+      window.removeEventListener(NOTIF_PREFS_CHANGED_EVENT, onPrefs);
+    };
   }, []);
 
   const toggleSound = useCallback(() => {
     const next = !getSoundEnabled();
     setSoundEnabled(next);
-    // Para todos os sons imediatamente se o usuário desativou
     if (!next) for (const [id] of activeOscillators) stopAlertSound(id);
+  }, []);
+
+  const updateNotifPrefs = useCallback((patch: Partial<NotifPrefs>) => {
+    setNotifPrefs(patch);
   }, []);
 
   useEffect(() => {
@@ -472,13 +531,16 @@ export function useAlertEngine() {
 
   // Disparar som + browser notification para cada alerta novo
   useEffect(() => {
+    const quiet = isQuietHours();
+    const { browserEnabled } = getNotifPrefs();
+
     for (const alert of criticalAlerts as any[]) {
       if (firedAlerts.has(alert.id)) continue;
       firedAlerts.add(alert.id);
 
-      playAlertSound(alert.id);
+      if (!quiet) playAlertSound(alert.id);
 
-      if (permissionGranted.current) {
+      if (permissionGranted.current && browserEnabled && !quiet) {
         showBrowserNotification(
           alert.id, alert.title, alert.message,
           alert.link || "/automacoes",
@@ -503,5 +565,7 @@ export function useAlertEngine() {
     activeSoundCount: activeOscillators.size,
     soundEnabled,
     toggleSound,
+    notifPrefs,
+    updateNotifPrefs,
   };
 }
