@@ -833,16 +833,21 @@ function ThresholdModal({ onClose, accounts, userId, qc, editing }: any) {
 
   return (
     <motion.div
-      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm p-4"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 z-50 flex justify-end bg-background/80 backdrop-blur-sm"
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
       <motion.div
-        initial={{ scale: 0.95, y: 20 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.95, y: 20 }}
-        className="glass-panel w-full max-w-lg flex flex-col shadow-2xl border border-primary/20"
-        style={{ maxHeight: 'calc(100svh - 2rem)' }}
+        initial={{ x: "100%" }}
+        animate={{ x: 0 }}
+        exit={{ x: "100%" }}
+        transition={{ type: "spring", damping: 32, stiffness: 320 }}
+        className="glass-panel w-full max-w-md h-full flex flex-col shadow-2xl border-l border-primary/20 bg-card rounded-none"
         onClick={(e) => e.stopPropagation()}
       >
+        {/* Header (Fixo no topo) */}
         <div className="shrink-0 flex items-center justify-between border-b border-white/5 p-6 bg-white/5">
           <div className="flex items-center gap-3">
             <div className={`h-10 w-10 rounded-xl flex items-center justify-center ${
@@ -851,20 +856,20 @@ function ThresholdModal({ onClose, accounts, userId, qc, editing }: any) {
               {isEditing ? <Pencil className="h-5 w-5" /> : <ShieldAlert className="h-5 w-5 fill-current" />}
             </div>
             <div>
-              <h3 className="font-display text-lg font-bold">
+              <h3 className="font-display text-base font-bold leading-tight">
                 {isEditing ? "Editar Regra de Alerta" : "Novo Alerta de Conta"}
               </h3>
-              <p className="text-[10px] text-muted-foreground uppercase tracking-widest font-bold">
+              <p className="text-[9px] text-muted-foreground uppercase tracking-widest font-bold font-mono">
                 {isEditing ? "Altere os parâmetros da regra" : "Monitoramento de CPL e Orçamento"}
               </p>
             </div>
           </div>
-          <button onClick={onClose} className="rounded-full p-2 hover:bg-white/10 transition">
+          <button onClick={onClose} className="rounded-full p-2 hover:bg-white/10 transition text-muted-foreground hover:text-foreground">
             <X className="h-5 w-5" />
           </button>
         </div>
 
-        {/* min-h-0 é OBRIGATÓRIO: sem ele, flex-1 overflow-y-auto nunca scrolla em flexbox */}
+        {/* Formulário Scrollable (Corpo com min-h-0 para forçar flexbox scroll) */}
         <div className="flex-1 min-h-0 overflow-y-auto p-6 space-y-6 custom-scrollbar">
           <div className="space-y-1.5">
             <label className="text-[10px] font-bold text-muted-foreground uppercase">
@@ -1013,17 +1018,18 @@ function ThresholdModal({ onClose, accounts, userId, qc, editing }: any) {
           </div>
         </div>
 
-        <div className="shrink-0 flex gap-3 justify-end border-t border-white/10 p-6 bg-white/5">
+        {/* Footer (Fixo embaixo) */}
+        <div className="shrink-0 flex gap-3 justify-end border-t border-white/10 p-6 bg-white/5 pb-safe">
           <button
             onClick={onClose}
-            className="rounded-full px-5 py-2 text-xs font-bold text-muted-foreground hover:bg-white/10 transition"
+            className="rounded-full px-5 py-2.5 text-xs font-bold text-muted-foreground hover:bg-white/10 transition"
           >
             Cancelar
           </button>
           <button
             onClick={handleSave}
             disabled={isSubmitting}
-            className={`rounded-full px-6 py-2 text-xs font-black text-background hover:scale-105 active:scale-95 transition flex items-center gap-2 ${
+            className={`rounded-full px-6 py-2.5 text-xs font-black text-background hover:scale-105 active:scale-95 transition flex items-center gap-2 ${
               isEditing ? "bg-blue-500 hover:bg-blue-400" : "bg-primary"
             }`}
           >
