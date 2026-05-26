@@ -3,10 +3,10 @@ import { createFileRoute, Outlet, redirect, Link, useRouterState, Navigate, useN
 import { motion, AnimatePresence } from "framer-motion";
 import {
   LayoutDashboard, FileText, Upload, Settings, Loader2,
-  Bell, User, Bot, Sparkles, Activity, Zap,
+  Bell, User, Bot, Activity, Zap,
   Sun, Moon, Menu, X, BarChart3, Megaphone, LineChart, Palette, Link2,
-  ChevronDown, RefreshCw, Wifi, WifiOff, Users, Store,
-  Volume2, VolumeX
+  ChevronDown, RefreshCw, Users, Store,
+  Volume2, VolumeX, LogOut
 } from "lucide-react";
 import { AuthProvider, useAuth } from "@/lib/auth";
 import { supabase } from "@/integrations/supabase/client";
@@ -135,6 +135,7 @@ function Shell() {
   const [showMore, setShowMore] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
   const [syncStatus, setSyncStatus] = useState<SyncStatus>(getSyncStatus);
+  const [showUserMenu, setShowUserMenu] = useState(false);
   const { theme, toggleTheme } = useTheme();
   const qc = useQueryClient();
 
@@ -196,10 +197,11 @@ function Shell() {
 
 
 
-  // Fecha o menu mobile ao navegar
+  // Fecha menus ao navegar
   useEffect(() => {
     setMobileMenuOpen(false);
     setShowMore(false);
+    setShowUserMenu(false);
   }, [path]);
 
   if (loading) {
@@ -352,27 +354,24 @@ function Shell() {
             </div>
           </nav>
 
-          {/* RIGHT: Actions */}
-          <div className="flex shrink-0 items-center gap-1 sm:gap-1.5">
+          {/* RIGHT: Actions — largura fixa ~220px, zero breakpoints, estável em qualquer zoom */}
+          <div className="flex shrink-0 items-center gap-1">
 
-            {/* Indicador de Sync */}
+            {/* Sync — ícone compacto com dot de status, tooltip com detalhes */}
             <button
               onClick={() => runSync("manual")}
               disabled={syncStatus.isSyncing}
-              className="hidden xl:flex items-center gap-1.5 rounded-xl border border-border bg-card px-2.5 py-1.5 text-[10px] font-bold text-muted-foreground transition-all hover:border-primary/30 hover:text-primary active:scale-95 disabled:opacity-60"
-              title={syncStatus.lastSync ? `Último sync: ${new Date(syncStatus.lastSync).toLocaleTimeString('pt-BR')}` : 'Sincronizar agora'}
+              className="relative flex h-8 w-8 items-center justify-center rounded-xl border border-border bg-card text-muted-foreground transition-all hover:border-primary/30 hover:text-primary active:scale-95 disabled:opacity-60"
+              title={syncStatus.isSyncing ? 'Sincronizando...' : syncStatus.lastSync
+                ? `Último sync: ${new Date(syncStatus.lastSync).toLocaleTimeString('pt-BR')}`
+                : 'Sincronizar agora'}
             >
-              <RefreshCw className={`h-3 w-3 ${syncStatus.isSyncing ? 'animate-spin text-primary' : ''}`} />
-              <span>
-                {syncStatus.isSyncing ? 'Sincronizando...' : syncStatus.lastSync
-                  ? formatDistanceToNow(new Date(syncStatus.lastSync), { addSuffix: true, locale: ptBR })
-                  : 'Sincronizar'}
-              </span>
+              <RefreshCw className={`h-3.5 w-3.5 ${syncStatus.isSyncing ? 'animate-spin text-primary' : ''}`} />
               {syncStatus.lastResult === 'success' && !syncStatus.isSyncing && (
-                <span className="h-1.5 w-1.5 rounded-full bg-success" />
+                <span className="absolute bottom-1 right-1 h-1.5 w-1.5 rounded-full bg-green-500" />
               )}
               {syncStatus.lastResult === 'error' && (
-                <span className="h-1.5 w-1.5 rounded-full bg-destructive" />
+                <span className="absolute bottom-1 right-1 h-1.5 w-1.5 rounded-full bg-destructive" />
               )}
             </button>
 
@@ -395,14 +394,14 @@ function Shell() {
               </AnimatePresence>
             </button>
 
-            {/* Victoria AI Badge */}
+            {/* Victoria AI Badge — sempre visível no desktop */}
             <button
               onClick={() => setIsAgentOpen(!isAgentOpen)}
-              className="hidden sm:flex items-center gap-1.5 rounded-xl border border-primary/20 bg-primary/10 px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-wider text-primary transition-all hover:bg-primary/20 hover:shadow-glow-sm active:scale-95"
+              className="hidden lg:flex items-center gap-1.5 rounded-xl border border-primary/20 bg-primary/10 px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-wider text-primary transition-all hover:bg-primary/20 hover:shadow-glow-sm active:scale-95"
             >
               <Bot className="h-3.5 w-3.5" />
-              <span className="hidden md:inline">Victoria</span>
-              <span className="h-1.5 w-1.5 rounded-full bg-success animate-pulse" />
+              Victoria
+              <span className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" />
             </button>
 
             {/* Notifications */}
@@ -486,8 +485,8 @@ function Shell() {
                                   refetchNotifications();
                                 }}
                                 className={`flex flex-col gap-1 rounded-xl p-2.5 border transition-all text-left relative ${
-                                  !notif.is_read 
-                                    ? "bg-primary/[0.03] hover:bg-primary/[0.06] border-primary/20" 
+                                  !notif.is_read
+                                    ? "bg-primary/[0.03] hover:bg-primary/[0.06] border-primary/20"
                                     : "bg-white/[0.01] hover:bg-white/[0.03] border-transparent"
                                 }`}
                               >
@@ -539,20 +538,12 @@ function Shell() {
               </AnimatePresence>
             </div>
 
-            {/* User Profile */}
-            <div className="flex items-center gap-1.5 pl-2 ml-1 border-l border-border min-w-0">
-              <div className="hidden lg:flex flex-col items-end leading-none min-w-0">
-                <p className="text-[11px] font-bold text-foreground max-w-[100px] truncate">
-                  {profile?.full_name?.split(' ')[0] || user?.email?.split('@')[0]}
-                </p>
-                <button onClick={handleSignOut} className="text-[10px] text-muted-foreground hover:text-primary transition-colors font-semibold mt-0.5">
-                  Sair
-                </button>
-              </div>
-              <button 
-                onClick={() => setIsProfileOpen(true)}
-                className="h-8 w-8 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center overflow-hidden shrink-0 hover:border-primary/50 transition-colors active:scale-95"
-                title="Configurações do Perfil"
+            {/* User Menu — dropdown profissional, avatar sempre visível */}
+            <div className="relative pl-2 ml-1 border-l border-border">
+              <button
+                onClick={() => setShowUserMenu(v => !v)}
+                className="h-8 w-8 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center overflow-hidden shrink-0 hover:border-primary/50 transition-all active:scale-95"
+                title={profile?.full_name || user?.email?.split('@')[0]}
               >
                 {profile?.avatar_url ? (
                   <img src={profile.avatar_url} alt="Profile" className="h-full w-full object-cover" />
@@ -560,12 +551,52 @@ function Shell() {
                   <User className="h-4 w-4 text-primary" />
                 )}
               </button>
+
+              <AnimatePresence>
+                {showUserMenu && (
+                  <>
+                    <div className="fixed inset-0 z-40" onClick={() => setShowUserMenu(false)} />
+                    <motion.div
+                      initial={{ opacity: 0, y: 8, scale: 0.96 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, y: 8, scale: 0.96 }}
+                      className="absolute right-0 top-full z-50 mt-2 w-56 rounded-2xl border border-border bg-card p-2 shadow-2xl"
+                    >
+                      {/* Identity */}
+                      <div className="flex items-center gap-3 px-3 py-2.5 border-b border-border mb-1.5">
+                        <div className="h-8 w-8 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center overflow-hidden shrink-0">
+                          {profile?.avatar_url
+                            ? <img src={profile.avatar_url} alt="Avatar" className="h-full w-full object-cover" />
+                            : <User className="h-4 w-4 text-primary" />}
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-xs font-bold truncate">{profile?.full_name || "Usuário"}</p>
+                          <p className="text-[10px] text-muted-foreground truncate">{user?.email}</p>
+                        </div>
+                      </div>
+                      {/* Actions */}
+                      <button
+                        onClick={() => { setIsProfileOpen(true); setShowUserMenu(false); }}
+                        className="w-full flex items-center gap-2.5 rounded-xl px-3 py-2 text-[12px] font-medium text-foreground hover:bg-muted/50 transition-all"
+                      >
+                        <User className="h-3.5 w-3.5 text-muted-foreground" /> Meu Perfil
+                      </button>
+                      <button
+                        onClick={() => { setShowUserMenu(false); handleSignOut(); }}
+                        className="w-full flex items-center gap-2.5 rounded-xl px-3 py-2 text-[12px] font-medium text-red-400 hover:bg-red-500/10 transition-all"
+                      >
+                        <LogOut className="h-3.5 w-3.5" /> Sair da Conta
+                      </button>
+                    </motion.div>
+                  </>
+                )}
+              </AnimatePresence>
             </div>
 
-            {/* Mobile: botão Victoria compacto */}
+            {/* Mobile: Victoria compacto */}
             <button
               onClick={() => setIsAgentOpen(!isAgentOpen)}
-              className="flex sm:hidden h-8 w-8 items-center justify-center rounded-xl border border-primary/20 bg-primary/10 text-primary"
+              className="flex lg:hidden h-8 w-8 items-center justify-center rounded-xl border border-primary/20 bg-primary/10 text-primary"
             >
               <Bot className="h-4 w-4" />
             </button>
