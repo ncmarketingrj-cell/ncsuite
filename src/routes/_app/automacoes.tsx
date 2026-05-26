@@ -834,11 +834,11 @@ function ThresholdModal({ onClose, accounts, userId, qc, editing }: any) {
   return (
     <motion.div
       initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm p-4 overflow-y-auto"
     >
       <motion.div
         initial={{ scale: 0.95, y: 20 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.95, y: 20 }}
-        className="glass-panel w-full max-w-lg overflow-hidden shadow-2xl border border-primary/20"
+        className="glass-panel w-full max-w-lg flex flex-col max-h-[calc(100dvh-2rem)] shadow-2xl border border-primary/20"
       >
         <div className="flex items-center justify-between border-b border-white/5 p-6 bg-white/5">
           <div className="flex items-center gap-3">
@@ -861,7 +861,7 @@ function ThresholdModal({ onClose, accounts, userId, qc, editing }: any) {
           </button>
         </div>
 
-        <div className="p-6 space-y-6">
+        <div className="overflow-y-auto flex-1 p-6 space-y-6 custom-scrollbar">
           <div className="space-y-1.5">
             <label className="text-[10px] font-bold text-muted-foreground uppercase">
               Conta de Anúncios
