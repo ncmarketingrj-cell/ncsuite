@@ -28,6 +28,7 @@ import { Route as AppIntegrationsRouteImport } from './routes/_app/integrations'
 import { Route as AppDashboardRouteImport } from './routes/_app/dashboard'
 import { Route as AppCriativosRouteImport } from './routes/_app/criativos'
 import { Route as AppConfigRouteImport } from './routes/_app/config'
+import { Route as AppCobrancasRouteImport } from './routes/_app/cobrancas'
 import { Route as AppClientesRouteImport } from './routes/_app/clientes'
 import { Route as AppCampanhasRouteImport } from './routes/_app/campanhas'
 import { Route as AppAutomacoesRouteImport } from './routes/_app/automacoes'
@@ -130,6 +131,11 @@ const AppConfigRoute = AppConfigRouteImport.update({
   path: '/config',
   getParentRoute: () => AppRoute,
 } as any)
+const AppCobrancasRoute = AppCobrancasRouteImport.update({
+  id: '/cobrancas',
+  path: '/cobrancas',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppClientesRoute = AppClientesRouteImport.update({
   id: '/clientes',
   path: '/clientes',
@@ -176,6 +182,7 @@ export interface FileRoutesByFullPath {
   '/automacoes': typeof AppAutomacoesRoute
   '/campanhas': typeof AppCampanhasRouteWithChildren
   '/clientes': typeof AppClientesRouteWithChildren
+  '/cobrancas': typeof AppCobrancasRoute
   '/config': typeof AppConfigRoute
   '/criativos': typeof AppCriativosRoute
   '/dashboard': typeof AppDashboardRoute
@@ -203,6 +210,7 @@ export interface FileRoutesByTo {
   '/automacoes': typeof AppAutomacoesRoute
   '/campanhas': typeof AppCampanhasRouteWithChildren
   '/clientes': typeof AppClientesRouteWithChildren
+  '/cobrancas': typeof AppCobrancasRoute
   '/config': typeof AppConfigRoute
   '/criativos': typeof AppCriativosRoute
   '/dashboard': typeof AppDashboardRoute
@@ -232,6 +240,7 @@ export interface FileRoutesById {
   '/_app/automacoes': typeof AppAutomacoesRoute
   '/_app/campanhas': typeof AppCampanhasRouteWithChildren
   '/_app/clientes': typeof AppClientesRouteWithChildren
+  '/_app/cobrancas': typeof AppCobrancasRoute
   '/_app/config': typeof AppConfigRoute
   '/_app/criativos': typeof AppCriativosRoute
   '/_app/dashboard': typeof AppDashboardRoute
@@ -261,6 +270,7 @@ export interface FileRouteTypes {
     | '/automacoes'
     | '/campanhas'
     | '/clientes'
+    | '/cobrancas'
     | '/config'
     | '/criativos'
     | '/dashboard'
@@ -288,6 +298,7 @@ export interface FileRouteTypes {
     | '/automacoes'
     | '/campanhas'
     | '/clientes'
+    | '/cobrancas'
     | '/config'
     | '/criativos'
     | '/dashboard'
@@ -316,6 +327,7 @@ export interface FileRouteTypes {
     | '/_app/automacoes'
     | '/_app/campanhas'
     | '/_app/clientes'
+    | '/_app/cobrancas'
     | '/_app/config'
     | '/_app/criativos'
     | '/_app/dashboard'
@@ -480,6 +492,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppConfigRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/cobrancas': {
+      id: '/_app/cobrancas'
+      path: '/cobrancas'
+      fullPath: '/cobrancas'
+      preLoaderRoute: typeof AppCobrancasRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/clientes': {
       id: '/_app/clientes'
       path: '/clientes'
@@ -573,6 +592,7 @@ interface AppRouteChildren {
   AppAutomacoesRoute: typeof AppAutomacoesRoute
   AppCampanhasRoute: typeof AppCampanhasRouteWithChildren
   AppClientesRoute: typeof AppClientesRouteWithChildren
+  AppCobrancasRoute: typeof AppCobrancasRoute
   AppConfigRoute: typeof AppConfigRoute
   AppCriativosRoute: typeof AppCriativosRoute
   AppDashboardRoute: typeof AppDashboardRoute
@@ -591,6 +611,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppAutomacoesRoute: AppAutomacoesRoute,
   AppCampanhasRoute: AppCampanhasRouteWithChildren,
   AppClientesRoute: AppClientesRouteWithChildren,
+  AppCobrancasRoute: AppCobrancasRoute,
   AppConfigRoute: AppConfigRoute,
   AppCriativosRoute: AppCriativosRoute,
   AppDashboardRoute: AppDashboardRoute,
