@@ -52,7 +52,7 @@ const LEVEL_TABS: { id: Level; label: string; icon: any }[] = [
 const ADMIN_EMAILS = ["nc.marketingrj@gmail.com", "hc.marketing.dgt@gmail.com"];
 
 function MetricasAvancadasPage() {
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const isAdmin = user?.email ? ADMIN_EMAILS.includes(user.email) : false;
   const navigate = useNavigate();
   const qc = useQueryClient();
@@ -65,28 +65,6 @@ function MetricasAvancadasPage() {
   const [search, setSearch] = useState("");
   const [level, setLevel] = useState<Level>("campanhas");
   const [highlightCampaign, setHighlightCampaign] = useState<string | undefined>(searchParams.campaign);
-
-  if (!isAdmin) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-[60vh] gap-6 text-center px-4">
-        <div className="h-16 w-16 rounded-2xl bg-destructive/10 border border-destructive/20 flex items-center justify-center">
-          <Lock className="h-7 w-7 text-destructive" />
-        </div>
-        <div className="space-y-2">
-          <h2 className="text-2xl font-black tracking-tight">Acesso Restrito</h2>
-          <p className="text-muted-foreground text-sm max-w-xs">
-            Métricas Avançadas é exclusivo para administradores da plataforma.
-          </p>
-        </div>
-        <button
-          onClick={() => navigate({ to: "/dashboard" })}
-          className="px-5 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-bold hover:opacity-90 transition-opacity"
-        >
-          Voltar ao Dashboard
-        </button>
-      </div>
-    );
-  }
 
   // Aplicar filtros vindos da URL (ex: clique em notificação de alerta)
   useEffect(() => {
@@ -290,6 +268,31 @@ function MetricasAvancadasPage() {
   const avgCpl = totConv > 0 ? totCost / totConv : 0;
   const avgCtr = totImpr > 0 ? (totClicks / totImpr) * 100 : 0;
   const avgCpm = totImpr > 0 ? (totCost / totImpr) * 1000 : 0;
+
+  // Todos os hooks já foram chamados — agora é seguro fazer early returns
+  if (authLoading) return null;
+
+  if (!isAdmin) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[60vh] gap-6 text-center px-4">
+        <div className="h-16 w-16 rounded-2xl bg-destructive/10 border border-destructive/20 flex items-center justify-center">
+          <Lock className="h-7 w-7 text-destructive" />
+        </div>
+        <div className="space-y-2">
+          <h2 className="text-2xl font-black tracking-tight">Acesso Restrito</h2>
+          <p className="text-muted-foreground text-sm max-w-xs">
+            Métricas Avançadas é exclusivo para administradores da plataforma.
+          </p>
+        </div>
+        <button
+          onClick={() => navigate({ to: "/dashboard" })}
+          className="px-5 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-bold hover:opacity-90 transition-opacity"
+        >
+          Voltar ao Dashboard
+        </button>
+      </div>
+    );
+  }
 
   if (location.pathname !== "/metricas") {
     return <Outlet />;
