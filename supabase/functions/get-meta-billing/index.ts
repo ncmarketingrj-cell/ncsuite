@@ -80,28 +80,46 @@ serve(async (req) => {
     }
 
     // ── Busca billing de cada conta em paralelo ───────────────────────────────
-    const billingFields = [
-      "id", "name", "currency",
-      "balance",           // saldo pré-pago (centavos)
-      "amount_spent",      // gasto acumulado lifetime (centavos)
-      "spend_cap",         // limite de gasto
-      "funding_source_details",
-      "bill_amount_immature",  // não faturado do ciclo atual
-    ].join(",")
+    // Campos separados em dois grupos:
+    // - safeFields: universais, não exigem permissão especial
+    // - extendedFields: podem falhar se o token não tiver ads_management
+    const safeFields = "id,name,currency,amount_spent,balance,spend_cap"
+    const extendedFields = "funding_source_details,bill_amount_immature"
+
+    // Meta retorna amount_spent em unidade mínima da moeda (centavos para BRL)
+    // mas spend_cap pode vir em unidade maior — tratamos os dois casos
+    const parseAmount = (v: any): number | null => {
+      if (v === undefined || v === null || v === "" || v === "0") return null
+      const n = parseFloat(String(v))
+      if (isNaN(n) || n === 0) return null
+      // Se o valor vier sem casas decimais e for muito grande, assume centavos
+      // Caso contrário (string com "."), assume unidade da moeda diretamente
+      return String(v).includes(".") ? n : n / 100
+    }
 
     const results = await Promise.allSettled(
       accounts.map(async (acc: any) => {
         const accountId = acc.id // já vem no formato "act_XXXXXX"
 
-        // Dados da conta
-        let accountBilling: any = {}
+        // 1) Campos seguros — não devem falhar para nenhuma conta
+        let accountBilling: any = { id: accountId, name: acc.name, currency: acc.currency }
         try {
-          accountBilling = await metaGet(`/${accountId}`, token, { fields: billingFields })
+          const res = await metaGet(`/${accountId}`, token, { fields: safeFields })
+          Object.assign(accountBilling, res)
         } catch (e) {
-          accountBilling = { id: accountId, name: acc.name, currency: acc.currency, _error: (e as Error).message }
+          accountBilling._safe_error = (e as Error).message
         }
 
-        // Histórico de transações (últimas 50)
+        // 2) Campos estendidos — tenta, mas ignora se o token não tiver permissão
+        try {
+          const res = await metaGet(`/${accountId}`, token, { fields: extendedFields })
+          if (res.funding_source_details) accountBilling.funding_source_details = res.funding_source_details
+          if (res.bill_amount_immature !== undefined) accountBilling.bill_amount_immature = res.bill_amount_immature
+        } catch {
+          // sem permissão para billing avançado — normal em tokens de leitura
+        }
+
+        // 3) Histórico de transações (últimas 50)
         let transactions: any[] = []
         try {
           const txData = await metaGet(`/${accountId}/transactions`, token, {
@@ -110,11 +128,8 @@ serve(async (req) => {
           })
           transactions = txData.data ?? []
         } catch {
-          // algumas contas não têm histórico de transações — ignora silenciosamente
+          // contas sem histórico ou sem permissão — ignora
         }
-
-        // Normaliza valores (Meta retorna centavos como strings)
-        const parseAmount = (v: any) => v !== undefined && v !== null ? parseFloat(v) / 100 : null
 
         const snapshot = {
           user_id:          user.id,
@@ -138,10 +153,10 @@ serve(async (req) => {
           })),
         }
 
-        // Salva/atualiza no banco (upsert pelo account_id + data de hoje)
+        // Salva no banco
         await supabase.from("billing_snapshots").insert(snapshot)
 
-        return snapshot
+        return { ...snapshot, _raw: accountBilling }
       })
     )
 
