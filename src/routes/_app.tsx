@@ -255,8 +255,8 @@ function Shell() {
       {/* ═══════════════════════════════════════
           TOP NAVIGATION BAR — Premium Horizontal
           ═══════════════════════════════════════ */}
-      <header className="sticky top-0 z-50 border-gradient-bottom bg-background/92 backdrop-blur-2xl overflow-hidden" style={{ height: '64px' }}>
-        <div className="mx-auto flex h-full max-w-[1600px] items-center justify-between gap-2 px-3 md:px-5 overflow-hidden">
+      <header className="sticky top-0 z-50 border-gradient-bottom bg-background/92 backdrop-blur-2xl" style={{ height: '64px' }}>
+        <div className="mx-auto flex h-full max-w-[1600px] items-center justify-between gap-2 px-3 md:px-5">
           
           {/* LEFT: Logo */}
           <Link to="/dashboard" className="flex items-center gap-2 shrink-0 group">
@@ -276,34 +276,36 @@ function Shell() {
           </Link>
 
           {/* CENTER: Navigation Links (Desktop) */}
-          <nav className="hidden lg:flex flex-1 min-w-0 items-center justify-center overflow-hidden px-1">
-            <div className="flex items-center overflow-x-auto scrollbar-none">
-            {filteredNavItems.map((item) => {
-              const isActive = path === item.to || (item.to !== "/dashboard" && path.startsWith(item.to));
-              return (
-                <Link
-                  key={item.to}
-                  to={item.to}
-                  className={`group relative flex items-center gap-1.5 rounded-xl px-2.5 py-1.5 text-[12px] font-semibold whitespace-nowrap transition-all duration-200 ${
-                    isActive 
-                      ? "text-primary bg-primary/10" 
-                      : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
-                  }`}
-                >
-                  <item.icon className={`h-3.5 w-3.5 shrink-0 transition-transform group-hover:scale-110 ${isActive ? 'text-primary' : ''}`} />
-                  <span>{item.label}</span>
-                  {isActive && (
-                    <motion.div
-                      layoutId="nav-indicator"
-                      className="absolute inset-x-2 bottom-0 h-[2px] bg-primary rounded-full shadow-glow-sm"
-                      transition={{ type: "spring", stiffness: 500, damping: 35 }}
-                    />
-                  )}
-                </Link>
-              );
-            })}
+          <nav className="hidden lg:flex flex-1 min-w-0 items-center justify-center gap-0 px-1">
+            {/* Scrollable nav items — overflow-x-auto só aqui, não afeta o dropdown */}
+            <div className="flex min-w-0 items-center overflow-x-auto scrollbar-none">
+              {filteredNavItems.map((item) => {
+                const isActive = path === item.to || (item.to !== "/dashboard" && path.startsWith(item.to));
+                return (
+                  <Link
+                    key={item.to}
+                    to={item.to}
+                    className={`group relative flex items-center gap-1.5 rounded-xl px-2.5 py-1.5 text-[12px] font-semibold whitespace-nowrap transition-all duration-200 ${
+                      isActive
+                        ? "text-primary bg-primary/10"
+                        : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
+                    }`}
+                  >
+                    <item.icon className={`h-3.5 w-3.5 shrink-0 transition-transform group-hover:scale-110 ${isActive ? 'text-primary' : ''}`} />
+                    <span>{item.label}</span>
+                    {isActive && (
+                      <motion.div
+                        layoutId="nav-indicator"
+                        className="absolute inset-x-2 bottom-0 h-[2px] bg-primary rounded-full shadow-glow-sm"
+                        transition={{ type: "spring", stiffness: 500, damping: 35 }}
+                      />
+                    )}
+                  </Link>
+                );
+              })}
+            </div>
 
-            {/* More dropdown */}
+            {/* More dropdown — fora do scroll container para o dropdown não ser clipado */}
             <div className="relative shrink-0">
               <button
                 onClick={() => setShowMore(!showMore)}
@@ -316,7 +318,7 @@ function Shell() {
                 Mais
                 <ChevronDown className={`h-3 w-3 transition-transform ${showMore ? 'rotate-180' : ''}`} />
               </button>
-              
+
               <AnimatePresence>
                 {showMore && (
                   <>
@@ -347,7 +349,6 @@ function Shell() {
                   </>
                 )}
               </AnimatePresence>
-            </div>
             </div>
           </nav>
 
