@@ -48,16 +48,16 @@ serve(async (req) => {
     }
 
     // ── Token Meta ────────────────────────────────────────────────────────────
-    // Busca qualquer token válido (não filtra is_connected para evitar falso-negativo)
+    // MESMO padrão do sync-meta-ads: busca qualquer token disponível na tabela,
+    // SEM filtrar por user_id — o token pode estar salvo sob o user_id do admin/master
+    // e o usuário logado ter um UUID diferente. O sync-meta-ads já usa esse padrão.
     const { data: config } = await supabase
       .from("meta_ads_configs")
       .select("access_token")
-      .eq("user_id", user.id)
       .not("access_token", "is", null)
       .maybeSingle()
 
     if (!config?.access_token) {
-      // Retorna 200 com lista vazia — não dispara o alerta genérico do invoke
       return new Response(JSON.stringify({ accounts: [], error: "Token Meta Ads não configurado. Acesse Configurações → Integrações." }), {
         status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
       })
