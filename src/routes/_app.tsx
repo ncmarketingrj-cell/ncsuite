@@ -3,7 +3,7 @@ import { createFileRoute, Outlet, redirect, Link, useRouterState, Navigate, useN
 import { motion, AnimatePresence } from "framer-motion";
 import {
   LayoutDashboard, FileText, Upload, Settings, Loader2,
-  Bell, User, Bot, Activity, Zap,
+  Bell, User, Bot, Sparkles, Activity, Zap,
   Sun, Moon, Menu, X, BarChart3, Megaphone, LineChart, Palette, Link2,
   ChevronDown, RefreshCw, Users, Store,
   Volume2, VolumeX, LogOut
