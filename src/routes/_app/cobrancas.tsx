@@ -10,7 +10,7 @@ import {
 import { supabase } from "@/integrations/supabase/client";
 import { PageHeader } from "@/components/PageHeader";
 import { DateRangePicker } from "@/components/DateRangePicker";
-import { format, subDays, startOfDay, endOfDay } from "date-fns";
+import { format, subYears, startOfDay, endOfDay } from "date-fns";
 import { ptBR } from "date-fns/locale";
 
 export const Route = createFileRoute("/_app/cobrancas")({
@@ -30,12 +30,18 @@ function fmtBRL(value: number | null | undefined, currency = "BRL") {
 }
 
 function parseDate(val: string | number | null | undefined): Date | null {
-  if (!val) return null;
-  // Unix timestamp em segundos (número) → converte para ms
-  if (typeof val === "number") return new Date(val * 1000);
-  // Se for string numérica (legado de dados já gravados)
-  if (/^\d{9,11}$/.test(val)) return new Date(Number(val) * 1000);
-  return new Date(val);
+  if (val === null || val === undefined || val === "" || val === 0) return null;
+  let d: Date;
+  if (typeof val === "number") {
+    // Unix timestamp em segundos → converte para ms
+    d = new Date(val * 1000);
+  } else if (/^\d{9,11}$/.test(String(val))) {
+    // String numérica (legado)
+    d = new Date(Number(val) * 1000);
+  } else {
+    d = new Date(val);
+  }
+  return isNaN(d.getTime()) ? null : d;
 }
 
 function fmtDate(val: string | number | null | undefined) {
@@ -76,7 +82,7 @@ const FUNDING_TYPE_LABEL: Record<string, string> = {
 function CobrancasPage() {
   const [expandedAccount, setExpandedAccount] = useState<string | null>(null);
   const [fetching, setFetching] = useState(false);
-  const [startDate, setStartDate] = useState<Date>(() => subDays(new Date(), 29));
+  const [startDate, setStartDate] = useState<Date>(() => subYears(new Date(), 3));
   const [endDate, setEndDate] = useState<Date>(() => new Date());
 
   // Último snapshot salvo no banco
@@ -205,9 +211,10 @@ function CobrancasPage() {
             const rangeEnd = endOfDay(endDate);
             const txs = allTxs.filter((tx: any) => {
               const d = parseDate(tx.created_at);
-              if (!d) return true;
+              if (!d) return false; // sem data → não exibe (não polui o filtro)
               return d >= rangeStart && d <= rangeEnd;
             });
+            const txsNoDate = allTxs.filter((tx: any) => !parseDate(tx.created_at));
             const lastTx = allTxs[0] ?? null;
             const statusCfg = lastTx ? (STATUS_CONFIG[lastTx.status] ?? STATUS_CONFIG.PENDING) : null;
 
@@ -315,11 +322,13 @@ function CobrancasPage() {
                       onClick={() => setExpandedAccount(isExpanded ? null : snap.ad_account_id)}
                       className="mt-4 w-full flex items-center justify-between rounded-xl border border-white/5 bg-white/[0.02] hover:bg-white/[0.04] px-4 py-2.5 text-xs font-bold text-muted-foreground transition-all"
                     >
-                      <span className="flex items-center gap-2">
+                      <span className="flex items-center gap-2 flex-wrap">
                         <Receipt className="h-3.5 w-3.5" />
                         {txs.length} transaç{txs.length === 1 ? "ão" : "ões"} no período
                         {txs.length < allTxs.length && (
-                          <span className="text-[9px] font-normal opacity-50">({allTxs.length} no total)</span>
+                          <span className="text-[9px] font-normal opacity-50">
+                            de {allTxs.length} no total
+                          </span>
                         )}
                       </span>
                       {isExpanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
@@ -328,7 +337,7 @@ function CobrancasPage() {
                 </div>
 
                 {/* Tabela de transações */}
-                {isExpanded && txs.length > 0 && (
+                {isExpanded && (txs.length > 0 || txsNoDate.length > 0) && (
                   <motion.div
                     initial={{ height: 0, opacity: 0 }}
                     animate={{ height: "auto", opacity: 1 }}
@@ -369,6 +378,29 @@ function CobrancasPage() {
                               </tr>
                             );
                           })}
+                          {/* Transações sem data — sempre exibidas abaixo */}
+                          {txsNoDate.map((tx: any) => {
+                            const cfg = STATUS_CONFIG[tx.status] ?? STATUS_CONFIG.PENDING;
+                            return (
+                              <tr key={tx.id} className="border-b border-white/[0.03] hover:bg-white/[0.02] opacity-50 transition-colors">
+                                <td className="px-4 py-3 text-muted-foreground/40 font-mono text-[10px] whitespace-nowrap italic">
+                                  sem data
+                                </td>
+                                <td className="px-4 py-3 text-foreground/60">
+                                  {BILLING_REASON_LABEL[tx.billing_reason] ?? tx.billing_reason ?? "—"}
+                                </td>
+                                <td className="px-4 py-3 text-right font-bold text-foreground/60 whitespace-nowrap">
+                                  {fmtBRL(tx.amount, tx.currency ?? snap.currency)}
+                                </td>
+                                <td className="px-4 py-3 text-center">
+                                  <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider ${cfg.color}`}>
+                                    <cfg.icon className="h-2.5 w-2.5" />
+                                    {cfg.label}
+                                  </span>
+                                </td>
+                              </tr>
+                            );
+                          })}
                         </tbody>
                       </table>
                     </div>
@@ -376,7 +408,7 @@ function CobrancasPage() {
                 )}
 
                 {/* Sem transações no período */}
-                {isExpanded && txs.length === 0 && (
+                {isExpanded && txs.length === 0 && txsNoDate.length === 0 && (
                   <div className="border-t border-white/5 px-4 py-6 text-center">
                     <p className="text-xs text-muted-foreground/50">
                       {allTxs.length > 0
