@@ -148,7 +148,9 @@ serve(async (req) => {
             billing_reason: tx.billing_reason,
             currency:       tx.currency,
             status:         tx.status,
-            created_at:     tx.time_created,
+            created_at:     tx.time_created
+                              ? new Date(Number(tx.time_created) * 1000).toISOString()
+                              : null,
             payment_option: tx.payment_option ?? null,
           })),
         }

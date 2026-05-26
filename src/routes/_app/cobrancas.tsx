@@ -29,12 +29,23 @@ function fmtBRL(value: number | null | undefined, currency = "BRL") {
   }).format(value);
 }
 
-function fmtDate(iso: string | null | undefined) {
-  if (!iso) return "—";
+function parseDate(val: string | number | null | undefined): Date | null {
+  if (!val) return null;
+  // Unix timestamp em segundos (número) → converte para ms
+  if (typeof val === "number") return new Date(val * 1000);
+  // Se for string numérica (legado de dados já gravados)
+  if (/^\d{9,11}$/.test(val)) return new Date(Number(val) * 1000);
+  return new Date(val);
+}
+
+function fmtDate(val: string | number | null | undefined) {
+  if (!val) return "—";
   try {
-    return format(new Date(iso), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR });
+    const d = parseDate(val);
+    if (!d) return "—";
+    return format(d, "dd/MM/yyyy 'às' HH:mm", { locale: ptBR });
   } catch {
-    return iso;
+    return String(val);
   }
 }
 
@@ -193,8 +204,8 @@ function CobrancasPage() {
             const rangeStart = startOfDay(startDate);
             const rangeEnd = endOfDay(endDate);
             const txs = allTxs.filter((tx: any) => {
-              if (!tx.created_at) return true;
-              const d = new Date(tx.created_at);
+              const d = parseDate(tx.created_at);
+              if (!d) return true;
               return d >= rangeStart && d <= rangeEnd;
             });
             const lastTx = allTxs[0] ?? null;
