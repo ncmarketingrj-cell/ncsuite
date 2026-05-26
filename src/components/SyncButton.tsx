@@ -141,12 +141,12 @@ export function SyncButton({ mode = "quick" }: SyncButtonProps) {
   const Icon = isMonthMode ? CalendarDays : isQuick ? Zap : Database;
 
   const buttonColorClass = isMonthMode
-    ? "bg-gradient-to-r from-violet-600 to-indigo-500 text-background hover:brightness-110 border-transparent"
+    ? "bg-violet-600 text-white hover:bg-violet-700 border-transparent"
     : isQuick
-    ? "bg-gradient-to-r from-primary to-secondary text-background hover:shadow-glow hover:brightness-110 border-transparent"
+    ? "bg-primary text-primary-foreground hover:bg-primary/90 border-transparent"
     : isMax
-    ? "bg-gradient-to-r from-red-600 to-orange-500 text-background hover:brightness-110 border-transparent"
-    : "bg-gradient-to-r from-orange-500 to-amber-500 text-background hover:brightness-110 border-transparent";
+    ? "bg-red-600 text-white hover:bg-red-700 border-transparent"
+    : "bg-orange-500 text-white hover:bg-orange-600 border-transparent";
 
   const tooltipTitle = isQuick ? "Sync Rápido — 7 dias"
     : isMax ? "Sync Máximo — tudo disponível"
