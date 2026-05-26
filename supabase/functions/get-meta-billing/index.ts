@@ -48,16 +48,18 @@ serve(async (req) => {
     }
 
     // ── Token Meta ────────────────────────────────────────────────────────────
+    // Busca qualquer token válido (não filtra is_connected para evitar falso-negativo)
     const { data: config } = await supabase
       .from("meta_ads_configs")
       .select("access_token")
       .eq("user_id", user.id)
-      .eq("is_connected", true)
+      .not("access_token", "is", null)
       .maybeSingle()
 
     if (!config?.access_token) {
-      return new Response(JSON.stringify({ error: "Token Meta Ads não configurado." }), {
-        status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      // Retorna 200 com lista vazia — não dispara o alerta genérico do invoke
+      return new Response(JSON.stringify({ accounts: [], error: "Token Meta Ads não configurado. Acesse Configurações → Integrações." }), {
+        status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
       })
     }
 
