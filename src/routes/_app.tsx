@@ -245,7 +245,7 @@ function Shell() {
   }
 
   return (
-    <div className="relative flex h-screen w-full flex-col bg-background overflow-x-hidden selection:bg-primary/30">
+    <div className="relative flex h-screen w-full flex-col bg-background overflow-x-hidden selection:bg-primary/30" style={{ touchAction: 'pan-y', WebkitTapHighlightColor: 'transparent' }}>
       {/* ── NC Watermark — identidade permanente de fundo ── */}
       <div
         className="pointer-events-none absolute bottom-[-2.5rem] right-[-1.5rem] z-0 select-none"
@@ -689,7 +689,7 @@ function Shell() {
           MOBILE BOTTOM NAVIGATION BAR
           5 ítens: Dashboard · Métricas · Alertas · Config · Mais
           ═══════════════════════════════════════ */}
-      <nav className="lg:hidden fixed bottom-0 inset-x-0 z-40 border-t border-border bg-background/96 backdrop-blur-xl">
+      <nav className="lg:hidden fixed bottom-0 inset-x-0 z-40 border-t border-border bg-background/96 backdrop-blur-xl pb-safe-nav">
         <div className="flex items-stretch justify-around px-1 pb-safe">
           {[
             { to: "/dashboard",  icon: LayoutDashboard, label: "Home" },
@@ -737,8 +737,8 @@ function Shell() {
       {/* ═══════════════════════════════════════
           MAIN CONTENT
           ═══════════════════════════════════════ */}
-      <main className="relative z-[1] flex-1 overflow-y-auto custom-scrollbar">
-        <div className="mx-auto max-w-[1600px] p-3 pb-24 sm:p-4 md:pb-8 md:p-6 lg:p-8">
+      <main className="relative z-[1] flex-1 overflow-y-auto overscroll-none custom-scrollbar" style={{ WebkitOverflowScrolling: 'touch' }}>
+        <div className="mx-auto max-w-[1600px] p-3 pb-28 sm:p-4 md:pb-8 md:p-6 lg:p-8">
           
           {/* Notificação Flutuante de Ação Autônoma da IA */}
           <AnimatePresence>

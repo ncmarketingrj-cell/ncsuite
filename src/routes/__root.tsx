@@ -88,7 +88,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     head: () => ({
       meta: [
         { charSet: "utf-8" },
-        { name: "viewport", content: "width=device-width, initial-scale=1" },
+        { name: "viewport", content: "width=device-width, initial-scale=1, viewport-fit=cover" },
         { title: "NC Performance Suite — Motor de tráfego pago automotivo" },
         { name: "description", content: "Suite SaaS para gestão e relatórios de performance Meta Ads no segmento automotivo." },
         { name: "theme-color", content: "#DC2626" },
@@ -144,12 +144,18 @@ function RootComponent() {
 
   const toggleTheme = () => {
     const next = theme === "dark" ? "light" : "dark";
-    setTheme(next);
-    document.documentElement.className = next;
-    localStorage.setItem("nc-theme", next);
-    // Adiciona classe de transição temporária para animação suave
+    // 1. Adiciona theme-transition ANTES da mudança para o browser já estar pronto
     document.documentElement.classList.add("theme-transition");
-    setTimeout(() => document.documentElement.classList.remove("theme-transition"), 400);
+    // 2. requestAnimationFrame garante que a classe é pintada ANTES de trocar o tema
+    requestAnimationFrame(() => {
+      setTheme(next);
+      document.documentElement.className = `${next} theme-transition`;
+      localStorage.setItem("nc-theme", next);
+      // 3. Remove a classe após a transição (280ms = duração do CSS)
+      setTimeout(() => {
+        document.documentElement.classList.remove("theme-transition");
+      }, 300);
+    });
   };
 
   useEffect(() => {
