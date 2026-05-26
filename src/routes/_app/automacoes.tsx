@@ -834,16 +834,16 @@ function ThresholdModal({ onClose, accounts, userId, qc, editing }: any) {
   return (
     <motion.div
       initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-      className="fixed inset-0 z-50 overflow-y-auto bg-background/80 backdrop-blur-sm"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm p-4"
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
-      <div className="flex min-h-full items-center justify-center p-4">
       <motion.div
         initial={{ scale: 0.95, y: 20 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.95, y: 20 }}
-        className="glass-panel w-full max-w-lg shadow-2xl border border-primary/20 my-auto"
+        className="glass-panel w-full max-w-lg flex flex-col shadow-2xl border border-primary/20"
+        style={{ maxHeight: 'calc(100svh - 2rem)' }}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between border-b border-white/5 p-6 bg-white/5">
+        <div className="shrink-0 flex items-center justify-between border-b border-white/5 p-6 bg-white/5">
           <div className="flex items-center gap-3">
             <div className={`h-10 w-10 rounded-xl flex items-center justify-center ${
               isEditing ? "bg-blue-500/20 text-blue-400" : "bg-primary/20 text-primary"
@@ -864,7 +864,8 @@ function ThresholdModal({ onClose, accounts, userId, qc, editing }: any) {
           </button>
         </div>
 
-        <div className="p-6 space-y-6">
+        {/* min-h-0 é OBRIGATÓRIO: sem ele, flex-1 overflow-y-auto nunca scrolla em flexbox */}
+        <div className="flex-1 min-h-0 overflow-y-auto p-6 space-y-6 custom-scrollbar">
           <div className="space-y-1.5">
             <label className="text-[10px] font-bold text-muted-foreground uppercase">
               Conta de Anúncios
@@ -1012,7 +1013,7 @@ function ThresholdModal({ onClose, accounts, userId, qc, editing }: any) {
           </div>
         </div>
 
-        <div className="flex gap-3 justify-end border-t border-white/10 p-6 bg-white/5">
+        <div className="shrink-0 flex gap-3 justify-end border-t border-white/10 p-6 bg-white/5">
           <button
             onClick={onClose}
             className="rounded-full px-5 py-2 text-xs font-bold text-muted-foreground hover:bg-white/10 transition"
@@ -1035,7 +1036,6 @@ function ThresholdModal({ onClose, accounts, userId, qc, editing }: any) {
           </button>
         </div>
       </motion.div>
-      </div>
     </motion.div>
   );
 }
