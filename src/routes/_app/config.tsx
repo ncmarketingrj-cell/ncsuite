@@ -74,7 +74,7 @@ function ConfigPage() {
         className="glass-panel p-8"
       >
         {tab === "conta" && <TabConta />}
-        {tab === "usuarios" && canManageUsers && <TabUsuarios />}
+        {tab === "usuarios" && canManageUsers && <TabUsuarios isAdmin={isAdmin} />}
         {tab === "tutorial" && <TabTutorial />}
         {tab === "clientes" && isAdmin && <TabClientes />}
         {tab === "integracoes" && isAdmin && <TabIntegracoes />}
@@ -720,7 +720,7 @@ const ROLE_LABEL: Record<string, string> = {
   outro:         "MEMBRO",
 };
 
-function TabUsuarios() {
+function TabUsuarios({ isAdmin }: { isAdmin: boolean }) {
   const qc = useQueryClient();
   const [search, setSearch] = useState("");
   const [editingUser, setEditingUser] = useState<any | null>(null);
@@ -775,7 +775,11 @@ function TabUsuarios() {
     }
   });
 
-  const handleDelete = async (userId: string) => {
+  const handleDelete = async (userId: string, targetRole?: string) => {
+    if (targetRole === "admin" && !isAdmin) {
+      toast.error("Apenas administradores podem excluir outros administradores.");
+      return;
+    }
     if (!confirm("Tem certeza que deseja excluir permanentemente este usuário da Suite? Esta ação não pode ser desfeita.")) return;
     try {
       const { error } = await supabase.rpc("admin_delete_user", { target_user_id: userId });
@@ -789,6 +793,10 @@ function TabUsuarios() {
 
   const handleUpdate = async () => {
     if (!editingUser) return;
+    if (editingUser.role === "admin" && !isAdmin) {
+      toast.error("Apenas administradores podem editar outros administradores.");
+      return;
+    }
     setSaving(true);
     try {
       const { error } = await supabase.rpc("admin_update_user", {
@@ -907,18 +915,26 @@ function TabUsuarios() {
                   </div>
                 </div>
                 <div className="flex items-center gap-1.5 shrink-0">
-                  <button
-                    onClick={() => { setEditingUser(u); setEditRole(u.role || "outro"); setEditPosition(u.position || POSITIONS_LIST[0]); setEditName(u.full_name || ""); setEditPassword(""); }}
-                    className="rounded-full border border-white/10 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider hover:bg-white/5 transition"
-                  >
-                    Editar
-                  </button>
-                  <button
-                    onClick={() => handleDelete(u.id)}
-                    className="rounded-full border border-red-500/20 bg-red-500/5 px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-wider text-red-400 hover:bg-red-500/10 transition"
-                  >
-                    Excluir
-                  </button>
+                  {u.role === "admin" && !isAdmin ? (
+                    <span className="flex items-center gap-1 rounded-full border border-white/5 bg-white/[0.03] px-2.5 py-1.5 text-[9px] font-bold uppercase tracking-wider text-muted-foreground/40">
+                      <Lock className="h-2.5 w-2.5" /> Admin
+                    </span>
+                  ) : (
+                    <>
+                      <button
+                        onClick={() => { setEditingUser(u); setEditRole(u.role || "outro"); setEditPosition(u.position || POSITIONS_LIST[0]); setEditName(u.full_name || ""); setEditPassword(""); }}
+                        className="rounded-full border border-white/10 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider hover:bg-white/5 transition"
+                      >
+                        Editar
+                      </button>
+                      <button
+                        onClick={() => handleDelete(u.id, u.role)}
+                        className="rounded-full border border-red-500/20 bg-red-500/5 px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-wider text-red-400 hover:bg-red-500/10 transition"
+                      >
+                        Excluir
+                      </button>
+                    </>
+                  )}
                 </div>
               </div>
 
@@ -1073,7 +1089,7 @@ function TabUsuarios() {
                     <option value="ceo">CEO</option>
                     <option value="videomaker">Videomaker / Filmmaker</option>
                     <option value="outro">Outros</option>
-                    <option value="admin">Administrador (Admin)</option>
+                    {isAdmin && <option value="admin">Administrador (Admin)</option>}
                   </select>
                 </div>
 
