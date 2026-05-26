@@ -1,9 +1,10 @@
 import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { useEffect, useState, type FormEvent } from "react";
 import { motion } from "framer-motion";
-import { Loader2, Mail, Lock, ArrowRight, ArrowLeft } from "lucide-react";
+import { Loader2, Mail, Lock, ArrowRight, ArrowLeft, Sun, Moon } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
+import { useTheme } from "./__root";
 
 export const Route = createFileRoute("/login")({
   head: () => ({ meta: [{ title: "Entrar — NC Performance Suite" }] }),
@@ -19,6 +20,7 @@ const BRAND_FEATURES = [
 
 function LoginPage() {
   const nav = useNavigate();
+  const { theme, toggleTheme } = useTheme();
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
@@ -57,6 +59,15 @@ function LoginPage() {
 
   return (
     <div className="relative flex min-h-screen bg-background overflow-hidden transition-colors duration-300">
+
+      {/* Botão de tema — canto superior direito */}
+      <button
+        onClick={toggleTheme}
+        title={theme === "dark" ? "Modo Claro" : "Modo Escuro"}
+        className="absolute top-4 right-4 z-20 flex h-9 w-9 items-center justify-center rounded-xl border border-border bg-card text-muted-foreground transition-all hover:text-foreground hover:border-primary/30 active:scale-95"
+      >
+        {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+      </button>
 
       {/* ── Background global ── */}
       <div className="pointer-events-none absolute inset-0" aria-hidden="true">
