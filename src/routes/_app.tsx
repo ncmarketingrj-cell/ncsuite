@@ -328,7 +328,7 @@ function Shell() {
                       initial={{ opacity: 0, y: 8, scale: 0.96 }}
                       animate={{ opacity: 1, y: 0, scale: 1 }}
                       exit={{ opacity: 0, y: 8, scale: 0.96 }}
-                      className="absolute right-0 top-full z-50 mt-2 w-56 rounded-2xl border border-border bg-card p-2 shadow-2xl"
+                      className="absolute right-0 top-full z-50 mt-2 w-52 rounded-2xl border border-border bg-card p-2 shadow-2xl"
                     >
                       {filteredMoreItems.map((item) => {
                         const isActive = path.startsWith(item.to);
@@ -430,7 +430,7 @@ function Shell() {
                        initial={{ opacity: 0, y: 8, scale: 0.96 }}
                        animate={{ opacity: 1, y: 0, scale: 1 }}
                        exit={{ opacity: 0, y: 8, scale: 0.96 }}
-                       className="absolute right-0 top-full z-50 mt-2 w-80 sm:w-96 rounded-2xl border border-border bg-card p-4 shadow-2xl overflow-hidden"
+                       className="fixed right-3 left-3 sm:absolute sm:left-auto sm:right-0 sm:w-96 top-[4.5rem] sm:top-full z-50 sm:mt-2 rounded-2xl border border-border bg-card p-4 shadow-2xl overflow-hidden"
                     >
                       <div className="flex items-center justify-between border-b border-border pb-2.5 mb-2.5">
                         <div className="flex items-center gap-2">
@@ -708,7 +708,7 @@ function Shell() {
           MAIN CONTENT
           ═══════════════════════════════════════ */}
       <main className="relative z-[1] flex-1 overflow-y-auto custom-scrollbar">
-        <div className="mx-auto max-w-[1600px] p-4 pb-24 md:pb-8 md:p-8 lg:p-10">
+        <div className="mx-auto max-w-[1600px] p-3 pb-24 sm:p-4 md:pb-8 md:p-6 lg:p-8">
           
           {/* Notificação Flutuante de Ação Autônoma da IA */}
           <AnimatePresence>
@@ -717,7 +717,7 @@ function Shell() {
                 initial={{ opacity: 0, y: 50, scale: 0.9 }}
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, y: 20, scale: 0.9 }}
-                className="fixed bottom-24 right-4 lg:bottom-6 lg:right-6 z-50 max-w-[calc(100vw-2rem)] sm:max-w-sm rounded-2xl border border-primary/30 bg-card p-4 shadow-2xl overflow-hidden card-sport nc-badge-corner"
+                className="fixed bottom-24 left-3 right-3 sm:left-auto sm:right-6 sm:w-[360px] lg:bottom-6 z-50 rounded-2xl border border-primary/30 bg-card p-4 shadow-2xl overflow-hidden card-sport nc-badge-corner"
               >
                 {/* Racing stripe no topo da notificação */}
                 <div className="absolute top-0 inset-x-0 h-[2px] bg-gradient-to-r from-transparent via-primary to-transparent pointer-events-none" />

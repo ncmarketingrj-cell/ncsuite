@@ -362,69 +362,79 @@ function MetaAdsManagerPage() {
     <div className="mx-auto max-w-[1700px] p-1 pb-20">
       
       {/* ─── STICKY HEADER AREA ─── */}
-      <div className="sticky top-0 z-40 -mx-1 px-1 bg-background/95 backdrop-blur-xl pt-2 space-y-4">
-        <PageHeader
-          eyebrow="Hub Operacional"
-          title="Meta Ads Manager"
-          description="Gestão centralizada de contas e campanhas. Selecione itens para ações em massa."
-          actions={
-            <div className="flex flex-wrap items-center gap-3">
-              <DateRangePicker startDate={dateRange.startDate} endDate={dateRange.endDate} onChange={(s, e) => setDateRange({ startDate: s, endDate: e })} />
-              <button
-                onClick={() => navigate({ to: "/metricas/grafico", search: { account: accountFilter === "all" ? undefined : accountFilter, campaign: undefined } })}
-                className="flex items-center gap-2 rounded-xl border border-primary/30 bg-primary/10 px-4 py-2.5 text-xs font-bold text-primary hover:bg-primary/20 transition-all"
-              >
-                <Pencil className="h-3.5 w-3.5" />
-                Gráficos Demográficos
-              </button>
-              <button
-                onClick={runAudit}
-                disabled={isAuditing}
-                className="flex items-center gap-2 rounded-xl border border-orange-400/30 bg-orange-400/10 px-4 py-2.5 text-xs font-bold text-orange-400 hover:bg-orange-400/20 transition-all disabled:opacity-50"
-                title="Mostra o que o Meta está retornando por campanha sem salvar dados — use para diagnosticar divergências"
-              >
-                {isAuditing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FlaskConical className="h-3.5 w-3.5" />}
-                Diagnóstico Meta
-              </button>
-            </div>
-          }
-        />
+      <div className="sticky top-0 z-40 -mx-1 px-1 bg-background/95 backdrop-blur-xl pt-2 space-y-2">
 
-        {/* FILTROS GLOBAIS */}
-        <div className="glass-panel p-3 flex flex-wrap items-center gap-3">
-          <div className="relative min-w-[200px]">
-            <Layers className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-            <select value={accountFilter} onChange={(e) => setAccountFilter(e.target.value)} className="w-full appearance-none rounded-xl border border-white/10 bg-background/40 py-2.5 pl-9 pr-8 text-xs font-bold focus:border-primary/50 focus:outline-none transition-all">
-              <option value="all" className="bg-background text-foreground">Todas as Contas</option>
-              {adAccounts.map((a: any) => <option key={a.id} value={a.id} className="bg-background text-foreground">{a.name}</option>)}
-            </select>
-            <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+        {/* Linha 1: título + botões de ação (scrollável no mobile) */}
+        <div className="flex items-center justify-between gap-3 pb-1">
+          <div className="min-w-0">
+            <div className="kpi-tag mb-0.5 text-[9px]">Hub Operacional</div>
+            <h1 className="header-sport font-display text-lg sm:text-2xl lg:text-3xl font-black tracking-tight leading-none">Meta Ads Manager</h1>
           </div>
-          <div className="relative">
-            <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as any)} className="appearance-none rounded-xl border border-white/10 bg-background/40 px-4 py-2.5 pr-8 text-xs font-bold focus:border-primary/50 focus:outline-none transition-all">
-              <option value="all" className="bg-background text-foreground">Todos os Status</option>
-              <option value="active" className="bg-background text-foreground">Ativos</option>
-              <option value="paused" className="bg-background text-foreground">Pausados</option>
-            </select>
-            <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-          </div>
-          <div className="relative flex-1 min-w-[220px]">
-            <Search className="pointer-events-none absolute left-3.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-            <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder={`Buscar ${level}...`} className="w-full rounded-xl border border-white/10 bg-background/40 py-2.5 pl-10 pr-4 text-xs font-semibold focus:border-primary/50 focus:outline-none transition-all placeholder:text-muted-foreground/50" />
+          {/* Botões: scroll horizontal no mobile */}
+          <div className="flex items-center gap-2 overflow-x-auto scrollbar-hide shrink-0 max-w-[60%] sm:max-w-none">
+            <DateRangePicker startDate={dateRange.startDate} endDate={dateRange.endDate} onChange={(s, e) => setDateRange({ startDate: s, endDate: e })} />
+            <button
+              onClick={() => navigate({ to: "/metricas/grafico", search: { account: accountFilter === "all" ? undefined : accountFilter, campaign: undefined } })}
+              className="shrink-0 flex items-center gap-1.5 rounded-xl border border-primary/30 bg-primary/10 px-3 py-2 text-[11px] font-bold text-primary hover:bg-primary/20 transition-all"
+            >
+              <Pencil className="h-3 w-3" />
+              <span className="hidden sm:inline">Gráficos Demográficos</span>
+              <span className="sm:hidden">Gráficos</span>
+            </button>
+            <button
+              onClick={runAudit}
+              disabled={isAuditing}
+              className="shrink-0 flex items-center gap-1.5 rounded-xl border border-orange-400/30 bg-orange-400/10 px-3 py-2 text-[11px] font-bold text-orange-400 hover:bg-orange-400/20 transition-all disabled:opacity-50"
+              title="Diagnóstico Meta"
+            >
+              {isAuditing ? <Loader2 className="h-3 w-3 animate-spin" /> : <FlaskConical className="h-3 w-3" />}
+              <span className="hidden sm:inline">Diagnóstico Meta</span>
+            </button>
           </div>
         </div>
 
-        {/* ABAS */}
-        <div className="flex gap-1 border-b border-white/5">
-          {LEVEL_TABS.map(tab => (
-            <button key={tab.id} onClick={() => setLevel(tab.id)} className={`flex items-center gap-2 px-5 py-3 text-[11px] font-black uppercase tracking-widest border-b-2 transition-all ${level === tab.id ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground hover:border-white/20"}`}>
-              <tab.icon className="h-3.5 w-3.5" />
-              {tab.label}
-              {tab.id === "campanhas" && selectedCamps.size > 0 && <span className="ml-1.5 rounded-full bg-primary/20 text-primary px-2 py-0.5 text-[9px] font-black">{selectedCamps.size} sel.</span>}
-              {tab.id === "conjuntos" && selectedAdSets.size > 0 && <span className="ml-1.5 rounded-full bg-primary/20 text-primary px-2 py-0.5 text-[9px] font-black">{selectedAdSets.size} sel.</span>}
-              {tab.id === "anuncios" && selectedAds.size > 0 && <span className="ml-1.5 rounded-full bg-primary/20 text-primary px-2 py-0.5 text-[9px] font-black">{selectedAds.size} sel.</span>}
-            </button>
-          ))}
+        {/* Linha 2: Filtros — scroll horizontal no mobile */}
+        <div className="flex items-center gap-2 overflow-x-auto scrollbar-hide pb-1">
+          <div className="relative shrink-0">
+            <Layers className="pointer-events-none absolute left-2.5 top-1/2 h-3 w-3 -translate-y-1/2 text-muted-foreground" />
+            <select value={accountFilter} onChange={(e) => setAccountFilter(e.target.value)} className="appearance-none rounded-xl border border-white/10 bg-background/40 py-2 pl-7 pr-6 text-xs font-bold focus:border-primary/50 focus:outline-none transition-all">
+              <option value="all" className="bg-background text-foreground">Todas as Contas</option>
+              {adAccounts.map((a: any) => <option key={a.id} value={a.id} className="bg-background text-foreground">{a.name}</option>)}
+            </select>
+            <ChevronDown className="pointer-events-none absolute right-2 top-1/2 h-3 w-3 -translate-y-1/2 text-muted-foreground" />
+          </div>
+          <div className="relative shrink-0">
+            <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as any)} className="appearance-none rounded-xl border border-white/10 bg-background/40 px-3 py-2 pr-7 text-xs font-bold focus:border-primary/50 focus:outline-none transition-all">
+              <option value="all" className="bg-background text-foreground">Todos</option>
+              <option value="active" className="bg-background text-foreground">Ativos</option>
+              <option value="paused" className="bg-background text-foreground">Pausados</option>
+            </select>
+            <ChevronDown className="pointer-events-none absolute right-2 top-1/2 h-3 w-3 -translate-y-1/2 text-muted-foreground" />
+          </div>
+          <div className="relative flex-1 min-w-[140px]">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-3 w-3 -translate-y-1/2 text-muted-foreground" />
+            <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder={`Buscar ${level}...`} className="w-full rounded-xl border border-white/10 bg-background/40 py-2 pl-8 pr-3 text-xs font-semibold focus:border-primary/50 focus:outline-none transition-all placeholder:text-muted-foreground/50" />
+          </div>
+        </div>
+
+        {/* Linha 3: Abas — scroll horizontal no mobile */}
+        <div className="flex gap-0 overflow-x-auto scrollbar-hide border-b border-white/5">
+          {LEVEL_TABS.map(tab => {
+            const shortLabel = tab.id === "campanhas" ? "Camps." : tab.id === "conjuntos" ? "Conjuntos" : "Anúncios";
+            const selCount = tab.id === "campanhas" ? selectedCamps.size : tab.id === "conjuntos" ? selectedAdSets.size : selectedAds.size;
+            return (
+              <button
+                key={tab.id}
+                onClick={() => setLevel(tab.id)}
+                className={`shrink-0 flex items-center gap-1.5 px-3 sm:px-5 py-2.5 text-[10px] sm:text-[11px] font-black uppercase tracking-widest border-b-2 transition-all whitespace-nowrap ${level === tab.id ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground hover:border-white/20"}`}
+              >
+                <tab.icon className="h-3 w-3 sm:h-3.5 sm:w-3.5 shrink-0" />
+                <span className="sm:hidden">{shortLabel}</span>
+                <span className="hidden sm:inline">{tab.label}</span>
+                {selCount > 0 && <span className="rounded-full bg-primary/20 text-primary px-1.5 py-0.5 text-[9px] font-black">{selCount}</span>}
+              </button>
+            );
+          })}
         </div>
       </div>
 
@@ -445,12 +455,12 @@ function MetaAdsManagerPage() {
           ) : (
             <div className="glass-panel card-sport overflow-hidden">
               {selSet.size > 0 && (
-                <div className="border-b border-white/5 bg-primary/5 px-6 py-3 flex flex-wrap items-center gap-5 text-xs">
-                  <span className="font-black text-primary uppercase tracking-widest">{selSet.size} selecionados</span>
-                  <span className="text-muted-foreground">Gasto: <strong className="text-foreground font-mono">R$ {totCost.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</strong></span>
-                  <span className="text-muted-foreground">Resultados: <strong className="text-violet-600 dark:text-violet-400 font-mono">{totConv}</strong></span>
-                  <span className="text-muted-foreground">Alcance: <strong className="text-foreground font-mono">{totReach.toLocaleString("pt-BR")}</strong></span>
-                  <button onClick={() => setSelSet(new Set())} className="ml-auto text-[9px] text-muted-foreground hover:text-foreground underline">Limpar Seleção</button>
+                <div className="border-b border-white/5 bg-primary/5 px-4 py-2.5 flex items-center gap-3 overflow-x-auto scrollbar-hide text-xs">
+                  <span className="shrink-0 font-black text-primary uppercase tracking-widest text-[11px]">{selSet.size} sel.</span>
+                  <span className="shrink-0 text-muted-foreground text-[11px]">R$ <strong className="text-foreground font-mono">{totCost.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</strong></span>
+                  <span className="shrink-0 text-[11px]"><strong className="text-violet-600 dark:text-violet-400 font-mono">{totConv}</strong> <span className="text-muted-foreground">res.</span></span>
+                  <span className="shrink-0 text-muted-foreground text-[11px]">Alc. <strong className="text-foreground font-mono">{totReach.toLocaleString("pt-BR")}</strong></span>
+                  <button onClick={() => setSelSet(new Set())} className="ml-auto shrink-0 text-[9px] text-muted-foreground hover:text-foreground underline">Limpar</button>
                 </div>
               )}
 

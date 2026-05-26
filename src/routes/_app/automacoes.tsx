@@ -204,37 +204,42 @@ function AutomationsPage() {
   }
 
   return (
-    <div className="mx-auto max-w-6xl space-y-8 pb-20 p-2">
+    <div className="mx-auto max-w-6xl space-y-5 pb-20">
       <PageHeader
         eyebrow="Monitoramento Inteligente"
-        title="Motor de Alertas e Sincronização"
-        description="Configure tetos de CPL e monitore o orçamento diário das suas campanhas. O sistema notificará visual e sonoramente caso os limites sejam ultrapassados."
+        title="Motor de Alertas"
+        description="Configure tetos de CPL e monitore o orçamento diário das suas campanhas."
+        compact
         actions={
           <button
             onClick={() => setModal(true)}
-            className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-primary to-secondary px-5 py-2.5 text-xs font-bold text-background shadow-glow transition hover:scale-105 active:scale-95"
+            className="shrink-0 inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-primary to-secondary px-4 py-2 text-xs font-bold text-background shadow-glow transition hover:scale-105 active:scale-95"
           >
-            <ShieldAlert className="h-4 w-4 fill-current" /> Novo Alerta de Conta
+            <ShieldAlert className="h-3.5 w-3.5 fill-current" />
+            <span className="hidden sm:inline">Novo Alerta de Conta</span>
+            <span className="sm:hidden">Novo Alerta</span>
           </button>
         }
       />
 
-      {/* Tabs */}
-      <div className="flex space-x-1 rounded-xl bg-background/50 p-1 w-fit border border-white/5 backdrop-blur-md">
+      {/* Tabs — scrollável no mobile */}
+      <div className="flex overflow-x-auto scrollbar-hide gap-1 rounded-xl bg-background/50 p-1 border border-white/5 backdrop-blur-md">
         {[
-          { id: "thresholds", label: "Limites de Alerta",        icon: AlertTriangle },
-          { id: "prefs",      label: "Preferências",             icon: Settings2 },
-          { id: "sync",       label: "Motor de Sincronização",  icon: Server },
-          { id: "logs",       label: "Histórico de Sync",       icon: History },
+          { id: "thresholds", label: "Limites de Alerta",       short: "Limites",   icon: AlertTriangle },
+          { id: "prefs",      label: "Preferências",            short: "Prefs",     icon: Settings2 },
+          { id: "sync",       label: "Motor de Sincronização",  short: "Sync",      icon: Server },
+          { id: "logs",       label: "Histórico de Sync",       short: "Histórico", icon: History },
         ].map((tab) => (
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id as any)}
-            className={`flex items-center gap-2 rounded-lg px-4 py-2 text-xs font-bold transition ${
+            className={`shrink-0 flex items-center gap-1.5 rounded-lg px-3 sm:px-4 py-2 text-xs font-bold transition whitespace-nowrap ${
               activeTab === tab.id ? "bg-white/10 text-primary" : "text-muted-foreground hover:text-foreground"
             }`}
           >
-            <tab.icon className="h-3.5 w-3.5" /> {tab.label.toUpperCase()}
+            <tab.icon className="h-3.5 w-3.5 shrink-0" />
+            <span className="sm:hidden">{tab.short.toUpperCase()}</span>
+            <span className="hidden sm:inline">{tab.label.toUpperCase()}</span>
           </button>
         ))}
       </div>
