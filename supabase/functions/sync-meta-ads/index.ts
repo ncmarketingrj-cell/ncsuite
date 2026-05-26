@@ -240,8 +240,14 @@ function extractConversions(actions: any[] = [], objective?: string): number {
   console.log(`[CONV] obj=${objective ?? "none"} | ${available}`);
 
   // Mapeamento objetivo → action_types primários (ordem de prioridade dentro de cada lista)
+  //
+  // REGRA CORRIGIDA (2026-05): Para campanhas de MENSAGEM (MESSAGES / OUTCOME_ENGAGEMENT messaging),
+  // o Meta Ads Manager exibe "messaging_first_reply" ou "messaging_conversation_started_7d"
+  // como resultado oficial — NÃO "total_messaging_connection" (que é superset e inclui
+  // conversas recorrentes, causando números inflados vs. o Gerenciador Meta).
   const byObjective: Record<string, string[]> = {
-    // Campanhas de Mensagens: Meta Ads Manager usa "first_reply" como resultado padrão desde 2024
+    // Campanhas de Mensagens: Meta Ads Manager usa "first_reply" como resultado principal
+    // "total_messaging_connection" fica como último fallback pois conta retornos
     "MESSAGES": [
       "onsite_conversion.messaging_first_reply",
       "onsite_conversion.messaging_conversation_started_7d",
@@ -287,12 +293,14 @@ function extractConversions(actions: any[] = [], objective?: string): number {
     "LINK_CLICKS":    ["landing_page_view", "link_click"],
     "OUTCOME_TRAFFIC": ["landing_page_view", "link_click", "outbound_clicks"],
     // Engajamento / Mensagens (OUTCOME_ENGAGEMENT cobre WhatsApp, DM, curtidas, etc.)
+    // CORREÇÃO: "first_reply" e "conversation_started" ANTES de "total_messaging_connection"
+    // O Gerenciador Meta exibe conversas iniciadas/primeiras respostas — não conexões totais.
     "POST_ENGAGEMENT":  ["post_engagement", "page_engagement"],
     "OUTCOME_ENGAGEMENT": [
-      "onsite_conversion.total_messaging_connection",      // WhatsApp + DM agrupado — mais comum no Brasil para automotive
-      "onsite_conversion.messaging_first_reply",
-      "onsite_conversion.messaging_conversation_started_7d",
+      "onsite_conversion.messaging_first_reply",           // ← Meta Ads Manager resultado primário para mensagens
+      "onsite_conversion.messaging_conversation_started_7d", // ← alternativa se first_reply não disponível
       "messaging_conversation_started_7d",
+      "onsite_conversion.total_messaging_connection",      // ← fallback: superset (inclui retornos), usar só se acima = 0
       "post_engagement",
       "page_engagement",
     ],
