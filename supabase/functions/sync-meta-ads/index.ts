@@ -831,6 +831,60 @@ serve(async (req) => {
         else totalMetrics += metricsToUpsert.length
       }
 
+      // ── Period stats (sem time_increment) → alcance e frequência reais do período ──
+      // Esta query retorna um único row por campanha com o total do período completo,
+      // que é exatamente o que o Gerenciador de Anúncios mostra.
+      try {
+        let periodStart = yesterdayStr
+        let periodEnd   = todayStr
+        try {
+          if (timeParams.time_range) {
+            const tr = JSON.parse(timeParams.time_range)
+            periodStart = tr.since
+            periodEnd   = tr.until
+          }
+        } catch (_) {}
+
+        const periodRaw = await metaGetPaginated(`/${accountId}/insights`, token, {
+          level: "campaign",
+          fields: "campaign_id,spend,reach,impressions,frequency,actions,inline_link_clicks,date_start,date_stop",
+          limit: "500",
+          ...timeParams
+          // Sem time_increment → agrega todo o período em 1 linha por campanha
+        })
+
+        const periodStatsToUpsert = periodRaw
+          .map((row: any) => {
+            const campaign_id = idMap.get(row.campaign_id)
+            if (!campaign_id) return null
+            const reach       = parseInt(row.reach) || 0
+            const impressions = parseInt(row.impressions) || 0
+            return {
+              campaign_id,
+              ad_account_id: accountId,
+              start_date:   row.date_start || periodStart,
+              end_date:     row.date_stop  || periodEnd,
+              reach,
+              impressions,
+              frequency:    reach > 0 ? impressions / reach : (parseFloat(row.frequency || "0") || 0),
+              spend:        parseFloat(row.spend || "0") || 0,
+              conversions:  extractConversions(row.actions, campaignObjectiveMap.get(row.campaign_id)),
+              clicks:       extractClicks(row.actions, row.inline_link_clicks),
+              synced_at:    new Date().toISOString(),
+            }
+          })
+          .filter(Boolean)
+
+        if (periodStatsToUpsert.length > 0) {
+          const { error } = await supabase
+            .from("campaign_period_stats")
+            .upsert(periodStatsToUpsert, { onConflict: "campaign_id,start_date,end_date" })
+          if (error) console.warn(`[SYNC] Period stats upsert: ${error.message}`)
+        }
+      } catch (periodErr: any) {
+        console.warn(`[SYNC] Period stats fetch failed for ${accountId}:`, periodErr.message)
+      }
+
       // Upsert breakdowns demográficos
       const demoToUpsert = demographics.map(row => {
         const campaign_id = idMap.get(row.campaign_id)
@@ -920,6 +974,7 @@ serve(async (req) => {
             cost: parseFloat(row.spend) || 0,
             conversions: extractConversions(row.actions, campaignObjectiveMap.get(row.campaign_id)),
             reach: parseInt(row.reach) || 0,
+            frequency: parseFloat(row.frequency || "0") || 0,
             video_p25: extractVideoMetric(row, "video_p25_watched_actions"),
             video_p50: extractVideoMetric(row, "video_p50_watched_actions"),
             video_p75: extractVideoMetric(row, "video_p75_watched_actions"),
@@ -940,6 +995,7 @@ serve(async (req) => {
             cost: parseFloat(row.spend) || 0,
             conversions: extractConversions(row.actions, campaignObjectiveMap.get(row.campaign_id)),
             reach: parseInt(row.reach) || 0,
+            frequency: parseFloat(row.frequency || "0") || 0,
             video_p25: extractVideoMetric(row, "video_p25_watched_actions"),
             video_p50: extractVideoMetric(row, "video_p50_watched_actions"),
             video_p75: extractVideoMetric(row, "video_p75_watched_actions"),

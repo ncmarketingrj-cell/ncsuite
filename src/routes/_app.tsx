@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   LayoutDashboard, FileText, Upload, Settings, Loader2,
   Bell, User, Bot, Sparkles, Activity, Zap,
-  Sun, Moon, Menu, X, BarChart3, Megaphone, LineChart, Palette, Link2,
+  Sun, Moon, Menu, X, BarChart3, LineChart, Palette, Link2,
   ChevronDown, RefreshCw, Users, Store,
   Volume2, VolumeX, LogOut, CreditCard
 } from "lucide-react";
@@ -68,7 +68,6 @@ const NAV_ITEMS: NavItem[] = [
   { to: "/dashboard", icon: LayoutDashboard, label: "Dashboard" },
   { to: "/metricas", icon: LineChart, label: "Métricas" },
   { to: "/clientes", icon: Store, label: "Clientes" },
-  { to: "/campanhas", icon: Megaphone, label: "Campanhas" },
   { to: "/reunioes", icon: Users, label: "Reuniões" },
   { to: "/relatorios", icon: FileText, label: "Relatórios" },
   { to: "/upload", icon: Upload, label: "Upload" },
@@ -688,13 +687,13 @@ function Shell() {
 
       {/* ═══════════════════════════════════════
           MOBILE BOTTOM NAVIGATION BAR
-          5 ítens: Dashboard · Campanhas · Alertas · Config · Mais
+          5 ítens: Dashboard · Métricas · Alertas · Config · Mais
           ═══════════════════════════════════════ */}
       <nav className="lg:hidden fixed bottom-0 inset-x-0 z-40 border-t border-border bg-background/96 backdrop-blur-xl">
         <div className="flex items-stretch justify-around px-1 pb-safe">
           {[
             { to: "/dashboard",  icon: LayoutDashboard, label: "Home" },
-            { to: "/campanhas",  icon: Megaphone,        label: "Camps." },
+            { to: "/metricas",   icon: LineChart,        label: "Métricas" },
           ].map((item) => {
             const isActive = path === item.to || (item.to !== "/dashboard" && path.startsWith(item.to));
             return (
