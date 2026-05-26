@@ -9,7 +9,8 @@ import {
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { PageHeader } from "@/components/PageHeader";
-import { format } from "date-fns";
+import { DateRangePicker } from "@/components/DateRangePicker";
+import { format, subDays, startOfDay, endOfDay } from "date-fns";
 import { ptBR } from "date-fns/locale";
 
 export const Route = createFileRoute("/_app/cobrancas")({
@@ -64,6 +65,8 @@ const FUNDING_TYPE_LABEL: Record<string, string> = {
 function CobrancasPage() {
   const [expandedAccount, setExpandedAccount] = useState<string | null>(null);
   const [fetching, setFetching] = useState(false);
+  const [startDate, setStartDate] = useState<Date>(() => subDays(new Date(), 29));
+  const [endDate, setEndDate] = useState<Date>(() => new Date());
 
   // Último snapshot salvo no banco
   const { data: snapshots = [], refetch: refetchSnapshots, isLoading } = useQuery({
@@ -122,14 +125,21 @@ function CobrancasPage() {
         title="Cobranças & Pagamentos"
         description="Saldo, forma de pagamento e histórico de transações das contas de anúncios."
         actions={
-          <button
-            onClick={handleFetch}
-            disabled={fetching}
-            className="inline-flex items-center gap-2 rounded-full bg-primary px-4 py-2.5 text-xs font-bold text-primary-foreground hover:bg-primary/90 transition disabled:opacity-60"
-          >
-            <RefreshCw className={`h-3.5 w-3.5 ${fetching ? "animate-spin" : ""}`} />
-            {fetching ? "Buscando..." : "Atualizar Dados"}
-          </button>
+          <div className="flex items-center gap-2 flex-wrap justify-end">
+            <DateRangePicker
+              startDate={startDate}
+              endDate={endDate}
+              onChange={(s, e) => { setStartDate(s); setEndDate(e); }}
+            />
+            <button
+              onClick={handleFetch}
+              disabled={fetching}
+              className="inline-flex items-center gap-2 rounded-full bg-primary px-4 py-2.5 text-xs font-bold text-primary-foreground hover:bg-primary/90 transition disabled:opacity-60"
+            >
+              <RefreshCw className={`h-3.5 w-3.5 ${fetching ? "animate-spin" : ""}`} />
+              {fetching ? "Buscando..." : "Atualizar Dados"}
+            </button>
+          </div>
         }
       />
 
@@ -179,8 +189,15 @@ function CobrancasPage() {
           {snapshots.map((snap: any, i: number) => {
             const isExpanded = expandedAccount === snap.ad_account_id;
             const funding = snap.funding_source;
-            const txs: any[] = snap.transactions ?? [];
-            const lastTx = txs[0] ?? null;
+            const allTxs: any[] = snap.transactions ?? [];
+            const rangeStart = startOfDay(startDate);
+            const rangeEnd = endOfDay(endDate);
+            const txs = allTxs.filter((tx: any) => {
+              if (!tx.created_at) return true;
+              const d = new Date(tx.created_at);
+              return d >= rangeStart && d <= rangeEnd;
+            });
+            const lastTx = allTxs[0] ?? null;
             const statusCfg = lastTx ? (STATUS_CONFIG[lastTx.status] ?? STATUS_CONFIG.PENDING) : null;
 
             return (
@@ -282,14 +299,17 @@ function CobrancasPage() {
                   </div>
 
                   {/* Toggle transações */}
-                  {txs.length > 0 && (
+                  {allTxs.length > 0 && (
                     <button
                       onClick={() => setExpandedAccount(isExpanded ? null : snap.ad_account_id)}
                       className="mt-4 w-full flex items-center justify-between rounded-xl border border-white/5 bg-white/[0.02] hover:bg-white/[0.04] px-4 py-2.5 text-xs font-bold text-muted-foreground transition-all"
                     >
                       <span className="flex items-center gap-2">
                         <Receipt className="h-3.5 w-3.5" />
-                        {txs.length} transaç{txs.length === 1 ? "ão" : "ões"} encontrada{txs.length !== 1 ? "s" : ""}
+                        {txs.length} transaç{txs.length === 1 ? "ão" : "ões"} no período
+                        {txs.length < allTxs.length && (
+                          <span className="text-[9px] font-normal opacity-50">({allTxs.length} no total)</span>
+                        )}
                       </span>
                       {isExpanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
                     </button>
@@ -344,10 +364,14 @@ function CobrancasPage() {
                   </motion.div>
                 )}
 
-                {/* Sem transações */}
+                {/* Sem transações no período */}
                 {isExpanded && txs.length === 0 && (
                   <div className="border-t border-white/5 px-4 py-6 text-center">
-                    <p className="text-xs text-muted-foreground/50">Nenhuma transação encontrada para esta conta.</p>
+                    <p className="text-xs text-muted-foreground/50">
+                      {allTxs.length > 0
+                        ? "Nenhuma transação no período selecionado. Ajuste o filtro de datas."
+                        : "Nenhuma transação encontrada para esta conta."}
+                    </p>
                   </div>
                 )}
               </motion.div>
