@@ -255,45 +255,42 @@ function Shell() {
       {/* ═══════════════════════════════════════
           TOP NAVIGATION BAR — Premium Horizontal
           ═══════════════════════════════════════ */}
-      <header className="sticky top-0 z-50 border-gradient-bottom bg-background/92 backdrop-blur-2xl">
-        <div className="mx-auto flex h-16 max-w-[1600px] items-center justify-between px-4 md:px-8">
+      <header className="sticky top-0 z-50 border-gradient-bottom bg-background/92 backdrop-blur-2xl overflow-hidden" style={{ height: '64px' }}>
+        <div className="mx-auto flex h-full max-w-[1600px] items-center justify-between gap-2 px-3 md:px-5 overflow-hidden">
           
           {/* LEFT: Logo */}
-          <Link to="/dashboard" className="flex items-center gap-3 shrink-0 group">
-            {/* NC Badge automotivo com racing stripes */}
-            <div className="relative h-9 w-9 rounded-xl bg-primary flex items-center justify-center overflow-hidden shadow-glow-sm transition-all duration-300 group-hover:shadow-glow">
-              {/* Faixa superior (reflexo de vidro) */}
+          <Link to="/dashboard" className="flex items-center gap-2 shrink-0 group">
+            <div className="relative h-8 w-8 rounded-xl bg-primary flex items-center justify-center overflow-hidden shadow-glow-sm transition-all duration-300 group-hover:shadow-glow">
               <div className="absolute inset-x-0 top-0 h-[3px] bg-white/28 rounded-t-xl pointer-events-none" />
-              <span className="font-display font-black text-white text-sm relative z-10 tracking-tight">NC</span>
-              {/* Faixa inferior (profundidade de cockpit) */}
+              <span className="font-display font-black text-white text-xs relative z-10 tracking-tight">NC</span>
               <div className="absolute inset-x-0 bottom-0 h-[2px] bg-black/22 rounded-b-xl pointer-events-none" />
             </div>
-            {/* Logotipo com tagline automotiva */}
-            <div className="hidden sm:flex flex-col leading-none gap-[5px]">
-              <span className="font-display text-[13px] font-black tracking-tight leading-none">NC Performance</span>
-              <div className="flex items-center gap-[5px]">
-                <div className="h-px w-3 bg-primary/65 rounded-full" />
-                <span className="text-[7px] font-mono font-bold uppercase tracking-[0.28em] text-primary leading-none">Suite Automotiva</span>
-                <div className="h-px w-3 bg-primary/65 rounded-full" />
+            <div className="hidden md:flex flex-col leading-none gap-[4px]">
+              <span className="font-display text-[12px] font-black tracking-tight leading-none">NC Performance</span>
+              <div className="flex items-center gap-[4px]">
+                <div className="h-px w-2.5 bg-primary/65 rounded-full" />
+                <span className="text-[7px] font-mono font-bold uppercase tracking-[0.25em] text-primary leading-none">Suite Automotiva</span>
+                <div className="h-px w-2.5 bg-primary/65 rounded-full" />
               </div>
             </div>
           </Link>
 
           {/* CENTER: Navigation Links (Desktop) */}
-          <nav className="hidden lg:flex items-center gap-1">
+          <nav className="hidden lg:flex flex-1 min-w-0 items-center justify-center overflow-hidden px-1">
+            <div className="flex items-center overflow-x-auto scrollbar-none">
             {filteredNavItems.map((item) => {
               const isActive = path === item.to || (item.to !== "/dashboard" && path.startsWith(item.to));
               return (
                 <Link
                   key={item.to}
                   to={item.to}
-                  className={`group relative flex items-center gap-2 rounded-xl px-3.5 py-2 text-[13px] font-semibold transition-all duration-200 ${
+                  className={`group relative flex items-center gap-1.5 rounded-xl px-2.5 py-1.5 text-[12px] font-semibold whitespace-nowrap transition-all duration-200 ${
                     isActive 
                       ? "text-primary bg-primary/10" 
                       : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
                   }`}
                 >
-                  <item.icon className={`h-4 w-4 transition-transform group-hover:scale-110 ${isActive ? 'text-primary' : ''}`} />
+                  <item.icon className={`h-3.5 w-3.5 shrink-0 transition-transform group-hover:scale-110 ${isActive ? 'text-primary' : ''}`} />
                   <span>{item.label}</span>
                   {isActive && (
                     <motion.div
@@ -307,17 +304,17 @@ function Shell() {
             })}
 
             {/* More dropdown */}
-            <div className="relative">
-              <button 
+            <div className="relative shrink-0">
+              <button
                 onClick={() => setShowMore(!showMore)}
-                className={`flex items-center gap-1.5 rounded-xl px-3 py-2 text-[13px] font-semibold transition-all ${
+                className={`flex items-center gap-1.5 rounded-xl px-2.5 py-1.5 text-[12px] font-semibold whitespace-nowrap transition-all ${
                   filteredMoreItems.some(i => path.startsWith(i.to))
                     ? "text-primary bg-primary/10"
                     : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
                 }`}
               >
                 Mais
-                <ChevronDown className={`h-3.5 w-3.5 transition-transform ${showMore ? 'rotate-180' : ''}`} />
+                <ChevronDown className={`h-3 w-3 transition-transform ${showMore ? 'rotate-180' : ''}`} />
               </button>
               
               <AnimatePresence>
@@ -351,20 +348,21 @@ function Shell() {
                 )}
               </AnimatePresence>
             </div>
+            </div>
           </nav>
 
           {/* RIGHT: Actions */}
-          <div className="flex items-center gap-2 sm:gap-3">
+          <div className="flex shrink-0 items-center gap-1 sm:gap-1.5">
 
             {/* Indicador de Sync */}
             <button
               onClick={() => runSync("manual")}
               disabled={syncStatus.isSyncing}
-              className="hidden md:flex items-center gap-1.5 rounded-xl border border-border bg-card px-2.5 py-1.5 text-[10px] font-bold text-muted-foreground transition-all hover:border-primary/30 hover:text-primary active:scale-95 disabled:opacity-60"
+              className="hidden xl:flex items-center gap-1.5 rounded-xl border border-border bg-card px-2.5 py-1.5 text-[10px] font-bold text-muted-foreground transition-all hover:border-primary/30 hover:text-primary active:scale-95 disabled:opacity-60"
               title={syncStatus.lastSync ? `Último sync: ${new Date(syncStatus.lastSync).toLocaleTimeString('pt-BR')}` : 'Sincronizar agora'}
             >
               <RefreshCw className={`h-3 w-3 ${syncStatus.isSyncing ? 'animate-spin text-primary' : ''}`} />
-              <span className="hidden lg:inline">
+              <span>
                 {syncStatus.isSyncing ? 'Sincronizando...' : syncStatus.lastSync
                   ? formatDistanceToNow(new Date(syncStatus.lastSync), { addSuffix: true, locale: ptBR })
                   : 'Sincronizar'}
@@ -380,17 +378,17 @@ function Shell() {
             {/* Theme Toggle */}
             <button
               onClick={toggleTheme}
-              className="relative flex h-9 w-9 items-center justify-center rounded-xl border border-border bg-card text-muted-foreground transition-all hover:text-foreground hover:border-primary/30 hover:shadow-glow-sm active:scale-95"
+              className="relative flex h-8 w-8 items-center justify-center rounded-xl border border-border bg-card text-muted-foreground transition-all hover:text-foreground hover:border-primary/30 hover:shadow-glow-sm active:scale-95"
               title={theme === "dark" ? "Modo Claro" : "Modo Escuro"}
             >
               <AnimatePresence mode="wait">
                 {theme === "dark" ? (
                   <motion.div key="sun" initial={{ rotate: -90, opacity: 0 }} animate={{ rotate: 0, opacity: 1 }} exit={{ rotate: 90, opacity: 0 }} transition={{ duration: 0.2 }}>
-                    <Sun className="h-4 w-4" />
+                    <Sun className="h-3.5 w-3.5" />
                   </motion.div>
                 ) : (
                   <motion.div key="moon" initial={{ rotate: 90, opacity: 0 }} animate={{ rotate: 0, opacity: 1 }} exit={{ rotate: -90, opacity: 0 }} transition={{ duration: 0.2 }}>
-                    <Moon className="h-4 w-4" />
+                    <Moon className="h-3.5 w-3.5" />
                   </motion.div>
                 )}
               </AnimatePresence>
@@ -399,7 +397,7 @@ function Shell() {
             {/* Victoria AI Badge */}
             <button
               onClick={() => setIsAgentOpen(!isAgentOpen)}
-              className="hidden sm:flex items-center gap-2 rounded-xl border border-primary/20 bg-primary/10 px-3 py-2 text-[11px] font-bold uppercase tracking-wider text-primary transition-all hover:bg-primary/20 hover:shadow-glow-sm active:scale-95"
+              className="hidden sm:flex items-center gap-1.5 rounded-xl border border-primary/20 bg-primary/10 px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-wider text-primary transition-all hover:bg-primary/20 hover:shadow-glow-sm active:scale-95"
             >
               <Bot className="h-3.5 w-3.5" />
               <span className="hidden md:inline">Victoria</span>
@@ -410,15 +408,15 @@ function Shell() {
             <div className="relative">
               <button
                 onClick={() => { setShowNotifications(!showNotifications); acknowledgeAll(); }}
-                className={`relative flex h-9 w-9 items-center justify-center rounded-xl border transition-all active:scale-95 ${
+                className={`relative flex h-8 w-8 items-center justify-center rounded-xl border transition-all active:scale-95 ${
                   showNotifications
                     ? "border-primary bg-primary/10 text-primary"
                     : "border-border bg-card text-muted-foreground hover:text-foreground hover:border-primary/30"
                 }`}
               >
-                <Bell className="h-4 w-4" />
+                <Bell className="h-3.5 w-3.5" />
                 {hasUnread && (
-                  <span className="absolute top-1.5 right-1.5 h-2 w-2 rounded-full bg-primary animate-pulse" />
+                  <span className="absolute top-1.5 right-1.5 h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />
                 )}
               </button>
 
@@ -541,10 +539,10 @@ function Shell() {
             </div>
 
             {/* User Profile */}
-            <div className="flex items-center gap-2 pl-2 ml-1 border-l border-border">
-              <div className="hidden md:flex flex-col items-end leading-none">
-                <p className="text-[11px] font-bold text-foreground">
-                  {profile?.full_name || user?.email?.split('@')[0]}
+            <div className="flex items-center gap-1.5 pl-2 ml-1 border-l border-border min-w-0">
+              <div className="hidden lg:flex flex-col items-end leading-none min-w-0">
+                <p className="text-[11px] font-bold text-foreground max-w-[100px] truncate">
+                  {profile?.full_name?.split(' ')[0] || user?.email?.split('@')[0]}
                 </p>
                 <button onClick={handleSignOut} className="text-[10px] text-muted-foreground hover:text-primary transition-colors font-semibold mt-0.5">
                   Sair
@@ -566,7 +564,7 @@ function Shell() {
             {/* Mobile: botão Victoria compacto */}
             <button
               onClick={() => setIsAgentOpen(!isAgentOpen)}
-              className="flex sm:hidden h-9 w-9 items-center justify-center rounded-xl border border-primary/20 bg-primary/10 text-primary"
+              className="flex sm:hidden h-8 w-8 items-center justify-center rounded-xl border border-primary/20 bg-primary/10 text-primary"
             >
               <Bot className="h-4 w-4" />
             </button>
