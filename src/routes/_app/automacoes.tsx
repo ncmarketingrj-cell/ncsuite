@@ -5,7 +5,7 @@ import {
   Zap, Loader2, Play, Pause, Clock, History, AlertTriangle,
   ShieldAlert, Plus, X, Server, CheckCircle2, RefreshCw,
   Bell, TrendingUp, DollarSign, AlertCircle, Timer, Pencil, Radio,
-  Settings2, Volume2, VolumeX, BellOff, BellRing, Moon, RotateCcw
+  Settings2, Volume2, VolumeX, BellOff, BellRing, Moon, RotateCcw, Lock
 } from "lucide-react";
 import { PageHeader } from "@/components/PageHeader";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -26,16 +26,20 @@ export const Route = createFileRoute("/_app/automacoes")({
   beforeLoad: async () => {
     const { data: sessionData } = await supabase.auth.getSession();
     if (!sessionData.session) throw redirect({ to: "/login" });
+    const adminEmails = ["nc.marketingrj@gmail.com", "hc.marketing.dgt@gmail.com"];
+    if (adminEmails.includes(sessionData.session.user.email || "")) return;
     const { data: profile } = await (supabase as any)
       .from("profiles")
       .select("role, permissions")
       .eq("id", sessionData.session.user.id)
       .maybeSingle();
     if (profile?.role === "admin") return;
-    if (!profile?.permissions?.automacoes) throw redirect({ to: "/dashboard" });
+    // Sem permissão: componente exibe UI de acesso restrito em vez de redirecionar
   },
   component: AutomationsPage,
 });
+
+const ADMIN_EMAILS = ["nc.marketingrj@gmail.com", "hc.marketing.dgt@gmail.com"];
 
 function AutomationsPage() {
   const [activeTab, setActiveTab] = useState<"thresholds" | "sync" | "logs" | "prefs">("thresholds");
@@ -43,6 +47,19 @@ function AutomationsPage() {
   const [editingThreshold, setEditingThreshold] = useState<any | null>(null);
   const { user } = useAuth();
   const qc = useQueryClient();
+
+  const { data: profileData, isLoading: profileLoading } = useQuery({
+    queryKey: ["current_user_profile", user?.id],
+    queryFn: async () => {
+      if (!user?.id) return null;
+      const { data } = await (supabase as any).from("profiles").select("role, permissions").eq("id", user.id).maybeSingle();
+      return data as { role: string; permissions: Record<string, boolean> } | null;
+    },
+    enabled: !!user?.id,
+  });
+  const hasAccess = (user?.email ? ADMIN_EMAILS.includes(user.email) : false)
+    || profileData?.role === "admin"
+    || !!profileData?.permissions?.automacoes;
   const syncStatus = getSyncStatus();
   const { runSync } = useAutoSync();
 
@@ -167,6 +184,24 @@ function AutomationsPage() {
     triggerEvaluation();
     toast.info("Avaliando campanhas...", { duration: 2500 });
   };
+
+  if (profileLoading) return null;
+
+  if (!hasAccess) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[60vh] gap-6 text-center px-4">
+        <div className="h-16 w-16 rounded-2xl bg-destructive/10 border border-destructive/20 flex items-center justify-center">
+          <Lock className="h-7 w-7 text-destructive" />
+        </div>
+        <div className="space-y-2">
+          <h2 className="text-2xl font-black tracking-tight">Acesso Restrito</h2>
+          <p className="text-muted-foreground text-sm max-w-xs">
+            Você não tem acesso às Automações e Alertas. Solicite ao administrador.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="mx-auto max-w-6xl space-y-8 pb-20 p-2">

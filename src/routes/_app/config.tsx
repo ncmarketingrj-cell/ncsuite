@@ -34,13 +34,14 @@ function ConfigPage() {
     queryKey: ["current_user_profile", user?.id],
     queryFn: async () => {
       if (!user?.id) return null;
-      const { data } = await supabase.from("profiles").select("role").eq("id", user.id).maybeSingle();
+      const { data } = await (supabase as any).from("profiles").select("role, permissions").eq("id", user.id).maybeSingle();
       return data;
     },
     enabled: !!user?.id,
   });
 
-  const isAdmin = profile?.role === "admin";
+  const ADMIN_EMAILS = ["nc.marketingrj@gmail.com", "hc.marketing.dgt@gmail.com"];
+  const isAdmin = profile?.role === "admin" || (user?.email ? ADMIN_EMAILS.includes(user.email) : false);
   const perms = (profile as any)?.permissions ?? {};
   const canManageUsers = isAdmin || !!perms.criar_usuarios;
 
@@ -819,15 +820,22 @@ function TabUsuarios() {
     }
     setCreating(true);
     try {
-      const { error } = await supabase.rpc("admin_create_user", {
-        new_email: newEmail.trim(),
-        new_password: newPassword.trim(),
-        new_name: newName.trim(),
-        new_position: newPosition,
-        new_role: newRole
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token;
+      if (!token) throw new Error("Sessão expirada. Faça login novamente.");
+
+      const { data, error } = await supabase.functions.invoke("admin-create-user", {
+        body: {
+          new_email: newEmail.trim(),
+          new_password: newPassword.trim(),
+          new_name: newName.trim(),
+          new_position: newPosition,
+          new_role: newRole,
+        },
       });
       if (error) throw error;
-      
+      if (data?.error) throw new Error(data.error);
+
       toast.success("Novo usuário cadastrado com sucesso!");
       setShowAddModal(false);
       setNewEmail("");

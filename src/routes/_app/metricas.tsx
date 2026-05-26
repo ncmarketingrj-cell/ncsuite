@@ -27,13 +27,15 @@ export const Route = createFileRoute("/_app/metricas")({
   beforeLoad: async () => {
     const { data: sessionData } = await supabase.auth.getSession();
     if (!sessionData.session) throw redirect({ to: "/login" });
+    const adminEmails = ["nc.marketingrj@gmail.com", "hc.marketing.dgt@gmail.com"];
+    if (adminEmails.includes(sessionData.session.user.email || "")) return;
     const { data: profile } = await (supabase as any)
       .from("profiles")
       .select("role, permissions")
       .eq("id", sessionData.session.user.id)
       .maybeSingle();
     if (profile?.role === "admin") return;
-    if (!profile?.permissions?.metricas) throw redirect({ to: "/dashboard" });
+    // Sem permissão: componente exibe UI de acesso restrito em vez de redirecionar
   },
   validateSearch: (search: Record<string, unknown>): { account?: string; campaign?: string } => ({
     account: (search.account as string) || undefined,
@@ -53,8 +55,21 @@ const ADMIN_EMAILS = ["nc.marketingrj@gmail.com", "hc.marketing.dgt@gmail.com"];
 
 function MetricasAvancadasPage() {
   const { user, loading: authLoading } = useAuth();
-  const isAdmin = user?.email ? ADMIN_EMAILS.includes(user.email) : false;
   const navigate = useNavigate();
+
+  const { data: profileData, isLoading: profileLoading } = useQuery({
+    queryKey: ["current_user_profile", user?.id],
+    queryFn: async () => {
+      if (!user?.id) return null;
+      const { data } = await (supabase as any).from("profiles").select("role, permissions").eq("id", user.id).maybeSingle();
+      return data as { role: string; permissions: Record<string, boolean> } | null;
+    },
+    enabled: !!user?.id,
+  });
+  const hasAccess = (user?.email ? ADMIN_EMAILS.includes(user.email) : false)
+    || profileData?.role === "admin"
+    || !!profileData?.permissions?.metricas;
+  const isAdmin = hasAccess;
   const qc = useQueryClient();
   const searchParams = useSearch({ from: "/_app/metricas" });
   const location = useLocation();
@@ -270,9 +285,9 @@ function MetricasAvancadasPage() {
   const avgCpm = totImpr > 0 ? (totCost / totImpr) * 1000 : 0;
 
   // Todos os hooks já foram chamados — agora é seguro fazer early returns
-  if (authLoading) return null;
+  if (authLoading || profileLoading) return null;
 
-  if (!isAdmin) {
+  if (!hasAccess) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] gap-6 text-center px-4">
         <div className="h-16 w-16 rounded-2xl bg-destructive/10 border border-destructive/20 flex items-center justify-center">
@@ -281,7 +296,7 @@ function MetricasAvancadasPage() {
         <div className="space-y-2">
           <h2 className="text-2xl font-black tracking-tight">Acesso Restrito</h2>
           <p className="text-muted-foreground text-sm max-w-xs">
-            Métricas Avançadas é exclusivo para administradores da plataforma.
+            Você não tem acesso às Métricas Avançadas. Solicite ao administrador.
           </p>
         </div>
         <button
