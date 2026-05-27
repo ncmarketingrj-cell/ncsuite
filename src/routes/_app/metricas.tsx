@@ -1,4 +1,4 @@
-// src/routes/_app/metricas.tsx
+﻿// src/routes/_app/metricas.tsx
 // NC Performance Suite — Métricas & Campanhas (Página Unificada)
 
 import { createFileRoute, redirect, useSearch, useNavigate, useLocation } from "@tanstack/react-router";
@@ -170,10 +170,32 @@ function LearningBadge() {
   return <span className="inline-flex items-center gap-1 rounded border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 text-[8px] font-black uppercase tracking-wider text-amber-500 animate-pulse"><BookOpen className="h-2.5 w-2.5"/>Aprendendo</span>;
 }
 
-function ChartCard({ icon, title, badge, context, children }: { icon: React.ReactNode; title: string; badge?: string; context?: string; children: React.ReactNode }) {
+function ChartCard({ 
+  icon, 
+  title, 
+  badge, 
+  context, 
+  children,
+  modoExplicativo,
+  didaticInfo
+}: { 
+  icon: React.ReactNode; 
+  title: string; 
+  badge?: string; 
+  context?: string; 
+  children: React.ReactNode;
+  modoExplicativo?: boolean;
+  didaticInfo?: { analise: string; decisao: string };
+}) {
   const [showCtx, setShowCtx] = useState(false);
   return (
-    <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }} className="glass-panel card-sport p-5">
+    <motion.div 
+      initial={{ opacity: 0, y: 12 }} 
+      animate={{ opacity: 1, y: 0 }} 
+      whileHover={{ y: -4, scale: 1.01, boxShadow: "0 10px 30px -10px rgba(99, 102, 241, 0.12)", borderColor: "rgba(99, 102, 241, 0.2)" }}
+      transition={{ duration: 0.3, type: "spring", stiffness: 300, damping: 20 }}
+      className="glass-panel card-sport p-5 border border-white/[0.08] transition-colors"
+    >
       <div className="flex items-center gap-2 mb-4">
         {icon}
         <p className="text-xs font-black uppercase tracking-widest header-sport">{title}</p>
@@ -185,7 +207,31 @@ function ChartCard({ icon, title, badge, context, children }: { icon: React.Reac
       <AnimatePresence>
         {showCtx && <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} className="mb-3 rounded-xl border border-blue-400/20 bg-blue-400/5 px-4 py-3"><p className="text-[11px] text-blue-300 leading-snug">{context}</p></motion.div>}
       </AnimatePresence>
+      
       {children}
+
+      {modoExplicativo && didaticInfo && (
+        <motion.div 
+          initial={{ opacity: 0, height: 0 }} 
+          animate={{ opacity: 1, height: "auto" }} 
+          className="mt-4 pt-3 border-t border-white/5 space-y-2 text-[10px] text-muted-foreground bg-white/[0.005] -mx-5 -mb-5 px-5 pb-5 rounded-b-xl"
+        >
+          <div className="flex items-start gap-1.5 leading-relaxed">
+            <span className="text-[11px] shrink-0">📊</span>
+            <div>
+              <span className="font-bold text-foreground">O que analisa: </span>
+              {didaticInfo.analise}
+            </div>
+          </div>
+          <div className="flex items-start gap-1.5 leading-relaxed">
+            <span className="text-[11px] shrink-0">💡</span>
+            <div>
+              <span className="font-bold text-primary">Tomada de Decisão: </span>
+              {didaticInfo.decisao}
+            </div>
+          </div>
+        </motion.div>
+      )}
     </motion.div>
   );
 }
@@ -232,6 +278,7 @@ function MetricasCampanhasPage() {
   const [search,        setSearch]        = useState("");
   const [dateRange,     setDateRange]     = useState({ startDate: subDays(new Date(), 29), endDate: new Date() });
   const [scrolled,      setScrolled]      = useState(false);
+  const [modoExplicativo, setModoExplicativo] = useState(true);
 
   // ── Estado de seleção (tabela) ──
   const [selectedCamps,  setSelectedCamps]  = useState<Set<string>>(new Set());
@@ -392,16 +439,30 @@ function MetricasCampanhasPage() {
   });
 
   const { data: breakdowns, isLoading: loadingBreakdowns } = useQuery({
-    queryKey: ["mc-breakdowns", accountFilter, startStr, endStr],
+    queryKey: ["mc-breakdowns", accountFilter, Array.from(selectedCamps).sort().join(","), startStr, endStr],
     enabled: view === "demograficos",
     queryFn: async () => {
       const acFilter = accountFilter !== "all";
-      const [demo, hourlyRaw, regionRaw, deviceRaw] = await Promise.all([
-        (supabase as any).from("demographic_metrics").select("age_range, gender, platform, conversions, spend, impressions, clicks, reach").gte("date", startStr).lte("date", endStr).filter(acFilter ? "ad_account_id" : "id", "neq", acFilter ? null : "null"),
-        (supabase as any).from("hourly_metrics").select("hour, conversions, spend, date").gte("date", startStr).lte("date", endStr),
-        (supabase as any).from("region_metrics").select("region, conversions, spend, impressions, clicks, reach").gte("date", startStr).lte("date", endStr),
-        (supabase as any).from("device_metrics" as any).select("device, platform, conversions, spend, impressions, clicks, reach").gte("date", startStr).lte("date", endStr),
-      ]);
+      const campFilter = selectedCamps.size > 0;
+      const campIds = Array.from(selectedCamps);
+
+      let demoQ = (supabase as any).from("demographic_metrics").select("age_range, gender, platform, conversions, spend, impressions, clicks, reach").gte("date", startStr).lte("date", endStr);
+      if (acFilter) demoQ = demoQ.eq("ad_account_id", accountFilter);
+      if (campFilter) demoQ = demoQ.in("campaign_id", campIds);
+
+      let hourlyQ = (supabase as any).from("hourly_metrics").select("hour, conversions, spend, date").gte("date", startStr).lte("date", endStr);
+      if (acFilter) hourlyQ = hourlyQ.eq("ad_account_id", accountFilter);
+      if (campFilter) hourlyQ = hourlyQ.in("campaign_id", campIds);
+
+      let regionQ = (supabase as any).from("region_metrics").select("region, conversions, spend, impressions, clicks, reach").gte("date", startStr).lte("date", endStr);
+      if (acFilter) regionQ = regionQ.eq("ad_account_id", accountFilter);
+      if (campFilter) regionQ = regionQ.in("campaign_id", campIds);
+
+      let deviceQ = (supabase as any).from("device_metrics" as any).select("device, platform, conversions, spend, impressions, clicks, reach").gte("date", startStr).lte("date", endStr);
+      if (acFilter) deviceQ = deviceQ.eq("ad_account_id", accountFilter);
+      if (campFilter) deviceQ = deviceQ.in("campaign_id", campIds);
+
+      const [demo, hourlyRaw, regionRaw, deviceRaw] = await Promise.all([demoQ, hourlyQ, regionQ, deviceQ]);
       const demoRows = demo.data || [];
       const ageMap: Record<string, any> = {};
       demoRows.forEach((r: any) => { if (!ageMap[r.age_range]) ageMap[r.age_range] = { name: r.age_range, conv: 0, cost: 0, impr: 0, clicks: 0 }; ageMap[r.age_range].conv += Number(r.conversions||0); ageMap[r.age_range].cost += Number(r.spend||0); ageMap[r.age_range].impr += Number(r.impressions||0); ageMap[r.age_range].clicks += Number(r.clicks||0); });
@@ -680,6 +741,20 @@ function MetricasCampanhasPage() {
 
           {/* Ações */}
           <div className="flex items-center gap-2 ml-auto shrink-0">
+            {(view === "analise" || view === "demograficos") && (
+              <button 
+                onClick={() => setModoExplicativo(v => !v)} 
+                className={`flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-[11px] font-black uppercase tracking-wider transition-all duration-300 ${
+                  modoExplicativo 
+                    ? "border-primary/40 bg-gradient-to-r from-primary/10 to-indigo-500/10 text-primary shadow-[0_0_12px_rgba(99,102,241,0.15)]" 
+                    : "border-white/10 bg-white/[0.02] text-muted-foreground hover:text-foreground hover:border-primary/20"
+                }`}
+                title="Ativa explicações intuitivas sobre as métricas para tomada de decisões"
+              >
+                <Sparkles className={`h-3.5 w-3.5 ${modoExplicativo ? "text-primary fill-primary animate-pulse" : ""}`} />
+                <span>Guia Explicativo {modoExplicativo ? "Ativo 💡" : "Off"}</span>
+              </button>
+            )}
             {view === "gestao" && (
               <button onClick={runAudit} disabled={isAuditing} className="flex items-center gap-1.5 rounded-xl border border-orange-400/30 bg-orange-400/10 px-3 py-1.5 text-[11px] font-bold text-orange-400 hover:bg-orange-400/20 transition-all disabled:opacity-50">
                 {isAuditing ? <Loader2 className="h-3 w-3 animate-spin"/> : <FlaskConical className="h-3 w-3"/>}
@@ -978,6 +1053,46 @@ function MetricasCampanhasPage() {
                     </div>
                   </div>
 
+                  {/* Guia de Interpretação de Métricas */}
+                  {modoExplicativo && (
+                    <motion.div
+                      initial={{ opacity: 0, y: -10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -10 }}
+                      className="glass-panel p-5 border-l-4 border-l-primary bg-gradient-to-r from-primary/5 via-indigo-500/5 to-transparent rounded-xl space-y-3 relative overflow-hidden"
+                    >
+                      <div className="absolute right-4 top-4 text-primary/10 pointer-events-none">
+                        <Sparkles className="h-20 w-20 animate-pulse" />
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Sparkles className="h-4 w-4 text-primary animate-spin" style={{ animationDuration: '3s' }} />
+                        <h4 className="text-xs font-black uppercase tracking-widest text-foreground">Guia de Interpretação de Métricas</h4>
+                        <span className="text-[9px] bg-primary/20 text-primary px-2 py-0.5 rounded-full font-bold uppercase">Didático & Profissional</span>
+                      </div>
+                      <p className="text-[11px] text-muted-foreground leading-relaxed max-w-4xl">
+                        Este painel foi desenhado para atender tanto ao especialista que toma decisões estratégicas quanto ao cliente ou leigo que deseja aprender o real significado das métricas de tráfego. Veja abaixo um resumo simples de cada conceito analisado nos gráficos:
+                      </p>
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 pt-2">
+                        {[
+                          { t: "Gasto (Investimento)", d: "Valor financeiro total alocado nas campanhas. Indica o custo total operacional no período.", e: "💸" },
+                          { t: "Conversões (Resultados)", d: "Total de ações de sucesso obtidas (leads cadastrados, vendas ou conversas iniciadas).", e: "🏆" },
+                          { t: "CPL (Custo por Resultado)", d: "Valor médio investido para gerar cada conversão única. Mede a eficiência do seu dinheiro.", e: "🎯" },
+                          { t: "CTR (Taxa de Cliques)", d: "Relação entre cliques e visualizações. Mede o interesse pelo criativo. Ideal acima de 1.5%.", e: "👀" },
+                          { t: "Frequência (Repetição)", d: "Número médio de vezes que a mesma pessoa viu o anúncio. Evite que ultrapasse 3.0 para não cansar o público.", e: "🔔" },
+                          { t: "Alcance vs Impressões", d: "Alcance são pessoas únicas atingidas; Impressões é o número total de exibições acumuladas.", e: "🌍" },
+                        ].map((item, idx) => (
+                          <div key={idx} className="bg-white/[0.015] border border-white/[0.04] rounded-lg p-2.5 hover:bg-white/[0.03] transition-colors">
+                            <div className="flex items-center gap-1.5 mb-1">
+                              <span className="text-[12px]">{item.e}</span>
+                              <span className="text-[10px] font-bold text-foreground">{item.t}</span>
+                            </div>
+                            <p className="text-[9px] text-muted-foreground leading-relaxed">{item.d}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </motion.div>
+                  )}
+
                   {/* Insights */}
                   {insights.length > 0 && (
                     <div className="space-y-2">
@@ -1016,7 +1131,17 @@ function MetricasCampanhasPage() {
 
                       {/* Tendência 14 dias — sempre */}
                       <div className="lg:col-span-2">
-                        <ChartCard icon={<TrendingUp className="h-4 w-4 text-primary"/>} title="Tendência de Performance" badge={`Últimos ${Math.min(trendData.length, 14)} dias`} context="Gasto diário vs conversões — identifique os dias de melhor custo-benefício.">
+                        <ChartCard 
+                          icon={<TrendingUp className="h-4 w-4 text-primary"/>} 
+                          title="Tendência de Performance" 
+                          badge={`Últimos ${Math.min(trendData.length, 14)} dias`} 
+                          context="Gasto diário vs conversões — identifique os dias de melhor custo-benefício."
+                          modoExplicativo={modoExplicativo}
+                          didaticInfo={{
+                            analise: "A linha de investimento diário (azul) cruzada com o volume absoluto de conversões diárias (barras roxas).",
+                            decisao: "Analise a inclinação da linha vs a altura das barras. Picos de conversão com baixo gasto indicam momentos de alta eficiência comercial, ideais para entender quais criativos ou públicos estavam ativos naquele dia."
+                          }}
+                        >
                           <ResponsiveContainer width="100%" height={220}>
                             <ComposedChart data={trendData}>
                               <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)"/>
@@ -1034,7 +1159,16 @@ function MetricasCampanhasPage() {
 
                       {/* Pie Status — geral, audiencia */}
                       {(modo === "geral" || modo === "audiencia") && (
-                        <ChartCard icon={<PieIcon className="h-4 w-4 text-violet-400"/>} title="Status das Campanhas" context="Proporção ativas vs pausadas — equilíbrio saudável é ter mais ativas do que pausadas.">
+                        <ChartCard 
+                          icon={<PieIcon className="h-4 w-4 text-violet-400"/>} 
+                          title="Status das Campanhas" 
+                          context="Proporção ativas vs pausadas — equilíbrio saudável é ter mais ativas do que pausadas."
+                          modoExplicativo={modoExplicativo}
+                          didaticInfo={{
+                            analise: "A proporção numérica e percentual entre as campanhas em execução ativa e as campanhas em pausa.",
+                            decisao: "Garanta que seu portfólio ativo esteja alinhado com sua capacidade operacional. Excesso de campanhas pausadas indica retrabalho de testes ou problemas passados de custo por resultado."
+                          }}
+                        >
                           <div className="flex items-center gap-5">
                             <ResponsiveContainer width="60%" height={180}>
                               <RechartsPieChart>
@@ -1061,7 +1195,16 @@ function MetricasCampanhasPage() {
 
                       {/* Scatter CPL — geral, eficiencia */}
                       {(modo === "geral" || modo === "eficiencia") && scatterData.length > 0 && (
-                        <ChartCard icon={<Activity className="h-4 w-4 text-orange-400"/>} title="CPL × Investimento" context="Campanhas no canto inferior direito são as mais eficientes: muito gasto, CPL baixo.">
+                        <ChartCard 
+                          icon={<Activity className="h-4 w-4 text-orange-400"/>} 
+                          title="CPL × Investimento" 
+                          context="Campanhas no canto inferior direito são as mais eficientes: muito gasto, CPL baixo."
+                          modoExplicativo={modoExplicativo}
+                          didaticInfo={{
+                            analise: "A distribuição espacial correlacionando o investimento financeiro acumulado (eixo X) e o CPL individual (eixo Y).",
+                            decisao: "Os anúncios de melhor performance estão no canto inferior direito (alto investimento com custo por lead muito baixo). Campanhas no canto superior esquerdo estão desperdiçando verba a um custo insustentável."
+                          }}
+                        >
                           <ResponsiveContainer width="100%" height={200}>
                             <ScatterChart>
                               <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)"/>
@@ -1078,7 +1221,17 @@ function MetricasCampanhasPage() {
 
                       {/* Gasto por campanha — eficiencia, budget, comparativo */}
                       {(modo === "eficiencia" || modo === "budget" || modo === "comparativo") && barData.length > 0 && (
-                        <ChartCard icon={<BarChart3 className="h-4 w-4 text-green-400"/>} title="Gasto vs Resultados" badge="Top 10" context="Redistribua budget das campanhas com alto gasto mas poucas conversões para as que convertem mais.">
+                        <ChartCard 
+                          icon={<BarChart3 className="h-4 w-4 text-green-400"/>} 
+                          title="Gasto vs Resultados" 
+                          badge="Top 10" 
+                          context="Redistribua budget das campanhas com alto gasto mas poucas conversões para as que convertem mais."
+                          modoExplicativo={modoExplicativo}
+                          didaticInfo={{
+                            analise: "O consumo direto de orçamento das 10 principais campanhas em relação às conversões entregues.",
+                            decisao: "Altere a alocação de orçamento: retire recursos de campanhas com alto consumo financeiro e baixas conversões, concentrando capital nas campanhas que lideram os resultados efetivos."
+                          }}
+                        >
                           <ResponsiveContainer width="100%" height={220}>
                             <BarChart data={barData} layout="vertical">
                               <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" horizontal={false}/>
@@ -1095,7 +1248,16 @@ function MetricasCampanhasPage() {
 
                       {/* Radar KPIs — geral, audiencia */}
                       {(modo === "geral" || modo === "audiencia") && radarData.length > 0 && (
-                        <ChartCard icon={<Eye className="h-4 w-4 text-cyan-400"/>} title="Radar de KPIs" context="Score de 0 a 100 para cada dimensão. Quanto mais preenchido, mais saudável a conta.">
+                        <ChartCard 
+                          icon={<Eye className="h-4 w-4 text-cyan-400"/>} 
+                          title="Radar de KPIs" 
+                          context="Score de 0 a 100 para cada dimensão. Quanto mais preenchido, mais saudável a conta."
+                          modoExplicativo={modoExplicativo}
+                          didaticInfo={{
+                            analise: "A performance geral da conta normalizada em score de 0 a 100 em 6 dimensões cruciais do tráfego.",
+                            decisao: "Busque um desenho equilibrado e amplo. Um radar encolhido em um ponto específico (ex: CTR baixo) aponta o diagnóstico exato (neste caso, a necessidade urgente de melhorar o apelo visual do anúncio)."
+                          }}
+                        >
                           <ResponsiveContainer width="100%" height={200}>
                             <RadarChart data={radarData}>
                               <PolarGrid stroke="rgba(255,255,255,0.1)"/>
@@ -1106,9 +1268,19 @@ function MetricasCampanhasPage() {
                         </ChartCard>
                       )}
 
-                      {/* Comparativo — comparativo */}
+                      {/* Ranking Comparativo — comparativo */}
                       {modo === "comparativo" && comparData.length > 0 && (
-                        <ChartCard icon={<BarChart2 className="h-4 w-4 text-blue-400"/>} title="Ranking Comparativo" badge="Score 0–100" context="Score relativo — 100 = melhor campanha naquela métrica. Use para ver quem lidera cada dimensão.">
+                        <ChartCard 
+                          icon={<BarChart2 className="h-4 w-4 text-blue-400"/>} 
+                          title="Ranking Comparativo" 
+                          badge="Score 0–100" 
+                          context="Score relativo — 100 = melhor campanha naquela métrica. Use para ver quem lidera cada dimensão."
+                          modoExplicativo={modoExplicativo}
+                          didaticInfo={{
+                            analise: "A performance relativa de cada campanha com pontuação comparada (onde 100 representa a melhor campanha).",
+                            decisao: "Ideal para detectar qual campanha é líder absoluta de cliques (CTR) e qual lidera em eficiência de custos (CPL), permitindo isolar as melhores táticas."
+                          }}
+                        >
                           <ResponsiveContainer width="100%" height={220}>
                             <BarChart data={comparData}>
                               <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)"/>
@@ -1126,7 +1298,16 @@ function MetricasCampanhasPage() {
 
                       {/* Pie share de gasto — budget, comparativo */}
                       {(modo === "budget" || modo === "comparativo") && barData.length > 0 && (
-                        <ChartCard icon={<PieIcon className="h-4 w-4 text-green-400"/>} title="Share de Gasto" context="Concentração de budget — se uma campanha tiver > 60% do gasto, vale revisar.">
+                        <ChartCard 
+                          icon={<PieIcon className="h-4 w-4 text-green-400"/>} 
+                          title="Share de Gasto" 
+                          context="Concentração de budget — se uma campanha tiver > 60% do gasto, vale revisar."
+                          modoExplicativo={modoExplicativo}
+                          didaticInfo={{
+                            analise: "A concentração percentual do orçamento total gasto entre as suas principais campanhas.",
+                            decisao: "Evite a dependência extrema. Se uma única campanha consome mais de 60% da sua verba, a saúde do seu negócio está vulnerável a instabilidades temporárias do leilão ou bloqueios de conta."
+                          }}
+                        >
                           <ResponsiveContainer width="100%" height={200}>
                             <RechartsPieChart>
                               <Pie data={budgetData.map((d: any,i: number) => ({ ...d, color: CHART_COLORS[i % CHART_COLORS.length] }))} cx="50%" cy="50%" outerRadius={80} dataKey="gasto" nameKey="name" label={({ name, percent }: any) => `${name}: ${(percent*100).toFixed(0)}%`} labelLine={false}>
@@ -1160,11 +1341,72 @@ function MetricasCampanhasPage() {
                   <p className="text-xs text-muted-foreground/60">Sincronize os dados e aguarde a coleta de breakdowns.</p>
                 </div>
               ) : (
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+                <>
+                  {/* Banner de filtros ativos */}
+                  {(selectedCamps.size > 0 || accountFilter !== "all") && (
+                    <div className="flex flex-wrap items-center gap-2 mb-4 rounded-xl border border-primary/20 bg-primary/5 px-4 py-2.5 text-[11px]">
+                      <Layers className="h-3.5 w-3.5 text-primary shrink-0"/>
+                      <span className="font-black text-primary uppercase tracking-widest text-[10px]">Filtros Ativos:</span>
+                      {accountFilter !== "all" && (
+                        <span className="rounded-lg border border-white/10 bg-white/5 px-2 py-0.5 font-mono text-foreground">
+                          Conta: {adAccounts.find((a: any) => a.id === accountFilter)?.name || accountFilter}
+                        </span>
+                      )}
+                      {selectedCamps.size > 0 && (
+                        <span className="rounded-lg border border-violet-500/20 bg-violet-500/10 px-2 py-0.5 font-mono text-violet-400">
+                          {selectedCamps.size} campanha{selectedCamps.size > 1 ? "s" : ""} selecionada{selectedCamps.size > 1 ? "s" : ""}
+                        </span>
+                      )}
+                      <span className="text-muted-foreground/60 ml-1">— dados demográficos refletem esta seleção</span>
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+
+                  {/* Guia Explicativo Demográficos */}
+                  {modoExplicativo && (
+                    <div className="lg:col-span-2">
+                      <motion.div
+                        initial={{ opacity: 0, y: -10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className="glass-panel p-5 border-l-4 border-l-pink-500 bg-gradient-to-r from-pink-500/5 via-violet-500/5 to-transparent rounded-xl space-y-3 relative overflow-hidden"
+                      >
+                        <div className="absolute right-4 top-4 text-pink-500/10 pointer-events-none">
+                          <Users className="h-20 w-20 animate-pulse" />
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Sparkles className="h-4 w-4 text-pink-400 animate-spin" style={{ animationDuration: '3s' }} />
+                          <h4 className="text-xs font-black uppercase tracking-widest text-foreground">Guia de Interpretação — Dados Demográficos</h4>
+                          <span className="text-[9px] bg-pink-500/20 text-pink-400 px-2 py-0.5 rounded-full font-bold uppercase">Segmentação Inteligente</span>
+                        </div>
+                        <p className="text-[11px] text-muted-foreground leading-relaxed max-w-4xl">
+                          Os dados demográficos revelam quem é o seu público real e onde ele está — use estas informações para refinar sua segmentação e maximizar o retorno sobre investimento.
+                        </p>
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 pt-2">
+                          {[
+                            { t: "Gênero & CPL", d: "Revela qual gênero converte ao menor custo. Ajuste criativos e copy para focar no gênero de menor CPL.", e: "👥" },
+                            { t: "Faixa Etária", d: "Identifica grupos etários mais eficientes. Exclua faixas caras e intensifique nas faixas de menor CPL.", e: "🎂" },
+                            { t: "Plataforma (Facebook/Instagram)", d: "Compara conversões e CPL por rede social. Concentre orçamento na plataforma com menor custo por resultado.", e: "📱" },
+                            { t: "Top Regiões", d: "Estados e cidades que mais convertem. Exclua regiões ineficientes e escale nas de maior tração.", e: "📍" },
+                            { t: "Dia & Horário de Pico", d: "Janelas de maior engajamento. Programe anúncios para intensificar entrega nos momentos de mais conversão.", e: "⏰" },
+                            { t: "Dispositivo (Mobile/Desktop)", d: "Se conversões dominam mobile, sua landing page deve carregar em menos de 2 segundos no celular.", e: "💻" },
+                          ].map((item, idx) => (
+                            <div key={idx} className="bg-white/[0.015] border border-white/[0.04] rounded-lg p-2.5 hover:bg-white/[0.03] transition-colors">
+                              <div className="flex items-center gap-1.5 mb-1">
+                                <span className="text-[12px]">{item.e}</span>
+                                <span className="text-[10px] font-bold text-foreground">{item.t}</span>
+                              </div>
+                              <p className="text-[9px] text-muted-foreground leading-relaxed">{item.d}</p>
+                            </div>
+                          ))}
+                        </div>
+                      </motion.div>
+                    </div>
+                  )}
 
                   {/* Gênero */}
                   {breakdowns.genderData.length > 0 && (
-                    <ChartCard icon={<Users className="h-4 w-4 text-pink-400"/>} title="Conversões por Gênero" context="Distribuição de resultados por gênero — use para ajustar segmentação e criativos.">
+                    <ChartCard icon={<Users className="h-4 w-4 text-pink-400"/>} title="Conversões por Gênero" context="Distribuição de resultados por gênero — use para ajustar segmentação e criativos." modoExplicativo={modoExplicativo} didaticInfo={{ analise: "A afinidade do produto com o gênero dos usuários que converteram: proporção de resultados entre Masculino e Feminino.", decisao: "Ajuste criativos e copywriting para focar no gênero com melhor CPL. Se mulheres convertem a menor custo, concentre maior orçamento em conjuntos segmentados por público feminino." }}>
                       <div className="flex items-stretch gap-4">
                         <ResponsiveContainer width="55%" height={180}>
                           <RechartsPieChart>
@@ -1194,7 +1436,7 @@ function MetricasCampanhasPage() {
 
                   {/* Faixa etária */}
                   {breakdowns.ageData.length > 0 && (
-                    <ChartCard icon={<Target className="h-4 w-4 text-amber-400"/>} title="CPL por Faixa Etária" context="Faixas com CPL mais baixo têm melhor custo por resultado — priorize na segmentação.">
+                    <ChartCard icon={<Target className="h-4 w-4 text-amber-400"/>} title="CPL por Faixa Etária" context="Faixas com CPL mais baixo têm melhor custo por resultado — priorize na segmentação." modoExplicativo={modoExplicativo} didaticInfo={{ analise: "A eficiência financeira de cada faixa etária: quanto custou gerar uma conversão em cada grupo de idade.", decisao: "Negative faixas etárias com CPL muito acima da média ou crie conjuntos exclusivos para as faixas de melhor desempenho, alocando mais orçamento onde o custo por lead é menor." }}>
                       <ResponsiveContainer width="100%" height={180}>
                         <BarChart data={breakdowns.ageData}>
                           <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)"/>
@@ -1210,7 +1452,7 @@ function MetricasCampanhasPage() {
 
                   {/* Plataforma */}
                   {breakdowns.platData.length > 0 && (
-                    <ChartCard icon={<Megaphone className="h-4 w-4 text-blue-400"/>} title="Performance por Plataforma" context="Instagram vs Facebook vs Audience Network — redirecione budget para onde o CPL é menor.">
+                    <ChartCard icon={<Megaphone className="h-4 w-4 text-blue-400"/>} title="Performance por Plataforma" context="Instagram vs Facebook vs Audience Network — redirecione budget para onde o CPL é menor." modoExplicativo={modoExplicativo} didaticInfo={{ analise: "A distribuição de conversões e custo por resultado entre as redes de distribuição: Facebook, Instagram e Audience Network.", decisao: "Realoque orçamento para a plataforma com menor CPL. Se o Instagram entrega leads 30% mais baratos, ajuste os conjuntos para priorizar entrega no Instagram com maior proporção de budget." }}>
                       <ResponsiveContainer width="100%" height={180}>
                         <BarChart data={breakdowns.platData}>
                           <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)"/>
@@ -1226,7 +1468,7 @@ function MetricasCampanhasPage() {
 
                   {/* Região */}
                   {breakdowns.regionData.length > 0 && (
-                    <ChartCard icon={<Activity className="h-4 w-4 text-emerald-400"/>} title="Top Regiões" badge="Top 10" context="Estados que mais convertem — amplie público nessas regiões.">
+                    <ChartCard icon={<Activity className="h-4 w-4 text-emerald-400"/>} title="Top Regiões" badge="Top 10" context="Estados que mais convertem — amplie público nessas regiões." modoExplicativo={modoExplicativo} didaticInfo={{ analise: "A dispersão geográfica das conversões: os 10 estados ou regiões com maior volume de resultados no período.", decisao: "Exclua estados com alto volume de impressões e zero conversões para reduzir desperdício. Crie conjuntos segmentados geograficamente para os top 3 estados, aumentando o lance ou orçamento nessas regiões de alta tração." }}>
                       <div className="space-y-1.5 max-h-[200px] overflow-y-auto pr-1">
                         {breakdowns.regionData.map((r: any, i: number) => (
                           <div key={i} className="flex items-center gap-3">
@@ -1242,7 +1484,7 @@ function MetricasCampanhasPage() {
 
                   {/* Dia da semana */}
                   {breakdowns.dayOfWeekData.length > 0 && (
-                    <ChartCard icon={<Eye className="h-4 w-4 text-violet-400"/>} title="Conversões por Dia da Semana" context="Dias com mais conversões — concentre budget e publicação de novos anúncios nesses dias.">
+                    <ChartCard icon={<Eye className="h-4 w-4 text-violet-400"/>} title="Conversões por Dia da Semana" context="Dias com mais conversões — concentre budget e publicação de novos anúncios nesses dias." modoExplicativo={modoExplicativo} didaticInfo={{ analise: "Os padrões de comportamento do público ao longo dos 7 dias da semana, identificando quais dias geram mais conversões.", decisao: "Ative o agendamento de anúncios para intensificar a entrega nos dias de maior conversão. Pause ou reduza o orçamento nos dias de baixíssima performance para economizar verba e direcionar ao pico." }}>
                       <ResponsiveContainer width="100%" height={180}>
                         <BarChart data={breakdowns.dayOfWeekData}>
                           <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)"/>
@@ -1257,7 +1499,7 @@ function MetricasCampanhasPage() {
 
                   {/* Dispositivo */}
                   {breakdowns.deviceData.length > 0 && (
-                    <ChartCard icon={<MousePointer2 className="h-4 w-4 text-cyan-400"/>} title="Performance por Dispositivo" context="Mobile vs Desktop — maioria das conversões no mobile indica necessidade de landing page responsiva.">
+                    <ChartCard icon={<MousePointer2 className="h-4 w-4 text-cyan-400"/>} title="Performance por Dispositivo" context="Mobile vs Desktop — maioria das conversões no mobile indica necessidade de landing page responsiva." modoExplicativo={modoExplicativo} didaticInfo={{ analise: "A origem do tráfego convertido entre dispositivos móveis (celulares e tablets) e computadores desktop.", decisao: "Se conversões são massivas em mobile, garanta que a landing page carregue em menos de 2 segundos no celular. Use o PageSpeed Insights para verificar. CPL alto em mobile pode indicar lentidão na página ou formulário difícil de preencher." }}>
                       <ResponsiveContainer width="100%" height={180}>
                         <BarChart data={breakdowns.deviceData}>
                           <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)"/>
@@ -1274,7 +1516,7 @@ function MetricasCampanhasPage() {
                   {/* Heatmap Horário */}
                   {breakdowns.hourlyData.length > 0 && (
                     <div className="lg:col-span-2">
-                      <ChartCard icon={<Zap className="h-4 w-4 text-yellow-400"/>} title="Conversões por Hora do Dia" context="Horários de pico de conversão — programe seus anúncios para entregar mais nessas janelas.">
+                      <ChartCard icon={<Zap className="h-4 w-4 text-yellow-400"/>} title="Conversões por Hora do Dia" context="Horários de pico de conversão — programe seus anúncios para entregar mais nessas janelas." modoExplicativo={modoExplicativo} didaticInfo={{ analise: "A distribuição horária das conversões ao longo das 24 horas, identificando as janelas de máximo engajamento e receptividade do público.", decisao: "Ative o agendamento de anúncios no Gerenciador de Anúncios do Meta para intensificar a entrega nas 3–4 horas de maior pico. Reduza o bid ou pause nos horários de madrugada com zero resultado para otimizar o orçamento diário." }}>
                         <ResponsiveContainer width="100%" height={120}>
                           <BarChart data={breakdowns.hourlyData}>
                             <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)"/>
@@ -1289,6 +1531,7 @@ function MetricasCampanhasPage() {
                   )}
 
                 </div>
+                </>
               )}
             </motion.div>
           )}
