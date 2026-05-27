@@ -114,6 +114,14 @@ const INSIGHT_COLOR: Record<InsightLvl, string> = {
 
 const CHART_COLORS = ["#6366f1","#8b5cf6","#06b6d4","#10b981","#f59e0b","#ef4444","#ec4899","#3b82f6"];
 
+const DECISION_COLORS: Record<string, string> = {
+  red:    "text-red-400 border-red-400/30 bg-red-400/5",
+  orange: "text-orange-400 border-orange-400/30 bg-orange-400/5",
+  yellow: "text-yellow-400 border-yellow-400/30 bg-yellow-400/5",
+  green:  "text-green-400 border-green-400/30 bg-green-400/5",
+  blue:   "text-blue-400 border-blue-400/30 bg-blue-400/5",
+};
+
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
 
 const fmtBRL = (v: number) => v.toLocaleString("pt-BR", { minimumFractionDigits: 2 });
@@ -154,6 +162,43 @@ function gerarInsights(camps: any[], totCost: number, totConv: number, avgCpl: n
   if (avgCpm > 25) ins.push({ level: "info", title: `CPM médio R$ ${avgCpm.toFixed(2)} — leilão competitivo`, detail: "CPM alto pode indicar público muito disputado ou segmentação restrita", acao: "Testar públicos mais amplos ou similares" });
   if (ins.length === 0 && totConv > 0) ins.push({ level: "info", title: "Conta saudável no período", detail: `${camps.length} campanhas, CPL médio R$ ${avgCpl.toFixed(2)}, CTR ${avgCtr.toFixed(2)}%`, acao: "Continue monitorando — considere testes A/B" });
   return ins;
+}
+
+function calcHealthScore(c: any, avgCpl: number): number {
+  if (c.t.cost === 0 && c.t.impressions === 0) return 50;
+  let score = 100;
+  if (c.t.conversions === 0 && c.t.cost > 50) score -= 40;
+  else if (c.t.conversions === 0 && c.t.cost > 20) score -= 25;
+  if (c.t.cpl > 0 && avgCpl > 0) {
+    if (c.t.cpl > avgCpl * 2.5) score -= 25;
+    else if (c.t.cpl > avgCpl * 1.8) score -= 15;
+    else if (c.t.cpl < avgCpl * 0.7) score += 10;
+  }
+  if (c.t.impressions > 1000) {
+    if (c.t.ctr < 0.5) score -= 25;
+    else if (c.t.ctr < 1.0) score -= 12;
+    else if (c.t.ctr >= 2.0) score += 10;
+  }
+  if (c.t.freq > 5) score -= 25;
+  else if (c.t.freq > 3.5) score -= 15;
+  else if (c.t.freq > 2.5) score -= 8;
+  return Math.max(0, Math.min(100, score));
+}
+
+function getDecision(c: any, avgCpl: number): { label: string; tier: string; reason: string; action: string } {
+  if (c.t.conversions === 0 && c.t.cost > 50)
+    return { label: "PAUSAR", tier: "red", reason: `R$ ${fmtBRL(c.t.cost)} gastos — zero leads`, action: "Pausar e revisar público + criativo" };
+  if (c.t.freq > 4.5 && c.t.impressions > 500)
+    return { label: "RENOVAR CRIATIVO", tier: "orange", reason: `Frequência ${c.t.freq.toFixed(1)}× — público saturado`, action: "Trocar criativo e expandir audiência" };
+  if (c.t.ctr < 0.5 && c.t.impressions > 2000)
+    return { label: "TROCAR CRIATIVO", tier: "orange", reason: `CTR ${c.t.ctr.toFixed(2)}% — anúncio não atrai`, action: "Testar novo visual, headline e oferta" };
+  if (c.t.cpl > 0 && avgCpl > 0 && c.t.cpl < avgCpl * 0.7 && c.t.conversions >= 3)
+    return { label: "ESCALAR", tier: "green", reason: `CPL ${Math.round((1 - c.t.cpl / avgCpl) * 100)}% abaixo da média`, action: "Aumentar budget 20-30%/dia e monitorar" };
+  if (c.t.cpl > 0 && avgCpl > 0 && c.t.cpl > avgCpl * 1.8 && c.t.cost > 30)
+    return { label: "REDUZIR BUDGET", tier: "yellow", reason: `CPL ${Math.round((c.t.cpl / avgCpl - 1) * 100)}% acima da média`, action: "Reduzir budget e testar segmentações" };
+  if (c.t.conversions === 0 && c.t.cost > 0 && c.t.cost <= 50)
+    return { label: "MONITORAR", tier: "yellow", reason: "Sem conversão ainda — pode estar aprendendo", action: "Aguardar 3-5 dias antes de decidir" };
+  return { label: "MANTER", tier: "blue", reason: "Performance estável no período", action: "Continuar monitorando CPL e frequência" };
 }
 
 // ─── SUB-COMPONENTES ──────────────────────────────────────────────────────────
@@ -631,6 +676,47 @@ function MetricasCampanhasPage() {
     return { name: c.name.length > 16 ? c.name.substring(0, 16) + "…" : c.name, ctr: Math.round((c.t.ctr / maxCtr2) * 100), cpl: c.t.cpl > 0 ? Math.round((1 - c.t.cpl / maxCpl2) * 100 + 20) : 0, freq: Math.max(0, Math.round((1 - (c.t.freq - 1) / 3) * 100)) };
   }), [enrichedCampaigns]);
 
+  const funnelData = useMemo(() => {
+    const maxVal = Math.max(totImpr, 1);
+    return [
+      { label: "Impressões",         value: totImpr,   rate: 100,                                                    widthPct: 100,                          color: "#6366f1" },
+      { label: "Alcance Único",       value: totReach,  rate: totImpr  > 0 ? (totReach  / totImpr)  * 100 : 0,       widthPct: (totReach  / maxVal) * 100,   color: "#8b5cf6" },
+      { label: "Cliques no Link",     value: totClicks, rate: totImpr  > 0 ? (totClicks / totImpr)  * 100 : 0,       widthPct: (totClicks / maxVal) * 100,   color: "#06b6d4" },
+      { label: "Leads / Conversões",  value: totConv,   rate: totClicks > 0 ? (totConv   / totClicks) * 100 : 0,     widthPct: (totConv   / maxVal) * 100,   color: "#10b981" },
+    ];
+  }, [totImpr, totReach, totClicks, totConv]);
+
+  const wastedSpend = useMemo(() =>
+    enrichedCampaigns.filter((c: any) => c.t.conversions === 0 && c.t.cost > 20)
+      .reduce((s: number, c: any) => s + c.t.cost, 0),
+  [enrichedCampaigns]);
+
+  const cplTrendData = useMemo(() => {
+    try {
+      const days = eachDayOfInterval({ start: dateRange.startDate, end: dateRange.endDate }).slice(-14);
+      return days.map(d => {
+        const ds = getLocalDateStr(d);
+        const dm = enrichedCampaigns.flatMap((c: any) => (c._metrics || []).filter((m: any) => (m.date || "").split("T")[0] === ds));
+        const dayCost = dm.reduce((s: number, m: any) => s + Number(m.cost || 0), 0);
+        const dayConv = dm.reduce((s: number, m: any) => s + Number(m.conversions || 0), 0);
+        return { date: format(d, "dd/MM", { locale: ptBR }), cpl: dayConv > 0 ? Math.round(dayCost / dayConv * 100) / 100 : null as number | null, conversoes: dayConv };
+      }).filter(d => d.cpl !== null);
+    } catch { return []; }
+  }, [enrichedCampaigns, dateRange]);
+
+  const campDecisions = useMemo(() =>
+    enrichedCampaigns
+      .filter((c: any) => c.t.cost > 0 || c.t.impressions > 0)
+      .map((c: any) => ({ ...c, healthScore: calcHealthScore(c, avgCpl), decision: getDecision(c, avgCpl) }))
+      .sort((a: any, b: any) => a.healthScore - b.healthScore),
+  [enrichedCampaigns, avgCpl]);
+
+  const overallHealthScore = useMemo(() => {
+    const withSpend = campDecisions.filter((c: any) => c.t.cost > 0);
+    if (!withSpend.length) return 50;
+    return Math.round(withSpend.reduce((s: number, c: any) => s + c.healthScore, 0) / withSpend.length);
+  }, [campDecisions]);
+
   // ─── EARLY RETURNS ────────────────────────────────────────────────────────────
 
   if (authLoading || profileLoading) return null;
@@ -1102,44 +1188,82 @@ function MetricasCampanhasPage() {
                     </div>
                   </div>
 
-                  {/* Guia de Interpretação de Métricas */}
-                  {modoExplicativo && (
-                    <motion.div
-                      initial={{ opacity: 0, y: -10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, y: -10 }}
-                      className="glass-panel p-5 border-l-4 border-l-primary bg-gradient-to-r from-primary/5 via-indigo-500/5 to-transparent rounded-xl space-y-3 relative overflow-hidden"
+                  {/* ── Painel de Saúde Executivo ── */}
+                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                    <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="glass-panel card-sport p-4 text-center">
+                      <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/50 mb-2">Saúde da Conta</p>
+                      <div className={`text-3xl font-black tabular-nums ${overallHealthScore >= 70 ? "text-green-400" : overallHealthScore >= 45 ? "text-yellow-400" : "text-red-400"}`}>
+                        {overallHealthScore}<span className="text-base font-bold opacity-40">/100</span>
+                      </div>
+                      <p className="text-[10px] text-muted-foreground/60 mt-1.5">{overallHealthScore >= 70 ? "Conta saudável" : overallHealthScore >= 45 ? "Precisa de atenção" : "Ação urgente"}</p>
+                    </motion.div>
+                    <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }} className="glass-panel card-sport p-4">
+                      <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/50 mb-2">Verba sem Retorno</p>
+                      <div className="text-xl font-black text-red-400 tabular-nums truncate">R$ {fmtBRL(wastedSpend)}</div>
+                      <p className="text-[10px] text-muted-foreground/60 mt-1.5">{enrichedCampaigns.filter((c: any) => c.t.conversions === 0 && c.t.cost > 20).length} camp. sem lead</p>
+                    </motion.div>
+                    <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="glass-panel card-sport p-4 text-center">
+                      <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/50 mb-2">Prontas p/ Escalar</p>
+                      <div className="text-3xl font-black text-green-400">{campDecisions.filter((c: any) => c.decision.tier === "green").length}</div>
+                      <p className="text-[10px] text-muted-foreground/60 mt-1.5">campanhas eficientes</p>
+                    </motion.div>
+                    <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }} className="glass-panel card-sport p-4 text-center">
+                      <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/50 mb-2">Pausar Imediato</p>
+                      <div className="text-3xl font-black text-red-400">{campDecisions.filter((c: any) => c.decision.tier === "red").length}</div>
+                      <p className="text-[10px] text-muted-foreground/60 mt-1.5">gasto sem conversão</p>
+                    </motion.div>
+                  </div>
+
+                  {/* ── Funil de Conversão ── */}
+                  {totImpr > 0 && (
+                    <ChartCard
+                      icon={<Activity className="h-4 w-4 text-cyan-400"/>}
+                      title="Funil de Conversão da Conta"
+                      badge="Impressões → Leads"
+                      context="Onde os leads estão sendo perdidos. CTR baixo = criativo ou segmentação fraca. Conv. cliques→leads baixa = oferta ou landing page fraca."
+                      modoExplicativo={modoExplicativo}
+                      didaticInfo={{
+                        analise: "A eficiência em cada etapa do caminho percorrido até o lead: quantas pessoas viram o anúncio, quantas únicas foram alcançadas, quantas clicaram e quantas viraram lead.",
+                        decisao: "CTR < 1% = troque o criativo imediatamente. Taxa cliques→leads < 2% = revise a oferta, a landing page ou o formulário. São as duas maiores alavancas para reduzir CPL sem aumentar investimento."
+                      }}
                     >
-                      <div className="absolute right-4 top-4 text-primary/10 pointer-events-none">
-                        <Sparkles className="h-20 w-20 animate-pulse" />
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Sparkles className="h-4 w-4 text-primary animate-spin" style={{ animationDuration: '3s' }} />
-                        <h4 className="text-xs font-black uppercase tracking-widest text-foreground">Guia de Interpretação de Métricas</h4>
-                        <span className="text-[9px] bg-primary/20 text-primary px-2 py-0.5 rounded-full font-bold uppercase">Didático & Profissional</span>
-                      </div>
-                      <p className="text-[11px] text-muted-foreground leading-relaxed max-w-4xl">
-                        Este painel foi desenhado para atender tanto ao especialista que toma decisões estratégicas quanto ao cliente ou leigo que deseja aprender o real significado das métricas de tráfego. Veja abaixo um resumo simples de cada conceito analisado nos gráficos:
-                      </p>
-                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 pt-2">
-                        {[
-                          { t: "Gasto (Investimento)", d: "Valor financeiro total alocado nas campanhas. Indica o custo total operacional no período.", e: "💸" },
-                          { t: "Conversões (Resultados)", d: "Total de ações de sucesso obtidas (leads cadastrados, vendas ou conversas iniciadas).", e: "🏆" },
-                          { t: "CPL (Custo por Resultado)", d: "Valor médio investido para gerar cada conversão única. Mede a eficiência do seu dinheiro.", e: "🎯" },
-                          { t: "CTR (Taxa de Cliques)", d: "Relação entre cliques e visualizações. Mede o interesse pelo criativo. Ideal acima de 1.5%.", e: "👀" },
-                          { t: "Frequência (Repetição)", d: "Número médio de vezes que a mesma pessoa viu o anúncio. Evite que ultrapasse 3.0 para não cansar o público.", e: "🔔" },
-                          { t: "Alcance vs Impressões", d: "Alcance são pessoas únicas atingidas; Impressões é o número total de exibições acumuladas.", e: "🌍" },
-                        ].map((item, idx) => (
-                          <div key={idx} className="bg-white/[0.015] border border-white/[0.04] rounded-lg p-2.5 hover:bg-white/[0.03] transition-colors">
-                            <div className="flex items-center gap-1.5 mb-1">
-                              <span className="text-[12px]">{item.e}</span>
-                              <span className="text-[10px] font-bold text-foreground">{item.t}</span>
+                      <div className="space-y-3.5 pt-1">
+                        {funnelData.map((stage, i) => (
+                          <div key={i}>
+                            <div className="flex justify-between items-center mb-1.5">
+                              <div className="flex items-center gap-2">
+                                <div className="h-2 w-2 rounded-full flex-shrink-0" style={{ background: stage.color }}/>
+                                <span className="text-[11px] font-bold text-foreground">{stage.label}</span>
+                              </div>
+                              <div className="flex items-center gap-3">
+                                <span className="text-[11px] font-mono font-bold text-foreground">{fmtN(stage.value)}</span>
+                                {i > 0 && stage.value > 0 && (
+                                  <span className={`text-[10px] font-black px-1.5 py-0.5 rounded whitespace-nowrap ${
+                                    i === 2 ? (stage.rate >= 1.5 ? "text-green-400 bg-green-400/10" : stage.rate >= 0.5 ? "text-yellow-400 bg-yellow-400/10" : "text-red-400 bg-red-400/10") :
+                                    i === 3 ? (stage.rate >= 3 ? "text-green-400 bg-green-400/10" : stage.rate >= 1 ? "text-yellow-400 bg-yellow-400/10" : "text-red-400 bg-red-400/10") :
+                                    "text-muted-foreground bg-white/5"
+                                  }`}>{stage.rate.toFixed(i <= 1 ? 0 : 2)}%</span>
+                                )}
+                              </div>
                             </div>
-                            <p className="text-[9px] text-muted-foreground leading-relaxed">{item.d}</p>
+                            <div className="h-2 bg-white/5 rounded-full overflow-hidden">
+                              <motion.div
+                                className="h-full rounded-full"
+                                style={{ background: stage.color, opacity: 0.8 }}
+                                initial={{ width: 0 }}
+                                animate={{ width: `${Math.max(stage.widthPct, stage.value > 0 ? 1 : 0)}%` }}
+                                transition={{ duration: 0.9, delay: i * 0.12, ease: "easeOut" }}
+                              />
+                            </div>
+                            {i < funnelData.length - 1 && funnelData[i + 1].value > 0 && stage.value > 0 && (
+                              <p className="text-[9px] text-muted-foreground/40 mt-1 pl-4">
+                                {fmtN(stage.value - funnelData[i + 1].value)} não avançam → {funnelData[i + 1].label.toLowerCase()}
+                              </p>
+                            )}
                           </div>
                         ))}
                       </div>
-                    </motion.div>
+                    </ChartCard>
                   )}
 
                   {/* Insights */}
@@ -1176,21 +1300,105 @@ function MetricasCampanhasPage() {
                   {campaigns.length === 0 ? (
                     <div className="glass-panel py-20 text-center text-sm text-muted-foreground">Nenhuma campanha no período. Sincronize os dados primeiro.</div>
                   ) : (
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+                    <>
+                      {/* ── Motor de Decisão por Campanha ── */}
+                      {campDecisions.length > 0 && (
+                        <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="glass-panel card-sport overflow-hidden">
+                          <div className="flex items-center gap-3 border-b border-white/5 px-5 py-3.5">
+                            <Target className="h-4 w-4 text-primary"/>
+                            <p className="text-xs font-black uppercase tracking-widest header-sport">Motor de Decisão por Campanha</p>
+                            <span className="ml-auto text-[9px] text-muted-foreground/50 font-mono">{campDecisions.length} camp. · urgência decrescente</span>
+                          </div>
+                          <div className="overflow-x-auto">
+                            <table className="w-full text-xs">
+                              <thead>
+                                <tr className="border-b border-white/5 bg-white/[0.02]">
+                                  <th className="px-4 py-2.5 text-left text-[9px] font-black uppercase tracking-widest text-muted-foreground/50">Campanha</th>
+                                  <th className="px-4 py-2.5 text-right text-[9px] font-black uppercase tracking-widest text-muted-foreground/50 hidden md:table-cell">CPL</th>
+                                  <th className="px-4 py-2.5 text-right text-[9px] font-black uppercase tracking-widest text-muted-foreground/50 hidden md:table-cell">CTR</th>
+                                  <th className="px-4 py-2.5 text-right text-[9px] font-black uppercase tracking-widest text-muted-foreground/50 hidden lg:table-cell">Freq.</th>
+                                  <th className="px-4 py-2.5 text-right text-[9px] font-black uppercase tracking-widest text-muted-foreground/50 hidden lg:table-cell">Gasto</th>
+                                  <th className="px-4 py-2.5 text-center text-[9px] font-black uppercase tracking-widest text-muted-foreground/50">Score</th>
+                                  <th className="px-4 py-2.5 text-center text-[9px] font-black uppercase tracking-widest text-muted-foreground/50">Decisão</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {campDecisions.map((c: any) => {
+                                  const dc = DECISION_COLORS[c.decision.tier] || DECISION_COLORS.blue;
+                                  return (
+                                    <tr key={c.id} className="border-b border-white/[0.03] hover:bg-white/[0.02] transition-colors">
+                                      <td className="px-4 py-3">
+                                        <div className="flex items-center gap-2">
+                                          <div className={`h-1.5 w-1.5 rounded-full flex-shrink-0 ${c.status?.toUpperCase() === "ACTIVE" ? "bg-green-400" : "bg-white/20"}`}/>
+                                          <div className="min-w-0">
+                                            <p className="font-semibold text-[11px] text-foreground max-w-[200px] truncate">{c.name}</p>
+                                            <p className="text-[9px] text-muted-foreground/50 mt-0.5 truncate max-w-[200px]">{c.decision.reason}</p>
+                                          </div>
+                                        </div>
+                                      </td>
+                                      <td className="px-4 py-3 text-right hidden md:table-cell">
+                                        {c.t.cpl > 0 ? (
+                                          <div>
+                                            <p className={`font-mono font-bold text-[11px] ${c.t.cpl < avgCpl * 0.7 ? "text-green-400" : c.t.cpl > avgCpl * 1.8 ? "text-red-400" : "text-yellow-400"}`}>R$ {c.t.cpl.toFixed(2)}</p>
+                                            {avgCpl > 0 && <p className="text-[9px] text-muted-foreground/50">{c.t.cpl < avgCpl ? `${Math.round((1-c.t.cpl/avgCpl)*100)}% abaixo` : `${Math.round((c.t.cpl/avgCpl-1)*100)}% acima`}</p>}
+                                          </div>
+                                        ) : <span className="text-muted-foreground/30 font-mono">—</span>}
+                                      </td>
+                                      <td className="px-4 py-3 text-right hidden md:table-cell">
+                                        <span className={`font-mono font-bold text-[11px] ${c.t.ctr >= 2 ? "text-green-400" : c.t.ctr >= 1 ? "text-yellow-400" : c.t.impressions > 1000 ? "text-red-400" : "text-muted-foreground/40"}`}>
+                                          {c.t.impressions > 0 ? `${c.t.ctr.toFixed(2)}%` : "—"}
+                                        </span>
+                                      </td>
+                                      <td className="px-4 py-3 text-right hidden lg:table-cell">
+                                        <span className={`font-mono font-bold text-[11px] ${c.t.freq > 0 && c.t.freq <= 2 ? "text-green-400" : c.t.freq <= 3.5 ? "text-yellow-400" : c.t.freq > 3.5 ? "text-red-400" : "text-muted-foreground/40"}`}>
+                                          {c.t.freq > 0 ? `${c.t.freq.toFixed(1)}×` : "—"}
+                                        </span>
+                                      </td>
+                                      <td className="px-4 py-3 text-right hidden lg:table-cell">
+                                        <span className="font-mono font-bold text-[11px] text-primary">R$ {fmtBRL(c.t.cost)}</span>
+                                      </td>
+                                      <td className="px-4 py-3 text-center">
+                                        <span className={`text-[12px] font-black tabular-nums ${c.healthScore >= 70 ? "text-green-400" : c.healthScore >= 45 ? "text-yellow-400" : "text-red-400"}`}>{c.healthScore}</span>
+                                      </td>
+                                      <td className="px-4 py-3 text-center">
+                                        <span className={`inline-flex items-center rounded border px-2 py-1 text-[9px] font-black uppercase tracking-wider whitespace-nowrap ${dc}`}>
+                                          {c.decision.label}
+                                        </span>
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                            {modoExplicativo && (
+                              <div className="px-5 py-3 border-t border-white/[0.04] bg-white/[0.005]">
+                                <p className="text-[10px] text-muted-foreground/60 leading-relaxed">
+                                  <span className="font-bold text-green-400">ESCALAR</span> = CPL 30%+ abaixo da média com ≥3 leads — aumente budget 20-30%/dia.{" "}
+                                  <span className="font-bold text-red-400">PAUSAR</span> = gasto sem nenhum lead — pare e revise.{" "}
+                                  <span className="font-bold text-orange-400">RENOVAR/TROCAR</span> = freq. ≥4.5× ou CTR ≤0.5% — mude o criativo.
+                                </p>
+                              </div>
+                            )}
+                          </div>
+                        </motion.div>
+                      )}
 
-                      {/* Tendência 14 dias — sempre */}
-                      <div className="lg:col-span-2">
-                        <ChartCard 
-                          icon={<TrendingUp className="h-4 w-4 text-primary"/>} 
-                          title="Tendência de Performance" 
-                          badge={`Últimos ${Math.min(trendData.length, 14)} dias`} 
-                          context="Gasto diário vs conversões — identifique os dias de melhor custo-benefício."
-                          modoExplicativo={modoExplicativo}
-                          didaticInfo={{
-                            analise: "A linha de investimento diário (azul) cruzada com o volume absoluto de conversões diárias (barras roxas).",
-                            decisao: "Analise a inclinação da linha vs a altura das barras. Picos de conversão com baixo gasto indicam momentos de alta eficiência comercial, ideais para entender quais criativos ou públicos estavam ativos naquele dia."
-                          }}
-                        >
+                      {/* Charts */}
+                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+
+                        {/* Tendência 14 dias — sempre */}
+                        <div className="lg:col-span-2">
+                          <ChartCard
+                            icon={<TrendingUp className="h-4 w-4 text-primary"/>}
+                            title="Tendência de Performance"
+                            badge={`Últimos ${Math.min(trendData.length, 14)} dias`}
+                            context="Gasto diário vs conversões — dias de pico de conversão com gasto normal revelam quando seu melhor criativo estava ativo."
+                            modoExplicativo={modoExplicativo}
+                            didaticInfo={{
+                              analise: "Área azul = investimento diário. Barras roxas = conversões diárias. Cruzar os dois mostra a eficiência de cada dia.",
+                              decisao: "Barras sobem mas gasto não acompanha = CPL melhorando → escale. Gasto sobe mas barras ficam iguais = CPL piorando → revise criativo ou público imediatamente."
+                            }}
+                          >
                           <ResponsiveContainer width="100%" height={220}>
                             <ComposedChart data={trendData}>
                               <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)"/>
@@ -1205,6 +1413,37 @@ function MetricasCampanhasPage() {
                           </ResponsiveContainer>
                         </ChartCard>
                       </div>
+
+                      {/* Evolução do CPL — sempre */}
+                      {cplTrendData.length > 1 && (
+                        <div className="lg:col-span-2">
+                          <ChartCard
+                            icon={<TrendingUp className="h-4 w-4 text-yellow-400"/>}
+                            title="Evolução do CPL"
+                            badge="Custo por Lead diário"
+                            context="Se a linha sobe, o CPL está piorando (mais caro por lead). Se desce, está melhorando. Linha vermelha = média do período."
+                            modoExplicativo={modoExplicativo}
+                            didaticInfo={{
+                              analise: "O custo por lead calculado dia a dia para mostrar se a eficiência está melhorando ou deteriorando ao longo do tempo.",
+                              decisao: "CPL subindo por 3+ dias consecutivos = ação urgente (público saturando, criativo cansando ou leilão aquecendo). CPL caindo consistentemente = momento ideal para aumentar budget com segurança."
+                            }}
+                          >
+                            <ResponsiveContainer width="100%" height={180}>
+                              <ComposedChart data={cplTrendData}>
+                                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)"/>
+                                <XAxis dataKey="date" tick={{ fontSize: 9, fill: "rgba(255,255,255,0.4)" }} axisLine={false} tickLine={false}/>
+                                <YAxis yAxisId="cpl" tick={{ fontSize: 9, fill: "rgba(255,255,255,0.4)" }} axisLine={false} tickLine={false} width={50} tickFormatter={(v: number) => `R$${v}`}/>
+                                <YAxis yAxisId="conv" orientation="right" tick={{ fontSize: 9, fill: "rgba(255,255,255,0.4)" }} axisLine={false} tickLine={false} width={30}/>
+                                <Tooltip content={<CustomTooltip/>}/>
+                                <Legend iconSize={8} wrapperStyle={{ fontSize: 10 }}/>
+                                {avgCpl > 0 && <ReferenceLine yAxisId="cpl" y={avgCpl} stroke="rgba(239,68,68,0.5)" strokeDasharray="4 4" label={{ value: `Média R$${avgCpl.toFixed(0)}`, fill: "rgba(239,68,68,0.6)", fontSize: 9 }}/>}
+                                <Line yAxisId="cpl" type="monotone" dataKey="cpl" name="CPL (R$)" stroke="#f59e0b" strokeWidth={2.5} dot={{ r: 3, fill: "#f59e0b" }} connectNulls/>
+                                <Bar yAxisId="conv" dataKey="conversoes" name="Conv." fill="#8b5cf6" opacity={0.45} radius={[2,2,0,0]}/>
+                              </ComposedChart>
+                            </ResponsiveContainer>
+                          </ChartCard>
+                        </div>
+                      )}
 
                       {/* Pie Status — geral, audiencia */}
                       {(modo === "geral" || modo === "audiencia") && (
@@ -1369,6 +1608,7 @@ function MetricasCampanhasPage() {
                       )}
 
                     </div>
+                    </>
                   )}
                 </div>
               </div>
