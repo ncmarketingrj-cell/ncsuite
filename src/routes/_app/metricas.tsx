@@ -835,25 +835,41 @@ function MetricasCampanhasPage() {
                     <div className="py-24 text-center text-sm text-muted-foreground">Nenhum dado encontrado.</div>
                   ) : (
                     <div className="overflow-x-auto">
-                      <table className="w-full text-xs">
+                      <table className="w-full text-xs border-collapse">
+                        <colgroup>
+                          <col className="w-10"/>
+                          <col className="w-16"/>
+                          <col className="min-w-[180px]"/>
+                          {level === "campanhas" && <col className="w-24"/>}
+                          <col className="w-28 hidden md:table-column"/>
+                          <col className="w-16"/>
+                          <col className="w-24 hidden lg:table-column"/>
+                          <col className="w-24 hidden xl:table-column"/>
+                          <col className="w-20"/>
+                          <col className="w-24"/>
+                          <col className="w-16 hidden lg:table-column"/>
+                          <col className="w-20 hidden xl:table-column"/>
+                          <col className="w-20 hidden xl:table-column"/>
+                          <col className="w-24"/>
+                        </colgroup>
                         <thead>
-                          <tr className="border-b border-white/5 bg-white/[0.02] sticky top-0">
-                            <th className="px-4 py-3 w-8">
+                          <tr className="border-b border-white/5 bg-white/[0.02] sticky top-0 z-10">
+                            <th className="px-3 py-3 w-10">
                               <button onClick={toggleAll} className="text-muted-foreground hover:text-primary transition">{allSelected ? <CheckSquare className="h-4 w-4 text-primary"/> : someSelected ? <CheckSquare className="h-4 w-4 text-primary/40"/> : <Square className="h-4 w-4"/>}</button>
                             </th>
-                            <th className="px-2 py-3 w-14 text-[9px] font-black uppercase tracking-widest text-muted-foreground/70 text-center">Status</th>
-                            <th className="px-4 py-3 text-left text-[9px] font-black uppercase tracking-widest text-muted-foreground/70 min-w-[200px]">Nome</th>
-                            {level === "campanhas" && <th className="px-3 py-3 text-center text-[9px] font-black uppercase tracking-widest text-muted-foreground/70 whitespace-nowrap">Objetivo</th>}
-                            <th className="px-4 py-3 text-right text-[9px] font-black uppercase tracking-widest text-muted-foreground/70 whitespace-nowrap hidden md:table-cell">Orçamento</th>
-                            <th className="px-4 py-3 text-right text-[9px] font-black uppercase tracking-widest text-amber-400/80 whitespace-nowrap">Freq.</th>
-                            <th className="px-4 py-3 text-right text-[9px] font-black uppercase tracking-widest text-muted-foreground/70 whitespace-nowrap hidden lg:table-cell">Alcance</th>
-                            <th className="px-4 py-3 text-right text-[9px] font-black uppercase tracking-widest text-muted-foreground/70 whitespace-nowrap hidden xl:table-cell">Impressões</th>
-                            <th className="px-4 py-3 text-right text-[9px] font-black uppercase tracking-widest text-violet-400/90 whitespace-nowrap">Resultados</th>
-                            <th className="px-4 py-3 text-right text-[9px] font-black uppercase tracking-widest text-emerald-400/90 whitespace-nowrap">CPL</th>
-                            <th className="px-4 py-3 text-right text-[9px] font-black uppercase tracking-widest text-blue-400/80 whitespace-nowrap hidden lg:table-cell">CTR</th>
-                            <th className="px-4 py-3 text-right text-[9px] font-black uppercase tracking-widest text-muted-foreground/70 whitespace-nowrap hidden xl:table-cell">CPC</th>
-                            <th className="px-4 py-3 text-right text-[9px] font-black uppercase tracking-widest text-muted-foreground/70 whitespace-nowrap hidden xl:table-cell">CPM</th>
-                            <th className="px-4 py-3 text-right text-[9px] font-black uppercase tracking-widest text-primary/80 whitespace-nowrap">Gasto</th>
+                            <th className="px-2 py-3 w-16 text-[9px] font-black uppercase tracking-widest text-muted-foreground/70 text-center">Status</th>
+                            <th className="px-4 py-3 text-left text-[9px] font-black uppercase tracking-widest text-muted-foreground/70">Nome</th>
+                            {level === "campanhas" && <th className="px-3 py-3 w-24 text-center text-[9px] font-black uppercase tracking-widest text-muted-foreground/70 whitespace-nowrap">Objetivo</th>}
+                            <th className="px-4 py-3 w-28 text-right text-[9px] font-black uppercase tracking-widest text-muted-foreground/70 whitespace-nowrap hidden md:table-cell">Orçamento</th>
+                            <th className="px-4 py-3 w-16 text-right text-[9px] font-black uppercase tracking-widest text-amber-400/80 whitespace-nowrap">Freq.</th>
+                            <th className="px-4 py-3 w-24 text-right text-[9px] font-black uppercase tracking-widest text-muted-foreground/70 whitespace-nowrap hidden lg:table-cell">Alcance</th>
+                            <th className="px-4 py-3 w-24 text-right text-[9px] font-black uppercase tracking-widest text-muted-foreground/70 whitespace-nowrap hidden xl:table-cell">Impressões</th>
+                            <th className="px-4 py-3 w-20 text-right text-[9px] font-black uppercase tracking-widest text-violet-400/90 whitespace-nowrap">Resultados</th>
+                            <th className="px-4 py-3 w-24 text-right text-[9px] font-black uppercase tracking-widest text-emerald-400/90 whitespace-nowrap">CPL / CPA</th>
+                            <th className="px-4 py-3 w-16 text-right text-[9px] font-black uppercase tracking-widest text-blue-400/80 whitespace-nowrap hidden lg:table-cell">CTR</th>
+                            <th className="px-4 py-3 w-20 text-right text-[9px] font-black uppercase tracking-widest text-muted-foreground/70 whitespace-nowrap hidden xl:table-cell">CPC</th>
+                            <th className="px-4 py-3 w-20 text-right text-[9px] font-black uppercase tracking-widest text-muted-foreground/70 whitespace-nowrap hidden xl:table-cell">CPM</th>
+                            <th className="px-4 py-3 w-24 text-right text-[9px] font-black uppercase tracking-widest text-primary/80 whitespace-nowrap">Gasto</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -868,58 +884,72 @@ function MetricasCampanhasPage() {
                             const ctrGood    = c.t.ctr >= 2;
                             return (
                               <tr id={`row-${c.id}`} key={c.id} className={`border-b border-white/[0.03] transition-colors ${isHighlight ? "bg-destructive/10 ring-1 ring-inset ring-destructive/40" : isSel ? "bg-primary/5" : "hover:bg-white/[0.015]"}`}>
-                                <td className="px-4 py-3 text-center">
+                                {/* checkbox */}
+                                <td className="px-3 py-3 text-center">
                                   <button onClick={() => toggleOne(c.id)} className="text-muted-foreground hover:text-primary transition">{isSel ? <CheckSquare className="h-4 w-4 text-primary"/> : <Square className="h-4 w-4"/>}</button>
                                 </td>
-                                <td className="px-2 py-3 text-center">
+                                {/* status toggle */}
+                                <td className="px-2 py-2.5 text-center">
                                   <button
                                     onClick={() => !isChanging && toggleMutation.mutate({ id: c.id, externalId: c.external_id, currentStatus: c.status, type: level })}
                                     disabled={isChanging}
-                                    className={`relative h-7 w-12 rounded-full transition-all duration-300 border ${isActive ? "bg-primary/20 border-primary/40 hover:bg-primary/30" : "bg-white/5 border-white/10 hover:bg-white/10"} disabled:opacity-40`}
+                                    className={`relative h-6 w-11 rounded-full transition-all duration-300 border ${isActive ? "bg-primary/20 border-primary/40 hover:bg-primary/30" : "bg-white/5 border-white/10 hover:bg-white/10"} disabled:opacity-40`}
                                     title={isActive ? "Pausar" : "Ativar"}
                                   >
                                     {isChanging ? (
                                       <Loader2 className="h-3 w-3 animate-spin absolute inset-0 m-auto text-primary"/>
                                     ) : (
-                                      <span className={`absolute top-1 h-5 w-5 rounded-full transition-all duration-300 flex items-center justify-center ${isActive ? "left-5 bg-primary" : "left-1 bg-white/30"}`}>
-                                        {isActive ? <Play className="h-2.5 w-2.5 text-background fill-background"/> : <Pause className="h-2.5 w-2.5 text-white/60"/>}
+                                      <span className={`absolute top-0.5 h-4.5 w-4.5 h-[18px] w-[18px] rounded-full transition-all duration-300 flex items-center justify-center ${isActive ? "left-[22px] bg-primary" : "left-0.5 bg-white/30"}`}>
+                                        {isActive ? <Play className="h-2 w-2 text-background fill-background"/> : <Pause className="h-2 w-2 text-white/60"/>}
                                       </span>
                                     )}
                                   </button>
                                 </td>
-                                <td className="px-4 py-3">
-                                  <div className="flex flex-col gap-1 min-w-0">
-                                    <span className="font-bold text-foreground truncate max-w-[260px]" title={c.name}>{c.name}</span>
+                                {/* nome */}
+                                <td className="px-4 py-2.5">
+                                  <div className="flex flex-col gap-0.5 min-w-0">
+                                    <span className="font-bold text-foreground truncate max-w-[240px] leading-tight" title={c.name}>{c.name}</span>
                                     <div className="flex items-center gap-1.5 flex-wrap">
                                       {isLearning && <LearningBadge/>}
-                                      {c.ad_account && <span className="text-[9px] text-muted-foreground/50 font-mono">{(c.ad_account as any).name}</span>}
+                                      {c.ad_account && <span className="text-[9px] text-muted-foreground/40 font-mono leading-none">{(c.ad_account as any).name}</span>}
                                     </div>
                                   </div>
                                 </td>
-                                {level === "campanhas" && <td className="px-3 py-3 text-center"><ObjectiveBadge objective={c.objective}/></td>}
-                                <td className="px-4 py-3 text-right font-mono text-muted-foreground hidden md:table-cell whitespace-nowrap">
+                                {/* objetivo */}
+                                {level === "campanhas" && <td className="px-3 py-2.5 text-center"><ObjectiveBadge objective={c.objective}/></td>}
+                                {/* orçamento */}
+                                <td className="px-4 py-2.5 text-right font-mono text-[11px] text-muted-foreground hidden md:table-cell whitespace-nowrap">
                                   {c.daily_budget ? `R$ ${Number(c.daily_budget).toFixed(0)}/d` : c.lifetime_budget ? `R$ ${Number(c.lifetime_budget).toFixed(0)} total` : c.budget ? `R$ ${Number(c.budget).toFixed(0)}/d` : "—"}
                                 </td>
-                                <td className="px-4 py-3 text-right">
-                                  <span className={`font-mono font-bold text-xs ${freqHigh ? "text-red-400" : "text-amber-400"}`}>{c.t.freq > 0 ? c.t.freq.toFixed(1) : "—"}</span>
+                                {/* freq */}
+                                <td className="px-4 py-2.5 text-right whitespace-nowrap">
+                                  <span className={`font-mono font-bold text-xs ${freqHigh ? "text-red-400" : c.t.freq > 0 ? "text-amber-400" : "text-muted-foreground/30"}`}>{c.t.freq > 0 ? c.t.freq.toFixed(1) : "—"}</span>
                                 </td>
-                                <td className="px-4 py-3 text-right font-mono text-muted-foreground hidden lg:table-cell">{c.t.reach > 0 ? fmtN(c.t.reach) : "—"}</td>
-                                <td className="px-4 py-3 text-right font-mono text-muted-foreground hidden xl:table-cell">{c.t.impressions > 0 ? fmtN(c.t.impressions) : "—"}</td>
-                                <td className="px-4 py-3 text-right">
-                                  <span className="font-mono font-black text-violet-400">{c.t.conversions > 0 ? fmtN(c.t.conversions) : <span className="text-muted-foreground/40">—</span>}</span>
+                                {/* alcance */}
+                                <td className="px-4 py-2.5 text-right font-mono text-[11px] text-muted-foreground hidden lg:table-cell whitespace-nowrap">{c.t.reach > 0 ? fmtN(c.t.reach) : "—"}</td>
+                                {/* impressões */}
+                                <td className="px-4 py-2.5 text-right font-mono text-[11px] text-muted-foreground hidden xl:table-cell whitespace-nowrap">{c.t.impressions > 0 ? fmtN(c.t.impressions) : "—"}</td>
+                                {/* resultados */}
+                                <td className="px-4 py-2.5 text-right whitespace-nowrap">
+                                  <span className="font-mono font-black text-violet-400">{c.t.conversions > 0 ? fmtN(c.t.conversions) : <span className="text-muted-foreground/30">—</span>}</span>
                                 </td>
-                                <td className="px-4 py-3 text-right">
+                                {/* cpl */}
+                                <td className="px-4 py-2.5 text-right whitespace-nowrap">
                                   {c.t.cpl > 0 ? (
-                                    <span className={`font-mono font-black ${cplOver ? "text-red-400" : "text-green-400"}`}>R$ {c.t.cpl.toFixed(2)}</span>
-                                  ) : <span className="text-muted-foreground/40 font-mono">—</span>}
+                                    <span className={`font-mono font-black text-xs ${cplOver ? "text-red-400" : "text-green-400"}`}>R$ {c.t.cpl.toFixed(2)}</span>
+                                  ) : <span className="text-muted-foreground/30 font-mono">—</span>}
                                 </td>
-                                <td className="px-4 py-3 text-right hidden lg:table-cell">
-                                  <span className={`font-mono font-bold ${ctrGood ? "text-green-400" : c.t.ctr > 0 ? "text-blue-400" : "text-muted-foreground/40"}`}>{c.t.ctr > 0 ? `${c.t.ctr.toFixed(2)}%` : "—"}</span>
+                                {/* ctr */}
+                                <td className="px-4 py-2.5 text-right hidden lg:table-cell whitespace-nowrap">
+                                  <span className={`font-mono font-bold text-xs ${ctrGood ? "text-green-400" : c.t.ctr > 0 ? "text-blue-400" : "text-muted-foreground/30"}`}>{c.t.ctr > 0 ? `${c.t.ctr.toFixed(2)}%` : "—"}</span>
                                 </td>
-                                <td className="px-4 py-3 text-right font-mono text-muted-foreground hidden xl:table-cell">{c.t.cpc > 0 ? `R$ ${c.t.cpc.toFixed(2)}` : "—"}</td>
-                                <td className="px-4 py-3 text-right font-mono text-muted-foreground hidden xl:table-cell">{c.t.cpm > 0 ? `R$ ${c.t.cpm.toFixed(2)}` : "—"}</td>
-                                <td className="px-4 py-3 text-right">
-                                  <span className={`font-mono font-black ${c.t.cost > 0 ? "text-primary" : "text-muted-foreground/40"}`}>{c.t.cost > 0 ? `R$ ${fmtBRL(c.t.cost)}` : "—"}</span>
+                                {/* cpc */}
+                                <td className="px-4 py-2.5 text-right font-mono text-[11px] text-muted-foreground hidden xl:table-cell whitespace-nowrap">{c.t.cpc > 0 ? `R$ ${c.t.cpc.toFixed(2)}` : "—"}</td>
+                                {/* cpm */}
+                                <td className="px-4 py-2.5 text-right font-mono text-[11px] text-muted-foreground hidden xl:table-cell whitespace-nowrap">{c.t.cpm > 0 ? `R$ ${c.t.cpm.toFixed(2)}` : "—"}</td>
+                                {/* gasto */}
+                                <td className="px-4 py-2.5 text-right whitespace-nowrap">
+                                  <span className={`font-mono font-black text-xs ${c.t.cost > 0 ? "text-primary" : "text-muted-foreground/30"}`}>{c.t.cost > 0 ? `R$ ${fmtBRL(c.t.cost)}` : "—"}</span>
                                 </td>
                               </tr>
                             );
@@ -927,15 +957,34 @@ function MetricasCampanhasPage() {
                         </tbody>
                         <tfoot>
                           <tr className="border-t border-white/10 bg-white/[0.03]">
-                            <td colSpan={level === "campanhas" ? 5 : 4} className="px-4 py-3 text-[9px] font-black uppercase tracking-widest text-muted-foreground/50">TOTAL ({filtered.length} {level})</td>
-                            <td className="px-4 py-3 text-right font-mono font-black text-amber-400 text-xs hidden lg:table-cell">—</td>
-                            <td className="px-4 py-3 text-right font-mono font-black text-muted-foreground text-xs hidden xl:table-cell">{totImpr > 0 ? fmtN(totImpr) : "—"}</td>
-                            <td className="px-4 py-3 text-right font-mono font-black text-violet-400 text-xs">{totConv > 0 ? fmtN(totConv) : "—"}</td>
-                            <td className="px-4 py-3 text-right font-mono font-black text-green-400 text-xs">{avgCpl > 0 ? `R$ ${avgCpl.toFixed(2)}` : "—"}</td>
-                            <td className="px-4 py-3 text-right font-mono font-black text-blue-400 text-xs hidden lg:table-cell">{avgCtr > 0 ? `${avgCtr.toFixed(2)}%` : "—"}</td>
+                            {/* checkbox */}
+                            <td className="px-4 py-3 w-8"/>
+                            {/* status */}
+                            <td className="px-2 py-3 w-14"/>
+                            {/* nome — label TOTAL */}
+                            <td className="px-4 py-3 text-[9px] font-black uppercase tracking-widest text-muted-foreground/50 whitespace-nowrap">TOTAL ({filtered.length} {level})</td>
+                            {/* objetivo — campanhas only */}
+                            {level === "campanhas" && <td className="px-3 py-3"/>}
+                            {/* orçamento — hidden md */}
+                            <td className="px-4 py-3 hidden md:table-cell"/>
+                            {/* freq — always */}
+                            <td className="px-4 py-3 text-right font-mono font-black text-amber-400 text-xs whitespace-nowrap">—</td>
+                            {/* alcance — hidden lg */}
+                            <td className="px-4 py-3 hidden lg:table-cell"/>
+                            {/* impressões — hidden xl */}
+                            <td className="px-4 py-3 text-right font-mono font-black text-muted-foreground text-xs hidden xl:table-cell whitespace-nowrap">{totImpr > 0 ? fmtN(totImpr) : "—"}</td>
+                            {/* resultados — always */}
+                            <td className="px-4 py-3 text-right font-mono font-black text-violet-400 text-xs whitespace-nowrap">{totConv > 0 ? fmtN(totConv) : "—"}</td>
+                            {/* cpl — always */}
+                            <td className="px-4 py-3 text-right font-mono font-black text-green-400 text-xs whitespace-nowrap">{avgCpl > 0 ? `R$ ${avgCpl.toFixed(2)}` : "—"}</td>
+                            {/* ctr — hidden lg */}
+                            <td className="px-4 py-3 text-right font-mono font-black text-blue-400 text-xs hidden lg:table-cell whitespace-nowrap">{avgCtr > 0 ? `${avgCtr.toFixed(2)}%` : "—"}</td>
+                            {/* cpc — hidden xl */}
                             <td className="px-4 py-3 hidden xl:table-cell"/>
+                            {/* cpm — hidden xl */}
                             <td className="px-4 py-3 hidden xl:table-cell"/>
-                            <td className="px-4 py-3 text-right font-mono font-black text-primary text-xs">R$ {fmtBRL(totCost)}</td>
+                            {/* gasto — always */}
+                            <td className="px-4 py-3 text-right font-mono font-black text-primary text-xs whitespace-nowrap">R$ {fmtBRL(totCost)}</td>
                           </tr>
                         </tfoot>
                       </table>
