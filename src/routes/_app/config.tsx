@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Settings, User, Building2, Plug, BookOpen, Cpu, Plus, Trash2, Check, X, Loader2, Wifi, WifiOff, ChevronDown, Zap, Brain, LayoutDashboard, FileText, Target, Upload, Send, Users, Database, Lock } from "lucide-react";
+import { Settings, User, Building2, Plug, BookOpen, Cpu, Plus, Trash2, Check, X, Loader2, Wifi, WifiOff, ChevronDown, Zap, Brain, LayoutDashboard, FileText, Target, Upload, Send, Users, Database, Lock, MessageSquareWarning, Bug, Lightbulb, Frown, HelpCircle, StickyNote, Filter, Eye, Clock } from "lucide-react";
 import { SyncButton } from "@/components/SyncButton";
 import { toast } from "sonner";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -16,13 +16,14 @@ export const Route = createFileRoute("/_app/config")({
 });
 
 const TABS = [
-  { id: "conta", label: "Meu Perfil", icon: User, adminOnly: false },
-  { id: "tutorial", label: "NC Academy", icon: BookOpen, adminOnly: false },
-  { id: "usuarios", label: "Gestão de Usuários", icon: Users, adminOnly: true },
-  { id: "clientes", label: "Gestão de Clientes", icon: Building2, adminOnly: true },
-  { id: "integracoes", label: "Integrações Master", icon: Plug, adminOnly: true },
-  { id: "automacoes", label: "Regras de Automação", icon: Zap, adminOnly: true },
-  { id: "sistema", label: "Status do Sistema", icon: Cpu, adminOnly: true },
+  { id: "conta",       label: "Meu Perfil",          icon: User,                   adminOnly: false },
+  { id: "tutorial",   label: "NC Academy",            icon: BookOpen,               adminOnly: false },
+  { id: "sac",        label: "SAC / Feedback",        icon: MessageSquareWarning,   adminOnly: false },
+  { id: "usuarios",   label: "Gestão de Usuários",   icon: Users,                  adminOnly: true  },
+  { id: "clientes",   label: "Gestão de Clientes",   icon: Building2,              adminOnly: true  },
+  { id: "integracoes",label: "Integrações Master",    icon: Plug,                   adminOnly: true  },
+  { id: "automacoes", label: "Regras de Automação",  icon: Zap,                    adminOnly: true  },
+  { id: "sistema",    label: "Status do Sistema",    icon: Cpu,                    adminOnly: true  },
 ] as const;
 type Tab = typeof TABS[number]["id"];
 
@@ -73,13 +74,14 @@ function ConfigPage() {
         animate={{ opacity: 1, y: 0 }}
         className="glass-panel p-8"
       >
-        {tab === "conta" && <TabConta />}
-        {tab === "usuarios" && canManageUsers && <TabUsuarios isAdmin={isAdmin} />}
-        {tab === "tutorial" && <TabTutorial />}
-        {tab === "clientes" && isAdmin && <TabClientes />}
+        {tab === "conta"       && <TabConta />}
+        {tab === "tutorial"    && <TabTutorial />}
+        {tab === "sac"         && <TabSac isAdmin={isAdmin} userId={user?.id ?? ""} />}
+        {tab === "usuarios"    && canManageUsers && <TabUsuarios isAdmin={isAdmin} />}
+        {tab === "clientes"    && isAdmin && <TabClientes />}
         {tab === "integracoes" && isAdmin && <TabIntegracoes />}
-        {tab === "automacoes" && isAdmin && <TabAutomacoes />}
-        {tab === "sistema" && isAdmin && <TabSistema />}
+        {tab === "automacoes"  && isAdmin && <TabAutomacoes />}
+        {tab === "sistema"     && isAdmin && <TabSistema />}
       </motion.div>
     </div>
   );
@@ -1111,6 +1113,307 @@ function TabUsuarios({ isAdmin }: { isAdmin: boolean }) {
           </motion.div>
         )}
       </AnimatePresence>
+    </div>
+  );
+}
+
+// ─── SAC Constants ───────────────────────────────────────────────────────────
+const TICKET_TYPES_SAC = [
+  { value: "bug",         label: "Bug / Erro",   emoji: "🐛", desc: "Algo não funciona corretamente",   border: "border-red-500/30 bg-red-500/5"      },
+  { value: "melhoria",   label: "Melhoria",      emoji: "💡", desc: "Ideia para melhorar o sistema",    border: "border-blue-500/30 bg-blue-500/5"    },
+  { value: "reclamacao", label: "Reclamação",     emoji: "😤", desc: "Algo que me incomoda",             border: "border-orange-500/30 bg-orange-500/5" },
+  { value: "outro",      label: "Outro",          emoji: "📝", desc: "Qualquer outro feedback",          border: "border-purple-500/30 bg-purple-500/5" },
+];
+const PRIORITIES_SAC = [
+  { value: "baixa",   label: "Baixa",   color: "text-green-400"  },
+  { value: "normal",  label: "Normal",  color: "text-blue-400"   },
+  { value: "alta",    label: "Alta",    color: "text-orange-400" },
+  { value: "critica", label: "Crítica", color: "text-red-400"    },
+];
+const STATUS_MAP_SAC: Record<string, { label: string; color: string }> = {
+  aberto:     { label: "Aberto",      color: "bg-blue-500/20 text-blue-400 border-blue-500/30"      },
+  em_analise: { label: "Em Análise",  color: "bg-orange-500/20 text-orange-400 border-orange-500/30" },
+  resolvido:  { label: "Resolvido",   color: "bg-green-500/20 text-green-400 border-green-500/30"   },
+  fechado:    { label: "Fechado",     color: "bg-white/10 text-muted-foreground border-white/10"    },
+};
+function sacTypeCard(type: string) {
+  return TICKET_TYPES_SAC.find(t => t.value === type)?.border ?? "border-white/10 bg-white/[0.02]";
+}
+
+function TabSac({ isAdmin, userId }: { isAdmin: boolean; userId: string }) {
+  const qc = useQueryClient();
+  const [type, setType]           = useState("bug");
+  const [priority, setPriority]   = useState("normal");
+  const [title, setTitle]         = useState("");
+  const [description, setDesc]    = useState("");
+  const [submitted, setSubmitted] = useState(false);
+  const [filterStatus, setFilterStatus] = useState("todos");
+  const [filterType,   setFilterType]   = useState("todos");
+  const [expandedId,   setExpandedId]   = useState<string | null>(null);
+  const [adminNotes,   setAdminNotes]   = useState<Record<string, string>>({});
+
+  const { data: myTickets = [] } = useQuery({
+    queryKey: ["sac_my_tickets", userId],
+    queryFn: async () => {
+      const { data } = await (supabase as any).from("sac_tickets").select("*")
+        .eq("user_id", userId).order("created_at", { ascending: false });
+      return (data as any[]) || [];
+    },
+    enabled: !!userId,
+    refetchInterval: 30000,
+  });
+
+  const { data: allTickets = [], isLoading: loadingAll } = useQuery({
+    queryKey: ["sac_all_tickets"],
+    queryFn: async () => {
+      const { data } = await (supabase as any).from("sac_tickets").select("*")
+        .order("created_at", { ascending: false });
+      return (data as any[]) || [];
+    },
+    enabled: isAdmin,
+    refetchInterval: 15000,
+  });
+
+  const submitMutation = useMutation({
+    mutationFn: async () => {
+      const { error } = await (supabase as any).from("sac_tickets").insert({
+        user_id: userId || null, type, priority,
+        title: title.trim(), description: description.trim(), status: "aberto",
+      });
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      setSubmitted(true);
+      qc.invalidateQueries({ queryKey: ["sac_my_tickets"] });
+      qc.invalidateQueries({ queryKey: ["sac_all_tickets"] });
+    },
+    onError: (e: any) => toast.error(e.message),
+  });
+
+  const updateStatus = useMutation({
+    mutationFn: async ({ id, status, notes }: { id: string; status: string; notes?: string }) => {
+      const { error } = await (supabase as any).from("sac_tickets")
+        .update({ status, admin_notes: notes ?? null, updated_at: new Date().toISOString() }).eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["sac_all_tickets"] }); toast.success("Status atualizado!"); },
+    onError: (e: any) => toast.error(e.message),
+  });
+
+  const filteredTickets = allTickets.filter((t: any) => {
+    if (filterStatus !== "todos" && t.status !== filterStatus) return false;
+    if (filterType   !== "todos" && t.type   !== filterType)   return false;
+    return true;
+  });
+  const newCount = allTickets.filter((t: any) => t.status === "aberto").length;
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h3 className="header-sport font-display text-lg font-semibold flex items-center gap-2 text-gradient">
+          <MessageSquareWarning className="h-5 w-5 text-primary" /> SAC — Central de Feedback
+        </h3>
+        <p className="text-xs text-muted-foreground mt-1">
+          Reporte bugs, sugira melhorias ou deixe sua reclamação. Seus envios são confidenciais — apenas os admins recebem.
+        </p>
+      </div>
+
+      <div className="grid gap-6 lg:grid-cols-2">
+        {/* ── FORMULÁRIO ─────────────────────────────────────────────────── */}
+        <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-5 space-y-4">
+          <AnimatePresence mode="wait">
+            {submitted ? (
+              <motion.div key="ok" initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }}
+                className="flex flex-col items-center py-10 text-center gap-4">
+                <div className="h-14 w-14 rounded-full bg-green-500/20 border border-green-500/30 flex items-center justify-center">
+                  <Check className="h-7 w-7 text-green-400" />
+                </div>
+                <div>
+                  <h4 className="font-bold">Recebido! 🙏</h4>
+                  <p className="text-xs text-muted-foreground mt-1 max-w-xs">Seu feedback foi enviado para os administradores. Obrigado!</p>
+                </div>
+                <button onClick={() => { setType("bug"); setPriority("normal"); setTitle(""); setDesc(""); setSubmitted(false); }}
+                  className="rounded-full bg-primary/20 text-primary border border-primary/30 px-5 py-2 text-xs font-bold hover:bg-primary/30 transition">
+                  Enviar outro
+                </button>
+              </motion.div>
+            ) : (
+              <motion.div key="form" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4">
+                <div className="space-y-2">
+                  <label className="text-[10px] font-bold text-muted-foreground uppercase">Tipo</label>
+                  <div className="grid grid-cols-2 gap-2">
+                    {TICKET_TYPES_SAC.map(t => (
+                      <button key={t.value} type="button" onClick={() => setType(t.value)}
+                        className={`flex items-center gap-2 rounded-xl border p-3 text-left transition-all ${type === t.value ? t.border : "border-white/10 bg-white/[0.02] hover:bg-white/5"}`}>
+                        <span className="text-lg">{t.emoji}</span>
+                        <div><p className="text-xs font-bold leading-tight">{t.label}</p><p className="text-[9px] text-muted-foreground">{t.desc}</p></div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-bold text-muted-foreground uppercase">Prioridade</label>
+                  <div className="flex gap-2">
+                    {PRIORITIES_SAC.map(p => (
+                      <button key={p.value} type="button" onClick={() => setPriority(p.value)}
+                        className={`flex-1 rounded-lg border py-1.5 text-xs font-bold transition-all ${priority === p.value ? `border-white/20 bg-white/10 ${p.color}` : "border-white/10 text-muted-foreground hover:bg-white/5"}`}>
+                        {p.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-bold text-muted-foreground uppercase">Título</label>
+                  <input value={title} onChange={e => setTitle(e.target.value)} maxLength={100}
+                    placeholder="Resumo do problema ou sugestão..."
+                    className="w-full rounded-lg border border-white/10 bg-background px-3 py-2.5 text-sm focus:border-primary focus:outline-none" />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-bold text-muted-foreground uppercase">Descrição</label>
+                  <textarea value={description} onChange={e => setDesc(e.target.value)} rows={3} maxLength={1000}
+                    placeholder="Descreva com detalhes: o que estava fazendo, o que aconteceu..."
+                    className="w-full rounded-lg border border-white/10 bg-background px-3 py-2.5 text-sm focus:border-primary focus:outline-none resize-none" />
+                  <p className="text-[9px] text-muted-foreground text-right">{description.length}/1000</p>
+                </div>
+                <button onClick={() => { if (!title.trim()) return toast.error("Informe um título"); if (!description.trim()) return toast.error("Descreva o problema"); submitMutation.mutate(); }}
+                  disabled={submitMutation.isPending}
+                  className="w-full rounded-full bg-primary py-2.5 text-sm font-black text-background hover:opacity-90 active:scale-95 transition flex items-center justify-center gap-2 disabled:opacity-50">
+                  {submitMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                  Enviar Feedback
+                </button>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+
+        {/* ── PAINEL ADMIN / MEUS ENVIOS ──────────────────────────────────── */}
+        <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-5 space-y-4">
+          {isAdmin ? (
+            <>
+              <div className="flex items-center justify-between">
+                <h4 className="font-bold text-sm flex items-center gap-2">
+                  Painel Admin
+                  {newCount > 0 && <span className="rounded-full bg-red-500/20 text-red-400 border border-red-500/30 px-2 py-0.5 text-[9px] font-black">{newCount} novo{newCount !== 1 ? "s" : ""}</span>}
+                </h4>
+                <span className="text-[10px] text-muted-foreground">{filteredTickets.length} tickets</span>
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {["todos", "aberto", "em_analise", "resolvido", "fechado"].map(s => (
+                  <button key={s} onClick={() => setFilterStatus(s)}
+                    className={`rounded-lg px-2 py-1 text-[10px] font-bold border transition-all ${filterStatus === s ? "bg-primary/20 text-primary border-primary/30" : "border-white/10 text-muted-foreground hover:bg-white/5"}`}>
+                    {s === "todos" ? "Todos" : STATUS_MAP_SAC[s]?.label ?? s}
+                  </button>
+                ))}
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {["todos", ...TICKET_TYPES_SAC.map(t => t.value)].map(tp => (
+                  <button key={tp} onClick={() => setFilterType(tp)}
+                    className={`rounded-lg px-2 py-1 text-[10px] font-bold border transition-all ${filterType === tp ? "bg-primary/20 text-primary border-primary/30" : "border-white/10 text-muted-foreground hover:bg-white/5"}`}>
+                    {tp === "todos" ? "Todos" : TICKET_TYPES_SAC.find(t => t.value === tp)?.emoji + " " + TICKET_TYPES_SAC.find(t => t.value === tp)?.label}
+                  </button>
+                ))}
+              </div>
+              {loadingAll ? (
+                <div className="flex justify-center py-8"><Loader2 className="h-5 w-5 animate-spin text-primary/50" /></div>
+              ) : filteredTickets.length === 0 ? (
+                <div className="py-8 text-center text-sm text-muted-foreground">Nenhum ticket encontrado.</div>
+              ) : (
+                <div className="space-y-2 max-h-[400px] overflow-y-auto pr-1 custom-scrollbar">
+                  {filteredTickets.map((tk: any) => {
+                    const st  = STATUS_MAP_SAC[tk.status] ?? STATUS_MAP_SAC.aberto;
+                    const tp  = TICKET_TYPES_SAC.find(t => t.value === tk.type);
+                    const pri = PRIORITIES_SAC.find(p => p.value === tk.priority);
+                    const isOpen = expandedId === tk.id;
+                    return (
+                      <motion.div key={tk.id} layout className={`rounded-xl border overflow-hidden ${sacTypeCard(tk.type)}`}>
+                        <button type="button" onClick={() => setExpandedId(isOpen ? null : tk.id)}
+                          className="w-full flex items-start gap-3 p-3 text-left hover:bg-white/[0.02] transition">
+                          <span className="text-lg shrink-0">{tp?.emoji}</span>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <p className="text-xs font-bold truncate">{tk.title}</p>
+                              <span className={`text-[9px] font-black px-1.5 py-0.5 rounded-full border ${st.color}`}>{st.label}</span>
+                              <span className={`text-[9px] font-bold ${pri?.color ?? ""}`}>{pri?.label}</span>
+                            </div>
+                            <p className="text-[10px] text-muted-foreground mt-0.5 truncate">{tk.description}</p>
+                            <p className="text-[9px] text-muted-foreground/50 font-mono mt-1">
+                              {new Date(tk.created_at).toLocaleString("pt-BR")} · #{String(tk.user_id ?? "anon").slice(-6)}
+                            </p>
+                          </div>
+                          <ChevronDown className={`h-4 w-4 text-muted-foreground shrink-0 transition-transform ${isOpen ? "rotate-180" : ""}`} />
+                        </button>
+                        <AnimatePresence>
+                          {isOpen && (
+                            <motion.div initial={{ height: 0 }} animate={{ height: "auto" }} exit={{ height: 0 }} className="overflow-hidden">
+                              <div className="px-4 pb-4 space-y-3 border-t border-white/5 pt-3">
+                                <p className="text-xs text-foreground/80 leading-relaxed">{tk.description}</p>
+                                <textarea rows={2} placeholder="Nota interna (visível ao usuário)..."
+                                  value={adminNotes[tk.id] ?? (tk.admin_notes || "")}
+                                  onChange={e => setAdminNotes(prev => ({ ...prev, [tk.id]: e.target.value }))}
+                                  className="w-full rounded-lg border border-white/10 bg-background px-3 py-2 text-xs focus:border-primary focus:outline-none resize-none" />
+                                <div className="flex flex-wrap gap-1.5">
+                                  {["aberto", "em_analise", "resolvido", "fechado"].map(s => (
+                                    <button key={s} disabled={tk.status === s || updateStatus.isPending}
+                                      onClick={() => updateStatus.mutate({ id: tk.id, status: s, notes: adminNotes[tk.id] ?? tk.admin_notes })}
+                                      className={`rounded-lg px-2.5 py-1 text-[10px] font-bold border transition-all disabled:opacity-40 ${tk.status === s ? STATUS_MAP_SAC[s].color : "border-white/10 text-muted-foreground hover:bg-white/5"}`}>
+                                      {STATUS_MAP_SAC[s]?.label}
+                                    </button>
+                                  ))}
+                                  <button onClick={() => updateStatus.mutate({ id: tk.id, status: tk.status, notes: adminNotes[tk.id] ?? tk.admin_notes })}
+                                    disabled={updateStatus.isPending}
+                                    className="ml-auto rounded-lg px-2.5 py-1 text-[10px] font-bold bg-primary/20 text-primary border border-primary/30 hover:bg-primary/30 transition">
+                                    Salvar Nota
+                                  </button>
+                                </div>
+                              </div>
+                            </motion.div>
+                          )}
+                        </AnimatePresence>
+                      </motion.div>
+                    );
+                  })}
+                </div>
+              )}
+            </>
+          ) : (
+            <>
+              <h4 className="font-bold text-sm flex items-center gap-2">
+                <Clock className="h-4 w-4 text-muted-foreground" /> Meus Envios
+              </h4>
+              {myTickets.length === 0 ? (
+                <div className="py-10 text-center text-muted-foreground">
+                  <MessageSquareWarning className="h-8 w-8 mx-auto mb-2 opacity-20" />
+                  <p className="text-sm">Nenhum envio ainda.</p>
+                  <p className="text-xs mt-1 opacity-60">Seus feedbacks aparecerão aqui após o envio.</p>
+                </div>
+              ) : (
+                <div className="space-y-2 max-h-[400px] overflow-y-auto pr-1 custom-scrollbar">
+                  {myTickets.map((tk: any) => {
+                    const st = STATUS_MAP_SAC[tk.status] ?? STATUS_MAP_SAC.aberto;
+                    const tp = TICKET_TYPES_SAC.find(t => t.value === tk.type);
+                    return (
+                      <div key={tk.id} className={`rounded-xl border p-3 space-y-1.5 ${sacTypeCard(tk.type)}`}>
+                        <div className="flex items-start justify-between gap-2">
+                          <p className="text-xs font-bold">{tp?.emoji} {tk.title}</p>
+                          <span className={`shrink-0 text-[9px] font-black px-1.5 py-0.5 rounded-full border ${st.color}`}>{st.label}</span>
+                        </div>
+                        <p className="text-[11px] text-muted-foreground line-clamp-2">{tk.description}</p>
+                        <p className="text-[9px] text-muted-foreground/50 font-mono">{new Date(tk.created_at).toLocaleString("pt-BR")}</p>
+                        {tk.admin_notes && (
+                          <div className="mt-1 rounded-lg bg-primary/10 border border-primary/20 px-3 py-2">
+                            <p className="text-[9px] font-black text-primary uppercase mb-0.5">Resposta dos Admins</p>
+                            <p className="text-[11px] text-foreground">{tk.admin_notes}</p>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
