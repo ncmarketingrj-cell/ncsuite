@@ -171,7 +171,15 @@ function RootComponent() {
     <ThemeContext.Provider value={{ theme, toggleTheme }}>
       <QueryClientProvider client={queryClient}>
         <Outlet />
-        <Toaster theme={theme} position="top-right" richColors />
+        <Toaster
+          theme={theme}
+          position="bottom-right"
+          richColors
+          offset={{ bottom: 80, right: 16 }}
+          toastOptions={{
+            style: { zIndex: 99999 },
+          }}
+        />
       </QueryClientProvider>
     </ThemeContext.Provider>
   );
