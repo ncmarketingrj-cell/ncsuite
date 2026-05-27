@@ -740,48 +740,50 @@ function Shell() {
       <main className="relative z-[1] flex-1 overflow-y-auto overscroll-none custom-scrollbar" style={{ WebkitOverflowScrolling: 'touch' }}>
         <div className="mx-auto max-w-[1600px] p-3 pb-28 sm:p-4 md:pb-8 md:p-6 lg:p-8">
           
-          {/* Notificação Flutuante de Ação Autônoma da IA */}
-          <AnimatePresence>
-            {showNotification && recentNotifications.length > 0 && (
-              <motion.div
-                initial={{ opacity: 0, y: 50, scale: 0.9 }}
-                animate={{ opacity: 1, y: 0, scale: 1 }}
-                exit={{ opacity: 0, y: 20, scale: 0.9 }}
-                className="fixed bottom-24 left-3 right-3 sm:left-auto sm:right-6 sm:w-[360px] lg:bottom-6 z-50 rounded-2xl border border-primary/30 bg-card p-4 shadow-2xl overflow-hidden card-sport nc-badge-corner"
-              >
-                {/* Racing stripe no topo da notificação */}
-                <div className="absolute top-0 inset-x-0 h-[2px] bg-gradient-to-r from-transparent via-primary to-transparent pointer-events-none" />
-                <div className="flex items-start gap-3">
-                  <div className="rounded-xl bg-primary/12 border border-primary/25 p-2 text-primary">
-                    <Sparkles className="h-4 w-4 animate-pulse" />
-                  </div>
-                  <div className="flex-1">
-                    <p className="text-xs font-black uppercase tracking-wider text-primary">Victoria AI</p>
-                    <p className="text-[11px] font-bold text-foreground mt-0.5">{recentNotifications[0].title}</p>
-                    <p className="text-[10px] text-muted-foreground mt-1 leading-relaxed">{recentNotifications[0].message}</p>
-                    <div className="mt-2 flex justify-end">
-                      <Link 
-                        to={recentNotifications[0].link || "/automacoes"} 
-                        onClick={async () => {
-                          setShowNotification(false);
-                          await supabase.from("notifications").update({ is_read: true }).eq("id", recentNotifications[0].id);
-                          refetchNotifications();
-                        }}
-                        className="text-[9px] font-bold uppercase text-primary hover:underline"
-                      >
-                        Ver Detalhes
-                      </Link>
-                    </div>
-                  </div>
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
-
-
           <Outlet />
         </div>
       </main>
+
+      {/* Notificação Flutuante VICTORIA AI — fora do scroll, canto inferior direito */}
+      <AnimatePresence>
+        {showNotification && recentNotifications.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, x: 60, scale: 0.95 }}
+            animate={{ opacity: 1, x: 0, scale: 1 }}
+            exit={{ opacity: 0, x: 60, scale: 0.95 }}
+            transition={{ type: "spring", stiffness: 300, damping: 25 }}
+            className="fixed bottom-6 right-4 sm:right-6 w-[calc(100vw-2rem)] max-w-[340px] z-[60] rounded-2xl border border-primary/30 bg-card p-4 shadow-2xl overflow-hidden card-sport"
+          >
+            <div className="absolute top-0 inset-x-0 h-[2px] bg-gradient-to-r from-transparent via-primary to-transparent pointer-events-none" />
+            <button onClick={() => setShowNotification(false)} className="absolute top-2.5 right-2.5 text-muted-foreground/50 hover:text-foreground transition-colors">
+              <X className="h-3.5 w-3.5" />
+            </button>
+            <div className="flex items-start gap-3">
+              <div className="rounded-xl bg-primary/12 border border-primary/25 p-2 text-primary shrink-0">
+                <Sparkles className="h-4 w-4 animate-pulse" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-black uppercase tracking-wider text-primary">Victoria AI</p>
+                <p className="text-[11px] font-bold text-foreground mt-0.5 truncate">{recentNotifications[0].title}</p>
+                <p className="text-[10px] text-muted-foreground mt-1 leading-relaxed line-clamp-2">{recentNotifications[0].message}</p>
+                <div className="mt-2 flex justify-end">
+                  <Link
+                    to={recentNotifications[0].link || "/automacoes"}
+                    onClick={async () => {
+                      setShowNotification(false);
+                      await supabase.from("notifications").update({ is_read: true }).eq("id", recentNotifications[0].id);
+                      refetchNotifications();
+                    }}
+                    className="text-[9px] font-bold uppercase text-primary hover:underline"
+                  >
+                    Ver Detalhes
+                  </Link>
+                </div>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <AIAgentSidebar isOpen={isAgentOpen} onClose={() => setIsAgentOpen(false)} />
       <ProfileSettingsModal isOpen={isProfileOpen} onClose={() => setIsProfileOpen(false)} profile={profile} userId={user?.id || ""} />
