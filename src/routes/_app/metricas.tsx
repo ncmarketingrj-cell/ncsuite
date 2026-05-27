@@ -1,4 +1,4 @@
-﻿// src/routes/_app/metricas.tsx
+// src/routes/_app/metricas.tsx
 // NC Performance Suite — Métricas & Campanhas (Página Unificada)
 
 import { createFileRoute, redirect, useSearch, useNavigate, useLocation } from "@tanstack/react-router";
@@ -752,7 +752,7 @@ function MetricasCampanhasPage() {
 
         {/* KPI Bar */}
         <motion.div
-          className="flex items-stretch overflow-x-auto rounded-xl border border-white/[0.09] bg-white/[0.03] backdrop-blur-sm divide-x divide-white/[0.07] scrollbar-hide"
+          className="flex items-stretch overflow-x-auto rounded-xl border border-border bg-card/60 backdrop-blur-sm divide-x divide-border scrollbar-hide"
           animate={{ opacity: 1 }} initial={{ opacity: 0 }}
         >
           {kpiItems.map(k => (
@@ -779,7 +779,7 @@ function MetricasCampanhasPage() {
         {/* Controles: View + Filtros */}
         <div className="flex flex-wrap items-center gap-2 pb-1">
           {/* View switcher */}
-          <div className="flex items-center gap-0.5 rounded-xl border border-white/10 bg-white/[0.02] p-0.5">
+          <div className="flex items-center gap-0.5 rounded-xl border border-border bg-card/50 p-0.5">
             {([
               { id: "gestao",       label: "Gestão",      icon: LayoutGrid },
               { id: "analise",      label: "Análise",     icon: BarChart2 },
@@ -795,7 +795,7 @@ function MetricasCampanhasPage() {
           {/* Conta */}
           <div className="relative shrink-0">
             <Layers className="pointer-events-none absolute left-2.5 top-1/2 h-3 w-3 -translate-y-1/2 text-muted-foreground" />
-            <select value={accountFilter} onChange={e => setAccountFilter(e.target.value)} className="appearance-none rounded-xl border border-white/10 bg-background/40 py-1.5 pl-7 pr-6 text-xs font-bold focus:border-primary/50 focus:outline-none transition-all">
+            <select value={accountFilter} onChange={e => setAccountFilter(e.target.value)} className="appearance-none rounded-xl border border-border bg-background/60 py-1.5 pl-7 pr-6 text-xs font-bold focus:border-primary/50 focus:outline-none transition-all">
               <option value="all" className="bg-background text-foreground">Todas as Contas</option>
               {adAccounts.map((a: any) => <option key={a.id} value={a.id} className="bg-background text-foreground">{a.name}</option>)}
             </select>
@@ -808,7 +808,7 @@ function MetricasCampanhasPage() {
           {/* Status (apenas na tab Gestão) */}
           {view === "gestao" && (
             <div className="relative shrink-0">
-              <select value={statusFilter} onChange={e => setStatusFilter(e.target.value as any)} className="appearance-none rounded-xl border border-white/10 bg-background/40 px-3 py-1.5 pr-7 text-xs font-bold focus:border-primary/50 focus:outline-none transition-all">
+              <select value={statusFilter} onChange={e => setStatusFilter(e.target.value as any)} className="appearance-none rounded-xl border border-border bg-background/60 px-3 py-1.5 pr-7 text-xs font-bold focus:border-primary/50 focus:outline-none transition-all">
                 <option value="all"    className="bg-background text-foreground">Todos</option>
                 <option value="active" className="bg-background text-foreground">Ativos</option>
                 <option value="paused" className="bg-background text-foreground">Pausados</option>
@@ -821,7 +821,7 @@ function MetricasCampanhasPage() {
           {view === "gestao" && (
             <div className="relative flex-1 min-w-[140px]">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-3 w-3 -translate-y-1/2 text-muted-foreground" />
-              <input value={search} onChange={e => setSearch(e.target.value)} placeholder={`Buscar ${level}...`} className="w-full rounded-xl border border-white/10 bg-background/40 py-1.5 pl-8 pr-3 text-xs font-semibold focus:border-primary/50 focus:outline-none transition-all placeholder:text-muted-foreground/50" />
+              <input value={search} onChange={e => setSearch(e.target.value)} placeholder={`Buscar ${level}...`} className="w-full rounded-xl border border-border bg-background/60 py-1.5 pl-8 pr-3 text-xs font-semibold focus:border-primary/50 focus:outline-none transition-all placeholder:text-muted-foreground/50" />
             </div>
           )}
 
@@ -858,7 +858,7 @@ function MetricasCampanhasPage() {
                 {(() => { const diff = Math.round((Date.now() - new Date(syncConfig.last_heartbeat_at).getTime()) / 60000); return diff < 1 ? "agora" : diff < 60 ? `${diff}m atrás` : `${Math.round(diff/60)}h atrás`; })()}
               </div>
             )}
-            <button onClick={() => syncMutation.mutate()} disabled={syncMutation.isPending} title="Sincronizar dados com Meta Ads" className="flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/[0.02] px-3 py-1.5 text-[11px] font-bold text-muted-foreground hover:text-foreground hover:border-primary/30 transition-all disabled:opacity-50">
+            <button onClick={() => syncMutation.mutate()} disabled={syncMutation.isPending} title="Sincronizar dados com Meta Ads" className="flex items-center gap-1.5 rounded-xl border border-border bg-card/50 px-3 py-1.5 text-[11px] font-bold text-muted-foreground hover:text-foreground hover:border-primary/30 transition-all disabled:opacity-50">
               {syncMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin"/> : <RefreshCw className="h-3.5 w-3.5"/>}
               <span className="hidden sm:inline">Sync</span>
             </button>

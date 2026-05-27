@@ -288,21 +288,23 @@ function extractConversions(actions: any[] = [], objective?: string): number {
     "OUTCOME_APP_PROMOTION": ["app_install", "mobile_app_install"],
     // Visualizações de Vídeo — Meta Ads Manager mostra ThruPlays como resultado principal
     "VIDEO_VIEWS":       ["thruplay", "video_view"],
-    "OUTCOME_AWARENESS": ["thruplay", "video_view", "post_engagement"],
+    "OUTCOME_AWARENESS": ["thruplay", "video_view"],
     // Tráfego — Meta Ads Manager mostra Landing Page Views por padrão
     "LINK_CLICKS":    ["landing_page_view", "link_click"],
     "OUTCOME_TRAFFIC": ["landing_page_view", "link_click", "outbound_clicks"],
-    // Engajamento / Mensagens (OUTCOME_ENGAGEMENT cobre WhatsApp, DM, curtidas, etc.)
-    // CORREÇÃO: "first_reply" e "conversation_started" ANTES de "total_messaging_connection"
-    // O Gerenciador Meta exibe conversas iniciadas/primeiras respostas — não conexões totais.
-    "POST_ENGAGEMENT":  ["post_engagement", "page_engagement"],
+    // Engajamento puro de post (curtidas, comentários, compartilhamentos)
+    // SOMENTE para campanhas cujo objetivo DE FATO é engajamento de publicação
+    "POST_ENGAGEMENT": ["post_engagement", "page_engagement"],
+    // OUTCOME_ENGAGEMENT cobre WhatsApp, DM, Instagram Direct — resultado = mensagens iniciadas
+    // ATENÇÃO: post_engagement e page_engagement REMOVIDOS daqui.
+    // Esses action_types são sempre > 0 em qualquer campanha ativa (curtidas, etc.)
+    // e fariam o app exibir resultados inflados quando não há mensagens reais no dia.
+    // O Meta Ads Manager para campanhas de mensagem exibe APENAS as métricas de messaging abaixo.
     "OUTCOME_ENGAGEMENT": [
-      "onsite_conversion.messaging_first_reply",           // ← Meta Ads Manager resultado primário para mensagens
-      "onsite_conversion.messaging_conversation_started_7d", // ← alternativa se first_reply não disponível
+      "onsite_conversion.messaging_first_reply",            // ← resultado primário para mensagens (Meta Ads Manager)
+      "onsite_conversion.messaging_conversation_started_7d",// ← alternativa
       "messaging_conversation_started_7d",
-      "onsite_conversion.total_messaging_connection",      // ← fallback: superset (inclui retornos), usar só se acima = 0
-      "post_engagement",
-      "page_engagement",
+      "onsite_conversion.total_messaging_connection",       // ← superset (inclui retornos), só se acima = 0
     ],
   };
 
@@ -315,6 +317,9 @@ function extractConversions(actions: any[] = [], objective?: string): number {
   }
 
   // 2ª passagem: fallback geral — apenas conversões reais, sem engajamento superficial
+  // ATENÇÃO: post_engagement e page_engagement AUSENTES intencionalmente.
+  // Engajamento de post (curtidas, reações) é sempre > 0 e causaria resultados
+  // inflados em campanhas de mensagem, leads ou tráfego quando não há conversão real.
   const fallback = [
     "lead",
     "offsite_conversion.fb_pixel_lead",
