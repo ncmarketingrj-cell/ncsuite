@@ -753,7 +753,7 @@ function Shell() {
               animate={{ opacity: 1, x: 0, scale: 1 }}
               exit={{ opacity: 0, x: 60, scale: 0.95 }}
               transition={{ type: "spring", stiffness: 300, damping: 25 }}
-              className="fixed bottom-20 right-3 sm:bottom-6 sm:right-6 w-[288px] sm:w-[340px] z-[9999] rounded-2xl border border-primary/30 bg-card p-4 shadow-2xl overflow-hidden card-sport"
+              className="!fixed bottom-20 right-3 sm:bottom-6 sm:right-6 w-[288px] sm:w-[340px] z-[9999] rounded-2xl border border-primary/30 bg-card p-4 shadow-2xl overflow-hidden"
             >
               <div className="absolute top-0 inset-x-0 h-[2px] bg-gradient-to-r from-transparent via-primary to-transparent pointer-events-none" />
               <button onClick={() => setShowNotification(false)} className="absolute top-2.5 right-2.5 text-muted-foreground/50 hover:text-foreground transition-colors">
