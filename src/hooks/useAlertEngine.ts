@@ -238,7 +238,11 @@ async function runThresholdEvaluation() {
         const duration = daysSince === null ? "campanha ativa" : daysSince === 0 ? "iniciou hoje" : `${daysSince}d de campanha`;
 
         // ── Violação de custo por resultado ──────────────────────────────────
-        if (threshold.max_cpl !== null && threshold.max_cpl !== undefined && todayCost > 0 && todayConv > 0) {
+        const cplEnabled    = threshold.alert_cpl_enabled       !== false;
+        const budgetEnabled = threshold.alert_budget_enabled     !== false;
+        const freqEnabled   = threshold.alert_frequency_enabled  !== false;
+
+        if (cplEnabled && threshold.max_cpl !== null && threshold.max_cpl !== undefined && Number(threshold.max_cpl) > 0 && todayCost > 0 && todayConv > 0) {
           const costPerResult = todayCost / todayConv;
 
           if (costPerResult > threshold.max_cpl) {
@@ -271,7 +275,7 @@ async function runThresholdEvaluation() {
         }
 
         // ── Violação de Orçamento ────────────────────────────────────────────
-        if (threshold.max_budget_pct !== null && threshold.max_budget_pct !== undefined && todayCost > 0 && campaign.budget > 0) {
+        if (budgetEnabled && threshold.max_budget_pct !== null && threshold.max_budget_pct !== undefined && Number(threshold.max_budget_pct) > 0 && todayCost > 0 && campaign.budget > 0) {
           const pct = (todayCost / campaign.budget) * 100;
 
           if (pct >= (threshold.max_budget_pct as number)) {
@@ -306,7 +310,7 @@ async function runThresholdEvaluation() {
         }
 
         // ── Violação de Frequência ───────────────────────────────────────────
-        if (threshold.max_frequency !== null && threshold.max_frequency !== undefined) {
+        if (freqEnabled && threshold.max_frequency !== null && threshold.max_frequency !== undefined && Number(threshold.max_frequency) > 0) {
           const freqValues = todayMetrics.map((m: any) => Number(m.frequency || 0)).filter((f: number) => f > 0);
           const avgFreq = freqValues.length > 0 ? freqValues.reduce((s: number, f: number) => s + f, 0) / freqValues.length : 0;
 

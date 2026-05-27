@@ -785,8 +785,17 @@ function ThresholdModal({ onClose, accounts, userId, qc, editing }: any) {
 
   const handleSave = async () => {
     const targetAccountId = accountId === "all" ? null : accountId;
-    if (!maxCpl && !maxBudgetPct && !maxFrequency) {
-      return toast.error("Preencha pelo menos um alerta (CPL, Orçamento ou Frequência)");
+    if (!alertCplEnabled && !alertBudgetEnabled && !alertFrequencyEnabled) {
+      return toast.error("Ative pelo menos um tipo de alerta (CPL, Orçamento ou Frequência)");
+    }
+    if (alertCplEnabled && (!maxCpl || parseFloat(maxCpl) <= 0)) {
+      return toast.error("Informe o CPL Máximo para ativar o alerta de CPL");
+    }
+    if (alertBudgetEnabled && (!maxBudgetPct || parseInt(maxBudgetPct) <= 0)) {
+      return toast.error("Informe o % de Orçamento para ativar o alerta de budget");
+    }
+    if (alertFrequencyEnabled && (!maxFrequency || parseFloat(maxFrequency) <= 0)) {
+      return toast.error("Informe a Frequência Máxima para ativar o alerta de frequência");
     }
 
     setIsSubmitting(true);
@@ -928,79 +937,103 @@ function ThresholdModal({ onClose, accounts, userId, qc, editing }: any) {
             </div>
           )}
 
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-1.5">
-              <label className="text-[10px] font-bold text-muted-foreground uppercase">
-                CPL Máximo (R$)
-              </label>
-              <input
-                type="number" step="0.01" value={maxCpl}
-                onChange={(e) => setMaxCpl(e.target.value)}
-                placeholder="Ex: 15.50"
-                className="w-full rounded-lg border border-white/10 bg-background px-3 py-3 text-sm focus:border-primary focus:outline-none"
-              />
-              <p className="text-[9px] text-muted-foreground">Alerta quando CPL do dia superar este valor</p>
+          {/* ── ALERTA DE CPL ───────────────────────────────────────────────── */}
+          <div className={`rounded-xl border p-4 space-y-3 transition-all ${
+            alertCplEnabled ? "border-red-500/40 bg-red-500/5" : "border-white/10 bg-white/[0.02]"
+          }`}>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <TrendingUp className={`h-4 w-4 ${alertCplEnabled ? "text-red-400" : "text-muted-foreground"}`} />
+                <span className={`text-sm font-bold ${alertCplEnabled ? "text-red-400" : "text-muted-foreground"}`}>Alerta de CPL</span>
+                <span className="text-[9px] font-mono text-muted-foreground/60">Custo Por Lead</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setAlertCplEnabled(v => !v)}
+                className={`relative h-5 w-9 rounded-full transition-colors shrink-0 ${alertCplEnabled ? "bg-red-500" : "bg-white/15"}`}
+              >
+                <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-all ${alertCplEnabled ? "left-4" : "left-0.5"}`} />
+              </button>
             </div>
-            <div className="space-y-1.5">
-              <label className="text-[10px] font-bold text-muted-foreground uppercase">
-                Aviso de Orçamento (%)
-              </label>
-              <input
-                type="number" value={maxBudgetPct}
-                onChange={(e) => setMaxBudgetPct(e.target.value)}
-                placeholder="Ex: 90"
-                className="w-full rounded-lg border border-white/10 bg-background px-3 py-3 text-sm focus:border-primary focus:outline-none"
-              />
-              <p className="text-[9px] text-muted-foreground">Alerta quando orçamento diário atingir este %</p>
-            </div>
+            {alertCplEnabled && (
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-bold text-muted-foreground uppercase">CPL Máximo (R$)</label>
+                <input
+                  type="number" step="0.01" min="0.01" value={maxCpl}
+                  onChange={(e) => setMaxCpl(e.target.value)}
+                  placeholder="Ex: 15.50"
+                  className="w-full rounded-lg border border-red-500/30 bg-background px-3 py-2.5 text-sm focus:border-red-400 focus:outline-none"
+                />
+                <p className="text-[9px] text-muted-foreground">Alerta quando CPL do dia superar este valor</p>
+              </div>
+            )}
           </div>
 
-          <div className="space-y-1.5">
-            <label className="text-[10px] font-bold text-muted-foreground uppercase flex items-center gap-2">
-              Frequência Máxima
-              <span className="px-1.5 py-0.5 rounded bg-orange-500/15 text-orange-400 text-[9px] font-black">NOVO</span>
-            </label>
-            <div className="flex items-center gap-3">
-              <input
-                type="number" step="0.1" min="1" max="10" value={maxFrequency}
-                onChange={(e) => setMaxFrequency(e.target.value)}
-                placeholder="3.5"
-                className="w-full rounded-lg border border-white/10 bg-background px-3 py-3 text-sm focus:border-orange-400 focus:outline-none"
-              />
-              <span className="text-sm font-bold text-muted-foreground shrink-0">×</span>
+          {/* ── ALERTA DE ORÇAMENTO ─────────────────────────────────────────── */}
+          <div className={`rounded-xl border p-4 space-y-3 transition-all ${
+            alertBudgetEnabled ? "border-yellow-500/40 bg-yellow-500/5" : "border-white/10 bg-white/[0.02]"
+          }`}>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <DollarSign className={`h-4 w-4 ${alertBudgetEnabled ? "text-yellow-400" : "text-muted-foreground"}`} />
+                <span className={`text-sm font-bold ${alertBudgetEnabled ? "text-yellow-400" : "text-muted-foreground"}`}>Alerta de Orçamento</span>
+                <span className="text-[9px] font-mono text-muted-foreground/60">Budget Diário</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setAlertBudgetEnabled(v => !v)}
+                className={`relative h-5 w-9 rounded-full transition-colors shrink-0 ${alertBudgetEnabled ? "bg-yellow-500" : "bg-white/15"}`}
+              >
+                <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-all ${alertBudgetEnabled ? "left-4" : "left-0.5"}`} />
+              </button>
             </div>
-            <p className="text-[9px] text-muted-foreground">Alerta quando qualquer campanha ultrapassar esta frequência média. Padrão 3.5× para automotivo (público limitado).</p>
+            {alertBudgetEnabled && (
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-bold text-muted-foreground uppercase">Aviso quando atingir (%)</label>
+                <input
+                  type="number" min="1" max="100" value={maxBudgetPct}
+                  onChange={(e) => setMaxBudgetPct(e.target.value)}
+                  placeholder="Ex: 90"
+                  className="w-full rounded-lg border border-yellow-500/30 bg-background px-3 py-2.5 text-sm focus:border-yellow-400 focus:outline-none"
+                />
+                <p className="text-[9px] text-muted-foreground">Alerta quando orçamento diário atingir este % do total</p>
+              </div>
+            )}
           </div>
 
-          {/* ── Alertas ativos ─────────────────────────────────────────────── */}
-          <div className="space-y-2">
-            <label className="text-[10px] font-bold text-muted-foreground uppercase">
-              Tipos de alerta ativos nesta regra
-            </label>
-            <div className="flex flex-wrap gap-2">
-              {[
-                { label: "CPL / Custo",   active: alertCplEnabled,       toggle: () => setAlertCplEnabled(v => !v),       color: "red" },
-                { label: "Orçamento",     active: alertBudgetEnabled,    toggle: () => setAlertBudgetEnabled(v => !v),    color: "yellow" },
-                { label: "Frequência",    active: alertFrequencyEnabled, toggle: () => setAlertFrequencyEnabled(v => !v), color: "orange" },
-              ].map(({ label, active, toggle, color }) => (
-                <button
-                  key={label}
-                  type="button"
-                  onClick={toggle}
-                  className={`flex items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-bold transition-all ${
-                    active
-                      ? color === "red"    ? "border-red-500/40 bg-red-500/10 text-red-400"
-                      : color === "yellow" ? "border-yellow-500/40 bg-yellow-500/10 text-yellow-400"
-                      :                     "border-orange-500/40 bg-orange-500/10 text-orange-400"
-                      : "border-white/10 bg-white/5 text-muted-foreground"
-                  }`}
-                >
-                  <span className={`h-2 w-2 rounded-full ${active ? "bg-current" : "bg-white/20"}`} />
-                  {label}
-                </button>
-              ))}
+          {/* ── ALERTA DE FREQUÊNCIA ────────────────────────────────────────── */}
+          <div className={`rounded-xl border p-4 space-y-3 transition-all ${
+            alertFrequencyEnabled ? "border-orange-500/40 bg-orange-500/5" : "border-white/10 bg-white/[0.02]"
+          }`}>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Radio className={`h-4 w-4 ${alertFrequencyEnabled ? "text-orange-400" : "text-muted-foreground"}`} />
+                <span className={`text-sm font-bold ${alertFrequencyEnabled ? "text-orange-400" : "text-muted-foreground"}`}>Alerta de Frequência</span>
+                <span className="text-[9px] font-mono text-muted-foreground/60">Saturação de Audiência</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setAlertFrequencyEnabled(v => !v)}
+                className={`relative h-5 w-9 rounded-full transition-colors shrink-0 ${alertFrequencyEnabled ? "bg-orange-500" : "bg-white/15"}`}
+              >
+                <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-all ${alertFrequencyEnabled ? "left-4" : "left-0.5"}`} />
+              </button>
             </div>
-            <p className="text-[9px] text-muted-foreground">Desative tipos que não se aplicam a esta conta.</p>
+            {alertFrequencyEnabled && (
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-bold text-muted-foreground uppercase">Frequência Máxima (×)</label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number" step="0.1" min="1" max="10" value={maxFrequency}
+                    onChange={(e) => setMaxFrequency(e.target.value)}
+                    placeholder="3.5"
+                    className="w-full rounded-lg border border-orange-500/30 bg-background px-3 py-2.5 text-sm focus:border-orange-400 focus:outline-none"
+                  />
+                  <span className="text-sm font-bold text-muted-foreground shrink-0">×</span>
+                </div>
+                <p className="text-[9px] text-muted-foreground">Alerta quando a frequência média ultrapassar este valor. Padrão 3.5× para automotivo.</p>
+              </div>
+            )}
           </div>
 
           {/* ── Gasto mínimo ───────────────────────────────────────────────── */}
@@ -1012,9 +1045,9 @@ function ThresholdModal({ onClose, accounts, userId, qc, editing }: any) {
               type="number" step="0.01" min="0" value={minSpend}
               onChange={(e) => setMinSpend(e.target.value)}
               placeholder="0 = sempre alertar"
-              className="w-full rounded-lg border border-white/10 bg-background px-3 py-3 text-sm focus:border-primary focus:outline-none"
+              className="w-full rounded-lg border border-white/10 bg-background px-3 py-2.5 text-sm focus:border-primary focus:outline-none"
             />
-            <p className="text-[9px] text-muted-foreground">Ignora campanhas que gastaram menos que este valor no dia — evita alertas de campanhas com orçamento muito baixo.</p>
+            <p className="text-[9px] text-muted-foreground">Ignora campanhas com gasto abaixo deste valor — evita ruído de campanhas com budget muito baixo.</p>
           </div>
         </div>
 
