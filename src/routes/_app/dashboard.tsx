@@ -19,6 +19,7 @@ import { format, subDays, isAfter } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { SyncButton } from "@/components/SyncButton";
 import { DateRangePicker } from "@/components/DateRangePicker";
+import { PageHeader } from "@/components/PageHeader";
 
 export const Route = createFileRoute("/_app/dashboard")({
   head: () => ({ meta: [{ title: "Dashboard — NC Performance Suite" }] }),
