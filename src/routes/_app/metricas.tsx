@@ -752,11 +752,11 @@ function MetricasCampanhasPage() {
 
         {/* KPI Bar */}
         <motion.div
-          className="flex items-stretch overflow-x-auto rounded-xl border border-border bg-card/60 backdrop-blur-sm divide-x divide-border scrollbar-hide"
+          className="flex w-full items-stretch overflow-x-auto rounded-xl border border-border bg-card/60 backdrop-blur-sm divide-x divide-border scrollbar-hide"
           animate={{ opacity: 1 }} initial={{ opacity: 0 }}
         >
           {kpiItems.map(k => (
-            <div key={k.label} className={`flex flex-shrink-0 overflow-hidden transition-all duration-300 ${scrolled ? "px-3 py-1.5" : "px-4 py-2.5"}`}>
+            <div key={k.label} className={`flex-1 min-w-[125px] transition-all duration-300 hover:bg-white/[0.02] ${scrolled ? "px-3 py-1.5" : "px-4 py-2.5"}`}>
               {scrolled ? (
                 <div className="flex items-center gap-1.5">
                   <k.icon className={`h-3 w-3 flex-shrink-0 ${k.color}`} />
