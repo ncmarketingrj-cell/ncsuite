@@ -338,15 +338,14 @@ html.light {
   .text-gradient {
     background-image: linear-gradient(
       100deg,
-      hsl(var(--primary)) 0%,
-      hsl(10 90% 72%) 30%,
-      hsl(20 95% 68%) 50%,
-      hsl(5 85% 65%) 70%,
-      hsl(var(--primary)) 100%
+      #ff6b6b 0%,
+      #ff9f43 50%,
+      #ff6b6b 100%
     );
     background-clip: text;
     -webkit-background-clip: text;
     color: transparent;
+    -webkit-text-fill-color: transparent;
     background-size: 300% auto;
     animation: gradient-flow 5s linear infinite;
   }
@@ -354,10 +353,9 @@ html.light {
   html.light .text-gradient {
     background-image: linear-gradient(
       100deg,
-      hsl(var(--primary)) 0%,
-      hsl(0 65% 38%) 40%,
-      hsl(10 70% 42%) 60%,
-      hsl(var(--primary)) 100%
+      #c31313 0%,
+      #e03131 50%,
+      #c31313 100%
     );
   }
 

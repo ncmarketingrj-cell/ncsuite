@@ -288,85 +288,95 @@ function Dashboard() {
       
       {/* ─── STICKY HEADER AREA ─── */}
       <div className="sticky top-0 z-40 -mx-1 px-1 bg-background/95 backdrop-blur-xl border-b border-white/5 pb-4 pt-2 space-y-5">
-        {/* Top Bar: Seletor & Global Actions */}
-        <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between pb-2">
-          <div>
-            <h1 className="text-4xl font-black tracking-tighter text-gradient mb-2 uppercase">Command Center</h1>
-            <div className="flex flex-wrap items-center gap-3">
-              <div className="relative">
-                <button 
-                  onClick={() => setShowAccounts(!showAccounts)}
-                  className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-xs font-black uppercase tracking-widest transition hover:border-primary/40 hover:bg-white/10"
-                >
-                  <Target className="h-3.5 w-3.5 text-primary" />
-                  {selectedAccountId === "all" ? "Todas as Contas Meta" : selectedAccount?.name}
-                  <ChevronDown className={`h-3 w-3 transition ${showAccounts ? "rotate-180" : ""}`} />
-                </button>
+        {/* PageHeader Corporativo Padronizado */}
+        <PageHeader 
+          eyebrow="Painel Geral"
+          title="Command Center"
+          description="Visão analítica de performance, tráfego e inteligência artificial da NC Suite."
+          compact
+        />
 
-                <AnimatePresence>
-                  {showAccounts && (
-                    <motion.div 
-                      initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }}
-                      className="absolute left-0 top-full z-50 mt-2 w-72 rounded-2xl border border-white/10 bg-background/95 p-2 shadow-2xl backdrop-blur-2xl"
-                    >
-                      <button 
-                        onClick={() => { setSelectedAccountId("all"); setShowAccounts(false); }}
-                        className={`flex w-full items-center gap-3 rounded-xl px-4 py-3 text-left text-[11px] font-bold uppercase tracking-widest transition ${selectedAccountId === "all" ? "bg-primary/20 text-primary" : "hover:bg-white/5 text-muted-foreground"}`}
-                      >
-                        <Globe className="h-4 w-4" /> Todas as Contas
-                      </button>
-                      <div className="my-2 h-px bg-white/5" />
-                      <div className="max-h-[300px] overflow-y-auto custom-scrollbar">
-                        {accounts.map(acc => (
-                          <button 
-                            key={acc.id}
-                            onClick={() => { setSelectedAccountId(acc.id); setShowAccounts(false); }}
-                            className={`flex w-full items-center gap-3 rounded-xl px-4 py-3 text-left text-[11px] font-bold uppercase tracking-widest transition ${selectedAccountId === acc.id ? "bg-primary/20 text-primary" : "hover:bg-white/5 text-muted-foreground"}`}
-                          >
-                            <div className={`h-1.5 w-1.5 rounded-full ${selectedAccountId === acc.id ? 'bg-primary animate-pulse' : 'bg-white/10'}`} />
-                            {acc.name}
-                          </button>
-                        ))}
-                      </div>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              </div>
-
-              {/* 📅 SELETOR DE PERÍODO PERSONALIZADO PREMIUM */}
-              <DateRangePicker 
-                startDate={dateRange.startDate} 
-                endDate={dateRange.endDate} 
-                onChange={(start, end) => setDateRange({ startDate: start, endDate: end })} 
-              />
-
-              <SyncButton mode="quick" />
-              
-              {/* NOVO: Botão Gerar Relatório */}
+        {/* ─── FILTER BAR ESTRUTURADA (UI PREMIUM) ─── */}
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between w-full bg-card/45 border border-border/60 rounded-2xl p-3 backdrop-blur-md">
+          {/* Filtros à esquerda */}
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="relative">
               <button 
-                onClick={() => navigate({ to: "/relatorios" })}
-                className="group relative flex items-center gap-2 overflow-hidden rounded-xl bg-primary/10 px-5 py-2.5 text-xs font-black uppercase tracking-widest text-primary transition-all hover:bg-primary hover:text-primary-foreground hover:shadow-[0_0_20px_rgba(var(--primary),0.4)]"
+                onClick={() => setShowAccounts(!showAccounts)}
+                className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-xs font-black uppercase tracking-widest transition hover:border-primary/40 hover:bg-white/10"
               >
-                <div className="absolute inset-0 flex h-full w-full justify-center [transform:skew(-12deg)_translateX(-100%)] group-hover:duration-1000 group-hover:[transform:skew(-12deg)_translateX(100%)]">
-                  <div className="relative h-full w-8 bg-white/20" />
-                </div>
-                <FileText className="h-4 w-4" />
-                Gerar Relatório
+                <Target className="h-3.5 w-3.5 text-primary" />
+                {selectedAccountId === "all" ? "Todas as Contas Meta" : selectedAccount?.name}
+                <ChevronDown className={`h-3 w-3 transition ${showAccounts ? "rotate-180" : ""}`} />
               </button>
+
+              <AnimatePresence>
+                {showAccounts && (
+                  <motion.div 
+                    initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }}
+                    className="absolute left-0 top-full z-50 mt-2 w-72 rounded-2xl border border-white/10 bg-background/95 p-2 shadow-2xl backdrop-blur-2xl"
+                  >
+                    <button 
+                      onClick={() => { setSelectedAccountId("all"); setShowAccounts(false); }}
+                      className={`flex w-full items-center gap-3 rounded-xl px-4 py-3 text-left text-[11px] font-bold uppercase tracking-widest transition ${selectedAccountId === "all" ? "bg-primary/20 text-primary" : "hover:bg-white/5 text-muted-foreground"}`}
+                    >
+                      <Globe className="h-4 w-4" /> Todas as Contas
+                    </button>
+                    <div className="my-2 h-px bg-white/5" />
+                    <div className="max-h-[300px] overflow-y-auto custom-scrollbar">
+                      {accounts.map(acc => (
+                        <button 
+                          key={acc.id}
+                          onClick={() => { setSelectedAccountId(acc.id); setShowAccounts(false); }}
+                          className={`flex w-full items-center gap-3 rounded-xl px-4 py-3 text-left text-[11px] font-bold uppercase tracking-widest transition ${selectedAccountId === acc.id ? "bg-primary/20 text-primary" : "hover:bg-white/5 text-muted-foreground"}`}
+                        >
+                          <div className={`h-1.5 w-1.5 rounded-full ${selectedAccountId === acc.id ? 'bg-primary animate-pulse' : 'bg-white/10'}`} />
+                          {acc.name}
+                        </button>
+                      ))}
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </div>
+
+            <DateRangePicker 
+              startDate={dateRange.startDate} 
+              endDate={dateRange.endDate} 
+              onChange={(start, end) => setDateRange({ startDate: start, endDate: end })} 
+            />
           </div>
 
-          <div className="flex items-center gap-4">
-            {config ? (
-              <span className="inline-flex items-center rounded-full bg-success/20 px-2 py-0.5 text-[10px] font-black uppercase tracking-widest text-success border border-success/30 shadow-glow-sm">
-                Ads Conectado
-              </span>
-            ) : (
-              <span className="inline-flex items-center rounded-full bg-amber-500/20 px-2 py-0.5 text-[10px] font-black uppercase tracking-widest text-amber-500 border border-amber-500/30">
-                Sem Integração Ads
-              </span>
-            )}
+          {/* Divisor vertical em telas grandes */}
+          <div className="hidden lg:block h-6 w-px bg-white/10" />
+
+          {/* Ações à direita com espaçamento destacado */}
+          <div className="flex items-center gap-3 ml-auto lg:ml-0">
+            <SyncButton mode="quick" />
+            <button 
+              onClick={() => navigate({ to: "/relatorios" })}
+              className="group relative flex items-center gap-2 overflow-hidden rounded-xl bg-primary px-5 py-2.5 text-xs font-black uppercase tracking-widest text-primary-foreground transition-all hover:bg-primary/90 hover:shadow-glow-sm"
+            >
+              <div className="absolute inset-0 flex h-full w-full justify-center [transform:skew(-12deg)_translateX(-100%)] group-hover:duration-1000 group-hover:[transform:skew(-12deg)_translateX(100%)]">
+                <div className="relative h-full w-8 bg-white/20" />
+              </div>
+              <FileText className="h-4 w-4" />
+              Gerar Relatório
+            </button>
           </div>
+        </div>
+
+        {/* Indicador de Ads Conectado */}
+        <div className="flex items-center gap-4">
+          {config ? (
+            <span className="inline-flex items-center rounded-full bg-emerald-100 px-2.5 py-1 text-[10px] font-black uppercase tracking-widest text-emerald-800 border border-emerald-200 dark:bg-emerald-950 dark:text-emerald-300 dark:border-emerald-900/50 shadow-glow-sm">
+              Ads Conectado
+            </span>
+          ) : (
+            <span className="inline-flex items-center rounded-full bg-amber-100 px-2.5 py-1 text-[10px] font-black uppercase tracking-widest text-amber-800 border border-amber-200 dark:bg-amber-950/70 dark:text-amber-300 dark:border-amber-900/30">
+              Sem Integração Ads
+            </span>
+          )}
         </div>
 
         {/* ─── PAINEL DE SITUAÇÃO OPERACIONAL ─── */}
@@ -687,34 +697,12 @@ function Dashboard() {
 }
 
 
-function StatCard({ label, value, prefix = "", icon: Icon, trend, isPositive, sparklineData = [] }: any) {
-  const max = Math.max(...(sparklineData.length ? sparklineData : [1]), 0.1);
-  const min = Math.min(...(sparklineData.length ? sparklineData : [0]));
-  const range = max - min || 1;
-  
-  const points = sparklineData.map((val: number, i: number) => 
-    `${(i / (sparklineData.length - 1 || 1)) * 100},${100 - ((val - min) / range) * 90 - 5}`
-  ).join(" ");
-
+function StatCard({ label, value, prefix = "", icon: Icon, trend, isPositive }: any) {
   return (
-    <div className="glass-panel card-sport p-5 relative overflow-hidden group transition hover:border-primary/30">
-      {/* Sparkline de fundo */}
-      <div className="absolute inset-x-0 bottom-0 h-20 opacity-20 pointer-events-none">
-        <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="w-full h-full">
-          {points && (
-             <polyline points={points} fill="none" stroke={isPositive ? "hsl(var(--success))" : "hsl(var(--primary))"} strokeWidth="2" vectorEffect="non-scaling-stroke" />
-          )}
-          {points && (
-             <polygon points={`0,100 ${points} 100,100`} fill={isPositive ? "hsl(var(--success))" : "hsl(var(--primary))"} opacity="0.1" />
-          )}
-        </svg>
-      </div>
-      {/* NC corner mark */}
-      <div className="absolute top-2.5 right-3 font-display font-black text-[8px] tracking-wider text-primary/18 select-none pointer-events-none">NC</div>
-
+    <div className="glass-panel card-sport p-6 relative overflow-hidden group transition hover:border-primary/30">
       <div className="flex items-center justify-between mb-4 relative z-10">
-        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10 border border-primary/15 text-primary shadow-inner group-hover:bg-primary/15 transition-colors">
-          <Icon className="h-4 w-4" />
+        <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 border border-primary/15 text-primary shadow-inner group-hover:bg-primary/15 transition-colors">
+          <Icon className="h-4.5 w-4.5" />
         </div>
         {trend && (
           <div className={`flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded-md bg-background/80 backdrop-blur-md border shadow-xl ${isPositive ? 'text-success border-success/22' : 'text-primary border-primary/22'}`}>
@@ -724,7 +712,7 @@ function StatCard({ label, value, prefix = "", icon: Icon, trend, isPositive, sp
         )}
       </div>
       <div className="relative z-10">
-        <p className="kpi-tag mb-2">{label}</p>
+        <p className="text-xs uppercase tracking-wider text-muted-foreground font-black mb-1.5">{label}</p>
         <h4 className="text-3xl font-black font-mono tracking-tighter text-foreground drop-shadow-md">
           {prefix}{typeof value === 'number' ? value.toLocaleString('pt-BR', { minimumFractionDigits: value % 1 !== 0 ? 2 : 0 }) : value}
         </h4>

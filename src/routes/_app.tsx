@@ -247,13 +247,7 @@ function Shell() {
 
   return (
     <div className="relative flex h-screen w-full flex-col bg-background overflow-x-hidden selection:bg-primary/30" style={{ touchAction: 'pan-y', WebkitTapHighlightColor: 'transparent' }}>
-      {/* ── NC Watermark — identidade permanente de fundo ── */}
-      <div
-        className="pointer-events-none absolute bottom-[-2.5rem] right-[-1.5rem] z-0 select-none"
-        aria-hidden="true"
-      >
-        <span className="nc-watermark-text" style={{ fontSize: 'clamp(12rem, 26vw, 34rem)' }}>NC</span>
-      </div>
+
       
       {/* ═══════════════════════════════════════
           TOP NAVIGATION BAR — Premium Horizontal

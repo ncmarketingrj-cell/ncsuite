@@ -32,13 +32,6 @@ export function PageHeader({ eyebrow, title, description, actions, compact }: Pa
         <div className="mt-2 sm:mt-0 flex items-center gap-2 flex-wrap sm:flex-nowrap">{actions}</div>
       )}
 
-      {/* NC watermark discreta no canto — só desktop */}
-      <div
-        className="pointer-events-none absolute top-0 right-0 hidden sm:block select-none"
-        aria-hidden="true"
-      >
-        <span className="font-display font-black text-[10px] tracking-wider" style={{ color: "hsl(var(--primary) / 0.18)" }}>NC</span>
-      </div>
     </motion.header>
   );
 }

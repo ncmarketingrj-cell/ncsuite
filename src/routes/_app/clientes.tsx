@@ -8,6 +8,7 @@ import {
   Loader2, X, AlertCircle, Download, Calendar
 } from "lucide-react";
 import { toast } from "sonner";
+import { PageHeader } from "@/components/PageHeader";
 import { supabase } from "@/integrations/supabase/client";
 
 export const Route = createFileRoute("/_app/clientes")({
@@ -51,14 +52,14 @@ type DayMetrics = {
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 const NICHE_COLOR: Record<string, string> = {
-  "E-commerce":    "bg-blue-500/10 text-blue-400 border-blue-500/20",
-  "Infoproduto":   "bg-violet-500/10 text-violet-400 border-violet-500/20",
-  "Serviços":      "bg-amber-500/10 text-amber-400 border-amber-500/20",
-  "Varejo":        "bg-emerald-500/10 text-emerald-400 border-emerald-500/20",
-  "Automotivo":    "bg-primary/10 text-primary border-primary/20",
-  "Imóveis":       "bg-cyan-500/10 text-cyan-400 border-cyan-500/20",
-  "Saúde":         "bg-rose-500/10 text-rose-400 border-rose-500/20",
-  "Educação":      "bg-orange-500/10 text-orange-400 border-orange-500/20",
+  "E-commerce":    "bg-blue-100 text-blue-800 border-blue-200 dark:bg-blue-950 dark:text-blue-300 dark:border-blue-900/50",
+  "Infoproduto":   "bg-violet-100 text-violet-800 border-violet-200 dark:bg-violet-950 dark:text-violet-300 dark:border-violet-900/50",
+  "Serviços":      "bg-amber-100 text-amber-800 border-amber-200 dark:bg-amber-950/70 dark:text-amber-300 dark:border-amber-900/30",
+  "Varejo":        "bg-emerald-100 text-emerald-800 border-emerald-200 dark:bg-emerald-950 dark:text-emerald-300 dark:border-emerald-900/50",
+  "Automotivo":    "bg-red-100 text-red-800 border-red-200 dark:bg-red-950 dark:text-red-300 dark:border-red-900/50",
+  "Imóveis":       "bg-cyan-100 text-cyan-800 border-cyan-200 dark:bg-cyan-950 dark:text-cyan-300 dark:border-cyan-900/50",
+  "Saúde":         "bg-rose-100 text-rose-800 border-rose-200 dark:bg-rose-950 dark:text-rose-300 dark:border-rose-900/50",
+  "Educação":      "bg-orange-100 text-orange-800 border-orange-200 dark:bg-orange-950 dark:text-orange-300 dark:border-orange-900/50",
 };
 
 const STATUS_STYLE: Record<string, string> = {
@@ -394,7 +395,7 @@ function ClientCard({ client, metrics, account, dateLabel }: {
         <Link
           to="/clientes/$clientId"
           params={{ clientId: client.id }}
-          className="flex items-center gap-1 rounded-lg bg-primary/10 border border-primary/20 px-2.5 py-1 text-[10px] font-black text-primary hover:bg-primary/20 transition-colors"
+          className="flex items-center gap-1 rounded-lg border border-primary/30 bg-transparent px-2.5 py-1 text-[10px] font-black text-primary hover:bg-primary hover:text-primary-foreground transition-colors"
         >
           Ver detalhes <ChevronRight className="h-3 w-3" />
         </Link>
@@ -508,32 +509,32 @@ function ClientesPage() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-black tracking-tight">Clientes</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">
-            {counts.total} {counts.total === 1 ? "cliente" : "clientes"} cadastrados
-          </p>
-        </div>
-        <div className="flex items-center gap-2 self-start sm:self-auto">
-          <button
-            onClick={handleImportFromMeta}
-            disabled={isImporting}
-            className="flex items-center gap-2 rounded-xl border border-primary/30 bg-primary/10 px-4 py-2.5 text-sm font-black text-primary hover:bg-primary/20 transition-colors active:scale-95 disabled:opacity-50"
-            title="Criar clientes automaticamente para cada conta Meta Ads ainda não vinculada"
-          >
-            {isImporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-            Importar do Meta
-          </button>
-          <button
-            onClick={() => setShowNew(true)}
-            className="flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-black text-primary-foreground hover:opacity-90 transition-opacity active:scale-95"
-          >
-            <Plus className="h-4 w-4" /> Novo Cliente
-          </button>
-        </div>
-      </div>
+      {/* PageHeader Padronizado */}
+      <PageHeader 
+        eyebrow="Nicho Corporativo"
+        title="Clientes"
+        description={`${counts.total} ${counts.total === 1 ? "cliente cadastrado" : "clientes cadastrados"} no sistema.`}
+        actions={
+          <>
+            <button
+              onClick={handleImportFromMeta}
+              disabled={isImporting}
+              className="flex items-center gap-2 rounded-xl border border-primary bg-transparent px-4 py-2.5 text-sm font-black text-primary hover:bg-primary hover:text-primary-foreground transition-colors active:scale-95 disabled:opacity-50"
+              title="Criar clientes automaticamente para cada conta Meta Ads ainda não vinculada"
+            >
+              {isImporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+              Importar do Meta
+            </button>
+            <button
+              onClick={() => setShowNew(true)}
+              className="flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-black text-primary-foreground hover:opacity-90 transition-opacity active:scale-95"
+            >
+              <Plus className="h-4 w-4" /> Novo Cliente
+            </button>
+          </>
+        }
+        compact
+      />
 
       {/* Filtros */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
@@ -581,7 +582,7 @@ function ClientesPage() {
               onClick={() => setFilterStatus(f.id)}
               className={`rounded-full border px-3 py-1 text-[11px] font-bold transition-all ${
                 filterStatus === f.id
-                  ? "bg-primary/15 border-primary/30 text-primary"
+                  ? "bg-primary/10 text-primary border border-primary/20 dark:bg-primary/20 dark:border-primary/30 shadow-glow-sm"
                   : "border-border text-muted-foreground hover:border-primary/20 hover:text-foreground"
               }`}
             >
