@@ -22,7 +22,7 @@ export function PageHeader({ eyebrow, title, description, actions, compact }: Pa
 
       <div>
         <div className={`kpi-tag ${compact ? "mb-1 sm:mb-3" : "mb-3"}`}>{eyebrow}</div>
-        <h1 className={`header-sport font-display font-black tracking-tight ${compact ? "text-xl sm:text-2xl lg:text-3xl" : "text-2xl sm:text-3xl"}`}>{title}</h1>
+        <h1 className={`header-sport font-display font-black tracking-normal ${compact ? "text-xl sm:text-2xl lg:text-3xl" : "text-2xl sm:text-3xl"}`}>{title}</h1>
         {description && (
           <p className={`mt-1.5 max-w-xl text-sm text-muted-foreground leading-relaxed ${compact ? "hidden sm:block" : "hidden sm:block"}`}>{description}</p>
         )}

@@ -223,12 +223,12 @@ function Shell() {
             <div className="absolute inset-[-9px] rounded-2xl border border-primary/22 animate-ping-ring" style={{ animationDelay: '0.55s' }} />
             <div className="relative h-16 w-16 rounded-2xl bg-primary flex flex-col items-center justify-center shadow-glow overflow-hidden">
               <div className="absolute inset-x-0 top-0 h-[4px] bg-white/28 rounded-t-2xl" />
-              <span className="font-display font-black text-white text-2xl relative z-10 tracking-tight">NC</span>
+              <span className="font-display font-black text-white text-2xl relative z-10 tracking-normal">NC</span>
               <div className="absolute inset-x-0 bottom-0 h-[3px] bg-black/22 rounded-b-2xl" />
             </div>
           </div>
           <div className="text-center space-y-1.5">
-            <p className="font-display font-black text-sm tracking-tight text-foreground">NC Performance Suite</p>
+            <p className="font-display font-black text-sm tracking-normal text-foreground">NC Performance Suite</p>
             <p className="label-mono text-primary">Motor de Tráfego Automotivo</p>
           </div>
           <div className="flex items-center gap-2.5">
@@ -259,11 +259,11 @@ function Shell() {
           <Link to="/dashboard" className="flex items-center gap-2 shrink-0 group">
             <div className="relative h-8 w-8 rounded-xl bg-primary flex items-center justify-center overflow-hidden shadow-glow-sm transition-all duration-300 group-hover:shadow-glow">
               <div className="absolute inset-x-0 top-0 h-[3px] bg-white/28 rounded-t-xl pointer-events-none" />
-              <span className="font-display font-black text-white text-xs relative z-10 tracking-tight">NC</span>
+              <span className="font-display font-black text-white text-xs relative z-10 tracking-normal">NC</span>
               <div className="absolute inset-x-0 bottom-0 h-[2px] bg-black/22 rounded-b-xl pointer-events-none" />
             </div>
             <div className="hidden md:flex flex-col leading-none gap-[4px]">
-              <span className="font-display text-[12px] font-black tracking-tight leading-none">NC Performance</span>
+              <span className="font-display text-[12px] font-black tracking-normal leading-none">NC Performance</span>
               <div className="flex items-center gap-[4px]">
                 <div className="h-px w-2.5 bg-primary/65 rounded-full" />
                 <span className="text-[7px] font-mono font-bold uppercase tracking-[0.25em] text-primary leading-none">Suite Automotiva</span>

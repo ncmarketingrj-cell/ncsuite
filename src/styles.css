@@ -3,7 +3,7 @@
 @import "tw-animate-css";
 
 @theme inline {
-  --font-display: "Barlow Condensed", system-ui, sans-serif;
+  --font-display: "Plus Jakarta Sans", system-ui, sans-serif;
   --font-body: "DM Sans", system-ui, sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, monospace;
 
@@ -683,6 +683,13 @@ html.light {
   .header-sport {
     position: relative;
     padding-left: 0.875rem;
+    letter-spacing: 0em !important;
+  }
+
+  /* Ajuste de espaçamento para a fonte display Plus Jakarta Sans */
+  .font-display.tracking-tight,
+  .font-display .tracking-tight {
+    letter-spacing: 0em !important;
   }
   .header-sport::before {
     content: '';
