@@ -10,6 +10,7 @@ import {
 import { toast } from "sonner";
 import { PageHeader } from "@/components/PageHeader";
 import { supabase } from "@/integrations/supabase/client";
+import { useGlobalDate, getLocalDateString } from "@/contexts/DateContext";
 
 export const Route = createFileRoute("/_app/clientes")({
   head: () => ({ meta: [{ title: "Clientes — NC Suite" }] }),
@@ -412,7 +413,7 @@ function ClientesPage() {
   const [filterStatus, setFilterStatus] = useState<string>("todos");
   const [showNew, setShowNew] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
-  const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const { selectedDate, setSelectedDate } = useGlobalDate();
 
   // Busca clientes com todos os campos
   const { data: clients = [], isLoading } = useQuery({
@@ -555,13 +556,13 @@ function ClientesPage() {
           <input
             type="date"
             value={selectedDate}
-            max={new Date().toISOString().slice(0, 10)}
+            max={getLocalDateString()}
             onChange={e => setSelectedDate(e.target.value)}
             className="bg-transparent text-sm font-medium text-foreground focus:outline-none cursor-pointer"
           />
-          {selectedDate !== new Date().toISOString().slice(0, 10) && (
+          {selectedDate !== getLocalDateString() && (
             <button
-              onClick={() => setSelectedDate(new Date().toISOString().slice(0, 10))}
+              onClick={() => setSelectedDate(getLocalDateString())}
               className="text-[10px] font-bold text-primary hover:text-primary/70 transition-colors ml-1"
             >
               Hoje
@@ -619,7 +620,7 @@ function ClientesPage() {
           variants={{ hidden: {}, visible: { transition: { staggerChildren: 0.04 } } }}
         >
           {filtered.map(client => {
-            const today = new Date().toISOString().slice(0, 10);
+            const today = getLocalDateString();
             const dateLabel = selectedDate === today
               ? "Gasto hoje"
               : `Gasto ${new Date(selectedDate + "T12:00:00").toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })}`;

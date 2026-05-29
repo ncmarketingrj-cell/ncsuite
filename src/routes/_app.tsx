@@ -20,6 +20,7 @@ import { useTheme } from "./__root";
 import { toast } from "sonner";
 import { useAutoSync, getSyncStatus, SYNC_STATUS_EVENT, type SyncStatus } from "@/hooks/useAutoSync";
 import { useAlertEngine } from "@/hooks/useAlertEngine";
+import { DateProvider } from "@/contexts/DateContext";
 
 function AppErrorFallback({ error, reset }: { error: Error; reset: () => void }) {
   return (
@@ -52,7 +53,9 @@ function AppErrorFallback({ error, reset }: { error: Error; reset: () => void })
 export const Route = createFileRoute("/_app")({
   component: () => (
     <AuthProvider>
-      <Shell />
+      <DateProvider>
+        <Shell />
+      </DateProvider>
     </AuthProvider>
   ),
   errorComponent: AppErrorFallback,

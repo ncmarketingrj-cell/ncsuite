@@ -18,6 +18,7 @@ import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import { DateRangePicker } from "@/components/DateRangePicker";
+import { useGlobalDate } from "@/contexts/DateContext";
 import {
   AreaChart, Area, BarChart, Bar, RadarChart, Radar, PolarGrid, PolarAngleAxis,
   PieChart as RechartsPieChart, Pie, Cell, Treemap,
@@ -321,7 +322,18 @@ function MetricasCampanhasPage() {
   const [accountFilter, setAccountFilter] = useState(searchParams.account || "all");
   const [statusFilter,  setStatusFilter]  = useState<"all"|"active"|"paused">("all");
   const [search,        setSearch]        = useState("");
-  const [dateRange,     setDateRange]     = useState({ startDate: subDays(new Date(), 29), endDate: new Date() });
+  const { dateFrom, dateTo, setDateFrom, setDateTo } = useGlobalDate();
+
+  const dateRange = useMemo(() => ({
+    startDate: new Date(dateFrom + "T12:00:00"),
+    endDate: new Date(dateTo + "T12:00:00")
+  }), [dateFrom, dateTo]);
+
+  const setDateRange = useCallback((range: { startDate: Date; endDate: Date }) => {
+    setDateFrom(getLocalDateStr(range.startDate));
+    setDateTo(getLocalDateStr(range.endDate));
+  }, [setDateFrom, setDateTo]);
+
   const [scrolled,      setScrolled]      = useState(false);
   const [modoExplicativo, setModoExplicativo] = useState(true);
 

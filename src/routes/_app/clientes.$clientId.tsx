@@ -13,6 +13,7 @@ import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { subDays, format } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { useGlobalDate, getLocalDateString } from "@/contexts/DateContext";
 
 export const Route = createFileRoute("/_app/clientes/$clientId")({
   head: () => ({ meta: [{ title: "Cliente — NC Suite" }] }),
@@ -328,22 +329,30 @@ function TabOverview({ client, metrics }: { client: ClientFull; metrics: MetricR
 // ─── Tab: Metas & Performance ─────────────────────────────────────────────────
 
 function TabGoals({ client, metrics }: { client: ClientFull; metrics: MetricRow[] }) {
-  const today = metrics.find(r => r.date === new Date().toISOString().slice(0, 10));
-  const last7 = metrics.filter(r => r.date >= subDays(new Date(), 7).toISOString().slice(0, 10));
+  const periodDays = metrics.length || 1;
+  const todayStr = getLocalDateString();
+  const today = metrics.find(r => r.date === todayStr);
 
-  const avg7 = last7.length > 0 ? {
-    leads: last7.reduce((s, r) => s + r.leads, 0) / last7.length,
-    spend: last7.reduce((s, r) => s + r.spend, 0) / last7.length,
-    roas: last7.filter(r => r.roas > 0).reduce((s, r) => s + r.roas, 0) / (last7.filter(r => r.roas > 0).length || 1),
-    cpa: last7.filter(r => r.cpa > 0).reduce((s, r) => s + r.cpa, 0) / (last7.filter(r => r.cpa > 0).length || 1),
-    ctr: last7.filter(r => r.ctr > 0).reduce((s, r) => s + r.ctr, 0) / (last7.filter(r => r.ctr > 0).length || 1),
-    cpm: last7.filter(r => r.cpm > 0).reduce((s, r) => s + r.cpm, 0) / (last7.filter(r => r.cpm > 0).length || 1),
+  const totalSpend = metrics.reduce((s, r) => s + r.spend, 0);
+
+  const avgPeriod = metrics.length > 0 ? {
+    leads: metrics.reduce((s, r) => s + r.leads, 0) / metrics.length,
+    spend: metrics.reduce((s, r) => s + r.spend, 0) / metrics.length,
+    purchases: metrics.reduce((s, r) => s + r.purchases, 0) / metrics.length,
+    roas: metrics.filter(r => r.roas > 0).reduce((s, r) => s + r.roas, 0) / (metrics.filter(r => r.roas > 0).length || 1),
+    cpa: metrics.filter(r => r.cpa > 0).reduce((s, r) => s + r.cpa, 0) / (metrics.filter(r => r.cpa > 0).length || 1),
+    ctr: metrics.filter(r => r.ctr > 0).reduce((s, r) => s + r.ctr, 0) / (metrics.filter(r => r.ctr > 0).length || 1),
+    cpm: metrics.filter(r => r.cpm > 0).reduce((s, r) => s + r.cpm, 0) / (metrics.filter(r => r.cpm > 0).length || 1),
   } : null;
 
   const taxRate = client.meta_tax_rate ?? 0.1215;
   const weeklyBruto = client.weekly_budget_goal ?? 0;
   const weeklyEffective = weeklyBruto * (1 - taxRate);
   const dailyBudget = weeklyEffective / 7;
+
+  // Metas proporcionais ao período selecionado
+  const periodBudgetGoal = dailyBudget * periodDays;
+  const periodEffectiveGoal = (weeklyEffective / 7) * periodDays;
 
   return (
     <div className="space-y-6">
@@ -352,16 +361,16 @@ function TabGoals({ client, metrics }: { client: ClientFull; metrics: MetricRow[
         <SectionTitle>Orçamento</SectionTitle>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <GoalBar
-            label="Gasto hoje"
-            current={today?.spend ?? null}
-            goal={dailyBudget > 0 ? dailyBudget : null}
+            label={periodDays === 1 ? "Gasto hoje" : `Gasto no período (${periodDays}d)`}
+            current={totalSpend}
+            goal={periodBudgetGoal > 0 ? periodBudgetGoal : null}
             unit=""
             color="bg-primary"
           />
           <GoalBar
-            label="Gasto semanal (efetivo)"
-            current={last7.reduce((s, r) => s + r.spend, 0) || null}
-            goal={weeklyEffective > 0 ? weeklyEffective : null}
+            label={periodDays === 7 ? "Gasto semanal (efetivo)" : `Verba período efetiva (${periodDays}d)`}
+            current={totalSpend}
+            goal={periodEffectiveGoal > 0 ? periodEffectiveGoal : null}
             unit=""
             color="bg-blue-500"
           />
@@ -391,14 +400,14 @@ function TabGoals({ client, metrics }: { client: ClientFull; metrics: MetricRow[
 
       {/* Performance */}
       <div>
-        <SectionTitle>Performance (média 7 dias vs meta)</SectionTitle>
+        <SectionTitle>Performance (média do período vs meta)</SectionTitle>
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-          <GoalBar label="Leads/dia" current={avg7 ? Math.round(avg7.leads) : null} goal={client.daily_leads_goal} color="bg-violet-500" />
-          <GoalBar label="Compras/dia" current={today?.purchases ?? null} goal={client.daily_purchases_goal} color="bg-emerald-500" />
-          <GoalBar label="ROAS" current={avg7 ? parseFloat(avg7.roas.toFixed(2)) : null} goal={client.target_roas} color="bg-blue-500" />
-          <GoalBar label="CPA máx (R$)" current={avg7 ? parseFloat(avg7.cpa.toFixed(2)) : null} goal={client.target_cpa} inverse color="bg-amber-500" />
-          <GoalBar label="CTR mín (%)" current={avg7 ? parseFloat(avg7.ctr.toFixed(2)) : null} goal={client.target_ctr} unit="%" color="bg-cyan-500" />
-          <GoalBar label="CPM máx (R$)" current={avg7 ? parseFloat(avg7.cpm.toFixed(2)) : null} goal={client.target_cpm} inverse color="bg-rose-500" />
+          <GoalBar label="Leads/dia" current={avgPeriod ? Math.round(avgPeriod.leads) : null} goal={client.daily_leads_goal} color="bg-violet-500" />
+          <GoalBar label="Compras/dia" current={avgPeriod ? parseFloat(avgPeriod.purchases.toFixed(1)) : null} goal={client.daily_purchases_goal} color="bg-emerald-500" />
+          <GoalBar label="ROAS" current={avgPeriod ? parseFloat(avgPeriod.roas.toFixed(2)) : null} goal={client.target_roas} color="bg-blue-500" />
+          <GoalBar label="CPA máx (R$)" current={avgPeriod ? parseFloat(avgPeriod.cpa.toFixed(2)) : null} goal={client.target_cpa} inverse color="bg-amber-500" />
+          <GoalBar label="CTR mín (%)" current={avgPeriod ? parseFloat(avgPeriod.ctr.toFixed(2)) : null} goal={client.target_ctr} unit="%" color="bg-cyan-500" />
+          <GoalBar label="CPM máx (R$)" current={avgPeriod ? parseFloat(avgPeriod.cpm.toFixed(2)) : null} goal={client.target_cpm} inverse color="bg-rose-500" />
         </div>
       </div>
 
@@ -933,8 +942,7 @@ const TABS = [
 function ClientDetailPage() {
   const { clientId } = Route.useParams();
   const [activeTab, setActiveTab] = useState("overview");
-  const [dateFrom, setDateFrom] = useState(() => subDays(new Date(), 29).toISOString().slice(0, 10));
-  const [dateTo, setDateTo]     = useState(() => new Date().toISOString().slice(0, 10));
+  const { dateFrom, dateTo, setDateFrom, setDateTo } = useGlobalDate();
 
   const { data: client, isLoading: clientLoading } = useQuery({
     queryKey: ["client_detail", clientId],
@@ -980,8 +988,8 @@ function ClientDetailPage() {
   const accountMap = Object.fromEntries(adAccounts.map(a => [a.id, a]));
   const linkedAccount = client?.meta_ad_account_id ? accountMap[client.meta_ad_account_id] : null;
 
-  const today = new Date().toISOString().slice(0, 10);
-  const isDefaultRange = dateFrom === subDays(new Date(), 29).toISOString().slice(0, 10) && dateTo === today;
+  const today = getLocalDateString();
+  const isDefaultRange = dateFrom === getLocalDateString(subDays(new Date(), 29)) && dateTo === today;
 
   if (clientLoading) {
     return (
@@ -1120,7 +1128,7 @@ function ClientDetailPage() {
           {!isDefaultRange && (
             <button
               onClick={() => {
-                setDateFrom(subDays(new Date(), 29).toISOString().slice(0, 10));
+                setDateFrom(getLocalDateString(subDays(new Date(), 29)));
                 setDateTo(today);
               }}
               className="text-[10px] font-bold text-primary hover:text-primary/70 transition-colors"
