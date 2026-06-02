@@ -602,17 +602,20 @@ function MetricasCampanhasPage() {
 
   // Injeta alcance e frequência reais (period stats) nas campanhas — torna todas as métricas exatas
   const enrichedCampaigns = useMemo(() => {
-    if (!periodStats.length) return campaigns;
-    const statsMap = new Map(periodStats.map((ps: any) => [ps.campaign_id, ps]));
-    return campaigns.map((c: any) => {
-      const ps = statsMap.get(c.id) as any;
-      if (!ps || (ps.reach as number) <= 0) return c;
-      const freq = (ps.impressions as number) > 0 ? (ps.impressions as number) / (ps.reach as number) : 0;
-      return { ...c, t: { ...c.t, reach: ps.reach as number, freq } };
-    });
+    let base = campaigns;
+    if (periodStats.length > 0) {
+      const statsMap = new Map(periodStats.map((ps: any) => [ps.campaign_id, ps]));
+      base = campaigns.map((c: any) => {
+        const ps = statsMap.get(c.id) as any;
+        if (!ps || (ps.reach as number) <= 0) return c;
+        const freq = (ps.impressions as number) > 0 ? (ps.impressions as number) / (ps.reach as number) : 0;
+        return { ...c, t: { ...c.t, reach: ps.reach as number, freq } };
+      });
+    }
+    return base.filter((c: any) => (c.t?.reach || 0) >= 1 || (c.t?.impressions || 0) >= 1 || (c.t?.cost || 0) > 0);
   }, [campaigns, periodStats]);
 
-  const listData = level === "campanhas" ? enrichedCampaigns : level === "conjuntos" ? adSets : ads;
+  const listData = level === "campanhas" ? enrichedCampaigns : level === "conjuntos" ? adSets.filter((c: any) => (c.t?.reach || 0) >= 1 || (c.t?.impressions || 0) >= 1 || (c.t?.cost || 0) > 0) : ads.filter((c: any) => (c.t?.reach || 0) >= 1 || (c.t?.impressions || 0) >= 1 || (c.t?.cost || 0) > 0);
   const filtered = useMemo(() => listData.filter((c: any) => !search || c.name?.toLowerCase().includes(search.toLowerCase())), [listData, search]);
 
   const selSet    = level === "campanhas" ? selectedCamps  : level === "conjuntos" ? selectedAdSets  : selectedAds;
