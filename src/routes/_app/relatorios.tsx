@@ -15,6 +15,7 @@ import { ptBR } from "date-fns/locale";
 import { toast } from "sonner";
 import { z } from "zod";
 import { DateRangePicker } from "@/components/DateRangePicker";
+import { TemplateModal } from "@/components/TemplateModal";
 
 const searchSchema = z.object({
   from: z.string().optional(),
@@ -82,6 +83,18 @@ function RelatoriosPage() {
 
   const [savedReports, setSavedReports] = useState<SavedReport[]>([]);
   const [activeReportId, setActiveReportId] = useState<string | null>(null);
+
+  // Controle de Templates
+  const [isTemplateModalOpen, setIsTemplateModalOpen] = useState(false);
+  const [activePdfLayout, setActivePdfLayout] = useState("classic");
+
+  const { data: templatesData, refetch: refetchTemplates } = useQuery<any[]>({
+    queryKey: ["report-templates"],
+    queryFn: async () => {
+      const { data } = await supabase.from("report_templates").select("*").order("created_at", { ascending: false });
+      return (data as any[]) ?? [];
+    },
+  });
 
   // Inicializa o salvamento de relatórios no localStorage
   useEffect(() => {
@@ -171,6 +184,26 @@ function RelatoriosPage() {
     enabled: source === "api",
   });
   const accounts = accountsData ?? [];
+
+  // Fetch dos clientes para auto-preenchimento
+  const { data: clientsData } = useQuery<any[]>({
+    queryKey: ["clients-reports"],
+    queryFn: async () => {
+      const { data } = await supabase.from("clients").select("*");
+      return (data as any[]) ?? [];
+    },
+    enabled: source === "api",
+  });
+
+  // Auto-preencher Nome do Cliente ao selecionar conta
+  useEffect(() => {
+    if (selectedAccountId !== "all" && clientsData) {
+      const client = clientsData.find(c => c.meta_ad_account_id === selectedAccountId);
+      if (client && client.name) {
+        setClientName(client.name);
+      }
+    }
+  }, [selectedAccountId, clientsData]);
 
   // Carregar dados de acordo com a origem (API ou Upload)
   const loadData = async () => {
@@ -270,7 +303,7 @@ function RelatoriosPage() {
             platform: "meta",
             selected: metrics.cost > 0 // Seleciona apenas as que tiveram investimento por padrão
           };
-        });
+        }).filter(c => c.cost > 0 || c.impressions >= 1 || c.reach >= 1);
 
         setCampaignList(mapped);
       } catch (err) {
@@ -345,7 +378,61 @@ function RelatoriosPage() {
 
     let text = "";
 
-    if (reportMode === "complete") {
+    const totalResults = selected.reduce((sum, c) => sum + (c.conversions || c.clicks), 0);
+    const totalReach = selected.reduce((sum, c) => sum + c.reach, 0);
+    const totalImps = selected.reduce((sum, c) => sum + c.impressions, 0);
+
+    const customTemplate = templatesData?.find(t => t.id === reportMode);
+
+    if (customTemplate) {
+      let text = customTemplate.message_template;
+      const avgCpa = totalResults > 0 ? totalCost / totalResults : 0;
+      
+      // Configurar layout do PDF
+      setActivePdfLayout(customTemplate.pdf_layout || "classic");
+
+      // Substituições Globais
+      text = text.replace(/\{\{NOME_CLIENTE\}\}/g, clientName);
+      text = text.replace(/\{\{PERIODO\}\}/g, periodText);
+      text = text.replace(/\{\{TOTAL_CAMPANHAS\}\}/g, selected.length.toString());
+      text = text.replace(/\{\{INVESTIMENTO\}\}/g, `R$ ${totalCost.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`);
+      text = text.replace(/\{\{TOTAL_RESULTADOS\}\}/g, totalResults.toLocaleString("pt-BR"));
+      text = text.replace(/\{\{CPA_MEDIO\}\}/g, `R$ ${avgCpa.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`);
+      text = text.replace(/\{\{AGENCIA\}\}/g, agencyName.toUpperCase());
+
+      // Substituição de Lista de Campanhas
+      if (text.includes("{{LISTA_CAMPANHAS}}")) {
+        let listText = "";
+        selected.forEach(c => {
+          const costPerRes = c.conversions > 0 ? c.cost / c.conversions : (c.clicks > 0 ? c.cost / c.clicks : 0);
+          listText += `📌 *${c.name.toUpperCase()}*\n`;
+          listText += `   💵 Investimento: R$ ${c.cost.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}\n`;
+          listText += `   📈 Resultados: ${c.conversions > 0 ? c.conversions.toLocaleString("pt-BR") : c.clicks.toLocaleString("pt-BR")}\n`;
+          listText += `   💲 Custo/Resultado: R$ ${costPerRes.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}\n`;
+          listText += `   👥 Alcance: ${c.reach.toLocaleString("pt-BR")}\n\n`;
+        });
+        text = text.replace(/\{\{LISTA_CAMPANHAS\}\}/g, listText);
+      }
+
+      // Substituição de Resultados por Tipo
+      if (text.includes("{{RESULTADOS_POR_TIPO}}")) {
+        let typeText = "";
+        groupedTypes.forEach((data, type) => {
+          const cpl = data.results > 0 ? data.cost / data.results : 0;
+          const resultLabel = type.includes("Cliques") ? "Visualizações" : "Resultados";
+          const costLabel = type.includes("Cliques") ? "Custo por Visualizações" : "CPL";
+
+          typeText += `*${type}*\n`;
+          typeText += `   💵 Investimento: R$ ${data.cost.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}\n`;
+          typeText += `   📈 ${resultLabel}: ${data.results.toLocaleString("pt-BR")}\n`;
+          typeText += `   💲 ${costLabel}: R$ ${cpl.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}\n\n`;
+        });
+        text = text.replace(/\{\{RESULTADOS_POR_TIPO\}\}/g, typeText);
+      }
+
+      setGeneratedText(text);
+    } else if (reportMode === "complete") {
+      setActivePdfLayout("classic");
       text += `📊 *RELATÓRIO DE PERFORMANCE*\n`;
       text += `━━━━━━━━━━━━━━━━━━━━\n`;
       text += `🏢 *Cliente:* ${clientName}\n`;
@@ -388,8 +475,9 @@ function RelatoriosPage() {
 
       text += `━━━━━━━━━━━━━━━━━━━━\n`;
       text += `*${agencyName.toUpperCase()}*`;
-
+      setGeneratedText(text);
     } else if (reportMode === "objective") {
+      setActivePdfLayout("analytical");
       text += `📊 *RELATÓRIO DE PERFORMANCE*\n`;
       text += `━━━━━━━━━━━━━━━━━━━━\n`;
       text += `🏢 *Cliente:* ${clientName}\n`;
@@ -415,14 +503,11 @@ function RelatoriosPage() {
 
       text += `━━━━━━━━━━━━━━━━━━━━\n`;
       text += `*${agencyName.toUpperCase()}*`;
-
+      setGeneratedText(text);
     } else {
       // campaigns mode
-      const totalResults = selected.reduce((sum, c) => sum + (c.conversions || c.clicks), 0);
+      setActivePdfLayout("minimalist");
       const avgCpa = totalResults > 0 ? totalCost / totalResults : 0;
-      const totalReach = selected.reduce((sum, c) => sum + c.reach, 0);
-      const totalImps = selected.reduce((sum, c) => sum + c.impressions, 0);
-
       text += `📊 *RELATÓRIO DE CAMPANHA*\n`;
       text += `━━━━━━━━━━━━━━━━━━━━━\n\n`;
       text += `🏢 *Cliente:* ${clientName}\n`;
@@ -454,10 +539,10 @@ function RelatoriosPage() {
 
       text += `━━━━━━━━━━━━━━━━━━━━━\n`;
       text += `*${agencyName.toUpperCase()}*`;
+      setGeneratedText(text);
     }
 
-    setGeneratedText(text);
-  }, [campaignList, reportMode, clientName, periodText]);
+  }, [campaignList, reportMode, clientName, periodText, templatesData]);
 
   const handleGenerate = () => {
     const selected = campaignList.filter(c => c.selected);
@@ -576,7 +661,10 @@ function RelatoriosPage() {
             )}
 
             <div className="space-y-2">
-              <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Modelo / Composição do Relatório</label>
+              <div className="flex items-center justify-between ml-1">
+                <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Modelo / Composição do Relatório</label>
+                <button onClick={() => setIsTemplateModalOpen(true)} className="text-[9px] text-primary hover:underline uppercase font-bold tracking-widest flex items-center gap-1"><Settings className="w-3 h-3"/> Templates</button>
+              </div>
               <select 
                 value={reportMode} 
                 onChange={(e) => setReportMode(e.target.value as any)}
@@ -585,6 +673,13 @@ function RelatoriosPage() {
                 <option value="complete">Completo (Tipo + Detalhe de Campanha)</option>
                 <option value="objective">Apenas por Tipo / Objetivo</option>
                 <option value="campaigns">Apenas Métrica de Campanhas</option>
+                {templatesData && templatesData.filter(t => !t.is_system).length > 0 && (
+                  <optgroup label="Templates Customizados">
+                    {templatesData.filter(t => !t.is_system).map(t => (
+                      <option key={t.id} value={t.id}>Modelo: {t.name}</option>
+                    ))}
+                  </optgroup>
+                )}
               </select>
             </div>
 
@@ -831,16 +926,37 @@ function RelatoriosPage() {
                   </div>
                 </div>
 
-                {/* Linha das Campanhas incluídas no PDF */}
-                <div className="space-y-2 mt-6">
-                  <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground print:text-black/50 mb-3 border-b border-white/5 pb-1">Campanhas Compiladas</p>
-                  {campaignList.filter(c => c.selected).map((c, idx) => (
-                    <div key={idx} className="flex justify-between text-xs py-1.5 border-b border-white/5">
-                      <span className="font-bold text-white truncate max-w-[260px]">{c.name}</span>
-                      <span className="font-mono text-muted-foreground">R$ {c.cost.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
-                    </div>
-                  ))}
-                </div>
+                {activePdfLayout !== "minimalist" && (
+                  <div className="space-y-2 mt-6">
+                    {activePdfLayout === "analytical" ? (
+                      <>
+                        <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground print:text-black/50 mb-3 border-b border-white/5 pb-1">Agrupamento por Objetivo</p>
+                        {Array.from(campaignList.filter(c => c.selected).reduce((acc, c) => {
+                          const cur = acc.get(c.objective) || { cost: 0, results: 0 };
+                          cur.cost += c.cost;
+                          cur.results += c.objective.includes("Cliques") ? c.clicks : c.conversions;
+                          acc.set(c.objective, cur);
+                          return acc;
+                        }, new Map<string, { cost: number; results: number }>())).map(([obj, data], idx) => (
+                          <div key={idx} className="flex justify-between text-xs py-1.5 border-b border-white/5">
+                            <span className="font-bold text-white truncate max-w-[260px]">{obj}</span>
+                            <span className="font-mono text-muted-foreground">R$ {data.cost.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} — {data.results.toLocaleString('pt-BR')} res</span>
+                          </div>
+                        ))}
+                      </>
+                    ) : (
+                      <>
+                        <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground print:text-black/50 mb-3 border-b border-white/5 pb-1">Campanhas Compiladas</p>
+                        {campaignList.filter(c => c.selected).map((c, idx) => (
+                          <div key={idx} className="flex justify-between text-xs py-1.5 border-b border-white/5">
+                            <span className="font-bold text-white truncate max-w-[260px]">{c.name}</span>
+                            <span className="font-mono text-muted-foreground">R$ {c.cost.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                          </div>
+                        ))}
+                      </>
+                    )}
+                  </div>
+                )}
               </div>
 
               <div className="mt-8 pt-6 border-t border-white/5 print:border-black/5 text-center flex items-center justify-between">
@@ -927,6 +1043,13 @@ function RelatoriosPage() {
           </div>
         )}
       </div>
+
+      <TemplateModal 
+        isOpen={isTemplateModalOpen} 
+        onClose={() => setIsTemplateModalOpen(false)} 
+        onSuccess={() => refetchTemplates()} 
+        templates={templatesData || []}
+      />
 
       <style>{`
         @media print {
