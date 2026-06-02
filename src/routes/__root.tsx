@@ -97,8 +97,8 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
         { property: "og:type", content: "website" },
         { name: "twitter:title", content: "NC Performance Suite — Motor de tráfego pago automotivo" },
         { name: "twitter:description", content: "Suite SaaS para gestão e relatórios de performance Meta Ads no segmento automotivo." },
-        { property: "og:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/7cd3254f-040f-43e5-97e1-471846f1d21c/id-preview-fa213812--77b0eaf2-9183-45a2-a6bd-af190dc9de8c.lovable.app-1778846697148.png" },
-        { name: "twitter:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/7cd3254f-040f-43e5-97e1-471846f1d21c/id-preview-fa213812--77b0eaf2-9183-45a2-a6bd-af190dc9de8c.lovable.app-1778846697148.png" },
+        { property: "og:image", content: "https://storage.googleapis.com/gpt-engineer-file-uploads/PXYT2fHT8Zd2UVh923EaGv29ll22/social-images/social-1780411155727-Captura_de_tela_2026-06-02_113859.webp" },
+        { name: "twitter:image", content: "https://storage.googleapis.com/gpt-engineer-file-uploads/PXYT2fHT8Zd2UVh923EaGv29ll22/social-images/social-1780411155727-Captura_de_tela_2026-06-02_113859.webp" },
         { name: "twitter:card", content: "summary_large_image" },
       ],
       links: [
