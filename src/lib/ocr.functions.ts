@@ -30,34 +30,38 @@ export const extractPrintFn = createServerFn({ method: "POST" })
 
     const systemPrompt = `Você é um motor de extração de dados de prints de dashboards de tráfego pago (Gerenciador de Anúncios do Meta Ads ou painel do Google Ads). Receba a imagem, identifique a plataforma do print (Meta Ads ou Google Ads) e extraia a lista de campanhas e suas métricas correspondentes.
 
-Preste extrema atenção para identificar as colunas e extrair:
-1. 'Nome da campanha' ou 'Campaign name' -> name
-2. 'Alcance' ou 'Reach' -> reach
-3. 'Impressões' ou 'Impressions' -> impressions
-4. 'Valor gasto', 'Custo', 'Cost' ou 'Amount spent' -> cost
-5. 'Resultados', 'Results', 'Conversões' ou 'Conversions' -> conversions (o número absoluto)
-6. 'Tipo de Resultado' ou 'Result type' (ex: 'Mensagens de conversas iniciadas', 'Visualizações', 'Cliques no link', 'Compras', 'Leads') -> result_type
-7. 'Custo por resultado', 'CPL', 'CPA', 'Custo por conversão' -> cpl (o valor monetário unitário)
+Instruções cruciais para a extração:
+1. Identifique as colunas baseando-se no cabeçalho da tabela:
+   - Nome: 'Campanha', 'Nome da campanha' ou 'Campaign name' -> name
+   - Impressões: 'Impr.', 'Impressões' ou 'Impressions' -> impressions
+   - Cliques: 'Cliques' ou 'Clicks' -> clicks
+   - Custo: 'Custo', 'Valor gasto', 'Cost' ou 'Amount spent' -> cost
+   - Conversões: 'Conversões', 'Resultados', 'Results' ou 'Conversions' -> conversions (número absoluto)
+   - Custo por conversão: 'Custo / conv.', 'Custo por resultado', 'CPL', 'CPA', 'Cost per result' -> cpl (valor monetário unitário)
+   - Alcance: 'Alcance' ou 'Reach' -> reach (frequentemente ausente no Google Ads, use null)
+   - Tipo de Resultado: 'Tipo de Resultado' ou 'Result type' -> result_type (frequentemente ausente no Google Ads)
+2. IGNORE COMPLETAMENTE linhas de Totais (ex: 'Total: conta', 'Total: todas as campanhas'). Extraia APENAS as linhas que representam campanhas individuais.
+3. Formatação: remova símbolos de moeda (R$, $) e converta para numérico (ex: "R$ 2.622,07" -> 2622.07, "960.055" -> 960055).
 
 Retorne APENAS um JSON válido com a estrutura:
 {
-  "platform": "meta|google",
+  "platform": "meta" | "google",
   "campaigns": [
     {
       "name": "string",
-      "status": "active|paused|other",
-      "budget": number|null,
-      "cost": number|null,
-      "impressions": number|null,
-      "clicks": number|null,
-      "conversions": number|null,
-      "reach": number|null,
-      "cpl": number|null,
-      "result_type": "string|null"
+      "status": "active" | "paused" | "other",
+      "budget": number | null,
+      "cost": number | null,
+      "impressions": number | null,
+      "clicks": number | null,
+      "conversions": number | null,
+      "reach": number | null,
+      "cpl": number | null,
+      "result_type": "string | null"
     }
   ]
 }
-Não invente dados. Se não conseguir ler um campo, use null. Valores monetários em reais sem símbolo. Não inclua texto fora do JSON.`;
+Não invente dados. Se não conseguir ler um campo com precisão, use null. Não inclua texto ou formatação Markdown fora do JSON.`;
 
     const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
