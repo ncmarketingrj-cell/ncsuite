@@ -255,7 +255,7 @@ function RelatoriosPage() {
         
         let metricsQuery = (supabase as any).from("metrics").select(`
           campaign_id, cost, conversions, impressions, clicks, reach,
-          campaigns!inner(id, name, ad_account_id, ad_accounts(platform))
+          campaigns!inner(id, name, ad_account_id)
         `)
         .gte("date", startLimit)
         .lte("date", endLimit);
@@ -265,7 +265,10 @@ function RelatoriosPage() {
         }
 
         const { data: dbMetrics, error: mErr } = await metricsQuery;
-        if (mErr) throw mErr;
+        if (mErr) {
+          console.error("Supabase Query Error:", mErr);
+          throw mErr;
+        }
 
         if (!dbMetrics || dbMetrics.length === 0) {
           setCampaignList([]);
@@ -277,7 +280,9 @@ function RelatoriosPage() {
         
         dbMetrics.forEach((m: any) => {
           const campId = m.campaign_id;
-          const platformStr = m.campaigns?.ad_accounts?.platform === "Google Ads" ? "google" : "meta";
+          const adAccountId = m.campaigns?.ad_account_id;
+          const matchedAccount = accounts.find(a => a.id === adAccountId);
+          const platformStr = matchedAccount?.platform === "Google Ads" ? "google" : "meta";
           
           const cur = metricsMap.get(campId) || { 
              id: campId, 
@@ -363,38 +368,38 @@ function RelatoriosPage() {
     const totalCost = selected.reduce((sum, c) => sum + c.cost, 0);
     const agencyName = localStorage.getItem("nc_agency_name") || "NC AGÊNCIA";
 
-    // 1. Agrupar Resultados por Tipo/Objetivo
+    // 1. Agrupar Resultados por Tipo/Objetivo e Plataforma
     const groupedTypes = new Map<string, { cost: number; results: number; reach: number; impressions: number }>();
+    const platforms = new Set<string>();
+
     selected.forEach(c => {
+      // Registrar plataforma
+      platforms.add(c.platform === 'google' ? 'Google Ads' : 'Meta Ads');
+
+      // Calcular resultado base
+      const isClickBased = c.objective.includes("Cliques");
+      const resultValue = isClickBased ? c.clicks : c.conversions;
+
+      // Agrupamento por Objetivo
       const cur = groupedTypes.get(c.objective) || { cost: 0, results: 0, reach: 0, impressions: 0 };
       cur.cost += c.cost;
-      
-      // Heurística de conversão de resultado com base no tipo
-      if (c.objective.includes("Cliques")) {
-        cur.results += c.clicks;
-      } else {
-        cur.results += c.conversions;
-      }
-      
+      cur.results += resultValue;
       cur.reach += c.reach;
       cur.impressions += c.impressions;
       groupedTypes.set(c.objective, cur);
     });
 
-    let text = "";
-
-    const totalResults = selected.reduce((sum, c) => sum + (c.conversions || c.clicks), 0);
+    const totalResults = Array.from(groupedTypes.values()).reduce((sum, g) => sum + g.results, 0);
     const totalReach = selected.reduce((sum, c) => sum + c.reach, 0);
     const totalImps = selected.reduce((sum, c) => sum + c.impressions, 0);
+    const avgCpa = totalResults > 0 ? totalCost / totalResults : 0;
+    const platformString = Array.from(platforms).join(" & ");
 
     const customTemplate = templatesData?.find(t => t.id === reportMode);
 
     if (customTemplate) {
-      let text = customTemplate.message_template;
-      const avgCpa = totalResults > 0 ? totalCost / totalResults : 0;
-      
-      // Configurar layout do PDF
       setActivePdfLayout(customTemplate.pdf_layout || "classic");
+      let text = customTemplate.message_template;
 
       // Substituições Globais
       text = text.replace(/\{\{NOME_CLIENTE\}\}/g, clientName);
@@ -404,17 +409,24 @@ function RelatoriosPage() {
       text = text.replace(/\{\{TOTAL_RESULTADOS\}\}/g, totalResults.toLocaleString("pt-BR"));
       text = text.replace(/\{\{CPA_MEDIO\}\}/g, `R$ ${avgCpa.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`);
       text = text.replace(/\{\{AGENCIA\}\}/g, agencyName.toUpperCase());
+      
+      // Nova Tag de Plataforma Suportada
+      text = text.replace(/\{\{PLATAFORMAS\}\}/g, platformString);
 
       // Substituição de Lista de Campanhas
       if (text.includes("{{LISTA_CAMPANHAS}}")) {
         let listText = "";
         selected.forEach(c => {
-          const costPerRes = c.conversions > 0 ? c.cost / c.conversions : (c.clicks > 0 ? c.cost / c.clicks : 0);
-          listText += `📌 *${c.name.toUpperCase()}*\n`;
+          const resultValue = c.objective.includes("Cliques") ? c.clicks : c.conversions;
+          const costPerRes = resultValue > 0 ? c.cost / resultValue : 0;
+          const platIcon = c.platform === 'google' ? '🌐' : '🎯';
+          
+          listText += `${platIcon} *${c.name.toUpperCase()}*\n`;
           listText += `   💵 Investimento: R$ ${c.cost.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}\n`;
-          listText += `   📈 Resultados: ${c.conversions > 0 ? c.conversions.toLocaleString("pt-BR") : c.clicks.toLocaleString("pt-BR")}\n`;
+          listText += `   📈 Resultados: ${resultValue.toLocaleString("pt-BR")}\n`;
           listText += `   💲 Custo/Resultado: R$ ${costPerRes.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}\n`;
-          listText += `   👥 Alcance: ${c.reach.toLocaleString("pt-BR")}\n\n`;
+          if (c.reach > 0) listText += `   👥 Alcance: ${c.reach.toLocaleString("pt-BR")}\n`;
+          listText += `\n`;
         });
         text = text.replace(/\{\{LISTA_CAMPANHAS\}\}/g, listText);
       }
@@ -424,129 +436,84 @@ function RelatoriosPage() {
         let typeText = "";
         groupedTypes.forEach((data, type) => {
           const cpl = data.results > 0 ? data.cost / data.results : 0;
-          const resultLabel = type.includes("Cliques") ? "Visualizações" : "Resultados";
-          const costLabel = type.includes("Cliques") ? "Custo por Visualizações" : "CPL";
+          const isClick = type.includes("Cliques");
+          const resultLabel = isClick ? "Visualizações" : "Resultados";
+          const costLabel = isClick ? "Custo por Visita" : "CPL/CPA";
 
           typeText += `*${type}*\n`;
           typeText += `   💵 Investimento: R$ ${data.cost.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}\n`;
           typeText += `   📈 ${resultLabel}: ${data.results.toLocaleString("pt-BR")}\n`;
           typeText += `   💲 ${costLabel}: R$ ${cpl.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}\n\n`;
         });
-        text = text.replace(/\{\{RESULTADOS_POR_TIPO\}\}/g, typeText);
+        text = text.replace(/\{\{RESULTADOS_POR_TIPO\}\}/g, typeText.trim());
       }
 
       setGeneratedText(text);
-    } else if (reportMode === "complete") {
-      setActivePdfLayout("classic");
-      text += `📊 *RELATÓRIO DE PERFORMANCE*\n`;
-      text += `━━━━━━━━━━━━━━━━━━━━\n`;
-      text += `🏢 *Cliente:* ${clientName}\n`;
-      text += `📅 *Período:* ${periodText}\n`;
-      text += `🎯 *Total de Campanhas:* ${selected.length}\n`;
-      text += `💰 *Investimento Total:* R$ ${totalCost.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}\n\n`;
-      
-      text += `━━━━━━━━━━━━━━━━━━━━\n`;
-      text += `*RESULTADOS POR TIPO*\n`;
-      text += `━━━━━━━━━━━━━━━━━━━━\n\n`;
-
-      groupedTypes.forEach((data, type) => {
-        const cpl = data.results > 0 ? data.cost / data.results : 0;
-        const resultLabel = type.includes("Cliques") ? "Visualizações" : "Resultados";
-        const costLabel = type.includes("Cliques") ? "Custo por Visualizações" : "CPL";
-
-        text += `${type}\n`;
-        text += `   💵 Investimento: R$ ${data.cost.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}\n`;
-        text += `   📈 ${resultLabel}: ${data.results.toLocaleString("pt-BR")}\n`;
-        text += `   💲 ${costLabel}: R$ ${cpl.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}\n`;
-        text += `   👥 Alcance: ${data.reach.toLocaleString("pt-BR")}\n`;
-        text += `   👁️ Impressões: ${data.impressions.toLocaleString("pt-BR")}\n\n`;
-      });
-
-      text += `━━━━━━━━━━━━━━━━━━━━\n`;
-      text += `*DETALHE POR CAMPANHA*\n`;
-      text += `━━━━━━━━━━━━━━━━━━━━\n\n`;
-
-      selected.forEach(c => {
-        const costPerRes = c.conversions > 0 ? c.cost / c.conversions : (c.clicks > 0 ? c.cost / c.clicks : 0);
-        const typeLabel = c.objective.substring(2); // Remove o emoji inicial
-        
-        text += `📌 *${c.name.toUpperCase()}*\n`;
-        text += `   💵 Investimento: R$ ${c.cost.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}\n`;
-        text += `   📈 Resultados: ${c.conversions > 0 ? c.conversions.toLocaleString("pt-BR") : c.clicks.toLocaleString("pt-BR")} (${typeLabel})\n`;
-        text += `   💲 Custo/Resultado: R$ ${costPerRes.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}\n`;
-        text += `   👥 Alcance: ${c.reach.toLocaleString("pt-BR")}\n`;
-        text += `   👁️ Impressões: ${c.impressions.toLocaleString("pt-BR")}\n\n`;
-      });
-
-      text += `━━━━━━━━━━━━━━━━━━━━\n`;
-      text += `*${agencyName.toUpperCase()}*`;
-      setGeneratedText(text);
-    } else if (reportMode === "objective") {
-      setActivePdfLayout("analytical");
-      text += `📊 *RELATÓRIO DE PERFORMANCE*\n`;
-      text += `━━━━━━━━━━━━━━━━━━━━\n`;
-      text += `🏢 *Cliente:* ${clientName}\n`;
-      text += `📅 *Período:* ${periodText}\n`;
-      text += `💰 *Investimento Total:* R$ ${totalCost.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}\n\n`;
-      
-      text += `━━━━━━━━━━━━━━━━━━━━\n`;
-      text += `*RESULTADOS POR TIPO*\n`;
-      text += `━━━━━━━━━━━━━━━━━━━━\n\n`;
-
-      groupedTypes.forEach((data, type) => {
-        const cpl = data.results > 0 ? data.cost / data.results : 0;
-        const resultLabel = type.includes("Cliques") ? "Visualizações" : "Resultados";
-        const costLabel = type.includes("Cliques") ? "Custo por Visualizações" : "CPL";
-
-        text += `${type}\n`;
-        text += `   💵 Investimento: R$ ${data.cost.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}\n`;
-        text += `   📈 ${resultLabel}: ${data.results.toLocaleString("pt-BR")}\n`;
-        text += `   💲 ${costLabel}: R$ ${cpl.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}\n`;
-        text += `   👥 Alcance: ${data.reach.toLocaleString("pt-BR")}\n`;
-        text += `   👁️ Impressões: ${data.impressions.toLocaleString("pt-BR")}\n\n`;
-      });
-
-      text += `━━━━━━━━━━━━━━━━━━━━\n`;
-      text += `*${agencyName.toUpperCase()}*`;
-      setGeneratedText(text);
-    } else {
-      // campaigns mode
-      setActivePdfLayout("minimalist");
-      const avgCpa = totalResults > 0 ? totalCost / totalResults : 0;
-      text += `📊 *RELATÓRIO DE CAMPANHA*\n`;
-      text += `━━━━━━━━━━━━━━━━━━━━━\n\n`;
-      text += `🏢 *Cliente:* ${clientName}\n`;
-      text += `📅 *Período:* ${periodText}\n`;
-      text += `📋 *Campanhas:* ${selected.length} campanhas\n\n`;
-      
-      text += `━━━━━━━━━━━━━━━━━━━━━\n`;
-      text += `📈 *MÉTRICAS PRINCIPAIS*\n`;
-      text += `━━━━━━━━━━━━━━━━━━━━━\n\n`;
-      text += `💰 Investimento: R$ ${totalCost.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}\n`;
-      text += `🌐 Resultados Totais: ${totalResults.toLocaleString("pt-BR")}\n`;
-      text += `🎯 Custo/Resultado: R$ ${avgCpa.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}\n`;
-      text += `👁️ Alcance: ${totalReach.toLocaleString("pt-BR")}\n`;
-      text += `📱 Impressões: ${totalImps.toLocaleString("pt-BR")}\n\n`;
-
-      text += `━━━━━━━━━━━━━━━━━━━━━\n`;
-      text += `📌 *DETALHE POR CAMPANHA*\n`;
-      text += `━━━━━━━━━━━━━━━━━━━━━\n\n`;
-
-      selected.forEach(c => {
-        const costPerRes = c.conversions > 0 ? c.cost / c.conversions : (c.clicks > 0 ? c.cost / c.clicks : 0);
-        
-        text += `🌐 *${c.name.toUpperCase()}*\n`;
-        text += `   💰 Investimento: R$ ${c.cost.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}\n`;
-        text += `   📊 Resultados: ${c.conversions > 0 ? c.conversions.toLocaleString("pt-BR") : c.clicks.toLocaleString("pt-BR")}\n`;
-        text += `   🎯 Custo/Resultado: R$ ${costPerRes.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}\n`;
-        text += `   👥 Alcance: ${c.reach.toLocaleString("pt-BR")}\n\n`;
-      });
-
-      text += `━━━━━━━━━━━━━━━━━━━━━\n`;
-      text += `*${agencyName.toUpperCase()}*`;
-      setGeneratedText(text);
+      return;
     }
 
+    // --- Lógica para os Relatórios Padrão (Sem Template Customizado) ---
+    const buildHeader = (title: string) => {
+      return `📊 *${title}*\n━━━━━━━━━━━━━━━━━━━━\n🏢 *Cliente:* ${clientName}\n📅 *Período:* ${periodText}\n📱 *Plataformas:* ${platformString}\n💰 *Investimento Total:* R$ ${totalCost.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}\n\n`;
+    };
+
+    const buildResultsByType = () => {
+      let txt = `━━━━━━━━━━━━━━━━━━━━\n*RESUMO POR OBJETIVO*\n━━━━━━━━━━━━━━━━━━━━\n\n`;
+      groupedTypes.forEach((data, type) => {
+        const cpl = data.results > 0 ? data.cost / data.results : 0;
+        const isClick = type.includes("Cliques");
+        txt += `${type}\n`;
+        txt += `   💵 Investimento: R$ ${data.cost.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}\n`;
+        txt += `   📈 ${isClick ? "Visualizações" : "Resultados"}: ${data.results.toLocaleString("pt-BR")}\n`;
+        txt += `   💲 ${isClick ? "Custo por Visita" : "CPA"}: R$ ${cpl.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}\n`;
+        if (data.reach > 0) txt += `   👥 Alcance: ${data.reach.toLocaleString("pt-BR")}\n`;
+        txt += `   👁️ Impressões: ${data.impressions.toLocaleString("pt-BR")}\n\n`;
+      });
+      return txt;
+    };
+
+    const buildCampaignDetails = () => {
+      let txt = `━━━━━━━━━━━━━━━━━━━━\n*DETALHAMENTO DE CAMPANHAS*\n━━━━━━━━━━━━━━━━━━━━\n\n`;
+      // Agrupa por plataforma para a listagem
+      ['google', 'meta'].forEach(plat => {
+        const platCampaigns = selected.filter(c => c.platform === plat);
+        if (platCampaigns.length === 0) return;
+        
+        txt += `*— ${plat === 'google' ? 'GOOGLE ADS' : 'META ADS'} —*\n\n`;
+        platCampaigns.forEach(c => {
+          const resultValue = c.objective.includes("Cliques") ? c.clicks : c.conversions;
+          const costPerRes = resultValue > 0 ? c.cost / resultValue : 0;
+          const typeLabel = c.objective.substring(2).trim(); // Remove emoji
+          
+          txt += `📌 *${c.name.toUpperCase()}*\n`;
+          txt += `   💵 Invest: R$ ${c.cost.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}\n`;
+          txt += `   📈 Result: ${resultValue.toLocaleString("pt-BR")} (${typeLabel})\n`;
+          txt += `   💲 Custo/Res: R$ ${costPerRes.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}\n\n`;
+        });
+      });
+      return txt;
+    };
+
+    let finalText = "";
+
+    if (reportMode === "complete") {
+      setActivePdfLayout("classic");
+      finalText += buildHeader("RELATÓRIO DE PERFORMANCE");
+      finalText += buildResultsByType();
+      finalText += buildCampaignDetails();
+    } else if (reportMode === "objective") {
+      setActivePdfLayout("analytical");
+      finalText += buildHeader("RELATÓRIO DE RESULTADOS");
+      finalText += buildResultsByType();
+    } else { // campaigns mode
+      setActivePdfLayout("minimalist");
+      finalText += buildHeader("RELATÓRIO DE CAMPANHAS");
+      finalText += `🎯 *CPA Médio Geral:* R$ ${avgCpa.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}\n\n`;
+      finalText += buildCampaignDetails();
+    }
+
+    finalText += `━━━━━━━━━━━━━━━━━━━━\n*${agencyName.toUpperCase()}*`;
+    setGeneratedText(finalText);
   }, [campaignList, reportMode, clientName, periodText, templatesData]);
 
   const handleGenerate = () => {
