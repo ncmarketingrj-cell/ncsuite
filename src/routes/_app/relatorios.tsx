@@ -7,7 +7,7 @@ import {
   Calendar, CheckCircle2, Loader2, Globe, Brain,
   TrendingUp, Users, PieChart, Send, Copy, Settings,
   Eye, FileCheck, RefreshCw, Smartphone, Sparkles,
-  Award, MessageSquare, AlertCircle
+  Award, MessageSquare, AlertCircle, Plus
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { format, subDays } from "date-fns";
@@ -615,9 +615,10 @@ function RelatoriosPage() {
               setActiveReportId(null);
               toast.info("Novo relatório iniciado.");
             }}
-            className="flex items-center gap-2 rounded-xl bg-white/5 px-4 py-2 text-xs font-black uppercase tracking-widest text-foreground hover:bg-white/10 transition-all border border-white/10 hover:border-white/20"
+            className="flex items-center gap-2 rounded-xl bg-primary/10 px-4 py-2 text-xs font-black uppercase tracking-widest text-primary hover:bg-primary/20 transition-all border border-primary/20"
+            title="Começar um novo relatório do zero"
           >
-            <Sparkles className="h-4 w-4 text-primary" /> Novo
+            <Plus className="h-4 w-4" /> Novo Relatório
           </button>
           
           <button
