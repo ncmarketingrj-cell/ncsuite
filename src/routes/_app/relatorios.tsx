@@ -112,7 +112,7 @@ function RelatoriosPage() {
     }
   }, []);
 
-  const handleSaveReport = () => {
+  const handleSaveReport = (showToast = true) => {
     if (!generatedText) {
       toast.warning("Gere o relatório antes de salvar!");
       return;
@@ -134,11 +134,11 @@ function RelatoriosPage() {
     const index = updatedList.findIndex(r => r.id === reportId);
     if (index >= 0) {
       updatedList[index] = newReport;
-      toast.success("Relatório atualizado no histórico!");
+      if (showToast) toast.success("Relatório atualizado no histórico!");
     } else {
       updatedList.unshift(newReport);
       setActiveReportId(reportId);
-      toast.success("Relatório salvo no histórico local!");
+      if (showToast) toast.success("Relatório salvo no histórico local!");
     }
 
     setSavedReports(updatedList);
@@ -563,10 +563,14 @@ function RelatoriosPage() {
       return;
     }
     
-    // Auto-salvar o relatório sempre que compilar
-    handleSaveReport();
+    setIsGenerating(true);
     
-    toast.success("Métricas compiladas e atualizadas em tempo real!");
+    setTimeout(() => {
+      // Auto-salvar o relatório sempre que compilar sem duplicar toasts
+      handleSaveReport(false);
+      setIsGenerating(false);
+      toast.success("Métricas compiladas e atualizadas em tempo real!");
+    }, 600);
   };
 
   const handleCopyToClipboard = () => {
