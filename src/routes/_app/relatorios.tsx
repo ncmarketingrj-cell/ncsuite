@@ -611,8 +611,18 @@ function RelatoriosPage() {
 
         <div className="flex items-center gap-4">
           <button
+            onClick={() => {
+              setActiveReportId(null);
+              toast.info("Novo relatório iniciado.");
+            }}
+            className="flex items-center gap-2 rounded-xl bg-white/5 px-4 py-2 text-xs font-black uppercase tracking-widest text-foreground hover:bg-white/10 transition-all border border-white/10 hover:border-white/20"
+          >
+            <Sparkles className="h-4 w-4 text-primary" /> Novo
+          </button>
+          
+          <button
             onClick={() => setIsSavedReportsModalOpen(true)}
-            className="flex items-center gap-2 rounded-xl bg-white/5 px-4 py-2 text-xs font-black uppercase tracking-widest text-white hover:bg-white/10 transition-all border border-white/10 hover:border-white/20"
+            className="flex items-center gap-2 rounded-xl bg-white/5 px-4 py-2 text-xs font-black uppercase tracking-widest text-foreground hover:bg-white/10 transition-all border border-white/10 hover:border-white/20"
           >
             <FileText className="h-4 w-4" /> Salvos
             {savedReports.length > 0 && (
@@ -1036,39 +1046,39 @@ function RelatoriosPage() {
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              className="relative w-full max-w-4xl max-h-[85vh] flex flex-col overflow-hidden rounded-3xl border border-white/10 bg-[#0A0A0A] shadow-2xl"
+              className="relative w-full max-w-4xl max-h-[85vh] flex flex-col overflow-hidden rounded-3xl border border-border bg-card shadow-2xl"
             >
               {/* Header Fixo do Modal */}
-              <div className="flex items-center justify-between border-b border-white/5 bg-white/[0.02] p-6">
+              <div className="flex items-center justify-between border-b border-border bg-muted/20 p-6">
                 <div>
-                  <h2 className="text-xl font-black uppercase tracking-tighter text-white flex items-center gap-2">
+                  <h2 className="text-xl font-black uppercase tracking-tighter text-foreground flex items-center gap-2">
                     <FileText className="h-5 w-5 text-primary" /> Relatórios Salvos
                   </h2>
                   <p className="text-xs text-muted-foreground mt-1">Carregue configurações e edite relatórios gerados anteriormente.</p>
                 </div>
                 <button
                   onClick={() => setIsSavedReportsModalOpen(false)}
-                  className="flex h-8 w-8 items-center justify-center rounded-full bg-white/5 text-white/50 hover:bg-white/10 hover:text-white transition"
+                  className="flex h-8 w-8 items-center justify-center rounded-full bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground transition"
                 >
                   ✕
                 </button>
               </div>
 
               {/* Área de Filtros Fixa */}
-              <div className="flex flex-col sm:flex-row gap-4 border-b border-white/5 bg-background p-6">
+              <div className="flex flex-col sm:flex-row gap-4 border-b border-border bg-background p-6">
                 <input
                   type="text"
                   placeholder="Filtrar por Cliente..."
                   value={reportSearchTerm}
                   onChange={(e) => setReportSearchTerm(e.target.value)}
-                  className="flex-1 rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm font-bold text-white focus:border-primary focus:outline-none"
+                  className="flex-1 rounded-xl border border-border bg-muted/50 px-4 py-2.5 text-sm font-bold text-foreground focus:border-primary focus:outline-none"
                 />
                 <input
                   type="text"
                   placeholder="Filtrar por Período (ex: MAIO)..."
                   value={reportSearchPeriod}
                   onChange={(e) => setReportSearchPeriod(e.target.value)}
-                  className="flex-1 rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm font-bold text-white focus:border-primary focus:outline-none"
+                  className="flex-1 rounded-xl border border-border bg-muted/50 px-4 py-2.5 text-sm font-bold text-foreground focus:border-primary focus:outline-none"
                 />
               </div>
 
@@ -1098,15 +1108,15 @@ function RelatoriosPage() {
                             handleLoadReport(report);
                             setIsSavedReportsModalOpen(false);
                           }}
-                          className={`group flex flex-col justify-between p-4 rounded-xl border cursor-pointer transition-all hover:bg-white/[0.04] ${
+                          className={`group flex flex-col justify-between p-4 rounded-xl border cursor-pointer transition-all hover:bg-muted/50 ${
                             activeReportId === report.id
                               ? "bg-primary/[0.05] border-primary/30"
-                              : "bg-white/[0.02] border-white/5"
+                              : "bg-card border-border"
                           }`}
                         >
                           <div className="flex items-start justify-between gap-2">
                             <div>
-                              <h4 className="text-sm font-bold text-white uppercase">{report.clientName}</h4>
+                              <h4 className="text-sm font-bold text-foreground uppercase">{report.clientName}</h4>
                               <p className="text-[10px] text-muted-foreground font-mono mt-0.5">
                                 Período: {report.periodText} • {report.reportMode === 'complete' ? 'Completo' : report.reportMode === 'objective' ? 'Por Objetivo' : 'Por Campanhas'}
                               </p>
@@ -1121,14 +1131,14 @@ function RelatoriosPage() {
                             </div>
                             <button
                               onClick={(e) => handleDeleteReport(report.id, e)}
-                              className="h-8 w-8 rounded-lg bg-white/5 hover:bg-red-500/20 hover:text-red-400 border border-white/10 flex items-center justify-center transition"
+                              className="h-8 w-8 rounded-lg bg-muted/50 hover:bg-red-500/20 hover:text-red-400 border border-border flex items-center justify-center transition"
                               title="Excluir Relatório"
                             >
                               <AlertCircle className="h-4 w-4" />
                             </button>
                           </div>
                           
-                          <div className="flex items-center justify-between border-t border-white/5 mt-4 pt-3 text-[10px] text-muted-foreground font-mono">
+                          <div className="flex items-center justify-between border-t border-border mt-4 pt-3 text-[10px] text-muted-foreground font-mono">
                             <span>Criado: {new Date(report.createdAt).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
                             <span className="text-primary group-hover:translate-x-1 transition-transform flex items-center gap-0.5 font-bold uppercase tracking-wider text-[9px]">
                               Carregar &rarr;
