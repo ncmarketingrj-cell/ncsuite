@@ -73,6 +73,7 @@ function RelatoriosPage() {
     const selectedMonth = months[start.getMonth()];
     const selectedYear = start.getFullYear();
     setPeriodText(`${selectedMonth} ${selectedYear}`);
+    setActiveReportId(null);
   };
   
   const [campaignList, setCampaignList] = useState<CampaignData[]>([]);
@@ -634,13 +635,13 @@ function RelatoriosPage() {
         {/* Alternador de Origem de Dados */}
         <div className="flex rounded-xl bg-white/5 p-1 border border-white/5">
           <button 
-            onClick={() => setSource("api")} 
+            onClick={() => { setSource("api"); setActiveReportId(null); }} 
             className={`flex items-center gap-1.5 rounded-lg px-4 py-2 text-xs font-bold transition-all ${source === "api" ? "bg-primary text-background" : "text-muted-foreground hover:text-white"}`}
           >
             <Globe className="h-3.5 w-3.5" /> Meta Ads (Integrado)
           </button>
           <button 
-            onClick={() => setSource("upload")} 
+            onClick={() => { setSource("upload"); setActiveReportId(null); }} 
             className={`flex items-center gap-1.5 rounded-lg px-4 py-2 text-xs font-bold transition-all ${source === "upload" ? "bg-primary text-background" : "text-muted-foreground hover:text-white"}`}
           >
             <Sparkles className="h-3.5 w-3.5" /> Extração de Print (OCR)
@@ -667,7 +668,10 @@ function RelatoriosPage() {
               <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Nome do Cliente</label>
               <input 
                 value={clientName} 
-                onChange={(e) => setClientName(e.target.value)}
+                onChange={(e) => {
+                  setClientName(e.target.value);
+                  setActiveReportId(null);
+                }}
                 placeholder="Ex: Pizza Bonne"
                 className="w-full rounded-xl border border-white/10 bg-background/50 px-4 py-3 text-sm font-bold focus:border-primary focus:outline-none"
               />
@@ -678,7 +682,10 @@ function RelatoriosPage() {
                 <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Período de Análise (Texto Livre)</label>
                 <input 
                   value={periodText} 
-                  onChange={(e) => setPeriodText(e.target.value)}
+                  onChange={(e) => {
+                    setPeriodText(e.target.value);
+                    setActiveReportId(null);
+                  }}
                   placeholder="Ex: ABRIL 2026"
                   className="w-full rounded-xl border border-white/10 bg-background/50 px-4 py-3 text-sm font-bold focus:border-primary focus:outline-none"
                 />
@@ -700,7 +707,10 @@ function RelatoriosPage() {
                 <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Conta Conectada</label>
                 <select 
                   value={selectedAccountId} 
-                  onChange={(e) => setSelectedAccountId(e.target.value)}
+                  onChange={(e) => {
+                    setSelectedAccountId(e.target.value);
+                    setActiveReportId(null);
+                  }}
                   className="w-full rounded-xl border border-white/10 bg-background/50 px-4 py-3 text-sm font-bold focus:border-primary focus:outline-none"
                 >
                   <option value="all">Consolidado (Todas as contas)</option>
