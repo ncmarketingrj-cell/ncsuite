@@ -84,6 +84,10 @@ function RelatoriosPage() {
   const [savedReports, setSavedReports] = useState<SavedReport[]>([]);
   const [activeReportId, setActiveReportId] = useState<string | null>(null);
 
+  const [isSavedReportsModalOpen, setIsSavedReportsModalOpen] = useState(false);
+  const [reportSearchTerm, setReportSearchTerm] = useState("");
+  const [reportSearchPeriod, setReportSearchPeriod] = useState("");
+
   // Controle de Templates
   const [isTemplateModalOpen, setIsTemplateModalOpen] = useState(false);
   const [activePdfLayout, setActivePdfLayout] = useState("classic");
@@ -405,9 +409,9 @@ function RelatoriosPage() {
       text = text.replace(/\{\{NOME_CLIENTE\}\}/g, clientName);
       text = text.replace(/\{\{PERIODO\}\}/g, periodText);
       text = text.replace(/\{\{TOTAL_CAMPANHAS\}\}/g, selected.length.toString());
-      text = text.replace(/\{\{INVESTIMENTO\}\}/g, `R$ ${totalCost.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`);
+      text = text.replace(/\{\{INVESTIMENTO\}\}/g, `R$ ${totalCost.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`);
       text = text.replace(/\{\{TOTAL_RESULTADOS\}\}/g, totalResults.toLocaleString("pt-BR"));
-      text = text.replace(/\{\{CPA_MEDIO\}\}/g, `R$ ${avgCpa.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`);
+      text = text.replace(/\{\{CPA_MEDIO\}\}/g, `R$ ${avgCpa.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`);
       text = text.replace(/\{\{AGENCIA\}\}/g, agencyName.toUpperCase());
       
       // Nova Tag de Plataforma Suportada
@@ -422,9 +426,9 @@ function RelatoriosPage() {
           const platIcon = c.platform === 'google' ? '🌐' : '🎯';
           
           listText += `${platIcon} *${c.name.toUpperCase()}*\n`;
-          listText += `   💵 Investimento: R$ ${c.cost.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}\n`;
+          listText += `   💵 Investimento: R$ ${c.cost.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n`;
           listText += `   📈 Resultados: ${resultValue.toLocaleString("pt-BR")}\n`;
-          listText += `   💲 Custo/Resultado: R$ ${costPerRes.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}\n`;
+          listText += `   💲 Custo/Resultado: R$ ${costPerRes.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n`;
           if (c.reach > 0) listText += `   👥 Alcance: ${c.reach.toLocaleString("pt-BR")}\n`;
           listText += `\n`;
         });
@@ -441,9 +445,9 @@ function RelatoriosPage() {
           const costLabel = isClick ? "Custo por Visita" : "CPL/CPA";
 
           typeText += `*${type}*\n`;
-          typeText += `   💵 Investimento: R$ ${data.cost.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}\n`;
+          typeText += `   💵 Investimento: R$ ${data.cost.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n`;
           typeText += `   📈 ${resultLabel}: ${data.results.toLocaleString("pt-BR")}\n`;
-          typeText += `   💲 ${costLabel}: R$ ${cpl.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}\n\n`;
+          typeText += `   💲 ${costLabel}: R$ ${cpl.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n\n`;
         });
         text = text.replace(/\{\{RESULTADOS_POR_TIPO\}\}/g, typeText.trim());
       }
@@ -454,7 +458,7 @@ function RelatoriosPage() {
 
     // --- Lógica para os Relatórios Padrão (Sem Template Customizado) ---
     const buildHeader = (title: string) => {
-      return `📊 *${title}*\n━━━━━━━━━━━━━━━━━━━━\n🏢 *Cliente:* ${clientName}\n📅 *Período:* ${periodText}\n📱 *Plataformas:* ${platformString}\n💰 *Investimento Total:* R$ ${totalCost.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}\n\n`;
+      return `📊 *${title}*\n━━━━━━━━━━━━━━━━━━━━\n🏢 *Cliente:* ${clientName}\n📅 *Período:* ${periodText}\n📱 *Plataformas:* ${platformString}\n💰 *Investimento Total:* R$ ${totalCost.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n\n`;
     };
 
     const buildResultsByType = () => {
@@ -463,9 +467,9 @@ function RelatoriosPage() {
         const cpl = data.results > 0 ? data.cost / data.results : 0;
         const isClick = type.includes("Cliques");
         txt += `${type}\n`;
-        txt += `   💵 Investimento: R$ ${data.cost.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}\n`;
+        txt += `   💵 Investimento: R$ ${data.cost.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n`;
         txt += `   📈 ${isClick ? "Visualizações" : "Resultados"}: ${data.results.toLocaleString("pt-BR")}\n`;
-        txt += `   💲 ${isClick ? "Custo por Visita" : "CPA"}: R$ ${cpl.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}\n`;
+        txt += `   💲 ${isClick ? "Custo por Visita" : "CPA"}: R$ ${cpl.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n`;
         if (data.reach > 0) txt += `   👥 Alcance: ${data.reach.toLocaleString("pt-BR")}\n`;
         txt += `   👁️ Impressões: ${data.impressions.toLocaleString("pt-BR")}\n\n`;
       });
@@ -486,9 +490,9 @@ function RelatoriosPage() {
           const typeLabel = c.objective.substring(2).trim(); // Remove emoji
           
           txt += `📌 *${c.name.toUpperCase()}*\n`;
-          txt += `   💵 Invest: R$ ${c.cost.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}\n`;
+          txt += `   💵 Invest: R$ ${c.cost.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n`;
           txt += `   📈 Result: ${resultValue.toLocaleString("pt-BR")} (${typeLabel})\n`;
-          txt += `   💲 Custo/Res: R$ ${costPerRes.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}\n\n`;
+          txt += `   💲 Custo/Res: R$ ${costPerRes.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n\n`;
         });
       });
       return txt;
@@ -508,7 +512,7 @@ function RelatoriosPage() {
     } else { // campaigns mode
       setActivePdfLayout("minimalist");
       finalText += buildHeader("RELATÓRIO DE CAMPANHAS");
-      finalText += `🎯 *CPA Médio Geral:* R$ ${avgCpa.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}\n\n`;
+      finalText += `🎯 *CPA Médio Geral:* R$ ${avgCpa.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n\n`;
       finalText += buildCampaignDetails();
     }
 
@@ -522,6 +526,10 @@ function RelatoriosPage() {
       toast.warning("Selecione pelo menos uma campanha!");
       return;
     }
+    
+    // Auto-salvar o relatório sempre que compilar
+    handleSaveReport();
+    
     toast.success("Métricas compiladas e atualizadas em tempo real!");
   };
 
@@ -560,6 +568,17 @@ function RelatoriosPage() {
             <h1 className="text-3xl font-black tracking-tighter text-gradient uppercase mt-0.5">Motor de Relatórios</h1>
           </div>
         </div>
+
+        <div className="flex items-center gap-4">
+          <button
+            onClick={() => setIsSavedReportsModalOpen(true)}
+            className="flex items-center gap-2 rounded-xl bg-secondary/10 px-4 py-2 text-xs font-black uppercase tracking-widest text-secondary hover:bg-secondary/20 transition-all border border-secondary/20"
+          >
+            <FileText className="h-4 w-4" /> Salvos
+            {savedReports.length > 0 && (
+              <span className="rounded bg-secondary/20 px-1.5 py-0.5 text-[10px]">{savedReports.length}</span>
+            )}
+          </button>
 
         {/* Alternador de Origem de Dados */}
         <div className="flex rounded-xl bg-white/5 p-1 border border-white/5">
@@ -757,7 +776,7 @@ function RelatoriosPage() {
                         </span>
                       </div>
                       <p className="text-[10px] text-muted-foreground font-mono mt-0.5">
-                        Custo: R$ {c.cost.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} • Cliques: {c.clicks} • Conversões: {c.conversions}
+                        Custo: R$ {c.cost.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} • Cliques: {c.clicks} • Conversões: {c.conversions}
                       </p>
                     </div>
                   </div>
@@ -875,7 +894,7 @@ function RelatoriosPage() {
                   <div className="p-4 rounded-xl bg-white/5 border border-white/10 print:bg-gray-100 print:border-gray-200">
                     <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground print:text-black/50">Investido</p>
                     <p className="text-base font-mono font-black mt-1.5 print:text-black text-gradient">
-                      R$ {campaignList.filter(c => c.selected).reduce((sum, c) => sum + c.cost, 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                      R$ {campaignList.filter(c => c.selected).reduce((sum, c) => sum + c.cost, 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </p>
                   </div>
                   <div className="p-4 rounded-xl bg-white/5 border border-white/10 print:bg-gray-100 print:border-gray-200">
@@ -912,7 +931,7 @@ function RelatoriosPage() {
                         }, new Map<string, { cost: number; results: number }>())).map(([obj, data], idx) => (
                           <div key={idx} className="flex justify-between text-xs py-1.5 border-b border-white/5">
                             <span className="font-bold text-white truncate max-w-[260px]">{obj}</span>
-                            <span className="font-mono text-muted-foreground">R$ {data.cost.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} — {data.results.toLocaleString('pt-BR')} res</span>
+                            <span className="font-mono text-muted-foreground">R$ {data.cost.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} — {data.results.toLocaleString('pt-BR')} res</span>
                           </div>
                         ))}
                       </>
@@ -922,7 +941,7 @@ function RelatoriosPage() {
                         {campaignList.filter(c => c.selected).map((c, idx) => (
                           <div key={idx} className="flex justify-between text-xs py-1.5 border-b border-white/5">
                             <span className="font-bold text-white truncate max-w-[260px]">{c.name}</span>
-                            <span className="font-mono text-muted-foreground">R$ {c.cost.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                            <span className="font-mono text-muted-foreground">R$ {c.cost.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                           </div>
                         ))}
                       </>
@@ -947,74 +966,122 @@ function RelatoriosPage() {
         )}
       </AnimatePresence>
 
-      {/* SEÇÃO DE RELATÓRIOS SALVOS ANTERIORMENTE */}
-      <div className="glass-panel card-sport p-6 border-white/10 bg-white/5 space-y-4 print:hidden">
-        <div className="flex items-center justify-between border-b border-border/50 pb-3">
-          <div>
-            <h3 className="header-sport text-sm font-black uppercase tracking-widest text-primary flex items-center gap-2">
-              <FileText className="h-4 w-4" /> Relatórios Salvos anteriormente
-            </h3>
-            <p className="text-[10px] text-muted-foreground">Clique em um relatório para carregar suas configurações e reeditá-lo.</p>
-          </div>
-          {savedReports.length > 0 && (
-            <span className="rounded bg-primary/10 px-1.5 py-0.5 text-[9px] font-black text-primary uppercase">
-              {savedReports.length} Salvos
-            </span>
-          )}
-        </div>
-
-        {savedReports.length === 0 ? (
-          <div className="py-8 text-center text-muted-foreground/60">
-            <p className="text-xs font-bold">Nenhum relatório salvo no histórico local.</p>
-            <p className="text-[9px]">Gere e salve relatórios acima para acessá-los futuramente.</p>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {savedReports.map((report) => (
-              <div 
-                key={report.id}
-                onClick={() => handleLoadReport(report)}
-                className={`group flex flex-col justify-between p-4 rounded-xl border cursor-pointer transition-all hover:bg-white/[0.02] ${
-                  activeReportId === report.id
-                    ? "bg-primary/[0.01] border-primary/30"
-                    : "bg-background/40 border-white/5"
-                }`}
-              >
-                <div className="flex items-start justify-between gap-2">
-                  <div>
-                    <h4 className="text-xs font-bold text-white uppercase">{report.clientName}</h4>
-                    <p className="text-[10px] text-muted-foreground font-mono mt-0.5">
-                      Período: {report.periodText} • {report.reportMode === 'complete' ? 'Completo' : report.reportMode === 'objective' ? 'Por Objetivo' : 'Por Campanhas'}
-                    </p>
-                    <div className="flex items-center gap-2 mt-1.5">
-                      <span className={`inline-flex rounded px-1.5 py-0.5 text-[8px] font-black uppercase tracking-wider ${report.source === 'api' ? 'bg-primary/20 text-primary border border-primary/30' : 'bg-secondary/20 text-secondary border border-secondary/30'}`}>
-                        {report.source === 'api' ? 'Meta Ads' : 'OCR Print'}
-                      </span>
-                      <span className="text-[9px] text-muted-foreground font-mono">
-                        {report.campaigns.filter(c => c.selected).length} campanhas
-                      </span>
-                    </div>
-                  </div>
-                  <button
-                    onClick={(e) => handleDeleteReport(report.id, e)}
-                    className="h-7 w-7 rounded-lg bg-white/5 hover:bg-red-500/20 hover:text-red-400 border border-white/10 flex items-center justify-center transition"
-                    title="Excluir Relatório"
-                  >
-                    <AlertCircle className="h-3.5 w-3.5" />
-                  </button>
+      {/* MODAL DE RELATÓRIOS SALVOS */}
+      <AnimatePresence>
+        {isSavedReportsModalOpen && (
+          <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm print:hidden">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="relative w-full max-w-4xl max-h-[85vh] flex flex-col overflow-hidden rounded-3xl border border-white/10 bg-[#0A0A0A] shadow-2xl"
+            >
+              {/* Header Fixo do Modal */}
+              <div className="flex items-center justify-between border-b border-white/5 bg-white/[0.02] p-6">
+                <div>
+                  <h2 className="text-xl font-black uppercase tracking-tighter text-white flex items-center gap-2">
+                    <FileText className="h-5 w-5 text-primary" /> Relatórios Salvos
+                  </h2>
+                  <p className="text-xs text-muted-foreground mt-1">Carregue configurações e edite relatórios gerados anteriormente.</p>
                 </div>
-                
-                <div className="flex items-center justify-between border-t border-white/5 mt-3 pt-2 text-[10px] text-muted-foreground font-mono">
-                  <span>Criado: {new Date(report.createdAt).toLocaleDateString('pt-BR')}</span>
-                  <span className="text-primary group-hover:translate-x-0.5 transition-transform flex items-center gap-0.5 font-bold uppercase tracking-wider text-[9px]">
-                    Carregar Configs &rarr;
-                  </span>
-                </div>
+                <button
+                  onClick={() => setIsSavedReportsModalOpen(false)}
+                  className="flex h-8 w-8 items-center justify-center rounded-full bg-white/5 text-white/50 hover:bg-white/10 hover:text-white transition"
+                >
+                  ✕
+                </button>
               </div>
-            ))}
+
+              {/* Área de Filtros Fixa */}
+              <div className="flex flex-col sm:flex-row gap-4 border-b border-white/5 bg-background p-6">
+                <input
+                  type="text"
+                  placeholder="Filtrar por Cliente..."
+                  value={reportSearchTerm}
+                  onChange={(e) => setReportSearchTerm(e.target.value)}
+                  className="flex-1 rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm font-bold text-white focus:border-primary focus:outline-none"
+                />
+                <input
+                  type="text"
+                  placeholder="Filtrar por Período (ex: MAIO)..."
+                  value={reportSearchPeriod}
+                  onChange={(e) => setReportSearchPeriod(e.target.value)}
+                  className="flex-1 rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-sm font-bold text-white focus:border-primary focus:outline-none"
+                />
+              </div>
+
+              {/* Área de Rolagem do Modal */}
+              <div className="flex-1 overflow-y-auto p-6">
+                {(() => {
+                  const filtered = savedReports.filter(r => 
+                    r.clientName.toLowerCase().includes(reportSearchTerm.toLowerCase()) &&
+                    r.periodText.toLowerCase().includes(reportSearchPeriod.toLowerCase())
+                  );
+
+                  if (filtered.length === 0) {
+                    return (
+                      <div className="py-12 text-center text-muted-foreground/60">
+                        <p className="text-sm font-bold">Nenhum relatório encontrado.</p>
+                        <p className="text-[10px] mt-1">Gere um relatório e ele será salvo automaticamente.</p>
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {filtered.map((report) => (
+                        <div 
+                          key={report.id}
+                          onClick={() => {
+                            handleLoadReport(report);
+                            setIsSavedReportsModalOpen(false);
+                          }}
+                          className={`group flex flex-col justify-between p-4 rounded-xl border cursor-pointer transition-all hover:bg-white/[0.04] ${
+                            activeReportId === report.id
+                              ? "bg-primary/[0.05] border-primary/30"
+                              : "bg-white/[0.02] border-white/5"
+                          }`}
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <div>
+                              <h4 className="text-sm font-bold text-white uppercase">{report.clientName}</h4>
+                              <p className="text-[10px] text-muted-foreground font-mono mt-0.5">
+                                Período: {report.periodText} • {report.reportMode === 'complete' ? 'Completo' : report.reportMode === 'objective' ? 'Por Objetivo' : 'Por Campanhas'}
+                              </p>
+                              <div className="flex items-center gap-2 mt-2">
+                                <span className={`inline-flex rounded px-1.5 py-0.5 text-[8px] font-black uppercase tracking-wider ${report.source === 'api' ? 'bg-primary/20 text-primary border border-primary/30' : 'bg-secondary/20 text-secondary border border-secondary/30'}`}>
+                                  {report.source === 'api' ? 'API Conectada' : 'OCR Print'}
+                                </span>
+                                <span className="text-[9px] text-muted-foreground font-mono">
+                                  {report.campaigns.filter(c => c.selected).length} campanhas
+                                </span>
+                              </div>
+                            </div>
+                            <button
+                              onClick={(e) => handleDeleteReport(report.id, e)}
+                              className="h-8 w-8 rounded-lg bg-white/5 hover:bg-red-500/20 hover:text-red-400 border border-white/10 flex items-center justify-center transition"
+                              title="Excluir Relatório"
+                            >
+                              <AlertCircle className="h-4 w-4" />
+                            </button>
+                          </div>
+                          
+                          <div className="flex items-center justify-between border-t border-white/5 mt-4 pt-3 text-[10px] text-muted-foreground font-mono">
+                            <span>Criado: {new Date(report.createdAt).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+                            <span className="text-primary group-hover:translate-x-1 transition-transform flex items-center gap-0.5 font-bold uppercase tracking-wider text-[9px]">
+                              Carregar &rarr;
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })()}
+              </div>
+            </motion.div>
           </div>
         )}
-      </div>
+      </AnimatePresence>
 
       <TemplateModal 
         isOpen={isTemplateModalOpen} 
