@@ -595,6 +595,7 @@ function RelatoriosPage() {
             <Sparkles className="h-3.5 w-3.5" /> Extração de Print (OCR)
           </button>
         </div>
+        </div>
       </div>
 
       {/* PAINEL DE CONFIGURAÇÕES E PARÂMETROS */}
