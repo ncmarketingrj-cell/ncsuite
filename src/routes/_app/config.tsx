@@ -205,6 +205,55 @@ function TabIntegracoes() {
   const [isLoading, setIsLoading] = useState(true);
   const [openaiConfigured, setOpenaiConfigured] = useState(false);
   const [showTokenPlain, setShowTokenPlain] = useState(false);
+  
+  // Google Ads state
+  const { data: googleConfigs, isLoading: loadingGoogle, refetch: refetchGoogle } = useQuery({
+    queryKey: ["google_ads_configs"],
+    queryFn: async () => {
+      const { data } = await (supabase as any).from("google_ads_configs").select("*").order("created_at", { ascending: false });
+      return data || [];
+    }
+  });
+
+  const [isProcessingAuth, setIsProcessingAuth] = useState(false);
+
+  // Hook to get URL parameters (we'll read the code via standard URLSearchParams to avoid strict typing errors with Route.useSearch)
+  useEffect(() => {
+    const processGoogleAuth = async () => {
+      const params = new URLSearchParams(window.location.search);
+      const code = params.get("code");
+      
+      if (code && !isProcessingAuth) {
+        setIsProcessingAuth(true);
+        toast.info("Processando autorização do Google Ads...", { id: "google-auth" });
+        
+        try {
+          const { data: { session } } = await supabase.auth.getSession();
+          if (!session) throw new Error("Usuário não autenticado");
+
+          // Chama a Edge Function para trocar o código pelo Refresh Token e salvar no banco
+          const { error } = await supabase.functions.invoke("google-ads-auth", {
+            body: { code, redirectUri: `${window.location.origin}/_app/config` }
+          });
+
+          if (error) throw error;
+          
+          toast.success("Google Ads conectado com sucesso!", { id: "google-auth" });
+          refetchGoogle();
+          
+          // Limpa a URL
+          window.history.replaceState({}, document.title, window.location.pathname);
+        } catch (err: any) {
+          console.error("Auth error:", err);
+          toast.error("Falha ao conectar o Google Ads.", { id: "google-auth" });
+        } finally {
+          setIsProcessingAuth(false);
+        }
+      }
+    };
+    
+    processGoogleAuth();
+  }, []);
 
   useEffect(() => {
     const loadConfig = async () => {
@@ -298,15 +347,79 @@ function TabIntegracoes() {
         </div>
       </div>
 
-      <div className="flex items-center gap-3 pt-2">
+      <div className="flex items-center gap-3 pt-2 mb-8">
         <button onClick={save} className="inline-flex items-center gap-2 rounded-full bg-primary px-4 py-2 text-xs font-bold text-primary-foreground hover:shadow-glow transition">
-          <Check className="h-3.5 w-3.5" /> SALVAR CONFIGURAÇÕES
+          <Check className="h-3.5 w-3.5" /> SALVAR META ADS
         </button>
         <button onClick={test} disabled={testing} className="inline-flex items-center gap-2 rounded-full border border-white/10 px-4 py-2 text-xs font-medium disabled:opacity-50 hover:bg-white/5">
           {testing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : connected ? <Wifi className="h-3.5 w-3.5 text-success" /> : <WifiOff className="h-3.5 w-3.5" />}
           TESTAR HEARTBEAT
         </button>
       </div>
+
+      <div className="h-px w-full bg-white/5 my-8" />
+
+      {/* GOOGLE ADS CONFIG */}
+      <div>
+        <h3 className="header-sport font-display text-lg font-semibold flex items-center gap-2 text-gradient">
+          <Globe className="h-5 w-5 text-[#4285F4]" /> Google Ads Multicanal
+        </h3>
+        <p className="text-xs text-muted-foreground mt-1">
+          Conecte sua MCC ou contas isoladas do Google Ads para unificar o seu tráfego no Dashboard.
+        </p>
+      </div>
+
+      <div className="grid gap-4">
+        {googleConfigs?.map((gc: any) => (
+          <div key={gc.id} className="rounded-xl border border-white/10 bg-white/[0.02] p-4 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="h-10 w-10 rounded-full bg-[#4285F4]/10 flex items-center justify-center">
+                <Globe className="h-5 w-5 text-[#4285F4]" />
+              </div>
+              <div>
+                <p className="text-sm font-bold">{gc.name}</p>
+                <p className="text-[10px] text-muted-foreground uppercase tracking-widest">{gc.email || "Sessão Ativa"}</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-3">
+              <span className="rounded-full px-2 py-0.5 text-[9px] font-black bg-success/20 text-success uppercase tracking-widest">
+                CONECTADO
+              </span>
+              <button 
+                onClick={async () => {
+                  if(!confirm("Remover esta conexão?")) return;
+                  await (supabase as any).from("google_ads_configs").delete().eq("id", gc.id);
+                  refetchGoogle();
+                  toast.success("Conexão removida.");
+                }}
+                className="text-muted-foreground hover:text-destructive transition p-2"
+              >
+                <Trash2 className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+        ))}
+
+        <button 
+          onClick={() => {
+             // Redireciona para o Google OAuth
+             const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID || "620606037088-ndk939vngs3kpsf1jeb5u70g00b1v4vj.apps.googleusercontent.com"; 
+             const redirectUri = `${window.location.origin}/_app/config`;
+             const scope = "https://www.googleapis.com/auth/adwords https://www.googleapis.com/auth/userinfo.email";
+             const url = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&scope=${encodeURIComponent(scope)}&access_type=offline&prompt=consent`;
+             window.location.href = url;
+          }}
+          disabled={isProcessingAuth}
+          className="w-full flex items-center justify-center gap-3 rounded-xl border border-dashed border-[#4285F4]/30 bg-[#4285F4]/5 p-6 hover:bg-[#4285F4]/10 hover:border-[#4285F4]/50 transition cursor-pointer"
+        >
+          {isProcessingAuth ? <Loader2 className="h-5 w-5 animate-spin text-[#4285F4]" /> : <Plus className="h-5 w-5 text-[#4285F4]" />}
+          <span className="text-sm font-bold text-[#4285F4]">
+            {isProcessingAuth ? "Processando..." : "Nova Conexão Google Ads"}
+          </span>
+        </button>
+      </div>
+
+      <div className="h-px w-full bg-white/5 my-8" />
 
       {/* Sync por Mês */}
       <div className="rounded-2xl border border-violet-500/20 bg-violet-500/5 p-4 space-y-3">

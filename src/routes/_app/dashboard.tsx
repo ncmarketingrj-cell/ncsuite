@@ -306,8 +306,12 @@ function Dashboard() {
                 onClick={() => setShowAccounts(!showAccounts)}
                 className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-xs font-black uppercase tracking-widest transition hover:border-primary/40 hover:bg-white/10"
               >
-                <Target className="h-3.5 w-3.5 text-primary" />
-                {selectedAccountId === "all" ? "Todas as Contas Meta" : selectedAccount?.name}
+                {selectedAccountId === "all" ? (
+                  <Target className="h-3.5 w-3.5 text-primary" />
+                ) : (
+                  selectedAccount?.platform === "Google Ads" ? <Globe className="h-3.5 w-3.5 text-[#4285F4]" /> : <Target className="h-3.5 w-3.5 text-primary" />
+                )}
+                {selectedAccountId === "all" ? "Todas as Contas" : selectedAccount?.name}
                 <ChevronDown className={`h-3 w-3 transition ${showAccounts ? "rotate-180" : ""}`} />
               </button>
 
@@ -331,7 +335,13 @@ function Dashboard() {
                           onClick={() => { setSelectedAccountId(acc.id); setShowAccounts(false); }}
                           className={`flex w-full items-center gap-3 rounded-xl px-4 py-3 text-left text-[11px] font-bold uppercase tracking-widest transition ${selectedAccountId === acc.id ? "bg-primary/20 text-primary" : "hover:bg-white/5 text-muted-foreground"}`}
                         >
-                          <div className={`h-1.5 w-1.5 rounded-full ${selectedAccountId === acc.id ? 'bg-primary animate-pulse' : 'bg-white/10'}`} />
+                          <div className="flex items-center justify-center w-4">
+                            {acc.platform === "Google Ads" ? (
+                              <Globe className={`h-3.5 w-3.5 ${selectedAccountId === acc.id ? 'text-[#4285F4]' : 'text-muted-foreground opacity-50'}`} />
+                            ) : (
+                              <Target className={`h-3.5 w-3.5 ${selectedAccountId === acc.id ? 'text-primary' : 'text-muted-foreground opacity-50'}`} />
+                            )}
+                          </div>
                           {acc.name}
                         </button>
                       ))}
