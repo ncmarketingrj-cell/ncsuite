@@ -702,12 +702,11 @@ function RelatoriosPage() {
               )}
             </button>
             <button
-              onClick={handleSaveReport}
-              disabled={!generatedText}
-              className="rounded-xl border border-white/10 hover:border-primary/40 bg-white/5 px-4 py-3.5 text-xs font-black uppercase tracking-widest text-white hover:text-primary transition hover:scale-[1.01] active:scale-95 disabled:opacity-50 disabled:pointer-events-none"
-              title="Salvar no Histórico"
+              onClick={() => setIsSavedReportsModalOpen(true)}
+              className="flex items-center gap-2 rounded-xl border border-white/10 hover:border-secondary/40 bg-white/5 px-4 py-3.5 text-xs font-black uppercase tracking-widest text-white hover:text-secondary transition hover:scale-[1.01] active:scale-95"
+              title="Ver Histórico de Relatórios"
             >
-              SALVAR
+              <FileText className="h-4.5 w-4.5" /> SALVOS
             </button>
           </div>
         </div>
