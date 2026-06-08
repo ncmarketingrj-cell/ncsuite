@@ -241,7 +241,7 @@ function RelatoriosPage() {
         console.error("Erro ao carregar campanhas do print:", e);
       }
     } else {
-      // Buscar dados do Meta Ads integrado local
+      // Buscar dados do Meta Ads / Google Ads integrado local
       try {
         const getLocalDateStr = (d: Date) => {
           const y = d.getFullYear();
@@ -253,57 +253,62 @@ function RelatoriosPage() {
         const startLimit = getLocalDateStr(dateRange.startDate);
         const endLimit = getLocalDateStr(dateRange.endDate);
         
-        let qCampaigns = (supabase as any).from("campaigns").select("id, name, ad_account_id");
-        if (selectedAccountId !== "all") {
-          qCampaigns = qCampaigns.eq("ad_account_id", selectedAccountId);
-        }
-        const { data, error: cErr } = await qCampaigns;
-        if (cErr) throw cErr;
-        const dbCampaigns = (data as any[]) ?? [];
+        let metricsQuery = (supabase as any).from("metrics").select(`
+          campaign_id, cost, conversions, impressions, clicks, reach,
+          campaigns!inner(id, name, ad_account_id, ad_accounts(platform))
+        `)
+        .gte("date", startLimit)
+        .lte("date", endLimit);
 
-        if (dbCampaigns.length === 0) {
+        if (selectedAccountId !== "all") {
+          metricsQuery = metricsQuery.eq("campaigns.ad_account_id", selectedAccountId);
+        }
+
+        const { data: dbMetrics, error: mErr } = await metricsQuery;
+        if (mErr) throw mErr;
+
+        if (!dbMetrics || dbMetrics.length === 0) {
           setCampaignList([]);
           return;
         }
 
-        const campIds = dbCampaigns.map((c: any) => c.id);
-
-        const { data: mData, error: mErr } = await (supabase as any)
-          .from("metrics")
-          .select("*")
-          .in("campaign_id", campIds)
-          .gte("date", startLimit)
-          .lte("date", endLimit);
-        if (mErr) throw mErr;
-        const dbMetrics = (mData as any[]) ?? [];
-
-        // Agrupar métricas por campanha
-        const metricsMap = new Map<string, { cost: number; impressions: number; clicks: number; conversions: number; reach: number }>();
+        // Agrupar métricas por campanha e identificar plataforma correta
+        const metricsMap = new Map<string, { id: string, name: string, platform: string, cost: number; impressions: number; clicks: number; conversions: number; reach: number }>();
+        
         dbMetrics.forEach((m: any) => {
-          const cur = metricsMap.get(m.campaign_id) || { cost: 0, impressions: 0, clicks: 0, conversions: 0, reach: 0 };
+          const campId = m.campaign_id;
+          const platformStr = m.campaigns?.ad_accounts?.platform === "Google Ads" ? "google" : "meta";
+          
+          const cur = metricsMap.get(campId) || { 
+             id: campId, 
+             name: m.campaigns?.name || "Sem Nome", 
+             platform: platformStr,
+             cost: 0, impressions: 0, clicks: 0, conversions: 0, reach: 0 
+          };
+          
           cur.cost += Number(m.cost || 0);
           cur.impressions += Number(m.impressions || 0);
           cur.clicks += Number(m.clicks || 0);
           cur.conversions += Number(m.conversions || 0);
           cur.reach += Number(m.reach || 0);
-          metricsMap.set(m.campaign_id, cur);
+          metricsMap.set(campId, cur);
         });
 
-        const mapped: CampaignData[] = dbCampaigns.map((c: any) => {
-          const metrics = metricsMap.get(c.id) || { cost: 0, impressions: 0, clicks: 0, conversions: 0, reach: 0 };
-          return {
-            id: c.id,
-            name: c.name,
-            cost: metrics.cost,
-            impressions: metrics.impressions,
-            clicks: metrics.clicks,
-            conversions: metrics.conversions,
-            reach: metrics.reach,
-            objective: detectObjective(c.name),
-            platform: "meta",
-            selected: metrics.cost > 0 // Seleciona apenas as que tiveram investimento por padrão
-          };
-        }).filter(c => c.cost > 0 || c.impressions >= 1 || c.reach >= 1);
+        const mapped: CampaignData[] = Array.from(metricsMap.values()).map(c => ({
+          id: c.id,
+          name: c.name,
+          cost: c.cost,
+          impressions: c.impressions,
+          clicks: c.clicks,
+          conversions: c.conversions,
+          reach: c.reach,
+          objective: detectObjective(c.name),
+          platform: c.platform as "meta" | "google",
+          selected: c.cost > 0 // Seleciona apenas as que tiveram investimento no período
+        })).filter(c => c.cost > 0 || c.impressions >= 1 || c.reach >= 1);
+
+        // Ordena por maior custo
+        mapped.sort((a, b) => b.cost - a.cost);
 
         setCampaignList(mapped);
       } catch (err) {
