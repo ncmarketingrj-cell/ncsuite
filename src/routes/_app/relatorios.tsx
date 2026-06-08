@@ -402,6 +402,11 @@ function RelatoriosPage() {
     const totalImps = selected.reduce((sum, c) => sum + c.impressions, 0);
     const avgCpa = totalResults > 0 ? totalCost / totalResults : 0;
     const platformString = Array.from(platforms).join(" & ");
+    
+    // Calcula o período para o relatório
+    const displayPeriod = source === "upload" 
+      ? periodText 
+      : `${format(dateRange.startDate, "dd/MM/yyyy")} a ${format(dateRange.endDate, "dd/MM/yyyy")}`;
 
     const customTemplate = templatesData?.find(t => t.id === reportMode);
 
@@ -411,7 +416,7 @@ function RelatoriosPage() {
 
       // Substituições Globais
       text = text.replace(/\{\{NOME_CLIENTE\}\}/g, clientName);
-      text = text.replace(/\{\{PERIODO\}\}/g, periodText);
+      text = text.replace(/\{\{PERIODO\}\}/g, displayPeriod);
       text = text.replace(/\{\{TOTAL_CAMPANHAS\}\}/g, selected.length.toString());
       text = text.replace(/\{\{INVESTIMENTO\}\}/g, `R$ ${totalCost.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`);
       text = text.replace(/\{\{TOTAL_RESULTADOS\}\}/g, totalResults.toLocaleString("pt-BR"));
@@ -477,7 +482,7 @@ function RelatoriosPage() {
 
     // --- Lógica para os Relatórios Padrão (Sem Template Customizado) ---
     const buildHeader = (title: string) => {
-      return `📊 *${title}*\n━━━━━━━━━━━━━━━━━━━━\n🏢 *Cliente:* ${clientName}\n📅 *Período:* ${periodText}\n📱 *Plataformas:* ${platformString}\n💰 *Investimento Total:* R$ ${totalCost.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n\n`;
+      return `📊 *${title}*\n━━━━━━━━━━━━━━━━━━━━\n🏢 *Cliente:* ${clientName}\n📅 *Período:* ${displayPeriod}\n📱 *Plataformas:* ${platformString}\n💰 *Investimento Total:* R$ ${totalCost.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n\n`;
     };
 
     const buildResultsByType = () => {
@@ -603,11 +608,11 @@ function RelatoriosPage() {
         <div className="flex items-center gap-4">
           <button
             onClick={() => setIsSavedReportsModalOpen(true)}
-            className="flex items-center gap-2 rounded-xl bg-secondary/10 px-4 py-2 text-xs font-black uppercase tracking-widest text-secondary hover:bg-secondary/20 transition-all border border-secondary/20"
+            className="flex items-center gap-2 rounded-xl bg-white/5 px-4 py-2 text-xs font-black uppercase tracking-widest text-white hover:bg-white/10 transition-all border border-white/10 hover:border-white/20"
           >
             <FileText className="h-4 w-4" /> Salvos
             {savedReports.length > 0 && (
-              <span className="rounded bg-secondary/20 px-1.5 py-0.5 text-[10px]">{savedReports.length}</span>
+              <span className="rounded bg-white/10 px-1.5 py-0.5 text-[10px] text-white/80">{savedReports.length}</span>
             )}
           </button>
 
@@ -653,15 +658,17 @@ function RelatoriosPage() {
               />
             </div>
 
-            <div className="space-y-2">
-              <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Período de Análise</label>
-              <input 
-                value={periodText} 
-                onChange={(e) => setPeriodText(e.target.value)}
-                placeholder="Ex: ABRIL 2026"
-                className="w-full rounded-xl border border-white/10 bg-background/50 px-4 py-3 text-sm font-bold focus:border-primary focus:outline-none"
-              />
-            </div>
+            {source === "upload" && (
+              <div className="space-y-2">
+                <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Período de Análise (Texto Livre)</label>
+                <input 
+                  value={periodText} 
+                  onChange={(e) => setPeriodText(e.target.value)}
+                  placeholder="Ex: ABRIL 2026"
+                  className="w-full rounded-xl border border-white/10 bg-background/50 px-4 py-3 text-sm font-bold focus:border-primary focus:outline-none"
+                />
+              </div>
+            )}
 
             <div className="space-y-2">
               <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Janela de Tempo (Calendário)</label>
