@@ -382,7 +382,11 @@ function RelatoriosPage() {
 
       // Calcular resultado base
       const isClickBased = c.objective.includes("Cliques");
-      const resultValue = isClickBased ? c.clicks : c.conversions;
+      const isReachBased = c.objective.includes("Alcance") || c.objective.includes("Visualizações") || c.objective.includes("Engajamento");
+      
+      let resultValue = c.conversions;
+      if (isClickBased) resultValue = c.clicks;
+      if (isReachBased) resultValue = c.impressions; // Base de cálculo para campanhas de topo
 
       // Agrupamento por Objetivo
       const cur = groupedTypes.get(c.objective) || { cost: 0, results: 0, reach: 0, impressions: 0 };
@@ -421,14 +425,21 @@ function RelatoriosPage() {
       if (text.includes("{{LISTA_CAMPANHAS}}")) {
         let listText = "";
         selected.forEach(c => {
-          const resultValue = c.objective.includes("Cliques") ? c.clicks : c.conversions;
-          const costPerRes = resultValue > 0 ? c.cost / resultValue : 0;
+          const isClick = c.objective.includes("Cliques");
+          const isReach = c.objective.includes("Alcance") || c.objective.includes("Visualizações") || c.objective.includes("Engajamento");
+          
+          let resultValue = c.conversions;
+          if (isClick) resultValue = c.clicks;
+          if (isReach) resultValue = c.impressions;
+          
+          const costPerRes = resultValue > 0 ? (isReach ? (c.cost / resultValue) * 1000 : c.cost / resultValue) : 0;
+          const costLabel = isReach ? "CPM" : "Custo/Resultado";
           const platIcon = c.platform === 'google' ? '🌐' : '🎯';
           
           listText += `${platIcon} *${c.name.toUpperCase()}*\n`;
           listText += `   💵 Investimento: R$ ${c.cost.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n`;
-          listText += `   📈 Resultados: ${resultValue.toLocaleString("pt-BR")}\n`;
-          listText += `   💲 Custo/Resultado: R$ ${costPerRes.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n`;
+          listText += `   📈 Resultados: ${resultValue.toLocaleString("pt-BR")} ${isReach ? 'impr.' : ''}\n`;
+          listText += `   💲 ${costLabel}: R$ ${costPerRes.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n`;
           if (c.reach > 0) listText += `   👥 Alcance: ${c.reach.toLocaleString("pt-BR")}\n`;
           listText += `\n`;
         });
@@ -439,10 +450,18 @@ function RelatoriosPage() {
       if (text.includes("{{RESULTADOS_POR_TIPO}}")) {
         let typeText = "";
         groupedTypes.forEach((data, type) => {
-          const cpl = data.results > 0 ? data.cost / data.results : 0;
           const isClick = type.includes("Cliques");
-          const resultLabel = isClick ? "Visualizações" : "Resultados";
-          const costLabel = isClick ? "Custo por Visita" : "CPL/CPA";
+          const isReach = type.includes("Alcance") || type.includes("Visualizações") || type.includes("Engajamento");
+          
+          const cpl = data.results > 0 ? (isReach ? (data.cost / data.results) * 1000 : data.cost / data.results) : 0;
+          
+          let resultLabel = "Resultados";
+          if (isClick) resultLabel = "Visitas";
+          if (isReach) resultLabel = "Impressões";
+          
+          let costLabel = "CPL/CPA";
+          if (isClick) costLabel = "Custo por Visita";
+          if (isReach) costLabel = "CPM";
 
           typeText += `*${type}*\n`;
           typeText += `   💵 Investimento: R$ ${data.cost.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n`;
@@ -464,14 +483,26 @@ function RelatoriosPage() {
     const buildResultsByType = () => {
       let txt = `━━━━━━━━━━━━━━━━━━━━\n*RESUMO POR OBJETIVO*\n━━━━━━━━━━━━━━━━━━━━\n\n`;
       groupedTypes.forEach((data, type) => {
-        const cpl = data.results > 0 ? data.cost / data.results : 0;
         const isClick = type.includes("Cliques");
+        const isReach = type.includes("Alcance") || type.includes("Visualizações") || type.includes("Engajamento");
+        
+        const cpl = data.results > 0 ? (isReach ? (data.cost / data.results) * 1000 : data.cost / data.results) : 0;
+        
+        let resultLabel = "Resultados";
+        if (isClick) resultLabel = "Visitas";
+        if (isReach) resultLabel = "Impressões";
+        
+        let costLabel = "CPA";
+        if (isClick) costLabel = "Custo por Visita";
+        if (isReach) costLabel = "CPM";
+
         txt += `${type}\n`;
         txt += `   💵 Investimento: R$ ${data.cost.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n`;
-        txt += `   📈 ${isClick ? "Visualizações" : "Resultados"}: ${data.results.toLocaleString("pt-BR")}\n`;
-        txt += `   💲 ${isClick ? "Custo por Visita" : "CPA"}: R$ ${cpl.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n`;
-        if (data.reach > 0) txt += `   👥 Alcance: ${data.reach.toLocaleString("pt-BR")}\n`;
-        txt += `   👁️ Impressões: ${data.impressions.toLocaleString("pt-BR")}\n\n`;
+        txt += `   📈 ${resultLabel}: ${data.results.toLocaleString("pt-BR")}\n`;
+        txt += `   💲 ${costLabel}: R$ ${cpl.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n`;
+        if (data.reach > 0 && !isReach) txt += `   👥 Alcance: ${data.reach.toLocaleString("pt-BR")}\n`;
+        if (!isReach) txt += `   👁️ Impressões: ${data.impressions.toLocaleString("pt-BR")}\n\n`;
+        else txt += `\n`;
       });
       return txt;
     };
@@ -603,7 +634,13 @@ function RelatoriosPage() {
         
         {/* Painel Esquerdo: Variáveis do Relatório */}
         <div className="glass-panel card-sport p-6 space-y-6 lg:col-span-1 border-white/10 bg-white/5 relative z-20">
-          <h3 className="header-sport text-sm font-black uppercase tracking-widest text-primary border-b border-border/50 pb-3">Parâmetros de Customização</h3>
+          <div className="border-b border-border/50 pb-3 flex items-center gap-3">
+            <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary/20 text-primary text-[10px] font-black">1</span>
+            <div>
+              <h3 className="header-sport text-sm font-black uppercase tracking-widest text-primary">Parâmetros Principais</h3>
+              <p className="text-[9px] text-muted-foreground mt-0.5">Defina o cliente, período e modelo.</p>
+            </div>
+          </div>
           
           <div className="space-y-4">
             <div className="space-y-2">
@@ -714,9 +751,12 @@ function RelatoriosPage() {
         {/* Painel Direito: Lista de Campanhas e Mapeamento de Objetivos */}
         <div className="glass-panel card-sport p-6 space-y-4 lg:col-span-2 border-white/10 bg-white/5 flex flex-col min-h-[400px]">
           <div className="flex items-center justify-between border-b border-border/50 pb-3">
-            <div>
-              <h3 className="header-sport text-sm font-black uppercase tracking-widest text-primary">Selecione as Campanhas</h3>
-              <p className="text-[10px] text-muted-foreground">Marque quais deseja consolidar no relatório final.</p>
+            <div className="flex items-center gap-3">
+              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary/20 text-primary text-[10px] font-black">2</span>
+              <div>
+                <h3 className="header-sport text-sm font-black uppercase tracking-widest text-primary">Selecione e Classifique as Campanhas</h3>
+                <p className="text-[10px] text-muted-foreground">Marque as campanhas que entrarão no relatório e defina o objetivo/métrica de cada uma.</p>
+              </div>
             </div>
             {campaignList.length > 0 && (
               <div className="flex gap-2">
@@ -738,19 +778,21 @@ function RelatoriosPage() {
 
           {campaignList.length === 0 ? (
             <div className="flex-1 flex flex-col items-center justify-center text-center p-8">
-              <AlertCircle className="h-10 w-10 text-muted-foreground/40 mb-3" />
+              <div className="rounded-full bg-white/5 p-4 mb-4">
+                <AlertCircle className="h-10 w-10 text-muted-foreground/40" />
+              </div>
               {source === "upload" ? (
                 <>
-                  <p className="text-sm font-bold text-white">Nenhum print extraído recentemente</p>
-                  <p className="text-xs text-muted-foreground mt-1 max-w-xs">Visite a aba de Upload e faça a extração inteligente de uma imagem antes de gerar o relatório.</p>
-                  <Link to="/upload" className="mt-4 rounded-xl bg-primary px-4 py-2 text-xs font-black uppercase text-background tracking-widest hover:shadow-glow transition">
-                    Fazer Upload de Print
+                  <p className="text-sm font-black text-white">Pronto para extrair um Print!</p>
+                  <p className="text-[10px] text-muted-foreground mt-2 max-w-[250px] leading-relaxed">Nenhuma campanha na memória. Vá até a aba de Upload e faça a leitura de uma imagem do Meta Ads ou Google Ads para continuarmos.</p>
+                  <Link to="/upload" className="mt-5 flex items-center gap-2 rounded-xl bg-primary/10 border border-primary/20 px-4 py-2.5 text-xs font-black uppercase text-primary tracking-widest hover:bg-primary/20 transition">
+                    Ir para Upload
                   </Link>
                 </>
               ) : (
                 <>
-                  <p className="text-sm font-bold text-white">Nenhuma campanha encontrada</p>
-                  <p className="text-xs text-muted-foreground mt-1 max-w-xs">Verifique se o token de acesso master está ativo e se os dados do Meta Ads foram sincronizados.</p>
+                  <p className="text-sm font-black text-white">Nenhum dado retornado no período</p>
+                  <p className="text-[10px] text-muted-foreground mt-2 max-w-[250px] leading-relaxed">Não encontramos campanhas na conta escolhida dentro desse período. Verifique o filtro de datas no <strong className="text-white">Passo 1</strong>.</p>
                 </>
               )}
             </div>
@@ -781,17 +823,26 @@ function RelatoriosPage() {
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-col gap-1 w-full sm:w-auto">
+                    <label className="text-[9px] text-muted-foreground uppercase font-black px-1 hidden sm:block">Objetivo / Métrica</label>
                     <select
                       value={c.objective}
                       onChange={(e) => handleUpdateObjective(c.id, e.target.value)}
-                      className="rounded-lg border border-white/10 bg-background/50 px-2 py-1.5 text-[10px] font-bold text-white focus:outline-none"
+                      className="rounded-lg border border-white/10 bg-background/50 px-3 py-2 text-[10px] font-bold text-white focus:outline-none focus:border-primary/50 transition-colors w-full sm:w-40"
                     >
-                      <option value="💬 Mensagens">💬 Mensagens</option>
-                      <option value="👆 Cliques">👆 Cliques</option>
-                      <option value="🎯 Compras/pedido concluido">🎯 Compras</option>
-                      <option value="👁️ Alcance">👁️ Alcance</option>
-                      <option value="🎯 Conversões">🎯 Outro</option>
+                      <optgroup label="Fundo de Funil (Conversão)">
+                        <option value="💬 Mensagens">💬 Mensagens (WPP/Direct)</option>
+                        <option value="📧 Cadastros / Leads">📧 Cadastros (Leads)</option>
+                        <option value="🛒 Adições ao Carrinho">🛒 Adições ao Carrinho</option>
+                        <option value="💳 Compras / Vendas">💳 Finalizações de Compra</option>
+                        <option value="📲 Instalações de App">📲 Instalações de App</option>
+                        <option value="🎯 Outras Conversões">🎯 Outras Conversões</option>
+                      </optgroup>
+                      <optgroup label="Meio/Topo de Funil">
+                        <option value="👆 Cliques no Link">👆 Cliques no Link</option>
+                        <option value="👁️ Visualizações / Alcance">👁️ Alcance / Impressões</option>
+                        <option value="🔥 Engajamento">🔥 Engajamento</option>
+                      </optgroup>
                     </select>
                   </div>
                 </div>
@@ -814,11 +865,11 @@ function RelatoriosPage() {
             <div className="glass-panel p-6 space-y-4 border-primary/20 bg-primary/[0.01] flex flex-col justify-between">
               <div>
                 <div className="flex items-center justify-between border-b border-white/5 pb-3">
-                  <div className="flex items-center gap-2">
-                    <Smartphone className="h-5 w-5 text-primary" />
+                  <div className="flex items-center gap-3">
+                    <span className="flex h-6 w-6 items-center justify-center rounded-full bg-success/20 text-success text-[10px] font-black">3</span>
                     <div>
-                      <h3 className="text-sm font-black uppercase tracking-widest text-primary">Texto de Envio (WhatsApp)</h3>
-                      <p className="text-[10px] text-muted-foreground">Prontinho para ser enviado ao cliente.</p>
+                      <h3 className="text-sm font-black uppercase tracking-widest text-primary flex items-center gap-1.5"><Smartphone className="h-4 w-4" /> Relatório Pronto</h3>
+                      <p className="text-[10px] text-muted-foreground mt-0.5">Texto idealizado para envio direto via WhatsApp.</p>
                     </div>
                   </div>
                   <div className="flex gap-2">
