@@ -106,10 +106,11 @@ serve(async (req) => {
       campaignMap.set(campId, existing);
     });
 
-    const campaigns = Array.from(campaignMap.values()).map(c => {
+    const campaigns = Array.from(campaignMap.entries()).map(([id, c]) => {
       const cpl = c.conversions > 0 ? c.cost / c.conversions : 0;
       const ctr = c.impressions > 0 ? (c.clicks / c.impressions) * 100 : 0;
       return {
+        id,
         name: c.name,
         status: c.status,
         budget: c.budget,
@@ -133,7 +134,7 @@ serve(async (req) => {
 
     const contextData = campaigns.length > 0
       ? campaigns.map(c => 
-          `- ${c.name} | ${c.status} | Orç/dia: R$${c.budget.toFixed(2)} | Gasto: R$${c.totals.cost.toFixed(2)} | Leads: ${c.totals.conversions} | CPL: R$${c.totals.cpl.toFixed(2)} | CTR: ${c.totals.ctr.toFixed(2)}%`
+          `- ID: ${c.id} | ${c.name} | ${c.status} | Orç/dia: R$${c.budget.toFixed(2)} | Gasto: R$${c.totals.cost.toFixed(2)} | Leads: ${c.totals.conversions} | CPL: R$${c.totals.cpl.toFixed(2)} | CTR: ${c.totals.ctr.toFixed(2)}%`
         ).join("\n")
       : "Nenhuma campanha ativa ou com investimento encontrada nos últimos 30 dias.";
 
@@ -231,7 +232,31 @@ ${dailySeriesText}
 REGRAS DE RESPOSTA:
 1. Sempre responda em Português Brasileiro usando formatação markdown limpa.
 2. Responda diretamente e aja como uma estrategista sênior dedicada. Nunca fale como uma IA.
-3. Se o usuário perguntar sobre o fim de semana, ontem, ou datas específicas, calcule e retorne os dados exatos somados da tabela diária e faça uma análise estratégica focada no mercado automotivo.`;
+3. Se o usuário perguntar sobre o fim de semana, ontem, ou datas específicas, calcule e retorne os dados exatos somados da tabela diária e faça uma análise estratégica focada no mercado automotivo.
+4. **AVALIAÇÃO VISUAL DE IMAGENS (MULTIMODALIDADE):**
+   - Se o usuário anexar uma imagem à mensagem, analise-a atentamente:
+     - Se for a foto de um carro: comente sobre a limpeza, ângulo (o ideal é diagonal mostrando a lateral e a frente), iluminação, fundo (evitar fundos poluídos que desvalorizam o carro), e a necessidade de fotos REAIS tiradas com celular no pátio da loja (fotos de catálogo/estúdio convertem menos).
+     - Se for uma peça gráfica ou criativo de anúncio: comente sobre legibilidade do texto no mobile (tamanho de fonte, contraste com o fundo), o apelo comercial (ex: "parcelas a partir de...", "taxa zero", "entrada facilitada"), e a força da chamada para ação (CTA).
+     - Seja cirúrgica, crítica e construtiva, dando recomendações visuais muito claras de melhoria.
+5. **RECOMENDAÇÃO DE AÇÃO EM 1-CLIQUE (ACTION ENGINE):**
+   - Se você decidir recomendar uma ação prática de otimização no texto, como pausar uma campanha ineficiente ou aumentar/reduzir o orçamento diário de uma campanha específica, inclua no final da sua resposta (como a última linha) o bloco JSON especial contendo as diretrizes de ação estruturadas, exatamente assim:
+   \`\`\`json:action
+   {
+     "type": "update_budget",
+     "campaignId": "ID_DA_CAMPANHA",
+     "campaignName": "NOME_DA_CAMPANHA",
+     "value": 150.00
+   }
+   \`\`\`
+   Ou:
+   \`\`\`json:action
+   {
+     "type": "pause_campaign",
+     "campaignId": "ID_DA_CAMPANHA",
+     "campaignName": "NOME_DA_CAMPANHA"
+   }
+   \`\`\`
+   Use apenas e exatamente uma dessas estruturas se e somente se você recomendar essa ação no texto da resposta. O ID da campanha deve bater exatamente com os IDs listados no contexto de dados.`;
 
     let responseText = "";
 
@@ -239,11 +264,25 @@ REGRAS DE RESPOSTA:
     if (GEMINI_API_KEY) {
       try {
         const contents = messages
-          .filter((m: any) => m.content && m.content.trim() !== "")
-          .map((m: any) => ({
-            role: m.role === "assistant" ? "model" : "user",
-            parts: [{ text: m.content }],
-          }));
+          .map((m: any) => {
+            const parts: any[] = [];
+            if (m.content && m.content.trim() !== "") {
+              parts.push({ text: m.content });
+            }
+            if (m.image) {
+              parts.push({
+                inlineData: {
+                  mimeType: m.image.mimeType,
+                  data: m.image.base64
+                }
+              });
+            }
+            return {
+              role: m.role === "assistant" ? "model" : "user",
+              parts
+            };
+          })
+          .filter((m: any) => m.parts.length > 0);
 
         const res = await fetch(
           `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`,

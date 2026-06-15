@@ -1,12 +1,31 @@
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Send, Bot, Sparkles, TrendingUp, Search, Loader2, User, X } from "lucide-react";
+import { Send, Bot, Sparkles, TrendingUp, Search, Loader2, User, X, Paperclip, Check } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import ReactMarkdown from "react-markdown";
 import { chatWithVictoriaFn } from "@/lib/agent.functions";
 
-type Message = { role: "user" | "assistant"; content: string; timestamp: Date };
+type Message = {
+  role: "user" | "assistant";
+  content: string;
+  timestamp: Date;
+  image?: { base64: string; mimeType: string };
+};
+
+function parseAction(content: string): { text: string; action: any | null } {
+  const match = content.match(/```json:action\s*([\s\S]*?)\s*```/);
+  if (match) {
+    try {
+      const action = JSON.parse(match[1]);
+      const text = content.replace(/```json:action[\s\S]*?```/, "").trim();
+      return { text, action };
+    } catch (e) {
+      console.error("Failed to parse action JSON:", e);
+    }
+  }
+  return { text: content, action: null };
+}
 
 interface AIAgentSidebarProps {
   isOpen: boolean;
@@ -19,6 +38,9 @@ export function AIAgentSidebar({ isOpen, onClose }: AIAgentSidebarProps) {
   const [accounts, setAccounts] = useState<{ id: string; name: string }[]>([]);
   const [selectedAccountId, setSelectedAccountId] = useState<string>("");
   const [messages, setMessages] = useState<Message[]>([]);
+  const [selectedImage, setSelectedImage] = useState<{ base64: string; mimeType: string } | null>(null);
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [appliedActions, setAppliedActions] = useState<Record<number, boolean>>({});
 
   useEffect(() => {
     const fetchAccounts = async () => {
@@ -52,13 +74,23 @@ export function AIAgentSidebar({ isOpen, onClose }: AIAgentSidebarProps) {
   const handleSend = async () => {
     if (!prompt.trim() || loading) return;
 
-    const userMsg: Message = { role: "user", content: prompt, timestamp: new Date() };
+    const userMsg: Message = { 
+      role: "user", 
+      content: prompt, 
+      timestamp: new Date(),
+      image: selectedImage || undefined
+    };
     setMessages(prev => [...prev, userMsg]);
     setPrompt("");
+    setSelectedImage(null);
     setLoading(true);
 
     try {
-      const requestMessages = [...messages, userMsg].map(m => ({ role: m.role, content: m.content }));
+      const requestMessages = [...messages, userMsg].map(m => ({ 
+        role: m.role, 
+        content: m.content,
+        image: m.image
+      }));
       
       let responseText = "";
       try {
@@ -235,6 +267,58 @@ Atualmente, estamos gerenciando **${activeCount} campanhas ativas** com um inves
     }
   };
 
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith("image/")) {
+      toast.error("Por favor, selecione apenas arquivos de imagem.");
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const base64String = (reader.result as string).split(",")[1];
+      setSelectedImage({
+        base64: base64String,
+        mimeType: file.type
+      });
+      toast.success("Imagem carregada com sucesso.");
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleExecuteAction = async (msgIndex: number, action: { type: string; campaignId: string; campaignName: string; value?: number }) => {
+    setActionLoading(action.campaignId);
+    try {
+      if (action.type === "update_budget") {
+        if (action.value === undefined) throw new Error("Valor do orçamento não especificado.");
+        const { error } = await supabase
+          .from("campaigns")
+          .update({ budget: action.value })
+          .eq("id", action.campaignId);
+
+        if (error) throw error;
+        toast.success(`Orçamento da campanha "${action.campaignName}" atualizado para R$ ${action.value.toFixed(2)}`);
+      } else if (action.type === "pause_campaign") {
+        const { error } = await supabase
+          .from("campaigns")
+          .update({ status: "PAUSED" })
+          .eq("id", action.campaignId);
+
+        if (error) throw error;
+        toast.success(`Campanha "${action.campaignName}" pausada com sucesso!`);
+      }
+
+      setAppliedActions(prev => ({ ...prev, [msgIndex]: true }));
+    } catch (err: any) {
+      console.error("Erro ao executar ação da Victoria:", err);
+      toast.error(`Falha ao executar ação: ${err.message || "Erro desconhecido"}`);
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
   const quickActions = [
     { icon: TrendingUp, label: "Como tá a performance?", prompt: "Analise a performance das minhas campanhas ativas nos últimos 7 dias." },
     { icon: Sparkles, label: "Escala budget em 15%", prompt: "Quais campanhas estão com ROI alto e podem ter o orçamento escalado em 15%?" },
@@ -366,22 +450,71 @@ Atualmente, estamos gerenciando **${activeCount} campanhas ativas** com um inves
                     : "bg-white/5 border border-white/5 text-foreground rounded-tl-none"
                 }`}>
                   {msg.role === "user" ? (
-                    msg.content
-                  ) : (
-                    <ReactMarkdown 
-                      components={{
-                        p: ({node, ...props}) => <p className="mb-2 last:mb-0 leading-relaxed text-foreground/90" {...props} />,
-                        h3: ({node, ...props}) => <h3 className="text-[11px] font-black text-primary mt-3 mb-1.5 uppercase tracking-widest first:mt-0 flex items-center gap-1.5 border-b border-white/5 pb-1" {...props} />,
-                        h4: ({node, ...props}) => <h4 className="text-[10px] font-black text-foreground mt-2.5 mb-1 uppercase tracking-wider" {...props} />,
-                        ul: ({node, ...props}) => <ul className="list-disc pl-4 mb-2 space-y-1 text-foreground/80" {...props} />,
-                        ol: ({node, ...props}) => <ol className="list-decimal pl-4 mb-2 space-y-1 text-foreground/80" {...props} />,
-                        li: ({node, ...props}) => <li className="leading-relaxed" {...props} />,
-                        strong: ({node, ...props}) => <strong className="font-bold text-foreground" {...props} />
-                      }}
-                    >
-                      {msg.content}
-                    </ReactMarkdown>
-                  )}
+                    <div className="flex flex-col gap-2">
+                      {msg.image && (
+                        <img 
+                          src={`data:${msg.image.mimeType};base64,${msg.image.base64}`} 
+                          alt="Upload" 
+                          className="max-h-32 rounded-lg object-cover border border-white/10" 
+                        />
+                      )}
+                      <div>{msg.content}</div>
+                    </div>
+                  ) : (() => {
+                    const parsed = parseAction(msg.content);
+                    return (
+                      <div className="flex flex-col gap-2">
+                        <ReactMarkdown 
+                          components={{
+                            p: ({node, ...props}) => <p className="mb-2 last:mb-0 leading-relaxed text-foreground/90" {...props} />,
+                            h3: ({node, ...props}) => <h3 className="text-[11px] font-black text-primary mt-3 mb-1.5 uppercase tracking-widest first:mt-0 flex items-center gap-1.5 border-b border-white/5 pb-1" {...props} />,
+                            h4: ({node, ...props}) => <h4 className="text-[10px] font-black text-foreground mt-2.5 mb-1 uppercase tracking-wider" {...props} />,
+                            ul: ({node, ...props}) => <ul className="list-disc pl-4 mb-2 space-y-1 text-foreground/80" {...props} />,
+                            ol: ({node, ...props}) => <ol className="list-decimal pl-4 mb-2 space-y-1 text-foreground/80" {...props} />,
+                            li: ({node, ...props}) => <li className="leading-relaxed" {...props} />,
+                            strong: ({node, ...props}) => <strong className="font-bold text-foreground" {...props} />
+                          }}
+                        >
+                          {parsed.text}
+                        </ReactMarkdown>
+
+                        {parsed.action && (
+                          <div className="mt-3 p-3 bg-primary/10 border border-primary/20 rounded-xl flex flex-col gap-2.5">
+                            <div className="flex items-center gap-2">
+                              <Sparkles className="h-4 w-4 text-primary animate-pulse shrink-0" />
+                              <span className="font-black text-[10px] uppercase tracking-wider text-primary">Recomendação Estratégica</span>
+                            </div>
+                            <p className="text-[11px] text-foreground/90 font-medium">
+                              {parsed.action.type === "update_budget" 
+                                ? `Ajustar o orçamento da campanha "${parsed.action.campaignName}" para R$ ${parsed.action.value?.toFixed(2)}/dia.`
+                                : `Pausar a campanha ineficiente "${parsed.action.campaignName}".`
+                              }
+                            </p>
+                            
+                            {appliedActions[i] ? (
+                              <div className="flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-lg bg-green-500/10 border border-green-500/20 text-green-400 font-bold text-[10px] uppercase tracking-wider">
+                                <Check className="h-3.5 w-3.5 animate-bounce" /> Otimização Aplicada com Sucesso
+                              </div>
+                            ) : (
+                              <button
+                                onClick={() => handleExecuteAction(i, parsed.action)}
+                                disabled={actionLoading === parsed.action.campaignId}
+                                className="w-full py-1.5 px-3 rounded-lg bg-primary hover:brightness-110 active:scale-[0.98] transition-all text-primary-foreground font-black text-[10px] uppercase tracking-wider disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-1.5"
+                              >
+                                {actionLoading === parsed.action.campaignId ? (
+                                  <>
+                                    <Loader2 className="h-3 w-3 animate-spin" /> Aplicando...
+                                  </>
+                                ) : (
+                                  parsed.action.type === "update_budget" ? "Aprovar e Atualizar Orçamento" : "Aprovar e Pausar Campanha"
+                                )}
+                              </button>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
                 </div>
               </motion.div>
             ))}
@@ -410,23 +543,58 @@ Atualmente, estamos gerenciando **${activeCount} campanhas ativas** com um inves
           </div>
         )}
         
-        <div className="relative group">
+        {selectedImage && (
+          <div className="relative inline-block mb-3 p-1.5 bg-white/5 border border-white/10 rounded-xl">
+            <img 
+              src={`data:${selectedImage.mimeType};base64,${selectedImage.base64}`} 
+              alt="Preview" 
+              className="h-16 w-16 object-cover rounded-lg" 
+            />
+            <button 
+              onClick={() => setSelectedImage(null)} 
+              className="absolute -top-1.5 -right-1.5 p-1 bg-red-500 hover:bg-red-600 text-white rounded-full transition-colors shadow-md"
+            >
+              <X className="h-3 w-3" />
+            </button>
+          </div>
+        )}
+        
+        <div className="relative group flex items-center">
           <input
-            type="text"
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && selectedAccountId !== "" && handleSend()}
+            type="file"
+            id="agent-image-upload"
+            accept="image/*"
+            onChange={handleImageUpload}
+            className="hidden"
             disabled={selectedAccountId === "" || loading}
-            placeholder={selectedAccountId === "" ? "Selecione uma conta acima para liberar o chat..." : "Comando para Meta Ads..."}
-            className="w-full bg-input/40 border border-white/10 rounded-xl pl-4 pr-12 py-3.5 text-xs focus:outline-none focus:ring-1 focus:ring-primary/40 focus:border-primary/40 transition-all placeholder:text-muted-foreground/30 shadow-inner disabled:opacity-50 disabled:cursor-not-allowed"
           />
-          <button 
-            onClick={handleSend}
-            disabled={selectedAccountId === "" || loading || !prompt.trim()}
-            className="absolute right-2 top-1/2 -translate-y-1/2 p-2 bg-primary text-primary-foreground rounded-lg hover:brightness-110 transition-all shadow-glow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+          <label 
+            htmlFor="agent-image-upload"
+            className={`mr-2 p-2.5 bg-input/40 border border-white/10 rounded-xl hover:bg-white/5 cursor-pointer transition-all flex items-center justify-center shrink-0 ${
+              selectedAccountId === "" || loading ? "opacity-40 cursor-not-allowed pointer-events-none" : "hover:border-primary/30"
+            }`}
           >
-            {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-          </button>
+            <Paperclip className="h-4 w-4 text-muted-foreground hover:text-foreground transition-colors" />
+          </label>
+
+          <div className="relative flex-1">
+            <input
+              type="text"
+              value={prompt}
+              onChange={(e) => setPrompt(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && selectedAccountId !== "" && handleSend()}
+              disabled={selectedAccountId === "" || loading}
+              placeholder={selectedAccountId === "" ? "Selecione uma conta acima para liberar o chat..." : "Comando para Meta Ads..."}
+              className="w-full bg-input/40 border border-white/10 rounded-xl pl-4 pr-12 py-3.5 text-xs focus:outline-none focus:ring-1 focus:ring-primary/40 focus:border-primary/40 transition-all placeholder:text-muted-foreground/30 shadow-inner disabled:opacity-50 disabled:cursor-not-allowed"
+            />
+            <button 
+              onClick={handleSend}
+              disabled={selectedAccountId === "" || loading || (!prompt.trim() && !selectedImage)}
+              className="absolute right-2 top-1/2 -translate-y-1/2 p-2 bg-primary text-primary-foreground rounded-lg hover:brightness-110 transition-all shadow-glow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+            </button>
+          </div>
         </div>
         <div className="flex items-center justify-center gap-2 mt-3">
           <div className="h-px flex-1 bg-border/40" />
