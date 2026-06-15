@@ -70,7 +70,7 @@ Não invente dados. Se não conseguir ler um campo com precisão, use null. Não
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "google/gemini-2.5-flash",
+        model: "google/gemini-1.5-flash",
         messages: [
           { role: "system", content: systemPrompt },
           {

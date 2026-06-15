@@ -105,7 +105,7 @@ REGRAS DE RESPOSTA:
 
     let responseText = "";
 
-    // Tentativa 1: Gemini 2.5 Flash direto (mais capaz)
+    // Tentativa 1: Gemini 1.5 Flash direto (mais capaz)
     if (GEMINI_API_KEY) {
       try {
         const contents = [
@@ -118,7 +118,7 @@ REGRAS DE RESPOSTA:
         ];
 
         const res = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`,
+          `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`,
           {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -132,7 +132,7 @@ REGRAS DE RESPOSTA:
         const data = await res.json();
         if (data.candidates?.[0]?.content?.parts?.[0]?.text) {
           responseText = data.candidates[0].content.parts[0].text;
-          console.log("[VICTORIA] ✓ Gemini 2.5 Flash direto");
+          console.log("[VICTORIA] ✓ Gemini 1.5 Flash direto");
         } else {
           console.error("[VICTORIA] Gemini sem candidatos:", JSON.stringify(data).slice(0, 300));
         }
@@ -151,7 +151,7 @@ REGRAS DE RESPOSTA:
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
-            model: "google/gemini-2.5-flash",
+            model: "google/gemini-1.5-flash",
             messages: [{ role: "system", content: systemPrompt }, ...messages],
             temperature: 0.85,
             max_tokens: 2048,

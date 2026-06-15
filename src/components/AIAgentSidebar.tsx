@@ -4,6 +4,7 @@ import { Send, Bot, Sparkles, TrendingUp, Search, Loader2, User, X } from "lucid
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import ReactMarkdown from "react-markdown";
+import { chatWithVictoriaFn } from "@/lib/agent.functions";
 
 type Message = { role: "user" | "assistant"; content: string; timestamp: Date };
 
@@ -61,18 +62,28 @@ export function AIAgentSidebar({ isOpen, onClose }: AIAgentSidebarProps) {
       
       let responseText = "";
       try {
-        const { data, error } = await supabase.functions.invoke("victoria-agent", {
-          body: { 
+        const result = await chatWithVictoriaFn({
+          data: {
             messages: requestMessages,
-            selectedAccountId: selectedAccountId
+            selectedAccountId: selectedAccountId || undefined
           }
         });
-
-        if (error) throw error;
-        if (data?.error) throw new Error(data.error);
-        responseText = data.message || "Comando processado com sucesso.";
+        responseText = result.message;
       } catch (err: any) {
-        console.warn("Victoria Edge Function failed, executing advanced frontend database-grounded fallback...", err);
+        console.warn("Victoria Server Function failed, falling back to Supabase Edge Function...", err);
+        try {
+          const { data, error } = await supabase.functions.invoke("victoria-agent", {
+            body: { 
+              messages: requestMessages,
+              selectedAccountId: selectedAccountId
+            }
+          });
+
+          if (error) throw error;
+          if (data?.error) throw new Error(data.error);
+          responseText = data.message || "Comando processado com sucesso.";
+        } catch (edgeErr: any) {
+          console.warn("Victoria Edge Function failed, executing advanced frontend database-grounded fallback...", edgeErr);
         
         // 1. Buscar todas as campanhas da conta selecionada com suas métricas históricas completas
         const { data: campaignsRaw } = await supabase
@@ -201,6 +212,7 @@ Atualmente, estamos gerenciando **${activeCount} campanhas ativas** com um inves
         }
 
         responseText = `${intro}${body}${conclusion}`;
+        }
       }
 
       const assistantMsg: Message = { 
