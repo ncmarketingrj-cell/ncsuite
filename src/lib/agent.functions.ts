@@ -59,17 +59,17 @@ export const chatWithVictoriaFn = createServerFn({ method: "POST" })
     const { messages, selectedAccountId } = data;
     const { supabase } = context;
 
-    // 1. Fetch clients for the current logged-in user to ensure isolation
+    // 1. Fetch ad accounts for the current logged-in user to ensure isolation
     const userId = context.userId;
-    const { data: userClients } = await supabase
-      .from("clients")
+    const { data: userAccounts } = await supabase
+      .from("ad_accounts")
       .select("id")
       .eq("user_id", userId);
 
-    const clientIds = (userClients || []).map(c => c.id);
+    const adAccountIds = (userAccounts || []).map(acc => acc.id);
 
     let dbMetrics: any[] = [];
-    if (clientIds.length > 0) {
+    if (adAccountIds.length > 0) {
       const thirtyDaysAgo = new Date();
       thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
       const startDateStr = thirtyDaysAgo.toISOString().split("T")[0];
@@ -80,7 +80,7 @@ export const chatWithVictoriaFn = createServerFn({ method: "POST" })
           cost, conversions, clicks, impressions, reach, date, client_id,
           campaigns!inner(id, name, status, budget, platform, ad_account_id)
         `)
-        .in("client_id", clientIds)
+        .in("campaigns.ad_account_id", adAccountIds)
         .gte("date", startDateStr);
 
       if (selectedAccountId) {

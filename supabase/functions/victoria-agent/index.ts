@@ -28,20 +28,20 @@ serve(async (req) => {
     const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
 
-    // 1. Fetch clients for the current logged-in user to ensure isolation
-    const { data: userClients, error: clientsErr } = await supabase
-      .from("clients")
+    // 1. Fetch ad accounts for the current logged-in user to ensure isolation
+    const { data: userAccounts, error: accountsErr } = await supabase
+      .from("ad_accounts")
       .select("id")
       .eq("user_id", user.id);
 
-    if (clientsErr) {
-      console.error("Error fetching clients:", clientsErr);
+    if (accountsErr) {
+      console.error("Error fetching ad accounts:", accountsErr);
     }
 
-    const clientIds = (userClients || []).map((c: any) => c.id);
+    const adAccountIds = (userAccounts || []).map((acc: any) => acc.id);
 
     let dbMetrics: any[] = [];
-    if (clientIds.length > 0) {
+    if (adAccountIds.length > 0) {
       const thirtyDaysAgo = new Date();
       thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
       const startDateStr = thirtyDaysAgo.toISOString().split("T")[0];
@@ -52,7 +52,7 @@ serve(async (req) => {
           cost, conversions, clicks, impressions, reach, date, client_id,
           campaigns!inner(id, name, status, budget, platform, ad_account_id)
         `)
-        .in("client_id", clientIds)
+        .in("campaigns.ad_account_id", adAccountIds)
         .gte("date", startDateStr);
 
       if (selectedAccountId) {
