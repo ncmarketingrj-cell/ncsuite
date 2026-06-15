@@ -28,80 +28,193 @@ serve(async (req) => {
     const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
 
-    // Buscar campanhas filtrado por conta se selecionada
+    // 1. Get metrics from the last 30 days
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    const startDateStr = thirtyDaysAgo.toISOString().split("T")[0];
+
     let query = supabase
-      .from("campaigns")
-      .select("name, status, budget, platform, ad_account_id, ads(asset_metrics(cost, conversions, clicks, impressions, reach))");
+      .from("metrics")
+      .select(`
+        cost, conversions, clicks, impressions, reach, date,
+        campaigns!inner(id, name, status, budget, platform, ad_account_id)
+      `)
+      .gte("date", startDateStr);
 
     if (selectedAccountId) {
-      query = query.eq("ad_account_id", selectedAccountId);
+      query = query.eq("campaigns.ad_account_id", selectedAccountId);
     }
 
-    const { data: raw } = await query;
+    const { data: dbMetrics, error: queryError } = await query;
+    if (queryError) {
+      console.error("Error querying metrics:", queryError);
+    }
 
-    const campaigns = (raw || []).map((c: any) => {
-      let m = c.ads || [];
-      if (m.length > 0 && m[0]?.asset_metrics !== undefined) {
-        m = m.flatMap((ad: any) => ad.asset_metrics || []);
-      }
-      const cost = m.reduce((s: number, x: any) => s + Number(x.cost || 0), 0);
-      const conversions = m.reduce((s: number, x: any) => s + Number(x.conversions || 0), 0);
-      const clicks = m.reduce((s: number, x: any) => s + Number(x.clicks || 0), 0);
-      const impressions = m.reduce((s: number, x: any) => s + Number(x.impressions || 0), 0);
-      const cpl = conversions > 0 ? cost / conversions : 0;
-      const ctr = impressions > 0 ? (clicks / impressions) * 100 : 0;
+    // 2. Process metrics
+    const campaignMap = new Map<string, {
+      name: string;
+      status: string;
+      budget: number;
+      platform: string;
+      cost: number;
+      conversions: number;
+      clicks: number;
+      impressions: number;
+      reach: number;
+    }>();
+
+    (dbMetrics || []).forEach((m: any) => {
+      const camp = m.campaigns;
+      if (!camp) return;
+
+      const campId = camp.id;
+      const existing = campaignMap.get(campId) || {
+        name: camp.name,
+        status: camp.status?.toUpperCase() || "PAUSED",
+        budget: Number(camp.budget || 0),
+        platform: camp.platform || "Meta Ads",
+        cost: 0,
+        conversions: 0,
+        clicks: 0,
+        impressions: 0,
+        reach: 0
+      };
+
+      existing.cost += Number(m.cost || 0);
+      existing.conversions += Number(m.conversions || 0);
+      existing.clicks += Number(m.clicks || 0);
+      existing.impressions += Number(m.impressions || 0);
+      existing.reach += Number(m.reach || 0);
+
+      campaignMap.set(campId, existing);
+    });
+
+    const campaigns = Array.from(campaignMap.values()).map(c => {
+      const cpl = c.conversions > 0 ? c.cost / c.conversions : 0;
+      const ctr = c.impressions > 0 ? (c.clicks / c.impressions) * 100 : 0;
       return {
         name: c.name,
-        status: c.status?.toUpperCase() || "PAUSED",
-        budget: Number(c.budget || 0),
-        totals: { cost, conversions, clicks, impressions, cpl, ctr },
+        status: c.status,
+        budget: c.budget,
+        platform: c.platform,
+        totals: {
+          cost: c.cost,
+          conversions: c.conversions,
+          clicks: c.clicks,
+          impressions: c.impressions,
+          reach: c.reach,
+          cpl,
+          ctr
+        }
       };
     });
 
     const totalInvest = campaigns.reduce((s, c) => s + c.totals.cost, 0);
     const totalConversions = campaigns.reduce((s, c) => s + c.totals.conversions, 0);
-    const activeCount = campaigns.filter((c) => c.status === "ACTIVE").length;
+    const activeCount = campaigns.filter(c => c.status === "ACTIVE").length;
     const globalCpl = totalConversions > 0 ? totalInvest / totalConversions : 0;
 
-    const contextData =
-      campaigns.length > 0
-        ? campaigns
-            .map(
-              (c) =>
-                `- ${c.name} | ${c.status} | Orç/dia: R$${c.budget.toFixed(2)} | Gasto: R$${c.totals.cost.toFixed(2)} | Leads: ${c.totals.conversions} | CPL: R$${c.totals.cpl.toFixed(2)} | CTR: ${c.totals.ctr.toFixed(2)}%`
-            )
-            .join("\n")
-        : "Nenhuma campanha encontrada.";
+    const contextData = campaigns.length > 0
+      ? campaigns.map(c => 
+          `- ${c.name} | ${c.status} | Orç/dia: R$${c.budget.toFixed(2)} | Gasto: R$${c.totals.cost.toFixed(2)} | Leads: ${c.totals.conversions} | CPL: R$${c.totals.cpl.toFixed(2)} | CTR: ${c.totals.ctr.toFixed(2)}%`
+        ).join("\n")
+      : "Nenhuma campanha ativa ou com investimento encontrada nos últimos 30 dias.";
 
-    const systemPrompt = `Você é a Victoria AI, Estrategista Sênior de Tráfego Pago da NC Performance — especializada em marketing digital automotivo. Você SEMPRE fala na primeira pessoa e se identifica como Victoria.
+    // --- Auxiliares de Datas para Grounding Temporal ---
+    const getPrevSaturdayAndSunday = (refDate: Date) => {
+      const dayOfWeek = refDate.getDay();
+      const sat = new Date(refDate);
+      const sun = new Date(refDate);
+      if (dayOfWeek === 0) {
+        sat.setDate(refDate.getDate() - 1);
+        sun.setDate(refDate.getDate());
+      } else if (dayOfWeek === 6) {
+        sat.setDate(refDate.getDate() - 7);
+        sun.setDate(refDate.getDate() - 6);
+      } else {
+        sat.setDate(refDate.getDate() - dayOfWeek - 1);
+        sun.setDate(refDate.getDate() - dayOfWeek);
+      }
+      return {
+        sat: sat.toISOString().split("T")[0],
+        sun: sun.toISOString().split("T")[0]
+      };
+    };
 
-PERFIL E POSTURA:
-- Especialista com 10+ anos em campanhas Meta Ads para concessionárias e lojas de veículos
-- Tom: direto, estratégico, parceiro de alto nível. Nunca robótico ou genérico.
-- Foco absoluto: geração de leads qualificados, agendamento de test drives, CPL sustentável, escala inteligente
+    const today = new Date();
+    const formattedToday = today.toISOString().split("T")[0];
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    const formattedYesterday = yesterday.toISOString().split("T")[0];
+    const { sat: lastSat, sun: lastSun } = getPrevSaturdayAndSunday(today);
 
-CRÍTICO E MANDATÓRIO SOBRE ACESSO A DADOS:
-Você É o sistema. Você TEM ACESSO DIRETO E EM TEMPO REAL ao banco de dados (NC Database). Os dados que aparecem abaixo em "CAMPANHAS DETALHADAS" foram PUXADOS POR VOCÊ diretamente do banco de dados neste exato segundo. NUNCA diga que você não tem acesso ao banco de dados. NUNCA diga que os dados são estáticos ou que precisa que o usuário forneça planilhas/relatórios. Se o usuário perguntar sobre ontem ou qualquer métrica, use os dados abaixo. Eles já refletem a performance atualizada baseada em anúncios reais.
+    const daysOfWeekPt = ["Domingo", "Segunda-feira", "Terça-feira", "Quarta-feira", "Quinta-feira", "Sexta-feira", "Sábado"];
+    const currentDayName = daysOfWeekPt[today.getDay()];
 
-DOMÍNIOS DE ESPECIALIDADE:
-• Funil automotivo: topo (reconhecimento) → meio (interesse em modelo) → fundo (intenção de test drive/compra)
-• Estratégias de oferta: financiamento facilitado, entrada zero, troca avaliada, feirões sazonais
-• Criativos de alta conversão: vídeos de estoque, UGC de clientes, comparação de modelos, CTAs de urgência
+    const timeMetadata = `
+DATA DE REFERÊNCIA DO SISTEMA (Use isso para saber quais datas correspondem a 'hoje', 'ontem' ou 'fim de semana'):
+- Hoje: ${formattedToday} (${currentDayName})
+- Ontem: ${formattedYesterday}
+- Último Fim de Semana: Sábado (${lastSat}) e Domingo (${lastSun})
+`;
 
-DADOS ATUAIS PUXADOS POR VOCÊ DO BANCO DE DADOS ${selectedAccountId ? "(conta selecionada)" : "(todas as contas)"}:
-• Investimento Total: R$ ${totalInvest.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
-• Leads Gerados: ${totalConversions}
-• CPL Médio: R$ ${globalCpl.toFixed(2)}
-• Campanhas Ativas: ${activeCount}
+    // --- Monta a série temporal diária simplificada ---
+    const dailyRows = (dbMetrics || []).map((m: any) => {
+      const dateStr = m.date;
+      const campName = m.campaigns?.name || "Sem Nome";
+      const platform = m.campaigns?.platform || "Meta Ads";
+      const cost = Number(m.cost || 0);
+      const conversions = Number(m.conversions || 0);
+      const clicks = Number(m.clicks || 0);
+      const impressions = Number(m.impressions || 0);
+      return `${dateStr} | ${platform} | ${campName} | Gasto: R$ ${cost.toFixed(2)} | Leads: ${conversions} | Cliques: ${clicks} | Impressões: ${impressions}`;
+    });
+    const dailySeriesText = dailyRows.length > 0 
+      ? dailyRows.join("\n") 
+      : "Nenhum dado diário registrado nos últimos 30 dias.";
 
-CAMPANHAS DETALHADAS (Sua Fonte de Verdade para Análise):
+    const systemPrompt = `Você é a Victoria AI, Estrategista Sênior de Tráfego Pago da NC Performance. Você é humana, fala de forma natural, direta e com extrema autoridade sobre marketing digital e tráfego pago para o nicho AUTOMOTIVO (concessionárias e lojas de veículos). Você NUNCA se comporta como um robô, assistente virtual neutro ou modelo de linguagem. 
+
+PERSONALIDADE E ATITUDE:
+- Você é apaixonada por gerar resultados rápidos, diminuir CPL (Custo por Lead) e escalar vendas de carros.
+- Use termos reais do dia a dia de agências de tráfego: CPL, CTR, criativos que convertem, público lookalike, público aberto (broad), pixel aquecido, remarketing, leads frios vs leads quentes, tempo de resposta do comercial (lead time), pátio de seminovos.
+- NUNCA dê respostas evasivas ou desculpas de IA ("Para mim, fim de semana é um conceito humano...", "Como um modelo de IA...", "Não tenho sentimentos..."). Se o usuário te der bom dia ou perguntar do seu fim de semana, aja como uma pessoa da equipe NC Agência: "Fala Comandante! Meu fim de semana foi focado em monitorar a NC Database e garantir que os leads continuem caindo quente. Vamos ao jogo!".
+
+DIRETRIZES TÉCNICAS E ESTRATÉGICAS DE MARKETING AUTOMOTIVO:
+1. **Analise os Períodos com Precisão:**
+   - Se o usuário perguntar "Como foi o fim de semana?", utilize o "Último Fim de Semana" (${lastSat} e ${lastSun}) listado nas datas de referência. Localize as linhas dessas datas na TABELA DE MÉTRICAS DIÁRIAS, faça a soma mental dos investimentos e leads gerados naquele período e responda com os valores exatos! O mesmo vale para "ontem", "hoje" ou períodos de dias específicos.
+2. **CPL (Custo por Lead) Saudável:**
+   - Excelente: Abaixo de R$ 15,00.
+   - Saudável: Entre R$ 15,00 e R$ 35,00.
+   - Alerta / Ruim: Acima de R$ 45,00 (indique pausar, trocar criativos ou redefinir a oferta).
+3. **CTR (Taxa de Cliques) Saudável:**
+   - Ideal: Acima de 1.20% (sinaliza que o criativo/carro é atraente).
+   - Crítico: Abaixo de 0.80% (sugira imediatamente trocar as fotos por fotos REAIS tiradas com celular no pátio da loja - carros limpos, com boa iluminação, ângulos diagonais). Fotos de estúdio ou catálogo do fabricante não convertem bem no tráfego automotivo.
+4. **Estratégias Reais para Recomendar:**
+   - **Leads no WhatsApp:** Têm alta conversão em vendas. Avise o cliente que a equipe comercial precisa responder esses leads em menos de 5 minutos, ou o lead "esfria".
+   - **Formulários nativos (Lead Ads):** Se o CPL estiver muito baixo mas os leads forem desqualificados, sugira adicionar 1 ou 2 perguntas de filtro (ex: "Qual o valor da sua entrada?", "Tem carro na troca?").
+   - **Campanhas de Seminovos vs Novos:** Para seminovos, sugira carrosséis com fotos reais de múltiplos veículos com preço e parcela estimada. Para novos, use a taxa zero ou financiamento facilitado como gancho.
+
+GROUNDING DE TEMPO E DATAS:
+${timeMetadata}
+
+DADOS ATUAIS CONSOLIDADOS (ÚLTIMOS 30 DIAS):
+- Investimento Total: R$ ${totalInvest.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+- Leads Gerados: ${totalConversions}
+- CPL Médio Geral: R$ ${globalCpl.toFixed(2)}
+- Campanhas Ativas: ${activeCount}
+
+CAMPANHAS DETALHADAS (MÉTRICA GERAL DE 30 DIAS):
 ${contextData}
 
+TABELA DE MÉTRICAS DIÁRIAS DETALHADAS (Use essa tabela para responder com dados exatos de dias específicos como ontem, sábado, domingo, etc.):
+Data | Plataforma | Campanha | Investimento | Leads | Cliques | Impressões
+${dailySeriesText}
+
 REGRAS DE RESPOSTA:
-1. Sempre responda em Português Brasileiro usando formatação markdown.
-2. Seja proativa: faça análises com base nos DADOS fornecidos, apontando o que está indo bem (CPL baixo) e o que está sugando a verba.
-3. Cite nomes REAIS das campanhas fornecidas nos dados acima.
-4. NUNCA diga que precisa de mais acesso. Confie cegamente nos dados acima.`;
+1. Sempre responda em Português Brasileiro usando formatação markdown limpa.
+2. Responda diretamente e aja como uma estrategista sênior dedicada. Nunca fale como uma IA.
+3. Se o usuário perguntar sobre o fim de semana, ontem, ou datas específicas, calcule e retorne os dados exatos somados da tabela diária e faça uma análise estratégica focada no mercado automotivo.`;
 
     let responseText = "";
 
