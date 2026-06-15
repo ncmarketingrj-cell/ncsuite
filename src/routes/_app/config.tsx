@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Settings, User, Building2, Plug, BookOpen, Cpu, Plus, Trash2, Check, X, Loader2, Wifi, WifiOff, ChevronDown, Zap, Brain, LayoutDashboard, FileText, Target, Upload, Send, Users, Database, Lock, MessageSquareWarning, Bug, Lightbulb, Frown, HelpCircle, StickyNote, Filter, Eye, Clock } from "lucide-react";
+import { Settings, User, Building2, Plug, BookOpen, Cpu, Plus, Trash2, Check, X, Loader2, Wifi, WifiOff, ChevronDown, Zap, Brain, LayoutDashboard, FileText, Target, Upload, Send, Users, Database, Lock, MessageSquareWarning, Bug, Lightbulb, Frown, HelpCircle, StickyNote, Filter, Eye, Clock, Megaphone } from "lucide-react";
 import { SyncButton } from "@/components/SyncButton";
 import { toast } from "sonner";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -459,121 +459,200 @@ function TabIntegracoes() {
 }
 
 function VisualGuide({ module, step }: { module: string, step: number }) {
+  const [isOpen, setIsOpen] = useState(false);
+  let imgSrc = "/assets/mockup-dashboard.png";
+  let altText = "Visualização do Dashboard";
+
+  if (module === "dashboard") {
+    imgSrc = "/assets/mockup-dashboard.png";
+    altText = "Painel principal e KPIs";
+  } else if (module === "agente") {
+    if (step === 2) {
+      imgSrc = "/assets/victoria-maia.png";
+      altText = "Victoria Maia - Análise Multimodal";
+    } else {
+      imgSrc = "/assets/mockup-victoria.png";
+      altText = "Interface da Victoria AI";
+    }
+  } else if (module === "relatorios") {
+    imgSrc = "/assets/mockup-reports.png";
+    altText = "Painel de Relatórios";
+  } else if (module === "campanhas") {
+    imgSrc = "/assets/mockup-dashboard.png";
+    altText = "Gestão de Campanhas de Tráfego";
+  } else if (module === "automacoes") {
+    imgSrc = "/assets/mockup-dashboard.png";
+    altText = "Configurações de Alertas e Automações";
+  } else if (module === "integracoes") {
+    imgSrc = "/assets/nc-logo.png";
+    altText = "Integrações Meta Ads e Google Ads";
+  }
+
   return (
-    <div className="relative w-full h-48 bg-black/40 rounded-2xl border border-white/5 overflow-hidden group/guide">
-      <div className="absolute inset-0 opacity-10 bg-[radial-gradient(#fff_1px,transparent_1px)] [background-size:16px_16px]" />
-      <div className="absolute inset-0 flex items-center justify-center p-4 text-center">
-        {module === "dashboard" && (
-           <div className="space-y-4">
-              <div className="flex gap-2">
-                 <div className="h-16 w-24 rounded bg-primary/10 border border-primary/20 relative">
-                    <div className="absolute -top-4 -right-4">
-                       <motion.div animate={{ y: [0, 5, 0] }} transition={{ repeat: Infinity }}>
-                          <ChevronDown className="h-6 w-6 text-primary" />
-                       </motion.div>
-                    </div>
-                 </div>
-                 <div className="h-16 w-24 rounded bg-white/5 border border-white/10" />
-              </div>
-              <p className="text-[10px] font-bold text-primary uppercase tracking-widest">Analise os KPIs em tempo real</p>
-           </div>
-        )}
-        {module === "operacao" && (
-           <div className="flex flex-col items-center gap-3">
-              <div className="grid grid-cols-3 gap-2 w-full max-w-[200px]">
-                 {[1,2,3].map(i => <div key={i} className={`h-12 rounded border ${i===2 ? 'border-primary bg-primary/10' : 'border-white/5 bg-white/5'}`} />)}
-              </div>
-              <div className="flex items-center gap-2">
-                 <div className="w-8 h-[2px] bg-primary" />
-                 <p className="text-[9px] font-black text-primary uppercase">Hub de Módulos</p>
-              </div>
-           </div>
-        )}
-        {module === "relatorios" && (
-           <div className="relative p-4 border border-white/10 rounded-xl bg-white/5 w-48">
-              <div className="h-2 w-full bg-white/10 rounded mb-2" />
-              <div className="h-2 w-2/3 bg-white/10 rounded mb-4" />
-              <div className="h-8 w-full rounded bg-primary flex items-center justify-center text-[10px] font-black text-background">
-                 EXPORTAR PDF
-              </div>
-              <div className="absolute -left-6 top-1/2 -translate-y-1/2">
-                 <motion.div animate={{ x: [0, 5, 0] }} transition={{ repeat: Infinity }} className="rotate-90">
-                    <ChevronDown className="h-6 w-6 text-primary" />
-                 </motion.div>
-              </div>
-           </div>
-        )}
-        {module === "agente" && (
-           <div className="relative h-32 w-48 bg-white/5 rounded-xl border border-white/10 p-3">
-              <div className="flex items-center gap-2 mb-4">
-                 <Brain className="h-4 w-4 text-primary" />
-                 <div className="h-1.5 w-20 bg-white/20 rounded" />
-              </div>
-              <div className="h-8 w-full rounded bg-primary/20 border border-primary/30 flex items-center px-2">
-                 <div className="h-2 w-24 bg-primary/40 rounded" />
-              </div>
-              <p className="mt-3 text-[8px] font-black text-primary uppercase animate-pulse">Victoria está ouvindo...</p>
-           </div>
-        )}
+    <>
+      <div 
+        onClick={() => setIsOpen(true)}
+        className="relative w-full h-64 bg-black/60 rounded-2xl border border-white/10 overflow-hidden group/guide flex items-center justify-center cursor-zoom-in mt-3"
+      >
+        <div className="absolute inset-0 bg-gradient-to-t from-background via-transparent to-transparent opacity-60 z-10" />
+        <img 
+          src={imgSrc} 
+          alt={altText}
+          className="w-full h-full object-cover transition-all duration-700 group-hover/guide:scale-105"
+        />
+        <div className="absolute bottom-3 left-3 right-3 bg-black/70 backdrop-blur-md border border-white/5 px-3 py-1.5 rounded-lg z-20 flex items-center justify-between">
+          <span className="text-[10px] font-bold text-primary uppercase tracking-wider">{altText}</span>
+          <span className="text-[9px] text-muted-foreground flex items-center gap-1">
+            <Eye className="h-3 w-3" /> Ampliar Print
+          </span>
+        </div>
       </div>
-    </div>
+
+      <AnimatePresence>
+        {isOpen && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => setIsOpen(false)}
+            className="fixed inset-0 z-[100] flex items-center justify-center bg-black/90 backdrop-blur-md p-4 md:p-8 cursor-zoom-out"
+          >
+            <button 
+              onClick={() => setIsOpen(false)}
+              className="absolute top-4 right-4 h-10 w-10 rounded-full bg-white/10 flex items-center justify-center text-white hover:bg-white/20 transition-all border border-white/10"
+            >
+              <X className="h-5 w-5" />
+            </button>
+            <motion.div 
+              initial={{ scale: 0.95 }}
+              animate={{ scale: 1 }}
+              exit={{ scale: 0.95 }}
+              className="relative max-w-5xl max-h-[90vh] overflow-hidden rounded-2xl border border-white/10 bg-background/50 shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <img 
+                src={imgSrc} 
+                alt={altText}
+                className="w-full h-auto max-h-[80vh] object-contain"
+              />
+              <div className="bg-background/80 border-t border-white/10 px-6 py-4 flex items-center justify-between">
+                <div>
+                  <h4 className="text-sm font-bold text-foreground">{altText}</h4>
+                  <p className="text-xs text-muted-foreground">Print real do sistema</p>
+                </div>
+                <button 
+                  onClick={() => setIsOpen(false)}
+                  className="rounded-full bg-primary px-4 py-1.5 text-xs font-bold text-primary-foreground hover:shadow-glow"
+                >
+                  Fechar
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </>
   );
 }
 
 const ACADEMY_MODULES = [
   {
     id: "dashboard",
-    title: "1. Domine o Dashboard",
-    desc: "Como interpretar seus dados de performance",
+    title: "1. Dashboard & KPIs",
+    desc: "Acompanhe e analise dados consolidados em tempo real",
     icon: LayoutDashboard,
     steps: [
       {
-        title: "Leitura de KPIs",
-        content: "No topo do Dashboard, acompanhe o Investimento, Conversões e CPL em tempo real. As sparklines (linhas azuis) mostram a tendência das últimas 24h.",
+        title: "Leitura de KPIs em Tempo Real",
+        content: "No painel principal (Dashboard), você visualiza métricas consolidadas como Investimento, Leads Gerados, Cliques e Custo por Lead (CPL) Geral. As sparklines indicam a tendência do tráfego das últimas 24h.",
       },
       {
-        title: "Visão Multi-Conta",
-        content: "Use o seletor no topo para filtrar dados de uma conta específica ou ver o resultado consolidado de toda a sua operação.",
-      }
-    ]
-  },
-  {
-    id: "operacao",
-    title: "2. Operações e Hub",
-    desc: "Navegando entre as ferramentas",
-    icon: Zap,
-    steps: [
-      {
-        title: "O Hub de Módulos",
-        content: "O centro da tela organiza suas ferramentas. Clique nos cards de 'Performance', 'Operação' ou 'Lab' para abrir as funções específicas de cada área.",
-      }
-    ]
-  },
-  {
-    id: "relatorios",
-    title: "3. Relatórios Estratégicos",
-    desc: "Crie entregas profissionais em segundos",
-    icon: FileText,
-    steps: [
-      {
-        title: "Gerador de Markdown",
-        content: "Vá em 'Relatórios' no Hub. Selecione o período e o cliente. A Victoria vai consolidar os dados e gerar um texto formatado pronto para enviar ao cliente.",
+        title: "Filtros de Período e Conta",
+        content: "Utilize o Date Range Picker no topo direito para escolher qualquer período de data personalizado. Use também o seletor de contas para isolar dados de uma única loja ou ver a performance agregada.",
       }
     ]
   },
   {
     id: "agente",
-    title: "4. IA Orquestradora",
-    desc: "Conversando com a Victoria",
+    title: "2. Victoria AI (Estrategista)",
+    desc: "Tire dúvidas e execute otimizações com Inteligência Artificial",
     icon: Brain,
     steps: [
       {
-        title: "Comandos Rápidos",
-        content: "Na sidebar direita, use os botões rápidos como 'Como está a performance?' para receber um briefing instantâneo do que está acontecendo nas contas.",
+        title: "Briefing Automotivo e Análise de Período",
+        content: "Abra a Victoria AI na lateral direita. Peça briefings das contas e análises do fim de semana. Ela sabe a data de referência atual e calcula com exatidão matemática o investimento, CPL e leads gerados.",
       },
       {
-        title: "Análise Profunda",
-        content: "Peça para a Victoria analisar breakdowns específicos: 'Victoria, qual a faixa etária que mais converteu na campanha de Teste?'",
+        title: "Action Cards (Otimização em 1-Clique)",
+        content: "A Victoria detecta campanhas com CPL alto ou CTR crítico e gera Cards de Ação interativos. Você pode pausar a campanha ou ajustar o orçamento diretamente pelo chat clicando em 'Aplicar Otimização'.",
+      },
+      {
+        title: "Análise Multimodal de Criativos",
+        content: "Envie fotos tiradas pelo celular no pátio da loja ou arquivos de criativos de tráfego. A Victoria analisará o enquadramento, iluminação e apelo comercial do carro, dando consultoria visual profissional.",
+      }
+    ]
+  },
+  {
+    id: "campanhas",
+    title: "3. Gestão de Campanhas",
+    desc: "Monitore o status e gerencie os orçamentos ativamente",
+    icon: Megaphone,
+    steps: [
+      {
+        title: "Visão Detalhada de Anúncios",
+        content: "Na aba 'Gestão de Ads', acompanhe todas as campanhas em andamento de forma organizada, exibindo status ativo/pausado, orçamento diário definido e o canal de tráfego (Meta ou Google).",
+      },
+      {
+        title: "Alteração de Orçamento e Status",
+        content: "Otimize criativos ou mude orçamentos rapidamente direto na tabela. Isso permite realizar alterações urgentes de verba sem a necessidade de acessar os gerenciadores nativos de anúncios.",
+      }
+    ]
+  },
+  {
+    id: "relatorios",
+    title: "4. Relatórios Estratégicos",
+    desc: "Crie briefings premium para clientes em segundos",
+    icon: FileText,
+    steps: [
+      {
+        title: "Gerador Automático de Briefings",
+        content: "Na aba 'Relatórios', selecione a conta de anúncio e o período. A Suite processará o histórico de dados e gerará um relatório profissional formatado em Markdown com análise tática.",
+      },
+      {
+        title: "Personalização e Download em PDF",
+        content: "Insira observações de rodapé, faça ajustes no texto gerado e clique em 'Exportar para PDF' para gerar um documento premium com a marca da agência pronto para enviar ao cliente no WhatsApp.",
+      }
+    ]
+  },
+  {
+    id: "automacoes",
+    title: "5. Automações e Alertas",
+    desc: "Regras inteligentes para proteger seu orçamento de tráfego",
+    icon: Zap,
+    steps: [
+      {
+        title: "Configurando Regras Personalizadas",
+        content: "Vá em Configurações > Regras de Automação. Adicione critérios como 'CPL maior que R$ 45,00'. O sistema monitora a conta em tempo real e emite avisos assim que o gatilho for acionado.",
+      },
+      {
+        title: "Central de Notificações",
+        content: "Acompanhe as notificações no painel superior do aplicativo para identificar anomalias rapidamente antes que comprometam o orçamento mensal.",
+      }
+    ]
+  },
+  {
+    id: "integracoes",
+    title: "6. Conexões e Setup Master",
+    desc: "Conecte fontes de dados de forma simples e segura",
+    icon: Plug,
+    steps: [
+      {
+        title: "Setup do Token de Acesso da Meta",
+        content: "Insira seu Token de Usuário do Sistema de Longa Duração da Meta na aba 'Integrações' para habilitar a extração e sincronização automática das campanhas do Facebook e Instagram.",
+      },
+      {
+        title: "Conexão Google Ads via OAuth",
+        content: "Clique em 'Nova Conexão Google Ads' para logar na sua conta do Google de forma totalmente segura, trazendo dados de campanhas de pesquisa, display, Youtube e PMax para o dashboard.",
       }
     ]
   }
