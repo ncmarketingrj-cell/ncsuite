@@ -1,6 +1,44 @@
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { z } from "zod";
+import fs from "node:fs";
+import path from "node:path";
+
+function getEnvVariable(name: string): string | undefined {
+  // 1. Check process.env
+  if (process.env[name]) return process.env[name];
+
+  // 2. Check import.meta.env
+  const metaEnv = (import.meta as any).env;
+  if (metaEnv && metaEnv[name]) return metaEnv[name];
+
+  // 3. Manually parse .env in workspace root
+  try {
+    const envPath = path.resolve(process.cwd(), ".env");
+    if (fs.existsSync(envPath)) {
+      const envContent = fs.readFileSync(envPath, "utf-8");
+      const lines = envContent.split("\n");
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (trimmed && !trimmed.startsWith("#") && trimmed.includes("=")) {
+          const parts = trimmed.split("=");
+          const key = parts[0].trim();
+          let val = parts.slice(1).join("=").trim();
+          if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
+            val = val.slice(1, -1);
+          }
+          if (key === name) {
+            return val;
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.error("Error reading .env manually:", err);
+  }
+
+  return undefined;
+}
 
 const Input = z.object({
   messages: z.array(z.object({
@@ -135,8 +173,8 @@ REGRAS DE RESPOSTA:
 4. Se o usuário pedir ideias de criativos ou estratégias, dê ideias práticas, detalhando imagens, copies ou formatos específicos para o nicho de carros/veículos.
 5. Responda à pergunta do usuário de forma completa, mantendo a postura de uma consultora de alta performance da NC Agência.`;
 
-    const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-    const LOVABLE_API_KEY = process.env.LOVABLE_API_KEY;
+    const GEMINI_API_KEY = getEnvVariable("GEMINI_API_KEY");
+    const LOVABLE_API_KEY = getEnvVariable("LOVABLE_API_KEY");
 
     let responseText = "";
 
@@ -152,7 +190,7 @@ REGRAS DE RESPOSTA:
         ];
 
         const res = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`,
+          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`,
           {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -167,8 +205,13 @@ REGRAS DE RESPOSTA:
           const data = await res.json();
           if (data.candidates?.[0]?.content?.parts?.[0]?.text) {
             responseText = data.candidates[0].content.parts[0].text;
-            console.log("[VICTORIA Server Fn] ✓ Gemini 1.5 Flash direto");
+            console.log("[VICTORIA Server Fn] ✓ Gemini 2.5 Flash direto");
+          } else {
+            console.warn("[VICTORIA Server Fn] Gemini respondido sem texto:", JSON.stringify(data));
           }
+        } else {
+          const errText = await res.text();
+          console.error("[VICTORIA Server Fn] Gemini API error:", res.status, errText);
         }
       } catch (e: any) {
         console.error("[VICTORIA Server Fn] Erro Gemini:", e.message);
@@ -184,7 +227,7 @@ REGRAS DE RESPOSTA:
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
-            model: "google/gemini-1.5-flash",
+            model: "google/gemini-2.5-flash",
             messages: [{ role: "system", content: systemPrompt }, ...messages],
             temperature: 0.85,
             max_tokens: 2048,
