@@ -55,26 +55,40 @@ export const chatWithVictoriaFn = createServerFn({ method: "POST" })
     const { messages, selectedAccountId } = data;
     const { supabase } = context;
 
-    // 1. Get metrics from the last 30 days
-    const thirtyDaysAgo = new Date();
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-    const startDateStr = thirtyDaysAgo.toISOString().split("T")[0];
+    // 1. Fetch clients for the current logged-in user to ensure isolation
+    const userId = context.userId;
+    const { data: userClients } = await supabase
+      .from("clients")
+      .select("id")
+      .eq("user_id", userId);
 
-    let query = supabase
-      .from("metrics")
-      .select(`
-        cost, conversions, clicks, impressions, reach, date,
-        campaigns!inner(id, name, status, budget, platform, ad_account_id)
-      `)
-      .gte("date", startDateStr);
+    const clientIds = (userClients || []).map(c => c.id);
 
-    if (selectedAccountId) {
-      query = query.eq("campaigns.ad_account_id", selectedAccountId);
-    }
+    let dbMetrics: any[] = [];
+    if (clientIds.length > 0) {
+      const thirtyDaysAgo = new Date();
+      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+      const startDateStr = thirtyDaysAgo.toISOString().split("T")[0];
 
-    const { data: dbMetrics, error: queryError } = await query;
-    if (queryError) {
-      console.error("Error querying metrics:", queryError);
+      let query = supabase
+        .from("metrics")
+        .select(`
+          cost, conversions, clicks, impressions, reach, date, client_id,
+          campaigns!inner(id, name, status, budget, platform, ad_account_id)
+        `)
+        .in("client_id", clientIds)
+        .gte("date", startDateStr);
+
+      if (selectedAccountId) {
+        query = query.eq("campaigns.ad_account_id", selectedAccountId);
+      }
+
+      const { data, error: queryError } = await query;
+      if (queryError) {
+        console.error("Error querying metrics:", queryError);
+      } else {
+        dbMetrics = data || [];
+      }
     }
 
     // 2. Process metrics
@@ -250,14 +264,12 @@ REGRAS DE RESPOSTA:
 
     if (GEMINI_API_KEY) {
       try {
-        const contents = [
-          { role: "user", parts: [{ text: systemPrompt }] },
-          { role: "model", parts: [{ text: "Dados carregados. Pronta para análise estratégica automotiva." }] },
-          ...messages.map((m: any) => ({
+        const contents = messages
+          .filter((m: any) => m.content && m.content.trim() !== "")
+          .map((m: any) => ({
             role: m.role === "assistant" ? "model" : "user",
             parts: [{ text: m.content }],
-          })),
-        ];
+          }));
 
         const res = await fetch(
           `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`,
@@ -266,7 +278,10 @@ REGRAS DE RESPOSTA:
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               contents,
-              generationConfig: { temperature: 0.85, maxOutputTokens: 2048 },
+              systemInstruction: {
+                parts: [{ text: systemPrompt }]
+              },
+              generationConfig: { temperature: 0.7, maxOutputTokens: 2048 },
             }),
           }
         );

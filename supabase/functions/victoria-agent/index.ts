@@ -28,26 +28,43 @@ serve(async (req) => {
     const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
 
-    // 1. Get metrics from the last 30 days
-    const thirtyDaysAgo = new Date();
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-    const startDateStr = thirtyDaysAgo.toISOString().split("T")[0];
+    // 1. Fetch clients for the current logged-in user to ensure isolation
+    const { data: userClients, error: clientsErr } = await supabase
+      .from("clients")
+      .select("id")
+      .eq("user_id", user.id);
 
-    let query = supabase
-      .from("metrics")
-      .select(`
-        cost, conversions, clicks, impressions, reach, date,
-        campaigns!inner(id, name, status, budget, platform, ad_account_id)
-      `)
-      .gte("date", startDateStr);
-
-    if (selectedAccountId) {
-      query = query.eq("campaigns.ad_account_id", selectedAccountId);
+    if (clientsErr) {
+      console.error("Error fetching clients:", clientsErr);
     }
 
-    const { data: dbMetrics, error: queryError } = await query;
-    if (queryError) {
-      console.error("Error querying metrics:", queryError);
+    const clientIds = (userClients || []).map((c: any) => c.id);
+
+    let dbMetrics: any[] = [];
+    if (clientIds.length > 0) {
+      const thirtyDaysAgo = new Date();
+      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+      const startDateStr = thirtyDaysAgo.toISOString().split("T")[0];
+
+      let query = supabase
+        .from("metrics")
+        .select(`
+          cost, conversions, clicks, impressions, reach, date, client_id,
+          campaigns!inner(id, name, status, budget, platform, ad_account_id)
+        `)
+        .in("client_id", clientIds)
+        .gte("date", startDateStr);
+
+      if (selectedAccountId) {
+        query = query.eq("campaigns.ad_account_id", selectedAccountId);
+      }
+
+      const { data, error: queryError } = await query;
+      if (queryError) {
+        console.error("Error querying metrics:", queryError);
+      } else {
+        dbMetrics = data || [];
+      }
     }
 
     // 2. Process metrics
@@ -221,14 +238,12 @@ REGRAS DE RESPOSTA:
     // Tentativa 1: Gemini 2.5 Flash direto (mais capaz)
     if (GEMINI_API_KEY) {
       try {
-        const contents = [
-          { role: "user", parts: [{ text: systemPrompt }] },
-          { role: "model", parts: [{ text: "Dados carregados. Pronta para análise estratégica automotiva." }] },
-          ...messages.map((m: any) => ({
+        const contents = messages
+          .filter((m: any) => m.content && m.content.trim() !== "")
+          .map((m: any) => ({
             role: m.role === "assistant" ? "model" : "user",
             parts: [{ text: m.content }],
-          })),
-        ];
+          }));
 
         const res = await fetch(
           `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`,
@@ -237,7 +252,10 @@ REGRAS DE RESPOSTA:
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               contents,
-              generationConfig: { temperature: 0.85, maxOutputTokens: 2048 },
+              systemInstruction: {
+                parts: [{ text: systemPrompt }]
+              },
+              generationConfig: { temperature: 0.7, maxOutputTokens: 2048 },
             }),
           }
         );
