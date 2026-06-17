@@ -20,7 +20,15 @@ export const Route = createFileRoute("/_app/social-insights")({
 });
 
 // Deterministic mock metric generator based on page credentials and date range
-function getDeterministicMetrics(pageId: string, pageName: string, dateFromStr: string, dateToStr: string, actualFbFollowers = 0, actualInstaFollowers = 0) {
+function getDeterministicMetrics(
+  pageId: string, 
+  pageName: string, 
+  dateFromStr: string, 
+  dateToStr: string, 
+  actualFbFollowers = 0, 
+  actualInstaFollowers = 0,
+  isMockToken = true
+) {
   let seed = 0;
   const combinedStr = pageId + pageName;
   for (let i = 0; i < combinedStr.length; i++) {
@@ -34,10 +42,14 @@ function getDeterministicMetrics(pageId: string, pageName: string, dateFromStr: 
 
   // Base values adjusted by seed, override with real counts if they exist
   const baseFollowers = 2000 + (seed % 17) * 2500 + (seed % 7) * 400;
-  const instaFollowers = actualInstaFollowers > 0 ? actualInstaFollowers : Math.round(baseFollowers * 0.65);
-  const fbFollowers = actualFbFollowers > 0 ? actualFbFollowers : Math.round(baseFollowers * 0.35);
+  const instaFollowers = isMockToken ? Math.round(baseFollowers * 0.65) : (actualInstaFollowers || 0);
+  const fbFollowers = isMockToken ? Math.round(baseFollowers * 0.35) : (actualFbFollowers || 0);
 
-  const dailyReach = 100 + (seed % 13) * 150 + (seed % 5) * 50;
+  // Scale factor based on the real followers count (baseline of 5000 followers)
+  const realFollowers = fbFollowers + instaFollowers;
+  const scaleFactor = isMockToken ? 1.0 : Math.max(0.01, realFollowers / 5000);
+
+  const dailyReach = Math.round((100 + (seed % 13) * 150 + (seed % 5) * 50) * scaleFactor);
   const dailyVisits = Math.round(dailyReach * 0.25);
   const dailyEngage = Math.round(dailyReach * 0.08);
 
@@ -178,24 +190,25 @@ function SocialInsightsPage() {
 
   const selectedPageObj = socialPages.find((sp: any) => sp.page_id === selectedPage);
   const isMetaConnected = socialPages.length > 0;
+  const isMockToken = !metaConfig?.access_token || metaConfig.access_token.startsWith("mock_") || metaConfig.access_token.length < 20;
 
   // Generate dynamic active metrics based on page selection and date range
   const activeMetrics = useMemo(() => {
     if (socialPages.length === 0) {
       // Fallback template when no pages connected, still changes dynamically by dates
-      return getDeterministicMetrics("mock", "Demonstração", dateFrom, dateTo);
+      return getDeterministicMetrics("mock", "Demonstração", dateFrom, dateTo, 0, 0, true);
     }
 
     if (selectedPage !== "all") {
       const sp = socialPages.find((p: any) => p.page_id === selectedPage);
       if (sp) {
-        return getDeterministicMetrics(sp.page_id, sp.page_name, dateFrom, dateTo, sp.facebook_followers, sp.instagram_followers);
+        return getDeterministicMetrics(sp.page_id, sp.page_name, dateFrom, dateTo, sp.facebook_followers, sp.instagram_followers, isMockToken);
       }
     }
 
     // Combine all pages
     const combined = socialPages.map((sp: any) => 
-      getDeterministicMetrics(sp.page_id, sp.page_name, dateFrom, dateTo, sp.facebook_followers, sp.instagram_followers)
+      getDeterministicMetrics(sp.page_id, sp.page_name, dateFrom, dateTo, sp.facebook_followers, sp.instagram_followers, isMockToken)
     );
 
     return {
@@ -224,7 +237,7 @@ function SocialInsightsPage() {
       },
       top_posts: combined.flatMap(m => m.top_posts).sort((a, b) => b.reach - a.reach).slice(0, 3)
     };
-  }, [socialPages, selectedPage, dateFrom, dateTo]);
+  }, [socialPages, selectedPage, dateFrom, dateTo, isMockToken]);
 
   // Generate daily sparkline reach based on date range
   const sparklineData = useMemo(() => {
@@ -391,7 +404,14 @@ function SocialInsightsPage() {
             <h3 className="font-display font-black text-2xl tracking-tight text-white">
               {selectedPage === "facebook" ? activeMetrics.followers_facebook.toLocaleString("pt-BR") : selectedPage === "instagram" ? activeMetrics.followers_instagram.toLocaleString("pt-BR") : (activeMetrics.followers_instagram + activeMetrics.followers_facebook).toLocaleString("pt-BR")}
             </h3>
-            <div className="flex items-center gap-1.5 mt-1">
+            {selectedPage !== "facebook" && selectedPage !== "instagram" && (
+              <div className="flex gap-2 text-[10px] text-muted-foreground mt-0.5 font-semibold">
+                <span>FB: {activeMetrics.followers_facebook.toLocaleString("pt-BR")}</span>
+                <span>•</span>
+                <span>IG: {activeMetrics.followers_instagram.toLocaleString("pt-BR")}</span>
+              </div>
+            )}
+            <div className="flex items-center gap-1.5 mt-1.5">
               <span className={`text-[10px] font-bold ${
                 (selectedPage === "facebook" ? activeMetrics.followers_growth_fb : activeMetrics.followers_growth_insta) >= 0 ? "text-green-400" : "text-red-400"
               }`}>
@@ -413,7 +433,14 @@ function SocialInsightsPage() {
             <h3 className="font-display font-black text-2xl tracking-tight text-white">
               {selectedPage === "facebook" ? activeMetrics.reach_facebook.toLocaleString("pt-BR") : selectedPage === "instagram" ? activeMetrics.reach_instagram.toLocaleString("pt-BR") : (activeMetrics.reach_instagram + activeMetrics.reach_facebook).toLocaleString("pt-BR")}
             </h3>
-            <div className="flex items-center gap-1.5 mt-1">
+            {selectedPage !== "facebook" && selectedPage !== "instagram" && (
+              <div className="flex gap-2 text-[10px] text-muted-foreground mt-0.5 font-semibold">
+                <span>FB: {activeMetrics.reach_facebook.toLocaleString("pt-BR")}</span>
+                <span>•</span>
+                <span>IG: {activeMetrics.reach_instagram.toLocaleString("pt-BR")}</span>
+              </div>
+            )}
+            <div className="flex items-center gap-1.5 mt-1.5">
               <span className={`text-[10px] font-bold ${
                 (selectedPage === "facebook" ? activeMetrics.reach_growth_fb : activeMetrics.reach_growth_insta) >= 0 ? "text-green-400" : "text-red-400"
               }`}>
@@ -435,7 +462,14 @@ function SocialInsightsPage() {
             <h3 className="font-display font-black text-2xl tracking-tight text-white">
               {selectedPage === "facebook" ? activeMetrics.visits_facebook.toLocaleString("pt-BR") : selectedPage === "instagram" ? activeMetrics.visits_instagram.toLocaleString("pt-BR") : (activeMetrics.visits_instagram + activeMetrics.visits_facebook).toLocaleString("pt-BR")}
             </h3>
-            <div className="flex items-center gap-1.5 mt-1">
+            {selectedPage !== "facebook" && selectedPage !== "instagram" && (
+              <div className="flex gap-2 text-[10px] text-muted-foreground mt-0.5 font-semibold">
+                <span>FB: {activeMetrics.visits_facebook.toLocaleString("pt-BR")}</span>
+                <span>•</span>
+                <span>IG: {activeMetrics.visits_instagram.toLocaleString("pt-BR")}</span>
+              </div>
+            )}
+            <div className="flex items-center gap-1.5 mt-1.5">
               <span className={`text-[10px] font-bold ${
                 (selectedPage === "facebook" ? activeMetrics.visits_growth_fb : activeMetrics.visits_growth_insta) >= 0 ? "text-green-400" : "text-red-400"
               }`}>
@@ -457,7 +491,14 @@ function SocialInsightsPage() {
             <h3 className="font-display font-black text-2xl tracking-tight text-white">
               {selectedPage === "facebook" ? activeMetrics.engagement_facebook.toLocaleString("pt-BR") : selectedPage === "instagram" ? activeMetrics.engagement_instagram.toLocaleString("pt-BR") : (activeMetrics.engagement_instagram + activeMetrics.engagement_facebook).toLocaleString("pt-BR")}
             </h3>
-            <div className="flex items-center gap-1.5 mt-1">
+            {selectedPage !== "facebook" && selectedPage !== "instagram" && (
+              <div className="flex gap-2 text-[10px] text-muted-foreground mt-0.5 font-semibold">
+                <span>FB: {activeMetrics.engagement_facebook.toLocaleString("pt-BR")}</span>
+                <span>•</span>
+                <span>IG: {activeMetrics.engagement_instagram.toLocaleString("pt-BR")}</span>
+              </div>
+            )}
+            <div className="flex items-center gap-1.5 mt-1.5">
               <span className={`text-[10px] font-bold ${
                 (selectedPage === "facebook" ? activeMetrics.engagement_growth_fb : activeMetrics.engagement_growth_insta) >= 0 ? "text-green-400" : "text-red-400"
               }`}>
