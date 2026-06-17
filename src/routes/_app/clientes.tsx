@@ -258,9 +258,8 @@ function ClientCard({ client, metrics, account, dateLabel }: {
     <motion.div
       initial={{ opacity: 0, y: 16 }}
       animate={{ opacity: 1, y: 0 }}
-      whileHover={{ y: -2 }}
-      transition={{ duration: 0.2 }}
-      className="group relative flex flex-col rounded-2xl border border-border bg-card overflow-hidden hover:border-primary/30 hover:shadow-glow-sm transition-all duration-200"
+      transition={{ duration: 0.3 }}
+      className="group relative flex flex-col rounded-2xl border border-border bg-card overflow-hidden hover:border-primary/30 hover:shadow-glow-sm hover:-translate-y-0.5 transition-all duration-200"
     >
       {/* racing stripe topo */}
       <div className="absolute top-0 inset-x-0 h-[2px] bg-gradient-to-r from-transparent via-primary/40 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
