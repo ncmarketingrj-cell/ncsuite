@@ -19,7 +19,7 @@ function PublicLinkPage() {
   const { data: page, isLoading, error } = useQuery({
     queryKey: ["public-link-page", slug],
     queryFn: async () => {
-      const { data, error } = await supabase.from("link_pages").select("*").eq("slug", slug).eq("is_active", true).single();
+      const { data, error } = await (supabase as any).from("link_pages").select("*").eq("slug", slug).eq("is_active", true).single();
       if (error) throw error;
       return data as any;
     },
@@ -29,7 +29,7 @@ function PublicLinkPage() {
     queryKey: ["public-link-items", page?.id],
     enabled: !!page?.id,
     queryFn: async () => {
-      const { data, error } = await supabase.from("link_items").select("*").eq("page_id", page.id).eq("is_active", true).order("order_index", { ascending: true });
+      const { data, error } = await (supabase as any).from("link_items").select("*").eq("page_id", page.id).eq("is_active", true).order("order_index", { ascending: true });
       if (error) throw error;
       return (data ?? []) as any[];
     },
@@ -50,11 +50,11 @@ function PublicLinkPage() {
 
   const clickMutation = useMutation({
     mutationFn: async (itemId: string) => {
-      await supabase.from("link_clicks").insert({ item_id: itemId, page_id: page.id, user_agent: navigator.userAgent });
-      await supabase.rpc('increment_item_click', { i_id: itemId }).then(() => {
+      await (supabase as any).from("link_clicks").insert({ item_id: itemId, page_id: page.id, user_agent: navigator.userAgent });
+      await supabase.rpc('increment_item_click', { i_id: itemId } as any).then(() => {
         // Fallback manual
         const item = items.find(i => i.id === itemId);
-        if(item) supabase.from('link_items').update({ click_count: (item.click_count || 0) + 1 }).eq('id', itemId).then();
+        if(item) (supabase as any).from('link_items').update({ click_count: (item.click_count || 0) + 1 }).eq('id', itemId).then();
       });
     }
   });
@@ -63,7 +63,7 @@ function PublicLinkPage() {
     mutationFn: async (e: React.FormEvent) => {
       e.preventDefault();
       if (!leadForm.name || !leadForm.phone) throw new Error("Nome e telefone são obrigatórios.");
-      const { error } = await supabase.from("lead_captures").insert({
+      const { error } = await (supabase as any).from("lead_captures").insert({
         page_id: page.id,
         name: leadForm.name,
         email: leadForm.email,

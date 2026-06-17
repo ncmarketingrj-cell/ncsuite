@@ -93,12 +93,11 @@ function SocialMediaPage() {
     }
   });
 
-  // Query social pages
   const { data: socialPages = [] } = useQuery({
     queryKey: ["social_pages"],
     queryFn: async () => {
-      const { data } = await supabase.from("social_pages").select("*").order("page_name");
-      return data || [];
+      const { data } = await (supabase as any).from("social_pages").select("*").order("page_name");
+      return (data || []) as any[];
     }
   });
 

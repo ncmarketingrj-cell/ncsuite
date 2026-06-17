@@ -27,6 +27,7 @@ import { Route as AppOrganizadorRouteImport } from './routes/_app/organizador'
 import { Route as AppMulticanalRouteImport } from './routes/_app/multicanal'
 import { Route as AppMetricasRouteImport } from './routes/_app/metricas'
 import { Route as AppIntegrationsRouteImport } from './routes/_app/integrations'
+import { Route as AppFunnelBuilderRouteImport } from './routes/_app/funnel-builder'
 import { Route as AppDashboardRouteImport } from './routes/_app/dashboard'
 import { Route as AppCriativosRouteImport } from './routes/_app/criativos'
 import { Route as AppConfigRouteImport } from './routes/_app/config'
@@ -128,6 +129,11 @@ const AppIntegrationsRoute = AppIntegrationsRouteImport.update({
   path: '/integrations',
   getParentRoute: () => AppRoute,
 } as any)
+const AppFunnelBuilderRoute = AppFunnelBuilderRouteImport.update({
+  id: '/funnel-builder',
+  path: '/funnel-builder',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppDashboardRoute = AppDashboardRouteImport.update({
   id: '/dashboard',
   path: '/dashboard',
@@ -198,6 +204,7 @@ export interface FileRoutesByFullPath {
   '/config': typeof AppConfigRoute
   '/criativos': typeof AppCriativosRoute
   '/dashboard': typeof AppDashboardRoute
+  '/funnel-builder': typeof AppFunnelBuilderRoute
   '/integrations': typeof AppIntegrationsRoute
   '/metricas': typeof AppMetricasRouteWithChildren
   '/multicanal': typeof AppMulticanalRoute
@@ -228,6 +235,7 @@ export interface FileRoutesByTo {
   '/config': typeof AppConfigRoute
   '/criativos': typeof AppCriativosRoute
   '/dashboard': typeof AppDashboardRoute
+  '/funnel-builder': typeof AppFunnelBuilderRoute
   '/integrations': typeof AppIntegrationsRoute
   '/metricas': typeof AppMetricasRouteWithChildren
   '/multicanal': typeof AppMulticanalRoute
@@ -260,6 +268,7 @@ export interface FileRoutesById {
   '/_app/config': typeof AppConfigRoute
   '/_app/criativos': typeof AppCriativosRoute
   '/_app/dashboard': typeof AppDashboardRoute
+  '/_app/funnel-builder': typeof AppFunnelBuilderRoute
   '/_app/integrations': typeof AppIntegrationsRoute
   '/_app/metricas': typeof AppMetricasRouteWithChildren
   '/_app/multicanal': typeof AppMulticanalRoute
@@ -292,6 +301,7 @@ export interface FileRouteTypes {
     | '/config'
     | '/criativos'
     | '/dashboard'
+    | '/funnel-builder'
     | '/integrations'
     | '/metricas'
     | '/multicanal'
@@ -322,6 +332,7 @@ export interface FileRouteTypes {
     | '/config'
     | '/criativos'
     | '/dashboard'
+    | '/funnel-builder'
     | '/integrations'
     | '/metricas'
     | '/multicanal'
@@ -353,6 +364,7 @@ export interface FileRouteTypes {
     | '/_app/config'
     | '/_app/criativos'
     | '/_app/dashboard'
+    | '/_app/funnel-builder'
     | '/_app/integrations'
     | '/_app/metricas'
     | '/_app/multicanal'
@@ -509,6 +521,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppIntegrationsRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/funnel-builder': {
+      id: '/_app/funnel-builder'
+      path: '/funnel-builder'
+      fullPath: '/funnel-builder'
+      preLoaderRoute: typeof AppFunnelBuilderRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/dashboard': {
       id: '/_app/dashboard'
       path: '/dashboard'
@@ -634,6 +653,7 @@ interface AppRouteChildren {
   AppConfigRoute: typeof AppConfigRoute
   AppCriativosRoute: typeof AppCriativosRoute
   AppDashboardRoute: typeof AppDashboardRoute
+  AppFunnelBuilderRoute: typeof AppFunnelBuilderRoute
   AppIntegrationsRoute: typeof AppIntegrationsRoute
   AppMetricasRoute: typeof AppMetricasRouteWithChildren
   AppMulticanalRoute: typeof AppMulticanalRoute
@@ -655,6 +675,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppConfigRoute: AppConfigRoute,
   AppCriativosRoute: AppCriativosRoute,
   AppDashboardRoute: AppDashboardRoute,
+  AppFunnelBuilderRoute: AppFunnelBuilderRoute,
   AppIntegrationsRoute: AppIntegrationsRoute,
   AppMetricasRoute: AppMetricasRouteWithChildren,
   AppMulticanalRoute: AppMulticanalRoute,

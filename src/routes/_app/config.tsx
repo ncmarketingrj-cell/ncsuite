@@ -214,8 +214,8 @@ function TabIntegracoes() {
   const { data: socialPages = [], refetch: refetchSocialPages } = useQuery({
     queryKey: ["social_pages_configs"],
     queryFn: async () => {
-      const { data } = await supabase.from("social_pages").select("*").order("page_name");
-      return data || [];
+      const { data } = await (supabase as any).from("social_pages").select("*").order("page_name");
+      return (data || []) as any[];
     }
   });
   
@@ -234,7 +234,7 @@ function TabIntegracoes() {
   const saveFollowers = async (id: string) => {
     setSavingFollowers(true);
     try {
-      const { error } = await supabase
+      const { error } = await (supabase as any)
         .from("social_pages")
         .update({
           facebook_followers: editFB,
@@ -517,7 +517,7 @@ function TabIntegracoes() {
                   <button 
                     onClick={async () => {
                       if (!confirm("Remover esta página da sincronização?")) return;
-                      await supabase.from("social_pages").delete().eq("id", sp.id);
+                      await (supabase as any).from("social_pages").delete().eq("id", sp.id);
                       refetchSocialPages();
                       toast.success("Página removida.");
                     }}

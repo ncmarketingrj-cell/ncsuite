@@ -26,7 +26,7 @@ function PublicQuizPage() {
   const { data: quiz, isLoading, error } = useQuery({
     queryKey: ["public-quiz", slug],
     queryFn: async () => {
-      const { data, error } = await supabase.from("quizzes").select("*").eq("slug", slug).eq("is_active", true).single();
+      const { data, error } = await (supabase as any).from("quizzes").select("*").eq("slug", slug).eq("is_active", true).single();
       if (error) throw error;
       return data as any;
     },
@@ -36,7 +36,7 @@ function PublicQuizPage() {
     queryKey: ["public-quiz-steps", quiz?.id],
     enabled: !!quiz?.id,
     queryFn: async () => {
-      const { data, error } = await supabase.from("quiz_steps").select("*").eq("quiz_id", quiz.id).order("order_index", { ascending: true });
+      const { data, error } = await (supabase as any).from("quiz_steps").select("*").eq("quiz_id", quiz.id).order("order_index", { ascending: true });
       if (error) throw error;
       return (data ?? []) as any[];
     },
@@ -67,7 +67,7 @@ function PublicQuizPage() {
       }
 
       // 1. Salva a submission do quiz
-      const { data: subData, error: subErr } = await supabase.from("quiz_submissions").insert({ 
+      const { data: subData, error: subErr } = await (supabase as any).from("quiz_submissions").insert({ 
         quiz_id: quiz.id, 
         answers, 
         lead_name: leadForm.name,
@@ -81,7 +81,7 @@ function PublicQuizPage() {
 
       // 2. Salva o Lead (se habilitado)
       if (quiz.lead_form_enabled) {
-        await supabase.from("lead_captures").insert({
+        await (supabase as any).from("lead_captures").insert({
           quiz_id: quiz.id,
           name: leadForm.name,
           email: leadForm.email,
@@ -127,7 +127,7 @@ function PublicQuizPage() {
     if (quiz.lead_form_enabled) {
       setShowLeadForm(true);
     } else {
-      submitQuizMutation.mutate();
+      submitQuizMutation.mutate(undefined as any);
     }
   };
 

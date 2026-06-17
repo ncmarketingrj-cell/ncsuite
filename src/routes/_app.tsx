@@ -7,7 +7,7 @@ import {
   Bell, User, Bot, Sparkles, Activity, Zap,
   Sun, Moon, Menu, X, BarChart3, LineChart, Palette, Link2,
   ChevronDown, RefreshCw, Users, Store,
-  Volume2, VolumeX, LogOut, CreditCard, Share2, ArrowRight
+  Volume2, VolumeX, LogOut, CreditCard, Share2, ArrowRight, GitBranch
 } from "lucide-react";
 import { AuthProvider, useAuth } from "@/lib/auth";
 import { supabase } from "@/integrations/supabase/client";
@@ -102,6 +102,15 @@ const GESTAO_MORE_ITEMS: NavItem[] = [
   { to: "/config", icon: Settings, label: "Configurações" },
 ];
 
+const FUNIL_NAV_ITEMS: NavItem[] = [
+  { to: "/organizador", icon: GitBranch, label: "Funis" },
+  { to: "/funnel-builder", icon: LayoutDashboard, label: "Canvas" },
+];
+const FUNIL_MORE_ITEMS: NavItem[] = [
+  { to: "/agente", icon: Bot, label: "Agente IA" },
+  { to: "/config", icon: Settings, label: "Templates" },
+];
+
 const ADMIN_EMAILS = ["nc.marketingrj@gmail.com", "hc.marketing.dgt@gmail.com"];
 
 function Shell() {
@@ -135,9 +144,10 @@ function Shell() {
   const canSeeMetricas  = profileLoading || isAdmin || !!perms.metricas;
   const canSeeAutomacoes = profileLoading || isAdmin || !!perms.automacoes;
 
-  const [activeModule, setActiveModule] = useState<"hub" | "trafego" | "social" | "gestao">(() => {
+  const [activeModule, setActiveModule] = useState<"hub" | "trafego" | "social" | "gestao" | "funil">(() => {
     if (typeof window !== "undefined") {
-      return (localStorage.getItem("nc_active_module") as any) || "hub";
+      const stored = localStorage.getItem("nc_active_module");
+      return (["hub", "trafego", "social", "gestao", "funil"].includes(stored as any) ? stored : "hub") as any;
     }
     return "hub";
   });
@@ -152,6 +162,9 @@ function Shell() {
   } else if (activeModule === "gestao") {
     currentNavItems = GESTAO_NAV_ITEMS;
     currentMoreItems = GESTAO_MORE_ITEMS;
+  } else if (activeModule === "funil") {
+    currentNavItems = FUNIL_NAV_ITEMS;
+    currentMoreItems = FUNIL_MORE_ITEMS;
   }
 
   const filteredNavItems = currentNavItems.filter(item => {
@@ -312,7 +325,7 @@ function Shell() {
           </div>
 
           {/* Grid of Directional Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pt-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 pt-4">
             {/* Card 1: Tráfego Pago */}
             <motion.div
               whileHover={{ y: -8, scale: 1.02, borderColor: "rgba(239, 68, 68, 0.4)" }}
@@ -387,6 +400,31 @@ function Shell() {
                 Acessar Gestão <ArrowRight className="h-3 w-3 transition-transform group-hover:translate-x-1" />
               </div>
             </motion.div>
+
+            {/* Card 4: Funis & Mapas */}
+            <motion.div
+              whileHover={{ y: -8, scale: 1.02, borderColor: "rgba(168, 85, 247, 0.4)" }}
+              onClick={() => {
+                setActiveModule("funil");
+                localStorage.setItem("nc_active_module", "funil");
+                nav({ to: "/organizador" });
+              }}
+              className="group relative rounded-2xl border border-white/5 bg-white/[0.02] p-6 text-left cursor-pointer transition-all duration-300 hover:bg-white/[0.04] shadow-2xl backdrop-blur-md"
+            >
+              <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-purple-500 to-indigo-500 rounded-t-2xl" />
+              <div className="h-10 w-10 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center mb-4">
+                <GitBranch className="h-5 w-5 text-purple-500" />
+              </div>
+              <h3 className="text-base font-black text-white group-hover:text-purple-400 transition-colors">
+                Mapas & Funis
+              </h3>
+              <p className="text-xs text-muted-foreground mt-2 leading-relaxed">
+                Construtor de funis automotivos em canvas infinito. Crie etapas, defina jornadas e rastreie fricções de conversão.
+              </p>
+              <div className="mt-6 flex items-center gap-1.5 text-[10px] font-black uppercase text-purple-400 tracking-wider">
+                Acessar Funis <ArrowRight className="h-3 w-3 transition-transform group-hover:translate-x-1" />
+              </div>
+            </motion.div>
           </div>
 
           {/* Footer logout */}
@@ -438,10 +476,10 @@ function Shell() {
                   className="flex items-center gap-1.5 rounded-full border border-border bg-card px-3 py-1.5 text-[10px] font-black uppercase tracking-wider text-foreground hover:bg-muted/50 transition-all duration-200"
                 >
                   <span className={`h-1.5 w-1.5 rounded-full ${
-                    activeModule === "trafego" ? "bg-red-500" : activeModule === "social" ? "bg-pink-500" : "bg-cyan-500"
+                    activeModule === "trafego" ? "bg-red-500" : activeModule === "social" ? "bg-pink-500" : activeModule === "funil" ? "bg-purple-500" : "bg-cyan-500"
                   }`} />
                   <span>
-                    {activeModule === "trafego" ? "Tráfego" : activeModule === "social" ? "Social" : "Gestão"}
+                    {activeModule === "trafego" ? "Tráfego" : activeModule === "social" ? "Social" : activeModule === "funil" ? "Funis" : "Gestão"}
                   </span>
                   <ChevronDown className="h-3 w-3 opacity-60" />
                 </button>
@@ -509,6 +547,20 @@ function Shell() {
                         >
                           <span className="h-1.5 w-1.5 rounded-full bg-cyan-500" />
                           Gestão &amp; CRM
+                        </button>
+                        <button
+                          onClick={() => {
+                            setActiveModule("funil");
+                            localStorage.setItem("nc_active_module", "funil");
+                            setShowModuleMenu(false);
+                            nav({ to: "/organizador" });
+                          }}
+                          className={`flex w-full items-center gap-2 rounded-xl px-2.5 py-2 text-xs font-bold transition-all ${
+                            activeModule === "funil" ? "bg-purple-500/10 text-purple-500" : "text-foreground/80 hover:bg-muted"
+                          }`}
+                        >
+                          <span className="h-1.5 w-1.5 rounded-full bg-purple-500" />
+                          Mapas &amp; Funis
                         </button>
                       </motion.div>
                     </>
