@@ -19,6 +19,7 @@ import { Route as QSlugRouteImport } from './routes/q.$slug'
 import { Route as PSlugRouteImport } from './routes/p.$slug'
 import { Route as AppUtmsRouteImport } from './routes/_app/utms'
 import { Route as AppUploadRouteImport } from './routes/_app/upload'
+import { Route as AppSocialRouteImport } from './routes/_app/social'
 import { Route as AppReunioesRouteImport } from './routes/_app/reunioes'
 import { Route as AppRelatoriosRouteImport } from './routes/_app/relatorios'
 import { Route as AppOrganizadorRouteImport } from './routes/_app/organizador'
@@ -84,6 +85,11 @@ const AppUtmsRoute = AppUtmsRouteImport.update({
 const AppUploadRoute = AppUploadRouteImport.update({
   id: '/upload',
   path: '/upload',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppSocialRoute = AppSocialRouteImport.update({
+  id: '/social',
+  path: '/social',
   getParentRoute: () => AppRoute,
 } as any)
 const AppReunioesRoute = AppReunioesRouteImport.update({
@@ -192,6 +198,7 @@ export interface FileRoutesByFullPath {
   '/organizador': typeof AppOrganizadorRoute
   '/relatorios': typeof AppRelatoriosRoute
   '/reunioes': typeof AppReunioesRoute
+  '/social': typeof AppSocialRoute
   '/upload': typeof AppUploadRoute
   '/utms': typeof AppUtmsRoute
   '/p/$slug': typeof PSlugRoute
@@ -220,6 +227,7 @@ export interface FileRoutesByTo {
   '/organizador': typeof AppOrganizadorRoute
   '/relatorios': typeof AppRelatoriosRoute
   '/reunioes': typeof AppReunioesRoute
+  '/social': typeof AppSocialRoute
   '/upload': typeof AppUploadRoute
   '/utms': typeof AppUtmsRoute
   '/p/$slug': typeof PSlugRoute
@@ -250,6 +258,7 @@ export interface FileRoutesById {
   '/_app/organizador': typeof AppOrganizadorRoute
   '/_app/relatorios': typeof AppRelatoriosRoute
   '/_app/reunioes': typeof AppReunioesRoute
+  '/_app/social': typeof AppSocialRoute
   '/_app/upload': typeof AppUploadRoute
   '/_app/utms': typeof AppUtmsRoute
   '/p/$slug': typeof PSlugRoute
@@ -280,6 +289,7 @@ export interface FileRouteTypes {
     | '/organizador'
     | '/relatorios'
     | '/reunioes'
+    | '/social'
     | '/upload'
     | '/utms'
     | '/p/$slug'
@@ -308,6 +318,7 @@ export interface FileRouteTypes {
     | '/organizador'
     | '/relatorios'
     | '/reunioes'
+    | '/social'
     | '/upload'
     | '/utms'
     | '/p/$slug'
@@ -337,6 +348,7 @@ export interface FileRouteTypes {
     | '/_app/organizador'
     | '/_app/relatorios'
     | '/_app/reunioes'
+    | '/_app/social'
     | '/_app/upload'
     | '/_app/utms'
     | '/p/$slug'
@@ -427,6 +439,13 @@ declare module '@tanstack/react-router' {
       path: '/upload'
       fullPath: '/upload'
       preLoaderRoute: typeof AppUploadRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/social': {
+      id: '/_app/social'
+      path: '/social'
+      fullPath: '/social'
+      preLoaderRoute: typeof AppSocialRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/reunioes': {
@@ -602,6 +621,7 @@ interface AppRouteChildren {
   AppOrganizadorRoute: typeof AppOrganizadorRoute
   AppRelatoriosRoute: typeof AppRelatoriosRoute
   AppReunioesRoute: typeof AppReunioesRoute
+  AppSocialRoute: typeof AppSocialRoute
   AppUploadRoute: typeof AppUploadRoute
   AppUtmsRoute: typeof AppUtmsRoute
 }
@@ -621,6 +641,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppOrganizadorRoute: AppOrganizadorRoute,
   AppRelatoriosRoute: AppRelatoriosRoute,
   AppReunioesRoute: AppReunioesRoute,
+  AppSocialRoute: AppSocialRoute,
   AppUploadRoute: AppUploadRoute,
   AppUtmsRoute: AppUtmsRoute,
 }

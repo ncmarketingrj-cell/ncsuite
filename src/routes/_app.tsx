@@ -7,7 +7,7 @@ import {
   Bell, User, Bot, Sparkles, Activity, Zap,
   Sun, Moon, Menu, X, BarChart3, LineChart, Palette, Link2,
   ChevronDown, RefreshCw, Users, Store,
-  Volume2, VolumeX, LogOut, CreditCard
+  Volume2, VolumeX, LogOut, CreditCard, Share2
 } from "lucide-react";
 import { AuthProvider, useAuth } from "@/lib/auth";
 import { supabase } from "@/integrations/supabase/client";
@@ -81,6 +81,7 @@ const NAV_ITEMS: NavItem[] = [
 const MORE_ITEMS: NavItem[] = [
   { to: "/multicanal", icon: BarChart3, label: "Multicanal" },
   { to: "/organizador", icon: Link2, label: "Link Pages" },
+  { to: "/social", icon: Share2, label: "Social Media" },
   { to: "/cobrancas", icon: CreditCard, label: "Cobranças" },
   { to: "/automacoes", icon: Zap, label: "Automações" },
   { to: "/agente", icon: Bot, label: "Agente IA" },
