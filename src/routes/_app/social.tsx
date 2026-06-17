@@ -5,7 +5,7 @@ import {
   Share2, Calendar, Layout, BarChart2, Plus, ArrowRight, Sparkles, Clock, MapPin, 
   Trash2, Edit, AlertCircle, CheckCircle2, FileText, Send, Check, Loader2, RefreshCw, 
   Instagram, Facebook, Eye, ChevronLeft, ChevronRight, MessageSquare, Heart, Bookmark,
-  ThumbsUp, MessageCircle, Info, CalendarCheck, HelpCircle
+  ThumbsUp, MessageCircle, Info, CalendarCheck, HelpCircle, X, Upload
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
@@ -84,24 +84,22 @@ function SocialMediaPage() {
   const [carTag, setCarTag] = useState("");
   const [tagPosition, setTagPosition] = useState<{ x: number; y: number } | null>(null);
 
-  // Load Meta Page Configurations
   const { data: metaConfig } = useQuery({
     queryKey: ["meta_social_configs"],
     queryFn: async () => {
-      const { data } = await supabase.from("meta_ads_configs").select("*").maybeSingle();
-      return data;
+      const { data } = await (supabase as any).from("meta_ads_configs").select("*").maybeSingle();
+      return data as any;
     }
   });
 
-  // Query Posts
   const { data: posts = [], isLoading: loadingPosts } = useQuery({
     queryKey: ["social_posts"],
     queryFn: async () => {
-      const { data } = await supabase
+      const { data } = await (supabase as any)
         .from("social_posts")
         .select("*")
         .order("scheduled_at", { ascending: true, nullsFirst: true });
-      return data || [];
+      return (data || []) as any[];
     }
   });
 
@@ -112,13 +110,13 @@ function SocialMediaPage() {
   const savePostMutation = useMutation({
     mutationFn: async (postData: any) => {
       if (postData.id) {
-        const { error } = await supabase
+        const { error } = await (supabase as any)
           .from("social_posts")
           .update(postData)
           .eq("id", postData.id);
         if (error) throw error;
       } else {
-        const { error } = await supabase
+        const { error } = await (supabase as any)
           .from("social_posts")
           .insert({ ...postData, user_id: user?.id });
         if (error) throw error;
@@ -138,7 +136,7 @@ function SocialMediaPage() {
   // Mutation to delete post
   const deletePostMutation = useMutation({
     mutationFn: async (postId: string) => {
-      const { error } = await supabase
+      const { error } = await (supabase as any)
         .from("social_posts")
         .delete()
         .eq("id", postId);
@@ -355,26 +353,43 @@ function SocialMediaPage() {
     if (activeIndex !== -1 && overIndex !== -1) {
       const reordered = arrayMove(scheduledPosts, activeIndex, overIndex);
       
-      // Recalculate scheduled times: spaced by 1 day starting from the first post's date
+      // 1. Calcula as novas datas localmente
+      const baseDate = reordered[0].scheduled_at ? new Date(reordered[0].scheduled_at) : new Date();
+      const updatedDatesMap = new Map<string, string>();
+      reordered.forEach((post, i) => {
+        const newDate = new Date(baseDate);
+        newDate.setDate(baseDate.getDate() + i);
+        updatedDatesMap.set(post.id, newDate.toISOString());
+      });
+
+      // 2. Atualização Otimista no Cache da Query (Zero Lag Visual)
+      qc.setQueryData(["social_posts"], (oldPosts: any[] | undefined) => {
+        if (!oldPosts) return [];
+        return oldPosts.map(post => {
+          if (updatedDatesMap.has(post.id)) {
+            return { ...post, scheduled_at: updatedDatesMap.get(post.id) };
+          }
+          return post;
+        });
+      });
+
       toast.info("Ajustando datas de postagem conforme a nova ordem visual...");
+
+      // 3. Atualizações no banco em paralelo via Promise.all
       try {
-        let baseDate = reordered[0].scheduled_at ? new Date(reordered[0].scheduled_at) : new Date();
-        
-        for (let i = 0; i < reordered.length; i++) {
-          const post = reordered[i];
-          const newDate = new Date(baseDate);
-          newDate.setDate(baseDate.getDate() + i); // space each post by 24h
-          
-          await supabase
-            .from("social_posts")
-            .update({ scheduled_at: newDate.toISOString() })
-            .eq("id", post.id);
-        }
-        
-        qc.invalidateQueries({ queryKey: ["social_posts"] });
+        await Promise.all(
+          reordered.map((post) => {
+            const newDateStr = updatedDatesMap.get(post.id);
+            return (supabase as any)
+              .from("social_posts")
+              .update({ scheduled_at: newDateStr })
+              .eq("id", post.id);
+          })
+        );
         toast.success("Grade de postagem atualizada!");
       } catch (err: any) {
-        toast.error("Erro ao reordenar datas de postagem.");
+        toast.error("Erro ao salvar ordem no servidor.");
+        qc.invalidateQueries({ queryKey: ["social_posts"] });
       }
     }
   };
