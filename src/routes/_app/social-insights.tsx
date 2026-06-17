@@ -5,7 +5,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { 
   BarChart3, TrendingUp, Users, Globe, Eye, Sparkles, Heart, MessageSquare, 
   Share2, ArrowLeft, RefreshCw, AlertCircle, Info, Calendar, Download, FileText,
-  Instagram, Facebook, ThumbsUp, ChevronDown, Check, Loader2, Bot, ArrowRight
+  Instagram, Facebook, ThumbsUp, ChevronDown, Check, Loader2, Bot, ArrowRight, UserPlus
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
@@ -64,6 +64,12 @@ function getDeterministicMetrics(
 
   const growthInstaFollowers = parseFloat((-3 + (seed % 11) * 1.8).toFixed(1));
   const growthFbFollowers = parseFloat((-4 + (seed % 7) * 1.5).toFixed(1));
+
+  const newFollowersFbDaily = Math.max(0.05, (fbFollowers * 0.0025) + (seed % 3) * 0.1);
+  const newFollowersInstaDaily = Math.max(0.08, (instaFollowers * 0.0045) + (seed % 5) * 0.15);
+
+  const newFollowersFb = fbFollowers > 0 ? Math.round(newFollowersFbDaily * diffDays) : 0;
+  const newFollowersInsta = instaFollowers > 0 ? Math.round(newFollowersInstaDaily * diffDays) : 0;
 
   const growthInstaReach = parseFloat((-5 + (seed % 13) * 2.2).toFixed(1));
   const growthFbReach = parseFloat((-6 + (seed % 9) * 1.9).toFixed(1));
@@ -127,6 +133,8 @@ function getDeterministicMetrics(
     followers_facebook: fbFollowers,
     followers_growth_insta: growthInstaFollowers,
     followers_growth_fb: growthFbFollowers,
+    new_followers_instagram: newFollowersInsta,
+    new_followers_facebook: newFollowersFb,
     reach_instagram: totalReachInsta,
     reach_facebook: totalReachFb,
     reach_growth_insta: growthInstaReach,
@@ -216,6 +224,8 @@ function SocialInsightsPage() {
       followers_facebook: combined.reduce((acc, m) => acc + m.followers_facebook, 0),
       followers_growth_insta: parseFloat((combined.reduce((acc, m) => acc + m.followers_growth_insta, 0) / combined.length).toFixed(1)),
       followers_growth_fb: parseFloat((combined.reduce((acc, m) => acc + m.followers_growth_fb, 0) / combined.length).toFixed(1)),
+      new_followers_instagram: combined.reduce((acc, m) => acc + m.new_followers_instagram, 0),
+      new_followers_facebook: combined.reduce((acc, m) => acc + m.new_followers_facebook, 0),
       reach_instagram: combined.reduce((acc, m) => acc + m.reach_instagram, 0),
       reach_facebook: combined.reduce((acc, m) => acc + m.reach_facebook, 0),
       reach_growth_insta: parseFloat((combined.reduce((acc, m) => acc + m.reach_growth_insta, 0) / combined.length).toFixed(1)),
@@ -451,36 +461,35 @@ function SocialInsightsPage() {
           </div>
         </div>
 
-        {/* Card 3: Visitas à Página / Perfil */}
+        {/* Card 3: Novos Seguidores */}
         <div className="glass-panel p-5 space-y-3 relative overflow-hidden">
           <div className="absolute top-0 left-0 w-full h-[2px] bg-gradient-to-r from-cyan-500 to-blue-500" />
           <div className="flex items-center justify-between">
-            <span className="label-mono text-[9px] text-muted-foreground uppercase">Visitas ao Perfil</span>
-            <Globe className="h-4.5 w-4.5 text-cyan-500" />
+            <span className="label-mono text-[9px] text-muted-foreground uppercase">Novos Seguidores</span>
+            <UserPlus className="h-4.5 w-4.5 text-cyan-500" />
           </div>
           <div>
             <h3 className="font-display font-black text-2xl tracking-tight text-white">
-              {selectedPage === "facebook" ? activeMetrics.visits_facebook.toLocaleString("pt-BR") : selectedPage === "instagram" ? activeMetrics.visits_instagram.toLocaleString("pt-BR") : (activeMetrics.visits_instagram + activeMetrics.visits_facebook).toLocaleString("pt-BR")}
+              {selectedPage === "facebook" ? activeMetrics.new_followers_facebook.toLocaleString("pt-BR") : selectedPage === "instagram" ? activeMetrics.new_followers_instagram.toLocaleString("pt-BR") : (activeMetrics.new_followers_instagram + activeMetrics.new_followers_facebook).toLocaleString("pt-BR")}
             </h3>
             {selectedPage !== "facebook" && selectedPage !== "instagram" && (
               <div className="flex gap-2 text-[10px] text-muted-foreground mt-0.5 font-semibold">
-                <span>FB: {activeMetrics.visits_facebook.toLocaleString("pt-BR")}</span>
+                <span>FB: {activeMetrics.new_followers_facebook.toLocaleString("pt-BR")}</span>
                 <span>•</span>
-                <span>IG: {activeMetrics.visits_instagram.toLocaleString("pt-BR")}</span>
+                <span>IG: {activeMetrics.new_followers_instagram.toLocaleString("pt-BR")}</span>
               </div>
             )}
             <div className="flex items-center gap-1.5 mt-1.5">
               <span className={`text-[10px] font-bold ${
-                (selectedPage === "facebook" ? activeMetrics.visits_growth_fb : activeMetrics.visits_growth_insta) >= 0 ? "text-green-400" : "text-red-400"
+                (selectedPage === "facebook" ? activeMetrics.followers_growth_fb : activeMetrics.followers_growth_insta) >= 0 ? "text-green-400" : "text-red-400"
               }`}>
-                {(selectedPage === "facebook" ? activeMetrics.visits_growth_fb : activeMetrics.visits_growth_insta) >= 0 ? "+" : ""}{selectedPage === "facebook" ? activeMetrics.visits_growth_fb : activeMetrics.visits_growth_insta}%
+                {(selectedPage === "facebook" ? activeMetrics.followers_growth_fb : activeMetrics.followers_growth_insta) >= 0 ? "+" : ""}{selectedPage === "facebook" ? activeMetrics.followers_growth_fb : activeMetrics.followers_growth_insta}%
               </span>
-              <span className="text-[9px] text-muted-foreground">vs período anterior ({diffDays}d)</span>
+              <span className="text-[9px] text-muted-foreground">no período ({diffDays}d)</span>
             </div>
           </div>
         </div>
 
-        {/* Card 4: Engajamento (Curtidas/Comentários) */}
         <div className="glass-panel p-5 space-y-3 relative overflow-hidden">
           <div className="absolute top-0 left-0 w-full h-[2px] bg-gradient-to-r from-emerald-500 to-teal-500" />
           <div className="flex items-center justify-between">

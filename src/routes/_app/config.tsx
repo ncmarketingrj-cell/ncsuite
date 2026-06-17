@@ -219,6 +219,40 @@ function TabIntegracoes() {
     }
   });
   
+  // States to edit followers
+  const [editingPageId, setEditingPageId] = useState<string | null>(null);
+  const [editFB, setEditFB] = useState<number>(0);
+  const [editIG, setEditIG] = useState<number>(0);
+  const [savingFollowers, setSavingFollowers] = useState(false);
+
+  const startEdit = (sp: any) => {
+    setEditingPageId(sp.id);
+    setEditFB(sp.facebook_followers || 0);
+    setEditIG(sp.instagram_followers || 0);
+  };
+
+  const saveFollowers = async (id: string) => {
+    setSavingFollowers(true);
+    try {
+      const { error } = await supabase
+        .from("social_pages")
+        .update({
+          facebook_followers: editFB,
+          instagram_followers: editIG,
+          updated_at: new Date().toISOString()
+        })
+        .eq("id", id);
+      if (error) throw error;
+      toast.success("Seguidores atualizados!");
+      setEditingPageId(null);
+      refetchSocialPages();
+      qc.invalidateQueries({ queryKey: ["social_pages_insights"] });
+    } catch (err: any) {
+      toast.error(err.message || "Erro ao salvar seguidores.");
+    } finally {
+      setSavingFollowers(false);
+    }
+  };
   // Google Ads state
   const { data: googleConfigs, isLoading: loadingGoogle, refetch: refetchGoogle } = useQuery({
     queryKey: ["google_ads_configs"],
@@ -411,11 +445,69 @@ function TabIntegracoes() {
                   <div>
                     <p className="text-sm font-bold">{sp.page_name}</p>
                     <p className="text-[9px] text-muted-foreground uppercase tracking-widest">ID: {sp.page_id}</p>
-                    {sp.instagram_handle && (
-                      <span className="inline-flex items-center gap-1 rounded bg-pink-500/10 border border-pink-500/20 px-1.5 py-0.5 text-[9px] font-bold text-pink-500 mt-1">
-                        <Instagram className="h-2.5 w-2.5" /> @{sp.instagram_handle}
-                      </span>
-                    )}
+                    <div className="flex items-center gap-2 mt-1">
+                      {sp.instagram_handle && (
+                        <span className="inline-flex items-center gap-1 rounded bg-pink-500/10 border border-pink-500/20 px-1.5 py-0.5 text-[9px] font-bold text-pink-500">
+                          <Instagram className="h-2.5 w-2.5" /> @{sp.instagram_handle}
+                        </span>
+                      )}
+                    </div>
+                    
+                    {/* Editor de seguidores inline */}
+                    <div className="mt-2 pt-2 border-t border-white/5">
+                      {editingPageId === sp.id ? (
+                        <div className="flex items-center gap-2 flex-wrap bg-white/[0.03] p-2 rounded-lg border border-white/5">
+                          <div className="flex items-center gap-1">
+                            <span className="text-[10px] text-muted-foreground">FB:</span>
+                            <input
+                              type="number"
+                              value={editFB}
+                              onChange={(e) => setEditFB(Math.max(0, parseInt(e.target.value) || 0))}
+                              className="w-16 bg-background border border-white/10 rounded px-1.5 py-0.5 text-xs text-white font-bold"
+                            />
+                          </div>
+                          <div className="flex items-center gap-1">
+                            <span className="text-[10px] text-muted-foreground">IG:</span>
+                            <input
+                              type="number"
+                              value={editIG}
+                              onChange={(e) => setEditIG(Math.max(0, parseInt(e.target.value) || 0))}
+                              className="w-16 bg-background border border-white/10 rounded px-1.5 py-0.5 text-xs text-white font-bold"
+                            />
+                          </div>
+                          <div className="flex items-center gap-1.5 ml-2">
+                            <button
+                              onClick={() => saveFollowers(sp.id)}
+                              disabled={savingFollowers}
+                              className="p-1 rounded bg-success/20 hover:bg-success/30 text-success text-[10px] font-bold transition flex items-center gap-0.5"
+                            >
+                              {savingFollowers ? <Loader2 className="h-2.5 w-2.5 animate-spin" /> : <Check className="h-2.5 w-2.5" />}
+                              Salvar
+                            </button>
+                            <button
+                              onClick={() => setEditingPageId(null)}
+                              className="p-1 rounded bg-white/5 hover:bg-white/10 text-muted-foreground text-[10px] font-medium transition"
+                            >
+                              Cancelar
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-3">
+                          <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
+                            <span>FB: <strong className="text-white">{sp.facebook_followers?.toLocaleString("pt-BR") || 0}</strong> seg.</span>
+                            <span>•</span>
+                            <span>IG: <strong className="text-white">{sp.instagram_followers?.toLocaleString("pt-BR") || 0}</strong> seg.</span>
+                          </div>
+                          <button
+                            onClick={() => startEdit(sp)}
+                            className="text-[9px] font-bold text-primary hover:underline transition uppercase tracking-wider ml-1"
+                          >
+                            [Editar]
+                          </button>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
                 <div className="flex items-center gap-3">
