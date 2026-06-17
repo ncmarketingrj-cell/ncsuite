@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Settings, User, Building2, Plug, BookOpen, Cpu, Plus, Trash2, Check, X, Loader2, Wifi, WifiOff, ChevronDown, Zap, Brain, LayoutDashboard, FileText, Target, Upload, Send, Users, Database, Lock, MessageSquareWarning, Bug, Lightbulb, Frown, HelpCircle, StickyNote, Filter, Eye, Clock, Megaphone } from "lucide-react";
+import { Settings, User, Building2, Plug, BookOpen, Cpu, Plus, Trash2, Globe, Check, X, Loader2, Wifi, WifiOff, ChevronDown, Zap, Brain, LayoutDashboard, FileText, Target, Upload, Send, Users, Database, Lock, MessageSquareWarning, Bug, Lightbulb, Frown, HelpCircle, StickyNote, Filter, Eye, Clock, Megaphone } from "lucide-react";
 import { SyncButton } from "@/components/SyncButton";
 import { toast } from "sonner";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -976,7 +976,7 @@ function TabUsuarios({ isAdmin }: { isAdmin: boolean }) {
     }
     if (!confirm("Tem certeza que deseja excluir permanentemente este usuário da Suite? Esta ação não pode ser desfeita.")) return;
     try {
-      const { error } = await supabase.rpc("admin_delete_user", { target_user_id: userId });
+      const { error } = await (supabase as any).rpc("admin_delete_user", { target_user_id: userId });
       if (error) throw error;
       toast.success("Usuário excluído com sucesso!");
       qc.invalidateQueries({ queryKey: ["admin_users_list"] });
@@ -993,7 +993,7 @@ function TabUsuarios({ isAdmin }: { isAdmin: boolean }) {
     }
     setSaving(true);
     try {
-      const { error } = await supabase.rpc("admin_update_user", {
+      const { error } = await (supabase as any).rpc("admin_update_user", {
         target_user_id: editingUser.id,
         new_role: editRole,
         new_position: editPosition,
