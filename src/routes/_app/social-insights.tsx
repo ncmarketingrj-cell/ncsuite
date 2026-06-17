@@ -35,50 +35,72 @@ function getDeterministicMetrics(
     seed += combinedStr.charCodeAt(i);
   }
   
-  const d1 = new Date(dateFromStr);
-  const d2 = new Date(dateToStr);
+  const d1 = new Date(dateFromStr + "T00:00:00");
+  const d2 = new Date(dateToStr + "T00:00:00");
+  
   const diffTime = Math.abs(d2.getTime() - d1.getTime());
   const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
 
-  // Base values adjusted by seed, override with real counts if they exist
+  // Base followers
   const baseFollowers = 2000 + (seed % 17) * 2500 + (seed % 7) * 400;
   const instaFollowers = isMockToken ? Math.round(baseFollowers * 0.65) : (actualInstaFollowers || 0);
   const fbFollowers = isMockToken ? Math.round(baseFollowers * 0.35) : (actualFbFollowers || 0);
-
-  // Scale factor based on the real followers count (baseline of 5000 followers)
   const realFollowers = fbFollowers + instaFollowers;
   const scaleFactor = isMockToken ? 1.0 : Math.max(0.01, realFollowers / 5000);
-
-  const dailyReach = Math.round((100 + (seed % 13) * 150 + (seed % 5) * 50) * scaleFactor);
-  const dailyVisits = Math.round(dailyReach * 0.25);
-  const dailyEngage = Math.round(dailyReach * 0.08);
-
-  const totalReachInsta = Math.round(dailyReach * diffDays * 0.7);
-  const totalReachFb = Math.round(dailyReach * diffDays * 0.3);
-
-  const totalVisitsInsta = Math.round(dailyVisits * diffDays * 0.72);
-  const totalVisitsFb = Math.round(dailyVisits * diffDays * 0.28);
-
-  const totalEngageInsta = Math.round(dailyEngage * diffDays * 0.75);
-  const totalEngageFb = Math.round(dailyEngage * diffDays * 0.25);
 
   const growthInstaFollowers = parseFloat((-3 + (seed % 11) * 1.8).toFixed(1));
   const growthFbFollowers = parseFloat((-4 + (seed % 7) * 1.5).toFixed(1));
 
-  const newFollowersFbDaily = Math.max(0.05, (fbFollowers * 0.0025) + (seed % 3) * 0.1);
-  const newFollowersInstaDaily = Math.max(0.08, (instaFollowers * 0.0045) + (seed % 5) * 0.15);
+  let totalReachInsta = 0;
+  let totalReachFb = 0;
+  let totalVisitsInsta = 0;
+  let totalVisitsFb = 0;
+  let totalEngageInsta = 0;
+  let totalEngageFb = 0;
+  let totalNewFollowersFb = 0;
+  let totalNewFollowersInsta = 0;
 
-  const newFollowersFb = fbFollowers > 0 ? Math.round(newFollowersFbDaily * diffDays) : 0;
-  const newFollowersInsta = instaFollowers > 0 ? Math.round(newFollowersInstaDaily * diffDays) : 0;
+  // Loop through each day in the date range to calculate metrics
+  let currentDate = new Date(d1);
+  for (let d = 0; d < diffDays; d++) {
+    const dayStr = currentDate.toISOString().split("T")[0];
+    let daySeed = seed;
+    for (let charIdx = 0; charIdx < dayStr.length; charIdx++) {
+      daySeed += dayStr.charCodeAt(charIdx);
+    }
+    
+    // Daily metric calculation
+    const dailyReach = Math.round((120 + (daySeed % 15) * 120 + (daySeed % 7) * 40) * scaleFactor);
+    const dailyVisits = Math.round(dailyReach * (0.2 + (daySeed % 10) * 0.01));
+    const dailyEngage = Math.round(dailyReach * (0.06 + (daySeed % 8) * 0.005));
+    
+    totalReachInsta += Math.round(dailyReach * 0.7);
+    totalReachFb += Math.round(dailyReach * 0.3);
+    
+    totalVisitsInsta += Math.round(dailyVisits * 0.72);
+    totalVisitsFb += Math.round(dailyVisits * 0.28);
+    
+    totalEngageInsta += Math.round(dailyEngage * 0.75);
+    totalEngageFb += Math.round(dailyEngage * 0.25);
+
+    const newFollowersFbDaily = Math.max(0.05, (fbFollowers * 0.0025) + (daySeed % 3) * 0.1);
+    const newFollowersInstaDaily = Math.max(0.08, (instaFollowers * 0.0045) + (daySeed % 5) * 0.15);
+
+    totalNewFollowersFb += fbFollowers > 0 ? Math.round(newFollowersFbDaily) : 0;
+    totalNewFollowersInsta += instaFollowers > 0 ? Math.round(newFollowersInstaDaily) : 0;
+    
+    currentDate.setDate(currentDate.getDate() + 1);
+  }
 
   const growthInstaReach = parseFloat((-5 + (seed % 13) * 2.2).toFixed(1));
   const growthFbReach = parseFloat((-6 + (seed % 9) * 1.9).toFixed(1));
-
   const growthInstaVisits = parseFloat((-3 + (seed % 8) * 1.7).toFixed(1));
   const growthFbVisits = parseFloat((-4 + (seed % 6) * 1.4).toFixed(1));
-
   const growthInstaEng = parseFloat((-2 + (seed % 10) * 1.6).toFixed(1));
   const growthFbEng = parseFloat((-5 + (seed % 7) * 1.3).toFixed(1));
+
+  const totalReachCombined = totalReachInsta + totalReachFb;
+  const totalEngageCombined = totalEngageInsta + totalEngageFb;
 
   const topPosts = [
     { 
@@ -86,9 +108,9 @@ function getDeterministicMetrics(
       title: `Lançamento Especial — ${pageName || "Estoque"}`, 
       type: "reels", 
       platform: "instagram", 
-      reach: Math.round(dailyReach * diffDays * 0.45), 
-      likes: Math.round(dailyEngage * diffDays * 0.35), 
-      comments: Math.round(dailyEngage * diffDays * 0.08), 
+      reach: Math.round(totalReachCombined * 0.45), 
+      likes: Math.round(totalEngageCombined * 0.35), 
+      comments: Math.round(totalEngageCombined * 0.08), 
       engRate: parseFloat((5.5 + (seed % 5) * 0.6).toFixed(1)) 
     },
     { 
@@ -96,9 +118,9 @@ function getDeterministicMetrics(
       title: `Oferta da Semana na ${pageName || "Loja"}`, 
       type: "feed", 
       platform: "both", 
-      reach: Math.round(dailyReach * diffDays * 0.35), 
-      likes: Math.round(dailyEngage * diffDays * 0.25), 
-      comments: Math.round(dailyEngage * diffDays * 0.12), 
+      reach: Math.round(totalReachCombined * 0.35), 
+      likes: Math.round(totalEngageCombined * 0.25), 
+      comments: Math.round(totalEngageCombined * 0.12), 
       engRate: parseFloat((4.8 + (seed % 7) * 0.5).toFixed(1)) 
     },
     { 
@@ -106,15 +128,15 @@ function getDeterministicMetrics(
       title: `Dicas de Manutenção Automotiva`, 
       type: "stories", 
       platform: "instagram", 
-      reach: Math.round(dailyReach * diffDays * 0.2), 
-      likes: Math.round(dailyEngage * diffDays * 0.1), 
-      comments: Math.round(dailyEngage * diffDays * 0.02), 
-      engRate: parseFloat((3.0 + (seed % 3) * 0.4).toFixed(1)) 
+      reach: Math.round(totalReachCombined * 0.2), 
+      likes: Math.round(totalEngageCombined * 0.1), 
+      comments: Math.round(totalEngageCombined * 0.05), 
+      engRate: parseFloat((6.2 + (seed % 9) * 0.4).toFixed(1)) 
     }
   ];
 
-  const malePct = 50 + (seed % 25);
-  const femalePct = 100 - malePct;
+  const malePct = 52;
+  const femalePct = 48;
   const age = [
     { range: "18-24", pct: 10 + (seed % 8) },
     { range: "25-34", pct: 35 + (seed % 12) },
@@ -133,8 +155,8 @@ function getDeterministicMetrics(
     followers_facebook: fbFollowers,
     followers_growth_insta: growthInstaFollowers,
     followers_growth_fb: growthFbFollowers,
-    new_followers_instagram: newFollowersInsta,
-    new_followers_facebook: newFollowersFb,
+    new_followers_instagram: totalNewFollowersInsta,
+    new_followers_facebook: totalNewFollowersFb,
     reach_instagram: totalReachInsta,
     reach_facebook: totalReachFb,
     reach_growth_insta: growthInstaReach,
@@ -257,13 +279,34 @@ function SocialInsightsPage() {
       seed += combinedStr.charCodeAt(i);
     }
 
+    const d1 = new Date(dateFrom + "T00:00:00");
     const data: number[] = [];
+    
+    // Scale factor based on page selection
+    let scaleFactor = 1.0;
+    if (selectedPage !== "all" && selectedPageObj) {
+      const realFollowers = (selectedPageObj.facebook_followers || 0) + (selectedPageObj.instagram_followers || 0);
+      scaleFactor = isMockToken ? 1.0 : Math.max(0.01, realFollowers / 5000);
+    } else if (selectedPage === "all" && socialPages.length > 0) {
+      const realFollowers = socialPages.reduce((acc: number, sp: any) => acc + (sp.facebook_followers || 0) + (sp.instagram_followers || 0), 0);
+      scaleFactor = isMockToken ? 1.0 : Math.max(0.01, realFollowers / (5000 * socialPages.length));
+    }
+
+    let currentDate = new Date(d1);
     for (let i = 0; i < diffDays; i++) {
-      const val = 50 + (seed % 20) + Math.round(Math.sin((i + seed) * 0.5) * 20) + (i % 7) * 5 + (i % 3) * 10;
+      const dayStr = currentDate.toISOString().split("T")[0];
+      let daySeed = seed;
+      for (let charIdx = 0; charIdx < dayStr.length; charIdx++) {
+        daySeed += dayStr.charCodeAt(charIdx);
+      }
+      
+      const val = Math.round((120 + (daySeed % 15) * 120 + (daySeed % 7) * 40) * scaleFactor);
       data.push(Math.max(10, val));
+      
+      currentDate.setDate(currentDate.getDate() + 1);
     }
     return data;
-  }, [selectedPage, selectedPageObj, diffDays]);
+  }, [selectedPage, selectedPageObj, socialPages, dateFrom, dateTo, diffDays, isMockToken]);
 
   const maxSparklineVal = Math.max(...sparklineData, 1);
 
@@ -544,13 +587,13 @@ function SocialInsightsPage() {
               
               {/* Graphic bars representing day-by-day stats */}
               {sparklineData.map((h, i) => (
-                <div key={i} className="flex-1 flex flex-col items-center gap-1 group relative cursor-pointer z-10">
+                <div key={i} className="flex-1 h-full flex flex-col justify-end items-center gap-1 group relative cursor-pointer z-10">
                   {/* Tooltip */}
                   <div className="absolute bottom-full mb-1 opacity-0 group-hover:opacity-100 transition-opacity bg-card border border-white/10 px-2 py-1 rounded text-[8px] font-mono whitespace-nowrap pointer-events-none">
-                    Alcance: {Math.round(h * 15).toLocaleString("pt-BR")}
+                    Alcance: {Math.round(h).toLocaleString("pt-BR")}
                   </div>
                   <div 
-                    style={{ height: `${(h / maxSparklineVal) * 100}%` }}
+                    style={{ height: `${Math.round((h / maxSparklineVal) * 85)}%` }}
                     className="w-full bg-gradient-to-t from-primary/30 to-primary rounded-t-sm group-hover:from-primary group-hover:to-pink-500 transition-all duration-300"
                   />
                   <span className="text-[7px] text-muted-foreground/60 font-mono hidden md:inline">{i + 1}</span>
