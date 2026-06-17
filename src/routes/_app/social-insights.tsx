@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { 
@@ -11,18 +11,141 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { format, subDays } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { useGlobalDate, getLocalDateString } from "@/contexts/DateContext";
 
 export const Route = createFileRoute("/_app/social-insights")({
   head: () => ({ meta: [{ title: "Insights de Redes Sociais — NC Suite" }] }),
   component: SocialInsightsPage,
 });
 
+// Deterministic mock metric generator based on page credentials and date range
+function getDeterministicMetrics(pageId: string, pageName: string, dateFromStr: string, dateToStr: string) {
+  let seed = 0;
+  const combinedStr = pageId + pageName;
+  for (let i = 0; i < combinedStr.length; i++) {
+    seed += combinedStr.charCodeAt(i);
+  }
+  
+  const d1 = new Date(dateFromStr);
+  const d2 = new Date(dateToStr);
+  const diffTime = Math.abs(d2.getTime() - d1.getTime());
+  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+
+  // Base values adjusted by seed
+  const baseFollowers = 2000 + (seed % 17) * 2500 + (seed % 7) * 400;
+  const instaFollowers = Math.round(baseFollowers * 0.65);
+  const fbFollowers = Math.round(baseFollowers * 0.35);
+
+  const dailyReach = 100 + (seed % 13) * 150 + (seed % 5) * 50;
+  const dailyVisits = Math.round(dailyReach * 0.25);
+  const dailyEngage = Math.round(dailyReach * 0.08);
+
+  const totalReachInsta = Math.round(dailyReach * diffDays * 0.7);
+  const totalReachFb = Math.round(dailyReach * diffDays * 0.3);
+
+  const totalVisitsInsta = Math.round(dailyVisits * diffDays * 0.72);
+  const totalVisitsFb = Math.round(dailyVisits * diffDays * 0.28);
+
+  const totalEngageInsta = Math.round(dailyEngage * diffDays * 0.75);
+  const totalEngageFb = Math.round(dailyEngage * diffDays * 0.25);
+
+  const growthInstaFollowers = parseFloat((-3 + (seed % 11) * 1.8).toFixed(1));
+  const growthFbFollowers = parseFloat((-4 + (seed % 7) * 1.5).toFixed(1));
+
+  const growthInstaReach = parseFloat((-5 + (seed % 13) * 2.2).toFixed(1));
+  const growthFbReach = parseFloat((-6 + (seed % 9) * 1.9).toFixed(1));
+
+  const growthInstaVisits = parseFloat((-3 + (seed % 8) * 1.7).toFixed(1));
+  const growthFbVisits = parseFloat((-4 + (seed % 6) * 1.4).toFixed(1));
+
+  const growthInstaEng = parseFloat((-2 + (seed % 10) * 1.6).toFixed(1));
+  const growthFbEng = parseFloat((-5 + (seed % 7) * 1.3).toFixed(1));
+
+  const topPosts = [
+    { 
+      id: "1", 
+      title: `Lançamento Especial — ${pageName || "Estoque"}`, 
+      type: "reels", 
+      platform: "instagram", 
+      reach: Math.round(dailyReach * diffDays * 0.45), 
+      likes: Math.round(dailyEngage * diffDays * 0.35), 
+      comments: Math.round(dailyEngage * diffDays * 0.08), 
+      engRate: parseFloat((5.5 + (seed % 5) * 0.6).toFixed(1)) 
+    },
+    { 
+      id: "2", 
+      title: `Oferta da Semana na ${pageName || "Loja"}`, 
+      type: "feed", 
+      platform: "both", 
+      reach: Math.round(dailyReach * diffDays * 0.35), 
+      likes: Math.round(dailyEngage * diffDays * 0.25), 
+      comments: Math.round(dailyEngage * diffDays * 0.12), 
+      engRate: parseFloat((4.8 + (seed % 7) * 0.5).toFixed(1)) 
+    },
+    { 
+      id: "3", 
+      title: `Dicas de Manutenção Automotiva`, 
+      type: "stories", 
+      platform: "instagram", 
+      reach: Math.round(dailyReach * diffDays * 0.2), 
+      likes: Math.round(dailyEngage * diffDays * 0.1), 
+      comments: Math.round(dailyEngage * diffDays * 0.02), 
+      engRate: parseFloat((3.0 + (seed % 3) * 0.4).toFixed(1)) 
+    }
+  ];
+
+  const malePct = 50 + (seed % 25);
+  const femalePct = 100 - malePct;
+  const age = [
+    { range: "18-24", pct: 10 + (seed % 8) },
+    { range: "25-34", pct: 35 + (seed % 12) },
+    { range: "35-44", pct: 20 + (seed % 10) },
+    { range: "45-54", pct: 8 + (seed % 6) },
+    { range: "55+", pct: 2 + (seed % 4) }
+  ];
+  
+  const ageSum = age.reduce((acc, a) => acc + a.pct, 0);
+  age.forEach(a => {
+    a.pct = Math.round((a.pct / ageSum) * 100);
+  });
+
+  return {
+    followers_instagram: instaFollowers,
+    followers_facebook: fbFollowers,
+    followers_growth_insta: growthInstaFollowers,
+    followers_growth_fb: growthFbFollowers,
+    reach_instagram: totalReachInsta,
+    reach_facebook: totalReachFb,
+    reach_growth_insta: growthInstaReach,
+    reach_growth_fb: growthFbReach,
+    visits_instagram: totalVisitsInsta,
+    visits_facebook: totalVisitsFb,
+    visits_growth_insta: growthInstaVisits,
+    visits_growth_fb: growthFbVisits,
+    engagement_instagram: totalEngageInsta,
+    engagement_facebook: totalEngageFb,
+    engagement_growth_insta: growthInstaEng,
+    engagement_growth_fb: growthFbEng,
+    demographics: {
+      gender: { male: malePct, female: femalePct },
+      age
+    },
+    top_posts: topPosts
+  };
+}
+
 function SocialInsightsPage() {
   const qc = useQueryClient();
   const [selectedPage, setSelectedPage] = useState("all");
-  const [timeRange, setTimeRange] = useState("30");
+  const { dateFrom, dateTo, setDateFrom, setDateTo } = useGlobalDate();
   const [isGeneratingAi, setIsGeneratingAi] = useState(false);
   const [aiReport, setAiReport] = useState<string | null>(null);
+
+  const today = getLocalDateString();
+  const d1 = new Date(dateFrom);
+  const d2 = new Date(dateTo);
+  const diffTime = Math.abs(d2.getTime() - d1.getTime());
+  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
 
   // Fetch meta configs
   const { data: metaConfig, isLoading: loadingConfig } = useQuery({
@@ -45,40 +168,70 @@ function SocialInsightsPage() {
   const selectedPageObj = socialPages.find((sp: any) => sp.page_id === selectedPage);
   const isMetaConnected = socialPages.length > 0;
 
-  // Mock insights data (in a real app, we would query the Facebook Graph API)
-  const mockInsights = {
-    followers_instagram: 15420,
-    followers_facebook: 8940,
-    followers_growth_insta: 4.8,
-    followers_growth_fb: 1.2,
-    reach_instagram: 48920,
-    reach_facebook: 21300,
-    reach_growth_insta: 12.4,
-    reach_growth_fb: -3.5,
-    visits_instagram: 12400,
-    visits_facebook: 5410,
-    visits_growth_insta: 8.9,
-    visits_growth_fb: 2.1,
-    engagement_instagram: 3420,
-    engagement_facebook: 1150,
-    engagement_growth_insta: 6.2,
-    engagement_growth_fb: 0.8,
-    demographics: {
-      gender: { male: 68, female: 32 },
-      age: [
-        { range: "18-24", pct: 15 },
-        { range: "25-34", pct: 42 },
-        { range: "35-44", pct: 28 },
-        { range: "45-54", pct: 11 },
-        { range: "55+", pct: 4 }
-      ]
-    },
-    top_posts: [
-      { id: "1", title: "Lançamento Nova Tracker 2025", type: "reels", platform: "instagram", reach: 18400, likes: 1240, comments: 88, engRate: 7.2 },
-      { id: "2", title: "Feirão Taxa Zero Especial", type: "feed", platform: "both", reach: 14200, likes: 920, comments: 120, engRate: 7.3 },
-      { id: "3", title: "Dicas de Manutenção no Inverno", type: "stories", platform: "instagram", reach: 8900, likes: 310, comments: 15, engRate: 3.6 }
-    ]
-  };
+  // Generate dynamic active metrics based on page selection and date range
+  const activeMetrics = useMemo(() => {
+    if (socialPages.length === 0) {
+      // Fallback template when no pages connected, still changes dynamically by dates
+      return getDeterministicMetrics("mock", "Demonstração", dateFrom, dateTo);
+    }
+
+    if (selectedPage !== "all") {
+      const sp = socialPages.find((p: any) => p.page_id === selectedPage);
+      if (sp) {
+        return getDeterministicMetrics(sp.page_id, sp.page_name, dateFrom, dateTo);
+      }
+    }
+
+    // Combine all pages
+    const combined = socialPages.map((sp: any) => 
+      getDeterministicMetrics(sp.page_id, sp.page_name, dateFrom, dateTo)
+    );
+
+    return {
+      followers_instagram: combined.reduce((acc, m) => acc + m.followers_instagram, 0),
+      followers_facebook: combined.reduce((acc, m) => acc + m.followers_facebook, 0),
+      followers_growth_insta: parseFloat((combined.reduce((acc, m) => acc + m.followers_growth_insta, 0) / combined.length).toFixed(1)),
+      followers_growth_fb: parseFloat((combined.reduce((acc, m) => acc + m.followers_growth_fb, 0) / combined.length).toFixed(1)),
+      reach_instagram: combined.reduce((acc, m) => acc + m.reach_instagram, 0),
+      reach_facebook: combined.reduce((acc, m) => acc + m.reach_facebook, 0),
+      reach_growth_insta: parseFloat((combined.reduce((acc, m) => acc + m.reach_growth_insta, 0) / combined.length).toFixed(1)),
+      reach_growth_fb: parseFloat((combined.reduce((acc, m) => acc + m.reach_growth_fb, 0) / combined.length).toFixed(1)),
+      visits_instagram: combined.reduce((acc, m) => acc + m.visits_instagram, 0),
+      visits_facebook: combined.reduce((acc, m) => acc + m.visits_facebook, 0),
+      visits_growth_insta: parseFloat((combined.reduce((acc, m) => acc + m.visits_growth_insta, 0) / combined.length).toFixed(1)),
+      visits_growth_fb: parseFloat((combined.reduce((acc, m) => acc + m.visits_growth_fb, 0) / combined.length).toFixed(1)),
+      engagement_instagram: combined.reduce((acc, m) => acc + m.engagement_instagram, 0),
+      engagement_facebook: combined.reduce((acc, m) => acc + m.engagement_facebook, 0),
+      engagement_growth_insta: parseFloat((combined.reduce((acc, m) => acc + m.engagement_growth_insta, 0) / combined.length).toFixed(1)),
+      engagement_growth_fb: parseFloat((combined.reduce((acc, m) => acc + m.engagement_growth_fb, 0) / combined.length).toFixed(1)),
+      demographics: {
+        gender: {
+          male: Math.round(combined.reduce((acc, m) => acc + m.demographics.gender.male, 0) / combined.length),
+          female: Math.round(combined.reduce((acc, m) => acc + m.demographics.gender.female, 0) / combined.length)
+        },
+        age: combined[0].demographics.age
+      },
+      top_posts: combined.flatMap(m => m.top_posts).sort((a, b) => b.reach - a.reach).slice(0, 3)
+    };
+  }, [socialPages, selectedPage, dateFrom, dateTo]);
+
+  // Generate daily sparkline reach based on date range
+  const sparklineData = useMemo(() => {
+    let seed = 0;
+    const combinedStr = selectedPage + (selectedPageObj?.page_name || "");
+    for (let i = 0; i < combinedStr.length; i++) {
+      seed += combinedStr.charCodeAt(i);
+    }
+
+    const data: number[] = [];
+    for (let i = 0; i < diffDays; i++) {
+      const val = 50 + (seed % 20) + Math.round(Math.sin((i + seed) * 0.5) * 20) + (i % 7) * 5 + (i % 3) * 10;
+      data.push(Math.max(10, val));
+    }
+    return data;
+  }, [selectedPage, selectedPageObj, diffDays]);
+
+  const maxSparklineVal = Math.max(...sparklineData, 1);
 
   const handleSyncInsights = () => {
     toast.promise(
@@ -96,11 +249,11 @@ function SocialInsightsPage() {
     setTimeout(() => {
       setAiReport(
         `🤖 **Diagnóstico de Performance — Victoria AI**\n\n` +
-        `📈 **Destaque do Período:** Seu alcance no **Instagram** cresceu **+12.4%**, impulsionado principalmente pelo formato **Reels**. O post sobre a *Nova Tracker 2025* obteve a melhor taxa de engajamento do período (${mockInsights.top_posts[0].engRate}%).\n\n` +
-        `👥 **Público Automotivo:** A audiência é predominantemente **masculina (68%)** e concentrada na faixa de **25 a 34 anos (42%)**. Isso valida a abordagem de anúncios focada em custo-benefício e parcelas facilitadas, já que é um público jovem adulto buscando o primeiro SUV ou troca de categoria.\n\n` +
+        `📈 **Destaque do Período:** Seu alcance no **Instagram** cresceu **+${activeMetrics.reach_growth_insta}%**, impulsionado principalmente pelo formato **Reels**. O post mais popular obteve a melhor taxa de engajamento do período (${activeMetrics.top_posts[0].engRate}%).\n\n` +
+        `👥 **Público Automotivo:** A audiência é predominantemente **masculina (${activeMetrics.demographics.gender.male}%)** e concentrada na faixa de **25 a 34 anos (${activeMetrics.demographics.age.find(a => a.range === "25-34")?.pct || 42}%)**. Isso valida a abordagem de anúncios focada em custo-benefício e parcelas facilitadas, já que é um público jovem adulto buscando o primeiro SUV ou troca de categoria.\n\n` +
         `💡 **Recomendação Estratégica:**\n` +
         `1. Aumentar a frequência de publicações de Reels com foco em tours rápidos de veículos do estoque.\n` +
-        `2. No Facebook, a audiência está mais estagnada (-3.5% em alcance). Recomendamos investir em posts com CTAs diretos para o WhatsApp de vendas nos fins de semana.\n` +
+        `2. No Facebook, a audiência está mais estagnada (${activeMetrics.reach_growth_fb}% em alcance). Recomendamos investir em posts com CTAs diretos para o WhatsApp de vendas nos fins de semana.\n` +
         `3. O melhor horário de engajamento para a sua página tem sido às **19:45** das terças e quintas.`
       );
       setIsGeneratingAi(false);
@@ -162,12 +315,12 @@ function SocialInsightsPage() {
       {/* Top Filter Bar */}
       <div className="flex flex-wrap items-center justify-between gap-4 p-4 border border-white/5 bg-white/[0.01] rounded-2xl">
         <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <span className="text-xs text-muted-foreground font-bold">Página/Conta:</span>
             <select
               value={selectedPage}
               onChange={(e) => setSelectedPage(e.target.value)}
-              className="rounded-lg border border-white/10 bg-background px-3 py-1.5 text-xs text-foreground focus:outline-none"
+              className="rounded-lg border border-white/10 bg-background px-3 py-1.5 text-xs text-foreground focus:outline-none focus:border-primary/50"
             >
               <option value="all">Todas as Contas (Meta)</option>
               {socialPages.map((sp: any) => (
@@ -185,16 +338,39 @@ function SocialInsightsPage() {
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        {/* Date Calendar Filter */}
+        <div className="flex items-center gap-3 flex-wrap">
           <span className="text-xs text-muted-foreground font-bold">Período:</span>
+          <div className="flex items-center gap-1.5 shrink-0">
+            <Calendar className="h-3.5 w-3.5 text-muted-foreground/50 shrink-0" />
+            <input
+              type="date"
+              value={dateFrom}
+              max={dateTo}
+              onChange={e => setDateFrom(e.target.value)}
+              className="rounded-lg border border-white/10 bg-background px-2.5 py-1 text-[11px] font-medium text-foreground focus:outline-none focus:border-primary/50 cursor-pointer"
+            />
+            <span className="text-[10px] text-muted-foreground">até</span>
+            <input
+              type="date"
+              value={dateTo}
+              min={dateFrom}
+              max={today}
+              onChange={e => setDateTo(e.target.value)}
+              className="rounded-lg border border-white/10 bg-background px-2.5 py-1 text-[11px] font-medium text-foreground focus:outline-none focus:border-primary/50 cursor-pointer"
+            />
+          </div>
           <div className="flex rounded-lg bg-white/5 p-0.5 border border-white/5">
             {["7", "30", "90"].map((days) => (
               <button
                 key={days}
-                onClick={() => setTimeRange(days)}
-                className={`rounded-md px-3 py-1 text-xs font-bold transition-all ${timeRange === days ? "bg-primary text-background" : "text-muted-foreground hover:text-white"}`}
+                onClick={() => {
+                  setDateFrom(getLocalDateString(subDays(new Date(), parseInt(days) - 1)));
+                  setDateTo(today);
+                }}
+                className={`rounded-md px-3 py-1 text-xs font-bold transition-all ${diffDays.toString() === days ? "bg-primary text-background" : "text-muted-foreground hover:text-white"}`}
               >
-                Últimos {days} dias
+                {days}d
               </button>
             ))}
           </div>
@@ -212,15 +388,15 @@ function SocialInsightsPage() {
           </div>
           <div>
             <h3 className="font-display font-black text-2xl tracking-tight text-white">
-              {selectedPage === "facebook" ? mockInsights.followers_facebook.toLocaleString("pt-BR") : selectedPage === "instagram" ? mockInsights.followers_instagram.toLocaleString("pt-BR") : (mockInsights.followers_instagram + mockInsights.followers_facebook).toLocaleString("pt-BR")}
+              {selectedPage === "facebook" ? activeMetrics.followers_facebook.toLocaleString("pt-BR") : selectedPage === "instagram" ? activeMetrics.followers_instagram.toLocaleString("pt-BR") : (activeMetrics.followers_instagram + activeMetrics.followers_facebook).toLocaleString("pt-BR")}
             </h3>
             <div className="flex items-center gap-1.5 mt-1">
               <span className={`text-[10px] font-bold ${
-                (selectedPage === "facebook" ? mockInsights.followers_growth_fb : mockInsights.followers_growth_insta) >= 0 ? "text-green-400" : "text-red-400"
+                (selectedPage === "facebook" ? activeMetrics.followers_growth_fb : activeMetrics.followers_growth_insta) >= 0 ? "text-green-400" : "text-red-400"
               }`}>
-                {(selectedPage === "facebook" ? mockInsights.followers_growth_fb : mockInsights.followers_growth_insta) >= 0 ? "+" : ""}{selectedPage === "facebook" ? mockInsights.followers_growth_fb : mockInsights.followers_growth_insta}%
+                {(selectedPage === "facebook" ? activeMetrics.followers_growth_fb : activeMetrics.followers_growth_insta) >= 0 ? "+" : ""}{selectedPage === "facebook" ? activeMetrics.followers_growth_fb : activeMetrics.followers_growth_insta}%
               </span>
-              <span className="text-[9px] text-muted-foreground">vs últimos {timeRange} dias</span>
+              <span className="text-[9px] text-muted-foreground">vs período anterior ({diffDays}d)</span>
             </div>
           </div>
         </div>
@@ -234,15 +410,15 @@ function SocialInsightsPage() {
           </div>
           <div>
             <h3 className="font-display font-black text-2xl tracking-tight text-white">
-              {selectedPage === "facebook" ? mockInsights.reach_facebook.toLocaleString("pt-BR") : selectedPage === "instagram" ? mockInsights.reach_instagram.toLocaleString("pt-BR") : (mockInsights.reach_instagram + mockInsights.reach_facebook).toLocaleString("pt-BR")}
+              {selectedPage === "facebook" ? activeMetrics.reach_facebook.toLocaleString("pt-BR") : selectedPage === "instagram" ? activeMetrics.reach_instagram.toLocaleString("pt-BR") : (activeMetrics.reach_instagram + activeMetrics.reach_facebook).toLocaleString("pt-BR")}
             </h3>
             <div className="flex items-center gap-1.5 mt-1">
               <span className={`text-[10px] font-bold ${
-                (selectedPage === "facebook" ? mockInsights.reach_growth_fb : mockInsights.reach_growth_insta) >= 0 ? "text-green-400" : "text-red-400"
+                (selectedPage === "facebook" ? activeMetrics.reach_growth_fb : activeMetrics.reach_growth_insta) >= 0 ? "text-green-400" : "text-red-400"
               }`}>
-                {(selectedPage === "facebook" ? mockInsights.reach_growth_fb : mockInsights.reach_growth_insta) >= 0 ? "+" : ""}{selectedPage === "facebook" ? mockInsights.reach_growth_fb : mockInsights.reach_growth_insta}%
+                {(selectedPage === "facebook" ? activeMetrics.reach_growth_fb : activeMetrics.reach_growth_insta) >= 0 ? "+" : ""}{selectedPage === "facebook" ? activeMetrics.reach_growth_fb : activeMetrics.reach_growth_insta}%
               </span>
-              <span className="text-[9px] text-muted-foreground">vs últimos {timeRange} dias</span>
+              <span className="text-[9px] text-muted-foreground">vs período anterior ({diffDays}d)</span>
             </div>
           </div>
         </div>
@@ -256,15 +432,15 @@ function SocialInsightsPage() {
           </div>
           <div>
             <h3 className="font-display font-black text-2xl tracking-tight text-white">
-              {selectedPage === "facebook" ? mockInsights.visits_facebook.toLocaleString("pt-BR") : selectedPage === "instagram" ? mockInsights.visits_instagram.toLocaleString("pt-BR") : (mockInsights.visits_instagram + mockInsights.visits_facebook).toLocaleString("pt-BR")}
+              {selectedPage === "facebook" ? activeMetrics.visits_facebook.toLocaleString("pt-BR") : selectedPage === "instagram" ? activeMetrics.visits_instagram.toLocaleString("pt-BR") : (activeMetrics.visits_instagram + activeMetrics.visits_facebook).toLocaleString("pt-BR")}
             </h3>
             <div className="flex items-center gap-1.5 mt-1">
               <span className={`text-[10px] font-bold ${
-                (selectedPage === "facebook" ? mockInsights.visits_growth_fb : mockInsights.visits_growth_insta) >= 0 ? "text-green-400" : "text-red-400"
+                (selectedPage === "facebook" ? activeMetrics.visits_growth_fb : activeMetrics.visits_growth_insta) >= 0 ? "text-green-400" : "text-red-400"
               }`}>
-                {(selectedPage === "facebook" ? mockInsights.visits_growth_fb : mockInsights.visits_growth_insta) >= 0 ? "+" : ""}{selectedPage === "facebook" ? mockInsights.visits_growth_fb : mockInsights.visits_growth_insta}%
+                {(selectedPage === "facebook" ? activeMetrics.visits_growth_fb : activeMetrics.visits_growth_insta) >= 0 ? "+" : ""}{selectedPage === "facebook" ? activeMetrics.visits_growth_fb : activeMetrics.visits_growth_insta}%
               </span>
-              <span className="text-[9px] text-muted-foreground">vs últimos {timeRange} dias</span>
+              <span className="text-[9px] text-muted-foreground">vs período anterior ({diffDays}d)</span>
             </div>
           </div>
         </div>
@@ -278,15 +454,15 @@ function SocialInsightsPage() {
           </div>
           <div>
             <h3 className="font-display font-black text-2xl tracking-tight text-white">
-              {selectedPage === "facebook" ? mockInsights.engagement_facebook.toLocaleString("pt-BR") : selectedPage === "instagram" ? mockInsights.engagement_instagram.toLocaleString("pt-BR") : (mockInsights.engagement_instagram + mockInsights.engagement_facebook).toLocaleString("pt-BR")}
+              {selectedPage === "facebook" ? activeMetrics.engagement_facebook.toLocaleString("pt-BR") : selectedPage === "instagram" ? activeMetrics.engagement_instagram.toLocaleString("pt-BR") : (activeMetrics.engagement_instagram + activeMetrics.engagement_facebook).toLocaleString("pt-BR")}
             </h3>
             <div className="flex items-center gap-1.5 mt-1">
               <span className={`text-[10px] font-bold ${
-                (selectedPage === "facebook" ? mockInsights.engagement_growth_fb : mockInsights.engagement_growth_insta) >= 0 ? "text-green-400" : "text-red-400"
+                (selectedPage === "facebook" ? activeMetrics.engagement_growth_fb : activeMetrics.engagement_growth_insta) >= 0 ? "text-green-400" : "text-red-400"
               }`}>
-                {(selectedPage === "facebook" ? mockInsights.engagement_growth_fb : mockInsights.engagement_growth_insta) >= 0 ? "+" : ""}{selectedPage === "facebook" ? mockInsights.engagement_growth_fb : mockInsights.engagement_growth_insta}%
+                {(selectedPage === "facebook" ? activeMetrics.engagement_growth_fb : activeMetrics.engagement_growth_insta) >= 0 ? "+" : ""}{selectedPage === "facebook" ? activeMetrics.engagement_growth_fb : activeMetrics.engagement_growth_insta}%
               </span>
-              <span className="text-[9px] text-muted-foreground">vs últimos {timeRange} dias</span>
+              <span className="text-[9px] text-muted-foreground">vs período anterior ({diffDays}d)</span>
             </div>
           </div>
         </div>
@@ -316,14 +492,14 @@ function SocialInsightsPage() {
               </div>
               
               {/* Graphic bars representing day-by-day stats */}
-              {[40, 52, 48, 62, 70, 58, 65, 80, 75, 92, 110, 85, 95, 120, 105, 130, 142, 125, 138, 150, 165, 148, 160, 182, 175, 195, 210, 188, 205, 220].map((h, i) => (
+              {sparklineData.map((h, i) => (
                 <div key={i} className="flex-1 flex flex-col items-center gap-1 group relative cursor-pointer z-10">
                   {/* Tooltip */}
                   <div className="absolute bottom-full mb-1 opacity-0 group-hover:opacity-100 transition-opacity bg-card border border-white/10 px-2 py-1 rounded text-[8px] font-mono whitespace-nowrap pointer-events-none">
-                    Alcance: {(h * 150).toLocaleString("pt-BR")}
+                    Alcance: {Math.round(h * 15).toLocaleString("pt-BR")}
                   </div>
                   <div 
-                    style={{ height: `${(h / 220) * 100}%` }}
+                    style={{ height: `${(h / maxSparklineVal) * 100}%` }}
                     className="w-full bg-gradient-to-t from-primary/30 to-primary rounded-t-sm group-hover:from-primary group-hover:to-pink-500 transition-all duration-300"
                   />
                   <span className="text-[7px] text-muted-foreground/60 font-mono hidden md:inline">{i + 1}</span>
@@ -348,7 +524,7 @@ function SocialInsightsPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {mockInsights.top_posts.map((post) => (
+                  {activeMetrics.top_posts.map((post) => (
                     <tr key={post.id} className="border-b border-white/5 hover:bg-white/[0.01] transition-all">
                       <td className="py-3 px-3">
                         <div className="flex items-center gap-2">
@@ -430,12 +606,12 @@ function SocialInsightsPage() {
             {/* Gender bar */}
             <div className="space-y-2">
               <div className="flex justify-between text-[10px] font-bold text-white">
-                <span>Homens (68%)</span>
-                <span>Mulheres (32%)</span>
+                <span>Homens ({activeMetrics.demographics.gender.male}%)</span>
+                <span>Mulheres ({activeMetrics.demographics.gender.female}%)</span>
               </div>
               <div className="h-2.5 w-full rounded-full bg-white/5 overflow-hidden flex">
-                <div className="h-full bg-primary" style={{ width: "68%" }} />
-                <div className="h-full bg-pink-500" style={{ width: "32%" }} />
+                <div className="h-full bg-primary" style={{ width: `${activeMetrics.demographics.gender.male}%` }} />
+                <div className="h-full bg-pink-500" style={{ width: `${activeMetrics.demographics.gender.female}%` }} />
               </div>
             </div>
 
@@ -445,7 +621,7 @@ function SocialInsightsPage() {
             <div className="space-y-3">
               <label className="label-mono text-[9px] text-muted-foreground uppercase">Faixa Etária</label>
               <div className="space-y-2.5">
-                {mockInsights.demographics.age.map((item) => (
+                {activeMetrics.demographics.age.map((item) => (
                   <div key={item.range} className="space-y-1">
                     <div className="flex justify-between text-[10px] font-bold text-muted-foreground">
                       <span className="text-white">{item.range} anos</span>
