@@ -101,6 +101,8 @@ serve(async (req) => {
             page_id: "mock_page_1",
             page_name: "NC Seminovos Premium",
             access_token: "mock_page_token_1",
+            facebook_followers: 420,
+            instagram_followers: 1540,
             instagram: {
               id: "mock_ig_1",
               username: "nc_seminovos_premium"
@@ -110,6 +112,8 @@ serve(async (req) => {
             page_id: "mock_page_2",
             page_name: "NC Concessionária",
             access_token: "mock_page_token_2",
+            facebook_followers: 180,
+            instagram_followers: 950,
             instagram: {
               id: "mock_ig_2",
               username: "nc_concessionaria"
@@ -119,12 +123,14 @@ serve(async (req) => {
             page_id: "mock_page_3",
             page_name: "NC Marketing Automotivo",
             access_token: "mock_page_token_3",
+            facebook_followers: 290,
+            instagram_followers: 0,
             instagram: null
           }
         ]
         mockUsed = true
       } else {
-        // Buscar páginas
+        // Buscar páginas reais
         try {
           const pagesRes = await fetch(`${META_API_BASE}/me/accounts?access_token=${tokenToUse}`)
           const pagesData = await pagesRes.json()
@@ -133,13 +139,40 @@ serve(async (req) => {
           const fbPages = pagesData.data || []
           for (const p of fbPages) {
             let igAccount = null
+            let igFollowers = 0
+            let fbFollowers = 0
+
+            // 1. Buscar seguidores do Facebook Page (fan_count / followers_count)
             try {
-              const igRes = await fetch(`${META_API_BASE}/${p.id}?fields=instagram_business_account{id,username}&access_token=${tokenToUse}`)
+              const fbFieldsRes = await fetch(`${META_API_BASE}/${p.id}?fields=fan_count,followers_count&access_token=${p.access_token}`)
+              const fbFieldsData = await fbFieldsRes.json()
+              if (!fbFieldsData.error) {
+                const fanCount = fbFieldsData.fan_count || 0
+                fbFollowers = fbFieldsData.followers_count || fanCount || 0
+              }
+            } catch (e: any) {
+              console.error(`Erro ao buscar seguidores do Facebook para pagina ${p.id}:`, e.message)
+            }
+
+            // 2. Buscar conta do Instagram e seus seguidores
+            try {
+              const igRes = await fetch(`${META_API_BASE}/${p.id}?fields=instagram_business_account{id,username}&access_token=${p.access_token}`)
               const igData = await igRes.json()
               if (igData.instagram_business_account) {
                 igAccount = {
                   id: igData.instagram_business_account.id,
                   username: igData.instagram_business_account.username
+                }
+
+                // Buscar contagem de seguidores do Instagram
+                try {
+                  const igFieldsRes = await fetch(`${META_API_BASE}/${igAccount.id}?fields=followers_count&access_token=${p.access_token}`)
+                  const igFieldsData = await igFieldsRes.json()
+                  if (!igFieldsData.error) {
+                    igFollowers = igFieldsData.followers_count || 0
+                  }
+                } catch (e: any) {
+                  console.error(`Erro ao buscar seguidores do Instagram para conta ${igAccount.id}:`, e.message)
                 }
               }
             } catch (e: any) {
@@ -150,16 +183,20 @@ serve(async (req) => {
               page_id: p.id,
               page_name: p.name,
               access_token: p.access_token,
+              facebook_followers: fbFollowers,
+              instagram_followers: igFollowers,
               instagram: igAccount
             })
           }
         } catch (err: any) {
-          console.error("Token real falhou, usando mock de contingência:", err.message)
+          console.error("Token real falhou ao buscar paginas:", err.message)
           pagesList = [
             {
               page_id: "mock_page_1",
               page_name: "NC Seminovos Premium (Demo)",
               access_token: "mock_page_token_1",
+              facebook_followers: 420,
+              instagram_followers: 1540,
               instagram: {
                 id: "mock_ig_1",
                 username: "nc_seminovos_premium"
@@ -169,6 +206,8 @@ serve(async (req) => {
               page_id: "mock_page_2",
               page_name: "NC Concessionária (Demo)",
               access_token: "mock_page_token_2",
+              facebook_followers: 180,
+              instagram_followers: 950,
               instagram: {
                 id: "mock_ig_2",
                 username: "nc_concessionaria"
@@ -190,6 +229,8 @@ serve(async (req) => {
             instagram_account_id: p.instagram?.id || null,
             instagram_handle: p.instagram?.username || null,
             access_token: p.access_token || null,
+            facebook_followers: p.facebook_followers || 0,
+            instagram_followers: p.instagram_followers || 0,
             updated_at: new Date().toISOString()
           }, { onConflict: "page_id" })
         if (upsertErr) {
@@ -217,38 +258,65 @@ serve(async (req) => {
 
       if (postErr || !post) throw new Error("Post não encontrado")
 
-      const { data: config } = await supabase
-        .from("meta_ads_configs")
-        .select("access_token, facebook_page_id, instagram_account_id")
-        .maybeSingle()
+      // 1. Descobrir Page Access Token e IDs específicos da página vinculada ao post
+      let activePageId = post.page_id
+      let fbPageId = activePageId
+      let igAccountId = null
+      let pageAccessToken = null
+
+      if (activePageId) {
+        const { data: pageData } = await supabase
+          .from("social_pages")
+          .select("page_id, instagram_account_id, access_token")
+          .eq("page_id", activePageId)
+          .maybeSingle()
+        
+        if (pageData) {
+          fbPageId = pageData.page_id
+          igAccountId = pageData.instagram_account_id
+          pageAccessToken = pageData.access_token
+        }
+      }
+
+      // Fallback para as credenciais globais da conta caso o post não tenha página definida ou o token seja nulo
+      if (!pageAccessToken || !fbPageId) {
+        const { data: config } = await supabase
+          .from("meta_ads_configs")
+          .select("access_token, facebook_page_id, instagram_account_id")
+          .maybeSingle()
+        
+        pageAccessToken = config?.access_token
+        fbPageId = fbPageId || config?.facebook_page_id
+        igAccountId = igAccountId || config?.instagram_account_id
+      }
 
       const results: Record<string, string> = {}
       const errors: string[] = []
 
-      const isMockToken = !config?.access_token || config.access_token.startsWith("mock_") || config.access_token.length < 20;
+      const isMockToken = !pageAccessToken || pageAccessToken.startsWith("mock_") || pageAccessToken.length < 20;
 
-      if (config?.access_token && !isMockToken) {
+      if (pageAccessToken && !isMockToken) {
         // 1. PUBLICAR NO FACEBOOK
-        if ((post.platform === "facebook" || post.platform === "both") && config.facebook_page_id && !config.facebook_page_id.startsWith("mock_")) {
+        if ((post.platform === "facebook" || post.platform === "both") && fbPageId && !fbPageId.startsWith("mock_")) {
           try {
             let fbRes;
             if (post.media_url) {
-              fbRes = await fetch(`${META_API_BASE}/${config.facebook_page_id}/photos`, {
+              fbRes = await fetch(`${META_API_BASE}/${fbPageId}/photos`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
                   url: post.media_url,
                   caption: post.content,
-                  access_token: config.access_token
+                  access_token: pageAccessToken
                 })
               })
             } else {
-              fbRes = await fetch(`${META_API_BASE}/${config.facebook_page_id}/feed`, {
+              fbRes = await fetch(`${META_API_BASE}/${fbPageId}/feed`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
                   message: post.content,
-                  access_token: config.access_token
+                  access_token: pageAccessToken
                 })
               })
             }
@@ -262,7 +330,7 @@ serve(async (req) => {
         }
 
         // 2. PUBLICAR NO INSTAGRAM
-        if ((post.platform === "instagram" || post.platform === "both") && config.instagram_account_id && !config.instagram_account_id.startsWith("mock_")) {
+        if ((post.platform === "instagram" || post.platform === "both") && igAccountId && !igAccountId.startsWith("mock_")) {
           try {
             if (!post.media_url) {
               throw new Error("Instagram não suporta posts sem imagem ou vídeo")
@@ -271,7 +339,7 @@ serve(async (req) => {
             const isVideo = post.post_type === "reels" || post.media_url.endsWith(".mp4")
             const containerParams: Record<string, string> = {
               caption: post.content || "",
-              access_token: config.access_token
+              access_token: pageAccessToken
             }
 
             if (isVideo) {
@@ -284,7 +352,7 @@ serve(async (req) => {
               }
             }
 
-            const mediaRes = await fetch(`${META_API_BASE}/${config.instagram_account_id}/media`, {
+            const mediaRes = await fetch(`${META_API_BASE}/${igAccountId}/media`, {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify(containerParams)
@@ -298,12 +366,12 @@ serve(async (req) => {
               await new Promise(resolve => setTimeout(resolve, 4000))
             }
 
-            const pubRes = await fetch(`${META_API_BASE}/${config.instagram_account_id}/media_publish`, {
+            const pubRes = await fetch(`${META_API_BASE}/${igAccountId}/media_publish`, {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
                 creation_id: containerId,
-                access_token: config.access_token
+                access_token: pageAccessToken
               })
             })
 

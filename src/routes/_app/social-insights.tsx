@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { 
@@ -12,6 +12,7 @@ import { toast } from "sonner";
 import { format, subDays } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { useGlobalDate, getLocalDateString } from "@/contexts/DateContext";
+import { DateRangePicker } from "@/components/DateRangePicker";
 
 export const Route = createFileRoute("/_app/social-insights")({
   head: () => ({ meta: [{ title: "Insights de Redes Sociais — NC Suite" }] }),
@@ -19,7 +20,7 @@ export const Route = createFileRoute("/_app/social-insights")({
 });
 
 // Deterministic mock metric generator based on page credentials and date range
-function getDeterministicMetrics(pageId: string, pageName: string, dateFromStr: string, dateToStr: string) {
+function getDeterministicMetrics(pageId: string, pageName: string, dateFromStr: string, dateToStr: string, actualFbFollowers = 0, actualInstaFollowers = 0) {
   let seed = 0;
   const combinedStr = pageId + pageName;
   for (let i = 0; i < combinedStr.length; i++) {
@@ -31,10 +32,10 @@ function getDeterministicMetrics(pageId: string, pageName: string, dateFromStr: 
   const diffTime = Math.abs(d2.getTime() - d1.getTime());
   const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
 
-  // Base values adjusted by seed
+  // Base values adjusted by seed, override with real counts if they exist
   const baseFollowers = 2000 + (seed % 17) * 2500 + (seed % 7) * 400;
-  const instaFollowers = Math.round(baseFollowers * 0.65);
-  const fbFollowers = Math.round(baseFollowers * 0.35);
+  const instaFollowers = actualInstaFollowers > 0 ? actualInstaFollowers : Math.round(baseFollowers * 0.65);
+  const fbFollowers = actualFbFollowers > 0 ? actualFbFollowers : Math.round(baseFollowers * 0.35);
 
   const dailyReach = 100 + (seed % 13) * 150 + (seed % 5) * 50;
   const dailyVisits = Math.round(dailyReach * 0.25);
@@ -147,6 +148,16 @@ function SocialInsightsPage() {
   const diffTime = Math.abs(d2.getTime() - d1.getTime());
   const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
 
+  const dateRange = useMemo(() => ({
+    startDate: new Date(dateFrom + "T12:00:00"),
+    endDate: new Date(dateTo + "T12:00:00")
+  }), [dateFrom, dateTo]);
+
+  const setDateRange = useCallback((range: { startDate: Date; endDate: Date }) => {
+    setDateFrom(getLocalDateString(range.startDate));
+    setDateTo(getLocalDateString(range.endDate));
+  }, [setDateFrom, setDateTo]);
+
   // Fetch meta configs
   const { data: metaConfig, isLoading: loadingConfig } = useQuery({
     queryKey: ["meta_social_configs_insights"],
@@ -178,13 +189,13 @@ function SocialInsightsPage() {
     if (selectedPage !== "all") {
       const sp = socialPages.find((p: any) => p.page_id === selectedPage);
       if (sp) {
-        return getDeterministicMetrics(sp.page_id, sp.page_name, dateFrom, dateTo);
+        return getDeterministicMetrics(sp.page_id, sp.page_name, dateFrom, dateTo, sp.facebook_followers, sp.instagram_followers);
       }
     }
 
     // Combine all pages
     const combined = socialPages.map((sp: any) => 
-      getDeterministicMetrics(sp.page_id, sp.page_name, dateFrom, dateTo)
+      getDeterministicMetrics(sp.page_id, sp.page_name, dateFrom, dateTo, sp.facebook_followers, sp.instagram_followers)
     );
 
     return {
@@ -233,9 +244,27 @@ function SocialInsightsPage() {
 
   const maxSparklineVal = Math.max(...sparklineData, 1);
 
-  const handleSyncInsights = () => {
+  const handleSyncInsights = async () => {
     toast.promise(
-      new Promise((resolve) => setTimeout(resolve, 1500)),
+      (async () => {
+        // 1. Sincronizar páginas e perfis (atualiza contagem de seguidores reais)
+        const { error: pageErr } = await supabase.functions.invoke("sync-social-media", {
+          body: { action: "fetch-pages" }
+        });
+        if (pageErr) throw pageErr;
+
+        // 2. Sincronizar métricas de posts orgânicos
+        const { error: metricErr } = await supabase.functions.invoke("sync-social-media", {
+          body: { action: "sync-metrics" }
+        });
+        if (metricErr) throw metricErr;
+
+        // Invalidar queries do React Query para recarregar com dados atualizados
+        await Promise.all([
+          qc.invalidateQueries({ queryKey: ["social_pages_insights"] }),
+          qc.invalidateQueries({ queryKey: ["social_posts_insights"] })
+        ]);
+      })(),
       {
         loading: "Conectando ao Graph API do Meta...",
         success: "Dados de Insights sincronizados com sucesso!",
@@ -341,39 +370,11 @@ function SocialInsightsPage() {
         {/* Date Calendar Filter */}
         <div className="flex items-center gap-3 flex-wrap">
           <span className="text-xs text-muted-foreground font-bold">Período:</span>
-          <div className="flex items-center gap-1.5 shrink-0">
-            <Calendar className="h-3.5 w-3.5 text-muted-foreground/50 shrink-0" />
-            <input
-              type="date"
-              value={dateFrom}
-              max={dateTo}
-              onChange={e => setDateFrom(e.target.value)}
-              className="rounded-lg border border-white/10 bg-background px-2.5 py-1 text-[11px] font-medium text-foreground focus:outline-none focus:border-primary/50 cursor-pointer"
-            />
-            <span className="text-[10px] text-muted-foreground">até</span>
-            <input
-              type="date"
-              value={dateTo}
-              min={dateFrom}
-              max={today}
-              onChange={e => setDateTo(e.target.value)}
-              className="rounded-lg border border-white/10 bg-background px-2.5 py-1 text-[11px] font-medium text-foreground focus:outline-none focus:border-primary/50 cursor-pointer"
-            />
-          </div>
-          <div className="flex rounded-lg bg-white/5 p-0.5 border border-white/5">
-            {["7", "30", "90"].map((days) => (
-              <button
-                key={days}
-                onClick={() => {
-                  setDateFrom(getLocalDateString(subDays(new Date(), parseInt(days) - 1)));
-                  setDateTo(today);
-                }}
-                className={`rounded-md px-3 py-1 text-xs font-bold transition-all ${diffDays.toString() === days ? "bg-primary text-background" : "text-muted-foreground hover:text-white"}`}
-              >
-                {days}d
-              </button>
-            ))}
-          </div>
+          <DateRangePicker
+            startDate={dateRange.startDate}
+            endDate={dateRange.endDate}
+            onChange={(start, end) => setDateRange({ startDate: start, endDate: end })}
+          />
         </div>
       </div>
 
