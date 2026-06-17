@@ -7,7 +7,7 @@ import {
   Bell, User, Bot, Sparkles, Activity, Zap,
   Sun, Moon, Menu, X, BarChart3, LineChart, Palette, Link2,
   ChevronDown, RefreshCw, Users, Store,
-  Volume2, VolumeX, LogOut, CreditCard, Share2
+  Volume2, VolumeX, LogOut, CreditCard, Share2, ArrowRight
 } from "lucide-react";
 import { AuthProvider, useAuth } from "@/lib/auth";
 import { supabase } from "@/integrations/supabase/client";
@@ -68,22 +68,36 @@ type NavItem = {
   group?: string;
 };
 
-const NAV_ITEMS: NavItem[] = [
-  { to: "/dashboard", icon: LayoutDashboard, label: "Dashboard" },
+const TRAFEGO_NAV_ITEMS: NavItem[] = [
+  { to: "/dashboard", icon: LayoutDashboard, label: "Command Center" },
   { to: "/metricas", icon: LineChart, label: "Métricas" },
-  { to: "/clientes", icon: Store, label: "Clientes" },
-  { to: "/reunioes", icon: Users, label: "Reuniões" },
   { to: "/relatorios", icon: FileText, label: "Relatórios" },
-  { to: "/upload", icon: Upload, label: "Upload" },
   { to: "/criativos", icon: Palette, label: "Criativos" },
 ];
-
-const MORE_ITEMS: NavItem[] = [
+const TRAFEGO_MORE_ITEMS: NavItem[] = [
   { to: "/multicanal", icon: BarChart3, label: "Multicanal" },
-  { to: "/organizador", icon: Link2, label: "Link Pages" },
-  { to: "/social", icon: Share2, label: "Social Media" },
-  { to: "/cobrancas", icon: CreditCard, label: "Cobranças" },
   { to: "/automacoes", icon: Zap, label: "Automações" },
+  { to: "/agente", icon: Bot, label: "Agente IA" },
+  { to: "/config", icon: Settings, label: "Configurações" },
+];
+
+const SOCIAL_NAV_ITEMS: NavItem[] = [
+  { to: "/social", icon: Share2, label: "Social Media" },
+  { to: "/social-insights", icon: BarChart3, label: "Insights Meta" },
+  { to: "/organizador", icon: Link2, label: "Link Pages" },
+];
+const SOCIAL_MORE_ITEMS: NavItem[] = [
+  { to: "/agente", icon: Bot, label: "Agente IA" },
+  { to: "/config", icon: Settings, label: "Integração Meta" },
+];
+
+const GESTAO_NAV_ITEMS: NavItem[] = [
+  { to: "/clientes", icon: Store, label: "Clientes" },
+  { to: "/reunioes", icon: Users, label: "Reuniões" },
+];
+const GESTAO_MORE_ITEMS: NavItem[] = [
+  { to: "/cobrancas", icon: CreditCard, label: "Cobranças" },
+  { to: "/upload", icon: Upload, label: "Upload" },
   { to: "/agente", icon: Bot, label: "Agente IA" },
   { to: "/config", icon: Settings, label: "Configurações" },
 ];
@@ -121,12 +135,31 @@ function Shell() {
   const canSeeMetricas  = profileLoading || isAdmin || !!perms.metricas;
   const canSeeAutomacoes = profileLoading || isAdmin || !!perms.automacoes;
 
-  const filteredNavItems = NAV_ITEMS.filter(item => {
+  const [activeModule, setActiveModule] = useState<"hub" | "trafego" | "social" | "gestao">(() => {
+    if (typeof window !== "undefined") {
+      return (localStorage.getItem("nc_active_module") as any) || "hub";
+    }
+    return "hub";
+  });
+  const [showModuleMenu, setShowModuleMenu] = useState(false);
+
+  let currentNavItems = TRAFEGO_NAV_ITEMS;
+  let currentMoreItems = TRAFEGO_MORE_ITEMS;
+
+  if (activeModule === "social") {
+    currentNavItems = SOCIAL_NAV_ITEMS;
+    currentMoreItems = SOCIAL_MORE_ITEMS;
+  } else if (activeModule === "gestao") {
+    currentNavItems = GESTAO_NAV_ITEMS;
+    currentMoreItems = GESTAO_MORE_ITEMS;
+  }
+
+  const filteredNavItems = currentNavItems.filter(item => {
     if (item.to === "/metricas" && !canSeeMetricas) return false;
     return true;
   });
 
-  const filteredMoreItems = MORE_ITEMS.filter(item => {
+  const filteredMoreItems = currentMoreItems.filter(item => {
     if (item.to === "/agente"     && !isAdmin)         return false;
     if (item.to === "/automacoes" && !canSeeAutomacoes) return false;
     return true;
@@ -249,6 +282,127 @@ function Shell() {
     return <Navigate to="/login" />;
   }
 
+  // Se o activeModule for "hub", renderiza a tela de seleção de módulos (Cards direcionais)
+  if (activeModule === "hub") {
+    return (
+      <div className="relative flex min-h-screen w-full flex-col bg-[#06060c] overflow-y-auto selection:bg-primary/30 text-white justify-center items-center p-6"
+           style={{
+             backgroundImage: "radial-gradient(circle, rgba(255,255,255,0.06) 1px, transparent 1px)",
+             backgroundSize: "28px 28px"
+           }}>
+        {/* Background glow effects */}
+        <div className="absolute inset-0 pointer-events-none -z-10">
+          <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full w-[800px] h-[500px] bg-gradient-to-r from-primary/10 via-violet-500/5 to-cyan-500/10 blur-[120px]" />
+        </div>
+
+        <div className="w-full max-w-4xl space-y-8 text-center relative z-10 my-auto">
+          {/* Logo & Header */}
+          <div className="flex flex-col items-center gap-3">
+            <div className="relative h-12 w-12 rounded-2xl bg-primary flex items-center justify-center overflow-hidden shadow-glow">
+              <div className="absolute inset-x-0 top-0 h-[4px] bg-white/28 rounded-t-2xl pointer-events-none" />
+              <span className="font-display font-black text-white text-lg relative z-10 tracking-normal">NC</span>
+              <div className="absolute inset-x-0 bottom-0 h-[3px] bg-black/22 rounded-b-2xl pointer-events-none" />
+            </div>
+            <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-white mt-2">
+              Selecione o Módulo de Trabalho
+            </h1>
+            <p className="text-xs text-muted-foreground uppercase tracking-[0.2em] font-mono">
+              NC Performance Suite · Bem-vindo, {profile?.full_name || user?.email}
+            </p>
+          </div>
+
+          {/* Grid of Directional Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pt-4">
+            {/* Card 1: Tráfego Pago */}
+            <motion.div
+              whileHover={{ y: -8, scale: 1.02, borderColor: "rgba(239, 68, 68, 0.4)" }}
+              onClick={() => {
+                setActiveModule("trafego");
+                localStorage.setItem("nc_active_module", "trafego");
+                nav({ to: "/dashboard" });
+              }}
+              className="group relative rounded-2xl border border-white/5 bg-white/[0.02] p-6 text-left cursor-pointer transition-all duration-300 hover:bg-white/[0.04] shadow-2xl backdrop-blur-md"
+            >
+              <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-red-500 to-orange-500 rounded-t-2xl" />
+              <div className="h-10 w-10 rounded-xl bg-red-500/10 border border-red-500/20 flex items-center justify-center mb-4">
+                <LineChart className="h-5 w-5 text-red-500" />
+              </div>
+              <h3 className="text-base font-black text-white group-hover:text-red-400 transition-colors">
+                Tráfego Pago
+              </h3>
+              <p className="text-xs text-muted-foreground mt-2 leading-relaxed">
+                Acesse o ecossistema de BI: Command Center, métricas granulares, dashboards de anúncios, relatórios de performance e automação de alertas.
+              </p>
+              <div className="mt-6 flex items-center gap-1.5 text-[10px] font-black uppercase text-red-400 tracking-wider">
+                Acessar Tráfego <ArrowRight className="h-3 w-3 transition-transform group-hover:translate-x-1" />
+              </div>
+            </motion.div>
+
+            {/* Card 2: Social Media */}
+            <motion.div
+              whileHover={{ y: -8, scale: 1.02, borderColor: "rgba(236, 72, 153, 0.4)" }}
+              onClick={() => {
+                setActiveModule("social");
+                localStorage.setItem("nc_active_module", "social");
+                nav({ to: "/social" });
+              }}
+              className="group relative rounded-2xl border border-white/5 bg-white/[0.02] p-6 text-left cursor-pointer transition-all duration-300 hover:bg-white/[0.04] shadow-2xl backdrop-blur-md"
+            >
+              <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-pink-500 to-violet-500 rounded-t-2xl" />
+              <div className="h-10 w-10 rounded-xl bg-pink-500/10 border border-pink-500/20 flex items-center justify-center mb-4">
+                <Share2 className="h-5 w-5 text-pink-500" />
+              </div>
+              <h3 className="text-base font-black text-white group-hover:text-pink-400 transition-colors">
+                Social Media
+              </h3>
+              <p className="text-xs text-muted-foreground mt-2 leading-relaxed">
+                Gerencie redes sociais organicamente. Planejador visual, calendário editorial integrado, criador de legendas com IA e analytics.
+              </p>
+              <div className="mt-6 flex items-center gap-1.5 text-[10px] font-black uppercase text-pink-400 tracking-wider">
+                Acessar Redes <ArrowRight className="h-3 w-3 transition-transform group-hover:translate-x-1" />
+              </div>
+            </motion.div>
+
+            {/* Card 3: Gestão / CRM */}
+            <motion.div
+              whileHover={{ y: -8, scale: 1.02, borderColor: "rgba(6, 182, 212, 0.4)" }}
+              onClick={() => {
+                setActiveModule("gestao");
+                localStorage.setItem("nc_active_module", "gestao");
+                nav({ to: "/clientes" });
+              }}
+              className="group relative rounded-2xl border border-white/5 bg-white/[0.02] p-6 text-left cursor-pointer transition-all duration-300 hover:bg-white/[0.04] shadow-2xl backdrop-blur-md"
+            >
+              <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-cyan-500 to-blue-500 rounded-t-2xl" />
+              <div className="h-10 w-10 rounded-xl bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center mb-4">
+                <Users className="h-5 w-5 text-cyan-500" />
+              </div>
+              <h3 className="text-base font-black text-white group-hover:text-cyan-400 transition-colors">
+                Gestão & CRM
+              </h3>
+              <p className="text-xs text-muted-foreground mt-2 leading-relaxed">
+                Controle operacional da agência. Gestão de carteiras, faturamento, reuniões de fechamento, uploads de planilhas e o Agente IA Victoria.
+              </p>
+              <div className="mt-6 flex items-center gap-1.5 text-[10px] font-black uppercase text-cyan-400 tracking-wider">
+                Acessar Gestão <ArrowRight className="h-3 w-3 transition-transform group-hover:translate-x-1" />
+              </div>
+            </motion.div>
+          </div>
+
+          {/* Footer logout */}
+          <div className="pt-4">
+            <button
+              onClick={handleSignOut}
+              className="text-[10px] font-bold text-muted-foreground hover:text-white uppercase tracking-wider flex items-center gap-1.5 mx-auto transition-colors"
+            >
+              <LogOut className="h-3.5 w-3.5" /> Sair da Conta
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="relative flex h-screen w-full flex-col bg-background overflow-x-hidden selection:bg-primary/30" style={{ touchAction: 'pan-y', WebkitTapHighlightColor: 'transparent' }}>
 
@@ -259,22 +413,110 @@ function Shell() {
       <header className="sticky top-0 z-50 border-gradient-bottom bg-background/92 backdrop-blur-2xl" style={{ height: '64px' }}>
         <div className="mx-auto flex h-full max-w-[1600px] items-center justify-between gap-2 px-3 md:px-5">
           
-          {/* LEFT: Logo */}
-          <Link to="/dashboard" className="flex items-center gap-2 shrink-0 group">
-            <div className="relative h-8 w-8 rounded-xl bg-primary flex items-center justify-center overflow-hidden shadow-glow-sm transition-all duration-300 group-hover:shadow-glow">
-              <div className="absolute inset-x-0 top-0 h-[3px] bg-white/28 rounded-t-xl pointer-events-none" />
-              <span className="font-display font-black text-white text-xs relative z-10 tracking-normal">NC</span>
-              <div className="absolute inset-x-0 bottom-0 h-[2px] bg-black/22 rounded-b-xl pointer-events-none" />
-            </div>
-            <div className="hidden md:flex flex-col leading-none gap-[4px]">
-              <span className="font-display text-[12px] font-black tracking-normal leading-none">NC Performance</span>
-              <div className="flex items-center gap-[4px]">
-                <div className="h-px w-2.5 bg-primary/65 rounded-full" />
-                <span className="text-[7px] font-mono font-bold uppercase tracking-[0.25em] text-primary leading-none">Suite Automotiva</span>
-                <div className="h-px w-2.5 bg-primary/65 rounded-full" />
+          {/* LEFT: Logo & Module Switcher */}
+          <div className="flex items-center gap-3 shrink-0">
+            <Link to="/dashboard" className="flex items-center gap-2 group">
+              <div className="relative h-8 w-8 rounded-xl bg-primary flex items-center justify-center overflow-hidden shadow-glow-sm transition-all duration-300 group-hover:shadow-glow">
+                <div className="absolute inset-x-0 top-0 h-[3px] bg-white/28 rounded-t-xl pointer-events-none" />
+                <span className="font-display font-black text-white text-xs relative z-10 tracking-normal">NC</span>
+                <div className="absolute inset-x-0 bottom-0 h-[2px] bg-black/22 rounded-b-xl pointer-events-none" />
               </div>
-            </div>
-          </Link>
+              <div className="hidden md:flex flex-col leading-none gap-[4px]">
+                <span className="font-display text-[12px] font-black tracking-normal leading-none">NC Performance</span>
+                <div className="flex items-center gap-[4px]">
+                  <div className="h-px w-2.5 bg-primary/65 rounded-full" />
+                  <span className="text-[7px] font-mono font-bold uppercase tracking-[0.25em] text-primary leading-none">Suite Automotiva</span>
+                  <div className="h-px w-2.5 bg-primary/65 rounded-full" />
+                </div>
+              </div>
+            </Link>
+
+            {activeModule !== "hub" && (
+              <div className="relative ml-2">
+                <button
+                  onClick={() => setShowModuleMenu(!showModuleMenu)}
+                  className="flex items-center gap-1.5 rounded-full border border-border bg-card px-3 py-1.5 text-[10px] font-black uppercase tracking-wider text-foreground hover:bg-muted/50 transition-all duration-200"
+                >
+                  <span className={`h-1.5 w-1.5 rounded-full ${
+                    activeModule === "trafego" ? "bg-red-500" : activeModule === "social" ? "bg-pink-500" : "bg-cyan-500"
+                  }`} />
+                  <span>
+                    {activeModule === "trafego" ? "Tráfego" : activeModule === "social" ? "Social" : "Gestão"}
+                  </span>
+                  <ChevronDown className="h-3 w-3 opacity-60" />
+                </button>
+
+                <AnimatePresence>
+                  {showModuleMenu && (
+                    <>
+                      <div className="fixed inset-0 z-40" onClick={() => setShowModuleMenu(false)} />
+                      <motion.div
+                        initial={{ opacity: 0, y: 6, scale: 0.96 }}
+                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                        exit={{ opacity: 0, y: 6, scale: 0.96 }}
+                        className="absolute left-0 top-full z-50 mt-1.5 w-48 rounded-2xl border border-border bg-card p-1.5 shadow-2xl"
+                      >
+                        <button
+                          onClick={() => {
+                            setActiveModule("hub");
+                            localStorage.setItem("nc_active_module", "hub");
+                            setShowModuleMenu(false);
+                          }}
+                          className="flex w-full items-center gap-2 rounded-xl px-2.5 py-2 text-xs font-bold text-muted-foreground hover:bg-muted hover:text-foreground transition-all"
+                        >
+                          <LayoutDashboard className="h-3.5 w-3.5" />
+                          Painel de Módulos (Hub)
+                        </button>
+                        <div className="my-1 border-t border-border" />
+                        <button
+                          onClick={() => {
+                            setActiveModule("trafego");
+                            localStorage.setItem("nc_active_module", "trafego");
+                            setShowModuleMenu(false);
+                            nav({ to: "/dashboard" });
+                          }}
+                          className={`flex w-full items-center gap-2 rounded-xl px-2.5 py-2 text-xs font-bold transition-all ${
+                            activeModule === "trafego" ? "bg-red-500/10 text-red-500" : "text-foreground/80 hover:bg-muted"
+                          }`}
+                        >
+                          <span className="h-1.5 w-1.5 rounded-full bg-red-500" />
+                          Tráfego Pago
+                        </button>
+                        <button
+                          onClick={() => {
+                            setActiveModule("social");
+                            localStorage.setItem("nc_active_module", "social");
+                            setShowModuleMenu(false);
+                            nav({ to: "/social" });
+                          }}
+                          className={`flex w-full items-center gap-2 rounded-xl px-2.5 py-2 text-xs font-bold transition-all ${
+                            activeModule === "social" ? "bg-pink-500/10 text-pink-500" : "text-foreground/80 hover:bg-muted"
+                          }`}
+                        >
+                          <span className="h-1.5 w-1.5 rounded-full bg-pink-500" />
+                          Social Media
+                        </button>
+                        <button
+                          onClick={() => {
+                            setActiveModule("gestao");
+                            localStorage.setItem("nc_active_module", "gestao");
+                            setShowModuleMenu(false);
+                            nav({ to: "/clientes" });
+                          }}
+                          className={`flex w-full items-center gap-2 rounded-xl px-2.5 py-2 text-xs font-bold transition-all ${
+                            activeModule === "gestao" ? "bg-cyan-500/10 text-cyan-500" : "text-foreground/80 hover:bg-muted"
+                          }`}
+                        >
+                          <span className="h-1.5 w-1.5 rounded-full bg-cyan-500" />
+                          Gestão &amp; CRM
+                        </button>
+                      </motion.div>
+                    </>
+                  )}
+                </AnimatePresence>
+              </div>
+            )}
+          </div>
 
           {/* CENTER: Navigation Links (Desktop) */}
           <nav className="hidden lg:flex flex-1 min-w-0 items-center justify-center gap-0 px-1">
@@ -690,19 +932,33 @@ function Shell() {
           ═══════════════════════════════════════ */}
       <nav className="lg:hidden fixed bottom-0 inset-x-0 z-40 border-t border-border bg-background/96 backdrop-blur-xl pb-safe-nav">
         <div className="flex items-stretch justify-around px-1 pb-safe">
-          {[
-            { to: "/dashboard",  icon: LayoutDashboard, label: "Home" },
-            { to: "/metricas",   icon: LineChart,        label: "Métricas" },
-          ].map((item) => {
-            const isActive = path === item.to || (item.to !== "/dashboard" && path.startsWith(item.to));
-            return (
-              <Link key={item.to} to={item.to} className={`flex flex-col items-center gap-1 px-3 py-3 text-[10px] font-bold transition-colors ${isActive ? "text-primary" : "text-muted-foreground"}`}>
-                <item.icon className={`h-5 w-5 ${isActive ? "text-primary" : ""}`} />
-                {item.label}
-                {isActive && <span className="absolute bottom-0 h-[2px] w-6 rounded-full bg-primary" />}
-              </Link>
-            );
-          })}
+          {(() => {
+            let mobileItems = [
+              { to: "/dashboard", icon: LayoutDashboard, label: "Home" },
+              { to: "/metricas", icon: LineChart, label: "Métricas" },
+            ];
+            if (activeModule === "social") {
+              mobileItems = [
+                { to: "/social", icon: Share2, label: "Social" },
+                { to: "/social-insights", icon: BarChart3, label: "Insights" },
+              ];
+            } else if (activeModule === "gestao") {
+              mobileItems = [
+                { to: "/clientes", icon: Store, label: "Clientes" },
+                { to: "/reunioes", icon: Users, label: "Reuniões" },
+              ];
+            }
+            return mobileItems.map((item) => {
+              const isActive = path === item.to || (item.to !== "/dashboard" && path.startsWith(item.to));
+              return (
+                <Link key={item.to} to={item.to} className={`flex flex-col items-center gap-1 px-3 py-3 text-[10px] font-bold transition-colors ${isActive ? "text-primary" : "text-muted-foreground"}`}>
+                  <item.icon className={`h-5 w-5 ${isActive ? "text-primary" : ""}`} />
+                  {item.label}
+                  {isActive && <span className="absolute bottom-0 h-[2px] w-6 rounded-full bg-primary" />}
+                </Link>
+              );
+            });
+          })()}
           {/* Alertas com badge */}
           <button
             onClick={() => { setShowNotifications(!showNotifications); acknowledgeAll(); }}
