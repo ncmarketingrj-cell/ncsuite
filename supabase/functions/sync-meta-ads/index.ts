@@ -219,14 +219,7 @@ async function fetchDemographicBreakdowns(adAccountId: string, token: string, ti
 //
 // REGRA DO META ADS MANAGER:
 //   O Gerenciador mostra o "evento de otimização primário" da campanha.
-//   Cada objective tem seu action_type principal. A ordem dentro de cada lista importa:
-//   o primeiro que tiver valor > 0 vence (sem somar, para não duplicar).
 //
-// ATENÇÃO: campanhas com Pixel de website retornam "offsite_conversion.fb_pixel_lead"
-//   — NÃO retornam "lead" puro. Sem esse mapeamento conversões aparecem como 0 no app.
-//
-// DEBUG: cada sync loga todos os action_types recebidos → comparar com Gerenciador Meta
-//   nos logs da Edge Function no Supabase Dashboard → Logs → Edge Functions → sync-meta-ads
 function extractConversions(actions: any[] = [], objective?: string): number {
   if (!Array.isArray(actions) || actions.length === 0) return 0;
 
@@ -238,6 +231,40 @@ function extractConversions(actions: any[] = [], objective?: string): number {
   // Log diagnóstico — visível em Supabase Dashboard → Logs → Edge Functions
   const available = actions.map((a: any) => `${a.action_type}:${a.value}`).join(" | ");
   console.log(`[CONV] obj=${objective ?? "none"} | ${available}`);
+
+  // Tratar Leads de forma agregada para somar múltiplos canais (Onsite + Offsite)
+  if (objective === "OUTCOME_LEADS" || objective === "LEAD_GENERATION") {
+    const onsite = Math.max(getVal("onsite_conversion.lead"), getVal("leadgen_grouped"));
+    const offsiteStandard = getVal("offsite_conversion.fb_pixel_lead") || 
+                            getVal("complete_registration") || 
+                            getVal("offsite_conversion.fb_pixel_complete_registration");
+    
+    let offsiteCustom = getVal("offsite_conversion.fb_pixel_custom.LEAD");
+    for (const act of actions) {
+      if (act.action_type.startsWith("offsite_conversion.custom.")) {
+        offsiteCustom += parseInt(act.value) || 0;
+      }
+    }
+
+    const offsite = Math.max(offsiteStandard, offsiteCustom);
+    return Math.max(getVal("lead"), onsite + offsite);
+  }
+
+  // Tratar Vendas/Compras de forma agregada (Onsite Shop + Offsite Pixel)
+  if (objective === "CONVERSIONS" || objective === "OUTCOME_SALES") {
+    const onsite = getVal("onsite_conversion.purchase");
+    const offsiteStandard = getVal("offsite_conversion.fb_pixel_purchase");
+    let offsiteCustom = getVal("offsite_conversion.fb_pixel_custom.PURCHASE");
+    
+    for (const act of actions) {
+      if (act.action_type.startsWith("offsite_conversion.custom.")) {
+        offsiteCustom += parseInt(act.value) || 0;
+      }
+    }
+    
+    const offsite = Math.max(offsiteStandard, offsiteCustom);
+    return Math.max(getVal("purchase"), onsite + offsite);
+  }
 
   // Mapeamento objetivo → action_types primários (ordem de prioridade dentro de cada lista)
   //
@@ -253,35 +280,6 @@ function extractConversions(actions: any[] = [], objective?: string): number {
       "onsite_conversion.messaging_conversation_started_7d",
       "messaging_conversation_started_7d",
       "onsite_conversion.total_messaging_connection",
-    ],
-    // Campanhas de Geração de Leads via formulário instantâneo do Facebook
-    "LEAD_GENERATION": [
-      "lead",
-      "leadgen_grouped",
-      "onsite_conversion.lead",
-    ],
-    // Campanhas de Leads (Advantage+) — inclui pixel de website, o mais comum para sites de concessionárias
-    "OUTCOME_LEADS": [
-      "lead",
-      "offsite_conversion.fb_pixel_lead",           // Leads via Pixel no site — ausente antes, causa principal de zeros
-      "offsite_conversion.fb_pixel_custom.LEAD",    // Evento customizado "LEAD" no pixel
-      "onsite_conversion.lead",
-      "leadgen_grouped",
-      "complete_registration",
-      "offsite_conversion.fb_pixel_complete_registration",
-    ],
-    // Campanhas de Vendas / Conversões no site
-    "CONVERSIONS": [
-      "purchase",
-      "offsite_conversion.fb_pixel_purchase",
-      "onsite_conversion.purchase",
-      "offsite_conversion.fb_pixel_custom.PURCHASE",
-    ],
-    "OUTCOME_SALES": [
-      "purchase",
-      "offsite_conversion.fb_pixel_purchase",
-      "onsite_conversion.purchase",
-      "offsite_conversion.fb_pixel_custom.PURCHASE",
     ],
     // Instalações de App
     "APP_INSTALLS":          ["app_install", "mobile_app_install"],
