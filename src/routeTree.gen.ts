@@ -36,6 +36,10 @@ import { Route as AppClientesRouteImport } from './routes/_app/clientes'
 import { Route as AppCampanhasRouteImport } from './routes/_app/campanhas'
 import { Route as AppAutomacoesRouteImport } from './routes/_app/automacoes'
 import { Route as AppAgenteRouteImport } from './routes/_app/agente'
+import { Route as AppFunisRouteImport } from './routes/_app/funis'
+import { Route as AppLinkBioRouteImport } from './routes/_app/link-bio'
+import { Route as AppFormularioRouteImport } from './routes/_app/formulario'
+import { Route as AppQuizRouteImport } from './routes/_app/quiz'
 import { Route as AppMetricasGraficoRouteImport } from './routes/_app/metricas.grafico'
 import { Route as AppClientesClientIdRouteImport } from './routes/_app/clientes.$clientId'
 import { Route as AppCampanhasGraficoRouteImport } from './routes/_app/campanhas.grafico'
@@ -174,6 +178,26 @@ const AppAgenteRoute = AppAgenteRouteImport.update({
   path: '/agente',
   getParentRoute: () => AppRoute,
 } as any)
+const AppFunisRoute = AppFunisRouteImport.update({
+  id: '/funis',
+  path: '/funis',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppLinkBioRoute = AppLinkBioRouteImport.update({
+  id: '/link-bio',
+  path: '/link-bio',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppFormularioRoute = AppFormularioRouteImport.update({
+  id: '/formulario',
+  path: '/formulario',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppQuizRoute = AppQuizRouteImport.update({
+  id: '/quiz',
+  path: '/quiz',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppMetricasGraficoRoute = AppMetricasGraficoRouteImport.update({
   id: '/grafico',
   path: '/grafico',
@@ -197,6 +221,10 @@ export interface FileRoutesByFullPath {
   '/privacy': typeof PrivacyRoute
   '/terms': typeof TermsRoute
   '/agente': typeof AppAgenteRoute
+  '/funis': typeof AppFunisRoute
+  '/link-bio': typeof AppLinkBioRoute
+  '/formulario': typeof AppFormularioRoute
+  '/quiz': typeof AppQuizRoute
   '/automacoes': typeof AppAutomacoesRoute
   '/campanhas': typeof AppCampanhasRouteWithChildren
   '/clientes': typeof AppClientesRouteWithChildren
@@ -228,6 +256,10 @@ export interface FileRoutesByTo {
   '/privacy': typeof PrivacyRoute
   '/terms': typeof TermsRoute
   '/agente': typeof AppAgenteRoute
+  '/funis': typeof AppFunisRoute
+  '/link-bio': typeof AppLinkBioRoute
+  '/formulario': typeof AppFormularioRoute
+  '/quiz': typeof AppQuizRoute
   '/automacoes': typeof AppAutomacoesRoute
   '/campanhas': typeof AppCampanhasRouteWithChildren
   '/clientes': typeof AppClientesRouteWithChildren
@@ -261,6 +293,10 @@ export interface FileRoutesById {
   '/privacy': typeof PrivacyRoute
   '/terms': typeof TermsRoute
   '/_app/agente': typeof AppAgenteRoute
+  '/_app/funis': typeof AppFunisRoute
+  '/_app/link-bio': typeof AppLinkBioRoute
+  '/_app/formulario': typeof AppFormularioRoute
+  '/_app/quiz': typeof AppQuizRoute
   '/_app/automacoes': typeof AppAutomacoesRoute
   '/_app/campanhas': typeof AppCampanhasRouteWithChildren
   '/_app/clientes': typeof AppClientesRouteWithChildren
@@ -294,6 +330,10 @@ export interface FileRouteTypes {
     | '/privacy'
     | '/terms'
     | '/agente'
+    | '/funis'
+    | '/link-bio'
+    | '/formulario'
+    | '/quiz'
     | '/automacoes'
     | '/campanhas'
     | '/clientes'
@@ -325,6 +365,10 @@ export interface FileRouteTypes {
     | '/privacy'
     | '/terms'
     | '/agente'
+    | '/funis'
+    | '/link-bio'
+    | '/formulario'
+    | '/quiz'
     | '/automacoes'
     | '/campanhas'
     | '/clientes'
@@ -357,6 +401,10 @@ export interface FileRouteTypes {
     | '/privacy'
     | '/terms'
     | '/_app/agente'
+    | '/_app/funis'
+    | '/_app/link-bio'
+    | '/_app/formulario'
+    | '/_app/quiz'
     | '/_app/automacoes'
     | '/_app/campanhas'
     | '/_app/clientes'
@@ -584,6 +632,34 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppAgenteRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/funis': {
+      id: '/_app/funis'
+      path: '/funis'
+      fullPath: '/funis'
+      preLoaderRoute: typeof AppFunisRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/link-bio': {
+      id: '/_app/link-bio'
+      path: '/link-bio'
+      fullPath: '/link-bio'
+      preLoaderRoute: typeof AppLinkBioRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/formulario': {
+      id: '/_app/formulario'
+      path: '/formulario'
+      fullPath: '/formulario'
+      preLoaderRoute: typeof AppFormularioRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/quiz': {
+      id: '/_app/quiz'
+      path: '/quiz'
+      fullPath: '/quiz'
+      preLoaderRoute: typeof AppQuizRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/metricas/grafico': {
       id: '/_app/metricas/grafico'
       path: '/grafico'
@@ -646,6 +722,10 @@ const AppMetricasRouteWithChildren = AppMetricasRoute._addFileChildren(
 
 interface AppRouteChildren {
   AppAgenteRoute: typeof AppAgenteRoute
+  AppFunisRoute: typeof AppFunisRoute
+  AppLinkBioRoute: typeof AppLinkBioRoute
+  AppFormularioRoute: typeof AppFormularioRoute
+  AppQuizRoute: typeof AppQuizRoute
   AppAutomacoesRoute: typeof AppAutomacoesRoute
   AppCampanhasRoute: typeof AppCampanhasRouteWithChildren
   AppClientesRoute: typeof AppClientesRouteWithChildren
@@ -668,6 +748,10 @@ interface AppRouteChildren {
 
 const AppRouteChildren: AppRouteChildren = {
   AppAgenteRoute: AppAgenteRoute,
+  AppFunisRoute: AppFunisRoute,
+  AppLinkBioRoute: AppLinkBioRoute,
+  AppFormularioRoute: AppFormularioRoute,
+  AppQuizRoute: AppQuizRoute,
   AppAutomacoesRoute: AppAutomacoesRoute,
   AppCampanhasRoute: AppCampanhasRouteWithChildren,
   AppClientesRoute: AppClientesRouteWithChildren,

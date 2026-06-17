@@ -103,10 +103,13 @@ const GESTAO_MORE_ITEMS: NavItem[] = [
 ];
 
 const FUNIL_NAV_ITEMS: NavItem[] = [
-  { to: "/organizador", icon: GitBranch, label: "Funis" },
-  { to: "/funnel-builder", icon: LayoutDashboard, label: "Canvas" },
+  { to: "/funis", icon: GitBranch, label: "Meus Funis" },
+  { to: "/funnel-builder", icon: LayoutDashboard, label: "Mapa Mental" },
+  { to: "/link-bio", icon: Link2, label: "Link Bio" },
+  { to: "/formulario", icon: FileText, label: "Formulário" },
 ];
 const FUNIL_MORE_ITEMS: NavItem[] = [
+  { to: "/quiz", icon: BarChart3, label: "Quiz" },
   { to: "/agente", icon: Bot, label: "Agente IA" },
   { to: "/config", icon: Settings, label: "Templates" },
 ];
@@ -297,15 +300,18 @@ function Shell() {
 
   // Se o activeModule for "hub", renderiza a tela de seleção de módulos (Cards direcionais)
   if (activeModule === "hub") {
+    const isHubDark = theme === "dark";
     return (
-      <div className="relative flex min-h-screen w-full flex-col bg-[#06060c] overflow-y-auto selection:bg-primary/30 text-white justify-center items-center p-6"
-           style={{
-             backgroundImage: "radial-gradient(circle, rgba(255,255,255,0.06) 1px, transparent 1px)",
-             backgroundSize: "28px 28px"
-           }}>
+      <div
+        className="relative flex min-h-screen w-full flex-col bg-background overflow-y-auto selection:bg-primary/30 justify-center items-center p-6"
+        style={{
+          backgroundImage: `radial-gradient(circle, ${isHubDark ? "rgba(255,255,255,0.045)" : "rgba(0,0,0,0.055)"} 1px, transparent 1px)`,
+          backgroundSize: "28px 28px",
+        }}
+      >
         {/* Background glow effects */}
         <div className="absolute inset-0 pointer-events-none -z-10">
-          <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full w-[800px] h-[500px] bg-gradient-to-r from-primary/10 via-violet-500/5 to-cyan-500/10 blur-[120px]" />
+          <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full w-[800px] h-[500px] bg-gradient-to-r from-primary/8 via-violet-500/5 to-cyan-500/8 blur-[140px]" />
         </div>
 
         <div className="w-full max-w-4xl space-y-8 text-center relative z-10 my-auto">
@@ -316,7 +322,7 @@ function Shell() {
               <span className="font-display font-black text-white text-lg relative z-10 tracking-normal">NC</span>
               <div className="absolute inset-x-0 bottom-0 h-[3px] bg-black/22 rounded-b-2xl pointer-events-none" />
             </div>
-            <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-white mt-2">
+            <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-foreground mt-2">
               Selecione o Módulo de Trabalho
             </h1>
             <p className="text-xs text-muted-foreground uppercase tracking-[0.2em] font-mono">
@@ -328,110 +334,118 @@ function Shell() {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 pt-4">
             {/* Card 1: Tráfego Pago */}
             <motion.div
-              whileHover={{ y: -8, scale: 1.02, borderColor: "rgba(239, 68, 68, 0.4)" }}
+              whileHover={{ y: -8, scale: 1.02 }}
               onClick={() => {
                 setActiveModule("trafego");
                 localStorage.setItem("nc_active_module", "trafego");
                 nav({ to: "/dashboard" });
               }}
-              className="group relative rounded-2xl border border-white/5 bg-white/[0.02] p-6 text-left cursor-pointer transition-all duration-300 hover:bg-white/[0.04] shadow-2xl backdrop-blur-md"
+              className="group relative rounded-2xl border border-border bg-card p-6 text-left cursor-pointer transition-all duration-300 hover:border-red-500/40 hover:shadow-lg shadow-sm"
             >
               <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-red-500 to-orange-500 rounded-t-2xl" />
               <div className="h-10 w-10 rounded-xl bg-red-500/10 border border-red-500/20 flex items-center justify-center mb-4">
                 <LineChart className="h-5 w-5 text-red-500" />
               </div>
-              <h3 className="text-base font-black text-white group-hover:text-red-400 transition-colors">
+              <h3 className="text-base font-black text-foreground group-hover:text-red-500 transition-colors">
                 Tráfego Pago
               </h3>
               <p className="text-xs text-muted-foreground mt-2 leading-relaxed">
-                Acesse o ecossistema de BI: Command Center, métricas granulares, dashboards de anúncios, relatórios de performance e automação de alertas.
+                Command Center, métricas granulares, dashboards de anúncios, relatórios de performance e automação de alertas.
               </p>
-              <div className="mt-6 flex items-center gap-1.5 text-[10px] font-black uppercase text-red-400 tracking-wider">
+              <div className="mt-6 flex items-center gap-1.5 text-[10px] font-black uppercase text-red-500 tracking-wider">
                 Acessar Tráfego <ArrowRight className="h-3 w-3 transition-transform group-hover:translate-x-1" />
               </div>
             </motion.div>
 
             {/* Card 2: Social Media */}
             <motion.div
-              whileHover={{ y: -8, scale: 1.02, borderColor: "rgba(236, 72, 153, 0.4)" }}
+              whileHover={{ y: -8, scale: 1.02 }}
               onClick={() => {
                 setActiveModule("social");
                 localStorage.setItem("nc_active_module", "social");
                 nav({ to: "/social" });
               }}
-              className="group relative rounded-2xl border border-white/5 bg-white/[0.02] p-6 text-left cursor-pointer transition-all duration-300 hover:bg-white/[0.04] shadow-2xl backdrop-blur-md"
+              className="group relative rounded-2xl border border-border bg-card p-6 text-left cursor-pointer transition-all duration-300 hover:border-pink-500/40 hover:shadow-lg shadow-sm"
             >
               <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-pink-500 to-violet-500 rounded-t-2xl" />
               <div className="h-10 w-10 rounded-xl bg-pink-500/10 border border-pink-500/20 flex items-center justify-center mb-4">
                 <Share2 className="h-5 w-5 text-pink-500" />
               </div>
-              <h3 className="text-base font-black text-white group-hover:text-pink-400 transition-colors">
+              <h3 className="text-base font-black text-foreground group-hover:text-pink-500 transition-colors">
                 Social Media
               </h3>
               <p className="text-xs text-muted-foreground mt-2 leading-relaxed">
-                Gerencie redes sociais organicamente. Planejador visual, calendário editorial integrado, criador de legendas com IA e analytics.
+                Planejador visual, calendário editorial integrado, criador de legendas com IA e analytics de conteúdo.
               </p>
-              <div className="mt-6 flex items-center gap-1.5 text-[10px] font-black uppercase text-pink-400 tracking-wider">
+              <div className="mt-6 flex items-center gap-1.5 text-[10px] font-black uppercase text-pink-500 tracking-wider">
                 Acessar Redes <ArrowRight className="h-3 w-3 transition-transform group-hover:translate-x-1" />
               </div>
             </motion.div>
 
             {/* Card 3: Gestão / CRM */}
             <motion.div
-              whileHover={{ y: -8, scale: 1.02, borderColor: "rgba(6, 182, 212, 0.4)" }}
+              whileHover={{ y: -8, scale: 1.02 }}
               onClick={() => {
                 setActiveModule("gestao");
                 localStorage.setItem("nc_active_module", "gestao");
                 nav({ to: "/clientes" });
               }}
-              className="group relative rounded-2xl border border-white/5 bg-white/[0.02] p-6 text-left cursor-pointer transition-all duration-300 hover:bg-white/[0.04] shadow-2xl backdrop-blur-md"
+              className="group relative rounded-2xl border border-border bg-card p-6 text-left cursor-pointer transition-all duration-300 hover:border-cyan-500/40 hover:shadow-lg shadow-sm"
             >
               <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-cyan-500 to-blue-500 rounded-t-2xl" />
               <div className="h-10 w-10 rounded-xl bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center mb-4">
                 <Users className="h-5 w-5 text-cyan-500" />
               </div>
-              <h3 className="text-base font-black text-white group-hover:text-cyan-400 transition-colors">
+              <h3 className="text-base font-black text-foreground group-hover:text-cyan-500 transition-colors">
                 Gestão & CRM
               </h3>
               <p className="text-xs text-muted-foreground mt-2 leading-relaxed">
-                Controle operacional da agência. Gestão de carteiras, faturamento, reuniões de fechamento, uploads de planilhas e o Agente IA Victoria.
+                Gestão de carteiras de clientes, faturamento, reuniões de fechamento e o Agente IA Victoria.
               </p>
-              <div className="mt-6 flex items-center gap-1.5 text-[10px] font-black uppercase text-cyan-400 tracking-wider">
+              <div className="mt-6 flex items-center gap-1.5 text-[10px] font-black uppercase text-cyan-500 tracking-wider">
                 Acessar Gestão <ArrowRight className="h-3 w-3 transition-transform group-hover:translate-x-1" />
               </div>
             </motion.div>
 
             {/* Card 4: Funis & Mapas */}
             <motion.div
-              whileHover={{ y: -8, scale: 1.02, borderColor: "rgba(168, 85, 247, 0.4)" }}
+              whileHover={{ y: -8, scale: 1.02 }}
               onClick={() => {
                 setActiveModule("funil");
                 localStorage.setItem("nc_active_module", "funil");
-                nav({ to: "/organizador" });
+                nav({ to: "/funis" });
               }}
-              className="group relative rounded-2xl border border-white/5 bg-white/[0.02] p-6 text-left cursor-pointer transition-all duration-300 hover:bg-white/[0.04] shadow-2xl backdrop-blur-md"
+              className="group relative rounded-2xl border border-border bg-card p-6 text-left cursor-pointer transition-all duration-300 hover:border-purple-500/40 hover:shadow-lg shadow-sm"
             >
               <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-purple-500 to-indigo-500 rounded-t-2xl" />
               <div className="h-10 w-10 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center mb-4">
                 <GitBranch className="h-5 w-5 text-purple-500" />
               </div>
-              <h3 className="text-base font-black text-white group-hover:text-purple-400 transition-colors">
+              <h3 className="text-base font-black text-foreground group-hover:text-purple-500 transition-colors">
                 Mapas & Funis
               </h3>
               <p className="text-xs text-muted-foreground mt-2 leading-relaxed">
-                Construtor de funis automotivos em canvas infinito. Crie etapas, defina jornadas e rastreie fricções de conversão.
+                Crie funis automotivos no Mapa Mental. Defina jornadas, rastreie fricções e gerencie Link Bios, Forms e Quizzes.
               </p>
-              <div className="mt-6 flex items-center gap-1.5 text-[10px] font-black uppercase text-purple-400 tracking-wider">
+              <div className="mt-6 flex items-center gap-1.5 text-[10px] font-black uppercase text-purple-500 tracking-wider">
                 Acessar Funis <ArrowRight className="h-3 w-3 transition-transform group-hover:translate-x-1" />
               </div>
             </motion.div>
           </div>
 
-          {/* Footer logout */}
-          <div className="pt-4">
+          {/* Theme toggle + Footer logout */}
+          <div className="pt-4 flex items-center justify-center gap-6">
+            <button
+              onClick={toggleTheme}
+              className="text-[10px] font-bold text-muted-foreground hover:text-foreground uppercase tracking-wider flex items-center gap-1.5 transition-colors"
+            >
+              {theme === "dark" ? <Sun className="h-3.5 w-3.5" /> : <Moon className="h-3.5 w-3.5" />}
+              {theme === "dark" ? "Modo Claro" : "Modo Escuro"}
+            </button>
+            <div className="h-3 w-px bg-border" />
             <button
               onClick={handleSignOut}
-              className="text-[10px] font-bold text-muted-foreground hover:text-white uppercase tracking-wider flex items-center gap-1.5 mx-auto transition-colors"
+              className="text-[10px] font-bold text-muted-foreground hover:text-destructive uppercase tracking-wider flex items-center gap-1.5 transition-colors"
             >
               <LogOut className="h-3.5 w-3.5" /> Sair da Conta
             </button>
@@ -469,7 +483,7 @@ function Shell() {
               </div>
             </Link>
 
-            {activeModule !== "hub" && (
+            {(activeModule as string) !== "hub" && (
               <div className="relative ml-2">
                 <button
                   onClick={() => setShowModuleMenu(!showModuleMenu)}
