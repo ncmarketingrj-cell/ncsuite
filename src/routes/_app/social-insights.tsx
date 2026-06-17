@@ -33,7 +33,17 @@ function SocialInsightsPage() {
     }
   });
 
-  const isMetaConnected = !!metaConfig?.facebook_page_id || !!metaConfig?.instagram_account_id;
+  // Query social pages
+  const { data: socialPages = [] } = useQuery({
+    queryKey: ["social_pages_insights"],
+    queryFn: async () => {
+      const { data } = await supabase.from("social_pages").select("*").order("page_name");
+      return data || [];
+    }
+  });
+
+  const selectedPageObj = socialPages.find((sp: any) => sp.page_id === selectedPage);
+  const isMetaConnected = socialPages.length > 0;
 
   // Mock insights data (in a real app, we would query the Facebook Graph API)
   const mockInsights = {
@@ -160,8 +170,17 @@ function SocialInsightsPage() {
               className="rounded-lg border border-white/10 bg-background px-3 py-1.5 text-xs text-foreground focus:outline-none"
             >
               <option value="all">Todas as Contas (Meta)</option>
-              <option value="instagram">{metaConfig?.instagram_handle ? `@${metaConfig.instagram_handle}` : "@ncperformance (Instagram)"}</option>
-              <option value="facebook">{metaConfig?.facebook_page_name || "NC Seminovos (Facebook)"}</option>
+              {socialPages.map((sp: any) => (
+                <option key={sp.page_id} value={sp.page_id}>
+                  {sp.page_name} {sp.instagram_handle ? `(@${sp.instagram_handle})` : ""}
+                </option>
+              ))}
+              {socialPages.length === 0 && (
+                <>
+                  <option value="instagram">@ncperformance (Instagram)</option>
+                  <option value="facebook">NC Seminovos (Facebook)</option>
+                </>
+              )}
             </select>
           </div>
         </div>

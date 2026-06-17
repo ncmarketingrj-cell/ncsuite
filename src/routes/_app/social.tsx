@@ -74,6 +74,7 @@ function SocialMediaPage() {
   const [scheduledTime, setScheduledTime] = useState("12:00");
   const [status, setStatus] = useState<"draft" | "pending_approval" | "scheduled">("scheduled");
   const [uploading, setUploading] = useState(false);
+  const [targetPageId, setTargetPageId] = useState("");
 
   // AI assistant states
   const [aiPrompt, setAiPrompt] = useState("");
@@ -92,6 +93,17 @@ function SocialMediaPage() {
     }
   });
 
+  // Query social pages
+  const { data: socialPages = [] } = useQuery({
+    queryKey: ["social_pages"],
+    queryFn: async () => {
+      const { data } = await supabase.from("social_pages").select("*").order("page_name");
+      return data || [];
+    }
+  });
+
+  const [selectedPageId, setSelectedPageId] = useState<string>("all");
+
   const { data: posts = [], isLoading: loadingPosts } = useQuery({
     queryKey: ["social_posts"],
     queryFn: async () => {
@@ -103,8 +115,10 @@ function SocialMediaPage() {
     }
   });
 
+  const filteredPosts = posts.filter(p => selectedPageId === "all" || p.page_id === selectedPageId);
+
   // Fetch Meta Pages list (for fallback/display warnings)
-  const isMetaConnected = !!metaConfig?.facebook_page_id || !!metaConfig?.instagram_account_id;
+  const isMetaConnected = socialPages.length > 0;
 
   // Mutation to create/update post
   const savePostMutation = useMutation({
@@ -198,6 +212,7 @@ function SocialMediaPage() {
     setCarTag("");
     setTagPosition(null);
     setAiPrompt("");
+    setTargetPageId("");
   };
 
   // Open drawer for editing
@@ -209,6 +224,7 @@ function SocialMediaPage() {
     setPostType(post.post_type || "feed");
     setPlatform(post.platform || "instagram");
     setStatus(post.status || "scheduled");
+    setTargetPageId(post.page_id || "");
     
     if (post.scheduled_at) {
       const dateObj = new Date(post.scheduled_at);
@@ -281,7 +297,8 @@ function SocialMediaPage() {
       platform,
       status: status,
       scheduled_at: isoScheduled,
-      product_tags: carTag && tagPosition ? [{ name: carTag, x: tagPosition.x, y: tagPosition.y }] : []
+      product_tags: carTag && tagPosition ? [{ name: carTag, x: tagPosition.x, y: tagPosition.y }] : [],
+      page_id: targetPageId || null
     };
 
     if (editingPost) {
@@ -400,9 +417,9 @@ function SocialMediaPage() {
   const calendarDays = eachDayOfInterval({ start: monthStart, end: monthEnd });
 
   // Group posts by status
-  const scheduledPosts = posts.filter(p => p.status === "scheduled");
-  const publishedPosts = posts.filter(p => p.status === "published");
-  const draftPosts = posts.filter(p => p.status === "draft" || p.status === "pending_approval");
+  const scheduledPosts = filteredPosts.filter(p => p.status === "scheduled");
+  const publishedPosts = filteredPosts.filter(p => p.status === "published");
+  const draftPosts = filteredPosts.filter(p => p.status === "draft" || p.status === "pending_approval");
 
   return (
     <div className="space-y-6">
@@ -417,7 +434,21 @@ function SocialMediaPage() {
             Agende postagens orgânicas (Feed, Reels, Stories) e otimize com IA no Meta.
           </p>
         </div>
-        <div className="flex items-center gap-2.5">
+        <div className="flex flex-wrap items-center gap-2.5">
+          {socialPages.length > 0 && (
+            <select
+              value={selectedPageId}
+              onChange={(e) => setSelectedPageId(e.target.value)}
+              className="rounded-xl border border-white/10 bg-card px-3 py-2 text-xs font-bold text-muted-foreground focus:outline-none"
+            >
+              <option value="all">Todas as Páginas / Contas</option>
+              {socialPages.map((sp: any) => (
+                <option key={sp.page_id} value={sp.page_id}>
+                  {sp.page_name} {sp.instagram_handle ? `(@${sp.instagram_handle})` : ""}
+                </option>
+              ))}
+            </select>
+          )}
           <button 
             onClick={() => syncMetricsMutation.mutate()} 
             disabled={syncMetricsMutation.isPending}
@@ -510,7 +541,7 @@ function SocialMediaPage() {
             {/* Grid do mês */}
             <div className="grid grid-cols-7 gap-2">
               {calendarDays.map((day, idx) => {
-                const dayPosts = posts.filter(p => p.scheduled_at && isSameDay(parseISO(p.scheduled_at), day));
+                const dayPosts = filteredPosts.filter(p => p.scheduled_at && isSameDay(parseISO(p.scheduled_at), day));
                 const isToday = isSameDay(day, new Date());
                 const holiday = AUTOMOTIVE_HOLIDAYS.find(h => h.day === day.getDate() && h.month === day.getMonth());
 
@@ -682,7 +713,7 @@ function SocialMediaPage() {
                         ))}
 
                         {/* Fallback de grid vazia */}
-                        {posts.length === 0 && (
+                        {filteredPosts.length === 0 && (
                           <div className="col-span-3 py-16 text-center text-xs text-muted-foreground flex flex-col items-center justify-center">
                             <Instagram className="h-8 w-8 opacity-30 mb-2" />
                             Nenhuma foto no feed
@@ -708,11 +739,11 @@ function SocialMediaPage() {
                 <h3 className="text-xs font-black uppercase text-primary tracking-widest">Publicações Agendadas e Rascunhos</h3>
                 {loadingPosts ? (
                   <div className="flex justify-center py-8"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>
-                ) : posts.length === 0 ? (
+                ) : filteredPosts.length === 0 ? (
                   <p className="py-8 text-center text-xs text-muted-foreground">Nenhuma postagem cadastrada.</p>
                 ) : (
                   <div className="grid gap-3">
-                    {posts.map((post) => (
+                    {filteredPosts.map((post) => (
                       <div 
                         key={post.id} 
                         className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 p-4 border border-white/5 bg-background/20 rounded-2xl transition hover:border-primary/20"
@@ -790,10 +821,10 @@ function SocialMediaPage() {
             {/* KPI Cards */}
             <div className="grid gap-4 sm:grid-cols-4">
               {[
-                { label: "Curtidas Totais", val: posts.reduce((acc, p) => acc + (p.likes_count || 0), 0), icon: Heart, color: "text-red-500 bg-red-500/10" },
-                { label: "Comentários", val: posts.reduce((acc, p) => acc + (p.comments_count || 0), 0), icon: MessageSquare, color: "text-blue-500 bg-blue-500/10" },
-                { label: "Alcance Orgânico", val: posts.reduce((acc, p) => acc + (p.reach_count || 0), 0), icon: Share2, color: "text-primary bg-primary/10" },
-                { label: "Impressões", val: posts.reduce((acc, p) => acc + (p.impressions_count || 0), 0), icon: Eye, color: "text-violet-500 bg-violet-500/10" }
+                { label: "Curtidas Totais", val: filteredPosts.reduce((acc, p) => acc + (p.likes_count || 0), 0), icon: Heart, color: "text-red-500 bg-red-500/10" },
+                { label: "Comentários", val: filteredPosts.reduce((acc, p) => acc + (p.comments_count || 0), 0), icon: MessageSquare, color: "text-blue-500 bg-blue-500/10" },
+                { label: "Alcance Orgânico", val: filteredPosts.reduce((acc, p) => acc + (p.reach_count || 0), 0), icon: Share2, color: "text-primary bg-primary/10" },
+                { label: "Impressões", val: filteredPosts.reduce((acc, p) => acc + (p.impressions_count || 0), 0), icon: Eye, color: "text-violet-500 bg-violet-500/10" }
               ].map((kpi, idx) => (
                 <div key={idx} className="glass-panel p-5 space-y-2 flex flex-col justify-between">
                   <div className="flex items-center justify-between">
@@ -921,6 +952,25 @@ function SocialMediaPage() {
                         className="w-full rounded-lg border border-white/10 bg-background px-3 py-2 text-xs text-foreground focus:border-primary focus:outline-none"
                       />
                     </div>
+
+                    {/* Página / Perfil de Destino */}
+                    {socialPages.length > 0 && (
+                      <div className="space-y-1.5">
+                        <label className="label-mono text-[9px] text-muted-foreground uppercase">Página / Perfil de Destino</label>
+                        <select
+                          value={targetPageId}
+                          onChange={(e) => setTargetPageId(e.target.value)}
+                          className="w-full rounded-lg border border-white/10 bg-background px-3 py-2 text-xs text-foreground focus:border-primary focus:outline-none"
+                        >
+                          <option value="">Selecione a Página Alvo</option>
+                          {socialPages.map((sp: any) => (
+                            <option key={sp.page_id} value={sp.page_id}>
+                              {sp.page_name} {sp.instagram_handle ? `(@${sp.instagram_handle})` : ""}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
 
                     {/* Canais / Plataformas */}
                     <div className="grid grid-cols-2 gap-2">

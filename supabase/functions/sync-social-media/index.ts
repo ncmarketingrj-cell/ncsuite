@@ -81,20 +81,26 @@ serve(async (req) => {
     // AÇÃO: BUSCAR PÁGINAS DO FACEBOOK E IG VINCULADOS
     // ==========================================
     if (action === "fetch-pages") {
-      const { data: config } = await supabase
-        .from("meta_ads_configs")
-        .select("access_token")
-        .maybeSingle()
+      let tokenToUse = body.accessToken
+      if (!tokenToUse) {
+        const { data: config } = await supabase
+          .from("meta_ads_configs")
+          .select("access_token")
+          .eq("user_id", user.id)
+          .maybeSingle()
+        tokenToUse = config?.access_token
+      }
 
       let pagesList = []
       let mockUsed = false
 
-      if (!config?.access_token || config.access_token.startsWith("mock_") || config.access_token.length < 20) {
+      if (!tokenToUse || tokenToUse.startsWith("mock_") || tokenToUse.length < 20) {
         // Usar dados mockados para demonstração comercial/teste sem token válido
         pagesList = [
           {
             page_id: "mock_page_1",
             page_name: "NC Seminovos Premium",
+            access_token: "mock_page_token_1",
             instagram: {
               id: "mock_ig_1",
               username: "nc_seminovos_premium"
@@ -103,6 +109,7 @@ serve(async (req) => {
           {
             page_id: "mock_page_2",
             page_name: "NC Concessionária",
+            access_token: "mock_page_token_2",
             instagram: {
               id: "mock_ig_2",
               username: "nc_concessionaria"
@@ -111,6 +118,7 @@ serve(async (req) => {
           {
             page_id: "mock_page_3",
             page_name: "NC Marketing Automotivo",
+            access_token: "mock_page_token_3",
             instagram: null
           }
         ]
@@ -118,7 +126,7 @@ serve(async (req) => {
       } else {
         // Buscar páginas
         try {
-          const pagesRes = await fetch(`${META_API_BASE}/me/accounts?access_token=${config.access_token}`)
+          const pagesRes = await fetch(`${META_API_BASE}/me/accounts?access_token=${tokenToUse}`)
           const pagesData = await pagesRes.json()
           if (pagesData.error) throw new Error(pagesData.error.message)
 
@@ -126,7 +134,7 @@ serve(async (req) => {
           for (const p of fbPages) {
             let igAccount = null
             try {
-              const igRes = await fetch(`${META_API_BASE}/${p.id}?fields=instagram_business_account{id,username}&access_token=${config.access_token}`)
+              const igRes = await fetch(`${META_API_BASE}/${p.id}?fields=instagram_business_account{id,username}&access_token=${tokenToUse}`)
               const igData = await igRes.json()
               if (igData.instagram_business_account) {
                 igAccount = {
@@ -134,22 +142,24 @@ serve(async (req) => {
                   username: igData.instagram_business_account.username
                 }
               }
-            } catch (e) {
+            } catch (e: any) {
               console.error(`Erro ao carregar Instagram da página ${p.id}:`, e.message)
             }
 
             pagesList.push({
               page_id: p.id,
               page_name: p.name,
+              access_token: p.access_token,
               instagram: igAccount
             })
           }
-        } catch (err) {
+        } catch (err: any) {
           console.error("Token real falhou, usando mock de contingência:", err.message)
           pagesList = [
             {
               page_id: "mock_page_1",
               page_name: "NC Seminovos Premium (Demo)",
+              access_token: "mock_page_token_1",
               instagram: {
                 id: "mock_ig_1",
                 username: "nc_seminovos_premium"
@@ -158,6 +168,7 @@ serve(async (req) => {
             {
               page_id: "mock_page_2",
               page_name: "NC Concessionária (Demo)",
+              access_token: "mock_page_token_2",
               instagram: {
                 id: "mock_ig_2",
                 username: "nc_concessionaria"
@@ -165,6 +176,24 @@ serve(async (req) => {
             }
           ]
           mockUsed = true
+        }
+      }
+
+      // Persistir na tabela social_pages para o usuário autenticado
+      for (const p of pagesList) {
+        const { error: upsertErr } = await supabase
+          .from("social_pages")
+          .upsert({
+            user_id: user.id,
+            page_id: p.page_id,
+            page_name: p.page_name,
+            instagram_account_id: p.instagram?.id || null,
+            instagram_handle: p.instagram?.username || null,
+            access_token: p.access_token || null,
+            updated_at: new Date().toISOString()
+          }, { onConflict: "page_id" })
+        if (upsertErr) {
+          console.error(`Erro ao salvar página ${p.page_id} no banco:`, upsertErr.message)
         }
       }
 

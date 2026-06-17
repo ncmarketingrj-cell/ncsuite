@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Settings, User, Building2, Plug, BookOpen, Cpu, Plus, Trash2, Globe, Check, X, Loader2, Wifi, WifiOff, ChevronDown, Zap, Brain, LayoutDashboard, FileText, Target, Upload, Send, Users, Database, Lock, MessageSquareWarning, Bug, Lightbulb, Frown, HelpCircle, StickyNote, Filter, Eye, Clock, Megaphone, Share2, RefreshCw } from "lucide-react";
+import { Settings, User, Building2, Plug, BookOpen, Cpu, Plus, Trash2, Globe, Check, X, Loader2, Wifi, WifiOff, ChevronDown, Zap, Brain, LayoutDashboard, FileText, Target, Upload, Send, Users, Database, Lock, MessageSquareWarning, Bug, Lightbulb, Frown, HelpCircle, StickyNote, Filter, Eye, Clock, Megaphone, Share2, RefreshCw, Instagram } from "lucide-react";
 import { SyncButton } from "@/components/SyncButton";
 import { toast } from "sonner";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -199,6 +199,7 @@ function TabClientes() {
 }
 
 function TabIntegracoes() {
+  const qc = useQueryClient();
   const [token, setToken] = useState("");
   const [testing, setTesting] = useState(false);
   const [connected, setConnected] = useState<boolean | null>(null);
@@ -207,12 +208,16 @@ function TabIntegracoes() {
   const [showTokenPlain, setShowTokenPlain] = useState(false);
   
   // Social Media states
-  const [fbPageId, setFbPageId] = useState("");
-  const [fbPageName, setFbPageName] = useState("");
-  const [igAccountId, setIgAccountId] = useState("");
-  const [igHandle, setIgHandle] = useState("");
-  const [pagesList, setPagesList] = useState<any[]>([]);
   const [loadingPages, setLoadingPages] = useState(false);
+
+  // Social Pages Query
+  const { data: socialPages = [], refetch: refetchSocialPages } = useQuery({
+    queryKey: ["social_pages_configs"],
+    queryFn: async () => {
+      const { data } = await supabase.from("social_pages").select("*").order("page_name");
+      return data || [];
+    }
+  });
   
   // Google Ads state
   const { data: googleConfigs, isLoading: loadingGoogle, refetch: refetchGoogle } = useQuery({
@@ -269,10 +274,6 @@ function TabIntegracoes() {
       if (data) {
         setToken(data.access_token || "");
         setOpenaiConfigured(data.openai_key_configured || false);
-        setFbPageId(data.facebook_page_id || "");
-        setFbPageName(data.facebook_page_name || "");
-        setIgAccountId(data.instagram_account_id || "");
-        setIgHandle(data.instagram_handle || "");
       }
       setIsLoading(false);
     };
@@ -287,36 +288,16 @@ function TabIntegracoes() {
     setLoadingPages(true);
     try {
       const { data, error } = await supabase.functions.invoke("sync-social-media", {
-        body: { action: "fetch-pages" }
+        body: { action: "fetch-pages", accessToken: token }
       });
       if (error) throw error;
-      setPagesList(data.pages || []);
-      toast.success("Páginas e Perfis carregados!");
+      refetchSocialPages();
+      toast.success("Páginas e Perfis do Instagram sincronizados com sucesso!");
     } catch (err: any) {
       console.error(err);
       toast.error(err.message ?? "Erro ao carregar páginas.");
     } finally {
       setLoadingPages(false);
-    }
-  };
-
-  const handlePageChange = (pageId: string) => {
-    const selected = pagesList.find(p => p.page_id === pageId);
-    if (selected) {
-      setFbPageId(selected.page_id);
-      setFbPageName(selected.page_name);
-      if (selected.instagram) {
-        setIgAccountId(selected.instagram.id);
-        setIgHandle(selected.instagram.username);
-      } else {
-        setIgAccountId("");
-        setIgHandle("");
-      }
-    } else {
-      setFbPageId("");
-      setFbPageName("");
-      setIgAccountId("");
-      setIgHandle("");
     }
   };
 
@@ -327,15 +308,11 @@ function TabIntegracoes() {
       const { error } = await (supabase as any).from("meta_ads_configs").upsert({
         user_id: u.user?.id,
         access_token: token,
-        ad_account_id: "ALL_ACCOUNTS",
-        facebook_page_id: fbPageId || null,
-        facebook_page_name: fbPageName || null,
-        instagram_account_id: igAccountId || null,
-        instagram_handle: igHandle || null
+        ad_account_id: "ALL_ACCOUNTS"
       }, { onConflict: "user_id" });
 
       if (error) throw error;
-      toast.success("✅ Configurações salvas! Clique em 'Sincronizar Agora' no Dashboard.");
+      toast.success("✅ Token do Meta salvo com sucesso!");
     } catch (err: any) {
       toast.error(err.message ?? "Erro ao salvar");
     }
@@ -410,7 +387,7 @@ function TabIntegracoes() {
             <h4 className="text-xs font-bold uppercase tracking-wider">Redes Sociais da Meta</h4>
           </div>
           <p className="text-[11px] text-muted-foreground leading-relaxed">
-            Selecione qual Página do Facebook e qual Conta do Instagram associada você deseja utilizar para agendar e planejar postagens.
+            Sincronize e gerencie todas as Páginas do Facebook e contas associadas do Instagram vinculadas ao seu token de acesso.
           </p>
           <div className="flex gap-2">
             <button
@@ -420,48 +397,58 @@ function TabIntegracoes() {
               className="inline-flex items-center gap-2 rounded-xl bg-white/5 border border-white/10 px-4 py-2 text-xs font-medium hover:bg-white/10 transition disabled:opacity-50 cursor-pointer"
             >
               {loadingPages ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
-              Carregar Páginas e Perfis
+              Sincronizar Páginas e Perfis
             </button>
           </div>
-          {(pagesList.length > 0 || fbPageId) && (
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-1.5">
-                <label className="label-mono text-[9px] text-muted-foreground uppercase">Página do Facebook</label>
-                {pagesList.length > 0 ? (
-                  <select
-                    value={fbPageId}
-                    onChange={(e) => handlePageChange(e.target.value)}
-                    className="w-full rounded-lg border border-white/10 bg-background px-3 py-2 text-xs text-foreground focus:border-primary focus:outline-none"
+
+          <div className="grid gap-3 pt-2">
+            {socialPages.map((sp: any) => (
+              <div key={sp.id} className="rounded-xl border border-white/10 bg-white/[0.02] p-4 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center">
+                    <Share2 className="h-5 w-5 text-primary" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-bold">{sp.page_name}</p>
+                    <p className="text-[9px] text-muted-foreground uppercase tracking-widest">ID: {sp.page_id}</p>
+                    {sp.instagram_handle && (
+                      <span className="inline-flex items-center gap-1 rounded bg-pink-500/10 border border-pink-500/20 px-1.5 py-0.5 text-[9px] font-bold text-pink-500 mt-1">
+                        <Instagram className="h-2.5 w-2.5" /> @{sp.instagram_handle}
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="rounded-full px-2 py-0.5 text-[9px] font-black bg-success/20 text-success uppercase tracking-widest">
+                    CONECTADO
+                  </span>
+                  <button 
+                    onClick={async () => {
+                      if (!confirm("Remover esta página da sincronização?")) return;
+                      await supabase.from("social_pages").delete().eq("id", sp.id);
+                      refetchSocialPages();
+                      toast.success("Página removida.");
+                    }}
+                    className="text-muted-foreground hover:text-destructive transition p-2"
                   >
-                    <option value="">Selecione a Página</option>
-                    {pagesList.map((p) => (
-                      <option key={p.page_id} value={p.page_id}>{p.page_name}</option>
-                    ))}
-                  </select>
-                ) : (
-                  <input
-                    value={fbPageName || "Página vinculada"}
-                    disabled
-                    className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs text-muted-foreground font-semibold"
-                  />
-                )}
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </div>
               </div>
-              <div className="space-y-1.5">
-                <label className="label-mono text-[9px] text-muted-foreground uppercase">Conta do Instagram</label>
-                <input
-                  value={igHandle ? `@${igHandle}` : "Nenhuma conta vinculada detectada"}
-                  disabled
-                  className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs text-muted-foreground font-semibold"
-                />
-              </div>
-            </div>
-          )}
+            ))}
+
+            {socialPages.length === 0 && !loadingPages && (
+              <p className="text-center text-xs text-muted-foreground py-4 border border-dashed border-white/5 rounded-xl">
+                Nenhuma Página do Facebook ou Instagram sincronizada. Insira seu token e clique em Sincronizar.
+              </p>
+            )}
+          </div>
         </div>
       </div>
 
       <div className="flex items-center gap-3 pt-2 mb-8">
         <button onClick={save} className="inline-flex items-center gap-2 rounded-full bg-primary px-4 py-2 text-xs font-bold text-primary-foreground hover:shadow-glow transition">
-          <Check className="h-3.5 w-3.5" /> SALVAR META ADS
+          <Check className="h-3.5 w-3.5" /> SALVAR TOKEN META
         </button>
         <button onClick={test} disabled={testing} className="inline-flex items-center gap-2 rounded-full border border-white/10 px-4 py-2 text-xs font-medium disabled:opacity-50 hover:bg-white/5">
           {testing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : connected ? <Wifi className="h-3.5 w-3.5 text-success" /> : <WifiOff className="h-3.5 w-3.5" />}
