@@ -38,6 +38,8 @@ interface CampaignData {
   objective: string;
   platform: "meta" | "google";
   selected: boolean;
+  campaignName?: string;
+  adSetName?: string;
 }
 
 interface SavedReport {
@@ -45,10 +47,11 @@ interface SavedReport {
   createdAt: string;
   clientName: string;
   periodText: string;
-  reportMode: "complete" | "objective" | "campaigns";
+  reportMode: string;
   source: "api" | "upload";
   campaigns: CampaignData[];
   generatedText: string;
+  reportLevel?: "campaign" | "adset" | "ad";
 }
 
 function RelatoriosPage() {
@@ -58,6 +61,7 @@ function RelatoriosPage() {
   const [source, setSource] = useState<"api" | "upload">(search.from === "upload" ? "upload" : "api");
   const [clientName, setClientName] = useState("Pizza Bonne");
   const [periodText, setPeriodText] = useState("");
+  const [reportLevel, setReportLevel] = useState<"campaign" | "adset" | "ad">("campaign");
   const [reportMode, setReportMode] = useState<"complete" | "objective" | "campaigns">("complete");
   
   const [selectedAccountId, setSelectedAccountId] = useState<string>("all");
@@ -128,7 +132,8 @@ function RelatoriosPage() {
       reportMode,
       source,
       campaigns: campaignList,
-      generatedText
+      generatedText,
+      reportLevel
     };
 
     let updatedList = [...savedReports];
@@ -154,6 +159,9 @@ function RelatoriosPage() {
     setCampaignList(rep.campaigns);
     setGeneratedText(rep.generatedText);
     setActiveReportId(rep.id);
+    if (rep.reportLevel) {
+      setReportLevel(rep.reportLevel);
+    }
     toast.success(`Relatório de ${rep.clientName} carregado com sucesso!`);
   };
 
@@ -258,68 +266,158 @@ function RelatoriosPage() {
         const startLimit = getLocalDateStr(dateRange.startDate);
         const endLimit = getLocalDateStr(dateRange.endDate);
         
-        let metricsQuery = (supabase as any).from("metrics").select(`
-          campaign_id, cost, conversions, impressions, clicks, reach,
-          campaigns!inner(id, name, ad_account_id)
-        `)
-        .gte("date", startLimit)
-        .lte("date", endLimit);
+        let mapped: CampaignData[] = [];
 
-        if (selectedAccountId !== "all") {
-          metricsQuery = metricsQuery.eq("campaigns.ad_account_id", selectedAccountId);
-        }
+        if (reportLevel === "adset") {
+          let query = (supabase as any).from("ad_sets").select(`
+            id, name, campaign_id,
+            campaigns!inner(id, name, ad_account_id),
+            asset_metrics(cost, conversions, impressions, clicks, reach, date)
+          `);
+          if (selectedAccountId !== "all") {
+            query = query.eq("campaigns.ad_account_id", selectedAccountId);
+          }
+          const { data: dbData, error } = await query;
+          if (error) throw error;
 
-        const { data: dbMetrics, error: mErr } = await metricsQuery;
-        if (mErr) {
-          console.error("Supabase Query Error:", mErr);
-          throw mErr;
-        }
+          mapped = (dbData || []).map((adset: any) => {
+            const filteredMetrics = (adset.asset_metrics || []).filter((x: any) => {
+              if (!x.date) return true;
+              return x.date >= startLimit && x.date <= endLimit;
+            });
+            const cost = filteredMetrics.reduce((s: number, x: any) => s + Number(x.cost || 0), 0);
+            const conversions = filteredMetrics.reduce((s: number, x: any) => s + Number(x.conversions || 0), 0);
+            const clicks = filteredMetrics.reduce((s: number, x: any) => s + Number(x.clicks || 0), 0);
+            const impressions = filteredMetrics.reduce((s: number, x: any) => s + Number(x.impressions || 0), 0);
+            const reach = filteredMetrics.reduce((s: number, x: any) => s + Number(x.reach || 0), 0);
 
-        if (!dbMetrics || dbMetrics.length === 0) {
-          setCampaignList([]);
-          return;
-        }
+            const adAccountId = adset.campaigns?.ad_account_id;
+            const matchedAccount = accounts.find(a => a.id === adAccountId);
+            const platformStr = matchedAccount?.platform === "Google Ads" ? "google" : "meta";
 
-        // Agrupar métricas por campanha e identificar plataforma correta
-        const metricsMap = new Map<string, { id: string, name: string, platform: string, cost: number; impressions: number; clicks: number; conversions: number; reach: number }>();
-        
-        dbMetrics.forEach((m: any) => {
-          const campId = m.campaign_id;
-          const adAccountId = m.campaigns?.ad_account_id;
-          const matchedAccount = accounts.find(a => a.id === adAccountId);
-          const platformStr = matchedAccount?.platform === "Google Ads" ? "google" : "meta";
+            return {
+              id: adset.id,
+              name: adset.name,
+              campaignName: adset.campaigns?.name || "Sem Campanha",
+              cost,
+              impressions,
+              clicks,
+              conversions,
+              reach,
+              objective: detectObjective(adset.name),
+              platform: platformStr as "meta" | "google",
+              selected: cost > 0
+            };
+          }).filter(c => c.cost > 0 || c.impressions >= 1 || c.reach >= 1);
+
+        } else if (reportLevel === "ad") {
+          let query = (supabase as any).from("ads").select(`
+            id, name, campaign_id, ad_set_id,
+            campaigns!inner(id, name, ad_account_id),
+            ad_sets(id, name),
+            asset_metrics(cost, conversions, impressions, clicks, reach, date)
+          `);
+          if (selectedAccountId !== "all") {
+            query = query.eq("campaigns.ad_account_id", selectedAccountId);
+          }
+          const { data: dbData, error } = await query;
+          if (error) throw error;
+
+          mapped = (dbData || []).map((ad: any) => {
+            const filteredMetrics = (ad.asset_metrics || []).filter((x: any) => {
+              if (!x.date) return true;
+              return x.date >= startLimit && x.date <= endLimit;
+            });
+            const cost = filteredMetrics.reduce((s: number, x: any) => s + Number(x.cost || 0), 0);
+            const conversions = filteredMetrics.reduce((s: number, x: any) => s + Number(x.conversions || 0), 0);
+            const clicks = filteredMetrics.reduce((s: number, x: any) => s + Number(x.clicks || 0), 0);
+            const impressions = filteredMetrics.reduce((s: number, x: any) => s + Number(x.impressions || 0), 0);
+            const reach = filteredMetrics.reduce((s: number, x: any) => s + Number(x.reach || 0), 0);
+
+            const adAccountId = ad.campaigns?.ad_account_id;
+            const matchedAccount = accounts.find(a => a.id === adAccountId);
+            const platformStr = matchedAccount?.platform === "Google Ads" ? "google" : "meta";
+
+            return {
+              id: ad.id,
+              name: ad.name,
+              campaignName: ad.campaigns?.name || "Sem Campanha",
+              adSetName: ad.ad_sets?.name || "Sem Conjunto",
+              cost,
+              impressions,
+              clicks,
+              conversions,
+              reach,
+              objective: detectObjective(ad.name),
+              platform: platformStr as "meta" | "google",
+              selected: cost > 0
+            };
+          }).filter(c => c.cost > 0 || c.impressions >= 1 || c.reach >= 1);
+
+        } else {
+          // Default: campaign level
+          let metricsQuery = (supabase as any).from("metrics").select(`
+            campaign_id, cost, conversions, impressions, clicks, reach,
+            campaigns!inner(id, name, ad_account_id)
+          `)
+          .gte("date", startLimit)
+          .lte("date", endLimit);
+
+          if (selectedAccountId !== "all") {
+            metricsQuery = metricsQuery.eq("campaigns.ad_account_id", selectedAccountId);
+          }
+
+          const { data: dbMetrics, error: mErr } = await metricsQuery;
+          if (mErr) {
+            console.error("Supabase Query Error:", mErr);
+            throw mErr;
+          }
+
+          if (!dbMetrics || dbMetrics.length === 0) {
+            setCampaignList([]);
+            return;
+          }
+
+          // Agrupar métricas por campanha e identificar plataforma correta
+          const metricsMap = new Map<string, { id: string, name: string, platform: string, cost: number; impressions: number; clicks: number; conversions: number; reach: number }>();
           
-          const cur = metricsMap.get(campId) || { 
-             id: campId, 
-             name: m.campaigns?.name || "Sem Nome", 
-             platform: platformStr,
-             cost: 0, impressions: 0, clicks: 0, conversions: 0, reach: 0 
-          };
-          
-          cur.cost += Number(m.cost || 0);
-          cur.impressions += Number(m.impressions || 0);
-          cur.clicks += Number(m.clicks || 0);
-          cur.conversions += Number(m.conversions || 0);
-          cur.reach += Number(m.reach || 0);
-          metricsMap.set(campId, cur);
-        });
+          dbMetrics.forEach((m: any) => {
+            const campId = m.campaign_id;
+            const adAccountId = m.campaigns?.ad_account_id;
+            const matchedAccount = accounts.find(a => a.id === adAccountId);
+            const platformStr = matchedAccount?.platform === "Google Ads" ? "google" : "meta";
+            
+            const cur = metricsMap.get(campId) || { 
+               id: campId, 
+               name: m.campaigns?.name || "Sem Nome", 
+               platform: platformStr,
+               cost: 0, impressions: 0, clicks: 0, conversions: 0, reach: 0 
+            };
+            
+            cur.cost += Number(m.cost || 0);
+            cur.impressions += Number(m.impressions || 0);
+            cur.clicks += Number(m.clicks || 0);
+            cur.conversions += Number(m.conversions || 0);
+            cur.reach += Number(m.reach || 0);
+            metricsMap.set(campId, cur);
+          });
 
-        const mapped: CampaignData[] = Array.from(metricsMap.values()).map(c => ({
-          id: c.id,
-          name: c.name,
-          cost: c.cost,
-          impressions: c.impressions,
-          clicks: c.clicks,
-          conversions: c.conversions,
-          reach: c.reach,
-          objective: detectObjective(c.name),
-          platform: c.platform as "meta" | "google",
-          selected: c.cost > 0 // Seleciona apenas as que tiveram investimento no período
-        })).filter(c => c.cost > 0 || c.impressions >= 1 || c.reach >= 1);
+          mapped = Array.from(metricsMap.values()).map(c => ({
+            id: c.id,
+            name: c.name,
+            cost: c.cost,
+            impressions: c.impressions,
+            clicks: c.clicks,
+            conversions: c.conversions,
+            reach: c.reach,
+            objective: detectObjective(c.name),
+            platform: c.platform as "meta" | "google",
+            selected: c.cost > 0
+          })).filter(c => c.cost > 0 || c.impressions >= 1 || c.reach >= 1);
+        }
 
         // Ordena por maior custo
         mapped.sort((a, b) => b.cost - a.cost);
-
         setCampaignList(mapped);
       } catch (err) {
         console.error("Erro ao puxar dados da API local:", err);
@@ -330,7 +428,7 @@ function RelatoriosPage() {
 
   useEffect(() => {
     loadData();
-  }, [source, selectedAccountId, dateRange]);
+  }, [source, selectedAccountId, dateRange, reportLevel]);
 
   // Função Heurística Inteligente para Detecção de Objetivos
   const detectObjective = (campName: string): string => {
@@ -427,7 +525,7 @@ function RelatoriosPage() {
       // Nova Tag de Plataforma Suportada
       text = text.replace(/\{\{PLATAFORMAS\}\}/g, platformString);
 
-      // Substituição de Lista de Campanhas
+      // Substituição de Lista de Campanhas/Conjuntos/Anúncios
       if (text.includes("{{LISTA_CAMPANHAS}}")) {
         let listText = "";
         selected.forEach(c => {
@@ -443,6 +541,12 @@ function RelatoriosPage() {
           const platIcon = c.platform === 'google' ? '🌐' : '🎯';
           
           listText += `${platIcon} *${c.name.toUpperCase()}*\n`;
+          if (reportLevel === "adset" && c.campaignName) {
+            listText += `   📁 Campanha: ${c.campaignName}\n`;
+          } else if (reportLevel === "ad") {
+            if (c.adSetName) listText += `   📦 Conjunto: ${c.adSetName}\n`;
+            if (c.campaignName) listText += `   📁 Campanha: ${c.campaignName}\n`;
+          }
           listText += `   💵 Investimento: R$ ${c.cost.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n`;
           listText += `   📈 Resultados: ${resultValue.toLocaleString("pt-BR")} ${isReach ? 'impr.' : ''}\n`;
           listText += `   💲 ${costLabel}: R$ ${costPerRes.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n`;
@@ -514,7 +618,11 @@ function RelatoriosPage() {
     };
 
     const buildCampaignDetails = () => {
-      let txt = `━━━━━━━━━━━━━━━━━━━━\n*DETALHAMENTO DE CAMPANHAS*\n━━━━━━━━━━━━━━━━━━━━\n\n`;
+      let levelTitle = "DETALHAMENTO DE CAMPANHAS";
+      if (reportLevel === "adset") levelTitle = "DETALHAMENTO DE CONJUNTOS DE ANÚNCIOS";
+      if (reportLevel === "ad") levelTitle = "DETALHAMENTO DE ANÚNCIOS";
+
+      let txt = `━━━━━━━━━━━━━━━━━━━━\n*${levelTitle}*\n━━━━━━━━━━━━━━━━━━━━\n\n`;
       // Agrupa por plataforma para a listagem
       ['google', 'meta'].forEach(plat => {
         const platCampaigns = selected.filter(c => c.platform === plat);
@@ -527,6 +635,12 @@ function RelatoriosPage() {
           const typeLabel = c.objective.substring(2).trim(); // Remove emoji
           
           txt += `📌 *${c.name.toUpperCase()}*\n`;
+          if (reportLevel === "adset" && c.campaignName) {
+            txt += `   📁 Campanha: ${c.campaignName}\n`;
+          } else if (reportLevel === "ad") {
+            if (c.adSetName) txt += `   📦 Conjunto: ${c.adSetName}\n`;
+            if (c.campaignName) txt += `   📁 Campanha: ${c.campaignName}\n`;
+          }
           txt += `   💵 Invest: R$ ${c.cost.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n`;
           txt += `   📈 Result: ${resultValue.toLocaleString("pt-BR")} (${typeLabel})\n`;
           txt += `   💲 Custo/Res: R$ ${costPerRes.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n\n`;
@@ -536,10 +650,13 @@ function RelatoriosPage() {
     };
 
     let finalText = "";
+    let reportTitle = "RELATÓRIO DE PERFORMANCE";
+    if (reportLevel === "adset") reportTitle = "RELATÓRIO DE CONJUNTOS DE ANÚNCIOS";
+    if (reportLevel === "ad") reportTitle = "RELATÓRIO DE ANÚNCIOS DE PERFORMANCE";
 
     if (reportMode === "complete") {
       setActivePdfLayout("classic");
-      finalText += buildHeader("RELATÓRIO DE PERFORMANCE");
+      finalText += buildHeader(reportTitle);
       finalText += buildResultsByType();
       finalText += buildCampaignDetails();
     } else if (reportMode === "objective") {
@@ -548,14 +665,14 @@ function RelatoriosPage() {
       finalText += buildResultsByType();
     } else { // campaigns mode
       setActivePdfLayout("minimalist");
-      finalText += buildHeader("RELATÓRIO DE CAMPANHAS");
+      finalText += buildHeader(reportTitle);
       finalText += `🎯 *CPA Médio Geral:* R$ ${avgCpa.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n\n`;
       finalText += buildCampaignDetails();
     }
 
     finalText += `━━━━━━━━━━━━━━━━━━━━\n*${agencyName.toUpperCase()}*`;
     setGeneratedText(finalText);
-  }, [campaignList, reportMode, clientName, periodText, templatesData]);
+  }, [campaignList, reportMode, clientName, periodText, templatesData, reportLevel]);
 
   const handleGenerate = () => {
     const selected = campaignList.filter(c => c.selected);
@@ -703,22 +820,40 @@ function RelatoriosPage() {
             </div>
 
             {source === "api" && (
-              <div className="space-y-2">
-                <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Conta Conectada</label>
-                <select 
-                  value={selectedAccountId} 
-                  onChange={(e) => {
-                    setSelectedAccountId(e.target.value);
-                    setActiveReportId(null);
-                  }}
-                  className="w-full rounded-xl border border-white/10 bg-background/50 px-4 py-3 text-sm font-bold focus:border-primary focus:outline-none"
-                >
-                  <option value="all">Consolidado (Todas as contas)</option>
-                  {accounts.map(acc => (
-                    <option key={acc.id} value={acc.id}>{acc.name}</option>
-                  ))}
-                </select>
-              </div>
+              <>
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Conta Conectada</label>
+                  <select 
+                    value={selectedAccountId} 
+                    onChange={(e) => {
+                      setSelectedAccountId(e.target.value);
+                      setActiveReportId(null);
+                    }}
+                    className="w-full rounded-xl border border-white/10 bg-background/50 px-4 py-3 text-sm font-bold focus:border-primary focus:outline-none"
+                  >
+                    <option value="all">Consolidado (Todas as contas)</option>
+                    {accounts.map(acc => (
+                      <option key={acc.id} value={acc.id}>{acc.name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Nível de Granularidade</label>
+                  <select 
+                    value={reportLevel} 
+                    onChange={(e) => {
+                      setReportLevel(e.target.value as "campaign" | "adset" | "ad");
+                      setActiveReportId(null);
+                    }}
+                    className="w-full rounded-xl border border-white/10 bg-background/50 px-4 py-3 text-sm font-bold focus:border-primary focus:outline-none"
+                  >
+                    <option value="campaign">Campanhas</option>
+                    <option value="adset">Conjuntos de Anúncios</option>
+                    <option value="ad">Anúncios</option>
+                  </select>
+                </div>
+              </>
             )}
 
             <div className="space-y-2">
@@ -786,8 +921,12 @@ function RelatoriosPage() {
             <div className="flex items-center gap-3">
               <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary/20 text-primary text-[10px] font-black">2</span>
               <div>
-                <h3 className="header-sport text-sm font-black uppercase tracking-widest text-primary">Selecione e Classifique as Campanhas</h3>
-                <p className="text-[10px] text-muted-foreground">Marque as campanhas que entrarão no relatório e defina o objetivo/métrica de cada uma.</p>
+                <h3 className="header-sport text-sm font-black uppercase tracking-widest text-primary">
+                  {reportLevel === "campaign" ? "Selecione e Classifique as Campanhas" : reportLevel === "adset" ? "Selecione e Classifique os Conjuntos" : "Selecione e Classifique os Anúncios"}
+                </h3>
+                <p className="text-[10px] text-muted-foreground">
+                  {reportLevel === "campaign" ? "Marque as campanhas que entrarão no relatório e defina o objetivo de cada uma." : reportLevel === "adset" ? "Marque os conjuntos de anúncios que entrarão no relatório e defina o objetivo." : "Marque os anúncios que entrarão no relatório e defina o objetivo de cada um."}
+                </p>
               </div>
             </div>
             {campaignList.length > 0 && (
@@ -824,7 +963,7 @@ function RelatoriosPage() {
               ) : (
                 <>
                   <p className="text-sm font-black text-white">Nenhum dado retornado no período</p>
-                  <p className="text-[10px] text-muted-foreground mt-2 max-w-[250px] leading-relaxed">Não encontramos campanhas na conta escolhida dentro desse período. Verifique o filtro de datas no <strong className="text-white">Passo 1</strong>.</p>
+                  <p className="text-[10px] text-muted-foreground mt-2 max-w-[250px] leading-relaxed">Não encontramos dados na conta conectada para a granularidade escolhida dentro desse período. Verifique o Passo 1.</p>
                 </>
               )}
             </div>
@@ -849,6 +988,11 @@ function RelatoriosPage() {
                           {c.platform === 'meta' ? 'Meta' : 'Google'}
                         </span>
                       </div>
+                      {c.campaignName && (
+                        <p className="text-[9px] text-muted-foreground/80 font-medium mt-0.5">
+                          {c.adSetName ? `Conjunto: ${c.adSetName} • ` : ""}Campanha: {c.campaignName}
+                        </p>
+                      )}
                       <p className="text-[10px] text-muted-foreground font-mono mt-0.5">
                         Custo: R$ {c.cost.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} • Cliques: {c.clicks} • Conversões: {c.conversions}
                       </p>
@@ -1020,11 +1164,20 @@ function RelatoriosPage() {
                       </>
                     ) : (
                       <>
-                        <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground print:text-black/50 mb-3 border-b border-white/5 pb-1">Campanhas Compiladas</p>
+                        <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground print:text-black/50 mb-3 border-b border-white/5 pb-1">
+                          {reportLevel === "campaign" ? "Campanhas Compiladas" : reportLevel === "adset" ? "Conjuntos Compilados" : "Anúncios Compilados"}
+                        </p>
                         {campaignList.filter(c => c.selected).map((c, idx) => (
-                          <div key={idx} className="flex justify-between text-xs py-1.5 border-b border-white/5">
-                            <span className="font-bold text-white truncate max-w-[260px]">{c.name}</span>
-                            <span className="font-mono text-muted-foreground">R$ {c.cost.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                          <div key={idx} className="flex flex-col py-1.5 border-b border-white/5">
+                            <div className="flex justify-between text-xs">
+                              <span className="font-bold text-white truncate max-w-[260px]">{c.name}</span>
+                              <span className="font-mono text-muted-foreground">R$ {c.cost.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                            </div>
+                            {c.campaignName && (
+                              <span className="text-[8px] text-muted-foreground/80 font-mono mt-0.5">
+                                {c.adSetName ? `Conjunto: ${c.adSetName} | ` : ""}Campanha: {c.campaignName}
+                              </span>
+                            )}
                           </div>
                         ))}
                       </>
