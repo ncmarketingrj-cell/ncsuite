@@ -84,7 +84,6 @@ serve(async (req) => {
       const { data: config } = await supabase
         .from("meta_ads_configs")
         .select("access_token")
-        .eq("user_id", user.id)
         .maybeSingle()
 
       let pagesList = []
@@ -192,8 +191,7 @@ serve(async (req) => {
       const { data: config } = await supabase
         .from("meta_ads_configs")
         .select("access_token, facebook_page_id, instagram_account_id")
-        .eq("user_id", post.user_id)
-        .single()
+        .maybeSingle()
 
       const results: Record<string, string> = {}
       const errors: string[] = []
@@ -344,8 +342,7 @@ serve(async (req) => {
       const { data: config } = await supabase
         .from("meta_ads_configs")
         .select("access_token")
-        .eq("user_id", user.id)
-        .single()
+        .maybeSingle()
 
       for (const post of posts) {
         // Se for um ID simulado ou se não temos o token de acesso
