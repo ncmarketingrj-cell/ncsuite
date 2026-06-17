@@ -238,9 +238,8 @@ function ChartCard({
     <motion.div 
       initial={{ opacity: 0, y: 12 }} 
       animate={{ opacity: 1, y: 0 }} 
-      whileHover={{ y: -4, scale: 1.01, boxShadow: "0 10px 30px -10px rgba(99, 102, 241, 0.12)", borderColor: "rgba(99, 102, 241, 0.2)" }}
-      transition={{ duration: 0.3, type: "spring", stiffness: 300, damping: 20 }}
-      className="glass-panel card-sport p-5 border border-white/[0.08] transition-colors"
+      transition={{ duration: 0.35, ease: "easeOut" }}
+      className="glass-panel card-sport p-5 border border-white/[0.08]"
     >
       <div className="flex items-center gap-2 mb-4">
         {icon}
@@ -278,6 +277,67 @@ function ChartCard({
           </div>
         </motion.div>
       )}
+    </motion.div>
+  );
+}
+
+// ─── KPI BAR COMPONENT ────────────────────────────────────────────────────────
+
+interface KPIBarProps {
+  totCost: number;
+  totConv: number;
+  avgCpl: number;
+  totImpr: number;
+  totReach: number;
+  totClicks: number;
+  avgCtr: number;
+  avgCpm: number;
+}
+
+function KPIBar({ totCost, totConv, avgCpl, totImpr, totReach, totClicks, avgCtr, avgCpm }: KPIBarProps) {
+  const [scrolled, setScrolled] = useState(false);
+
+  useEffect(() => {
+    const onScroll = () => setScrolled(window.scrollY > 60);
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
+
+  const kpiItems = [
+    { label: "Gasto",      value: `R$ ${fmtBRL(totCost)}`,                                   color: "text-primary",              icon: DollarSign },
+    { label: "Resultados", value: fmtN(totConv),                                             color: "text-violet-400",           icon: Target },
+    { label: "CPL / CPA",  value: avgCpl > 0 ? `R$ ${avgCpl.toFixed(2)}` : "—",              color: "text-primary",              icon: Zap },
+    { label: "Impressões", value: fmtN(totImpr),                                             color: "text-muted-foreground",     icon: Eye },
+    { label: "Alcance",    value: totReach > 0 ? fmtN(totReach) : "—",                       color: "text-muted-foreground",     icon: Users },
+    { label: "Cliques",    value: fmtN(totClicks),                                           color: "text-muted-foreground",     icon: MousePointer2 },
+    { label: "CTR Médio",  value: `${avgCtr.toFixed(2)}%`,                                   color: avgCtr >= 1.5 ? "text-green-400" : "text-muted-foreground", icon: TrendingUp },
+    { label: "CPM Médio",  value: avgCpm > 0 ? `R$ ${avgCpm.toFixed(2)}` : "—",              color: "text-muted-foreground",     icon: BarChart3 },
+  ];
+
+  return (
+    <motion.div
+      className="flex w-full items-stretch overflow-x-auto rounded-xl border border-border bg-card/60 backdrop-blur-sm divide-x divide-border scrollbar-hide"
+      animate={{ opacity: 1 }} initial={{ opacity: 0 }}
+    >
+      {kpiItems.map(k => (
+        <div key={k.label} className={`flex-1 min-w-[125px] transition-all duration-300 hover:bg-white/[0.02] ${scrolled ? "px-3 py-1.5" : "px-4 py-2.5"}`}>
+          {scrolled ? (
+            <div className="flex items-center gap-1.5">
+              <k.icon className={`h-3 w-3 flex-shrink-0 ${k.color}`} />
+              <span className="text-[8px] font-black uppercase tracking-widest text-muted-foreground/50 whitespace-nowrap">{k.label}</span>
+              <span className={`font-mono font-black text-[11px] whitespace-nowrap ${k.color}`}>{k.value}</span>
+            </div>
+          ) : (
+            <div className="flex flex-col justify-center gap-0.5">
+              <div className="flex items-center gap-1.5">
+                <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/60 whitespace-nowrap">{k.label}</span>
+                <k.icon className={`h-3 w-3 flex-shrink-0 ${k.color}`} />
+              </div>
+              <span className={`font-mono font-black text-[13px] whitespace-nowrap ${k.color}`}>{k.value}</span>
+            </div>
+          )}
+        </div>
+      ))}
     </motion.div>
   );
 }
@@ -334,7 +394,6 @@ function MetricasCampanhasPage() {
     setDateTo(getLocalDateStr(range.endDate));
   }, [setDateFrom, setDateTo]);
 
-  const [scrolled,      setScrolled]      = useState(false);
   const [modoExplicativo, setModoExplicativo] = useState(true);
 
   // ── Estado de seleção (tabela) ──
@@ -355,11 +414,6 @@ function MetricasCampanhasPage() {
   const autoSyncMutRef = useRef<any>(null);
 
   // ── Efeitos ──
-  useEffect(() => {
-    const onScroll = () => setScrolled(window.scrollY > 60);
-    window.addEventListener("scroll", onScroll, { passive: true });
-    return () => window.removeEventListener("scroll", onScroll);
-  }, []);
 
   useEffect(() => {
     if (searchParams.account) setAccountFilter(searchParams.account);
@@ -744,19 +798,6 @@ function MetricasCampanhasPage() {
     </div>
   );
 
-  // ─── KPI BAR ──────────────────────────────────────────────────────────────────
-
-  const kpiItems = [
-    { label: "Gasto",      value: `R$ ${fmtBRL(totCost)}`,                                   color: "text-primary",              icon: DollarSign },
-    { label: "Resultados", value: fmtN(totConv),                                             color: "text-violet-400",           icon: Target },
-    { label: "CPL / CPA",  value: avgCpl > 0 ? `R$ ${avgCpl.toFixed(2)}` : "—",              color: "text-primary",              icon: Zap },
-    { label: "Impressões", value: fmtN(totImpr),                                             color: "text-muted-foreground",     icon: Eye },
-    { label: "Alcance",    value: totReach > 0 ? fmtN(totReach) : "—",                       color: "text-muted-foreground",     icon: Users },
-    { label: "Cliques",    value: fmtN(totClicks),                                           color: "text-muted-foreground",     icon: MousePointer2 },
-    { label: "CTR Médio",  value: `${avgCtr.toFixed(2)}%`,                                   color: avgCtr >= 1.5 ? "text-green-400" : "text-muted-foreground", icon: TrendingUp },
-    { label: "CPM Médio",  value: avgCpm > 0 ? `R$ ${avgCpm.toFixed(2)}` : "—",              color: "text-muted-foreground",     icon: BarChart3 },
-  ];
-
   // ─── RENDER ───────────────────────────────────────────────────────────────────
 
   return (
@@ -766,30 +807,16 @@ function MetricasCampanhasPage() {
       <div className="sticky top-0 z-40 -mx-1 px-1 bg-background/95 backdrop-blur-xl pt-2 pb-0 space-y-2">
 
         {/* KPI Bar */}
-        <motion.div
-          className="flex w-full items-stretch overflow-x-auto rounded-xl border border-border bg-card/60 backdrop-blur-sm divide-x divide-border scrollbar-hide"
-          animate={{ opacity: 1 }} initial={{ opacity: 0 }}
-        >
-          {kpiItems.map(k => (
-            <div key={k.label} className={`flex-1 min-w-[125px] transition-all duration-300 hover:bg-white/[0.02] ${scrolled ? "px-3 py-1.5" : "px-4 py-2.5"}`}>
-              {scrolled ? (
-                <div className="flex items-center gap-1.5">
-                  <k.icon className={`h-3 w-3 flex-shrink-0 ${k.color}`} />
-                  <span className="text-[8px] font-black uppercase tracking-widest text-muted-foreground/50 whitespace-nowrap">{k.label}</span>
-                  <span className={`font-mono font-black text-[11px] whitespace-nowrap ${k.color}`}>{k.value}</span>
-                </div>
-              ) : (
-                <div className="flex flex-col justify-center gap-0.5">
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/60 whitespace-nowrap">{k.label}</span>
-                    <k.icon className={`h-3 w-3 flex-shrink-0 ${k.color}`} />
-                  </div>
-                  <span className={`font-mono font-black text-[13px] whitespace-nowrap ${k.color}`}>{k.value}</span>
-                </div>
-              )}
-            </div>
-          ))}
-        </motion.div>
+        <KPIBar
+          totCost={totCost}
+          totConv={totConv}
+          avgCpl={avgCpl}
+          totImpr={totImpr}
+          totReach={totReach}
+          totClicks={totClicks}
+          avgCtr={avgCtr}
+          avgCpm={avgCpm}
+        />
 
         {/* Controles: View + Filtros */}
         <div className="flex flex-wrap items-center gap-2 pb-1">
@@ -937,22 +964,7 @@ function MetricasCampanhasPage() {
                   ) : (
                     <div className="overflow-x-auto">
                       <table className="w-full text-xs border-collapse">
-                        <colgroup>
-                          <col className="w-10"/>
-                          <col className="w-16"/>
-                          <col className="min-w-[180px]"/>
-                          {level === "campanhas" && <col className="w-24"/>}
-                          <col className="w-28 hidden md:table-column"/>
-                          <col className="w-16"/>
-                          <col className="w-24 hidden lg:table-column"/>
-                          <col className="w-24 hidden xl:table-column"/>
-                          <col className="w-20"/>
-                          <col className="w-24"/>
-                          <col className="w-16 hidden lg:table-column"/>
-                          <col className="w-20 hidden xl:table-column"/>
-                          <col className="w-20 hidden xl:table-column"/>
-                          <col className="w-24"/>
-                        </colgroup>
+
                         <thead>
                           <tr className="border-b border-white/5 bg-white/[0.02] sticky top-0 z-10">
                             <th className="px-3 py-3 w-10">
