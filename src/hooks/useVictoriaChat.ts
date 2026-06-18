@@ -384,7 +384,10 @@ export function useVictoriaChat(selectedAccountId: string, setSelectedAccountId:
       }
 
       // 4. Busca vetorial no hook antes de chamar o chat (C4)
-      const ragResults = content.trim() ? await searchKnowledge(content) : [];
+      // Só chama a Gemini API se houver documentos cadastrados na base de conhecimento
+      const ragResults = (content.trim() && knowledgeList.length > 0)
+        ? await searchKnowledge(content)
+        : [];
       const externalContext = ragResults.length > 0
         ? ragResults.map(s => `[CONHECIMENTO — ${s.category.toUpperCase()}] ${s.title}: ${s.content}`).join("\n\n")
         : undefined;

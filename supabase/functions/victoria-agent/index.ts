@@ -259,10 +259,10 @@ serve(async (req) => {
 
     // ─── C8: Dados Expandidos — Social, Clientes, Funis ─────────────────────
     const [socialPagesRes, socialPostsRes, clientsRes, funnelsRes] = await Promise.all([
-      supabase.from("social_pages").select("page_name, facebook_followers, instagram_followers").limit(10),
-      supabase.from("social_posts").select("content, platform, status, scheduled_at, likes_count, comments_count, reach_count").order("scheduled_at", { ascending: false }).limit(8),
-      supabase.from("clients").select("name, status").order("name").limit(20),
-      supabase.from("funnels").select("name, created_at").order("created_at", { ascending: false }).limit(10)
+      supabase.from("social_pages").select("page_name, facebook_followers, instagram_followers").eq("user_id", user.id).limit(10),
+      supabase.from("social_posts").select("content, platform, status, scheduled_at, likes_count, comments_count, reach_count").eq("user_id", user.id).order("scheduled_at", { ascending: false }).limit(8),
+      supabase.from("clients").select("name").eq("user_id", user.id).order("name").limit(20),
+      supabase.from("funnels").select("name, created_at").eq("user_id", user.id).order("created_at", { ascending: false }).limit(10)
     ]);
 
     const socialPages    = socialPagesRes.data   || [];
@@ -304,7 +304,7 @@ serve(async (req) => {
       : "Nenhum post recente.";
 
     const clientsCtx = clientsList.length > 0
-      ? clientsList.map((c: any) => `- ${c.name} (${c.status || "ativo"})`).join("\n")
+      ? clientsList.map((c: any) => `- ${c.name}`).join("\n")
       : "Nenhum cliente cadastrado.";
 
     const funnelsCtx = funnelsList.length > 0
