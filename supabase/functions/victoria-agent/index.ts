@@ -261,15 +261,7 @@ serve(async (req) => {
     // AÇÃO: chat (Modo Chat principal com RAG e Streaming SSE)
     // =========================================================================
 
-    // 1. Scoping via clients (user_id é confiável em clients, não em ad_accounts)
-    const { data: userClients } = await supabase
-      .from("clients")
-      .select("id, name")
-      .eq("user_id", user.id);
-
-    const clientIds = (userClients || []).map((c: any) => c.id);
-
-    // ad_accounts apenas para nomes (sem filtrar por user_id — pode estar null)
+    // 1. Ad accounts (sem filtro user_id — sync do Meta pode deixar user_id null)
     const { data: allAdAccounts } = await supabase
       .from("ad_accounts")
       .select("id, name");
@@ -277,29 +269,21 @@ serve(async (req) => {
       (allAdAccounts || []).map((acc: any) => [acc.id, acc.name] as [string, string])
     );
 
-    // Campanhas dos clientes do usuário
-    let userCampaignsData: any[] = [];
-    if (clientIds.length > 0) {
-      const { data: campsData, error: campsErr } = await supabase
-        .from("campaigns")
-        .select("id, name, status, budget, platform, ad_account_id, client_id, clients(id, name)")
-        .in("client_id", clientIds);
-      if (campsErr) console.error("Error fetching campaigns:", campsErr);
-      else userCampaignsData = campsData || [];
-    }
-
-    const campaignInfoMap = new Map<string, any>(
-      userCampaignsData.map((c: any) => [c.id, c])
-    );
-    let campaignIds = userCampaignsData.map((c: any) => c.id);
-
-    // Se selectedAccountId especificado, restringir às campanhas dessa conta
+    // 2. Campanhas — igual ao dashboard (sem filtro user, filtra por ad_account se selecionado)
+    let campsQuery = (supabase as any)
+      .from("campaigns")
+      .select("id, name, status, budget, platform, ad_account_id, client_id, clients(id, name)");
     if (selectedAccountId) {
-      campaignIds = userCampaignsData
-        .filter((c: any) => c.ad_account_id === selectedAccountId)
-        .map((c: any) => c.id);
+      campsQuery = campsQuery.eq("ad_account_id", selectedAccountId);
     }
+    const { data: campaignsData, error: campsErr } = await campsQuery;
+    if (campsErr) console.error("Error fetching campaigns:", campsErr);
 
+    const allCampaigns: any[] = campaignsData || [];
+    const campaignInfoMap = new Map<string, any>(allCampaigns.map((c: any) => [c.id, c]));
+    const campaignIds = allCampaigns.map((c: any) => c.id);
+
+    // 3. Métricas dos últimos 30 dias para essas campanhas
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
     const startDateStr = thirtyDaysAgo.toISOString().split("T")[0];
@@ -328,7 +312,8 @@ serve(async (req) => {
       if (!campId) return;
       const camp = campaignInfoMap.get(campId);
       if (!camp) return;
-      const clientName = (camp.clients as any)?.name || "Sem Cliente";
+      // client_id pode ser null em campanhas sincronizadas do Meta — usa ad_account name como fallback
+      const clientName = (camp.clients as any)?.name || adAccountNameMap.get(camp.ad_account_id) || "Sem Cliente";
       const adAccountName = adAccountNameMap.get(camp.ad_account_id) || camp.ad_account_id || "—";
       const existing = campaignMap.get(campId) || {
         name: camp.name,
@@ -482,7 +467,7 @@ DATA DE REFERÊNCIA DO SISTEMA (Use isso para saber quais datas correspondem a '
     const dailyRows = (dbMetrics || []).map((m: any) => {
       const camp = campaignInfoMap.get(m.campaign_id);
       const campName = camp?.name || "Sem Nome";
-      const clientName = (camp?.clients as any)?.name || "Sem Cliente";
+      const clientName = (camp?.clients as any)?.name || adAccountNameMap.get(camp?.ad_account_id) || "Sem Cliente";
       const platform = camp?.platform || "Meta Ads";
       const cost = Number(m.cost || 0);
       const conversions = Number(m.conversions || 0);
