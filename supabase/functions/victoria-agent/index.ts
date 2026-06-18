@@ -747,7 +747,14 @@ REGRAS DE RESPOSTA:
           });
         } else {
           const errText = await streamRes.text();
-          console.error("[VICTORIA] Erro na stream do provedor:", errText);
+          console.error("[VICTORIA] Erro na stream do provedor:", streamRes.status, errText);
+          // Retorna o erro real no SSE para diagnóstico
+          const encoder2 = new TextEncoder();
+          const debugMsg = `[ERRO ${streamRes.status}] ${errText.slice(0, 300)}`;
+          const debugSse = `data: ${JSON.stringify({ choices: [{ delta: { content: debugMsg } }] })}\n\ndata: [DONE]\n\n`;
+          return new Response(encoder2.encode(debugSse), {
+            headers: { ...corsHeaders, "Content-Type": "text/event-stream" }
+          });
         }
       } catch (streamErr: any) {
         console.error("[VICTORIA] Falha ao iniciar stream:", streamErr.message);
