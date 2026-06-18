@@ -79,7 +79,7 @@ function SocialRelatoriosPage() {
   const [topN, setTopN] = useState(5);
   const [showAdvanced, setShowAdvanced] = useState(false);
 
-  /* copy state */
+  const [pageDropdownOpen, setPageDropdownOpen] = useState(false);
   const [copied, setCopied] = useState(false);
 
   /* ── data ──────────────────────────────────── */
@@ -357,60 +357,85 @@ function SocialRelatoriosPage() {
         ═══════════════════════════════════════ */}
         <div className="space-y-4">
 
-          {/* PAGE SELECTOR */}
+          {/* PAGE SELECTOR — dropdown compacto */}
           <div className="rounded-2xl border border-border bg-card p-4 space-y-2">
             <h3 className="text-[10px] font-black uppercase tracking-widest text-muted-foreground flex items-center gap-1.5">
               <Share2 className="h-3 w-3" /> Página
             </h3>
+            <div className="relative">
+              <button
+                onClick={() => setPageDropdownOpen(o => !o)}
+                className="flex w-full items-center justify-between rounded-xl border border-border bg-muted/30 px-3 py-2.5 text-xs font-bold text-foreground hover:bg-muted/50 transition-all"
+              >
+                <span className="flex items-center gap-2 min-w-0">
+                  <Globe className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                  <span className="truncate">{selectedPage ? selectedPage.page_name : "Todas as páginas"}</span>
+                </span>
+                <ChevronDown className={`h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform ${pageDropdownOpen ? "rotate-180" : ""}`} />
+              </button>
 
-            {/* Todas as páginas */}
-            <button
-              onClick={() => setSelectedPageId("all")}
-              className={`flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-xs font-bold border transition-all ${
-                selectedPageId === "all"
-                  ? "border-primary/40 bg-primary/10 text-primary"
-                  : "border-transparent bg-muted/30 text-muted-foreground hover:bg-muted/50"
-              }`}
-            >
-              <span className="flex items-center gap-2">
-                <Globe className="h-3.5 w-3.5" />
-                Todas as páginas
-              </span>
-              {selectedPageId === "all" && <CheckCircle2 className="h-3.5 w-3.5" />}
-            </button>
+              <AnimatePresence>
+                {pageDropdownOpen && (
+                  <>
+                    <div className="fixed inset-0 z-40" onClick={() => setPageDropdownOpen(false)} />
+                    <motion.div
+                      initial={{ opacity: 0, y: 6, scale: 0.97 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, y: 6, scale: 0.97 }}
+                      transition={{ duration: 0.15 }}
+                      className="absolute left-0 right-0 top-full z-50 mt-1.5 rounded-2xl border border-border bg-card p-1.5 shadow-2xl"
+                    >
+                      {/* Todas as páginas */}
+                      <button
+                        onClick={() => { setSelectedPageId("all"); setPageDropdownOpen(false); }}
+                        className={`flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-xs font-bold transition-all ${
+                          selectedPageId === "all"
+                            ? "bg-primary/10 text-primary"
+                            : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
+                        }`}
+                      >
+                        <span className="flex items-center gap-2">
+                          <Globe className="h-3.5 w-3.5" />
+                          Todas as páginas
+                        </span>
+                        {selectedPageId === "all" && <CheckCircle2 className="h-3.5 w-3.5" />}
+                      </button>
 
-            {realPages.length === 0 && (
-              <p className="text-[10px] text-muted-foreground/60 text-center py-2">Nenhuma página conectada</p>
-            )}
+                      {realPages.length > 0 && <div className="my-1 border-t border-border/50" />}
 
-            {realPages.map((page: any) => {
-              const pageKey = page.page_id || page.id;
-              const isSelected = selectedPageId === pageKey;
-              return (
-                <button
-                  key={pageKey}
-                  onClick={() => setSelectedPageId(pageKey)}
-                  className={`flex w-full items-start justify-between rounded-xl px-3 py-2.5 text-xs font-bold border transition-all ${
-                    isSelected
-                      ? "border-pink-500/40 bg-pink-500/10 text-pink-500"
-                      : "border-transparent bg-muted/30 text-muted-foreground hover:bg-muted/50"
-                  }`}
-                >
-                  <div className="text-left">
-                    <p className={`font-black ${isSelected ? "text-pink-500" : "text-foreground"}`}>{page.page_name}</p>
-                    <div className="flex items-center gap-2 mt-0.5">
-                      {page.facebook_followers > 0 && (
-                        <span className="text-[10px] text-blue-500">{fmtNum(page.facebook_followers)} FB</span>
+                      {realPages.length === 0 && (
+                        <p className="text-[10px] text-muted-foreground/60 text-center py-3">Nenhuma página conectada</p>
                       )}
-                      {page.instagram_followers > 0 && (
-                        <span className="text-[10px] text-pink-500">{fmtNum(page.instagram_followers)} IG</span>
-                      )}
-                    </div>
-                  </div>
-                  {isSelected && <CheckCircle2 className="h-3.5 w-3.5 mt-0.5 shrink-0" />}
-                </button>
-              );
-            })}
+
+                      {realPages.map((page: any) => {
+                        const pageKey = page.page_id || page.id;
+                        const isSelected = selectedPageId === pageKey;
+                        return (
+                          <button
+                            key={pageKey}
+                            onClick={() => { setSelectedPageId(pageKey); setPageDropdownOpen(false); }}
+                            className={`flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-xs font-bold transition-all ${
+                              isSelected
+                                ? "bg-pink-500/10 text-pink-500"
+                                : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
+                            }`}
+                          >
+                            <div className="text-left min-w-0">
+                              <p className={`font-black truncate ${isSelected ? "text-pink-500" : "text-foreground"}`}>{page.page_name}</p>
+                              <div className="flex items-center gap-2 mt-0.5">
+                                {page.facebook_followers > 0 && <span className="text-[10px] text-blue-500">{fmtNum(page.facebook_followers)} FB</span>}
+                                {page.instagram_followers > 0 && <span className="text-[10px] text-pink-500">{fmtNum(page.instagram_followers)} IG</span>}
+                              </div>
+                            </div>
+                            {isSelected && <CheckCircle2 className="h-3.5 w-3.5 shrink-0 ml-2" />}
+                          </button>
+                        );
+                      })}
+                    </motion.div>
+                  </>
+                )}
+              </AnimatePresence>
+            </div>
           </div>
 
           {/* DATE RANGE */}
