@@ -155,7 +155,7 @@ function RelatoriosPage() {
     setSource(rep.source);
     setClientName(rep.clientName);
     setPeriodText(rep.periodText);
-    setReportMode(rep.reportMode);
+    setReportMode(rep.reportMode as "campaigns" | "complete" | "objective");
     setCampaignList(rep.campaigns);
     setGeneratedText(rep.generatedText);
     setActiveReportId(rep.id);
@@ -308,7 +308,7 @@ function RelatoriosPage() {
               platform: platformStr as "meta" | "google",
               selected: cost > 0
             };
-          }).filter(c => c.cost > 0 || c.impressions >= 1 || c.reach >= 1);
+          }).filter((c: any) => c.cost > 0 || c.impressions >= 1 || c.reach >= 1);
 
         } else if (reportLevel === "ad") {
           let query = (supabase as any).from("ads").select(`
@@ -352,7 +352,7 @@ function RelatoriosPage() {
               platform: platformStr as "meta" | "google",
               selected: cost > 0
             };
-          }).filter(c => c.cost > 0 || c.impressions >= 1 || c.reach >= 1);
+          }).filter((c: any) => c.cost > 0 || c.impressions >= 1 || c.reach >= 1);
 
         } else {
           // Default: campaign level

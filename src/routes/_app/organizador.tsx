@@ -475,31 +475,31 @@ function QuizEditorForm({ pageId }: { pageId: string }) {
   const qc = useQueryClient();
   const { data: quiz, isLoading } = useQuery({
     queryKey: ["quizzes", pageId],
-    queryFn: async () => { const { data } = await supabase.from("quizzes").select("*").eq("id", pageId).single(); return data; }
+    queryFn: async () => { const { data } = await (supabase as any).from("quizzes").select("*").eq("id", pageId).single(); return data as any; }
   });
 
   const { data: steps = [] } = useQuery({
     queryKey: ["quiz-steps", pageId],
-    queryFn: async () => { const { data } = await supabase.from("quiz_steps").select("*").eq("quiz_id", pageId).order("order_index", { ascending: true }); return data || []; }
+    queryFn: async () => { const { data } = await (supabase as any).from("quiz_steps").select("*").eq("quiz_id", pageId).order("order_index", { ascending: true }); return data || []; }
   });
 
   const updateMutation = useMutation({
-    mutationFn: async (data: any) => { await supabase.from("quizzes").update(data).eq("id", pageId); },
+    mutationFn: async (data: any) => { await (supabase as any).from("quizzes").update(data).eq("id", pageId); },
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["quizzes", pageId] }); qc.invalidateQueries({ queryKey: ["funnel-items"] }); },
   });
 
   const addStepMutation = useMutation({
-    mutationFn: async (type: string) => { await supabase.from("quiz_steps").insert({ quiz_id: pageId, title: "Nova Pergunta", step_type: type, order_index: steps.length }); },
+    mutationFn: async (type: string) => { await (supabase as any).from("quiz_steps").insert({ quiz_id: pageId, title: "Nova Pergunta", step_type: type, order_index: steps.length }); },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["quiz-steps", pageId] }),
   });
 
   const updateStepMutation = useMutation({
-    mutationFn: async ({ id, data }: { id: string, data: any }) => { await supabase.from("quiz_steps").update(data).eq("id", id); },
+    mutationFn: async ({ id, data }: { id: string, data: any }) => { await (supabase as any).from("quiz_steps").update(data).eq("id", id); },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["quiz-steps", pageId] }),
   });
 
   const deleteStepMutation = useMutation({
-    mutationFn: async (id: string) => { await supabase.from("quiz_steps").delete().eq("id", id); },
+    mutationFn: async (id: string) => { await (supabase as any).from("quiz_steps").delete().eq("id", id); },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["quiz-steps", pageId] }),
   });
 
@@ -601,8 +601,8 @@ function QuizEditorForm({ pageId }: { pageId: string }) {
 // LIVE PREVIEW COMPONENT
 // ---------------------------------------------------------
 function LivePreview({ pageId }: { pageId: string }) {
-  const { data: page } = useQuery({ queryKey: ["link-pages", pageId], queryFn: async () => { const { data } = await supabase.from("link_pages").select("*").eq("id", pageId).single(); return data; } });
-  const { data: links = [] } = useQuery({ queryKey: ["link-items", pageId], queryFn: async () => { const { data } = await supabase.from("link_items").select("*").eq("page_id", pageId).eq("is_active", true).order("order_index", { ascending: true }); return data || []; } });
+  const { data: page } = useQuery({ queryKey: ["link-pages", pageId], queryFn: async () => { const { data } = await (supabase as any).from("link_pages").select("*").eq("id", pageId).single(); return data as any; } });
+  const { data: links = [] } = useQuery({ queryKey: ["link-items", pageId], queryFn: async () => { const { data } = await (supabase as any).from("link_items").select("*").eq("page_id", pageId).eq("is_active", true).order("order_index", { ascending: true }); return data || []; } });
 
   if (!page) return null;
   const btnRadius = page.button_style === 'pill' ? '999px' : page.button_style === 'squared' ? '4px' : '12px';

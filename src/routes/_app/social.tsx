@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo, useCallback, memo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { 
   Share2, Calendar, Layout, BarChart2, Plus, ArrowRight, Sparkles, Clock, MapPin, 
@@ -114,7 +114,9 @@ function SocialMediaPage() {
     }
   });
 
-  const filteredPosts = posts.filter(p => selectedPageId === "all" || p.page_id === selectedPageId);
+  const filteredPosts = useMemo(() => {
+    return posts.filter((p: any) => selectedPageId === "all" || p.page_id === selectedPageId);
+  }, [posts, selectedPageId]);
 
   // Fetch Meta Pages list (for fallback/display warnings)
   const isMetaConnected = socialPages.length > 0;
@@ -422,14 +424,16 @@ function SocialMediaPage() {
   };
 
   // Calendar calculations
-  const monthStart = startOfMonth(currentMonth);
-  const monthEnd = endOfMonth(currentMonth);
-  const calendarDays = eachDayOfInterval({ start: monthStart, end: monthEnd });
+  const calendarDays = useMemo(() => {
+    const monthStart = startOfMonth(currentMonth);
+    const monthEnd = endOfMonth(currentMonth);
+    return eachDayOfInterval({ start: monthStart, end: monthEnd });
+  }, [currentMonth]);
 
   // Group posts by status
-  const scheduledPosts = filteredPosts.filter(p => p.status === "scheduled");
-  const publishedPosts = filteredPosts.filter(p => p.status === "published");
-  const draftPosts = filteredPosts.filter(p => p.status === "draft" || p.status === "pending_approval");
+  const scheduledPosts = useMemo(() => filteredPosts.filter((p: any) => p.status === "scheduled"), [filteredPosts]);
+  const publishedPosts = useMemo(() => filteredPosts.filter((p: any) => p.status === "published"), [filteredPosts]);
+  const draftPosts = useMemo(() => filteredPosts.filter((p: any) => p.status === "draft" || p.status === "pending_approval"), [filteredPosts]);
 
   return (
     <div className="space-y-6">
@@ -840,12 +844,12 @@ function SocialMediaPage() {
           <div className="space-y-6">
             {/* KPI Cards */}
             <div className="grid gap-4 sm:grid-cols-4">
-              {[
-                { label: "Curtidas Totais", val: filteredPosts.reduce((acc, p) => acc + (p.likes_count || 0), 0), icon: Heart, color: "text-red-500 bg-red-500/10" },
-                { label: "Comentários", val: filteredPosts.reduce((acc, p) => acc + (p.comments_count || 0), 0), icon: MessageSquare, color: "text-blue-500 bg-blue-500/10" },
-                { label: "Alcance Orgânico", val: filteredPosts.reduce((acc, p) => acc + (p.reach_count || 0), 0), icon: Share2, color: "text-primary bg-primary/10" },
-                { label: "Impressões", val: filteredPosts.reduce((acc, p) => acc + (p.impressions_count || 0), 0), icon: Eye, color: "text-violet-500 bg-violet-500/10" }
-              ].map((kpi, idx) => (
+              {useMemo(() => [
+                { label: "Curtidas Totais", val: filteredPosts.reduce((acc: number, p: any) => acc + (p.likes_count || 0), 0), icon: Heart, color: "text-red-500 bg-red-500/10" },
+                { label: "Comentários", val: filteredPosts.reduce((acc: number, p: any) => acc + (p.comments_count || 0), 0), icon: MessageSquare, color: "text-blue-500 bg-blue-500/10" },
+                { label: "Alcance Orgânico", val: filteredPosts.reduce((acc: number, p: any) => acc + (p.reach_count || 0), 0), icon: Share2, color: "text-primary bg-primary/10" },
+                { label: "Impressões", val: filteredPosts.reduce((acc: number, p: any) => acc + (p.impressions_count || 0), 0), icon: Eye, color: "text-violet-500 bg-violet-500/10" }
+              ], [filteredPosts]).map((kpi, idx) => (
                 <div key={idx} className="glass-panel p-5 space-y-2 flex flex-col justify-between">
                   <div className="flex items-center justify-between">
                     <span className="label-mono text-[9px] text-muted-foreground uppercase">{kpi.label}</span>
@@ -1254,7 +1258,7 @@ interface SortableGridItemProps {
   onClick: () => void;
 }
 
-function SortableGridItem({ id, post, onClick }: SortableGridItemProps) {
+const SortableGridItem = memo(function SortableGridItem({ id, post, onClick }: SortableGridItemProps) {
   const {
     attributes,
     listeners,
@@ -1307,4 +1311,4 @@ function SortableGridItem({ id, post, onClick }: SortableGridItemProps) {
       </div>
     </div>
   );
-}
+});

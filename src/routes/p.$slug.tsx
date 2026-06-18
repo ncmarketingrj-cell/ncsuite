@@ -40,9 +40,9 @@ function PublicLinkPage() {
     if (!page?.id) return;
     const viewKey = `viewed_${page.id}`;
     if (!sessionStorage.getItem(viewKey)) {
-      supabase.rpc('increment_page_view', { p_id: page.id }).then(() => {
+      (supabase as any).rpc('increment_page_view', { p_id: page.id }).then(() => {
         // Fallback se a RPC não existir: update manual (ignora RLS se possível, ou usa edge function, mas faremos update direto se permitido)
-        supabase.from('link_pages').update({ views_count: (page.views_count || 0) + 1 }).eq('id', page.id).then();
+        (supabase as any).from('link_pages').update({ views_count: (page.views_count || 0) + 1 }).eq('id', page.id).then();
       });
       sessionStorage.setItem(viewKey, 'true');
     }
@@ -51,7 +51,7 @@ function PublicLinkPage() {
   const clickMutation = useMutation({
     mutationFn: async (itemId: string) => {
       await (supabase as any).from("link_clicks").insert({ item_id: itemId, page_id: page.id, user_agent: navigator.userAgent });
-      await supabase.rpc('increment_item_click', { i_id: itemId } as any).then(() => {
+      await (supabase as any).rpc('increment_item_click', { i_id: itemId } as any).then(() => {
         // Fallback manual
         const item = items.find(i => i.id === itemId);
         if(item) (supabase as any).from('link_items').update({ click_count: (item.click_count || 0) + 1 }).eq('id', itemId).then();
