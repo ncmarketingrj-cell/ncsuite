@@ -261,10 +261,10 @@ serve(async (req) => {
     // AÇÃO: chat (Modo Chat principal com RAG e Streaming SSE)
     // =========================================================================
 
-    // 1. Fetch ad accounts for the current logged-in user to ensure isolation
+    // 1. Fetch ad accounts (with name) for current user
     const { data: userAccounts, error: accountsErr } = await supabase
       .from("ad_accounts")
-      .select("id")
+      .select("id, name")
       .eq("user_id", user.id);
 
     if (accountsErr) {
@@ -272,6 +272,9 @@ serve(async (req) => {
     }
 
     const adAccountIds = (userAccounts || []).map((acc: any) => acc.id);
+    const adAccountNameMap = new Map<string, string>(
+      (userAccounts || []).map((acc: any) => [acc.id, acc.name] as [string, string])
+    );
 
     let dbMetrics: any[] = [];
     if (adAccountIds.length > 0) {
@@ -279,20 +282,22 @@ serve(async (req) => {
       thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
       const startDateStr = thirtyDaysAgo.toISOString().split("T")[0];
 
-      let query = supabase
+      let metricsQuery = supabase
         .from("metrics")
         .select(`
-          cost, conversions, clicks, impressions, reach, date, client_id,
-          campaigns!inner(id, name, status, budget, platform, ad_account_id)
+          cost, conversions, clicks, impressions, reach, date,
+          campaigns!inner(id, name, status, budget, platform, ad_account_id, client_id,
+            clients(id, name)
+          )
         `)
         .in("campaigns.ad_account_id", adAccountIds)
         .gte("date", startDateStr);
 
       if (selectedAccountId) {
-        query = query.eq("campaigns.ad_account_id", selectedAccountId);
+        metricsQuery = metricsQuery.eq("campaigns.ad_account_id", selectedAccountId);
       }
 
-      const { data, error: queryError } = await query;
+      const { data, error: queryError } = await metricsQuery;
       if (queryError) {
         console.error("Error querying metrics:", queryError);
       } else {
@@ -300,42 +305,33 @@ serve(async (req) => {
       }
     }
 
-    // 2. Process metrics
+    // 2. Process metrics — campaign map com cliente e conta
     const campaignMap = new Map<string, {
-      name: string;
-      status: string;
-      budget: number;
-      platform: string;
-      cost: number;
-      conversions: number;
-      clicks: number;
-      impressions: number;
-      reach: number;
+      name: string; status: string; budget: number; platform: string;
+      clientName: string; adAccountName: string;
+      cost: number; conversions: number; clicks: number; impressions: number; reach: number;
     }>();
 
     (dbMetrics || []).forEach((m: any) => {
       const camp = m.campaigns;
       if (!camp) return;
-
       const campId = camp.id;
+      const clientName = camp.clients?.name || "Sem Cliente";
+      const adAccountName = adAccountNameMap.get(camp.ad_account_id) || camp.ad_account_id || "—";
       const existing = campaignMap.get(campId) || {
         name: camp.name,
         status: camp.status?.toUpperCase() || "PAUSED",
         budget: Number(camp.budget || 0),
         platform: camp.platform || "Meta Ads",
-        cost: 0,
-        conversions: 0,
-        clicks: 0,
-        impressions: 0,
-        reach: 0
+        clientName,
+        adAccountName,
+        cost: 0, conversions: 0, clicks: 0, impressions: 0, reach: 0
       };
-
       existing.cost += Number(m.cost || 0);
       existing.conversions += Number(m.conversions || 0);
       existing.clicks += Number(m.clicks || 0);
       existing.impressions += Number(m.impressions || 0);
       existing.reach += Number(m.reach || 0);
-
       campaignMap.set(campId, existing);
     });
 
@@ -343,20 +339,9 @@ serve(async (req) => {
       const cpl = c.conversions > 0 ? c.cost / c.conversions : 0;
       const ctr = c.impressions > 0 ? (c.clicks / c.impressions) * 100 : 0;
       return {
-        id,
-        name: c.name,
-        status: c.status,
-        budget: c.budget,
-        platform: c.platform,
-        totals: {
-          cost: c.cost,
-          conversions: c.conversions,
-          clicks: c.clicks,
-          impressions: c.impressions,
-          reach: c.reach,
-          cpl,
-          ctr
-        }
+        id, name: c.name, status: c.status, budget: c.budget,
+        platform: c.platform, clientName: c.clientName, adAccountName: c.adAccountName,
+        totals: { cost: c.cost, conversions: c.conversions, clicks: c.clicks, impressions: c.impressions, reach: c.reach, cpl, ctr }
       };
     });
 
@@ -365,9 +350,29 @@ serve(async (req) => {
     const activeCount = campaigns.filter(c => c.status === "ACTIVE").length;
     const globalCpl = totalConversions > 0 ? totalInvest / totalConversions : 0;
 
+    // Resumo por cliente
+    const clientSummaryMap = new Map<string, { invest: number; leads: number; campaigns: string[] }>();
+    campaigns.forEach(c => {
+      const key = c.clientName;
+      const ex = clientSummaryMap.get(key) || { invest: 0, leads: 0, campaigns: [] };
+      ex.invest += c.totals.cost;
+      ex.leads += c.totals.conversions;
+      if (!ex.campaigns.includes(c.name)) ex.campaigns.push(c.name);
+      clientSummaryMap.set(key, ex);
+    });
+
+    const clientSummaryCtx = clientSummaryMap.size > 0
+      ? Array.from(clientSummaryMap.entries())
+          .sort((a, b) => b[1].invest - a[1].invest)
+          .map(([name, d]) => {
+            const cpl = d.leads > 0 ? d.invest / d.leads : 0;
+            return `- ${name} | Invest: R$${d.invest.toFixed(2)} | Leads: ${d.leads} | CPL: R$${cpl.toFixed(2)} | Campanhas: ${d.campaigns.slice(0,3).join(", ")}${d.campaigns.length > 3 ? ` +${d.campaigns.length-3}` : ""}`;
+          }).join("\n")
+      : "Nenhum dado de cliente disponível.";
+
     const contextData = campaigns.length > 0
-      ? campaigns.map(c => 
-          `- ID: ${c.id} | ${c.name} | ${c.status} | Orç/dia: R$${c.budget.toFixed(2)} | Gasto: R$${c.totals.cost.toFixed(2)} | Leads: ${c.totals.conversions} | CPL: R$${c.totals.cpl.toFixed(2)} | CTR: ${c.totals.ctr.toFixed(2)}%`
+      ? campaigns.map(c =>
+          `- [${c.clientName}] ${c.name} | ${c.status} | ${c.platform} | Orç/dia: R$${c.budget.toFixed(2)} | Gasto: R$${c.totals.cost.toFixed(2)} | Leads: ${c.totals.conversions} | CPL: R$${c.totals.cpl.toFixed(2)} | CTR: R$${c.totals.ctr.toFixed(2)}%`
         ).join("\n")
       : "Nenhuma campanha ativa ou com investimento encontrada nos últimos 30 dias.";
 
@@ -464,13 +469,15 @@ DATA DE REFERÊNCIA DO SISTEMA (Use isso para saber quais datas correspondem a '
 
     const dailyRows = (dbMetrics || []).map((m: any) => {
       const dateStr = m.date;
-      const campName = m.campaigns?.name || "Sem Nome";
-      const platform = m.campaigns?.platform || "Meta Ads";
+      const camp = m.campaigns;
+      const campName = camp?.name || "Sem Nome";
+      const clientName = camp?.clients?.name || "Sem Cliente";
+      const platform = camp?.platform || "Meta Ads";
       const cost = Number(m.cost || 0);
       const conversions = Number(m.conversions || 0);
       const clicks = Number(m.clicks || 0);
       const impressions = Number(m.impressions || 0);
-      return `${dateStr} | ${platform} | ${campName} | Gasto: R$ ${cost.toFixed(2)} | Leads: ${conversions} | Cliques: ${clicks} | Impressões: ${impressions}`;
+      return `${dateStr} | ${clientName} | ${platform} | ${campName} | Gasto: R$ ${cost.toFixed(2)} | Leads: ${conversions} | Cliques: ${clicks} | Impressões: ${impressions}`;
     });
     const dailySeriesText = dailyRows.length > 0 
       ? dailyRows.join("\n") 
@@ -507,11 +514,13 @@ DADOS ATUAIS CONSOLIDADOS (ÚLTIMOS 30 DIAS):
 - CPL Médio Geral: R$ ${globalCpl.toFixed(2)}
 - Campanhas Ativas: ${activeCount}
 
-CAMPANHAS DETALHADAS (MÉTRICA GERAL DE 30 DIAS):
+RESUMO POR CLIENTE (30 DIAS) — use para responder perguntas sobre clientes específicos:
+${clientSummaryCtx}
+
+CAMPANHAS DETALHADAS (MÉTRICA GERAL DE 30 DIAS) — formato: [Cliente] Campanha | Status | Platform | Orç/dia | Gasto | Leads | CPL | CTR:
 ${contextData}
 
-TABELA DE MÉTRICAS DIÁRIAS DETALHADAS (Use essa tabela para responder com dados exatos de dias específicos como ontem, sábado, domingo, etc.):
-Data | Plataforma | Campanha | Investimento | Leads | Cliques | Impressões
+TABELA DE MÉTRICAS DIÁRIAS — Data | Cliente | Plataforma | Campanha | Gasto | Leads | Cliques | Impressões (use para filtrar por data, cliente ou campanha específica):
 ${dailySeriesText}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
