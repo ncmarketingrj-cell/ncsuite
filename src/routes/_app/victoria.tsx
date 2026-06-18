@@ -194,13 +194,15 @@ function VictoriaHubPage() {
   // Importar base de conhecimento NC Performance com 1 clique
   const handleSeedKnowledge = async () => {
     setSeedingKnowledge(true);
-    const toastId = toast.loading("Importando base NC Performance... (pode levar ~20s)");
-    const result = await chat.seedDefaultKnowledge();
+    const toastId = toast.loading("Importando documento 1/12...");
+    const result = await chat.seedDefaultKnowledge((current, total) => {
+      toast.loading(`Importando documento ${current}/${total}...`, { id: toastId });
+    });
     toast.dismiss(toastId);
     if (result.success) {
-      toast.success(`${result.created} documentos NC Performance importados com sucesso!`);
+      toast.success(`${result.created} documentos NC Performance importados!`);
     } else {
-      toast.error("Erro ao importar base de conhecimento. Tente novamente.");
+      toast.error("Nenhum documento pôde ser importado. Verifique a conexão.");
     }
     setSeedingKnowledge(false);
   };
