@@ -283,19 +283,72 @@ serve(async (req) => {
     const campaignInfoMap = new Map<string, any>(allCampaigns.map((c: any) => [c.id, c]));
     const campaignIds = allCampaigns.map((c: any) => c.id);
 
-    // 3. Métricas dos últimos 30 dias para essas campanhas
-    const thirtyDaysAgo = new Date();
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-    const startDateStr = thirtyDaysAgo.toISOString().split("T")[0];
+    // 3. Detecta intenção de data no último message para ajustar janela de consulta
+    const rawLastMsg = (body.messages && body.messages.length > 0)
+      ? String(body.messages[body.messages.length - 1]?.content || "").toLowerCase()
+      : "";
+
+    // Extrai YYYY-MM-DD explícito de formatos como 10/06, 10/06/2026, 2026-06-10
+    let dynamicStartDate: string | null = null;
+    let dynamicEndDate: string | null = null;
+    const todayRef = new Date();
+    const yearRef = todayRef.getFullYear();
+
+    // Padrão dd/mm/aaaa ou dd/mm
+    const dateMatch = rawLastMsg.match(/(\d{1,2})\/(\d{1,2})(?:\/(\d{4}))?/);
+    if (dateMatch) {
+      const d = dateMatch[1].padStart(2, "0");
+      const mo = dateMatch[2].padStart(2, "0");
+      const yr = dateMatch[3] || String(yearRef);
+      dynamicStartDate = `${yr}-${mo}-${d}`;
+      dynamicEndDate   = `${yr}-${mo}-${d}`;
+    }
+    // Padrão "dia X de mês" em pt-BR
+    const meses: Record<string, string> = {
+      janeiro:"01",fevereiro:"02",março:"03",marco:"03",abril:"04",maio:"05",junho:"06",
+      julho:"07",agosto:"08",setembro:"09",outubro:"10",novembro:"11",dezembro:"12"
+    };
+    const ptMatch = rawLastMsg.match(/dia\s+(\d{1,2})\s+de\s+([a-zçã]+)/i);
+    if (!dynamicStartDate && ptMatch) {
+      const d = ptMatch[1].padStart(2, "0");
+      const mo = meses[ptMatch[2].toLowerCase()] || null;
+      if (mo) {
+        dynamicStartDate = `${yearRef}-${mo}-${d}`;
+        dynamicEndDate   = `${yearRef}-${mo}-${d}`;
+      }
+    }
+    // "semana passada" → 7 a 14 dias atrás
+    if (!dynamicStartDate && /semana passada|última semana|semana anterior/.test(rawLastMsg)) {
+      const s = new Date(todayRef); s.setDate(s.getDate() - 14);
+      const e = new Date(todayRef); e.setDate(e.getDate() - 7);
+      dynamicStartDate = s.toISOString().split("T")[0];
+      dynamicEndDate   = e.toISOString().split("T")[0];
+    }
+    // "mês passado" → mês anterior completo
+    if (!dynamicStartDate && /mês passado|último mês|mes passado/.test(rawLastMsg)) {
+      const firstOfThisMonth = new Date(todayRef.getFullYear(), todayRef.getMonth(), 1);
+      const lastOfLastMonth  = new Date(firstOfThisMonth.getTime() - 1);
+      const firstOfLastMonth = new Date(lastOfLastMonth.getFullYear(), lastOfLastMonth.getMonth(), 1);
+      dynamicStartDate = firstOfLastMonth.toISOString().split("T")[0];
+      dynamicEndDate   = lastOfLastMonth.toISOString().split("T")[0];
+    }
+
+    // Janela padrão: 90 dias (cobre histórico razoável e semana passada/mês passado)
+    const ninetyDaysAgo = new Date();
+    ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
+    const startDateStr = dynamicStartDate || ninetyDaysAgo.toISOString().split("T")[0];
+    const endDateStr   = dynamicEndDate   || todayRef.toISOString().split("T")[0];
 
     let dbMetrics: any[] = [];
     if (campaignIds.length > 0) {
-      const { data, error: queryError } = await supabase
+      let metricsQ = supabase
         .from("metrics")
         .select("cost, conversions, clicks, impressions, reach, date, campaign_id")
         .in("campaign_id", campaignIds)
         .gte("date", startDateStr)
+        .lte("date", endDateStr)
         .order("date", { ascending: true });
+      const { data, error: queryError } = await metricsQ;
       if (queryError) console.error("Error querying metrics:", queryError);
       else dbMetrics = data || [];
     }
@@ -488,7 +541,11 @@ PERSONALIDADE E ATITUDE:
 
 DIRETRIZES TÉCNICAS E ESTRATÉGICAS DE MARKETING AUTOMOTIVO:
 1. **Analise os Períodos com Precisão:**
-   - Se o usuário perguntar "Como foi o fim de semana?", utilize o "Último Fim de Semana" (${lastSat} e ${lastSun}) listado nas datas de referência. Localize as linhas dessas datas na TABELA DE MÉTRICAS DIÁRIAS, faça a soma mental dos investimentos e leads gerados naquele período e responda com os valores exatos! O mesmo vale para "ontem", "hoje" ou períodos de dias específicos.
+   - Os dados na tabela cobrem de ${startDateStr} a ${endDateStr}.
+   - Para filtrar por data: localize as linhas da data solicitada na TABELA DE MÉTRICAS DIÁRIAS e some os valores. Ex: "como foi dia 10/06?" → filtre por "2026-06-10" na tabela.
+   - Para filtrar por cliente: filtre as linhas onde a coluna Cliente contém o nome buscado.
+   - "ontem" = ${formattedYesterday} | "fim de semana" = ${lastSat} (sáb) e ${lastSun} (dom) | "hoje" = ${formattedToday}.
+   - Se o usuário pedir uma data fora do período carregado, informe que os dados disponíveis são de ${startDateStr} até ${endDateStr} e sugira refinar a pergunta.
 2. **CPL (Custo por Lead) Saudável:**
    - Excelente: Abaixo de R$ 15,00.
    - Saudável: Entre R$ 15,00 e R$ 35,00.
@@ -504,7 +561,9 @@ DIRETRIZES TÉCNICAS E ESTRATÉGICAS DE MARKETING AUTOMOTIVO:
 GROUNDING DE TEMPO E DATAS:
 ${timeMetadata}
 
-DADOS ATUAIS CONSOLIDADOS (ÚLTIMOS 30 DIAS):
+PERÍODO DOS DADOS CARREGADOS: ${startDateStr} até ${endDateStr} (${dbMetrics.length} registros diários)
+
+DADOS ATUAIS CONSOLIDADOS (PERÍODO ACIMA):
 - Investimento Total: R$ ${totalInvest.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
 - Leads Gerados: ${totalConversions}
 - CPL Médio Geral: R$ ${globalCpl.toFixed(2)}
