@@ -3,6 +3,10 @@ import { supabase } from "@/integrations/supabase/client";
 import { extractPrintFn } from "@/lib/ocr.functions";
 import { toast } from "sonner";
 
+// Fallbacks hardcoded como em client.ts — garante URL correta mesmo se env var undefined no runtime
+const VITE_SUPABASE_URL = (import.meta.env["VITE_SUPABASE_URL"] as string) || "https://xudumzedcxuuhxokissm.supabase.co";
+const ANON_KEY = (import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string) || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inh1ZHVtemVkY3h1dWh4b2tpc3NtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkxMDcyNjcsImV4cCI6MjA5NDY4MzI2N30.9XXDZEDwuS5_6zsDWT5e6QxCEDvQpEyY88R7BNJ4SmM";
+
 export type Message = {
   id: string;
   role: "user" | "assistant";
@@ -243,13 +247,13 @@ export function useVictoriaChat(selectedAccountId: string, setSelectedAccountId:
       
       const { data: { session } } = await supabase.auth.getSession();
       const res = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/victoria-agent`,
+        `${VITE_SUPABASE_URL}/functions/v1/victoria-agent`,
         {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
             Authorization: `Bearer ${session?.access_token || ""}`,
-            "apikey": import.meta.env.VITE_SUPABASE_ANON_KEY || ""
+            "apikey": ANON_KEY
           },
           body: JSON.stringify({
             action: "chat",
@@ -395,13 +399,13 @@ export function useVictoriaChat(selectedAccountId: string, setSelectedAccountId:
       // 5. Invocar a IA Victoria por Streaming SSE
       const { data: { session } } = await supabase.auth.getSession();
       const res = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/victoria-agent`,
+        `${VITE_SUPABASE_URL}/functions/v1/victoria-agent`,
         {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
             Authorization: `Bearer ${session?.access_token || ""}`,
-            "apikey": import.meta.env.VITE_SUPABASE_ANON_KEY || ""
+            "apikey": ANON_KEY
           },
           body: JSON.stringify({
             action: "chat",
@@ -662,13 +666,13 @@ export function useVictoriaChat(selectedAccountId: string, setSelectedAccountId:
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const res = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/victoria-agent`,
+        `${VITE_SUPABASE_URL}/functions/v1/victoria-agent`,
         {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
             Authorization: `Bearer ${session?.access_token || ""}`,
-            "apikey": import.meta.env.VITE_SUPABASE_ANON_KEY || ""
+            "apikey": ANON_KEY
           },
           body: JSON.stringify({ action: "search_knowledge", query })
         }
@@ -689,13 +693,13 @@ export function useVictoriaChat(selectedAccountId: string, setSelectedAccountId:
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const res = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/victoria-agent`,
+        `${VITE_SUPABASE_URL}/functions/v1/victoria-agent`,
         {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
             Authorization: `Bearer ${session?.access_token || ""}`,
-            "apikey": import.meta.env.VITE_SUPABASE_ANON_KEY || ""
+            "apikey": ANON_KEY
           },
           body: JSON.stringify({
             action: "add_knowledge",
