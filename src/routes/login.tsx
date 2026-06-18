@@ -24,7 +24,10 @@ function LoginPage() {
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
-      if (data.session) nav({ to: "/dashboard", replace: true });
+      if (data.session) {
+        localStorage.setItem("nc_active_module", "hub");
+        nav({ to: "/dashboard", replace: true });
+      }
     });
   }, [nav]);
 
@@ -40,6 +43,7 @@ function LoginPage() {
       if (mode === "login") {
         const { error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
+        localStorage.setItem("nc_active_module", "hub");
         toast.success("Bem-vindo de volta");
         nav({ to: "/dashboard", replace: true });
       } else {
