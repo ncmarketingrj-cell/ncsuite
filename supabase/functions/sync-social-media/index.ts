@@ -493,6 +493,109 @@ serve(async (req) => {
       })
     }
 
+    // ==========================================
+    // AÇÃO: GET-INSIGHTS — Busca insights reais do Meta API por dia
+    // ==========================================
+    if (action === "get-insights") {
+      const { page_id, date_from, date_to } = body
+
+      // Resolver dados da página
+      let pageRecord: any = null
+      if (page_id && page_id !== "all") {
+        const { data } = await supabase.from("social_pages").select("*").eq("page_id", page_id).eq("user_id", user.id).maybeSingle()
+        pageRecord = data
+      } else {
+        const { data } = await supabase.from("social_pages").select("*").eq("user_id", user.id).order("page_name").limit(1).maybeSingle()
+        pageRecord = data
+      }
+
+      const { data: configData } = await supabase.from("meta_ads_configs").select("access_token").eq("user_id", user.id).maybeSingle()
+      const token = pageRecord?.access_token || configData?.access_token
+
+      const isMock = !token || token.startsWith("mock_") || token.length < 20
+      if (isMock) {
+        return new Response(JSON.stringify({ mock: true }), { headers: { ...corsHeaders, "Content-Type": "application/json" } })
+      }
+
+      const fbPageId = pageRecord?.page_id
+      const igAccountId = pageRecord?.instagram_account_id
+      const results: any = {
+        mock: false,
+        fb_insights: null,
+        ig_insights: null,
+        ig_followers: pageRecord?.instagram_followers || 0,
+        fb_followers: pageRecord?.facebook_followers || 0,
+        ig_media: [],
+        fb_posts: [],
+        ig_media_count: 0,
+      }
+
+      // Facebook Page Insights por dia
+      if (fbPageId) {
+        try {
+          const fbMetrics = "page_fans,page_impressions_organic,page_reach,page_views_total,page_engaged_users"
+          const fbRes = await fetch(`${META_API_BASE}/${fbPageId}/insights?metric=${fbMetrics}&period=day&since=${date_from}&until=${date_to}&access_token=${token}`)
+          const fbData = await fbRes.json()
+          if (!fbData.error) results.fb_insights = fbData.data || []
+
+          const fbFanRes = await fetch(`${META_API_BASE}/${fbPageId}?fields=fan_count,followers_count&access_token=${token}`)
+          const fbFanData = await fbFanRes.json()
+          if (!fbFanData.error) results.fb_followers = fbFanData.followers_count || fbFanData.fan_count || 0
+
+          const fbPostsRes = await fetch(`${META_API_BASE}/${fbPageId}/posts?fields=id,message,created_time,likes.summary(true),comments.summary(true),shares&limit=15&access_token=${token}`)
+          const fbPostsData = await fbPostsRes.json()
+          results.fb_posts = fbPostsData.data || []
+        } catch (e: any) { console.error("Erro FB insights:", e.message) }
+      }
+
+      // Instagram Insights por dia
+      if (igAccountId) {
+        try {
+          const igAccountRes = await fetch(`${META_API_BASE}/${igAccountId}?fields=followers_count,media_count&access_token=${token}`)
+          const igAccountData = await igAccountRes.json()
+          if (!igAccountData.error) {
+            results.ig_followers = igAccountData.followers_count || 0
+            results.ig_media_count = igAccountData.media_count || 0
+          }
+
+          const igMetrics = "impressions,reach,profile_views"
+          const igRes = await fetch(`${META_API_BASE}/${igAccountId}/insights?metric=${igMetrics}&period=day&since=${date_from}&until=${date_to}&access_token=${token}`)
+          const igData = await igRes.json()
+          if (!igData.error) results.ig_insights = igData.data || []
+
+          const igMediaRes = await fetch(`${META_API_BASE}/${igAccountId}/media?fields=id,caption,media_type,like_count,comments_count,timestamp,media_url,permalink&limit=15&access_token=${token}`)
+          const igMediaData = await igMediaRes.json()
+          const igMediaList = igMediaData.data || []
+
+          // Buscar insights individuais de cada post
+          for (const media of igMediaList.slice(0, 10)) {
+            try {
+              const mediaInsRes = await fetch(`${META_API_BASE}/${media.id}/insights?metric=impressions,reach&access_token=${token}`)
+              const mediaInsData = await mediaInsRes.json()
+              if (!mediaInsData.error && mediaInsData.data) {
+                for (const ins of mediaInsData.data) {
+                  if (ins.name === "impressions") media.impressions = ins.values?.[0]?.value || 0
+                  if (ins.name === "reach") media.reach = ins.values?.[0]?.value || 0
+                }
+              }
+            } catch (e) { /* ignorar erros por post */ }
+          }
+          results.ig_media = igMediaList
+        } catch (e: any) { console.error("Erro IG insights:", e.message) }
+      }
+
+      // Atualizar banco com dados frescos
+      if (pageRecord?.page_id) {
+        await supabase.from("social_pages").update({
+          instagram_followers: results.ig_followers || pageRecord.instagram_followers,
+          facebook_followers: results.fb_followers || pageRecord.facebook_followers,
+          updated_at: new Date().toISOString()
+        }).eq("page_id", pageRecord.page_id)
+      }
+
+      return new Response(JSON.stringify(results), { headers: { ...corsHeaders, "Content-Type": "application/json" } })
+    }
+
     // Ação desconhecida
     return new Response(JSON.stringify({ error: "Ação desconhecida." }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } })
 

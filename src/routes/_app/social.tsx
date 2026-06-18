@@ -161,6 +161,8 @@ function SocialMediaPage() {
     }
   });
 
+  const isMockToken = !metaConfig?.access_token || metaConfig.access_token.startsWith("mock_") || metaConfig.access_token.length < 20;
+
   // Mutation to trigger immediate publish via Edge Function
   const publishNowMutation = useMutation({
     mutationFn: async (postId: string) => {
@@ -170,9 +172,18 @@ function SocialMediaPage() {
       if (error) throw error;
       return data;
     },
-    onSuccess: () => {
+    onSuccess: (data: any) => {
       qc.invalidateQueries({ queryKey: ["social_posts"] });
-      toast.success("Postagem veiculada no Meta com sucesso!");
+      if (data?.warning && (data.warning.includes("token") || data.warning.includes("Token") || data.warning.includes("mock_"))) {
+        toast.warning(
+          "Salvo localmente — Token Meta não configurado. Acesse Configurações → Integrações Master para publicar nas redes sociais reais.",
+          { duration: 7000 }
+        );
+      } else if (data?.warning) {
+        toast.warning(`Publicado com aviso: ${data.warning}`);
+      } else {
+        toast.success("Postagem veiculada no Meta com sucesso!");
+      }
     },
     onError: (err: any) => {
       toast.error(`Erro ao publicar: ${err.message}`);
@@ -466,15 +477,25 @@ function SocialMediaPage() {
       </div>
 
       {/* Warnings & Meta Connection status */}
-      {!isMetaConnected && (
-        <div className="rounded-2xl border border-yellow-500/20 bg-yellow-500/5 p-4 flex items-start gap-3">
-          <AlertCircle className="h-5 w-5 text-yellow-500 shrink-0 mt-0.5" />
+      {(!isMetaConnected || isMockToken) && (
+        <div className={`rounded-2xl border p-4 flex items-start gap-3 ${isMockToken && isMetaConnected ? "border-red-500/20 bg-red-500/5" : "border-yellow-500/20 bg-yellow-500/5"}`}>
+          <AlertCircle className={`h-5 w-5 shrink-0 mt-0.5 ${isMockToken && isMetaConnected ? "text-red-500" : "text-yellow-500"}`} />
           <div className="text-left">
-            <p className="text-xs font-bold text-yellow-400">Meta Ads Config não integrada para Social Media</p>
-            <p className="text-[10px] text-muted-foreground leading-relaxed mt-0.5">
-              Suas páginas e contas não estão vinculadas nas configurações do aplicativo. As publicações serão salvas localmente
-              com IDs simulados para demonstração comercial. Acesse **Configurações → Integrações Master** para vincular.
-            </p>
+            {isMockToken && isMetaConnected ? (
+              <>
+                <p className="text-xs font-bold text-red-400">Token Meta inválido — publicações NÃO chegam às redes sociais reais</p>
+                <p className="text-[10px] text-muted-foreground leading-relaxed mt-0.5">
+                  As páginas estão vinculadas, mas o Token de Acesso é inválido ou está expirado. Ao clicar em "Publicar Agora", o post é salvo localmente com um ID simulado — nada é publicado no Instagram ou Facebook. Acesse <strong>Configurações → Integrações Master</strong> e insira um Token válido do Meta.
+                </p>
+              </>
+            ) : (
+              <>
+                <p className="text-xs font-bold text-yellow-400">Meta não integrado — publicações salvas localmente</p>
+                <p className="text-[10px] text-muted-foreground leading-relaxed mt-0.5">
+                  Sem integração ativa com o Meta, as publicações são salvas apenas no banco de dados interno. Acesse <strong>Configurações → Integrações Master</strong> para vincular sua conta e publicar nas redes sociais reais.
+                </p>
+              </>
+            )}
           </div>
         </div>
       )}
