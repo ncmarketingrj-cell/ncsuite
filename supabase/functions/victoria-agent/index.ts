@@ -561,17 +561,23 @@ REGRAS DE RESPOSTA:
     // =========================================================================
     // 3. EXECUÇÃO RAG (RETRIEVAL-AUGMENTED GENERATION)
     // =========================================================================
-    // ─── Injetar TODOS os documentos de conhecimento do usuário no prompt ──────
-    const { data: allKnowledge } = await supabase
-      .from("victoria_knowledge")
-      .select("category, title, content")
-      .eq("user_id", user.id)
-      .order("created_at", { ascending: false })
-      .limit(30);
-
-    const knowledgeCtx = (allKnowledge || []).length > 0
-      ? (allKnowledge || []).map((k: any) => `[${(k.category || "").toUpperCase()}] ${k.title}:\n${k.content}`).join("\n\n---\n\n")
-      : "";
+    // ─── Injetar documentos de conhecimento no prompt (sem depender de embedding) ─
+    let knowledgeCtx = "";
+    try {
+      const { data: allKnowledge, error: kErr } = await supabase
+        .from("victoria_knowledge")
+        .select("category, title, content")
+        .eq("user_id", user.id)
+        .order("created_at", { ascending: false })
+        .limit(20);
+      if (!kErr && allKnowledge && allKnowledge.length > 0) {
+        knowledgeCtx = allKnowledge
+          .map((k: any) => `[${String(k.category || "").toUpperCase()}] ${String(k.title || "")}:\n${String(k.content || "").slice(0, 600)}`)
+          .join("\n\n---\n\n");
+      }
+    } catch (_kErr) {
+      console.warn("[VICTORIA] Falha ao carregar base de conhecimento:", _kErr);
+    }
 
     let retrievedContext = externalContext || "";
     if (!retrievedContext && GEMINI_API_KEY && messages && messages.length > 0) {
