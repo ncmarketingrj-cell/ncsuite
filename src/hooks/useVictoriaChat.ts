@@ -413,7 +413,8 @@ export function useVictoriaChat(selectedAccountId: string, setSelectedAccountId:
       );
 
       if (!res.ok) {
-        throw new Error("Erro de comunicação com o servidor.");
+        const errBody = await res.text().catch(() => "");
+        throw new Error(`HTTP ${res.status}: ${errBody.slice(0, 200) || "Erro de comunicação com o servidor."}`);
       }
 
       const reader = res.body?.getReader();
