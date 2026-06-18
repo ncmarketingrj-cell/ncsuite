@@ -19,6 +19,7 @@ import { Route as QSlugRouteImport } from './routes/q.$slug'
 import { Route as PSlugRouteImport } from './routes/p.$slug'
 import { Route as AppUtmsRouteImport } from './routes/_app/utms'
 import { Route as AppUploadRouteImport } from './routes/_app/upload'
+import { Route as AppSocialRelatoriosRouteImport } from './routes/_app/social-relatorios'
 import { Route as AppSocialInsightsRouteImport } from './routes/_app/social-insights'
 import { Route as AppSocialRouteImport } from './routes/_app/social'
 import { Route as AppReunioesRouteImport } from './routes/_app/reunioes'
@@ -91,6 +92,11 @@ const AppUtmsRoute = AppUtmsRouteImport.update({
 const AppUploadRoute = AppUploadRouteImport.update({
   id: '/upload',
   path: '/upload',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppSocialRelatoriosRoute = AppSocialRelatoriosRouteImport.update({
+  id: '/social-relatorios',
+  path: '/social-relatorios',
   getParentRoute: () => AppRoute,
 } as any)
 const AppSocialInsightsRoute = AppSocialInsightsRouteImport.update({
@@ -241,6 +247,7 @@ export interface FileRoutesByFullPath {
   '/reunioes': typeof AppReunioesRoute
   '/social': typeof AppSocialRoute
   '/social-insights': typeof AppSocialInsightsRoute
+  '/social-relatorios': typeof AppSocialRelatoriosRoute
   '/upload': typeof AppUploadRoute
   '/utms': typeof AppUtmsRoute
   '/p/$slug': typeof PSlugRoute
@@ -276,6 +283,7 @@ export interface FileRoutesByTo {
   '/reunioes': typeof AppReunioesRoute
   '/social': typeof AppSocialRoute
   '/social-insights': typeof AppSocialInsightsRoute
+  '/social-relatorios': typeof AppSocialRelatoriosRoute
   '/upload': typeof AppUploadRoute
   '/utms': typeof AppUtmsRoute
   '/p/$slug': typeof PSlugRoute
@@ -313,6 +321,7 @@ export interface FileRoutesById {
   '/_app/reunioes': typeof AppReunioesRoute
   '/_app/social': typeof AppSocialRoute
   '/_app/social-insights': typeof AppSocialInsightsRoute
+  '/_app/social-relatorios': typeof AppSocialRelatoriosRoute
   '/_app/upload': typeof AppUploadRoute
   '/_app/utms': typeof AppUtmsRoute
   '/p/$slug': typeof PSlugRoute
@@ -350,6 +359,7 @@ export interface FileRouteTypes {
     | '/reunioes'
     | '/social'
     | '/social-insights'
+    | '/social-relatorios'
     | '/upload'
     | '/utms'
     | '/p/$slug'
@@ -385,6 +395,7 @@ export interface FileRouteTypes {
     | '/reunioes'
     | '/social'
     | '/social-insights'
+    | '/social-relatorios'
     | '/upload'
     | '/utms'
     | '/p/$slug'
@@ -421,6 +432,7 @@ export interface FileRouteTypes {
     | '/_app/reunioes'
     | '/_app/social'
     | '/_app/social-insights'
+    | '/_app/social-relatorios'
     | '/_app/upload'
     | '/_app/utms'
     | '/p/$slug'
@@ -511,6 +523,13 @@ declare module '@tanstack/react-router' {
       path: '/upload'
       fullPath: '/upload'
       preLoaderRoute: typeof AppUploadRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/social-relatorios': {
+      id: '/_app/social-relatorios'
+      path: '/social-relatorios'
+      fullPath: '/social-relatorios'
+      preLoaderRoute: typeof AppSocialRelatoriosRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/social-insights': {
@@ -742,6 +761,7 @@ interface AppRouteChildren {
   AppReunioesRoute: typeof AppReunioesRoute
   AppSocialRoute: typeof AppSocialRoute
   AppSocialInsightsRoute: typeof AppSocialInsightsRoute
+  AppSocialRelatoriosRoute: typeof AppSocialRelatoriosRoute
   AppUploadRoute: typeof AppUploadRoute
   AppUtmsRoute: typeof AppUtmsRoute
 }
@@ -768,6 +788,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppReunioesRoute: AppReunioesRoute,
   AppSocialRoute: AppSocialRoute,
   AppSocialInsightsRoute: AppSocialInsightsRoute,
+  AppSocialRelatoriosRoute: AppSocialRelatoriosRoute,
   AppUploadRoute: AppUploadRoute,
   AppUtmsRoute: AppUtmsRoute,
 }

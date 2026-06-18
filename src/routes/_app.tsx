@@ -73,11 +73,8 @@ const TRAFEGO_NAV_ITEMS: NavItem[] = [
   { to: "/metricas", icon: LineChart, label: "Métricas" },
   { to: "/relatorios", icon: FileText, label: "Relatórios" },
   { to: "/criativos", icon: Palette, label: "Criativos" },
-];
-const TRAFEGO_MORE_ITEMS: NavItem[] = [
   { to: "/multicanal", icon: BarChart3, label: "Multicanal" },
   { to: "/automacoes", icon: Zap, label: "Automações" },
-  { to: "/agente", icon: Bot, label: "Agente IA" },
   { to: "/config", icon: Settings, label: "Configurações" },
 ];
 
@@ -85,20 +82,15 @@ const SOCIAL_NAV_ITEMS: NavItem[] = [
   { to: "/social", icon: Share2, label: "Social Media" },
   { to: "/social-insights", icon: BarChart3, label: "Insights Meta" },
   { to: "/organizador", icon: Link2, label: "Link Pages" },
-];
-const SOCIAL_MORE_ITEMS: NavItem[] = [
-  { to: "/agente", icon: Bot, label: "Agente IA" },
-  { to: "/config", icon: Settings, label: "Integração Meta" },
+  { to: "/social-relatorios", icon: FileText, label: "Relatórios" },
+  { to: "/config", icon: Settings, label: "Configurações" },
 ];
 
 const GESTAO_NAV_ITEMS: NavItem[] = [
   { to: "/clientes", icon: Store, label: "Clientes" },
   { to: "/reunioes", icon: Users, label: "Reuniões" },
-];
-const GESTAO_MORE_ITEMS: NavItem[] = [
   { to: "/cobrancas", icon: CreditCard, label: "Cobranças" },
   { to: "/upload", icon: Upload, label: "Upload" },
-  { to: "/agente", icon: Bot, label: "Agente IA" },
   { to: "/config", icon: Settings, label: "Configurações" },
 ];
 
@@ -107,11 +99,8 @@ const FUNIL_NAV_ITEMS: NavItem[] = [
   { to: "/funnel-builder", icon: LayoutDashboard, label: "Mapa Mental" },
   { to: "/link-bio", icon: Link2, label: "Link Bio" },
   { to: "/formulario", icon: FileText, label: "Formulário" },
-];
-const FUNIL_MORE_ITEMS: NavItem[] = [
   { to: "/quiz", icon: BarChart3, label: "Quiz" },
-  { to: "/agente", icon: Bot, label: "Agente IA" },
-  { to: "/config", icon: Settings, label: "Templates" },
+  { to: "/config", icon: Settings, label: "Configurações" },
 ];
 
 const ADMIN_EMAILS = ["nc.marketingrj@gmail.com", "hc.marketing.dgt@gmail.com"];
@@ -121,6 +110,7 @@ function Shell() {
   const nav = useNavigate();
 
   const handleSignOut = async () => {
+    localStorage.setItem("nc_active_module", "hub");
     await signOut();
     nav({ to: "/login", replace: true });
   };
@@ -157,26 +147,17 @@ function Shell() {
   const [showModuleMenu, setShowModuleMenu] = useState(false);
 
   let currentNavItems = TRAFEGO_NAV_ITEMS;
-  let currentMoreItems = TRAFEGO_MORE_ITEMS;
 
   if (activeModule === "social") {
     currentNavItems = SOCIAL_NAV_ITEMS;
-    currentMoreItems = SOCIAL_MORE_ITEMS;
   } else if (activeModule === "gestao") {
     currentNavItems = GESTAO_NAV_ITEMS;
-    currentMoreItems = GESTAO_MORE_ITEMS;
   } else if (activeModule === "funil") {
     currentNavItems = FUNIL_NAV_ITEMS;
-    currentMoreItems = FUNIL_MORE_ITEMS;
   }
 
   const filteredNavItems = currentNavItems.filter(item => {
     if (item.to === "/metricas" && !canSeeMetricas) return false;
-    return true;
-  });
-
-  const filteredMoreItems = currentMoreItems.filter(item => {
-    if (item.to === "/agente"     && !isAdmin)         return false;
     if (item.to === "/automacoes" && !canSeeAutomacoes) return false;
     return true;
   });
@@ -186,7 +167,6 @@ function Shell() {
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [showNotification, setShowNotification] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [showMore, setShowMore] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
   const [syncStatus, setSyncStatus] = useState<SyncStatus>(getSyncStatus);
   const [showUserMenu, setShowUserMenu] = useState(false);
@@ -254,7 +234,6 @@ function Shell() {
   // Fecha menus ao navegar
   useEffect(() => {
     setMobileMenuOpen(false);
-    setShowMore(false);
     setShowUserMenu(false);
   }, [path]);
 
@@ -433,8 +412,8 @@ function Shell() {
             </motion.div>
           </div>
 
-          {/* Theme toggle + Footer logout */}
-          <div className="pt-4 flex items-center justify-center gap-6">
+          {/* Theme toggle + Configurações + Footer logout */}
+          <div className="pt-4 flex items-center justify-center gap-6 flex-wrap">
             <button
               onClick={toggleTheme}
               className="text-[10px] font-bold text-muted-foreground hover:text-foreground uppercase tracking-wider flex items-center gap-1.5 transition-colors"
@@ -442,6 +421,13 @@ function Shell() {
               {theme === "dark" ? <Sun className="h-3.5 w-3.5" /> : <Moon className="h-3.5 w-3.5" />}
               {theme === "dark" ? "Modo Claro" : "Modo Escuro"}
             </button>
+            <div className="h-3 w-px bg-border" />
+            <Link
+              to="/config"
+              className="text-[10px] font-bold text-muted-foreground hover:text-foreground uppercase tracking-wider flex items-center gap-1.5 transition-colors"
+            >
+              <Settings className="h-3.5 w-3.5" /> Configurações
+            </Link>
             <div className="h-3 w-px bg-border" />
             <button
               onClick={handleSignOut}
@@ -576,6 +562,15 @@ function Shell() {
                           <span className="h-1.5 w-1.5 rounded-full bg-purple-500" />
                           Mapas &amp; Funis
                         </button>
+                        <div className="my-1 border-t border-border" />
+                        <Link
+                          to="/config"
+                          onClick={() => setShowModuleMenu(false)}
+                          className="flex w-full items-center gap-2 rounded-xl px-2.5 py-2 text-xs font-bold text-muted-foreground hover:bg-muted hover:text-foreground transition-all"
+                        >
+                          <Settings className="h-3.5 w-3.5" />
+                          Configurações
+                        </Link>
                       </motion.div>
                     </>
                   )}
@@ -584,9 +579,8 @@ function Shell() {
             )}
           </div>
 
-          {/* CENTER: Navigation Links (Desktop) */}
+          {/* CENTER: Navigation Links (Desktop) — todos inline, sem botão Mais */}
           <nav className="hidden lg:flex flex-1 min-w-0 items-center justify-center gap-0 px-1">
-            {/* Scrollable nav items — overflow-x-auto só aqui, não afeta o dropdown */}
             <div className="flex min-w-0 items-center overflow-x-auto scrollbar-none">
               {filteredNavItems.map((item) => {
                 const isActive = path === item.to || (item.to !== "/dashboard" && path.startsWith(item.to));
@@ -612,52 +606,6 @@ function Shell() {
                   </Link>
                 );
               })}
-            </div>
-
-            {/* More dropdown — fora do scroll container para o dropdown não ser clipado */}
-            <div className="relative shrink-0">
-              <button
-                onClick={() => setShowMore(!showMore)}
-                className={`flex items-center gap-1.5 rounded-xl px-2.5 py-1.5 text-[12px] font-semibold whitespace-nowrap transition-all ${
-                  filteredMoreItems.some(i => path.startsWith(i.to))
-                    ? "text-primary bg-primary/10"
-                    : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
-                }`}
-              >
-                Mais
-                <ChevronDown className={`h-3 w-3 transition-transform ${showMore ? 'rotate-180' : ''}`} />
-              </button>
-
-              <AnimatePresence>
-                {showMore && (
-                  <>
-                    <div className="fixed inset-0 z-40" onClick={() => setShowMore(false)} />
-                    <motion.div
-                      initial={{ opacity: 0, y: 8, scale: 0.96 }}
-                      animate={{ opacity: 1, y: 0, scale: 1 }}
-                      exit={{ opacity: 0, y: 8, scale: 0.96 }}
-                      className="absolute right-0 top-full z-50 mt-2 w-52 rounded-2xl border border-border bg-card p-2 shadow-2xl"
-                    >
-                      {filteredMoreItems.map((item) => {
-                        const isActive = path.startsWith(item.to);
-                        return (
-                          <Link
-                            key={item.to}
-                            to={item.to}
-                            onClick={() => setShowMore(false)}
-                            className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all ${
-                              isActive ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
-                            }`}
-                          >
-                            <item.icon className="h-4 w-4" />
-                            {item.label}
-                          </Link>
-                        );
-                      })}
-                    </motion.div>
-                  </>
-                )}
-              </AnimatePresence>
             </div>
           </nav>
 
@@ -953,7 +901,7 @@ function Shell() {
               </div>
               {/* Grid de nav */}
               <nav className="p-4 grid grid-cols-3 gap-2.5">
-                {[...filteredNavItems, ...filteredMoreItems].map((item) => {
+                {filteredNavItems.map((item) => {
                   const isActive = path === item.to || (item.to !== "/dashboard" && path.startsWith(item.to));
                   return (
                     <Link
