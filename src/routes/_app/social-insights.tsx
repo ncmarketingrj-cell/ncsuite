@@ -303,23 +303,25 @@ function SocialInsightsPage() {
 
   // Detecta se token é real ou mock
   const isMockToken = !metaConfig?.access_token || metaConfig.access_token.startsWith("mock_") || metaConfig.access_token.length < 20;
-  const isMetaConnected = socialPages.length > 0;
+  // Só conta páginas reais (sem page_id começando com "mock_")
+  const realPages = socialPages.filter((sp: any) => !String(sp.page_id).startsWith("mock_"));
+  const isMetaConnected = realPages.length > 0;
   const isRealData = insightsData && !insightsData.mock;
 
-  // ── Dados diários para gráficos
+  // ── Dados diários para gráficos (usando apenas páginas reais)
   const { dailyData, kpis, baseSeed } = useMemo(() => {
-    const selectedPageObj: any = socialPages.find((sp: any) => sp.page_id === selectedPage);
+    const selectedPageObj: any = realPages.find((sp: any) => sp.page_id === selectedPage);
 
     let fbFollowers = 0;
     let igFollowers = 0;
     let pageId = selectedPage;
-    let pageName = "Demonstração";
+    let pageName = "Sem título";
 
     if (selectedPage === "all") {
-      fbFollowers = socialPages.reduce((a: number, sp: any) => a + (sp.facebook_followers || 0), 0);
-      igFollowers = socialPages.reduce((a: number, sp: any) => a + (sp.instagram_followers || 0), 0);
-      pageId = socialPages.map((sp: any) => sp.page_id).join("+");
-      pageName = socialPages.map((sp: any) => sp.page_name).join("+");
+      fbFollowers = realPages.reduce((a: number, sp: any) => a + (sp.facebook_followers || 0), 0);
+      igFollowers = realPages.reduce((a: number, sp: any) => a + (sp.instagram_followers || 0), 0);
+      pageId = realPages.map((sp: any) => sp.page_id).join("+");
+      pageName = realPages.map((sp: any) => sp.page_name).join("+");
     } else if (selectedPageObj) {
       fbFollowers = selectedPageObj.facebook_followers || 0;
       igFollowers = selectedPageObj.instagram_followers || 0;
@@ -343,7 +345,7 @@ function SocialInsightsPage() {
     const daily = generateDailyData(pageId, pageName, dateFrom, dateTo, fbFollowers, igFollowers, isMockToken);
     const k = computeKPIs(daily, fbFollowers, igFollowers, bs);
     return { dailyData: daily, kpis: k, baseSeed: bs };
-  }, [socialPages, selectedPage, dateFrom, dateTo, insightsData, isRealData, isMockToken]);
+  }, [realPages, selectedPage, dateFrom, dateTo, insightsData, isRealData, isMockToken]);
 
   // ── Top posts para a tabela
   const topPosts = useMemo(() => {
@@ -543,22 +545,52 @@ function SocialInsightsPage() {
         </div>
       </div>
 
-      {/* ── Banner de aviso se não conectado ─────────────────────────────── */}
+      {/* ── Estado vazio: Meta não conectado ─────────────────────────────── */}
       {!isMetaConnected && (
         <motion.div
-          initial={{ opacity: 0, y: -8 }}
+          initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
-          className="rounded-2xl border border-amber-500/20 bg-amber-500/5 p-4 flex items-start gap-3"
+          className="flex flex-col items-center justify-center py-24 text-center gap-6"
         >
-          <AlertCircle className="h-5 w-5 text-amber-500 shrink-0 mt-0.5" />
-          <div>
-            <p className="text-xs font-bold text-amber-400">Meta não integrado — exibindo dados de demonstração</p>
-            <p className="text-[10px] text-muted-foreground mt-0.5 leading-relaxed">
-              Acesse <strong>Configurações → Integrações Master</strong> e insira seu Token de Acesso do Meta para ativar sincronização real. Enquanto isso, todos os gráficos abaixo são simulações interativas e realistas.
+          <div className="w-20 h-20 rounded-3xl bg-gradient-to-br from-primary/20 to-pink-500/10 flex items-center justify-center border border-primary/20">
+            <WifiOff className="h-9 w-9 text-primary/60" />
+          </div>
+          <div className="space-y-2 max-w-md">
+            <h3 className="text-xl font-black text-foreground">Nenhuma página vinculada ao Meta</h3>
+            <p className="text-sm text-muted-foreground leading-relaxed">
+              Para ver dados reais de Instagram e Facebook — seguidores, alcance, impressões e métricas de posts — você precisa conectar sua conta do Meta Business com um Token de Acesso válido.
             </p>
+          </div>
+          <div className="flex flex-col sm:flex-row gap-3">
+            <Link
+              to="/config"
+              className="inline-flex items-center gap-2 rounded-xl bg-primary px-6 py-3 text-sm font-bold text-primary-foreground shadow-glow hover:opacity-90 active:scale-95 transition"
+            >
+              <Sparkles className="h-4 w-4" />
+              Ir para Configurações
+            </Link>
+            <button
+              onClick={handleManualSync}
+              disabled={isSyncing}
+              className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-card px-6 py-3 text-sm font-bold text-muted-foreground hover:text-foreground transition"
+            >
+              <RefreshCw className={`h-4 w-4 ${isSyncing ? "animate-spin" : ""}`} />
+              Tentar sincronizar
+            </button>
+          </div>
+          <div className="max-w-sm rounded-2xl border border-white/5 bg-white/[0.02] p-4 text-left space-y-3">
+            <p className="text-[10px] font-black text-muted-foreground uppercase tracking-wider">Como conectar</p>
+            <ol className="space-y-2 text-[11px] text-muted-foreground list-decimal list-inside leading-relaxed">
+              <li>Acesse <strong className="text-foreground">Configurações → Integrações Master</strong></li>
+              <li>Insira seu <strong className="text-foreground">Token de Acesso do Meta</strong> (User ou Page Token com permissão <code className="text-primary">pages_read_engagement</code>)</li>
+              <li>Clique em <strong className="text-foreground">Salvar e Sincronizar</strong> — as páginas reais aparecerão automaticamente</li>
+            </ol>
           </div>
         </motion.div>
       )}
+
+      {/* ── Conteúdo de análise (só aparece quando há páginas reais) ─────── */}
+      {isMetaConnected && (<>
 
       {/* ── Filtros ──────────────────────────────────────────────────────────── */}
       <div className="flex flex-wrap items-center justify-between gap-4 p-4 border border-white/5 bg-white/[0.015] rounded-2xl">
@@ -570,7 +602,7 @@ function SocialInsightsPage() {
             className="rounded-xl border border-white/10 bg-background px-3 py-1.5 text-xs text-foreground focus:outline-none focus:border-primary/50"
           >
             <option value="all">Todas as Contas</option>
-            {socialPages.map((sp: any) => (
+            {realPages.map((sp: any) => (
               <option key={sp.page_id} value={sp.page_id}>
                 {sp.page_name}{sp.instagram_handle ? ` (@${sp.instagram_handle})` : ""}
               </option>
@@ -1019,6 +1051,8 @@ function SocialInsightsPage() {
           </table>
         </div>
       </motion.div>
+
+      </>)}
     </div>
   );
 }

@@ -91,156 +91,99 @@ serve(async (req) => {
         tokenToUse = config?.access_token
       }
 
-      let pagesList = []
-      let mockUsed = false
-
+      // Sem token válido → não inventar páginas, retornar vazio com mensagem clara
       if (!tokenToUse || tokenToUse.startsWith("mock_") || tokenToUse.length < 20) {
-        // Usar dados mockados para demonstração comercial/teste sem token válido
-        pagesList = [
-          {
-            page_id: "mock_page_1",
-            page_name: "NC Seminovos Premium",
-            access_token: "mock_page_token_1",
-            facebook_followers: 420,
-            instagram_followers: 1540,
-            instagram: {
-              id: "mock_ig_1",
-              username: "nc_seminovos_premium"
-            }
-          },
-          {
-            page_id: "mock_page_2",
-            page_name: "NC Concessionária",
-            access_token: "mock_page_token_2",
-            facebook_followers: 180,
-            instagram_followers: 950,
-            instagram: {
-              id: "mock_ig_2",
-              username: "nc_concessionaria"
-            }
-          },
-          {
-            page_id: "mock_page_3",
-            page_name: "NC Marketing Automotivo",
-            access_token: "mock_page_token_3",
-            facebook_followers: 290,
-            instagram_followers: 0,
-            instagram: null
-          }
-        ]
-        mockUsed = true
-      } else {
-        // Buscar páginas reais
-        try {
-          const pagesRes = await fetch(`${META_API_BASE}/me/accounts?access_token=${tokenToUse}`)
-          const pagesData = await pagesRes.json()
-          if (pagesData.error) throw new Error(pagesData.error.message)
-
-          const fbPages = pagesData.data || []
-          for (const p of fbPages) {
-            let igAccount = null
-            let igFollowers = 0
-            let fbFollowers = 0
-
-            // 1. Buscar seguidores do Facebook Page (fan_count / followers_count)
-            try {
-              const fbFieldsRes = await fetch(`${META_API_BASE}/${p.id}?fields=fan_count,followers_count&access_token=${p.access_token}`)
-              const fbFieldsData = await fbFieldsRes.json()
-              if (!fbFieldsData.error) {
-                const fanCount = fbFieldsData.fan_count || 0
-                fbFollowers = fbFieldsData.followers_count || fanCount || 0
-              }
-            } catch (e: any) {
-              console.error(`Erro ao buscar seguidores do Facebook para pagina ${p.id}:`, e.message)
-            }
-
-            // 2. Buscar conta do Instagram e seus seguidores
-            try {
-              const igRes = await fetch(`${META_API_BASE}/${p.id}?fields=instagram_business_account{id,username}&access_token=${p.access_token}`)
-              const igData = await igRes.json()
-              if (igData.instagram_business_account) {
-                igAccount = {
-                  id: igData.instagram_business_account.id,
-                  username: igData.instagram_business_account.username
-                }
-
-                // Buscar contagem de seguidores do Instagram
-                try {
-                  const igFieldsRes = await fetch(`${META_API_BASE}/${igAccount.id}?fields=followers_count&access_token=${p.access_token}`)
-                  const igFieldsData = await igFieldsRes.json()
-                  if (!igFieldsData.error) {
-                    igFollowers = igFieldsData.followers_count || 0
-                  }
-                } catch (e: any) {
-                  console.error(`Erro ao buscar seguidores do Instagram para conta ${igAccount.id}:`, e.message)
-                }
-              }
-            } catch (e: any) {
-              console.error(`Erro ao carregar Instagram da página ${p.id}:`, e.message)
-            }
-
-            pagesList.push({
-              page_id: p.id,
-              page_name: p.name,
-              access_token: p.access_token,
-              facebook_followers: fbFollowers,
-              instagram_followers: igFollowers,
-              instagram: igAccount
-            })
-          }
-        } catch (err: any) {
-          console.error("Token real falhou ao buscar paginas:", err.message)
-          pagesList = [
-            {
-              page_id: "mock_page_1",
-              page_name: "NC Seminovos Premium (Demo)",
-              access_token: "mock_page_token_1",
-              facebook_followers: 420,
-              instagram_followers: 1540,
-              instagram: {
-                id: "mock_ig_1",
-                username: "nc_seminovos_premium"
-              }
-            },
-            {
-              page_id: "mock_page_2",
-              page_name: "NC Concessionária (Demo)",
-              access_token: "mock_page_token_2",
-              facebook_followers: 180,
-              instagram_followers: 950,
-              instagram: {
-                id: "mock_ig_2",
-                username: "nc_concessionaria"
-              }
-            }
-          ]
-          mockUsed = true
-        }
+        return new Response(JSON.stringify({
+          pages: [],
+          mock: false,
+          error: "Token Meta não configurado. Acesse Configurações → Integrações Master para vincular sua conta."
+        }), { headers: { ...corsHeaders, "Content-Type": "application/json" } })
       }
 
-      // Persistir na tabela social_pages para o usuário autenticado
-      for (const p of pagesList) {
-        const { error: upsertErr } = await supabase
-          .from("social_pages")
-          .upsert({
-            user_id: user.id,
-            page_id: p.page_id,
-            page_name: p.page_name,
-            instagram_account_id: p.instagram?.id || null,
-            instagram_handle: p.instagram?.username || null,
-            access_token: p.access_token || null,
-            facebook_followers: p.facebook_followers || 0,
-            instagram_followers: p.instagram_followers || 0,
-            updated_at: new Date().toISOString()
-          }, { onConflict: "page_id" })
-        if (upsertErr) {
-          console.error(`Erro ao salvar página ${p.page_id} no banco:`, upsertErr.message)
-        }
-      }
+      // Limpar páginas inventadas (mock_*) que possam ter sido salvas anteriormente
+      await supabase.from("social_pages").delete().eq("user_id", user.id).like("page_id", "mock_%")
 
-      return new Response(JSON.stringify({ pages: pagesList, mock: mockUsed }), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" }
-      })
+      // Buscar páginas reais do Meta
+      try {
+        const pagesRes = await fetch(`${META_API_BASE}/me/accounts?access_token=${tokenToUse}`)
+        const pagesData = await pagesRes.json()
+        if (pagesData.error) throw new Error(pagesData.error.message)
+
+        const fbPages = pagesData.data || []
+        const pagesList: any[] = []
+
+        for (const p of fbPages) {
+          let igAccount = null
+          let igFollowers = 0
+          let fbFollowers = 0
+
+          try {
+            const fbFieldsRes = await fetch(`${META_API_BASE}/${p.id}?fields=fan_count,followers_count&access_token=${p.access_token}`)
+            const fbFieldsData = await fbFieldsRes.json()
+            if (!fbFieldsData.error) {
+              fbFollowers = fbFieldsData.followers_count || fbFieldsData.fan_count || 0
+            }
+          } catch (e: any) {
+            console.error(`Erro seguidores FB página ${p.id}:`, e.message)
+          }
+
+          try {
+            const igRes = await fetch(`${META_API_BASE}/${p.id}?fields=instagram_business_account{id,username}&access_token=${p.access_token}`)
+            const igData = await igRes.json()
+            if (igData.instagram_business_account) {
+              igAccount = { id: igData.instagram_business_account.id, username: igData.instagram_business_account.username }
+              try {
+                const igFieldsRes = await fetch(`${META_API_BASE}/${igAccount.id}?fields=followers_count&access_token=${p.access_token}`)
+                const igFieldsData = await igFieldsRes.json()
+                if (!igFieldsData.error) igFollowers = igFieldsData.followers_count || 0
+              } catch (e: any) {
+                console.error(`Erro seguidores IG ${igAccount.id}:`, e.message)
+              }
+            }
+          } catch (e: any) {
+            console.error(`Erro IG da página ${p.id}:`, e.message)
+          }
+
+          pagesList.push({
+            page_id: p.id,
+            page_name: p.name,
+            access_token: p.access_token,
+            facebook_followers: fbFollowers,
+            instagram_followers: igFollowers,
+            instagram: igAccount
+          })
+        }
+
+        // Persistir apenas páginas reais
+        for (const p of pagesList) {
+          const { error: upsertErr } = await supabase
+            .from("social_pages")
+            .upsert({
+              user_id: user.id,
+              page_id: p.page_id,
+              page_name: p.page_name,
+              instagram_account_id: p.instagram?.id || null,
+              instagram_handle: p.instagram?.username || null,
+              access_token: p.access_token || null,
+              facebook_followers: p.facebook_followers || 0,
+              instagram_followers: p.instagram_followers || 0,
+              updated_at: new Date().toISOString()
+            }, { onConflict: "page_id" })
+          if (upsertErr) console.error(`Erro ao salvar página ${p.page_id}:`, upsertErr.message)
+        }
+
+        return new Response(JSON.stringify({ pages: pagesList, mock: false }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" }
+        })
+
+      } catch (err: any) {
+        console.error("Erro ao buscar páginas do Meta:", err.message)
+        return new Response(JSON.stringify({
+          pages: [],
+          mock: false,
+          error: `Falha ao buscar páginas do Meta: ${err.message}. Verifique se o Token é válido e tem permissões de pages_read_engagement.`
+        }), { headers: { ...corsHeaders, "Content-Type": "application/json" } })
+      }
     }
 
     // ==========================================
