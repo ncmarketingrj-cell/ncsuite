@@ -261,48 +261,59 @@ serve(async (req) => {
     // AÇÃO: chat (Modo Chat principal com RAG e Streaming SSE)
     // =========================================================================
 
-    // 1. Fetch ad accounts (with name) for current user
-    const { data: userAccounts, error: accountsErr } = await supabase
-      .from("ad_accounts")
+    // 1. Scoping via clients (user_id é confiável em clients, não em ad_accounts)
+    const { data: userClients } = await supabase
+      .from("clients")
       .select("id, name")
       .eq("user_id", user.id);
 
-    if (accountsErr) {
-      console.error("Error fetching ad accounts:", accountsErr);
-    }
+    const clientIds = (userClients || []).map((c: any) => c.id);
 
-    const adAccountIds = (userAccounts || []).map((acc: any) => acc.id);
+    // ad_accounts apenas para nomes (sem filtrar por user_id — pode estar null)
+    const { data: allAdAccounts } = await supabase
+      .from("ad_accounts")
+      .select("id, name");
     const adAccountNameMap = new Map<string, string>(
-      (userAccounts || []).map((acc: any) => [acc.id, acc.name] as [string, string])
+      (allAdAccounts || []).map((acc: any) => [acc.id, acc.name] as [string, string])
     );
 
+    // Campanhas dos clientes do usuário
+    let userCampaignsData: any[] = [];
+    if (clientIds.length > 0) {
+      const { data: campsData, error: campsErr } = await supabase
+        .from("campaigns")
+        .select("id, name, status, budget, platform, ad_account_id, client_id, clients(id, name)")
+        .in("client_id", clientIds);
+      if (campsErr) console.error("Error fetching campaigns:", campsErr);
+      else userCampaignsData = campsData || [];
+    }
+
+    const campaignInfoMap = new Map<string, any>(
+      userCampaignsData.map((c: any) => [c.id, c])
+    );
+    let campaignIds = userCampaignsData.map((c: any) => c.id);
+
+    // Se selectedAccountId especificado, restringir às campanhas dessa conta
+    if (selectedAccountId) {
+      campaignIds = userCampaignsData
+        .filter((c: any) => c.ad_account_id === selectedAccountId)
+        .map((c: any) => c.id);
+    }
+
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    const startDateStr = thirtyDaysAgo.toISOString().split("T")[0];
+
     let dbMetrics: any[] = [];
-    if (adAccountIds.length > 0) {
-      const thirtyDaysAgo = new Date();
-      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-      const startDateStr = thirtyDaysAgo.toISOString().split("T")[0];
-
-      let metricsQuery = supabase
+    if (campaignIds.length > 0) {
+      const { data, error: queryError } = await supabase
         .from("metrics")
-        .select(`
-          cost, conversions, clicks, impressions, reach, date,
-          campaigns!inner(id, name, status, budget, platform, ad_account_id, client_id,
-            clients(id, name)
-          )
-        `)
-        .in("campaigns.ad_account_id", adAccountIds)
-        .gte("date", startDateStr);
-
-      if (selectedAccountId) {
-        metricsQuery = metricsQuery.eq("campaigns.ad_account_id", selectedAccountId);
-      }
-
-      const { data, error: queryError } = await metricsQuery;
-      if (queryError) {
-        console.error("Error querying metrics:", queryError);
-      } else {
-        dbMetrics = data || [];
-      }
+        .select("cost, conversions, clicks, impressions, reach, date, campaign_id")
+        .in("campaign_id", campaignIds)
+        .gte("date", startDateStr)
+        .order("date", { ascending: true });
+      if (queryError) console.error("Error querying metrics:", queryError);
+      else dbMetrics = data || [];
     }
 
     // 2. Process metrics — campaign map com cliente e conta
@@ -313,10 +324,11 @@ serve(async (req) => {
     }>();
 
     (dbMetrics || []).forEach((m: any) => {
-      const camp = m.campaigns;
+      const campId = m.campaign_id;
+      if (!campId) return;
+      const camp = campaignInfoMap.get(campId);
       if (!camp) return;
-      const campId = camp.id;
-      const clientName = camp.clients?.name || "Sem Cliente";
+      const clientName = (camp.clients as any)?.name || "Sem Cliente";
       const adAccountName = adAccountNameMap.get(camp.ad_account_id) || camp.ad_account_id || "—";
       const existing = campaignMap.get(campId) || {
         name: camp.name,
@@ -468,16 +480,15 @@ DATA DE REFERÊNCIA DO SISTEMA (Use isso para saber quais datas correspondem a '
 `;
 
     const dailyRows = (dbMetrics || []).map((m: any) => {
-      const dateStr = m.date;
-      const camp = m.campaigns;
+      const camp = campaignInfoMap.get(m.campaign_id);
       const campName = camp?.name || "Sem Nome";
-      const clientName = camp?.clients?.name || "Sem Cliente";
+      const clientName = (camp?.clients as any)?.name || "Sem Cliente";
       const platform = camp?.platform || "Meta Ads";
       const cost = Number(m.cost || 0);
       const conversions = Number(m.conversions || 0);
       const clicks = Number(m.clicks || 0);
       const impressions = Number(m.impressions || 0);
-      return `${dateStr} | ${clientName} | ${platform} | ${campName} | Gasto: R$ ${cost.toFixed(2)} | Leads: ${conversions} | Cliques: ${clicks} | Impressões: ${impressions}`;
+      return `${m.date} | ${clientName} | ${platform} | ${campName} | Gasto: R$ ${cost.toFixed(2)} | Leads: ${conversions} | Cliques: ${clicks} | Impressões: ${impressions}`;
     });
     const dailySeriesText = dailyRows.length > 0 
       ? dailyRows.join("\n") 
