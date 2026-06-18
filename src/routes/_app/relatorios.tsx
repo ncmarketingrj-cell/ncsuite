@@ -19,6 +19,7 @@ import { TemplateModal } from "@/components/TemplateModal";
 
 const searchSchema = z.object({
   from: z.string().optional(),
+  activeReportId: z.string().optional(),
 });
 
 export const Route = createFileRoute("/_app/relatorios")({
@@ -116,6 +117,20 @@ function RelatoriosPage() {
       }
     }
   }, []);
+
+  // Monitora se veio um ID de relatório por parâmetro de busca para carregá-lo imediatamente
+  useEffect(() => {
+    if (search.activeReportId && savedReports.length > 0) {
+      const rep = savedReports.find(r => r.id === search.activeReportId);
+      if (rep) {
+        // Aguarda um pequeno delay para garantir que outras inicializações de dados do relatório tenham rodado
+        const timer = setTimeout(() => {
+          handleLoadReport(rep);
+        }, 100);
+        return () => clearTimeout(timer);
+      }
+    }
+  }, [search.activeReportId, savedReports]);
 
   const handleSaveReport = (showToast = true) => {
     if (!generatedText) {

@@ -17,6 +17,7 @@ import { Route as AppRouteImport } from './routes/_app'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as QSlugRouteImport } from './routes/q.$slug'
 import { Route as PSlugRouteImport } from './routes/p.$slug'
+import { Route as AppVictoriaRouteImport } from './routes/_app/victoria'
 import { Route as AppUtmsRouteImport } from './routes/_app/utms'
 import { Route as AppUploadRouteImport } from './routes/_app/upload'
 import { Route as AppSocialRelatoriosRouteImport } from './routes/_app/social-relatorios'
@@ -83,6 +84,11 @@ const PSlugRoute = PSlugRouteImport.update({
   id: '/p/$slug',
   path: '/p/$slug',
   getParentRoute: () => rootRouteImport,
+} as any)
+const AppVictoriaRoute = AppVictoriaRouteImport.update({
+  id: '/victoria',
+  path: '/victoria',
+  getParentRoute: () => AppRoute,
 } as any)
 const AppUtmsRoute = AppUtmsRouteImport.update({
   id: '/utms',
@@ -250,6 +256,7 @@ export interface FileRoutesByFullPath {
   '/social-relatorios': typeof AppSocialRelatoriosRoute
   '/upload': typeof AppUploadRoute
   '/utms': typeof AppUtmsRoute
+  '/victoria': typeof AppVictoriaRoute
   '/p/$slug': typeof PSlugRoute
   '/q/$slug': typeof QSlugRoute
   '/campanhas/grafico': typeof AppCampanhasGraficoRoute
@@ -286,6 +293,7 @@ export interface FileRoutesByTo {
   '/social-relatorios': typeof AppSocialRelatoriosRoute
   '/upload': typeof AppUploadRoute
   '/utms': typeof AppUtmsRoute
+  '/victoria': typeof AppVictoriaRoute
   '/p/$slug': typeof PSlugRoute
   '/q/$slug': typeof QSlugRoute
   '/campanhas/grafico': typeof AppCampanhasGraficoRoute
@@ -324,6 +332,7 @@ export interface FileRoutesById {
   '/_app/social-relatorios': typeof AppSocialRelatoriosRoute
   '/_app/upload': typeof AppUploadRoute
   '/_app/utms': typeof AppUtmsRoute
+  '/_app/victoria': typeof AppVictoriaRoute
   '/p/$slug': typeof PSlugRoute
   '/q/$slug': typeof QSlugRoute
   '/_app/campanhas/grafico': typeof AppCampanhasGraficoRoute
@@ -362,6 +371,7 @@ export interface FileRouteTypes {
     | '/social-relatorios'
     | '/upload'
     | '/utms'
+    | '/victoria'
     | '/p/$slug'
     | '/q/$slug'
     | '/campanhas/grafico'
@@ -398,6 +408,7 @@ export interface FileRouteTypes {
     | '/social-relatorios'
     | '/upload'
     | '/utms'
+    | '/victoria'
     | '/p/$slug'
     | '/q/$slug'
     | '/campanhas/grafico'
@@ -435,6 +446,7 @@ export interface FileRouteTypes {
     | '/_app/social-relatorios'
     | '/_app/upload'
     | '/_app/utms'
+    | '/_app/victoria'
     | '/p/$slug'
     | '/q/$slug'
     | '/_app/campanhas/grafico'
@@ -510,6 +522,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/p/$slug'
       preLoaderRoute: typeof PSlugRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/_app/victoria': {
+      id: '/_app/victoria'
+      path: '/victoria'
+      fullPath: '/victoria'
+      preLoaderRoute: typeof AppVictoriaRouteImport
+      parentRoute: typeof AppRoute
     }
     '/_app/utms': {
       id: '/_app/utms'
@@ -764,6 +783,7 @@ interface AppRouteChildren {
   AppSocialRelatoriosRoute: typeof AppSocialRelatoriosRoute
   AppUploadRoute: typeof AppUploadRoute
   AppUtmsRoute: typeof AppUtmsRoute
+  AppVictoriaRoute: typeof AppVictoriaRoute
 }
 
 const AppRouteChildren: AppRouteChildren = {
@@ -791,6 +811,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppSocialRelatoriosRoute: AppSocialRelatoriosRoute,
   AppUploadRoute: AppUploadRoute,
   AppUtmsRoute: AppUtmsRoute,
+  AppVictoriaRoute: AppVictoriaRoute,
 }
 
 const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)

@@ -103,6 +103,11 @@ const FUNIL_NAV_ITEMS: NavItem[] = [
   { to: "/config", icon: Settings, label: "Configurações" },
 ];
 
+const VICTORIA_NAV_ITEMS: NavItem[] = [
+  { to: "/victoria", icon: Bot, label: "Victoria AI Chat" },
+  { to: "/config", icon: Settings, label: "Configurações" },
+];
+
 const ADMIN_EMAILS = ["nc.marketingrj@gmail.com", "hc.marketing.dgt@gmail.com"];
 
 function Shell() {
@@ -137,10 +142,10 @@ function Shell() {
   const canSeeMetricas  = profileLoading || isAdmin || !!perms.metricas;
   const canSeeAutomacoes = profileLoading || isAdmin || !!perms.automacoes;
 
-  const [activeModule, setActiveModule] = useState<"hub" | "trafego" | "social" | "gestao" | "funil">(() => {
+  const [activeModule, setActiveModule] = useState<"hub" | "trafego" | "social" | "gestao" | "funil" | "victoria">(() => {
     if (typeof window !== "undefined") {
       const stored = localStorage.getItem("nc_active_module");
-      return (["hub", "trafego", "social", "gestao", "funil"].includes(stored as any) ? stored : "hub") as any;
+      return (["hub", "trafego", "social", "gestao", "funil", "victoria"].includes(stored as any) ? stored : "hub") as any;
     }
     return "hub";
   });
@@ -154,6 +159,8 @@ function Shell() {
     currentNavItems = GESTAO_NAV_ITEMS;
   } else if (activeModule === "funil") {
     currentNavItems = FUNIL_NAV_ITEMS;
+  } else if (activeModule === "victoria") {
+    currentNavItems = VICTORIA_NAV_ITEMS;
   }
 
   const filteredNavItems = currentNavItems.filter(item => {
@@ -310,7 +317,7 @@ function Shell() {
           </div>
 
           {/* Grid of Directional Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 pt-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-6 pt-4">
             {/* Card 1: Tráfego Pago */}
             <motion.div
               whileHover={{ y: -8, scale: 1.02 }}
@@ -410,6 +417,31 @@ function Shell() {
                 Acessar Funis <ArrowRight className="h-3 w-3 transition-transform group-hover:translate-x-1" />
               </div>
             </motion.div>
+
+            {/* Card 5: Victoria AI */}
+            <motion.div
+              whileHover={{ y: -8, scale: 1.02 }}
+              onClick={() => {
+                setActiveModule("victoria");
+                localStorage.setItem("nc_active_module", "victoria");
+                nav({ to: "/victoria" });
+              }}
+              className="group relative rounded-2xl border border-border bg-card p-6 text-left cursor-pointer transition-all duration-300 hover:border-amber-500/40 hover:shadow-lg shadow-sm"
+            >
+              <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-amber-500 to-yellow-500 rounded-t-2xl animate-pulse" />
+              <div className="h-10 w-10 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center mb-4">
+                <Bot className="h-5 w-5 text-amber-500 animate-pulse" />
+              </div>
+              <h3 className="text-base font-black text-foreground group-hover:text-amber-500 transition-colors flex items-center gap-1.5">
+                Victoria AI <span className="rounded-full bg-amber-500/20 px-2 py-0.5 text-[8px] font-black uppercase text-amber-500 tracking-wider">Cérebro</span>
+              </h3>
+              <p className="text-xs text-muted-foreground mt-2 leading-relaxed">
+                Orquestrador Multiagente. Crie funis via chat, gere relatórios OCR e execute análises de tráfego sênior em tempo real.
+              </p>
+              <div className="mt-6 flex items-center gap-1.5 text-[10px] font-black uppercase text-amber-500 tracking-wider">
+                Acessar Victoria AI <ArrowRight className="h-3 w-3 transition-transform group-hover:translate-x-1" />
+              </div>
+            </motion.div>
           </div>
 
           {/* Theme toggle + Configurações + Footer logout */}
@@ -476,14 +508,14 @@ function Shell() {
                   className="flex items-center gap-1.5 rounded-full border border-border bg-card px-3 py-1.5 text-[10px] font-black uppercase tracking-wider text-foreground hover:bg-muted/50 transition-all duration-200"
                 >
                   <span className={`h-1.5 w-1.5 rounded-full ${
-                    activeModule === "trafego" ? "bg-red-500" : activeModule === "social" ? "bg-pink-500" : activeModule === "funil" ? "bg-purple-500" : "bg-cyan-500"
+                    activeModule === "trafego" ? "bg-red-500" : activeModule === "social" ? "bg-pink-500" : activeModule === "funil" ? "bg-purple-500" : activeModule === "gestao" ? "bg-cyan-500" : "bg-amber-500"
                   }`} />
                   <span>
-                    {activeModule === "trafego" ? "Tráfego" : activeModule === "social" ? "Social" : activeModule === "funil" ? "Funis" : "Gestão"}
+                    {activeModule === "trafego" ? "Tráfego" : activeModule === "social" ? "Social" : activeModule === "funil" ? "Funis" : activeModule === "gestao" ? "Gestão" : "Victoria AI"}
                   </span>
                   <ChevronDown className="h-3 w-3 opacity-60" />
                 </button>
-
+ 
                 <AnimatePresence>
                   {showModuleMenu && (
                     <>
@@ -553,7 +585,7 @@ function Shell() {
                             setActiveModule("funil");
                             localStorage.setItem("nc_active_module", "funil");
                             setShowModuleMenu(false);
-                            nav({ to: "/organizador" });
+                            nav({ to: "/funis" });
                           }}
                           className={`flex w-full items-center gap-2 rounded-xl px-2.5 py-2 text-xs font-bold transition-all ${
                             activeModule === "funil" ? "bg-purple-500/10 text-purple-500" : "text-foreground/80 hover:bg-muted"
@@ -561,6 +593,20 @@ function Shell() {
                         >
                           <span className="h-1.5 w-1.5 rounded-full bg-purple-500" />
                           Mapas &amp; Funis
+                        </button>
+                        <button
+                          onClick={() => {
+                            setActiveModule("victoria");
+                            localStorage.setItem("nc_active_module", "victoria");
+                            setShowModuleMenu(false);
+                            nav({ to: "/victoria" });
+                          }}
+                          className={`flex w-full items-center gap-2 rounded-xl px-2.5 py-2 text-xs font-bold transition-all ${
+                            activeModule === "victoria" ? "bg-amber-500/10 text-amber-500" : "text-foreground/80 hover:bg-muted"
+                          }`}
+                        >
+                          <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+                          Victoria AI
                         </button>
                         <div className="my-1 border-t border-border" />
                         <Link
@@ -651,7 +697,11 @@ function Shell() {
 
             {/* Victoria AI Badge — sempre visível no desktop */}
             <button
-              onClick={() => setIsAgentOpen(!isAgentOpen)}
+              onClick={() => {
+                setActiveModule("victoria");
+                localStorage.setItem("nc_active_module", "victoria");
+                nav({ to: "/victoria" });
+              }}
               className="hidden lg:flex items-center gap-1.5 rounded-xl border border-primary/20 bg-primary/10 px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-wider text-primary transition-all hover:bg-primary/20 hover:shadow-glow-sm active:scale-95"
             >
               <Bot className="h-3.5 w-3.5" />
@@ -850,7 +900,11 @@ function Shell() {
 
             {/* Mobile: Victoria compacto */}
             <button
-              onClick={() => setIsAgentOpen(!isAgentOpen)}
+              onClick={() => {
+                setActiveModule("victoria");
+                localStorage.setItem("nc_active_module", "victoria");
+                nav({ to: "/victoria" });
+              }}
               className="flex lg:hidden h-8 w-8 items-center justify-center rounded-xl border border-primary/20 bg-primary/10 text-primary"
             >
               <Bot className="h-4 w-4" />

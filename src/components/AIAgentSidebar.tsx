@@ -118,7 +118,7 @@ export function AIAgentSidebar({ isOpen, onClose }: AIAgentSidebarProps) {
           console.warn("Victoria Edge Function failed, executing advanced frontend database-grounded fallback...", edgeErr);
         
         // 1. Buscar todas as campanhas da conta selecionada com suas métricas históricas completas
-        const { data: campaignsRaw } = await supabase
+        const { data: campaignsRaw } = await (supabase as any)
           .from('campaigns')
           .select('name, status, budget, platform, metrics(cost, conversions, clicks, impressions)')
           .eq('ad_account_id', selectedAccountId)
@@ -144,13 +144,13 @@ export function AIAgentSidebar({ isOpen, onClose }: AIAgentSidebarProps) {
         });
 
         // Calcular estatísticas globais
-        const totalInvest = campaigns.reduce((s, c) => s + c.totals.cost, 0);
-        const totalConversions = campaigns.reduce((s, c) => s + c.totals.conversions, 0);
-        const activeCount = campaigns.filter(c => c.status === "ACTIVE").length;
+        const totalInvest = campaigns.reduce((s: number, c: any) => s + c.totals.cost, 0);
+        const totalConversions = campaigns.reduce((s: number, c: any) => s + c.totals.conversions, 0);
+        const activeCount = campaigns.filter((c: any) => c.status === "ACTIVE").length;
         const globalCpl = totalConversions > 0 ? totalInvest / totalConversions : 0;
 
         // Ordenar campanhas por gasto e performance
-        const activeCampaigns = campaigns.filter(c => c.status === "ACTIVE");
+        const activeCampaigns = campaigns.filter((c: any) => c.status === "ACTIVE");
         
         // Campanha mais eficiente
         const efficientCamp = [...activeCampaigns]

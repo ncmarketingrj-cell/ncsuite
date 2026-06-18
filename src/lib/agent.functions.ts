@@ -66,7 +66,7 @@ export const chatWithVictoriaFn = createServerFn({ method: "POST" })
       .select("id")
       .eq("user_id", userId);
 
-    const adAccountIds = (userAccounts || []).map(acc => acc.id);
+    const adAccountIds = (userAccounts || []).map((acc: any) => acc.id);
 
     let dbMetrics: any[] = [];
     if (adAccountIds.length > 0) {

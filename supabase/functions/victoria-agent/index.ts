@@ -24,9 +24,77 @@ serve(async (req) => {
       return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
-    const { messages, selectedAccountId } = await req.json();
+    const body = await req.json();
+    const { action = "chat", messages, selectedAccountId, title, content, category } = body;
     const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
+
+    // =========================================================================
+    // AÇÃO: add_knowledge (Geração de embeddings e inserção na base)
+    // =========================================================================
+    if (action === "add_knowledge") {
+      if (!title || !content || !category) {
+        return new Response(JSON.stringify({ error: "Missing title, content or category" }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" }
+        });
+      }
+
+      if (!GEMINI_API_KEY) {
+        throw new Error("GEMINI_API_KEY não configurada no servidor");
+      }
+
+      // 1. Obter o embedding do texto de conteúdo usando o Gemini text-embedding-004
+      const embedRes = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent?key=${GEMINI_API_KEY}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            model: "models/text-embedding-004",
+            content: {
+              parts: [{ text: `${title}\n\n${content}` }]
+            }
+          })
+        }
+      );
+
+      if (!embedRes.ok) {
+        const errText = await embedRes.text();
+        throw new Error(`Erro ao gerar embedding: ${errText}`);
+      }
+
+      const embedData = await embedRes.json();
+      const embedding = embedData.embedding?.values;
+      if (!embedding) {
+        throw new Error("Resposta de embedding vazia do Gemini");
+      }
+
+      // 2. Salvar na tabela victoria_knowledge
+      const { data, error: insertErr } = await supabase
+        .from("victoria_knowledge")
+        .insert({
+          user_id: user.id,
+          category,
+          title,
+          content,
+          embedding
+        })
+        .select()
+        .single();
+
+      if (insertErr) {
+        throw insertErr;
+      }
+
+      return new Response(JSON.stringify({ success: true, data }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" }
+      });
+    }
+
+    // =========================================================================
+    // AÇÃO: chat (Modo Chat principal com RAG e Streaming SSE)
+    // =========================================================================
 
     // 1. Fetch ad accounts for the current logged-in user to ensure isolation
     const { data: userAccounts, error: accountsErr } = await supabase
@@ -138,7 +206,6 @@ serve(async (req) => {
         ).join("\n")
       : "Nenhuma campanha ativa ou com investimento encontrada nos últimos 30 dias.";
 
-    // --- Auxiliares de Datas para Grounding Temporal ---
     const getPrevSaturdayAndSunday = (refDate: Date) => {
       const dayOfWeek = refDate.getDay();
       const sat = new Date(refDate);
@@ -176,7 +243,6 @@ DATA DE REFERÊNCIA DO SISTEMA (Use isso para saber quais datas correspondem a '
 - Último Fim de Semana: Sábado (${lastSat}) e Domingo (${lastSun})
 `;
 
-    // --- Monta a série temporal diária simplificada ---
     const dailyRows = (dbMetrics || []).map((m: any) => {
       const dateStr = m.date;
       const campName = m.campaigns?.name || "Sem Nome";
@@ -196,7 +262,7 @@ DATA DE REFERÊNCIA DO SISTEMA (Use isso para saber quais datas correspondem a '
 PERSONALIDADE E ATITUDE:
 - Você é apaixonada por gerar resultados rápidos, diminuir CPL (Custo por Lead) e escalar vendas de carros.
 - Use termos reais do dia a dia de agências de tráfego: CPL, CTR, criativos que convertem, público lookalike, público aberto (broad), pixel aquecido, remarketing, leads frios vs leads quentes, tempo de resposta do comercial (lead time), pátio de seminovos.
-- NUNCA dê respostas evasivas ou desculpas de IA ("Para mim, fim de semana é um conceito humano...", "Como um modelo de IA...", "Não tenho sentimentos..."). Se o usuário te der bom dia ou perguntar do seu fim de semana, aja como uma pessoa da equipe NC Agência: "Fala Comandante! Meu fim de semana foi focado em monitorar a NC Database e garantir que os leads continuem caindo quente. Vamos ao jogo!".
+- NUNCA dê respostas evasivas ou desculpas de IA. Se o usuário te der bom dia ou perguntar do seu fim de semana, aja como uma pessoa da equipe NC Agência: "Fala Comandante! Meu fim de semana foi focado em monitorar a NC Database e garantir que os leads continuem caindo quente. Vamos ao jogo!".
 
 DIRETRIZES TÉCNICAS E ESTRATÉGICAS DE MARKETING AUTOMOTIVO:
 1. **Analise os Períodos com Precisão:**
@@ -207,11 +273,11 @@ DIRETRIZES TÉCNICAS E ESTRATÉGICAS DE MARKETING AUTOMOTIVO:
    - Alerta / Ruim: Acima de R$ 45,00 (indique pausar, trocar criativos ou redefinir a oferta).
 3. **CTR (Taxa de Cliques) Saudável:**
    - Ideal: Acima de 1.20% (sinaliza que o criativo/carro é atraente).
-   - Crítico: Abaixo de 0.80% (sugira imediatamente trocar as fotos por fotos REAIS tiradas com celular no pátio da loja - carros limpos, com boa iluminação, ângulos diagonais). Fotos de estúdio ou catálogo do fabricante não convertem bem no tráfego automotivo.
+   - Crítico: Abaixo de 0.80% (sugira imediatamente trocar as fotos por fotos REAIS tiradas com celular no pátio da loja). Fotos de catálogo do fabricante não convertem bem.
 4. **Estratégias Reais para Recomendar:**
-   - **Leads no WhatsApp:** Têm alta conversão em vendas. Avise o cliente que a equipe comercial precisa responder esses leads em menos de 5 minutos, ou o lead "esfria".
-   - **Formulários nativos (Lead Ads):** Se o CPL estiver muito baixo mas os leads forem desqualificados, sugira adicionar 1 ou 2 perguntas de filtro (ex: "Qual o valor da sua entrada?", "Tem carro na troca?").
-   - **Campanhas de Seminovos vs Novos:** Para seminovos, sugira carrosséis com fotos reais de múltiplos veículos com preço e parcela estimada. Para novos, use a taxa zero ou financiamento facilitado como gancho.
+   - **Leads no WhatsApp:** Resposta em menos de 5 minutos do comercial.
+   - **Formulários nativos (Lead Ads):** Perguntas de filtro (ex: "Qual a entrada?", "Tem carro na troca?").
+   - **Campanhas de Seminovos vs Novos:** Carrosséis com fotos reais de múltiplos veículos vs taxa zero e parcelamento facilitado.
 
 GROUNDING DE TEMPO E DATAS:
 ${timeMetadata}
@@ -234,12 +300,9 @@ REGRAS DE RESPOSTA:
 2. Responda diretamente e aja como uma estrategista sênior dedicada. Nunca fale como uma IA.
 3. Se o usuário perguntar sobre o fim de semana, ontem, ou datas específicas, calcule e retorne os dados exatos somados da tabela diária e faça uma análise estratégica focada no mercado automotivo.
 4. **AVALIAÇÃO VISUAL DE IMAGENS (MULTIMODALIDADE):**
-   - Se o usuário anexar uma imagem à mensagem, analise-a atentamente:
-     - Se for a foto de um carro: comente sobre a limpeza, ângulo (o ideal é diagonal mostrando a lateral e a frente), iluminação, fundo (evitar fundos poluídos que desvalorizam o carro), e a necessidade de fotos REAIS tiradas com celular no pátio da loja (fotos de catálogo/estúdio convertem menos).
-     - Se for uma peça gráfica ou criativo de anúncio: comente sobre legibilidade do texto no mobile (tamanho de fonte, contraste com o fundo), o apelo comercial (ex: "parcelas a partir de...", "taxa zero", "entrada facilitada"), e a força da chamada para ação (CTA).
-     - Seja cirúrgica, crítica e construtiva, dando recomendações visuais muito claras de melhoria.
+   - Se o usuário anexar uma imagem à mensagem, comente sobre fotos reais vs catálogo, legibilidade de textos no mobile, oferta e chamadas para ação. Seja construtiva.
 5. **RECOMENDAÇÃO DE AÇÃO EM 1-CLIQUE (ACTION ENGINE):**
-   - Se você decidir recomendar uma ação prática de otimização no texto, como pausar uma campanha ineficiente ou aumentar/reduzir o orçamento diário de uma campanha específica, inclua no final da sua resposta (como a última linha) o bloco JSON especial contendo as diretrizes de ação estruturadas, exatamente assim:
+   - Se recomendar ação prática de otimização, inclua no final o bloco JSON especial:
    \`\`\`json:action
    {
      "type": "update_budget",
@@ -256,121 +319,170 @@ REGRAS DE RESPOSTA:
      "campaignName": "NOME_DA_CAMPANHA"
    }
    \`\`\`
-   Use apenas e exatamente uma dessas estruturas se e somente se você recomendar essa ação no texto da resposta. O ID da campanha deve bater exatamente com os IDs listados no contexto de dados.`;
+   Use apenas uma dessas se e somente se recomendar a ação.`;
 
-    let responseText = "";
-
-    // Tentativa 1: Gemini 2.5 Flash direto (mais capaz)
-    if (GEMINI_API_KEY) {
-      try {
-        const contents = messages
-          .map((m: any) => {
-            const parts: any[] = [];
-            if (m.content && m.content.trim() !== "") {
-              parts.push({ text: m.content });
-            }
-            if (m.image) {
-              parts.push({
-                inlineData: {
-                  mimeType: m.image.mimeType,
-                  data: m.image.base64
+    // =========================================================================
+    // 3. EXECUÇÃO RAG (RETRIEVAL-AUGMENTED GENERATION)
+    // =========================================================================
+    let retrievedContext = "";
+    if (GEMINI_API_KEY && messages && messages.length > 0) {
+      const lastUserMessage = messages[messages.length - 1].content;
+      if (lastUserMessage && lastUserMessage.trim() !== "") {
+        try {
+          // Obter o embedding da última pergunta do usuário
+          const embedRes = await fetch(
+            `https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent?key=${GEMINI_API_KEY}`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                model: "models/text-embedding-004",
+                content: {
+                  parts: [{ text: lastUserMessage }]
                 }
-              });
+              })
             }
-            return {
-              role: m.role === "assistant" ? "model" : "user",
-              parts
-            };
-          })
-          .filter((m: any) => m.parts.length > 0);
+          );
 
-        const res = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              contents,
-              systemInstruction: {
-                parts: [{ text: systemPrompt }]
-              },
-              generationConfig: { temperature: 0.7, maxOutputTokens: 2048 },
-            }),
+          if (embedRes.ok) {
+            const embedData = await embedRes.json();
+            const embedding = embedData.embedding?.values;
+            if (embedding) {
+              // Buscar conhecimentos similares usando a RPC do Supabase
+              const { data: matchData, error: matchErr } = await supabase.rpc(
+                "match_victoria_knowledge",
+                {
+                  query_embedding: embedding,
+                  match_threshold: 0.70,
+                  match_count: 5,
+                  p_user_id: user.id
+                }
+              );
+
+              if (matchErr) {
+                console.error("Erro na busca de similaridade RAG:", matchErr);
+              } else if (matchData && matchData.length > 0) {
+                retrievedContext = matchData
+                  .map((k: any) => `[CONHECIMENTO EXTRAÍDO - Categoria: ${k.category}] ${k.title}: ${k.content}`)
+                  .join("\n\n");
+                console.log(`[VICTORIA] RAG Ativado: ${matchData.length} blocos de conhecimento recuperados.`);
+              }
+            }
           }
-        );
-
-        const data = await res.json();
-        if (data.candidates?.[0]?.content?.parts?.[0]?.text) {
-          responseText = data.candidates[0].content.parts[0].text;
-          console.log("[VICTORIA] ✓ Gemini 2.5 Flash direto");
-        } else {
-          console.error("[VICTORIA] Gemini sem candidatos:", JSON.stringify(data).slice(0, 300));
+        } catch (ragErr) {
+          console.error("Falha ao computar RAG para a pergunta:", ragErr);
         }
-      } catch (e: any) {
-        console.error("[VICTORIA] Erro Gemini:", e.message);
       }
     }
 
-    // Tentativa 2: Lovable Gateway
-    if (!responseText && LOVABLE_API_KEY) {
+    let promptWithRAG = systemPrompt;
+    if (retrievedContext) {
+      promptWithRAG += `\n\nCONHECIMENTO ADICIONAL DO PROPRIETÁRIO / REGRAS DE NEGÓCIO (Utilize estes dados como verdade absoluta para responder à pergunta atual): \n${retrievedContext}`;
+    }
+
+    // =========================================================================
+    // 4. PREPARAÇÃO DO PAYLOAD NO PADRÃO OPENAI COMPATÍVEL
+    // =========================================================================
+    const openAiMessages = messages.map((m: any) => {
+      const role = m.role === "assistant" ? "assistant" : "user";
+      
+      // Se tiver imagem na mensagem
+      if (m.image || m.metadata?.image) {
+        const img = m.image || m.metadata.image;
+        return {
+          role,
+          content: [
+            { type: "text", text: m.content || "" },
+            { type: "image_url", image_url: { url: `data:${img.mimeType};base64,${img.base64}` } }
+          ]
+        };
+      }
+      
+      return { role, content: m.content };
+    });
+
+    // Injeta a instrução do sistema
+    openAiMessages.unshift({
+      role: "system",
+      content: promptWithRAG
+    });
+
+    let fetchUrl = "";
+    let fetchHeaders: Record<string, string> = { "Content-Type": "application/json" };
+    let fetchBody: any = {};
+
+    if (LOVABLE_API_KEY) {
+      fetchUrl = "https://ai.gateway.lovable.dev/v1/chat/completions";
+      fetchHeaders["Authorization"] = `Bearer ${LOVABLE_API_KEY}`;
+      fetchBody = {
+        model: "google/gemini-2.5-flash",
+        messages: openAiMessages,
+        temperature: 0.7,
+        max_tokens: 2048,
+        stream: true
+      };
+    } else if (GEMINI_API_KEY) {
+      fetchUrl = `https://generativelanguage.googleapis.com/v1beta/openai/chat/completions?key=${GEMINI_API_KEY}`;
+      fetchBody = {
+        model: "gemini-2.5-flash",
+        messages: openAiMessages,
+        temperature: 0.7,
+        max_tokens: 2048,
+        stream: true
+      };
+    }
+
+    if (fetchUrl) {
       try {
-        const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+        const streamRes = await fetch(fetchUrl, {
           method: "POST",
-          headers: {
-            Authorization: `Bearer ${LOVABLE_API_KEY}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            model: "google/gemini-2.5-flash",
-            messages: [{ role: "system", content: systemPrompt }, ...messages],
-            temperature: 0.85,
-            max_tokens: 2048,
-          }),
+          headers: fetchHeaders,
+          body: JSON.stringify(fetchBody)
         });
 
-        if (res.ok) {
-          const data = await res.json();
-          const content = data.choices?.[0]?.message?.content;
-          if (content) {
-            responseText = content;
-            console.log("[VICTORIA] ✓ Lovable Gateway");
-          }
+        if (streamRes.ok) {
+          // Repassa a stream de eventos SSE diretamente!
+          return new Response(streamRes.body, {
+            headers: {
+              ...corsHeaders,
+              "Content-Type": "text/event-stream",
+              "Cache-Control": "no-cache",
+              "Connection": "keep-alive"
+            }
+          });
+        } else {
+          const errText = await streamRes.text();
+          console.error("[VICTORIA] Erro na stream do provedor:", errText);
         }
-      } catch (e: any) {
-        console.error("[VICTORIA] Erro Lovable:", e.message);
+      } catch (streamErr: any) {
+        console.error("[VICTORIA] Falha ao iniciar stream:", streamErr.message);
       }
     }
 
-    // Fallback analítico (modo offline)
-    if (!responseText) {
-      const efficient = [...campaigns]
-        .filter((c) => c.status === "ACTIVE" && c.totals.conversions > 0)
-        .sort((a, b) => a.totals.cpl - b.totals.cpl)[0];
+    // Fallback SSE se nenhuma das streams funcionar
+    const fallbackText = `### 🤖 Victoria AI — Modo Analítico Local\n\nDesculpe comandante, tive um problema de comunicação com o servidor de IA. Mas os dados do banco de dados continuam ativos. O que deseja auditar especificamente?`;
+    const encoder = new TextEncoder();
+    const sseChunk = `data: ${JSON.stringify({
+      choices: [{ delta: { content: fallbackText } }]
+    })}\n\ndata: [DONE]\n\n`;
 
-      responseText = [
-        `> ⚡ *Modo Analítico Local — serviço de IA temporariamente indisponível*\n`,
-        `### 📊 Resumo Atual`,
-        `- **Investimento:** R$ ${totalInvest.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`,
-        `- **Leads gerados:** ${totalConversions}`,
-        `- **CPL médio:** R$ ${globalCpl.toFixed(2)}`,
-        `- **Campanhas ativas:** ${activeCount}`,
-        efficient
-          ? `\n### ⚡ Destaque\n**${efficient.name}** — CPL R$ ${efficient.totals.cpl.toFixed(2)} com ${efficient.totals.conversions} leads`
-          : "",
-        `\n*Tente novamente em instantes para análise completa com IA.*`,
-      ]
-        .filter(Boolean)
-        .join("\n");
-    }
-
-    return new Response(JSON.stringify({ message: responseText }), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    return new Response(encoder.encode(sseChunk), {
+      headers: {
+        ...corsHeaders,
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+      }
     });
+
   } catch (e: any) {
     console.error("[VICTORIA] Erro fatal:", e.message);
-    return new Response(JSON.stringify({ error: e.message }), {
-      status: 200,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    const encoder = new TextEncoder();
+    const sseError = `data: ${JSON.stringify({
+      choices: [{ delta: { content: `Erro interno no servidor: ${e.message}` } }]
+    })}\n\ndata: [DONE]\n\n`;
+
+    return new Response(encoder.encode(sseError), {
+      headers: { ...corsHeaders, "Content-Type": "text/event-stream" },
     });
   }
 });
