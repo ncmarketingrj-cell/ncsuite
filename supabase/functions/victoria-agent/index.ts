@@ -387,10 +387,20 @@ serve(async (req) => {
       else dbMetrics = data || [];
     }
 
-    // 2. Process metrics — campaign map com cliente e conta
+    // Detecta objetivo da campanha pelo nome (igual ao detectObjective do relatorios.tsx)
+    const detectObjective = (campName: string): string => {
+      const n = campName.toLowerCase();
+      if (/atendimento|mensagem|whatsapp|msg|conversa/.test(n)) return "💬 Mensagens";
+      if (/clique|click|link|trafego|site|cardapio|visita/.test(n)) return "👆 Cliques";
+      if (/compra|conversao|venda|pedido|checkout|leads|concluido/.test(n)) return "🎯 Conversões";
+      if (/alcance|reconhecimento|reach|brand|audiencia|awareness|video/.test(n)) return "👁️ Alcance";
+      return "🎯 Conversões";
+    };
+
+    // 4. Process metrics — campaign map com objetivo detectado
     const campaignMap = new Map<string, {
       name: string; status: string; budget: number; platform: string;
-      clientName: string; adAccountName: string;
+      clientName: string; adAccountName: string; objective: string;
       cost: number; conversions: number; clicks: number; impressions: number; reach: number;
     }>();
 
@@ -399,7 +409,6 @@ serve(async (req) => {
       if (!campId) return;
       const camp = campaignInfoMap.get(campId);
       if (!camp) return;
-      // client_id pode ser null em campanhas sincronizadas do Meta — usa ad_account name como fallback
       const clientName = (camp.clients as any)?.name || adAccountNameMap.get(camp.ad_account_id) || "Sem Cliente";
       const adAccountName = adAccountNameMap.get(camp.ad_account_id) || camp.ad_account_id || "—";
       const existing = campaignMap.get(campId) || {
@@ -407,8 +416,8 @@ serve(async (req) => {
         status: camp.status?.toUpperCase() || "PAUSED",
         budget: Number(camp.budget || 0),
         platform: camp.platform || "Meta Ads",
-        clientName,
-        adAccountName,
+        clientName, adAccountName,
+        objective: detectObjective(camp.name || ""),
         cost: 0, conversions: 0, clicks: 0, impressions: 0, reach: 0
       };
       existing.cost += Number(m.cost || 0);
@@ -420,27 +429,35 @@ serve(async (req) => {
     });
 
     const campaigns = Array.from(campaignMap.entries()).map(([id, c]) => {
-      const cpl = c.conversions > 0 ? c.cost / c.conversions : 0;
+      const isClick  = c.objective.includes("Cliques");
+      const isReach  = c.objective.includes("Alcance");
+      const resultValue = isClick ? c.clicks : isReach ? c.impressions : c.conversions;
+      const costPerRes  = resultValue > 0 ? (isReach ? (c.cost / resultValue) * 1000 : c.cost / resultValue) : 0;
+      const resultLabel = isClick ? "Visitas" : isReach ? "Impressões" : "Resultados/Leads";
+      const costLabel   = isClick ? "Custo/Visita" : isReach ? "CPM" : "CPL/CPA";
       const ctr = c.impressions > 0 ? (c.clicks / c.impressions) * 100 : 0;
       return {
         id, name: c.name, status: c.status, budget: c.budget,
         platform: c.platform, clientName: c.clientName, adAccountName: c.adAccountName,
-        totals: { cost: c.cost, conversions: c.conversions, clicks: c.clicks, impressions: c.impressions, reach: c.reach, cpl, ctr }
+        objective: c.objective,
+        totals: {
+          cost: c.cost, conversions: c.conversions, clicks: c.clicks,
+          impressions: c.impressions, reach: c.reach,
+          resultValue, costPerRes, resultLabel, costLabel, ctr
+        }
       };
     });
 
     const totalInvest = campaigns.reduce((s, c) => s + c.totals.cost, 0);
-    const totalConversions = campaigns.reduce((s, c) => s + c.totals.conversions, 0);
     const activeCount = campaigns.filter(c => c.status === "ACTIVE").length;
-    const globalCpl = totalConversions > 0 ? totalInvest / totalConversions : 0;
 
-    // Resumo por cliente
-    const clientSummaryMap = new Map<string, { invest: number; leads: number; campaigns: string[] }>();
+    // Resumo por cliente com métricas corretas por objetivo
+    const clientSummaryMap = new Map<string, { invest: number; results: number; campaigns: string[] }>();
     campaigns.forEach(c => {
       const key = c.clientName;
-      const ex = clientSummaryMap.get(key) || { invest: 0, leads: 0, campaigns: [] };
+      const ex = clientSummaryMap.get(key) || { invest: 0, results: 0, campaigns: [] };
       ex.invest += c.totals.cost;
-      ex.leads += c.totals.conversions;
+      ex.results += c.totals.resultValue;
       if (!ex.campaigns.includes(c.name)) ex.campaigns.push(c.name);
       clientSummaryMap.set(key, ex);
     });
@@ -449,16 +466,65 @@ serve(async (req) => {
       ? Array.from(clientSummaryMap.entries())
           .sort((a, b) => b[1].invest - a[1].invest)
           .map(([name, d]) => {
-            const cpl = d.leads > 0 ? d.invest / d.leads : 0;
-            return `- ${name} | Invest: R$${d.invest.toFixed(2)} | Leads: ${d.leads} | CPL: R$${cpl.toFixed(2)} | Campanhas: ${d.campaigns.slice(0,3).join(", ")}${d.campaigns.length > 3 ? ` +${d.campaigns.length-3}` : ""}`;
+            const cpa = d.results > 0 ? d.invest / d.results : 0;
+            return `- ${name} | Invest: R$${d.invest.toFixed(2)} | Resultados: ${d.results} | CPA: R$${cpa.toFixed(2)} | Campanhas: ${d.campaigns.slice(0,3).join(", ")}`;
           }).join("\n")
       : "Nenhum dado de cliente disponível.";
 
+    // Contexto detalhado por campanha com objetivo e métrica correta
     const contextData = campaigns.length > 0
       ? campaigns.map(c =>
-          `- [${c.clientName}] ${c.name} | ${c.status} | ${c.platform} | Orç/dia: R$${c.budget.toFixed(2)} | Gasto: R$${c.totals.cost.toFixed(2)} | Leads: ${c.totals.conversions} | CPL: R$${c.totals.cpl.toFixed(2)} | CTR: R$${c.totals.ctr.toFixed(2)}%`
+          `- [${c.clientName}] ${c.name} | ${c.objective} | ${c.status} | Invest: R$${c.totals.cost.toFixed(2)} | ${c.totals.resultLabel}: ${c.totals.resultValue} | ${c.totals.costLabel}: R$${c.totals.costPerRes.toFixed(2)} | Alcance: ${c.totals.reach} | Impressões: ${c.totals.impressions} | CTR: ${c.totals.ctr.toFixed(2)}%`
         ).join("\n")
-      : "Nenhuma campanha ativa ou com investimento encontrada nos últimos 30 dias.";
+      : "Nenhuma campanha com dados no período selecionado.";
+
+    // Template de resposta formatado (igual ao relatório do sistema)
+    const reportTemplate = campaigns.length > 0 ? (() => {
+      const fmt = (n: number) => n.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      const fmtN = (n: number) => n.toLocaleString("pt-BR");
+      const displayPeriod = startDateStr === endDateStr
+        ? new Date(startDateStr + "T12:00:00Z").toLocaleDateString("pt-BR")
+        : `${new Date(startDateStr + "T12:00:00Z").toLocaleDateString("pt-BR")} a ${new Date(endDateStr + "T12:00:00Z").toLocaleDateString("pt-BR")}`;
+      const clients = [...new Set(campaigns.map(c => c.clientName))].join(", ");
+      const platforms = [...new Set(campaigns.map(c => c.platform === "google" ? "Google Ads" : "Meta Ads"))].join(" & ");
+
+      // Agrupa por objetivo
+      const byObj = new Map<string, { cost: number; results: number; reach: number; imps: number }>();
+      campaigns.forEach(c => {
+        const cur = byObj.get(c.objective) || { cost: 0, results: 0, reach: 0, imps: 0 };
+        cur.cost += c.totals.cost;
+        cur.results += c.totals.resultValue;
+        cur.reach += c.totals.reach;
+        cur.imps += c.totals.impressions;
+        byObj.set(c.objective, cur);
+      });
+
+      let tpl = `📊 *RELATÓRIO DE PERFORMANCE*\n━━━━━━━━━━━━━━━━━━━━\n`;
+      tpl += `🏢 *Cliente:* ${clients}\n📅 *Período:* ${displayPeriod}\n📱 *Plataformas:* ${platforms}\n\n`;
+      tpl += `━━━━━━━━━━━━━━━━━━━━\n*RESUMO POR OBJETIVO*\n━━━━━━━━━━━━━━━━━━━━\n\n`;
+      byObj.forEach((d, obj) => {
+        const isReach = obj.includes("Alcance");
+        const isClick = obj.includes("Cliques");
+        const cpa = d.results > 0 ? (isReach ? (d.cost / d.results) * 1000 : d.cost / d.results) : 0;
+        const rLabel = isClick ? "Visitas" : isReach ? "Impressões" : "Resultados";
+        const cLabel = isClick ? "Custo/Visita" : isReach ? "CPM" : "CPA/CPL";
+        tpl += `${obj}\n   💵 Investimento: R$ ${fmt(d.cost)}\n   📈 ${rLabel}: ${fmtN(d.results)}\n   💲 ${cLabel}: R$ ${fmt(cpa)}\n`;
+        if (d.reach > 0 && !isReach) tpl += `   👥 Alcance: ${fmtN(d.reach)}\n`;
+        tpl += `\n`;
+      });
+      tpl += `━━━━━━━━━━━━━━━━━━━━\n*DETALHAMENTO DE CAMPANHAS*\n━━━━━━━━━━━━━━━━━━━━\n\n`;
+      campaigns.sort((a,b) => b.totals.cost - a.totals.cost).forEach(c => {
+        const isReach = c.objective.includes("Alcance");
+        tpl += `📌 *${c.name.toUpperCase()}*\n`;
+        tpl += `   💵 Invest: R$ ${fmt(c.totals.cost)}\n`;
+        tpl += `   📈 ${c.totals.resultLabel}: ${fmtN(c.totals.resultValue)}${isReach ? " impr." : ""}\n`;
+        tpl += `   💲 ${c.totals.costLabel}: R$ ${fmt(c.totals.costPerRes)}\n`;
+        if (c.totals.reach > 0) tpl += `   👥 Alcance: ${fmtN(c.totals.reach)}\n`;
+        tpl += `\n`;
+      });
+      tpl += `━━━━━━━━━━━━━━━━━━━━\n💰 *TOTAL INVESTIDO: R$ ${fmt(totalInvest)}*\n⚡ Relatório gerado pela Victoria AI — NC Performance`;
+      return tpl;
+    })() : "";
 
     // ─── C8: Dados Expandidos — Social, Clientes, Funis ─────────────────────
     const [socialPagesRes, socialPostsRes, clientsRes, funnelsRes] = await Promise.all([
@@ -595,22 +661,21 @@ DIRETRIZES TÉCNICAS E ESTRATÉGICAS DE MARKETING AUTOMOTIVO:
 GROUNDING DE TEMPO E DATAS:
 ${timeMetadata}
 
-PERÍODO DOS DADOS CARREGADOS: ${startDateStr} até ${endDateStr} (${dbMetrics.length} registros diários)
+PERÍODO DOS DADOS CARREGADOS: ${startDateStr} até ${endDateStr} | Total investido: R$ ${totalInvest.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} | Campanhas com dados: ${campaigns.length}
 
-DADOS ATUAIS CONSOLIDADOS (PERÍODO ACIMA):
-- Investimento Total: R$ ${totalInvest.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-- Leads Gerados: ${totalConversions}
-- CPL Médio Geral: R$ ${globalCpl.toFixed(2)}
-- Campanhas Ativas: ${activeCount}
-
-RESUMO POR CLIENTE (30 DIAS) — use para responder perguntas sobre clientes específicos:
+RESUMO POR CLIENTE (período acima):
 ${clientSummaryCtx}
 
-CAMPANHAS DETALHADAS (MÉTRICA GERAL DE 30 DIAS) — formato: [Cliente] Campanha | Status | Platform | Orç/dia | Gasto | Leads | CPL | CTR:
+CAMPANHAS DETALHADAS — [Cliente] Nome | Objetivo | Status | Invest | Resultado correto pelo objetivo | Custo/Resultado | Alcance | Impressões | CTR:
 ${contextData}
 
-TABELA DE MÉTRICAS DIÁRIAS — Data | Cliente | Plataforma | Campanha | Gasto | Leads | Cliques | Impressões (use para filtrar por data, cliente ou campanha específica):
+TABELA DIÁRIA — Data | Cliente | Plataforma | Campanha | Gasto | Leads/Conversões | Cliques | Impressões:
 ${dailySeriesText}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+RELATÓRIO PRÉ-FORMATADO (use este bloco como base quando o usuário pedir análise, relatório ou "como foi"):
+${reportTemplate || "Sem dados suficientes para gerar relatório no período."}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ROTEAMENTO MULTIAGENTE — SUB-AGENTE ATIVO:
@@ -636,7 +701,13 @@ REGRAS DE RESPOSTA:
 3. Se o usuário perguntar sobre o fim de semana, ontem, ou datas específicas, calcule e retorne os dados exatos somados da tabela diária e faça uma análise estratégica focada no mercado automotivo.
 4. **AVALIAÇÃO VISUAL DE IMAGENS (MULTIMODALIDADE):**
    - Se o usuário anexar uma imagem à mensagem, comente sobre fotos reais vs catálogo, legibilidade de textos no mobile, oferta e chamadas para ação. Seja construtiva.
-5. **RECOMENDAÇÃO DE AÇÃO EM 1-CLIQUE (ACTION ENGINE):**
+5. **FORMATO DE RELATÓRIO — REGRA CRÍTICA:**
+   - Quando o usuário perguntar "como foi [período/cliente]?", "me dá um relatório", "análise de campanhas" ou similar: copie e adapte o RELATÓRIO PRÉ-FORMATADO acima. Use os emojis, separadores ━━━ e estrutura exata. Não invente dados — use apenas os números do bloco RELATÓRIO PRÉ-FORMATADO.
+   - Para campanhas de *Alcance/Awareness*: o resultado é Impressões e o custo é CPM (custo por mil impressões). NUNCA chame impressões de "leads".
+   - Para campanhas de *Mensagens/Cliques*: o resultado são cliques/mensagens e o custo é Custo/Resultado.
+   - Para campanhas de *Conversões/Leads*: o resultado são leads/conversões e o custo é CPL/CPA.
+
+6. **RECOMENDAÇÃO DE AÇÃO EM 1-CLIQUE (ACTION ENGINE):**
    - Se recomendar ação prática de otimização, inclua no final o bloco JSON especial:
    \`\`\`json:action
    {
