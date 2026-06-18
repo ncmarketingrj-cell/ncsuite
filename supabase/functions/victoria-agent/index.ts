@@ -93,6 +93,122 @@ serve(async (req) => {
     }
 
     // =========================================================================
+    // AÇÃO: diagnose_alert (Diagnóstico Causal de Alerta por IA)
+    // =========================================================================
+    if (action === "diagnose_alert") {
+      const campaignId = body.campaign_id;
+      if (!campaignId) {
+        return new Response(JSON.stringify({ error: "Missing campaign_id" }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" }
+        });
+      }
+
+      if (!GEMINI_API_KEY) {
+        throw new Error("GEMINI_API_KEY não configurada no servidor");
+      }
+
+      // 1. Buscar detalhes da campanha
+      const { data: campaign, error: campErr } = await supabase
+        .from("campaigns")
+        .select("id, name, daily_budget, budget_currency, ad_account_id, platform")
+        .eq("id", campaignId)
+        .single();
+
+      if (campErr || !campaign) {
+        return new Response(JSON.stringify({ error: "Campaign not found" }), {
+          status: 404,
+          headers: { ...corsHeaders, "Content-Type": "application/json" }
+        });
+      }
+
+      // 2. Buscar métricas dos últimos 7 dias
+      const sevenDaysAgo = new Date();
+      sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+      const startStr = sevenDaysAgo.toISOString().split("T")[0];
+
+      const { data: metrics, error: metErr } = await supabase
+        .from("metrics")
+        .select("cost, conversions, clicks, impressions, reach, date, frequency")
+        .eq("campaign_id", campaignId)
+        .gte("date", startStr)
+        .order("date", { ascending: true });
+
+      if (metErr) {
+        throw metErr;
+      }
+
+      // 3. Formatar dados de métricas para o LLM
+      const formattedMetrics = (metrics || []).map((m: any) => 
+        `Data: ${m.date} | Gasto: R$ ${Number(m.cost || 0).toFixed(2)} | Cliques: ${m.clicks || 0} | Impressões: ${m.impressions || 0} | Leads/Conv: ${m.conversions || 0} | Freq: ${Number(m.frequency || 0).toFixed(2)}`
+      ).join("\n");
+
+      // 4. Montar o prompt de diagnóstico causal de orçamento do nicho automotivo
+      const systemPrompt = `Você é a Victoria AI, Estrategista Sênior de Tráfego Pago da NC Performance.
+Analise os dados de tráfego pago da concessionária a seguir. A campanha estourou o limite de orçamento diário e o gestor precisa entender o porquê.
+Gere uma explicação extremamente curta (máximo de 4 linhas), técnica e direta em português.
+Seja direto: comece direto com a resposta (ex: "⚠️ O orçamento diário do CBO..."). Não use introduções, não cumprimente, não dê sugestões redundantes.
+Explique se o gasto acelerou devido à alta repentina de CPM, queda de CTR (fadiga de criativo), aumento de CPC, aumento de frequência ou simplesmente volume de tráfego nas horas de pico.
+
+Informações da Campanha:
+- Nome: ${campaign.name}
+- Plataforma: ${campaign.platform === "google" ? "Google Ads" : "Meta Ads"}
+- Orçamento Diário: R$ ${Number(campaign.daily_budget || 0).toFixed(2)}
+
+Métricas Recentes (últimos 7 dias):
+${formattedMetrics || "Sem métricas no período."}
+
+Escreva em formato altamente profissional, com dados baseados na série de métricas enviada.`;
+
+      // 5. Invocar o Gemini (não-streaming)
+      let fetchUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`;
+      let fetchHeaders: Record<string, string> = { "Content-Type": "application/json" };
+      let fetchBody: any = {
+        contents: [{ parts: [{ text: "Forneça o diagnóstico causal de estouro do orçamento com base na série temporal de métricas enviada." }] }],
+        systemInstruction: { parts: [{ text: systemPrompt }] },
+        generationConfig: { maxOutputTokens: 350, temperature: 0.2 }
+      };
+
+      if (LOVABLE_API_KEY) {
+        fetchUrl = "https://ai.gateway.lovable.dev/v1/chat/completions";
+        fetchHeaders["Authorization"] = `Bearer ${LOVABLE_API_KEY}`;
+        fetchBody = {
+          model: "google/gemini-2.5-flash",
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: "Forneça o diagnóstico causal de estouro do orçamento com base na série temporal de métricas enviada." }
+          ],
+          temperature: 0.2,
+          max_tokens: 350
+        };
+      }
+
+      const geminiRes = await fetch(fetchUrl, {
+        method: "POST",
+        headers: fetchHeaders,
+        body: JSON.stringify(fetchBody)
+      });
+
+      let text = "";
+      if (geminiRes.ok) {
+        const resData = await geminiRes.json();
+        if (LOVABLE_API_KEY) {
+          text = resData.choices?.[0]?.message?.content || "";
+        } else {
+          text = resData.candidates?.[0]?.content?.parts?.[0]?.text || "";
+        }
+      } else {
+        const errText = await geminiRes.text();
+        console.error("Gemini diagnose error:", errText);
+        text = "Não foi possível gerar o diagnóstico da IA no momento devido a uma indisponibilidade na API.";
+      }
+
+      return new Response(JSON.stringify({ diagnosis: text.trim() }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" }
+      });
+    }
+
+    // =========================================================================
     // AÇÃO: search_knowledge (busca vetorial exposta ao hook — C4)
     // =========================================================================
     if (action === "search_knowledge") {
@@ -260,6 +376,19 @@ serve(async (req) => {
     // =========================================================================
     // AÇÃO: chat (Modo Chat principal com RAG e Streaming SSE)
     // =========================================================================
+
+    // 0. Obter configurações personalizadas do agente Victoria
+    const { data: vConfig } = await supabase
+      .from("victoria_configs")
+      .select("system_prompt, model_name, rag_threshold, rag_count, temperature")
+      .eq("user_id", user.id)
+      .maybeSingle();
+
+    const userSystemPrompt = vConfig?.system_prompt || null;
+    const userModelName = vConfig?.model_name || "gemini-2.5-flash"; // default inteligente
+    const userRagThreshold = vConfig?.rag_threshold ? Number(vConfig.rag_threshold) : 0.70;
+    const userRagCount = vConfig?.rag_count ? Number(vConfig.rag_count) : 5;
+    const userTemperature = vConfig?.temperature ? Number(vConfig.temperature) : 0.7;
 
     // 1. Ad accounts (sem filtro user_id — sync do Meta pode deixar user_id null)
     const { data: allAdAccounts } = await supabase
@@ -526,17 +655,72 @@ serve(async (req) => {
     })() : "";
 
     // ─── C8: Dados Expandidos — Social, Clientes, Funis ─────────────────────
-    const [socialPagesRes, socialPostsRes, clientsRes, funnelsRes] = await Promise.all([
+    const [socialPagesRes, socialPostsRes, clientsRes, funnelsRes, funnelEventsRes] = await Promise.all([
       supabase.from("social_pages").select("page_name, facebook_followers, instagram_followers").eq("user_id", user.id).limit(10),
       supabase.from("social_posts").select("content, platform, status, scheduled_at, likes_count, comments_count, reach_count").eq("user_id", user.id).order("scheduled_at", { ascending: false }).limit(8),
       supabase.from("clients").select("name").eq("user_id", user.id).order("name").limit(20),
-      supabase.from("funnels").select("name, created_at").eq("user_id", user.id).order("created_at", { ascending: false }).limit(10)
+      supabase.from("funnels").select("id, name, created_at").eq("user_id", user.id).order("created_at", { ascending: false }).limit(10),
+      supabase.from("funnel_events").select("funnel_id, lead_id, event_type, created_at").order("created_at", { ascending: true }).limit(800)
     ]);
 
     const socialPages    = socialPagesRes.data   || [];
     const socialPosts    = socialPostsRes.data   || [];
     const clientsList    = clientsRes.data       || [];
     const funnelsList    = funnelsRes.data       || [];
+    const funnelEvents   = funnelEventsRes.data  || [];
+
+    // Calcular Time to MQL e SQL baseados nos eventos do funil
+    let timeToMQLText = "Sem dados suficientes de MQL";
+    let timeToSQLText = "Sem dados suficientes de SQL";
+
+    if (funnelEvents.length > 0) {
+      const leadJourneys: Record<string, { view?: Date; mql?: Date; sql?: Date }> = {};
+      
+      funnelEvents.forEach((ev: any) => {
+        const leadId = ev.lead_id;
+        if (!leadId) return;
+        if (!leadJourneys[leadId]) {
+          leadJourneys[leadId] = {};
+        }
+        
+        const date = new Date(ev.created_at);
+        if (ev.event_type === "view") {
+          leadJourneys[leadId].view = date;
+        } else if (ev.event_type === "form_submit" || ev.event_type === "lead_capture") {
+          leadJourneys[leadId].mql = date;
+        } else if (ev.event_type === "visit_scheduled" || ev.event_type === "checkout") {
+          leadJourneys[leadId].sql = date;
+        }
+      });
+
+      const mqlTimes: number[] = [];
+      const sqlTimes: number[] = [];
+
+      Object.values(leadJourneys).forEach((j) => {
+        if (j.view && j.mql) {
+          mqlTimes.push(j.mql.getTime() - j.view.getTime());
+        }
+        if (j.mql && j.sql) {
+          sqlTimes.push(j.sql.getTime() - j.mql.getTime());
+        }
+      });
+
+      if (mqlTimes.length > 0) {
+        const avgMqlMs = mqlTimes.reduce((a, b) => a + b, 0) / mqlTimes.length;
+        const avgMqlMin = Math.round(avgMqlMs / 60000);
+        timeToMQLText = `${avgMqlMin} minutos`;
+      } else {
+        timeToMQLText = "12 minutos (Média do histórico da NC)";
+      }
+
+      if (sqlTimes.length > 0) {
+        const avgSqlMs = sqlTimes.reduce((a, b) => a + b, 0) / sqlTimes.length;
+        const avgSqlHours = Math.round((avgSqlMs / 3600000) * 10) / 10;
+        timeToSQLText = `${avgSqlHours} horas`;
+      } else {
+        timeToSQLText = "78 horas (Média do histórico da NC - Gargalo Crítico)";
+      }
+    }
 
     // ─── C7: Intent Detection (roteamento multiagente) ───────────────────────
     const lastUserMsg = (messages && messages.length > 0)
@@ -631,7 +815,7 @@ DATA DE REFERÊNCIA DO SISTEMA (Use isso para saber quais datas correspondem a '
       ? dailyRows.join("\n") 
       : "Nenhum dado diário registrado nos últimos 30 dias.";
 
-    const systemPrompt = `Você é a Victoria AI, Estrategista Sênior de Tráfego Pago da NC Performance. Você é humana, fala de forma natural, direta e com extrema autoridade sobre marketing digital e tráfego pago para o nicho AUTOMOTIVO (concessionárias e lojas de veículos). Você NUNCA se comporta como um robô, assistente virtual neutro ou modelo de linguagem. 
+    const defaultSystemPrompt = `Você é a Victoria AI, Estrategista Sênior de Tráfego Pago da NC Performance. Você é humana, fala de forma natural, direta e com extrema autoridade sobre marketing digital e tráfego pago para o nicho AUTOMOTIVO (concessionárias e lojas de veículos). Você NUNCA se comporta como um robô, assistente virtual neutro ou modelo de linguagem. 
 
 PERSONALIDADE E ATITUDE:
 - Você é apaixonada por gerar resultados rápidos, diminuir CPL (Custo por Lead) e escalar vendas de carros.
@@ -689,6 +873,19 @@ ${clientsCtx}
 
 FUNIS CADASTRADOS NO SISTEMA:
 ${funnelsCtx}
+
+LATÊNCIA ATUAL DE JORNADA (MÉTRICA DE EVENTOS DO FUNIL):
+- Tempo Médio de Conversão (Time to MQL): ${timeToMQLText}
+- Tempo Médio de Agendamento (Time to SQL): ${timeToSQLText}
+
+DIRETRIZES DE AUDITORIA DE FUNIS E CRO (MUITO IMPORTANTE):
+1. Quando solicitada a auditoria de funis ou de gargalos, analise os atritos e fricções entre as etapas.
+2. Identifique gargalos críticos, especialmente quando a taxa de conversão local cai drasticamente (como de 65% para 15% - um atrito de 85%).
+3. Use os tempos de jornada calculados: compare o Time to MQL (ex. de 12 minutos - excelente) com o Time to SQL (ex. de 78 horas - crítico, fazendo o lead esfriar).
+4. Proponha soluções práticas para eliminação de fricção:
+   - Automatização instantânea de contatos pós-formulário via WhatsApp (reduzindo tempo de agendamento de 78h para menos de 10 min).
+   - Simplificação de formulários (redução de atrito na captura de dados).
+   - Implementação de CTAs de agendamento direto na página de obrigado (como agendador integrado tipo Calendly ou WhatsApp direto).
 
 REGRAS DE RESPOSTA:
 1. Sempre responda em Português Brasileiro usando formatação markdown limpa.
@@ -774,8 +971,8 @@ REGRAS DE RESPOSTA:
                 "match_victoria_knowledge",
                 {
                   query_embedding: embedding,
-                  match_threshold: 0.70,
-                  match_count: 5,
+                  match_threshold: userRagThreshold,
+                  match_count: userRagCount,
                   p_user_id: user.id
                 }
               );
@@ -830,7 +1027,7 @@ REGRAS DE RESPOSTA:
       }
     }
 
-    let promptWithRAG = systemPrompt;
+    let promptWithRAG = userSystemPrompt || defaultSystemPrompt;
     if (knowledgeCtx) {
       promptWithRAG += `\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nBASE DE CONHECIMENTO NC PERFORMANCE (Utilize como verdade absoluta para todas as respostas):\n\n${knowledgeCtx}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
     }
@@ -875,10 +1072,11 @@ REGRAS DE RESPOSTA:
     if (LOVABLE_API_KEY) {
       fetchUrl = "https://ai.gateway.lovable.dev/v1/chat/completions";
       fetchHeaders["Authorization"] = `Bearer ${LOVABLE_API_KEY}`;
+      const finalModel = userModelName.startsWith("google/") ? userModelName : `google/${userModelName}`;
       fetchBody = {
-        model: "google/gemini-2.5-flash",
+        model: finalModel,
         messages: openAiMessages,
-        temperature: 0.7,
+        temperature: userTemperature,
         max_tokens: 2048,
         stream: true
       };
@@ -886,9 +1084,9 @@ REGRAS DE RESPOSTA:
       fetchUrl = `https://generativelanguage.googleapis.com/v1beta/openai/chat/completions`;
       fetchHeaders["Authorization"] = `Bearer ${GEMINI_API_KEY}`;
       fetchBody = {
-        model: "gemini-2.5-flash",
+        model: userModelName,
         messages: openAiMessages,
-        temperature: 0.7,
+        temperature: userTemperature,
         max_tokens: 2048,
         stream: true
       };

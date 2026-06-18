@@ -17,6 +17,7 @@ export const Route = createFileRoute("/_app/config")({
 
 const TABS = [
   { id: "conta",       label: "Meu Perfil",          icon: User,                   adminOnly: false },
+  { id: "agente",      label: "Agente Victoria",     icon: Brain,                  adminOnly: true  },
   { id: "tutorial",   label: "NC Academy",            icon: BookOpen,               adminOnly: false },
   { id: "sac",        label: "SAC / Feedback",        icon: MessageSquareWarning,   adminOnly: false },
   { id: "usuarios",   label: "Gestão de Usuários",   icon: Users,                  adminOnly: true  },
@@ -75,6 +76,7 @@ function ConfigPage() {
         className="glass-panel p-8"
       >
         {tab === "conta"       && <TabConta />}
+        {tab === "agente"      && isAdmin && <TabAgente />}
         {tab === "tutorial"    && <TabTutorial />}
         {tab === "sac"         && <TabSac isAdmin={isAdmin} userId={user?.id ?? ""} />}
         {tab === "usuarios"    && canManageUsers && <TabUsuarios isAdmin={isAdmin} />}
@@ -1797,6 +1799,407 @@ function TabSac({ isAdmin, userId }: { isAdmin: boolean; userId: string }) {
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+function TabAgente() {
+  const { user } = useAuth();
+  const qc = useQueryClient();
+
+  // Estados locais do formulário de configs
+  const [modelName, setModelName] = useState("gemini-2.5-flash");
+  const [temperature, setTemperature] = useState(0.7);
+  const [ragThreshold, setRagThreshold] = useState(0.70);
+  const [ragCount, setRagCount] = useState(5);
+  const [systemPrompt, setSystemPrompt] = useState("");
+  const [savingConfig, setSavingConfig] = useState(false);
+
+  // Estados locais do formulário de novos conhecimentos
+  const [newTitle, setNewTitle] = useState("");
+  const [newCategory, setNewCategory] = useState("manual");
+  const [newContent, setNewContent] = useState("");
+  const [addingDoc, setAddingDoc] = useState(false);
+  const [knowledgeSearch, setKnowledgeSearch] = useState("");
+  const [selectedCategoryFilter, setSelectedCategoryFilter] = useState("todos");
+
+  // Query das configurações
+  const { data: config, isLoading: loadingConfig } = useQuery({
+    queryKey: ["victoria_config_user", user?.id],
+    queryFn: async () => {
+      if (!user?.id) return null;
+      const { data, error } = await (supabase as any)
+        .from("victoria_configs")
+        .select("*")
+        .eq("user_id", user.id)
+        .maybeSingle();
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!user?.id,
+  });
+
+  // Query dos conhecimentos cadastrados
+  const { data: knowledgeList = [], isLoading: loadingKnowledge, refetch: refetchKnowledge } = useQuery({
+    queryKey: ["victoria_knowledge_user", user?.id],
+    queryFn: async () => {
+      if (!user?.id) return [];
+      const { data, error } = await (supabase as any)
+        .from("victoria_knowledge")
+        .select("id, title, category, content, created_at")
+        .eq("user_id", user.id)
+        .order("created_at", { ascending: false });
+      if (error) throw error;
+      return data || [];
+    },
+    enabled: !!user?.id,
+  });
+
+  // Preenche os inputs quando a config do banco for carregada
+  useEffect(() => {
+    if (config) {
+      setModelName(config.model_name || "gemini-2.5-flash");
+      setTemperature(config.temperature !== undefined ? Number(config.temperature) : 0.7);
+      setRagThreshold(config.rag_threshold !== undefined ? Number(config.rag_threshold) : 0.70);
+      setRagCount(config.rag_count !== undefined ? Number(config.rag_count) : 5);
+      setSystemPrompt(config.system_prompt || "");
+    }
+  }, [config]);
+
+  // Salvar configurações
+  const handleSaveConfig = async () => {
+    if (!user?.id) return;
+    setSavingConfig(true);
+    try {
+      const { error } = await (supabase as any)
+        .from("victoria_configs")
+        .upsert({
+          user_id: user.id,
+          model_name: modelName,
+          temperature,
+          rag_threshold: ragThreshold,
+          rag_count: ragCount,
+          system_prompt: systemPrompt,
+          updated_at: new Date().toISOString()
+        }, { onConflict: "user_id" });
+
+      if (error) throw error;
+      toast.success("Configurações do Agente salvas com sucesso!");
+      qc.invalidateQueries({ queryKey: ["victoria_config_user", user?.id] });
+    } catch (err: any) {
+      console.error(err);
+      toast.error(err.message || "Erro ao salvar configurações do agente.");
+    } finally {
+      setSavingConfig(false);
+    }
+  };
+
+  // Adicionar novo documento à base de conhecimento (com embedding na Edge Function)
+  const handleAddDocument = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newTitle.trim() || !newContent.trim()) {
+      toast.error("Preencha o título e o conteúdo do documento.");
+      return;
+    }
+    setAddingDoc(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("victoria-agent", {
+        body: {
+          action: "add_knowledge",
+          title: newTitle.trim(),
+          category: newCategory,
+          content: newContent.trim()
+        }
+      });
+
+      if (error) throw error;
+      toast.success("Documento adicionado à Base de Conhecimento e indexado via RAG!");
+      setNewTitle("");
+      setNewContent("");
+      refetchKnowledge();
+    } catch (err: any) {
+      console.error(err);
+      toast.error(err.message || "Erro ao adicionar documento.");
+    } finally {
+      setAddingDoc(false);
+    }
+  };
+
+  // Excluir documento
+  const handleDeleteDocument = async (id: string) => {
+    if (!confirm("Deseja realmente remover este documento da base de conhecimento da Victoria?")) return;
+    try {
+      const { error } = await (supabase as any)
+        .from("victoria_knowledge")
+        .delete()
+        .eq("id", id);
+      if (error) throw error;
+      toast.success("Documento removido da Base de Conhecimento!");
+      refetchKnowledge();
+    } catch (err: any) {
+      console.error(err);
+      toast.error(err.message || "Erro ao excluir documento.");
+    }
+  };
+
+  const filteredKnowledge = knowledgeList.filter((k: any) => {
+    const matchesSearch = k.title.toLowerCase().includes(knowledgeSearch.toLowerCase()) || 
+                          k.content.toLowerCase().includes(knowledgeSearch.toLowerCase());
+    const matchesCategory = selectedCategoryFilter === "todos" || k.category === selectedCategoryFilter;
+    return matchesSearch && matchesCategory;
+  });
+
+  return (
+    <div className="space-y-8">
+      {/* Cabeçalho */}
+      <div>
+        <h3 className="header-sport font-display text-lg font-semibold flex items-center gap-2 text-gradient">
+          <Brain className="h-5 w-5 text-primary" /> Personalidade e Configurações da Victoria AI
+        </h3>
+        <p className="text-xs text-muted-foreground mt-1">
+          Ajuste as diretrizes táticas, controle a temperatura das respostas e gerencie o motor de RAG (Busca Vetorial).
+        </p>
+      </div>
+
+      {loadingConfig ? (
+        <div className="flex justify-center py-12">
+          <Loader2 className="h-6 w-6 animate-spin text-primary" />
+        </div>
+      ) : (
+        <div className="grid gap-8 lg:grid-cols-3">
+          {/* Coluna 1 e 2: Formulário do Agente */}
+          <div className="space-y-6 lg:col-span-2">
+            <div className="glass-panel p-6 space-y-4">
+              <h4 className="text-sm font-bold text-white flex items-center gap-1.5 border-b border-white/5 pb-2">
+                <Settings className="h-4 w-4 text-primary" /> Configurações de Geração
+              </h4>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                {/* Modelo */}
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Modelo da Linguagem (Gemini)</label>
+                  <select
+                    value={modelName}
+                    onChange={(e) => setModelName(e.target.value)}
+                    className="w-full rounded-xl border border-white/10 bg-background/50 px-3 py-2.5 text-xs text-white focus:border-primary focus:outline-none"
+                  >
+                    <option value="gemini-2.5-flash">Gemini 2.5 Flash (Padrão e Rápido)</option>
+                    <option value="gemini-1.5-pro">Gemini 1.5 Pro (Mais Analítico)</option>
+                    <option value="gemini-1.5-flash">Gemini 1.5 Flash (Leve)</option>
+                  </select>
+                </div>
+
+                {/* Temperatura */}
+                <div className="space-y-1.5">
+                  <div className="flex justify-between items-center">
+                    <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Criatividade (Temperatura)</label>
+                    <span className="text-[10px] font-mono font-bold text-primary">{temperature.toFixed(1)}</span>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <input
+                      type="range"
+                      min="0.0"
+                      max="1.5"
+                      step="0.1"
+                      value={temperature}
+                      onChange={(e) => setTemperature(parseFloat(e.target.value))}
+                      className="w-full h-1.5 rounded-lg appearance-none bg-white/10 cursor-pointer accent-primary"
+                    />
+                  </div>
+                </div>
+
+                {/* RAG Threshold */}
+                <div className="space-y-1.5">
+                  <div className="flex justify-between items-center">
+                    <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Filtro de Similaridade RAG (Threshold)</label>
+                    <span className="text-[10px] font-mono font-bold text-primary">{ragThreshold.toFixed(2)}</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="0.30"
+                    max="0.95"
+                    step="0.05"
+                    value={ragThreshold}
+                    onChange={(e) => setRagThreshold(parseFloat(e.target.value))}
+                    className="w-full h-1.5 rounded-lg appearance-none bg-white/10 cursor-pointer accent-primary"
+                  />
+                </div>
+
+                {/* RAG Count */}
+                <div className="space-y-1.5">
+                  <div className="flex justify-between items-center">
+                    <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Máximo de Fragmentos no RAG</label>
+                    <span className="text-[10px] font-mono font-bold text-primary">{ragCount} blocos</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="1"
+                    max="15"
+                    step="1"
+                    value={ragCount}
+                    onChange={(e) => setRagCount(parseInt(e.target.value))}
+                    className="w-full h-1.5 rounded-lg appearance-none bg-white/10 cursor-pointer accent-primary"
+                  />
+                </div>
+              </div>
+
+              {/* Prompt de Sistema */}
+              <div className="space-y-1.5">
+                <div className="flex justify-between items-center">
+                  <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Instruções de Personalidade (System Prompt)</label>
+                  {!systemPrompt && (
+                    <span className="text-[9px] bg-primary/20 text-primary px-1.5 py-0.5 rounded-full font-bold">Usando Prompt Padrão da Victoria</span>
+                  )}
+                </div>
+                <textarea
+                  value={systemPrompt}
+                  onChange={(e) => setSystemPrompt(e.target.value)}
+                  placeholder="Se deixado em branco, ela usará a personalidade padrão de Estrategista Sênior de Tráfego Pago Automotivo (NC Performance). Digite aqui para customizar o tom de voz e diretrizes específicas..."
+                  className="w-full min-h-[220px] rounded-xl border border-white/10 bg-background/50 p-3 text-xs focus:border-primary focus:outline-none font-mono leading-relaxed"
+                />
+              </div>
+
+              <div className="flex justify-end pt-2">
+                <button
+                  type="button"
+                  onClick={handleSaveConfig}
+                  disabled={savingConfig}
+                  className="inline-flex items-center gap-2 rounded-xl bg-primary px-5 py-2.5 text-xs font-bold text-primary-foreground hover:shadow-glow disabled:opacity-50 transition cursor-pointer"
+                >
+                  {savingConfig ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
+                  Salvar Configurações do Agente
+                </button>
+              </div>
+            </div>
+
+            {/* Gerenciador de Documentos de Conhecimento */}
+            <div className="glass-panel p-6 space-y-4">
+              <div className="flex items-center justify-between border-b border-white/5 pb-2">
+                <h4 className="text-sm font-bold text-white flex items-center gap-1.5">
+                  <Database className="h-4 w-4 text-primary" /> Documentos da Base de Conhecimento RAG
+                </h4>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={knowledgeSearch}
+                    onChange={(e) => setKnowledgeSearch(e.target.value)}
+                    placeholder="Filtrar base..."
+                    className="rounded-lg border border-white/10 bg-background/50 px-2.5 py-1 text-[11px] focus:outline-none focus:border-primary w-32 sm:w-44"
+                  />
+                  <select
+                    value={selectedCategoryFilter}
+                    onChange={(e) => setSelectedCategoryFilter(e.target.value)}
+                    className="rounded-lg border border-white/10 bg-background px-2 py-1 text-[11px] focus:outline-none"
+                  >
+                    <option value="todos">Todos</option>
+                    <option value="manual">Manuais</option>
+                    <option value="faq">FAQ</option>
+                    <option value="custom">Outros</option>
+                  </select>
+                </div>
+              </div>
+
+              {loadingKnowledge ? (
+                <div className="flex justify-center py-8">
+                  <Loader2 className="h-5 w-5 animate-spin text-primary" />
+                </div>
+              ) : filteredKnowledge.length === 0 ? (
+                <p className="text-center text-xs text-muted-foreground py-8">Nenhum documento de conhecimento indexado nesta categoria.</p>
+              ) : (
+                <div className="grid gap-3 max-h-[350px] overflow-y-auto pr-1 custom-scrollbar">
+                  {filteredKnowledge.map((k: any) => (
+                    <div key={k.id} className="rounded-xl border border-white/5 bg-background/40 p-4 flex flex-col justify-between hover:border-primary/20 transition">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <span className={`inline-block text-[8px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded-full border mb-1.5 ${
+                            k.category === "manual" ? "bg-blue-500/10 border-blue-500/20 text-blue-400" :
+                            k.category === "faq" ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400" :
+                            "bg-purple-500/10 border-purple-500/20 text-purple-400"
+                          }`}>
+                            {k.category}
+                          </span>
+                          <h5 className="text-xs font-bold text-white">{k.title}</h5>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteDocument(k.id)}
+                          className="text-muted-foreground hover:text-destructive p-1 transition"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                      <p className="text-[11px] text-muted-foreground mt-2 line-clamp-3 leading-relaxed whitespace-pre-wrap">{k.content}</p>
+                      <p className="text-[8px] text-muted-foreground/30 font-mono mt-3">{new Date(k.created_at).toLocaleString("pt-BR")}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Coluna 3: Cadastrar Novo Documento */}
+          <div className="space-y-6">
+            <form onSubmit={handleAddDocument} className="glass-panel p-6 space-y-4">
+              <h4 className="text-sm font-bold text-white flex items-center gap-1.5 border-b border-white/5 pb-2">
+                <Plus className="h-4 w-4 text-primary" /> Indexar Conhecimento
+              </h4>
+
+              <p className="text-[11px] text-muted-foreground leading-relaxed">
+                Adicione dados de estoque de carros, FAQs de ofertas ou scripts de conversão. 
+                O sistema gerará automaticamente os vetores (embeddings) para que a Victoria consulte em tempo real.
+              </p>
+
+              {/* Título */}
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Título do Bloco</label>
+                <input
+                  type="text"
+                  required
+                  value={newTitle}
+                  onChange={(e) => setNewTitle(e.target.value)}
+                  placeholder="Ex: Tabela de Preços Jeep Renegade Junho"
+                  className="w-full rounded-xl border border-white/10 bg-background/50 px-3 py-2 text-xs text-white focus:border-primary focus:outline-none"
+                />
+              </div>
+
+              {/* Categoria */}
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Categoria</label>
+                <select
+                  value={newCategory}
+                  onChange={(e) => setNewCategory(e.target.value)}
+                  className="w-full rounded-xl border border-white/10 bg-background px-3 py-2 text-xs text-white focus:border-primary focus:outline-none"
+                >
+                  <option value="manual">Manual / Script de Vendas</option>
+                  <option value="faq">Estoque / FAQ</option>
+                  <option value="custom">Outros Dados Táticos</option>
+                </select>
+              </div>
+
+              {/* Conteúdo */}
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">Conteúdo Detalhado</label>
+                <textarea
+                  required
+                  value={newContent}
+                  onChange={(e) => setNewContent(e.target.value)}
+                  placeholder="Cole aqui o texto corrido, especificações de carros ou informações detalhadas..."
+                  className="w-full min-h-[160px] rounded-xl border border-white/10 bg-background/50 p-3 text-xs focus:border-primary focus:outline-none leading-relaxed"
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={addingDoc}
+                className="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-xs font-bold text-primary-foreground hover:shadow-glow disabled:opacity-50 transition cursor-pointer"
+              >
+                {addingDoc ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
+                Cadastrar e Indexar RAG
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

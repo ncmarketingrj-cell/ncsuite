@@ -72,13 +72,31 @@ export function useAutoSync() {
         until: getLocalDateString(today)
       };
 
-      console.log(`[AUTO-SYNC] ⚡ Sync 3min (D-1+D0) [${triggeredBy}]: ${timeRange.since} → ${timeRange.until}`);
+      console.log(`[AUTO-SYNC] ⚡ Iniciando Sync Unificado 3min [${triggeredBy}]: ${timeRange.since} → ${timeRange.until}`);
 
-      const { error: syncError } = await supabase.functions.invoke("sync-meta-ads", {
-        body: { triggered_by: "auto", time_range: timeRange }
-      });
+      // Executa todos os sincronizadores de forma concorrente em paralelo
+      const syncResults = await Promise.allSettled([
+        supabase.functions.invoke("sync-meta-ads", {
+          body: { triggered_by: "auto", time_range: timeRange }
+        }),
+        supabase.functions.invoke("sync-google-ads", {
+          body: { triggered_by: "auto", time_range: timeRange }
+        }),
+        supabase.functions.invoke("get-meta-billing", {
+          body: {}
+        }),
+        supabase.functions.invoke("sync-social-media", {
+          body: { action: "sync-metrics" }
+        })
+      ]);
 
-      if (syncError) throw syncError;
+      // Verifica se houve falha total ou se pelo menos algum sync rodou
+      const failures = syncResults.filter(r => r.status === "rejected" || (r.status === "fulfilled" && r.value.error));
+      if (failures.length === syncResults.length) {
+        throw new Error("Todos os serviços de sincronização falharam.");
+      }
+
+      console.log(`[AUTO-SYNC] 🧠 Serviços sincronizados. Rodando motor de automações/alertas...`);
 
       // Executar motor de alertas após sync
       await supabase.functions.invoke("run-automations", { body: {} });
@@ -87,15 +105,16 @@ export function useAutoSync() {
       localStorage.setItem(STORAGE_REALTIME_KEY, now);
 
       const nextSync = new Date(Date.now() + REALTIME_SYNC_INTERVAL_MS).toISOString();
-      dispatchSyncStatus({ isSyncing: false, lastSync: now, nextSync, lastResult: "success" });
+      const lastResult = failures.length > 0 ? "partial" : "success";
+      dispatchSyncStatus({ isSyncing: false, lastSync: now, nextSync, lastResult });
 
       // Atualizar toda a UI
       qc.invalidateQueries();
 
-      console.log(`[AUTO-SYNC] ✅ Sync concluído em ${now}. Próximo em ${nextSync}`);
+      console.log(`[AUTO-SYNC] ✅ Sync unificado concluído em ${now}. Status: ${lastResult}. Próximo em ${nextSync}`);
 
     } catch (error: any) {
-      console.error("[AUTO-SYNC] ❌ Erro:", error.message);
+      console.error("[AUTO-SYNC] ❌ Erro no sync unificado:", error.message);
       dispatchSyncStatus({ isSyncing: false, lastResult: "error" });
     } finally {
       isSyncingRef.current = false;

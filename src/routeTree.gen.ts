@@ -31,6 +31,7 @@ import { Route as AppMulticanalRouteImport } from './routes/_app/multicanal'
 import { Route as AppMetricasRouteImport } from './routes/_app/metricas'
 import { Route as AppLinkBioRouteImport } from './routes/_app/link-bio'
 import { Route as AppIntegrationsRouteImport } from './routes/_app/integrations'
+import { Route as AppStrategyMapRouteImport } from './routes/_app/strategy-map'
 import { Route as AppFunnelBuilderRouteImport } from './routes/_app/funnel-builder'
 import { Route as AppFunisRouteImport } from './routes/_app/funis'
 import { Route as AppFormularioRouteImport } from './routes/_app/formulario'
@@ -41,6 +42,7 @@ import { Route as AppCobrancasRouteImport } from './routes/_app/cobrancas'
 import { Route as AppClientesRouteImport } from './routes/_app/clientes'
 import { Route as AppCampanhasRouteImport } from './routes/_app/campanhas'
 import { Route as AppAutomacoesRouteImport } from './routes/_app/automacoes'
+import { Route as AppAuditoriaRouteImport } from './routes/_app/auditoria'
 import { Route as AppAgenteRouteImport } from './routes/_app/agente'
 import { Route as AppMetricasGraficoRouteImport } from './routes/_app/metricas.grafico'
 import { Route as AppClientesClientIdRouteImport } from './routes/_app/clientes.$clientId'
@@ -155,6 +157,11 @@ const AppIntegrationsRoute = AppIntegrationsRouteImport.update({
   path: '/integrations',
   getParentRoute: () => AppRoute,
 } as any)
+const AppStrategyMapRoute = AppStrategyMapRouteImport.update({
+  id: '/strategy-map',
+  path: '/strategy-map',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppFunnelBuilderRoute = AppFunnelBuilderRouteImport.update({
   id: '/funnel-builder',
   path: '/funnel-builder',
@@ -205,6 +212,11 @@ const AppAutomacoesRoute = AppAutomacoesRouteImport.update({
   path: '/automacoes',
   getParentRoute: () => AppRoute,
 } as any)
+const AppAuditoriaRoute = AppAuditoriaRouteImport.update({
+  id: '/auditoria',
+  path: '/auditoria',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppAgenteRoute = AppAgenteRouteImport.update({
   id: '/agente',
   path: '/agente',
@@ -233,6 +245,7 @@ export interface FileRoutesByFullPath {
   '/privacy': typeof PrivacyRoute
   '/terms': typeof TermsRoute
   '/agente': typeof AppAgenteRoute
+  '/auditoria': typeof AppAuditoriaRoute
   '/automacoes': typeof AppAutomacoesRoute
   '/campanhas': typeof AppCampanhasRouteWithChildren
   '/clientes': typeof AppClientesRouteWithChildren
@@ -243,6 +256,7 @@ export interface FileRoutesByFullPath {
   '/formulario': typeof AppFormularioRoute
   '/funis': typeof AppFunisRoute
   '/funnel-builder': typeof AppFunnelBuilderRoute
+  '/strategy-map': typeof AppStrategyMapRoute
   '/integrations': typeof AppIntegrationsRoute
   '/link-bio': typeof AppLinkBioRoute
   '/metricas': typeof AppMetricasRouteWithChildren
@@ -270,6 +284,7 @@ export interface FileRoutesByTo {
   '/privacy': typeof PrivacyRoute
   '/terms': typeof TermsRoute
   '/agente': typeof AppAgenteRoute
+  '/auditoria': typeof AppAuditoriaRoute
   '/automacoes': typeof AppAutomacoesRoute
   '/campanhas': typeof AppCampanhasRouteWithChildren
   '/clientes': typeof AppClientesRouteWithChildren
@@ -280,6 +295,7 @@ export interface FileRoutesByTo {
   '/formulario': typeof AppFormularioRoute
   '/funis': typeof AppFunisRoute
   '/funnel-builder': typeof AppFunnelBuilderRoute
+  '/strategy-map': typeof AppStrategyMapRoute
   '/integrations': typeof AppIntegrationsRoute
   '/link-bio': typeof AppLinkBioRoute
   '/metricas': typeof AppMetricasRouteWithChildren
@@ -309,6 +325,7 @@ export interface FileRoutesById {
   '/privacy': typeof PrivacyRoute
   '/terms': typeof TermsRoute
   '/_app/agente': typeof AppAgenteRoute
+  '/_app/auditoria': typeof AppAuditoriaRoute
   '/_app/automacoes': typeof AppAutomacoesRoute
   '/_app/campanhas': typeof AppCampanhasRouteWithChildren
   '/_app/clientes': typeof AppClientesRouteWithChildren
@@ -319,6 +336,7 @@ export interface FileRoutesById {
   '/_app/formulario': typeof AppFormularioRoute
   '/_app/funis': typeof AppFunisRoute
   '/_app/funnel-builder': typeof AppFunnelBuilderRoute
+  '/_app/strategy-map': typeof AppStrategyMapRoute
   '/_app/integrations': typeof AppIntegrationsRoute
   '/_app/link-bio': typeof AppLinkBioRoute
   '/_app/metricas': typeof AppMetricasRouteWithChildren
@@ -348,6 +366,7 @@ export interface FileRouteTypes {
     | '/privacy'
     | '/terms'
     | '/agente'
+    | '/auditoria'
     | '/automacoes'
     | '/campanhas'
     | '/clientes'
@@ -358,6 +377,7 @@ export interface FileRouteTypes {
     | '/formulario'
     | '/funis'
     | '/funnel-builder'
+    | '/strategy-map'
     | '/integrations'
     | '/link-bio'
     | '/metricas'
@@ -385,6 +405,7 @@ export interface FileRouteTypes {
     | '/privacy'
     | '/terms'
     | '/agente'
+    | '/auditoria'
     | '/automacoes'
     | '/campanhas'
     | '/clientes'
@@ -395,6 +416,7 @@ export interface FileRouteTypes {
     | '/formulario'
     | '/funis'
     | '/funnel-builder'
+    | '/strategy-map'
     | '/integrations'
     | '/link-bio'
     | '/metricas'
@@ -423,6 +445,7 @@ export interface FileRouteTypes {
     | '/privacy'
     | '/terms'
     | '/_app/agente'
+    | '/_app/auditoria'
     | '/_app/automacoes'
     | '/_app/campanhas'
     | '/_app/clientes'
@@ -433,6 +456,7 @@ export interface FileRouteTypes {
     | '/_app/formulario'
     | '/_app/funis'
     | '/_app/funnel-builder'
+    | '/_app/strategy-map'
     | '/_app/integrations'
     | '/_app/link-bio'
     | '/_app/metricas'
@@ -628,6 +652,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppFunnelBuilderRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/strategy-map': {
+      id: '/_app/strategy-map'
+      path: '/strategy-map'
+      fullPath: '/strategy-map'
+      preLoaderRoute: typeof AppStrategyMapRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/funis': {
       id: '/_app/funis'
       path: '/funis'
@@ -689,6 +720,13 @@ declare module '@tanstack/react-router' {
       path: '/automacoes'
       fullPath: '/automacoes'
       preLoaderRoute: typeof AppAutomacoesRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/auditoria': {
+      id: '/_app/auditoria'
+      path: '/auditoria'
+      fullPath: '/auditoria'
+      preLoaderRoute: typeof AppAuditoriaRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/agente': {
@@ -760,6 +798,7 @@ const AppMetricasRouteWithChildren = AppMetricasRoute._addFileChildren(
 
 interface AppRouteChildren {
   AppAgenteRoute: typeof AppAgenteRoute
+  AppAuditoriaRoute: typeof AppAuditoriaRoute
   AppAutomacoesRoute: typeof AppAutomacoesRoute
   AppCampanhasRoute: typeof AppCampanhasRouteWithChildren
   AppClientesRoute: typeof AppClientesRouteWithChildren
@@ -770,6 +809,7 @@ interface AppRouteChildren {
   AppFormularioRoute: typeof AppFormularioRoute
   AppFunisRoute: typeof AppFunisRoute
   AppFunnelBuilderRoute: typeof AppFunnelBuilderRoute
+  AppStrategyMapRoute: typeof AppStrategyMapRoute
   AppIntegrationsRoute: typeof AppIntegrationsRoute
   AppLinkBioRoute: typeof AppLinkBioRoute
   AppMetricasRoute: typeof AppMetricasRouteWithChildren
@@ -788,6 +828,7 @@ interface AppRouteChildren {
 
 const AppRouteChildren: AppRouteChildren = {
   AppAgenteRoute: AppAgenteRoute,
+  AppAuditoriaRoute: AppAuditoriaRoute,
   AppAutomacoesRoute: AppAutomacoesRoute,
   AppCampanhasRoute: AppCampanhasRouteWithChildren,
   AppClientesRoute: AppClientesRouteWithChildren,
@@ -798,6 +839,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppFormularioRoute: AppFormularioRoute,
   AppFunisRoute: AppFunisRoute,
   AppFunnelBuilderRoute: AppFunnelBuilderRoute,
+  AppStrategyMapRoute: AppStrategyMapRoute,
   AppIntegrationsRoute: AppIntegrationsRoute,
   AppLinkBioRoute: AppLinkBioRoute,
   AppMetricasRoute: AppMetricasRouteWithChildren,

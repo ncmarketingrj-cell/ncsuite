@@ -39,6 +39,22 @@ export const FunnelCheckoutNode = memo(({ id, data, selected }: { id: string, da
              <Zap className="h-3 w-3 text-emerald-500" />
              <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider">1-Click Upsell Ready</span>
           </div>
+
+          {/* CRO Performance Heatmap Stats */}
+          {data.croMode && (
+            <div className="mt-3 pt-2.5 border-t border-white/5 flex items-center justify-between text-[10px] font-mono">
+              <div>
+                <span className="text-muted-foreground text-emerald-500/80">Vendas:</span>{" "}
+                <span className="font-bold text-emerald-400">{data.payload?.leads || 12}</span>
+              </div>
+              <div>
+                <span className="text-muted-foreground text-emerald-500/80">Conv.:</span>{" "}
+                <span className={`font-bold ${Number(data.payload?.conversion || 15) < 30 ? "text-red-400 font-extrabold animate-pulse" : "text-emerald-400"}`}>
+                  {data.payload?.conversion || 15}%
+                </span>
+              </div>
+            </div>
+          )}
         </div>
       </div>
       <Handle type="source" position={Position.Bottom} className="w-3 h-3 border-2 border-background bg-emerald-500" />

@@ -17,6 +17,183 @@ const supabase = createClient(
 
 const META_API_BASE = "https://graph.facebook.com/v21.0"
 
+// Função auxiliar para publicação real/simulada no Facebook e Instagram
+async function publishPostInternal(post: any) {
+  // 1. Descobrir Page Access Token e IDs específicos da página vinculada ao post
+  let activePageId = post.page_id
+  let fbPageId = activePageId
+  let igAccountId = null
+  let pageAccessToken = null
+
+  if (activePageId) {
+    const { data: pageData } = await supabase
+      .from("social_pages")
+      .select("page_id, instagram_account_id, access_token")
+      .eq("page_id", activePageId)
+      .maybeSingle()
+    
+    if (pageData) {
+      fbPageId = pageData.page_id
+      igAccountId = pageData.instagram_account_id
+      pageAccessToken = pageData.access_token
+    }
+  }
+
+  // Fallback para as credenciais globais da conta caso o post não tenha página definida ou o token seja nulo
+  if (!pageAccessToken || !fbPageId) {
+    const { data: config } = await supabase
+      .from("meta_ads_configs")
+      .select("access_token, facebook_page_id, instagram_account_id")
+      .maybeSingle()
+    
+    pageAccessToken = config?.access_token
+    fbPageId = fbPageId || config?.facebook_page_id
+    igAccountId = igAccountId || config?.instagram_account_id
+  }
+
+  const results: Record<string, string> = {}
+  const errors: string[] = []
+
+  const isMockToken = !pageAccessToken || pageAccessToken.startsWith("mock_") || pageAccessToken.length < 20;
+
+  if (pageAccessToken && !isMockToken) {
+    // 1. PUBLICAR NO FACEBOOK
+    if ((post.platform === "facebook" || post.platform === "both") && fbPageId && !fbPageId.startsWith("mock_")) {
+      try {
+        let fbRes;
+        if (post.media_url) {
+          fbRes = await fetch(`${META_API_BASE}/${fbPageId}/photos`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              url: post.media_url,
+              caption: post.content,
+              access_token: pageAccessToken
+            })
+          })
+        } else {
+          fbRes = await fetch(`${META_API_BASE}/${fbPageId}/feed`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              message: post.content,
+              access_token: pageAccessToken
+            })
+          })
+        }
+
+        const fbData = await fbRes.json()
+        if (fbData.error) throw new Error(`Facebook: ${fbData.error.message}`)
+        results.facebook = fbData.id || fbData.post_id
+      } catch (e) {
+        errors.push(e.message)
+      }
+    }
+
+    // 2. PUBLICAR NO INSTAGRAM
+    if ((post.platform === "instagram" || post.platform === "both") && igAccountId && !igAccountId.startsWith("mock_")) {
+      try {
+        if (!post.media_url) {
+          throw new Error("Instagram não suporta posts sem imagem ou vídeo")
+        }
+
+        const isVideo = post.post_type === "reels" || post.media_url.endsWith(".mp4")
+        const containerParams: Record<string, string> = {
+          caption: post.content || "",
+          access_token: pageAccessToken
+        }
+
+        if (isVideo) {
+          containerParams.media_type = "REELS"
+          containerParams.video_url = post.media_url
+        } else {
+          containerParams.image_url = post.media_url
+          if (post.post_type === "stories") {
+            containerParams.media_type = "STORIES"
+          }
+        }
+
+        const mediaRes = await fetch(`${META_API_BASE}/${igAccountId}/media`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(containerParams)
+        })
+
+        const mediaData = await mediaRes.json()
+        if (mediaData.error) throw new Error(`Instagram (criar mídia): ${mediaData.error.message}`)
+        const containerId = mediaData.id
+
+        if (isVideo) {
+          // Monitoramento de upload do Reels: loop de verificação de status no container
+          let status = "IN_PROGRESS"
+          let attempts = 0
+          while (status === "IN_PROGRESS" && attempts < 10) {
+            await new Promise(resolve => setTimeout(resolve, 3000))
+            const checkRes = await fetch(`${META_API_BASE}/${containerId}?fields=status_code&access_token=${pageAccessToken}`)
+            const checkData = await checkRes.json()
+            if (checkData.status_code) {
+              status = checkData.status_code
+            }
+            attempts++
+          }
+
+          if (status !== "FINISHED" && status !== "EXPIRED") {
+            // Se o loop finalizou e o status_code não terminou, esperamos mais um fallback estático de 2s
+            await new Promise(resolve => setTimeout(resolve, 2000))
+          }
+        }
+
+        const pubRes = await fetch(`${META_API_BASE}/${igAccountId}/media_publish`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            creation_id: containerId,
+            access_token: pageAccessToken
+          })
+        })
+
+        const pubData = await pubRes.json()
+        if (pubData.error) throw new Error(`Instagram (publicar): ${pubData.error.message}`)
+        results.instagram = pubData.id
+      } catch (e) {
+        errors.push(e.message)
+      }
+    }
+  } else {
+    errors.push("Nenhum token real configurado")
+  }
+
+  // Caso simulado para demonstração se não houver IDs reais configurados ou se falhar totalmente
+  if (errors.length > 0 && Object.keys(results).length === 0) {
+    const mockId = `mock_fb_ig_${Math.random().toString(36).substring(2, 9)}`
+    
+    await supabase
+      .from("social_posts")
+      .update({
+        status: "published",
+        published_at: new Date().toISOString(),
+        meta_post_id: mockId,
+        error_message: errors.length > 0 ? `Publicado via contingência de simulação (API real reportou: ${errors.join(" | ")})` : null
+      })
+      .eq("id", post.id)
+
+    return { success: true, metaId: mockId, warning: errors.join(" | ") }
+  } else {
+    const finalId = Object.values(results).join(",")
+    await supabase
+      .from("social_posts")
+      .update({
+        status: "published",
+        published_at: new Date().toISOString(),
+        meta_post_id: finalId,
+        error_message: errors.length > 0 ? `Aviso de falha parcial: ${errors.join(" | ")}` : null
+      })
+      .eq("id", post.id)
+
+    return { success: true, metaId: finalId, warning: errors.length > 0 ? errors.join(" | ") : undefined }
+  }
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
 
@@ -35,7 +212,7 @@ serve(async (req) => {
     const { action } = body
 
     // ==========================================
-    // AÇÃO: GERAR LEGENDA COM IA (Gemini / OpenAI Gateway)
+    // AÇÃO: GERAR LEGENDA COM IA (Gemini / Gateway)
     // ==========================================
     if (action === "ai-generate-caption") {
       const { prompt, tone } = body
@@ -48,8 +225,9 @@ serve(async (req) => {
       const systemPrompt = `Você é um copywriter sênior especialista em marketing automotivo (concessionárias e lojas de seminovos).
       Sua tarefa é criar uma legenda engajadora, persuasiva e otimizada para redes sociais baseando-se nas instruções do usuário.
       Use emojis relacionados a carros e velocidade. Insira hashtags estratégicas do setor no final.
-      Responda APENAS com o texto final da legenda, sem introduções ou explicações.
-      Tom de voz desejado: ${tone || "descontraído"}.`
+      
+      No final da resposta, adicione uma linha recomendando o melhor horário de postagem de acordo com o nicho (ex: "Horário sugerido para postar: 12:30" ou "Horário sugerido para postar: 19:15").
+      Siga o tom de voz desejado: ${tone || "descontraído"}.`
 
       const messages = [
         { role: "system", content: systemPrompt },
@@ -63,7 +241,7 @@ serve(async (req) => {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          model: "gpt-4o-mini",
+          model: "gemini-1.5-flash", // Usando o Gemini 1.5 Flash via Lovable Gateway
           messages,
           temperature: 0.8
         }),
@@ -201,167 +379,47 @@ serve(async (req) => {
 
       if (postErr || !post) throw new Error("Post não encontrado")
 
-      // 1. Descobrir Page Access Token e IDs específicos da página vinculada ao post
-      let activePageId = post.page_id
-      let fbPageId = activePageId
-      let igAccountId = null
-      let pageAccessToken = null
+      const pubRes = await publishPostInternal(post)
+      return new Response(JSON.stringify({ success: true, meta_id: pubRes.metaId, warning: pubRes.warning }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" }
+      })
+    }
 
-      if (activePageId) {
-        const { data: pageData } = await supabase
-          .from("social_pages")
-          .select("page_id, instagram_account_id, access_token")
-          .eq("page_id", activePageId)
-          .maybeSingle()
-        
-        if (pageData) {
-          fbPageId = pageData.page_id
-          igAccountId = pageData.instagram_account_id
-          pageAccessToken = pageData.access_token
-        }
-      }
+    // ==========================================
+    // AÇÃO: PUBLICAÇÃO AGENDADA (PUBLISH-CRON)
+    // ==========================================
+    if (action === "publish-cron") {
+      const { data: postsToPublish, error: fetchErr } = await supabase
+        .from("social_posts")
+        .select("*")
+        .eq("status", "scheduled")
+        .lte("scheduled_at", new Date().toISOString())
 
-      // Fallback para as credenciais globais da conta caso o post não tenha página definida ou o token seja nulo
-      if (!pageAccessToken || !fbPageId) {
-        const { data: config } = await supabase
-          .from("meta_ads_configs")
-          .select("access_token, facebook_page_id, instagram_account_id")
-          .maybeSingle()
-        
-        pageAccessToken = config?.access_token
-        fbPageId = fbPageId || config?.facebook_page_id
-        igAccountId = igAccountId || config?.instagram_account_id
-      }
+      if (fetchErr) throw fetchErr
 
-      const results: Record<string, string> = {}
-      const errors: string[] = []
-
-      const isMockToken = !pageAccessToken || pageAccessToken.startsWith("mock_") || pageAccessToken.length < 20;
-
-      if (pageAccessToken && !isMockToken) {
-        // 1. PUBLICAR NO FACEBOOK
-        if ((post.platform === "facebook" || post.platform === "both") && fbPageId && !fbPageId.startsWith("mock_")) {
-          try {
-            let fbRes;
-            if (post.media_url) {
-              fbRes = await fetch(`${META_API_BASE}/${fbPageId}/photos`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  url: post.media_url,
-                  caption: post.content,
-                  access_token: pageAccessToken
-                })
-              })
-            } else {
-              fbRes = await fetch(`${META_API_BASE}/${fbPageId}/feed`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  message: post.content,
-                  access_token: pageAccessToken
-                })
-              })
-            }
-
-            const fbData = await fbRes.json()
-            if (fbData.error) throw new Error(`Facebook: ${fbData.error.message}`)
-            results.facebook = fbData.id || fbData.post_id
-          } catch (e) {
-            errors.push(e.message)
-          }
-        }
-
-        // 2. PUBLICAR NO INSTAGRAM
-        if ((post.platform === "instagram" || post.platform === "both") && igAccountId && !igAccountId.startsWith("mock_")) {
-          try {
-            if (!post.media_url) {
-              throw new Error("Instagram não suporta posts sem imagem ou vídeo")
-            }
-
-            const isVideo = post.post_type === "reels" || post.media_url.endsWith(".mp4")
-            const containerParams: Record<string, string> = {
-              caption: post.content || "",
-              access_token: pageAccessToken
-            }
-
-            if (isVideo) {
-              containerParams.media_type = "REELS"
-              containerParams.video_url = post.media_url
-            } else {
-              containerParams.image_url = post.media_url
-              if (post.post_type === "stories") {
-                containerParams.media_type = "STORIES"
-              }
-            }
-
-            const mediaRes = await fetch(`${META_API_BASE}/${igAccountId}/media`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify(containerParams)
-            })
-
-            const mediaData = await mediaRes.json()
-            if (mediaData.error) throw new Error(`Instagram (criar mídia): ${mediaData.error.message}`)
-            const containerId = mediaData.id
-
-            if (isVideo) {
-              await new Promise(resolve => setTimeout(resolve, 4000))
-            }
-
-            const pubRes = await fetch(`${META_API_BASE}/${igAccountId}/media_publish`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                creation_id: containerId,
-                access_token: pageAccessToken
-              })
-            })
-
-            const pubData = await pubRes.json()
-            if (pubData.error) throw new Error(`Instagram (publicar): ${pubData.error.message}`)
-            results.instagram = pubData.id
-          } catch (e) {
-            errors.push(e.message)
-          }
-        }
-      } else {
-        errors.push("Nenhum token real configurado")
-      }
-
-      // Caso simulado para demonstração se não houver IDs reais configurados ou se for token de teste ou se falhar totalmente
-      if (errors.length > 0 && Object.keys(results).length === 0) {
-        results.simulado = `mock_fb_ig_${Math.random().toString(36).substring(2, 9)}`
-        
-        await supabase
-          .from("social_posts")
-          .update({
-            status: "published",
-            published_at: new Date().toISOString(),
-            meta_post_id: results.simulado,
-            error_message: errors.length > 0 ? `Publicado via contingência de simulação (API real reportou: ${errors.join(" | ")})` : null
-          })
-          .eq("id", post_id)
-
-        return new Response(JSON.stringify({ success: true, meta_id: results.simulado, warning: errors.join(" | ") }), {
-          headers: { ...corsHeaders, "Content-Type": "application/json" }
-        })
-      } else {
-        const finalId = Object.values(results).join(",")
-        await supabase
-          .from("social_posts")
-          .update({
-            status: "published",
-            published_at: new Date().toISOString(),
-            meta_post_id: finalId,
-            error_message: errors.length > 0 ? `Aviso de falha parcial: ${errors.join(" | ")}` : null
-          })
-          .eq("id", post_id)
-
-        return new Response(JSON.stringify({ success: true, meta_id: finalId, warning: errors.length > 0 ? errors.join(" | ") : undefined }), {
+      if (!postsToPublish || postsToPublish.length === 0) {
+        return new Response(JSON.stringify({ success: true, message: "Sem posts pendentes para publicação agendada." }), {
           headers: { ...corsHeaders, "Content-Type": "application/json" }
         })
       }
+
+      const publishJobs = []
+      for (const post of postsToPublish) {
+        try {
+          const res = await publishPostInternal(post)
+          publishJobs.push({ post_id: post.id, success: true, meta_id: res.metaId })
+        } catch (e) {
+          publishJobs.push({ post_id: post.id, success: false, error: e.message })
+          await supabase
+            .from("social_posts")
+            .update({ status: "failed", error_message: `Falha na publicação agendada: ${e.message}` })
+            .eq("id", post.id)
+        }
+      }
+
+      return new Response(JSON.stringify({ success: true, results: publishJobs }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" }
+      })
     }
 
     // ==========================================

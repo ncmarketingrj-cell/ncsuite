@@ -107,40 +107,43 @@ serve(async (req) => {
 
     let totalAlerts = 0
 
-    for (const threshold of thresholds) {
-      const accountId   = threshold.ad_account_id
-      const accountName = (threshold.ad_accounts as any)?.name || (accountId === null ? "Global" : accountId)
-      const userId      = threshold.user_id
-      const maxCpl      = threshold.max_cpl
-      const maxBudgetPct = threshold.max_budget_pct
-      const maxFrequency = threshold.max_frequency
-      const minSpend    = Number(threshold.min_spend_threshold || 0)
-      const cplEnabled  = threshold.alert_cpl_enabled       !== false
-      const budgetEnabled = threshold.alert_budget_enabled  !== false
-      const freqEnabled = threshold.alert_frequency_enabled !== false
+    // Buscar todas as campanhas ativas
+    const { data: campaigns, error: campErr } = await supabase
+      .from("campaigns")
+      .select("id, name, status, external_id, daily_budget, budget_currency, ad_account_id, objective")
+      .in("status", ["active", "ACTIVE"])
 
-      console.log(`[AUTO] Conta: ${accountName} | MaxCusto: ${maxCpl ? `R$${maxCpl}` : 'OFF'} | MaxBudget: ${maxBudgetPct ? `${maxBudgetPct}%` : 'OFF'} | MaxFreq: ${maxFrequency ?? 'OFF'}`)
+    if (campErr) {
+      console.error("[AUTO] Erro ao buscar campanhas:", campErr.message)
+    }
 
-      // Buscar campanhas ativas
-      let campQuery = supabase
-        .from("campaigns")
-        .select("id, name, status, external_id, daily_budget, budget_currency, ad_account_id, objective")
-        .in("status", ["active", "ACTIVE"])
-
-      if (accountId) campQuery = campQuery.eq("ad_account_id", accountId)
-
-      const { data: campaigns } = await campQuery
-      if (!campaigns?.length) {
-        console.log(`[AUTO] Sem campanhas ativas em ${accountName}`)
-        continue
-      }
-
+    if (campaigns && campaigns.length > 0) {
       for (const campaign of campaigns) {
-        // Regra global: pula contas excluídas pelo usuário
-        if (!accountId && (threshold.excluded_account_ids || []).includes(campaign.ad_account_id)) {
-          console.log(`[AUTO] Conta ${campaign.ad_account_id} excluída — ignorando ${campaign.name}`)
-          continue
+        // Encontrar a regra mais específica para a campanha
+        const specificRule = thresholds.find(t => t.campaign_id === campaign.id);
+        const accountRule  = thresholds.find(t => t.ad_account_id === campaign.ad_account_id && !t.campaign_id);
+        const globalRule   = thresholds.find(t => !t.ad_account_id && !t.campaign_id);
+
+        const activeRule = specificRule || accountRule || globalRule;
+        if (!activeRule) continue;
+
+        // Regra global/conta: pula se a conta estiver na lista de exclusão do threshold
+        if (!activeRule.campaign_id && activeRule.excluded_account_ids && activeRule.excluded_account_ids.includes(campaign.ad_account_id)) {
+          console.log(`[AUTO] Campanha ${campaign.name} ignorada (conta ${campaign.ad_account_id} está nas exclusões do threshold)`)
+          continue;
         }
+
+        const userId = activeRule.user_id
+        const maxCpl = activeRule.max_cpl
+        const maxBudgetPct = activeRule.max_budget_pct
+        const maxFrequency = activeRule.max_frequency
+        const minSpend = Number(activeRule.min_spend_threshold || 0)
+        const cplEnabled = activeRule.alert_cpl_enabled !== false
+        const budgetEnabled = activeRule.alert_budget_enabled !== false
+        const freqEnabled = activeRule.alert_frequency_enabled !== false
+
+        const ruleType = specificRule ? "Campanha" : (accountRule ? "Conta" : "Global")
+        const accountName = (activeRule.ad_accounts as any)?.name || campaign.ad_account_id || "Global"
 
         // Métricas de hoje da tabela metrics (tem result_type e frequency)
         const { data: metricsRows } = await supabase
@@ -176,9 +179,9 @@ serve(async (req) => {
         // Custo por resultado — indefinido quando não há resultados
         const costPerResult = conversions > 0 ? spend / conversions : null
 
-        console.log(`[AUTO] ${campaign.name} [${result.label}]: R$${spend.toFixed(2)} | ${conversions} ${result.label}(s) | ${result.metricLabel}: ${costPerResult ? `R$${costPerResult.toFixed(2)}` : 'N/A'} | Freq: ${frequency.toFixed(2)} | Budget: ${budgetUsedPct.toFixed(0)}%`)
+        console.log(`[AUTO] ${campaign.name} [${result.label}] (Regra ${ruleType}): R$${spend.toFixed(2)} | ${conversions} ${result.label}(s) | ${result.metricLabel}: ${costPerResult ? `R$${costPerResult.toFixed(2)}` : 'N/A'} | Freq: ${frequency.toFixed(2)} | Budget: ${budgetUsedPct.toFixed(0)}%`)
 
-        const targetAccId = campaign.ad_account_id || accountId || ""
+        const targetAccId = campaign.ad_account_id || activeRule.ad_account_id || ""
         const link        = `/metricas?account=${targetAccId}&campaign=${campaign.external_id}`
         const alertsToInsert: any[] = []
 
@@ -194,6 +197,7 @@ serve(async (req) => {
             metadata: {
               account_id:      targetAccId,
               campaign_id:     campaign.external_id,
+              db_campaign_id:  campaign.id,
               campaign_name:   campaign.name,
               result_type:     rawType,
               result_label:    result.label,
@@ -221,6 +225,7 @@ serve(async (req) => {
             metadata: {
               account_id:       targetAccId,
               campaign_id:      campaign.external_id,
+              db_campaign_id:   campaign.id,
               campaign_name:    campaign.name,
               result_type:      rawType,
               result_label:     result.label,
@@ -246,6 +251,7 @@ serve(async (req) => {
             metadata: {
               account_id:       targetAccId,
               campaign_id:      campaign.external_id,
+              db_campaign_id:   campaign.id,
               campaign_name:    campaign.name,
               frequency,
               max_frequency:    maxFrequency,
@@ -296,13 +302,16 @@ serve(async (req) => {
           }
         }
       }
+    }
 
-      // Regras manuais de automação (sistema legado)
+    // Regras manuais de automação legadas
+    const { data: activeAccounts } = await supabase.from("ad_accounts").select("id, name")
+    for (const acc of activeAccounts || []) {
       const { data: rules } = await supabase
         .from("automation_rules")
         .select("*")
         .eq("status", "active")
-        .eq("ad_account_id", accountId)
+        .eq("ad_account_id", acc.id)
 
       for (const rule of rules || []) {
         if (rule.is_active === false) continue;
@@ -312,7 +321,7 @@ serve(async (req) => {
           .select("cost, conversions, clicks, impressions, campaign_id")
           .eq("date", today)
           .in("campaign_id", (
-            await supabase.from("campaigns").select("id").eq("ad_account_id", accountId)
+            await supabase.from("campaigns").select("id").eq("ad_account_id", acc.id)
           ).data?.map((c: any) => c.id) || [])
 
         if (!campaignMetrics?.length) continue
@@ -340,10 +349,10 @@ serve(async (req) => {
           await supabase.from("notifications").insert({
             user_id:     rule.user_id,
             title:       `⚡ Regra: ${rule.name}`,
-            message:     `${rule.metric.toUpperCase()} atual ${valorAtual.toFixed(2)} ${rule.condition} ${rule.value}. Condição atingida na conta ${accountName}.`,
+            message:     `${rule.metric.toUpperCase()} atual ${valorAtual.toFixed(2)} ${rule.condition} ${rule.value}. Condição atingida na conta ${acc.name}.`,
             type:        "alert",
             is_critical: true,
-            link:        `/metricas?account=${accountId}`
+            link:        `/metricas?account=${acc.id}`
           })
           totalAlerts++
 

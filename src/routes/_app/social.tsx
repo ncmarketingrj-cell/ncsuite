@@ -296,8 +296,13 @@ function SocialMediaPage() {
       return;
     }
 
+    if (status === "scheduled" && !scheduledDate) {
+      toast.error("A data de agendamento é obrigatória para agendar o post.");
+      return;
+    }
+
     let isoScheduled = null;
-    if (status !== "draft" && scheduledDate) {
+    if (scheduledDate) {
       isoScheduled = new Date(`${scheduledDate}T${scheduledTime}:00`).toISOString();
     }
 
@@ -364,7 +369,11 @@ function SocialMediaPage() {
 
   // Drag and drop sensor configuration for the Feed Planner Grid
   const sensors = useSensors(
-    useSensor(PointerSensor),
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 8,
+      },
+    }),
     useSensor(KeyboardSensor, {
       coordinateGetter: sortableKeyboardCoordinates,
     })
@@ -708,7 +717,17 @@ function SocialMediaPage() {
                       strategy={rectSortingStrategy}
                     >
                       <div className="grid grid-cols-3 gap-1">
-                        {/* 1. Primeiro renderiza os posts publicados (estáticos, não arrastáveis) */}
+                        {/* 1. Primeiro renderiza os posts agendados (dinâmicos, arrastáveis, planejados no topo) */}
+                        {scheduledPosts.map((post) => (
+                          <SortableGridItem 
+                            key={post.id} 
+                            id={post.id} 
+                            post={post} 
+                            onClick={() => openEdit(post)}
+                          />
+                        ))}
+
+                        {/* 2. Em seguida renderiza os posts publicados (estáticos, não arrastáveis, abaixo no feed) */}
                         {publishedPosts.map((post) => (
                           <div 
                             key={post.id} 
@@ -724,16 +743,6 @@ function SocialMediaPage() {
                               <Check className="h-2 w-2 text-white" />
                             </div>
                           </div>
-                        ))}
-
-                        {/* 2. Em seguida renderiza os posts agendados (dinâmicos, arrastáveis) */}
-                        {scheduledPosts.map((post) => (
-                          <SortableGridItem 
-                            key={post.id} 
-                            id={post.id} 
-                            post={post} 
-                            onClick={() => openEdit(post)}
-                          />
                         ))}
 
                         {/* Fallback de grid vazia */}

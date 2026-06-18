@@ -15,10 +15,14 @@ const SOUND_PREF_KEY = "nc_alert_sound_enabled";
 export const SOUND_CHANGED_EVENT = "nc:sound-pref-changed";
 
 export function getSoundEnabled(): boolean {
-  try { return localStorage.getItem(SOUND_PREF_KEY) !== "false"; } catch { return true; }
+  try { 
+    if (typeof window === "undefined" || typeof localStorage === "undefined") return true;
+    return localStorage.getItem(SOUND_PREF_KEY) !== "false"; 
+  } catch { return true; }
 }
 
 export function setSoundEnabled(enabled: boolean): void {
+  if (typeof window === "undefined" || typeof localStorage === "undefined") return;
   try { localStorage.setItem(SOUND_PREF_KEY, enabled ? "true" : "false"); } catch {}
   window.dispatchEvent(new CustomEvent(SOUND_CHANGED_EVENT, { detail: enabled }));
 }
@@ -50,6 +54,7 @@ const DEFAULT_NOTIF_PREFS: NotifPrefs = {
 
 export function getNotifPrefs(): NotifPrefs {
   try {
+    if (typeof window === "undefined" || typeof localStorage === "undefined") return { ...DEFAULT_NOTIF_PREFS };
     const s = localStorage.getItem(NOTIF_PREFS_KEY);
     return s ? { ...DEFAULT_NOTIF_PREFS, ...JSON.parse(s) } : { ...DEFAULT_NOTIF_PREFS };
   } catch { return { ...DEFAULT_NOTIF_PREFS }; }
@@ -57,6 +62,7 @@ export function getNotifPrefs(): NotifPrefs {
 
 export function setNotifPrefs(patch: Partial<NotifPrefs>): void {
   const next = { ...getNotifPrefs(), ...patch };
+  if (typeof window === "undefined" || typeof localStorage === "undefined") return;
   try { localStorage.setItem(NOTIF_PREFS_KEY, JSON.stringify(next)); } catch {}
   window.dispatchEvent(new CustomEvent(NOTIF_PREFS_CHANGED_EVENT, { detail: next }));
 }
@@ -82,6 +88,7 @@ function isQuietHours(): boolean {
 // Dedup por localStorage — primário, síncrono, sem dependência de rede
 function isDedupBlocked(key: string): boolean {
   try {
+    if (typeof window === "undefined" || typeof localStorage === "undefined") return false;
     const cache: Record<string, string> = JSON.parse(localStorage.getItem(DEDUP_CACHE_KEY) || "{}");
     const last = cache[key];
     return !!last && (Date.now() - new Date(last).getTime()) < getDedupWindowMs();
@@ -89,6 +96,7 @@ function isDedupBlocked(key: string): boolean {
 }
 
 function markDedupFired(key: string): void {
+  if (typeof window === "undefined" || typeof localStorage === "undefined") return;
   try {
     const cache: Record<string, string> = JSON.parse(localStorage.getItem(DEDUP_CACHE_KEY) || "{}");
     const cutoff = Date.now() - 2 * getDedupWindowMs();
@@ -111,6 +119,9 @@ export type EvalStatus = {
 
 export function getEvalStatus(): EvalStatus {
   try {
+    if (typeof window === "undefined" || typeof localStorage === "undefined") {
+      return { isEvaluating: false, lastEval: null, nextEval: null, violationsFound: 0, error: null };
+    }
     const s = localStorage.getItem(EVAL_STATUS_KEY);
     return s ? JSON.parse(s) : {
       isEvaluating: false, lastEval: null, nextEval: null, violationsFound: 0, error: null,
@@ -122,6 +133,7 @@ export function getEvalStatus(): EvalStatus {
 
 function saveEvalStatus(update: Partial<EvalStatus>) {
   const next = { ...getEvalStatus(), ...update };
+  if (typeof window === "undefined" || typeof localStorage === "undefined") return;
   try { localStorage.setItem(EVAL_STATUS_KEY, JSON.stringify(next)); } catch {}
   window.dispatchEvent(new CustomEvent(EVAL_STATUS_EVENT, { detail: next }));
 }

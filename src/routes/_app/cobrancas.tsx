@@ -1,27 +1,30 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import {
   CreditCard, RefreshCw, Loader2, AlertCircle,
   CheckCircle2, Clock, TrendingUp, Wallet, Receipt,
-  ChevronDown, ChevronUp, ShieldCheck,
+  ChevronDown, ChevronUp, ShieldCheck, Coins, Play, Pause,
+  DollarSign, Activity, Sparkles, AlertTriangle
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { PageHeader } from "@/components/PageHeader";
 import { DateRangePicker } from "@/components/DateRangePicker";
-import { format, subYears, startOfDay, endOfDay } from "date-fns";
+import { toast } from "sonner";
+import { format, subDays, startOfDay, endOfDay } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { DiagnosisModal } from "@/components/victoria/DiagnosisModal";
 
 export const Route = createFileRoute("/_app/cobrancas")({
-  head: () => ({ meta: [{ title: "Cobranças — NC Suite" }] }),
+  head: () => ({ meta: [{ title: "Cobranças & Despesas — NC Suite" }] }),
   component: CobrancasPage,
 });
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
 function fmtBRL(value: number | null | undefined, currency = "BRL") {
-  if (value === null || value === undefined) return "—";
+  if (value === null || value === undefined) return "R$ 0,00";
   return new Intl.NumberFormat("pt-BR", {
     style: "currency",
     currency: currency || "BRL",
@@ -33,10 +36,8 @@ function parseDate(val: string | number | null | undefined): Date | null {
   if (val === null || val === undefined || val === "" || val === 0) return null;
   let d: Date;
   if (typeof val === "number") {
-    // Unix timestamp em segundos → converte para ms
     d = new Date(val * 1000);
   } else if (/^\d{9,11}$/.test(String(val))) {
-    // String numérica (legado)
     d = new Date(Number(val) * 1000);
   } else {
     d = new Date(val);
@@ -81,23 +82,24 @@ const FUNDING_TYPE_LABEL: Record<string, string> = {
 
 function CobrancasPage() {
   const [expandedAccount, setExpandedAccount] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<"todos" | "meta" | "google">("todos");
   const [fetching, setFetching] = useState(false);
-  const [startDate, setStartDate] = useState<Date>(() => subYears(new Date(), 3));
+  const [startDate, setStartDate] = useState<Date>(() => subDays(new Date(), 30));
   const [endDate, setEndDate] = useState<Date>(() => new Date());
+  const [selectedDiagnoseCampId, setSelectedDiagnoseCampId] = useState<string | null>(null);
+  const [selectedDiagnoseCampName, setSelectedDiagnoseCampName] = useState<string>("");
+  const [isDiagnoseOpen, setIsDiagnoseOpen] = useState(false);
 
-  // Último snapshot salvo no banco
-  const { data: snapshots = [], refetch: refetchSnapshots, isLoading } = useQuery({
+  // Deduplica e carrega snapshots de faturamento
+  const { data: snapshots = [], refetch: refetchSnapshots, isLoading: loadingSnapshots } = useQuery<any[]>({
     queryKey: ["billing_snapshots"],
     queryFn: async () => {
-      // Pega o snapshot mais recente de cada conta
       const { data, error } = await (supabase as any)
         .from("billing_snapshots")
         .select("*")
-        .order("fetched_at", { ascending: false })
-        .limit(200);
+        .order("fetched_at", { ascending: false });
       if (error) throw error;
 
-      // Deduplica: apenas o snapshot mais recente por conta
       const seen = new Set<string>();
       return (data ?? []).filter((s: any) => {
         if (seen.has(s.ad_account_id)) return false;
@@ -107,40 +109,88 @@ function CobrancasPage() {
     },
   });
 
+  // Carrega despesas das campanhas e progresso de hoje
+  const { data: campaignStats = [], isLoading: loadingStats } = useQuery<any[]>({
+    queryKey: ["campaign_billing_stats", startDate.toISOString(), endDate.toISOString()],
+    queryFn: async () => {
+      const { data: campaigns, error: campErr } = await (supabase as any)
+        .from("campaigns")
+        .select("id, name, status, daily_budget, budget_currency, ad_account_id, platform");
+      if (campErr) throw campErr;
+
+      const startStr = startOfDay(startDate).toISOString().split("T")[0];
+      const endStr = endOfDay(endDate).toISOString().split("T")[0];
+      const todayStr = new Date().toISOString().split("T")[0];
+
+      // Busca métricas agregadas por dia
+      const { data: metrics, error: metErr } = await (supabase as any)
+        .from("metrics")
+        .select("campaign_id, cost, date")
+        .gte("date", startStr)
+        .lte("date", endStr);
+      if (metErr) throw metErr;
+
+      const statsMap = new Map<string, { totalSpend: number; todaySpend: number }>();
+      (metrics || []).forEach((m: any) => {
+        const cost = Number(m.cost || 0);
+        const existing = statsMap.get(m.campaign_id) || { totalSpend: 0, todaySpend: 0 };
+        existing.totalSpend += cost;
+        if (m.date === todayStr) {
+          existing.todaySpend += cost;
+        }
+        statsMap.set(m.campaign_id, existing);
+      });
+
+      return (campaigns || []).map((c: any) => {
+        const stats = statsMap.get(c.id) || { totalSpend: 0, todaySpend: 0 };
+        return {
+          ...c,
+          totalSpend: stats.totalSpend,
+          todaySpend: stats.todaySpend
+        };
+      });
+    }
+  });
+
   const lastFetch = snapshots.length > 0
     ? snapshots.reduce((a: any, b: any) =>
         new Date(a.fetched_at) > new Date(b.fetched_at) ? a : b
       ).fetched_at
     : null;
 
-  // Busca dados frescos da API Meta
+  // Atualiza dados na API Meta
   const handleFetch = async () => {
     setFetching(true);
     try {
-      const { data: sessionData } = await supabase.auth.getSession();
-      const token = sessionData?.session?.access_token;
-      if (!token) throw new Error("Sessão expirada.");
-
-      const { data, error } = await supabase.functions.invoke("get-meta-billing", {
-        body: {},
-      });
+      const { error } = await supabase.functions.invoke("get-meta-billing");
       if (error) throw error;
-      if (data?.error) throw new Error(data.error);
-
       await refetchSnapshots();
+      toast.success("Dados de cobrança sincronizados!");
     } catch (err: any) {
-      alert(err.message ?? "Erro ao buscar dados de cobrança.");
+      toast.error(err.message ?? "Erro ao buscar dados de cobrança.");
     } finally {
       setFetching(false);
     }
   };
 
+  // Filtragem
+  const filteredSnapshots = snapshots.filter((snap: any) => {
+    if (activeTab === "meta") return snap.ad_account_id.startsWith("act_") || !snap.ad_account_id.includes("-");
+    if (activeTab === "google") return snap.ad_account_id.includes("-");
+    return true;
+  });
+
+  // Métricas Consolidadas Gerais
+  const totalSpentToday = campaignStats.reduce((sum, c) => sum + c.todaySpend, 0);
+  const totalSpentPeriod = campaignStats.reduce((sum, c) => sum + c.totalSpend, 0);
+  const activeCampaignsCount = campaignStats.filter(c => ["active", "ACTIVE"].includes(c.status)).length;
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       <PageHeader
-        eyebrow="Meta Ads · Cobrança"
-        title="Cobranças & Pagamentos"
-        description="Saldo, forma de pagamento e histórico de transações das contas de anúncios."
+        eyebrow="Finanças e Performance"
+        title="Cobranças & Investimentos"
+        description="Acompanhe o consumo diário de orçamento e os gastos das campanhas em tempo real."
         actions={
           <div className="flex items-center gap-2 flex-wrap justify-end">
             <DateRangePicker
@@ -151,285 +201,367 @@ function CobrancasPage() {
             <button
               onClick={handleFetch}
               disabled={fetching}
-              className="inline-flex items-center gap-2 rounded-full bg-primary px-4 py-2.5 text-xs font-bold text-primary-foreground hover:bg-primary/90 transition disabled:opacity-60"
+              className="inline-flex items-center gap-2 rounded-full bg-primary px-4 py-2.5 text-xs font-bold text-primary-foreground hover:shadow-glow transition disabled:opacity-60 cursor-pointer"
             >
               <RefreshCw className={`h-3.5 w-3.5 ${fetching ? "animate-spin" : ""}`} />
-              {fetching ? "Buscando..." : "Atualizar Dados"}
+              {fetching ? "Sincronizando..." : "Sincronizar"}
             </button>
           </div>
         }
       />
 
       {lastFetch && (
-        <p className="text-[10px] text-muted-foreground font-mono -mt-4">
-          Última atualização: {fmtDate(lastFetch)}
+        <p className="text-[10px] text-muted-foreground font-mono -mt-6">
+          Última atualização de faturamento: {fmtDate(lastFetch)} (Sincronização global automática a cada 3 minutos)
         </p>
       )}
 
-      {/* Estado vazio */}
-      {!isLoading && snapshots.length === 0 && (
-        <motion.div
-          initial={{ opacity: 0, y: 12 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="flex flex-col items-center gap-4 py-20 text-center"
-        >
-          <div className="h-16 w-16 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center">
-            <Receipt className="h-7 w-7 text-primary/60" />
+      {/* Cards de Resumo Geral */}
+      <div className="grid gap-4 sm:grid-cols-3">
+        <div className="glass-panel p-5 space-y-2 relative overflow-hidden group">
+          <div className="absolute top-0 right-0 p-3 opacity-5 group-hover:scale-110 transition-transform">
+            <DollarSign className="h-16 w-16 text-primary" />
           </div>
-          <div className="space-y-1">
-            <p className="text-sm font-bold">Nenhum dado de cobrança ainda</p>
-            <p className="text-xs text-muted-foreground max-w-sm">
-              Clique em "Atualizar Dados" para buscar as informações de cobrança das contas Meta Ads conectadas.
-            </p>
+          <div className="flex items-center gap-2 text-muted-foreground">
+            <Activity className="h-4 w-4 text-emerald-400" />
+            <span className="text-[10px] font-black uppercase tracking-wider">Investido Hoje</span>
           </div>
-          <button
-            onClick={handleFetch}
-            disabled={fetching}
-            className="inline-flex items-center gap-2 rounded-full bg-primary px-5 py-2.5 text-sm font-bold text-primary-foreground hover:bg-primary/90 transition"
-          >
-            <RefreshCw className={`h-4 w-4 ${fetching ? "animate-spin" : ""}`} />
-            {fetching ? "Buscando..." : "Buscar Agora"}
-          </button>
-        </motion.div>
-      )}
+          <p className="text-2xl font-black text-gradient">{fmtBRL(totalSpentToday)}</p>
+          <p className="text-[10px] text-muted-foreground">soma de todas as campanhas ativas</p>
+        </div>
 
-      {/* Loading */}
-      {isLoading && (
+        <div className="glass-panel p-5 space-y-2 relative overflow-hidden group">
+          <div className="absolute top-0 right-0 p-3 opacity-5 group-hover:scale-110 transition-transform">
+            <TrendingUp className="h-16 w-16 text-primary" />
+          </div>
+          <div className="flex items-center gap-2 text-muted-foreground">
+            <Coins className="h-4 w-4 text-primary" />
+            <span className="text-[10px] font-black uppercase tracking-wider">Investido no Período</span>
+          </div>
+          <p className="text-2xl font-black text-white">{fmtBRL(totalSpentPeriod)}</p>
+          <p className="text-[10px] text-muted-foreground">acumulado de {format(startDate, "dd/MM")} a {format(endDate, "dd/MM")}</p>
+        </div>
+
+        <div className="glass-panel p-5 space-y-2 relative overflow-hidden group">
+          <div className="absolute top-0 right-0 p-3 opacity-5 group-hover:scale-110 transition-transform">
+            <Play className="h-16 w-16 text-primary" />
+          </div>
+          <div className="flex items-center gap-2 text-muted-foreground">
+            <Sparkles className="h-4 w-4 text-amber-400" />
+            <span className="text-[10px] font-black uppercase tracking-wider">Campanhas Ativas</span>
+          </div>
+          <p className="text-2xl font-black text-white">{activeCampaignsCount} ativas</p>
+          <p className="text-[10px] text-muted-foreground">gerando tráfego e leads agora</p>
+        </div>
+      </div>
+
+      {/* Tabs por canal */}
+      <div className="flex gap-2 border-b border-white/5 pb-2">
+        <button
+          onClick={() => setActiveTab("todos")}
+          className={`px-4 py-2 rounded-full text-xs font-bold transition ${activeTab === "todos" ? "bg-white/10 text-white" : "text-muted-foreground hover:bg-white/[0.03]"}`}
+        >
+          Todas as Contas
+        </button>
+        <button
+          onClick={() => setActiveTab("meta")}
+          className={`px-4 py-2 rounded-full text-xs font-bold transition ${activeTab === "meta" ? "bg-[#1877F2]/10 text-[#1877F2] border border-[#1877F2]/20" : "text-muted-foreground hover:bg-white/[0.03]"}`}
+        >
+          Meta Ads
+        </button>
+        <button
+          onClick={() => setActiveTab("google")}
+          className={`px-4 py-2 rounded-full text-xs font-bold transition ${activeTab === "google" ? "bg-[#4285F4]/10 text-[#4285F4] border border-[#4285F4]/20" : "text-muted-foreground hover:bg-white/[0.03]"}`}
+        >
+          Google Ads
+        </button>
+      </div>
+
+      {/* Loader */}
+      {(loadingSnapshots || loadingStats) && (
         <div className="flex justify-center py-20">
-          <Loader2 className="h-6 w-6 animate-spin text-primary" />
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
         </div>
       )}
 
-      {/* Cards de contas */}
-      {!isLoading && snapshots.length > 0 && (
-        <div className="space-y-4">
-          {snapshots.map((snap: any, i: number) => {
+      {/* Estado Vazio */}
+      {!loadingSnapshots && filteredSnapshots.length === 0 && (
+        <div className="text-center py-16 border border-dashed border-white/5 rounded-2xl">
+          <AlertCircle className="h-10 w-10 mx-auto text-muted-foreground/30 mb-3" />
+          <p className="text-sm font-bold">Nenhum snapshot de cobrança localizado.</p>
+          <p className="text-xs text-muted-foreground mt-1">Conecte contas de anúncios nas configurações para ver despesas.</p>
+        </div>
+      )}
+
+      {/* Lista de Contas */}
+      {!loadingSnapshots && !loadingStats && filteredSnapshots.length > 0 && (
+        <div className="space-y-6">
+          {filteredSnapshots.map((snap: any, idx: number) => {
             const isExpanded = expandedAccount === snap.ad_account_id;
             const funding = snap.funding_source;
             const allTxs: any[] = snap.transactions ?? [];
             const rangeStart = startOfDay(startDate);
             const rangeEnd = endOfDay(endDate);
+
+            // Transações filtradas
             const txs = allTxs.filter((tx: any) => {
               const d = parseDate(tx.created_at);
-              if (!d) return false; // sem data → não exibe (não polui o filtro)
+              if (!d) return false;
               return d >= rangeStart && d <= rangeEnd;
             });
             const txsNoDate = allTxs.filter((tx: any) => !parseDate(tx.created_at));
-            const lastTx = allTxs[0] ?? null;
-            const statusCfg = lastTx ? (STATUS_CONFIG[lastTx.status] ?? STATUS_CONFIG.PENDING) : null;
+
+            // Campanhas vinculadas a esta conta de anúncios
+            const accountCampaigns = campaignStats.filter(c => c.ad_account_id === snap.ad_account_id);
+            const totalAccountSpentToday = accountCampaigns.reduce((sum, c) => sum + c.todaySpend, 0);
 
             return (
               <motion.div
                 key={snap.ad_account_id}
-                initial={{ opacity: 0, y: 10 }}
+                initial={{ opacity: 0, y: 12 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: i * 0.04 }}
-                className="rounded-2xl border border-white/5 bg-background/40 overflow-hidden"
+                transition={{ delay: idx * 0.04 }}
+                className="glass-panel overflow-hidden border border-white/5 hover:border-white/10 transition"
               >
-                {/* Header do card */}
-                <div className="p-4 sm:p-5">
-                  <div className="flex items-start justify-between gap-3 flex-wrap">
-                    {/* Info da conta */}
-                    <div className="flex items-center gap-3 min-w-0">
-                      <div className="h-10 w-10 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center shrink-0">
-                        <CreditCard className="h-5 w-5 text-primary" />
+                {/* Cabeçalho do Card da Conta */}
+                <div className="p-5 space-y-4">
+                  <div className="flex items-start justify-between gap-4 flex-wrap">
+                    <div className="flex items-center gap-3">
+                      <div className={`h-10 w-10 rounded-xl flex items-center justify-center border ${
+                        snap.ad_account_id.includes("-") 
+                          ? "bg-[#4285F4]/10 border-[#4285F4]/20 text-[#4285F4]" 
+                          : "bg-[#1877F2]/10 border-[#1877F2]/20 text-[#1877F2]"
+                      }`}>
+                        <CreditCard className="h-5 w-5" />
                       </div>
-                      <div className="min-w-0">
-                        <p className="text-sm font-bold truncate">{snap.ad_account_name || snap.ad_account_id}</p>
-                        <p className="text-[10px] text-muted-foreground/60 font-mono mt-0.5">{snap.ad_account_id}</p>
+                      <div>
+                        <h4 className="text-sm font-bold text-white">{snap.ad_account_name || snap.ad_account_id}</h4>
+                        <span className="text-[9px] font-mono text-muted-foreground uppercase bg-white/5 px-2 py-0.5 rounded mt-1 inline-block">
+                          ID: {snap.ad_account_id}
+                        </span>
                       </div>
                     </div>
 
-                    {/* Status do último pagamento */}
-                    {statusCfg && lastTx && (
-                      <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider shrink-0 ${statusCfg.color}`}>
-                        <statusCfg.icon className="h-3 w-3" />
-                        {statusCfg.label}
+                    <div className="text-right">
+                      <span className="text-[10px] text-muted-foreground uppercase block font-bold tracking-wider">Consumido Hoje</span>
+                      <p className="text-base font-black text-gradient">{fmtBRL(totalAccountSpentToday, snap.currency)}</p>
+                    </div>
+                  </div>
+
+                  {/* KPIs Internos */}
+                  <div className="grid gap-3 grid-cols-2 sm:grid-cols-4 pt-2">
+                    <div className="bg-white/[0.02] border border-white/5 rounded-xl p-3">
+                      <span className="text-[9px] font-black text-muted-foreground/60 uppercase block">Gasto Total Acumulado</span>
+                      <p className="text-sm font-bold text-white mt-1">{fmtBRL(snap.amount_spent, snap.currency)}</p>
+                    </div>
+
+                    <div className="bg-white/[0.02] border border-white/5 rounded-xl p-3">
+                      <span className="text-[9px] font-black text-muted-foreground/60 uppercase block">
+                        {snap.balance !== null ? "Saldo Pré-Pago" : "Não Faturado (Ciclo)"}
                       </span>
+                      <p className="text-sm font-bold text-white mt-1">
+                        {snap.balance !== null 
+                          ? fmtBRL(snap.balance, snap.currency) 
+                          : snap.bill_immature !== null 
+                            ? fmtBRL(snap.bill_immature, snap.currency) 
+                            : "—"}
+                      </p>
+                    </div>
+
+                    <div className="bg-white/[0.02] border border-white/5 rounded-xl p-3">
+                      <span className="text-[9px] font-black text-muted-foreground/60 uppercase block">Limite de Faturamento</span>
+                      <p className="text-sm font-bold text-white mt-1">{fmtBRL(snap.spend_cap, snap.currency)}</p>
+                    </div>
+
+                    <div className="bg-white/[0.02] border border-white/5 rounded-xl p-3">
+                      <span className="text-[9px] font-black text-muted-foreground/60 uppercase block">Forma de Pagamento</span>
+                      <p className="text-xs font-bold text-white truncate mt-1">
+                        {funding ? `${FUNDING_TYPE_LABEL[funding.type] || funding.type} (${funding.display_string || ""})` : "Não cadastrado"}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Campanhas Ativas da Conta com Progresso de Orçamento em Tempo Real */}
+                  <div className="pt-2">
+                    <h5 className="text-[10px] font-black uppercase text-muted-foreground/70 tracking-wider mb-3 flex items-center gap-1.5">
+                      <Activity className="h-3 w-3 text-primary animate-pulse" /> Campanhas vinculadas e gastos de hoje
+                    </h5>
+
+                    {accountCampaigns.length === 0 ? (
+                      <p className="text-xs text-muted-foreground/40 py-2">Nenhuma campanha registrada para esta conta.</p>
+                    ) : (
+                      <div className="space-y-3">
+                        {accountCampaigns.map((c) => {
+                          const isCampActive = ["active", "ACTIVE"].includes(c.status);
+                          const budget = c.daily_budget || 0;
+                          const pctUsed = budget > 0 ? (c.todaySpend / budget) * 100 : 0;
+
+                          return (
+                            <div key={c.id} className="bg-white/[0.01] border border-white/5 p-3 rounded-xl space-y-2">
+                              <div className="flex items-center justify-between gap-3 text-xs">
+                                <div className="flex items-center gap-2 min-w-0">
+                                  {isCampActive ? (
+                                    <span className="h-2 w-2 rounded-full bg-success shrink-0" />
+                                  ) : (
+                                    <span className="h-2 w-2 rounded-full bg-white/20 shrink-0" />
+                                  )}
+                                  <span className="font-semibold text-white truncate">{c.name}</span>
+                                </div>
+                                <div className="flex items-center gap-3 shrink-0">
+                                  <span className="text-muted-foreground font-mono">
+                                    {fmtBRL(c.todaySpend, snap.currency)} / {budget > 0 ? fmtBRL(budget, snap.currency) : "Sem limite"}
+                                  </span>
+                                  {pctUsed >= 100 && (
+                                    <div className="flex items-center gap-1.5 shrink-0">
+                                      <span className="inline-flex items-center gap-0.5 text-[9px] font-bold text-destructive bg-destructive/10 border border-destructive/20 px-1.5 py-0.5 rounded-full">
+                                        <AlertTriangle className="h-2.5 w-2.5" /> Estourado
+                                      </span>
+                                      <button
+                                        onClick={() => {
+                                          setSelectedDiagnoseCampId(c.id);
+                                          setSelectedDiagnoseCampName(c.name);
+                                          setIsDiagnoseOpen(true);
+                                        }}
+                                        className="inline-flex items-center gap-1 text-[9px] font-bold text-primary bg-primary/10 border border-primary/20 px-2 py-0.5 rounded-full hover:bg-primary/20 transition cursor-pointer"
+                                      >
+                                        <Sparkles className="h-2.5 w-2.5" /> Diagnóstico
+                                      </button>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+
+                              {budget > 0 && (
+                                <div className="space-y-1">
+                                  <div className="w-full h-1.5 bg-white/5 rounded-full overflow-hidden">
+                                    <div 
+                                      className={`h-full rounded-full transition-all duration-500 ${
+                                        pctUsed >= 100 ? "bg-destructive shadow-glow-sm" :
+                                        pctUsed >= 85 ? "bg-amber-400" :
+                                        "bg-primary"
+                                      }`}
+                                      style={{ width: `${Math.min(100, pctUsed)}%` }}
+                                    />
+                                  </div>
+                                  <div className="flex justify-between items-center text-[9px] text-muted-foreground/60">
+                                    <span>Consumo de hoje</span>
+                                    <span>{pctUsed.toFixed(0)}%</span>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
                     )}
                   </div>
 
-                  {/* KPI row */}
-                  <div className="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-3">
-                    {/* Gasto total */}
-                    <div className="rounded-xl bg-white/[0.03] border border-white/5 p-3">
-                      <div className="flex items-center gap-1.5 mb-1">
-                        <TrendingUp className="h-3 w-3 text-muted-foreground/50" />
-                        <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/50">Gasto Total</span>
-                      </div>
-                      <p className="text-base font-black text-foreground leading-none">
-                        {fmtBRL(snap.amount_spent, snap.currency)}
-                      </p>
-                      <p className="text-[9px] text-muted-foreground/50 mt-0.5">lifetime acumulado</p>
-                    </div>
-
-                    {/* Saldo / não faturado */}
-                    <div className="rounded-xl bg-white/[0.03] border border-white/5 p-3">
-                      <div className="flex items-center gap-1.5 mb-1">
-                        <Wallet className="h-3 w-3 text-muted-foreground/50" />
-                        <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/50">
-                          {snap.balance !== null ? "Saldo" : "Não Faturado"}
-                        </span>
-                      </div>
-                      <p className="text-base font-black text-foreground leading-none">
-                        {snap.balance !== null
-                          ? fmtBRL(snap.balance, snap.currency)
-                          : snap.bill_immature !== null
-                            ? fmtBRL(snap.bill_immature, snap.currency)
-                            : "—"}
-                      </p>
-                      <p className="text-[9px] text-muted-foreground/50 mt-0.5">
-                        {snap.balance !== null ? "conta pré-paga" : "ciclo atual"}
-                      </p>
-                    </div>
-
-                    {/* Limite de gasto */}
-                    <div className="rounded-xl bg-white/[0.03] border border-white/5 p-3">
-                      <div className="flex items-center gap-1.5 mb-1">
-                        <ShieldCheck className="h-3 w-3 text-muted-foreground/50" />
-                        <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/50">Limite Gasto</span>
-                      </div>
-                      <p className="text-base font-black text-foreground leading-none">
-                        {fmtBRL(snap.spend_cap, snap.currency)}
-                      </p>
-                      <p className="text-[9px] text-muted-foreground/50 mt-0.5">spend cap</p>
-                    </div>
-
-                    {/* Forma de pagamento */}
-                    <div className="rounded-xl bg-white/[0.03] border border-white/5 p-3">
-                      <div className="flex items-center gap-1.5 mb-1">
-                        <CreditCard className="h-3 w-3 text-muted-foreground/50" />
-                        <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/50">Pagamento</span>
-                      </div>
-                      {funding ? (
-                        <>
-                          <p className="text-[11px] font-bold text-foreground leading-none">
-                            {FUNDING_TYPE_LABEL[funding.type] ?? funding.type ?? "—"}
-                          </p>
-                          {funding.display_string && (
-                            <p className="text-[9px] text-muted-foreground/60 font-mono mt-0.5">{funding.display_string}</p>
-                          )}
-                        </>
-                      ) : (
-                        <p className="text-[11px] font-bold text-muted-foreground/40">Não informado</p>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Toggle transações */}
+                  {/* Toggle Transações de Faturamento */}
                   {allTxs.length > 0 && (
                     <button
                       onClick={() => setExpandedAccount(isExpanded ? null : snap.ad_account_id)}
-                      className="mt-4 w-full flex items-center justify-between rounded-xl border border-white/5 bg-white/[0.02] hover:bg-white/[0.04] px-4 py-2.5 text-xs font-bold text-muted-foreground transition-all"
+                      className="w-full flex items-center justify-between rounded-xl border border-white/5 bg-white/[0.02] hover:bg-white/[0.04] px-4 py-2.5 text-xs font-bold text-muted-foreground transition-all cursor-pointer"
                     >
-                      <span className="flex items-center gap-2 flex-wrap">
-                        <Receipt className="h-3.5 w-3.5" />
-                        {txs.length} transaç{txs.length === 1 ? "ão" : "ões"} no período
-                        {txs.length < allTxs.length && (
-                          <span className="text-[9px] font-normal opacity-50">
-                            de {allTxs.length} no total
-                          </span>
-                        )}
+                      <span className="flex items-center gap-2">
+                        <Receipt className="h-4 w-4" />
+                        Histórico de Faturas ({txs.length} no período)
                       </span>
-                      {isExpanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+                      {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
                     </button>
                   )}
                 </div>
 
-                {/* Tabela de transações */}
-                {isExpanded && (txs.length > 0 || txsNoDate.length > 0) && (
-                  <motion.div
-                    initial={{ height: 0, opacity: 0 }}
-                    animate={{ height: "auto", opacity: 1 }}
-                    exit={{ height: 0, opacity: 0 }}
-                    transition={{ duration: 0.2 }}
-                    className="border-t border-white/5 overflow-hidden"
-                  >
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-xs">
-                        <thead>
-                          <tr className="border-b border-white/5 bg-white/[0.02]">
-                            <th className="px-4 py-2.5 text-left text-[9px] font-black uppercase tracking-widest text-muted-foreground/50">Data</th>
-                            <th className="px-4 py-2.5 text-left text-[9px] font-black uppercase tracking-widest text-muted-foreground/50">Motivo</th>
-                            <th className="px-4 py-2.5 text-right text-[9px] font-black uppercase tracking-widest text-muted-foreground/50">Valor</th>
-                            <th className="px-4 py-2.5 text-center text-[9px] font-black uppercase tracking-widest text-muted-foreground/50">Status</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {txs.map((tx: any) => {
-                            const cfg = STATUS_CONFIG[tx.status] ?? STATUS_CONFIG.PENDING;
-                            return (
-                              <tr key={tx.id} className="border-b border-white/[0.03] hover:bg-white/[0.02] transition-colors">
-                                <td className="px-4 py-3 text-muted-foreground font-mono text-[10px] whitespace-nowrap">
-                                  {fmtDate(tx.created_at)}
-                                </td>
-                                <td className="px-4 py-3 text-foreground">
-                                  {BILLING_REASON_LABEL[tx.billing_reason] ?? tx.billing_reason ?? "—"}
-                                </td>
-                                <td className="px-4 py-3 text-right font-bold text-foreground whitespace-nowrap">
-                                  {fmtBRL(tx.amount, tx.currency ?? snap.currency)}
-                                </td>
-                                <td className="px-4 py-3 text-center">
-                                  <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider ${cfg.color}`}>
-                                    <cfg.icon className="h-2.5 w-2.5" />
-                                    {cfg.label}
-                                  </span>
-                                </td>
-                              </tr>
-                            );
-                          })}
-                          {/* Transações sem data — sempre exibidas abaixo */}
-                          {txsNoDate.map((tx: any) => {
-                            const cfg = STATUS_CONFIG[tx.status] ?? STATUS_CONFIG.PENDING;
-                            return (
-                              <tr key={tx.id} className="border-b border-white/[0.03] hover:bg-white/[0.02] opacity-50 transition-colors">
-                                <td className="px-4 py-3 text-muted-foreground/40 font-mono text-[10px] whitespace-nowrap italic">
-                                  sem data
-                                </td>
-                                <td className="px-4 py-3 text-foreground/60">
-                                  {BILLING_REASON_LABEL[tx.billing_reason] ?? tx.billing_reason ?? "—"}
-                                </td>
-                                <td className="px-4 py-3 text-right font-bold text-foreground/60 whitespace-nowrap">
-                                  {fmtBRL(tx.amount, tx.currency ?? snap.currency)}
-                                </td>
-                                <td className="px-4 py-3 text-center">
-                                  <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider ${cfg.color}`}>
-                                    <cfg.icon className="h-2.5 w-2.5" />
-                                    {cfg.label}
-                                  </span>
-                                </td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
-                  </motion.div>
-                )}
-
-                {/* Sem transações no período */}
-                {isExpanded && txs.length === 0 && txsNoDate.length === 0 && (
-                  <div className="border-t border-white/5 px-4 py-6 text-center">
-                    <p className="text-xs text-muted-foreground/50">
-                      {allTxs.length > 0
-                        ? "Nenhuma transação no período selecionado. Ajuste o filtro de datas."
-                        : "Nenhuma transação encontrada para esta conta."}
-                    </p>
-                  </div>
-                )}
+                {/* Bloco Expandido: Transações */}
+                <AnimatePresence>
+                  {isExpanded && (
+                    <motion.div
+                      initial={{ height: 0, opacity: 0 }}
+                      animate={{ height: "auto", opacity: 1 }}
+                      exit={{ height: 0, opacity: 0 }}
+                      className="border-t border-white/5 overflow-hidden bg-black/20"
+                    >
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-xs">
+                          <thead>
+                            <tr className="border-b border-white/5 bg-white/[0.01]">
+                              <th className="px-5 py-3 text-left text-[9px] font-black uppercase tracking-wider text-muted-foreground/60">Data</th>
+                              <th className="px-5 py-3 text-left text-[9px] font-black uppercase tracking-wider text-muted-foreground/60">Motivo de Faturamento</th>
+                              <th className="px-5 py-3 text-right text-[9px] font-black uppercase tracking-wider text-muted-foreground/60">Valor Faturado</th>
+                              <th className="px-5 py-3 text-center text-[9px] font-black uppercase tracking-wider text-muted-foreground/60">Status</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {txs.map((tx: any) => {
+                              const cfg = STATUS_CONFIG[tx.status] ?? STATUS_CONFIG.PENDING;
+                              return (
+                                <tr key={tx.id} className="border-b border-white/[0.02] hover:bg-white/[0.01] transition">
+                                  <td className="px-5 py-3 text-muted-foreground font-mono text-[10px] whitespace-nowrap">
+                                    {fmtDate(tx.created_at)}
+                                  </td>
+                                  <td className="px-5 py-3 text-white">
+                                    {BILLING_REASON_LABEL[tx.billing_reason] ?? tx.billing_reason ?? "—"}
+                                  </td>
+                                  <td className="px-5 py-3 text-right font-bold text-white font-mono">
+                                    {fmtBRL(tx.amount, tx.currency ?? snap.currency)}
+                                  </td>
+                                  <td className="px-5 py-3 text-center">
+                                    <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[9px] font-bold uppercase ${cfg.color}`}>
+                                      <cfg.icon className="h-2.5 w-2.5" />
+                                      {cfg.label}
+                                    </span>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                            {txsNoDate.map((tx: any) => {
+                              const cfg = STATUS_CONFIG[tx.status] ?? STATUS_CONFIG.PENDING;
+                              return (
+                                <tr key={tx.id} className="border-b border-white/[0.02] hover:bg-white/[0.01] opacity-65 transition">
+                                  <td className="px-5 py-3 text-muted-foreground/50 font-mono text-[10px] italic">
+                                    sem data registrada
+                                  </td>
+                                  <td className="px-5 py-3 text-white/70">
+                                    {BILLING_REASON_LABEL[tx.billing_reason] ?? tx.billing_reason ?? "—"}
+                                  </td>
+                                  <td className="px-5 py-3 text-right font-bold text-white/70 font-mono">
+                                    {fmtBRL(tx.amount, tx.currency ?? snap.currency)}
+                                  </td>
+                                  <td className="px-5 py-3 text-center">
+                                    <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[9px] font-bold uppercase ${cfg.color}`}>
+                                      <cfg.icon className="h-2.5 w-2.5" />
+                                      {cfg.label}
+                                    </span>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
               </motion.div>
             );
           })}
         </div>
       )}
 
-      {/* Aviso */}
+      {/* Informação Legal */}
       <div className="rounded-xl border border-white/5 bg-white/[0.02] p-4 flex items-start gap-3">
         <AlertCircle className="h-4 w-4 text-muted-foreground/40 shrink-0 mt-0.5" />
         <p className="text-[11px] text-muted-foreground/50 leading-relaxed">
-          Os dados de cobrança são fornecidos diretamente pela API do Meta Ads. O saldo disponível aparece apenas em contas pré-pagas. Para contas pós-pagas (cartão de crédito), o campo "Não Faturado" mostra os gastos do ciclo atual ainda não cobrados.
+          Os dados de faturamento e consumo diário das campanhas são coletados em tempo real diretamente das APIs de anúncios (Meta e Google Ads). Para as contas pós-pagas, o valor "Não Faturado" indica as despesas acumuladas desde a última cobrança.
         </p>
       </div>
+
+      {/* Diagnosis Modal */}
+      <DiagnosisModal
+        isOpen={isDiagnoseOpen}
+        onClose={() => setIsDiagnoseOpen(false)}
+        campaignId={selectedDiagnoseCampId}
+        campaignName={selectedDiagnoseCampName}
+      />
     </div>
   );
 }

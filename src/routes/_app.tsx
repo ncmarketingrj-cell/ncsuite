@@ -7,7 +7,7 @@ import {
   Bell, User, Bot, Sparkles, Activity, Zap,
   Sun, Moon, Menu, X, BarChart3, LineChart, Palette, Link2,
   ChevronDown, RefreshCw, Users, Store,
-  Volume2, VolumeX, LogOut, CreditCard, Share2, ArrowRight, GitBranch
+  Volume2, VolumeX, LogOut, CreditCard, Share2, ArrowRight, GitBranch, Brain
 } from "lucide-react";
 import { AuthProvider, useAuth } from "@/lib/auth";
 import { supabase } from "@/integrations/supabase/client";
@@ -98,7 +98,8 @@ const GESTAO_NAV_ITEMS: NavItem[] = [
 
 const FUNIL_NAV_ITEMS: NavItem[] = [
   { to: "/funis", icon: GitBranch, label: "Meus Funis" },
-  { to: "/funnel-builder", icon: LayoutDashboard, label: "Mapa Mental" },
+  { to: "/funnel-builder", icon: LayoutDashboard, label: "Funil Builder" },
+  { to: "/strategy-map", icon: Brain, label: "Strategy Map" },
   { to: "/link-bio", icon: Link2, label: "Link Bio" },
   { to: "/formulario", icon: FileText, label: "Formulário" },
   { to: "/quiz", icon: BarChart3, label: "Quiz" },
@@ -487,7 +488,7 @@ function Shell() {
           
           {/* LEFT: Logo & Module Switcher */}
           <div className="flex items-center gap-3 shrink-0">
-            <Link to="/hub" className="flex items-center gap-2 group">
+            <Link to={"/hub" as any} className="flex items-center gap-2 group">
               <div className="relative h-8 w-8 rounded-xl bg-primary flex items-center justify-center overflow-hidden shadow-glow-sm transition-all duration-300 group-hover:shadow-glow">
                 <div className="absolute inset-x-0 top-0 h-[3px] bg-white/28 rounded-t-xl pointer-events-none" />
                 <span className="font-display font-black text-white text-xs relative z-10 tracking-normal">NC</span>

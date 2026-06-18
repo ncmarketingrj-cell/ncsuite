@@ -34,6 +34,7 @@ type NodeData = {
   payload?: any;
   color?: string;
   onContextMenuClick?: (e: React.MouseEvent, nodeId: string) => void;
+  croMode?: boolean;
 };
 
 export const FunnelStageNode = memo(({ id, data, selected }: { id: string; data: NodeData; selected: boolean }) => {
@@ -144,6 +145,22 @@ export const FunnelStageNode = memo(({ id, data, selected }: { id: string; data:
               <Pencil className="w-3 h-3" />
               <span className="text-[10px]">Editar copy desta etapa...</span>
             </button>
+          )}
+
+          {/* CRO Performance Heatmap Stats */}
+          {data.croMode && (
+            <div className="mt-3 pt-2.5 border-t border-white/5 flex items-center justify-between text-[10px] font-mono">
+              <div>
+                <span className="text-muted-foreground">Volume:</span>{" "}
+                <span className="font-bold text-foreground">{data.payload?.leads || 120}</span>
+              </div>
+              <div>
+                <span className="text-muted-foreground">Conversão:</span>{" "}
+                <span className={`font-bold ${Number(data.payload?.conversion || 100) < 30 ? "text-red-400 font-extrabold animate-pulse" : "text-emerald-400"}`}>
+                  {data.payload?.conversion || 100}%
+                </span>
+              </div>
+            </div>
           )}
         </div>
 

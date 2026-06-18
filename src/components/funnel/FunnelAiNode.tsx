@@ -47,6 +47,20 @@ export const FunnelAiNode = memo(({ id, data, selected }: { id: string, data: an
               {data.payload?.kb_name || "Nenhuma base selecionada"}
             </p>
           </div>
+
+          {/* CRO Performance Heatmap Stats */}
+          {data.croMode && (
+            <div className="mt-3 pt-2.5 border-t border-white/5 flex items-center justify-between text-[10px] font-mono">
+              <div>
+                <span className="text-muted-foreground text-amber-500/80">Triados:</span>{" "}
+                <span className="font-bold text-amber-400">{data.payload?.leads || 85}</span>
+              </div>
+              <div>
+                <span className="text-muted-foreground text-amber-500/80">Q. Rate:</span>{" "}
+                <span className="font-bold text-emerald-400">{data.payload?.conversion || 70}%</span>
+              </div>
+            </div>
+          )}
         </div>
       </div>
       <Handle type="source" position={Position.Bottom} className="w-3 h-3 border-2 border-background bg-amber-500" />

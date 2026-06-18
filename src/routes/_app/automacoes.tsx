@@ -5,13 +5,14 @@ import {
   Zap, Loader2, Play, Pause, Clock, History, AlertTriangle,
   ShieldAlert, Plus, X, Server, CheckCircle2, RefreshCw,
   Bell, TrendingUp, DollarSign, AlertCircle, Timer, Pencil, Radio,
-  Settings2, Volume2, VolumeX, BellOff, BellRing, Moon, RotateCcw, Lock
+  Settings2, Volume2, VolumeX, BellOff, BellRing, Moon, RotateCcw, Lock, Sparkles
 } from "lucide-react";
 import { PageHeader } from "@/components/PageHeader";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import { toast } from "sonner";
+import { DiagnosisModal } from "@/components/victoria/DiagnosisModal";
 import { getSyncStatus, useAutoSync } from "@/hooks/useAutoSync";
 import {
   triggerEvaluation, getEvalStatus, EVAL_STATUS_EVENT, type EvalStatus,
@@ -69,6 +70,9 @@ function AutomationsPage() {
   // ── Preferências de notificação (localStorage) ───────────────────────────────
   const [soundOn, setSoundOn]     = useState(getSoundEnabled);
   const [prefs, setPrefsState]    = useState<NotifPrefs>(getNotifPrefs);
+  const [selectedDiagnoseCampId, setSelectedDiagnoseCampId] = useState<string | null>(null);
+  const [selectedDiagnoseCampName, setSelectedDiagnoseCampName] = useState<string>("");
+  const [isDiagnoseOpen, setIsDiagnoseOpen] = useState(false);
 
   useEffect(() => {
     const onSound = (e: Event) => setSoundOn((e as CustomEvent).detail);
@@ -105,7 +109,7 @@ function AutomationsPage() {
     queryFn: async () => {
       const { data } = await (supabase as any)
         .from("alert_thresholds")
-        .select("*, ad_accounts(name)")
+        .select("*, ad_accounts(name), campaigns(name)")
         .order("created_at", { ascending: false });
       return (data as any[]) || [];
     },
@@ -365,6 +369,20 @@ function AutomationsPage() {
                         <p className="text-[10px] text-muted-foreground/50 font-mono mt-1">
                           {formatDistanceToNow(new Date(v.created_at), { addSuffix: true, locale: ptBR })}
                         </p>
+                        {v.metadata?.db_campaign_id && (
+                          <div className="mt-2">
+                            <button
+                              onClick={() => {
+                                setSelectedDiagnoseCampId(v.metadata.db_campaign_id);
+                                setSelectedDiagnoseCampName(v.metadata.campaign_name || "Campanha");
+                                setIsDiagnoseOpen(true);
+                              }}
+                              className="inline-flex items-center gap-1 text-[9px] font-bold text-primary bg-primary/10 border border-primary/20 px-2 py-0.5 rounded-full hover:bg-primary/20 transition cursor-pointer"
+                            >
+                              <Sparkles className="h-2.5 w-2.5" /> Ver Motivo (IA)
+                            </button>
+                          </div>
+                        )}
                       </div>
 
                       <button
@@ -433,13 +451,18 @@ function AutomationsPage() {
                       <AlertTriangle className={`h-6 w-6 ${th.is_active ? "animate-pulse" : ""}`} />
                     </div>
                     <div>
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <h4 className="font-bold text-base text-foreground/90">
-                          {th.ad_accounts?.name || (th.ad_account_id === null ? "Todas as Contas Meta" : "Conta Desconhecida")}
+                          {th.campaigns?.name ? `Campanha: ${th.campaigns.name}` : (th.ad_accounts?.name || (th.ad_account_id === null ? "Todas as Contas Meta" : "Conta Desconhecida"))}
                         </h4>
-                        {th.ad_account_id !== null && (
+                        {th.campaign_id !== null && (
+                          <span className="inline-flex rounded px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider bg-primary/20 text-primary border border-primary/30">
+                            CAMPANHA
+                          </span>
+                        )}
+                        {th.campaign_id === null && th.ad_account_id !== null && (
                           <span className="inline-flex rounded px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider bg-secondary/20 text-secondary border border-secondary/30">
-                            EXCEÇÃO
+                            EXCEÇÃO CONTA
                           </span>
                         )}
                       </div>
@@ -743,6 +766,14 @@ function AutomationsPage() {
           />
         )}
       </AnimatePresence>
+
+      {/* Diagnosis Modal */}
+      <DiagnosisModal
+        isOpen={isDiagnoseOpen}
+        onClose={() => setIsDiagnoseOpen(false)}
+        campaignId={selectedDiagnoseCampId}
+        campaignName={selectedDiagnoseCampName}
+      />
     </div>
   );
 }
@@ -752,6 +783,9 @@ function ThresholdModal({ onClose, accounts, userId, qc, editing }: any) {
 
   const [accountId, setAccountId] = useState<string>(
     isEditing ? (editing.ad_account_id ?? "all") : "all"
+  );
+  const [campaignId, setCampaignId] = useState<string>(
+    isEditing ? (editing.campaign_id ?? "all") : "all"
   );
   const [excludedIds, setExcludedIds] = useState<Set<string>>(
     isEditing && editing.excluded_account_ids
@@ -774,6 +808,29 @@ function ThresholdModal({ onClose, accounts, userId, qc, editing }: any) {
   const [alertBudgetEnabled,    setAlertBudgetEnabled]    = useState(isEditing ? editing.alert_budget_enabled    !== false : true);
   const [alertFrequencyEnabled, setAlertFrequencyEnabled] = useState(isEditing ? editing.alert_frequency_enabled !== false : true);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Carregar campanhas da conta ativa
+  const { data: campaigns = [], isLoading: loadingCampaigns } = useQuery({
+    queryKey: ["campaigns_for_threshold_modal", accountId],
+    queryFn: async () => {
+      if (!accountId || accountId === "all") return [];
+      const { data, error } = await (supabase as any)
+        .from("campaigns")
+        .select("id, name")
+        .eq("ad_account_id", accountId)
+        .order("name");
+      if (error) throw error;
+      return data || [];
+    },
+    enabled: !!accountId && accountId !== "all",
+  });
+
+  // Resetar a campanha selecionada se mudar a conta
+  useEffect(() => {
+    if (!isEditing) {
+      setCampaignId("all");
+    }
+  }, [accountId]);
 
   const toggleExclusion = (id: string) => {
     setExcludedIds(prev => {
@@ -802,6 +859,7 @@ function ThresholdModal({ onClose, accounts, userId, qc, editing }: any) {
     try {
       const commonFields = {
         ad_account_id:           targetAccountId,
+        campaign_id:             campaignId === "all" ? null : campaignId,
         max_cpl:                 maxCpl ? parseFloat(maxCpl) : null,
         max_budget_pct:          maxBudgetPct ? parseInt(maxBudgetPct) : null,
         max_frequency:           maxFrequency ? parseFloat(maxFrequency) : null,
@@ -897,6 +955,33 @@ function ThresholdModal({ onClose, accounts, userId, qc, editing }: any) {
           </div>
 
           {accountId !== "all" && (
+            <div className="space-y-1.5">
+              <label className="text-[10px] font-bold text-muted-foreground uppercase">
+                Campanha (Opcional)
+              </label>
+              {loadingCampaigns ? (
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" /> Carregando campanhas...
+                </div>
+              ) : (
+                <select
+                  value={campaignId}
+                  onChange={(e) => setCampaignId(e.target.value)}
+                  className="w-full rounded-lg border border-white/10 bg-background px-3 py-3 text-sm focus:border-primary focus:outline-none cursor-pointer"
+                >
+                  <option value="all">Todas as Campanhas da Conta (Alerta Geral da Conta)</option>
+                  {campaigns.map((c: any) => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
+              )}
+              <p className="text-[9px] text-muted-foreground">
+                Selecione uma campanha específica para monitorar o CPL, Frequência e Orçamento dela.
+              </p>
+            </div>
+          )}
+
+          {accountId !== "all" && campaignId === "all" && (
             <div className="rounded-xl border border-secondary/30 bg-secondary/10 px-4 py-3 text-[11px] text-secondary leading-relaxed">
               <strong>Exceção de conta:</strong> esta regra substituirá o alerta global para a conta selecionada. A regra global não será avaliada para ela.
             </div>
