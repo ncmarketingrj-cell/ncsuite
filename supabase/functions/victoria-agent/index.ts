@@ -449,7 +449,6 @@ serve(async (req) => {
     });
 
     const totalInvest = campaigns.reduce((s, c) => s + c.totals.cost, 0);
-    const activeCount = campaigns.filter(c => c.status === "ACTIVE").length;
 
     // Resumo por cliente com métricas corretas por objetivo
     const clientSummaryMap = new Map<string, { invest: number; results: number; campaigns: string[] }>();
@@ -672,10 +671,6 @@ ${contextData}
 TABELA DIÁRIA — Data | Cliente | Plataforma | Campanha | Gasto | Leads/Conversões | Cliques | Impressões:
 ${dailySeriesText}
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-RELATÓRIO PRÉ-FORMATADO (use este bloco como base quando o usuário pedir análise, relatório ou "como foi"):
-${reportTemplate || "Sem dados suficientes para gerar relatório no período."}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ROTEAMENTO MULTIAGENTE — SUB-AGENTE ATIVO:
@@ -701,11 +696,13 @@ REGRAS DE RESPOSTA:
 3. Se o usuário perguntar sobre o fim de semana, ontem, ou datas específicas, calcule e retorne os dados exatos somados da tabela diária e faça uma análise estratégica focada no mercado automotivo.
 4. **AVALIAÇÃO VISUAL DE IMAGENS (MULTIMODALIDADE):**
    - Se o usuário anexar uma imagem à mensagem, comente sobre fotos reais vs catálogo, legibilidade de textos no mobile, oferta e chamadas para ação. Seja construtiva.
-5. **FORMATO DE RELATÓRIO — REGRA CRÍTICA:**
-   - Quando o usuário perguntar "como foi [período/cliente]?", "me dá um relatório", "análise de campanhas" ou similar: copie e adapte o RELATÓRIO PRÉ-FORMATADO acima. Use os emojis, separadores ━━━ e estrutura exata. Não invente dados — use apenas os números do bloco RELATÓRIO PRÉ-FORMATADO.
-   - Para campanhas de *Alcance/Awareness*: o resultado é Impressões e o custo é CPM (custo por mil impressões). NUNCA chame impressões de "leads".
-   - Para campanhas de *Mensagens/Cliques*: o resultado são cliques/mensagens e o custo é Custo/Resultado.
-   - Para campanhas de *Conversões/Leads*: o resultado são leads/conversões e o custo é CPL/CPA.
+5. **MÉTRICAS CORRETAS POR OBJETIVO — REGRA CRÍTICA:**
+   Use sempre a coluna "Resultado correto pelo objetivo" da seção CAMPANHAS DETALHADAS. Cada campanha já tem o valor calculado certo:
+   - 👁️ *Alcance/Awareness/Vídeo* → resultado = Impressões, custo = CPM (R$/mil impressões). NUNCA chame impressões de "leads".
+   - 💬 *Mensagens/WhatsApp* → resultado = conversas iniciadas, custo = CPA.
+   - 👆 *Cliques/Link/Tráfego* → resultado = visitas/cliques, custo = Custo/Visita.
+   - 🎯 *Conversões/Leads* → resultado = leads gerados, custo = CPL/CPA.
+   Ao responder análises ou "como foi?", cite cada campanha com seu resultado correto e custo/resultado. Responda em formato conversacional natural — não copie templates literalmente.
 
 6. **RECOMENDAÇÃO DE AÇÃO EM 1-CLIQUE (ACTION ENGINE):**
    - Se recomendar ação prática de otimização, inclua no final o bloco JSON especial:
