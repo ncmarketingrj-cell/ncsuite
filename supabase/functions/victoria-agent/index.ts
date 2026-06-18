@@ -717,7 +717,8 @@ REGRAS DE RESPOSTA:
         stream: true
       };
     } else if (GEMINI_API_KEY) {
-      fetchUrl = `https://generativelanguage.googleapis.com/v1beta/openai/chat/completions?key=${GEMINI_API_KEY}`;
+      fetchUrl = `https://generativelanguage.googleapis.com/v1beta/openai/chat/completions`;
+      fetchHeaders["Authorization"] = `Bearer ${GEMINI_API_KEY}`;
       fetchBody = {
         model: "gemini-2.5-flash",
         messages: openAiMessages,
