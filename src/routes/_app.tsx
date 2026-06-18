@@ -75,6 +75,7 @@ const TRAFEGO_NAV_ITEMS: NavItem[] = [
   { to: "/criativos", icon: Palette, label: "Criativos" },
   { to: "/multicanal", icon: BarChart3, label: "Multicanal" },
   { to: "/automacoes", icon: Zap, label: "Automações" },
+  { to: "/auditoria", icon: Activity, label: "Auditoria Hub" },
   { to: "/config", icon: Settings, label: "Configurações" },
 ];
 
@@ -90,6 +91,7 @@ const GESTAO_NAV_ITEMS: NavItem[] = [
   { to: "/clientes", icon: Store, label: "Clientes" },
   { to: "/reunioes", icon: Users, label: "Reuniões" },
   { to: "/cobrancas", icon: CreditCard, label: "Cobranças" },
+  { to: "/auditoria", icon: Activity, label: "Auditoria Hub" },
   { to: "/upload", icon: Upload, label: "Upload" },
   { to: "/config", icon: Settings, label: "Configurações" },
 ];
@@ -485,7 +487,7 @@ function Shell() {
           
           {/* LEFT: Logo & Module Switcher */}
           <div className="flex items-center gap-3 shrink-0">
-            <Link to="/dashboard" className="flex items-center gap-2 group">
+            <Link to="/hub" className="flex items-center gap-2 group">
               <div className="relative h-8 w-8 rounded-xl bg-primary flex items-center justify-center overflow-hidden shadow-glow-sm transition-all duration-300 group-hover:shadow-glow">
                 <div className="absolute inset-x-0 top-0 h-[3px] bg-white/28 rounded-t-xl pointer-events-none" />
                 <span className="font-display font-black text-white text-xs relative z-10 tracking-normal">NC</span>
