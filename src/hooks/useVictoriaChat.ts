@@ -814,15 +814,39 @@ export function useVictoriaChat(selectedAccountId: string, setSelectedAccountId:
       }
     ];
 
+    // Obter user_id atual
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return { success: false, created: 0 };
+
     let created = 0;
+    let lastError = "";
     for (let i = 0; i < SEED_DOCS.length; i++) {
       const doc = SEED_DOCS[i];
       if (onProgress) onProgress(i + 1, SEED_DOCS.length);
       try {
-        const ok = await addKnowledge(doc.title, doc.content, doc.category);
-        if (ok) created++;
-      } catch { /* silencia erros individuais, continua o loop */ }
+        // Insere diretamente via Supabase client (embedding null por enquanto)
+        const { error } = await supabase
+          .from("victoria_knowledge" as any)
+          .insert({
+            user_id: user.id,
+            category: doc.category,
+            title: doc.title,
+            content: doc.content,
+          });
+        if (error) {
+          lastError = error.message;
+          console.error("[VICTORIA SEED]", doc.title, error.message);
+        } else {
+          created++;
+        }
+      } catch (e: any) {
+        lastError = e?.message || "Erro desconhecido";
+        console.error("[VICTORIA SEED] Exception:", e);
+      }
     }
+
+    if (created > 0) await fetchKnowledge();
+    if (lastError && created === 0) toast.error(`Erro no seed: ${lastError}`);
     return { success: created > 0, created };
   };
 

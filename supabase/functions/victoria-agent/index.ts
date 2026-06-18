@@ -561,6 +561,18 @@ REGRAS DE RESPOSTA:
     // =========================================================================
     // 3. EXECUÇÃO RAG (RETRIEVAL-AUGMENTED GENERATION)
     // =========================================================================
+    // ─── Injetar TODOS os documentos de conhecimento do usuário no prompt ──────
+    const { data: allKnowledge } = await supabase
+      .from("victoria_knowledge")
+      .select("category, title, content")
+      .eq("user_id", user.id)
+      .order("created_at", { ascending: false })
+      .limit(30);
+
+    const knowledgeCtx = (allKnowledge || []).length > 0
+      ? (allKnowledge || []).map((k: any) => `[${(k.category || "").toUpperCase()}] ${k.title}:\n${k.content}`).join("\n\n---\n\n")
+      : "";
+
     let retrievedContext = externalContext || "";
     if (!retrievedContext && GEMINI_API_KEY && messages && messages.length > 0) {
       const lastUserMessage = messages[messages.length - 1].content;
@@ -647,8 +659,11 @@ REGRAS DE RESPOSTA:
     }
 
     let promptWithRAG = systemPrompt;
-    if (retrievedContext) {
-      promptWithRAG += `\n\nCONHECIMENTO ADICIONAL DO PROPRIETÁRIO / REGRAS DE NEGÓCIO (Utilize estes dados como verdade absoluta para responder à pergunta atual): \n${retrievedContext}`;
+    if (knowledgeCtx) {
+      promptWithRAG += `\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nBASE DE CONHECIMENTO NC PERFORMANCE (Utilize como verdade absoluta para todas as respostas):\n\n${knowledgeCtx}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+    }
+    if (retrievedContext && retrievedContext !== knowledgeCtx) {
+      promptWithRAG += `\n\nCONHECIMENTO ESPECÍFICO RECUPERADO POR SIMILARIDADE:\n${retrievedContext}`;
     }
     if (webSearchContext) {
       promptWithRAG += webSearchContext;
