@@ -749,6 +749,34 @@ export function useVictoriaChat(selectedAccountId: string, setSelectedAccountId:
     }
   };
 
+  // Importar base de conhecimento NC Performance (12 documentos estratégicos)
+  const seedDefaultKnowledge = async (): Promise<{ success: boolean; created: number }> => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/victoria-agent`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${session?.access_token || ""}`,
+            "apikey": import.meta.env.VITE_SUPABASE_ANON_KEY || ""
+          },
+          body: JSON.stringify({ action: "seed_default_knowledge" })
+        }
+      );
+      const data = await res.json();
+      if (data.success) {
+        await fetchKnowledge();
+        return { success: true, created: data.created || 0 };
+      }
+      return { success: false, created: 0 };
+    } catch (err: any) {
+      console.error("[VICTORIA] Seed knowledge falhou:", err);
+      return { success: false, created: 0 };
+    }
+  };
+
   return {
     conversations,
     activeConversationId,
@@ -770,6 +798,7 @@ export function useVictoriaChat(selectedAccountId: string, setSelectedAccountId:
     deleteKnowledge,
     fetchKnowledge,
     ragSnippets,
-    searchKnowledge
+    searchKnowledge,
+    seedDefaultKnowledge
   };
 }

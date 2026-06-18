@@ -194,35 +194,15 @@ function VictoriaHubPage() {
   // Importar base de conhecimento NC Performance com 1 clique
   const handleSeedKnowledge = async () => {
     setSeedingKnowledge(true);
-    const toastId = toast.loading("Importando base de conhecimento NC Performance... (12 documentos)");
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const res = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/victoria-agent`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${session?.access_token || ""}`,
-            "apikey": import.meta.env.VITE_SUPABASE_ANON_KEY || ""
-          },
-          body: JSON.stringify({ action: "seed_default_knowledge" })
-        }
-      );
-      const data = await res.json();
-      toast.dismiss(toastId);
-      if (data.success) {
-        toast.success(`✅ ${data.created} documentos NC Performance importados com sucesso!`);
-        await chat.fetchKnowledge();
-      } else {
-        toast.error(data.error || "Erro ao importar base de conhecimento.");
-      }
-    } catch (e) {
-      toast.dismiss(toastId);
-      toast.error("Erro de conexão ao importar base de conhecimento.");
-    } finally {
-      setSeedingKnowledge(false);
+    const toastId = toast.loading("Importando base NC Performance... (pode levar ~20s)");
+    const result = await chat.seedDefaultKnowledge();
+    toast.dismiss(toastId);
+    if (result.success) {
+      toast.success(`${result.created} documentos NC Performance importados com sucesso!`);
+    } else {
+      toast.error("Erro ao importar base de conhecimento. Tente novamente.");
     }
+    setSeedingKnowledge(false);
   };
 
   // Extrair texto de documentos (PDF, TXT, MD) localmente no navegador
