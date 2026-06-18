@@ -39,6 +39,7 @@ function VictoriaHubPage() {
   const [knowledgeSearchTerm, setKnowledgeSearchTerm] = useState("");
   const [savingKnowledge, setSavingKnowledge] = useState(false);
   const [extractingFile, setExtractingFile] = useState(false);
+  const [seedingKnowledge, setSeedingKnowledge] = useState(false);
 
   // Estados de Entrada por Voz
   const [isListening, setIsListening] = useState(false);
@@ -187,6 +188,40 @@ function VictoriaHubPage() {
       setNewKnowledgeTitle("");
       setNewKnowledgeContent("");
       if (docInputRef.current) docInputRef.current.value = "";
+    }
+  };
+
+  // Importar base de conhecimento NC Performance com 1 clique
+  const handleSeedKnowledge = async () => {
+    setSeedingKnowledge(true);
+    const toastId = toast.loading("Importando base de conhecimento NC Performance... (12 documentos)");
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/victoria-agent`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${session?.access_token || ""}`,
+            "apikey": import.meta.env.VITE_SUPABASE_ANON_KEY || ""
+          },
+          body: JSON.stringify({ action: "seed_default_knowledge" })
+        }
+      );
+      const data = await res.json();
+      toast.dismiss(toastId);
+      if (data.success) {
+        toast.success(`✅ ${data.created} documentos NC Performance importados com sucesso!`);
+        await chat.fetchKnowledge();
+      } else {
+        toast.error(data.error || "Erro ao importar base de conhecimento.");
+      }
+    } catch (e) {
+      toast.dismiss(toastId);
+      toast.error("Erro de conexão ao importar base de conhecimento.");
+    } finally {
+      setSeedingKnowledge(false);
     }
   };
 
@@ -555,6 +590,22 @@ function VictoriaHubPage() {
                   className="px-3 py-1.5 rounded-lg border border-border hover:bg-white/5 text-[10px] uppercase font-bold text-muted-foreground hover:text-foreground transition-all"
                 >
                   Voltar ao Chat
+                </button>
+              </div>
+
+              {/* Botão de seed NC Performance */}
+              <div className="flex items-center gap-3 p-4 bg-amber-500/8 border border-amber-500/20 rounded-2xl">
+                <div className="flex-1">
+                  <p className="text-xs font-black text-amber-400">Base de Conhecimento NC Performance</p>
+                  <p className="text-[10px] text-muted-foreground mt-0.5">Importa 12 documentos estratégicos: benchmarks, funis, protocolos, mercado automotivo RJ e capacidades da Victoria.</p>
+                </div>
+                <button
+                  onClick={handleSeedKnowledge}
+                  disabled={seedingKnowledge}
+                  className="flex-shrink-0 flex items-center gap-2 px-4 py-2 rounded-xl bg-amber-500 hover:brightness-110 text-black font-extrabold text-[10px] uppercase tracking-wider transition-all disabled:opacity-50 shadow-[0_0_12px_rgba(245,158,11,0.3)]"
+                >
+                  {seedingKnowledge ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
+                  {seedingKnowledge ? "Importando..." : "Importar Base"}
                 </button>
               </div>
 

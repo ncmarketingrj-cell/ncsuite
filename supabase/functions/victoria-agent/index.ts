@@ -144,6 +144,120 @@ serve(async (req) => {
     }
 
     // =========================================================================
+    // AÇÃO: seed_default_knowledge — popula base NC Performance com 1 clique
+    // =========================================================================
+    if (action === "seed_default_knowledge") {
+      if (!GEMINI_API_KEY) {
+        return new Response(JSON.stringify({ error: "GEMINI_API_KEY não configurada" }), {
+          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" }
+        });
+      }
+
+      const DOCS: { title: string; category: string; content: string }[] = [
+        {
+          title: "Posicionamento e Identidade NC Performance",
+          category: "brand_voice",
+          content: `NC Performance é uma agência de tráfego pago especializada em marketing automotivo no Rio de Janeiro. Atendemos concessionárias, revendedoras de seminovos e centros automotivos.\n\nNosso diferencial: velocidade de execução, dados em tempo real e linguagem do setor — não entregamos relatórios genéricos, entregamos diagnósticos precisos com ação imediata.\n\nTom de comunicação:\n- Direto, profissional mas acessível\n- Sempre com dados concretos (CPL, CTR, Leads gerados)\n- Proativo com sugestões de otimização\n- Nunca desculpas: se campanha não performa, apresentamos a solução imediatamente\n\nSlogans NC Performance:\n- "Performance em Alta Velocidade"\n- "Motor de Tráfego Automotivo"\n- "Leads que convertem em vendas"\n\nPosicionamento: Agência de médio-alto tier. Não competimos por preço, competimos por resultado. RJSP foco.`
+        },
+        {
+          title: "Benchmarks CPL, CTR e Frequência — Automotivo RJ 2025-2026",
+          category: "strategy",
+          content: `BENCHMARKS CPL (CUSTO POR LEAD) MERCADO AUTOMOTIVO RJ:\n\nVEÍCULOS NOVOS:\n- Excelente: < R$ 15,00\n- Saudável: R$ 15-35,00\n- Atenção: R$ 35-55,00\n- Crítico (pausar e revisar): > R$ 55,00\n\nSEMINOVOS POPULARES (HB20, Ônix, Gol até 5 anos):\n- Excelente: < R$ 18,00\n- Saudável: R$ 18-40,00\n- Atenção: R$ 40-65,00\n- Crítico: > R$ 65,00\n\nSEMINOVOS PREMIUM (BMW, Mercedes, Audi):\n- Excelente: < R$ 35,00\n- Saudável: R$ 35-80,00\n- Atenção: R$ 80-130,00\n- Crítico: > R$ 130,00\n\nCTR (TAXA DE CLIQUE):\n- Ideal: > 1.20%\n- Aceitável: 0.80%-1.20%\n- Crítico: < 0.80% → trocar criativos por fotos reais do pátio imediatamente\nAção imediata CTR baixo: Substituir fotos de catálogo por fotos reais tiradas com celular no pátio, luz natural. Fotos reais convertem 40-60% melhor no segmento automotivo.\n\nFREQUÊNCIA DE EXIBIÇÃO:\n- Ideal: 1.5-2.5 por pessoa\n- Alerta: > 3.0 (criativo saturando o público, renovar)\n- Crítico: > 4.0 → pausar conjunto e reformular segmentação`
+        },
+        {
+          title: "Estrutura de Campanhas Meta Ads — Automotivo",
+          category: "strategy",
+          content: `ESTRUTURA PADRÃO META ADS PARA CONCESSIONÁRIAS:\n\nCAMPANHA 1 — PROSPECÇÃO (Topo de Funil):\n- Objetivo: Leads ou Tráfego\n- Público: Broad 25-55 anos, interessados em veículos, condução, financiamento\n- Raio: 40-60km da concessionária\n- Criativos: 3-5 fotos reais + 1-2 vídeos 15-30s\n- Budget mínimo: R$ 50/dia por conjunto\n\nCAMPANHA 2 — REMARKETING:\n- Público: Visitantes do site (30 dias) + Engajamento IG/FB (60 dias) + leads que não compraram (90 dias)\n- Criativos: específicos por modelo + oferta especial + depoimentos\n- Budget: 20-30% do budget total\n\nCAMPANHA 3 — LOOKALIKE:\n- Público origem: compradores confirmados ou leads qualificados\n- Tamanho: 1-3% (mais qualificado) ou 3-5% (volume)\n\nORÇAMENTOS MÍNIMOS RJ:\n- Concessionária pequena (1-3 modelos): R$ 150/dia\n- Concessionária média (5-10 modelos): R$ 300/dia\n- Multi-marca seminovos: R$ 200/dia\n\nESTRUTURA DO CONJUNTO:\n- Mínimo 3 anúncios por conjunto (A/B/C)\n- CTA eficaz: "Saiba Mais", "Enviar Mensagem", "Ligue Agora"\n- Formulários nativos: incluir pergunta qualificadora (entrada, troca, financiamento)`
+        },
+        {
+          title: "Funil de Vendas Automotivo — Etapas, KPIs e Taxas",
+          category: "strategy",
+          content: `FUNIL DE VENDAS AUTOMOTIVO COMPLETO NC PERFORMANCE:\n\nETAPA 1 — AWARENESS (Topo):\n- Canal: Meta Ads, TikTok, Google Display\n- Conteúdo: Vídeos do modelo, tour do pátio, "novo chegou"\n- KPI: CPM, Alcance, Frequência\n\nETAPA 2 — INTERESSE:\n- Canal: Retargeting Meta, Google Search\n- Conteúdo: Especificações, diferenciais, comparativos\n- KPI: CTR, CPC\n\nETAPA 3 — CONSIDERAÇÃO:\n- Canal: WhatsApp, e-mail\n- Ação: Ligação em até 5 min após lead, proposta, agendamento test drive\n- KPI: Taxa de atendimento, taxa de test drive\n\nETAPA 4 — DECISÃO:\n- Canal: Presencial + follow-up WhatsApp\n- Ação: Negociação, financiamento, aprovação crédito\n- KPI: Taxa conversão lead→venda, ticket médio\n\nETAPA 5 — PÓS-VENDA:\n- Ação: NPS, solicitar indicação, depoimento nas redes\n- Compradores viram audiência personalizada para campanha de indicação\n\nTAXAS DE CONVERSÃO SAUDÁVEIS:\n- Lead → Atendimento: 70%+ (< 50% = problema no processo de vendas)\n- Atendimento → Test Drive: 30-40%\n- Test Drive → Proposta: 60-70%\n- Proposta → Venda: 25-40%\n\nMOTIVOS DE PERDA MAIS COMUNS:\n1. Demora no atendimento (> 30 min → lead esfria)\n2. Falta de follow-up (90% das vendas precisam > 1 contato)\n3. Ausência de oferta clara no anúncio\n4. Preço desatualizado vs Mercado Livre`
+        },
+        {
+          title: "Estratégia de Remarketing para Concessionárias",
+          category: "strategy",
+          content: `PÚBLICOS DE REMARKETING ESSENCIAIS:\n1. Visitantes site (3 dias): interesse quente, mostrar modelo específico visto\n2. Visitantes site (7 dias): oferta especial + facilidade financiamento\n3. Visitantes site (30 dias): depoimentos + novo estoque + urgência\n4. Engajamento Instagram/Facebook (30 dias): conteúdo de consideração\n5. Leads não atendidos (15 dias): impulsionar retomada de contato\n6. Clientes antigos (> 2 anos): campanha de troca/renovação\n\nMENSAGENS DE REMARKETING EFICAZES RJ:\n- "Ainda pensando no [modelo]? Temos condições especiais esta semana."\n- "Seu próximo carro está te esperando. Traga seu usado na troca."\n- "Financiamento aprovado na hora. 0 entrada para clientes CPF limpo."\n- "Test Drive gratuito. Venha nos visitar em [bairro]."\n\nPIXEL META — EVENTOS MÍNIMOS:\n- PageView (todas as páginas)\n- ViewContent (página de modelo específico)\n- Lead (formulário preenchido)\n- Contact (WhatsApp clicado)\n- CompleteRegistration (proposta solicitada)`
+        },
+        {
+          title: "Social Media Automotivo — Frequência, Formatos e Horários",
+          category: "strategy",
+          content: `FREQUÊNCIA MÍNIMA PARA CONCESSIONÁRIAS:\n- Instagram Feed: 4-5 posts/semana\n- Instagram Stories: diário (8-12 stories)\n- Facebook: 3-4 posts/semana\n- TikTok: 2-3 vídeos/semana\n\nTIPOS DE CONTEÚDO QUE MAIS CONVERTEM:\n1. FOTO REAL DO PÁTIO (40%): "Chegou no estoque", luz natural, carro limpo\n2. VÍDEO TOUR DO VEÍCULO (20%): walk-around 60-90s, interior e exterior\n3. DEPOIMENTO DE CLIENTE (15%): foto/vídeo com frase de impacto\n4. CONTEÚDO EDUCATIVO (15%): "como funciona o financiamento?", "test drive sem compromisso"\n5. OFERTA/PROMOÇÃO (10%): condições especiais, taxa zero, bônus troca\n\nHORÁRIOS MELHOR ENGAJAMENTO RJ — AUTOMOTIVO:\n- Seg-Sex: 7h-9h (commute), 12h-13h (almoço), 18h-20h (saída trabalho)\n- Sábado 9h-12h: MELHOR DIA para publicar novos carros\n- Domingo 10h-12h: família planeja compra\n\nERROS FREQUENTES:\n- Fotos de catálogo (público percebe como impessoal)\n- Posts com texto longo na imagem (plataformas penalizam)\n- Preço desatualizado (gera reclamação)\n- Stories sem link/CTA (perda de conversão)`
+        },
+        {
+          title: "Mercado de Seminovos RJ — Guia Estratégico",
+          category: "inventory",
+          content: `PANORAMA SEMINOVOS RJ 2025-2026:\n- RJ é o 2º maior mercado de seminovos do Brasil\n- Demanda concentrada: Zona Sul, Barra, Niterói, Nova Iguaçu, Duque de Caxias\n- Ticket médio: R$ 45.000-85.000 (popular) | R$ 120.000-280.000 (premium)\n\nMODELOS MAIS BUSCADOS NO RJ:\n1. Toyota Corolla (XEi, Altis)\n2. Jeep Renegade / Compass\n3. Honda HRV / Civic\n4. Volkswagen T-Cross / Virtus\n5. Hyundai Creta / ix35\n6. Ford Bronco Sport / Territory\n7. Chevrolet Tracker / Onix Plus\n8. BMW Série 3 (premium)\n\nDIFERENCIAIS COMPETITIVOS NOS ANÚNCIOS:\n1. Histórico completo (FIPE, revisões em dia)\n2. Laudo cautelar incluso\n3. Garantia estendida\n4. Financiamento aprovado em 24h\n5. Aceita troca\n6. IPVA e seguro inclusos\n\nGATILHOS DE COMPRA MAIS EFICAZES RJ:\n- "Parcela que cabe no seu bolso"\n- "Sem saída"\n- "Financiamento sem consulta SPC/Serasa"\n- "Entrega em domicílio"\n- "Documentação 100% inclusa"`
+        },
+        {
+          title: "Segmentos de Veículos e Abordagem por Público",
+          category: "inventory",
+          content: `SEGMENTOS AUTOMOTIVOS E ESTRATÉGIA DE ANÚNCIO:\n\nHATCHBACKS POPULARES (Ônix, HB20, Polo):\n- Público: Jovens 20-35, renda 2-5 SM, primeiro carro\n- Abordagem: Parcela baixa, consumo econômico, custo-benefício\n- Copy: "Seu primeiro carro com parcela de [valor]"\n\nSEDÃS EXECUTIVOS (Corolla, Virtus, Cruze):\n- Público: 30-50 anos, executivos, família pequena\n- Abordagem: Conforto, status, tecnologia embarcada\n- Copy: "Conforto e eficiência para o dia a dia profissional"\n\nSUVs MEDIANOS (Renegade, Compass, Creta, HRV):\n- Público: Famílias 30-50 anos, renda 5-15 SM\n- Abordagem: Espaço, segurança família, aventura urbana\n- Copy: "A família merece espaço e segurança"\n\nSUVs PREMIUM (BMW X3, Audi Q5, Volvo XC60):\n- Público: 40-60 anos, renda > 15 SM, empresários\n- Abordagem: Status, tecnologia avançada, exclusividade\n- Copy: Evitar preço, focar experiência e exclusividade\n\nPICKUPS (Hilux, Ranger, S10, Frontier):\n- Público: 30-55 anos, empresários rurais/construção, custo x robustez\n- Abordagem: Capacidade de carga, durabilidade, versatilidade\n- Copy: "Para quem trabalha de verdade"`
+        },
+        {
+          title: "Protocolo de Lançamento de Campanha NC Performance",
+          category: "manual",
+          content: `CHECKLIST DE LANÇAMENTO NC PERFORMANCE:\n\nPRÉ-LANÇAMENTO (48h antes):\n☐ Definir objetivo: Leads, Tráfego ou Conversões\n☐ Confirmar URL de destino funcional (site, WhatsApp, formulário)\n☐ Validar Pixel Meta instalado e disparando eventos corretamente\n☐ Criar públicos: Prospecting, Remarketing, Lookalike\n☐ Preparar mínimo 3 criativos por conjunto\n☐ Definir budget diário aprovado com cliente\n☐ Configurar regras automáticas de pausa (CPL > meta × 2)\n☐ Confirmar número WhatsApp ativo\n\nLANÇAMENTO:\n☐ Ativar campanhas entre 6h-8h (melhor horário de leilão)\n☐ Monitorar primeiras 4 horas (taxa de rejeição, CPM inicial)\n☐ Verificar se leads estão chegando ao cliente\n☐ Documentar orçamento ativado no NC Suite\n\nPÓS-LANÇAMENTO (24h-48h):\n☐ Analisar CPL e CTR iniciais\n☐ Pausar criativos CTR < 0.5% após 1.000 impressões\n☐ Escalar budget em 20% se CPL < meta e leads chegando\n☐ Reportar ao cliente: "Campanha ativa, primeiros leads chegando"`
+        },
+        {
+          title: "SLA de Atendimento ao Lead e Script de Abordagem",
+          category: "manual",
+          content: `SLA PADRÃO NC PERFORMANCE:\n- WhatsApp: Resposta em até 5 MINUTOS (meta: 2 min)\n- Formulário de site: Ligação em até 15 MINUTOS\n- Lead Ads Meta: Resposta em até 10 MINUTOS\n- E-mail: Resposta em até 2 HORAS\n\nIMPACTO DA DEMORA NA CONVERSÃO:\n- 0-5 min: Taxa 80%+\n- 5-30 min: Taxa 60%\n- 30-60 min: Taxa 40%\n- 1-24h: Taxa 20%\n- Após 24h: < 5%\n\nSCRIPT PRIMEIRO CONTATO WHATSAPP:\n"Oi [Nome]! Aqui é [Consultor] da [Concessionária]. Vi que você demonstrou interesse no [Modelo]. Tenho condições especiais que vão te interessar! Qual o melhor horário para eu te passar os detalhes? 😊"\n\nQUALIFICADORES (perguntar nos primeiros 2 min):\n1. "Você está buscando novo ou seminovo?"\n2. "Tem veículo para dar de entrada/troca?"\n3. "Pensou em financiar ou pagar à vista?"\n4. "Para quando você precisaria do carro?"\n\nSEQUÊNCIA FOLLOW-UP (leads que não responderam):\n- Dia 1: Mensagem inicial\n- Dia 2: Foto específica do carro + link\n- Dia 4: "Oferta especial disponível até [data]"\n- Dia 7: "Última oportunidade, carro pode ser vendido"\n- Dia 14: "Temos novos modelos, posso te mandar?"`
+        },
+        {
+          title: "Rotina de Otimização Semanal de Campanhas",
+          category: "manual",
+          content: `ROTINA NC PERFORMANCE — OTIMIZAÇÃO SEMANAL:\n\nSEGUNDA (Análise do Fim de Semana):\n1. Verificar resultados sáb/dom (melhores dias em automotivo)\n2. Checar CPL acumulado da semana anterior\n3. Identificar melhor e pior campanha/conjunto\n4. Decisão: Escalar ou pausar baseado na meta de CPL\n\nQUARTA (Manutenção):\n1. Revisar criativos com frequência > 3.0 (renovar se necessário)\n2. Atualizar públicos de remarketing (adicionar leads recentes)\n3. Testar novo criativo se CTR médio < 0.90%\n4. Verificar se formulários/WhatsApp estão recebendo leads\n\nSEXTA (Preparo para Fim de Semana):\n1. Aumentar budget 20-30% (volume maior no fim de semana)\n2. Ativar campanhas de "oferta do fim de semana"\n3. Checar criativos ativos (sem erros, link válido)\n4. Enviar relatório semanal ao cliente\n\nSINAIS DE ALERTA PARA AÇÃO IMEDIATA:\n- CPL > 2x meta → Pausar e reformular oferta/público\n- CTR < 0.70% → Trocar criativos imediatamente\n- Frequência > 4.0 → Ampliar público ou pausar conjunto\n- 0 leads em 24h com budget ativo → Checar pixel, formulário e link`
+        },
+        {
+          title: "Capacidades e Comandos da Victoria no NC Suite",
+          category: "custom",
+          content: `CAPACIDADES DA VICTORIA NO SISTEMA NC SUITE:\n\nANÁLISE E RELATÓRIOS:\n- Analisar performance de campanhas ativas (7/15/30 dias)\n- Calcular CPL, CTR, ROAS por campanha\n- Identificar melhor e pior campanha do período\n- Gerar relatório executivo formatado para enviar ao cliente via WhatsApp\n- Analisar dados de dias específicos (ontem, sábado, domingo, semana)\n\nEXECUÇÃO (com aprovação Human-in-the-Loop):\n- Atualizar orçamento diário de campanha específica\n- Pausar campanha com performance crítica\n- Gerar estrutura de novo funil de vendas\n\nSOCIAL MEDIA:\n- Analisar performance de páginas conectadas\n- Identificar melhores posts por engajamento\n- Sugerir calendário de conteúdo baseado em dados reais\n\nPESQUISA NA INTERNET:\n- Pesquisar tendências de marketing automotivo\n- Buscar novas estratégias e cases de sucesso\n- Monitorar novidades de plataformas (Meta, Google Ads)\n(Ativar com: "pesquise sobre", "procure na internet", "últimas tendências de")\n\nCOMUNICAÇÃO:\n- Responde em português brasileiro\n- Tom estratégico e direto, como uma sênior da agência\n- Nunca se comporta como IA genérica\n- Foca em resultados práticos e ações concretas`
+        }
+      ];
+
+      let created = 0;
+      const errors: string[] = [];
+      const batchSize = 3;
+
+      for (let i = 0; i < DOCS.length; i += batchSize) {
+        const batch = DOCS.slice(i, i + batchSize);
+        await Promise.all(batch.map(async (doc) => {
+          try {
+            const embedRes = await fetch(
+              `https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent?key=${GEMINI_API_KEY}`,
+              {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  model: "models/text-embedding-004",
+                  content: { parts: [{ text: `${doc.title}\n\n${doc.content}` }] }
+                })
+              }
+            );
+            if (!embedRes.ok) { errors.push(doc.title); return; }
+            const embedData = await embedRes.json();
+            const embedding = embedData.embedding?.values;
+            if (!embedding) { errors.push(doc.title); return; }
+
+            const { error } = await supabase.from("victoria_knowledge").insert({
+              user_id: user.id,
+              category: doc.category,
+              title: doc.title,
+              content: doc.content,
+              embedding
+            });
+            if (error) { errors.push(doc.title); } else { created++; }
+          } catch { errors.push(doc.title); }
+        }));
+      }
+
+      return new Response(JSON.stringify({ success: true, created, errors }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" }
+      });
+    }
+
+    // =========================================================================
     // AÇÃO: chat (Modo Chat principal com RAG e Streaming SSE)
     // =========================================================================
 
@@ -498,9 +612,46 @@ REGRAS DE RESPOSTA:
       }
     }
 
+    // =========================================================================
+    // 3b. WEB SEARCH — Gemini Google Grounding quando usuário pede pesquisa
+    // =========================================================================
+    const hasSearchIntent = /pesquise|procure na internet|busque na web|buscar na internet|últimas tendências|novidades sobre|pesquisa sobre|o que está acontecendo com|pesquise sobre|me traga dados de|me traga informações sobre|tendências de mercado/.test(lastUserMsg);
+
+    let webSearchContext = "";
+    if (hasSearchIntent && GEMINI_API_KEY) {
+      try {
+        const searchQuery = messages[messages.length - 1]?.content || lastUserMsg;
+        const searchRes = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              contents: [{ parts: [{ text: `Pesquise e resuma em português: ${searchQuery}` }], role: "user" }],
+              tools: [{ google_search: {} }],
+              generationConfig: { maxOutputTokens: 1024, temperature: 0.3 }
+            })
+          }
+        );
+        if (searchRes.ok) {
+          const searchData = await searchRes.json();
+          const searchText = searchData.candidates?.[0]?.content?.parts?.[0]?.text || "";
+          if (searchText) {
+            webSearchContext = `\n\n[🌐 RESULTADO DE PESQUISA NA INTERNET — ${new Date().toLocaleDateString("pt-BR")}]:\n${searchText}\n[Fim da pesquisa web]`;
+            console.log("[VICTORIA] Web search realizado com sucesso.");
+          }
+        }
+      } catch (searchErr) {
+        console.warn("[VICTORIA] Falha na pesquisa web:", searchErr);
+      }
+    }
+
     let promptWithRAG = systemPrompt;
     if (retrievedContext) {
       promptWithRAG += `\n\nCONHECIMENTO ADICIONAL DO PROPRIETÁRIO / REGRAS DE NEGÓCIO (Utilize estes dados como verdade absoluta para responder à pergunta atual): \n${retrievedContext}`;
+    }
+    if (webSearchContext) {
+      promptWithRAG += webSearchContext;
     }
 
     // =========================================================================
