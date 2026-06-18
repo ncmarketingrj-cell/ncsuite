@@ -751,38 +751,78 @@ function VictoriaHubPage() {
                     </div>
                   )}
 
-                  {/* Painel de Quick Actions */}
-                  <div className="w-full flex flex-col gap-4 text-left">
+                  {/* Painel de Quick Actions — C5: Análise / Execução */}
+                  <div className="w-full flex flex-col gap-5 text-left">
                     <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/50 border-b border-border/40 pb-2">Como posso alavancar seus resultados hoje?</span>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      {quickActions.map((action, index) => {
-                        const Icon = action.icon;
-                        return (
-                          <button
-                            key={index}
-                            onClick={() => {
-                              if (!selectedAccountId && action.type === "analysis") {
-                                    toast.warning("Selecione uma conta de anúncios no cabeçalho primeiro!");
-                                return;
-                              }
-                              setPrompt(action.prompt);
-                            }}
-                            className="card-sport p-4 bg-card/30 hover:bg-primary/5 border border-border/40 hover:border-primary/28 rounded-2xl transition-all duration-200 text-left flex gap-3 group active:scale-[0.98]"
-                          >
-                            <div className="h-8 w-8 rounded-xl bg-background flex items-center justify-center shrink-0 border border-border/60 group-hover:border-primary/20 shadow-sm transition-colors">
-                              <Icon className="h-4 w-4 text-muted-foreground group-hover:text-primary transition-colors" />
-                            </div>
-                            <div className="min-w-0">
-                              <div className="flex items-center gap-1.5">
-                                <h4 className="text-xs font-bold text-foreground group-hover:text-primary transition-colors">{action.title}</h4>
-                                <ArrowUpRight className="h-3.5 w-3.5 text-muted-foreground/40 group-hover:text-primary group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-all" />
-                              </div>
-                              <p className="text-[10px] text-muted-foreground mt-0.5 leading-relaxed">{action.description}</p>
-                            </div>
-                          </button>
-                        );
-                      })}
-                    </div>
+
+                    {/* RAG indicator — C4: mostra snippets recuperados */}
+                    {chat.ragSnippets.length > 0 && (
+                      <div className="flex items-center gap-2 rounded-xl border border-amber-500/20 bg-amber-500/5 px-3 py-2 text-[10px] font-bold text-amber-500">
+                        <Database className="h-3 w-3 shrink-0" />
+                        {chat.ragSnippets.length} documento{chat.ragSnippets.length > 1 ? "s" : ""} da base de conhecimento aplicado{chat.ragSnippets.length > 1 ? "s" : ""} na última resposta
+                      </div>
+                    )}
+
+                    {(["analysis", "action"] as const).map(group => {
+                      const grouped = quickActions.filter(a => a.type === group);
+                      if (!grouped.length) return null;
+                      return (
+                        <div key={group} className="flex flex-col gap-2">
+                          <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/40 flex items-center gap-1.5">
+                            {group === "analysis" ? (
+                              <><BarChart3 className="h-3 w-3" /> Análise</>
+                            ) : (
+                              <><Zap className="h-3 w-3 text-amber-500" /> <span className="text-amber-500">Execução</span></>
+                            )}
+                          </span>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            {grouped.map((action, index) => {
+                              const Icon = action.icon;
+                              return (
+                                <button
+                                  key={index}
+                                  onClick={() => {
+                                    if (!selectedAccountId && action.type === "analysis") {
+                                      toast.warning("Selecione uma conta de anúncios no cabeçalho primeiro!");
+                                      return;
+                                    }
+                                    setPrompt(action.prompt);
+                                  }}
+                                  className={`card-sport p-4 border rounded-2xl transition-all duration-200 text-left flex gap-3 group active:scale-[0.98] ${
+                                    group === "action"
+                                      ? "bg-amber-500/5 border-amber-500/20 hover:bg-amber-500/10 hover:border-amber-500/40"
+                                      : "bg-card/30 border-border/40 hover:bg-primary/5 hover:border-primary/28"
+                                  }`}
+                                >
+                                  <div className={`h-8 w-8 rounded-xl bg-background flex items-center justify-center shrink-0 border shadow-sm transition-colors ${
+                                    group === "action"
+                                      ? "border-amber-500/20 group-hover:border-amber-500/40"
+                                      : "border-border/60 group-hover:border-primary/20"
+                                  }`}>
+                                    <Icon className={`h-4 w-4 transition-colors ${
+                                      group === "action"
+                                        ? "text-amber-500/70 group-hover:text-amber-500"
+                                        : "text-muted-foreground group-hover:text-primary"
+                                    }`} />
+                                  </div>
+                                  <div className="min-w-0">
+                                    <div className="flex items-center gap-1.5">
+                                      <h4 className={`text-xs font-bold transition-colors ${
+                                        group === "action"
+                                          ? "text-foreground group-hover:text-amber-500"
+                                          : "text-foreground group-hover:text-primary"
+                                      }`}>{action.title}</h4>
+                                      <ArrowUpRight className="h-3.5 w-3.5 text-muted-foreground/40 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-all" />
+                                    </div>
+                                    <p className="text-[10px] text-muted-foreground mt-0.5 leading-relaxed">{action.description}</p>
+                                  </div>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               ) : (

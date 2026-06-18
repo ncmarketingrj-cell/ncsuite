@@ -51,6 +51,7 @@ export function useVictoriaChat(selectedAccountId: string, setSelectedAccountId:
   // Estados do RAG / Base de Conhecimento
   const [knowledgeList, setKnowledgeList] = useState<KnowledgeItem[]>([]);
   const [loadingKnowledge, setLoadingKnowledge] = useState(false);
+  const [ragSnippets, setRagSnippets] = useState<{ id: string; title: string; category: string; content: string }[]>([]);
 
   // Carregar conversas do usuário
   const fetchConversations = async () => {
@@ -382,7 +383,13 @@ export function useVictoriaChat(selectedAccountId: string, setSelectedAccountId:
         });
       }
 
-      // 4. Invocar a IA Victoria por Streaming SSE
+      // 4. Busca vetorial no hook antes de chamar o chat (C4)
+      const ragResults = content.trim() ? await searchKnowledge(content) : [];
+      const externalContext = ragResults.length > 0
+        ? ragResults.map(s => `[CONHECIMENTO — ${s.category.toUpperCase()}] ${s.title}: ${s.content}`).join("\n\n")
+        : undefined;
+
+      // 5. Invocar a IA Victoria por Streaming SSE
       const { data: { session } } = await supabase.auth.getSession();
       const res = await fetch(
         `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/victoria-agent`,
@@ -396,7 +403,8 @@ export function useVictoriaChat(selectedAccountId: string, setSelectedAccountId:
           body: JSON.stringify({
             action: "chat",
             messages: requestMessages,
-            selectedAccountId: selectedAccountId || undefined
+            selectedAccountId: selectedAccountId || undefined,
+            externalContext
           })
         }
       );
@@ -645,6 +653,33 @@ export function useVictoriaChat(selectedAccountId: string, setSelectedAccountId:
     }
   };
 
+  // Busca vetorial na base de conhecimento — exposta ao hook (C4)
+  const searchKnowledge = async (query: string): Promise<{ id: string; title: string; category: string; content: string }[]> => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/victoria-agent`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${session?.access_token || ""}`,
+            "apikey": import.meta.env.VITE_SUPABASE_ANON_KEY || ""
+          },
+          body: JSON.stringify({ action: "search_knowledge", query })
+        }
+      );
+      if (!res.ok) return [];
+      const data = await res.json();
+      const snippets = (data.snippets || []) as { id: string; title: string; category: string; content: string }[];
+      setRagSnippets(snippets);
+      return snippets;
+    } catch (e) {
+      console.warn("[VICTORIA] RAG hook search falhou:", e);
+      return [];
+    }
+  };
+
   // Adicionar Conhecimento (RAG) via Edge Function
   const addKnowledge = async (title: string, content: string, category: 'inventory' | 'brand_voice' | 'manual' | 'strategy' | 'custom') => {
     try {
@@ -730,6 +765,8 @@ export function useVictoriaChat(selectedAccountId: string, setSelectedAccountId:
     loadingKnowledge,
     addKnowledge,
     deleteKnowledge,
-    fetchKnowledge
+    fetchKnowledge,
+    ragSnippets,
+    searchKnowledge
   };
 }

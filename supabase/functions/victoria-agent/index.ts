@@ -25,7 +25,7 @@ serve(async (req) => {
     }
 
     const body = await req.json();
-    const { action = "chat", messages, selectedAccountId, title, content, category } = body;
+    const { action = "chat", messages, selectedAccountId, title, content, category, query, externalContext } = body;
     const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
 
@@ -88,6 +88,57 @@ serve(async (req) => {
       }
 
       return new Response(JSON.stringify({ success: true, data }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" }
+      });
+    }
+
+    // =========================================================================
+    // AÇÃO: search_knowledge (busca vetorial exposta ao hook — C4)
+    // =========================================================================
+    if (action === "search_knowledge") {
+      if (!query || !GEMINI_API_KEY) {
+        return new Response(JSON.stringify({ snippets: [] }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" }
+        });
+      }
+
+      const embedRes = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent?key=${GEMINI_API_KEY}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            model: "models/text-embedding-004",
+            content: { parts: [{ text: query }] }
+          })
+        }
+      );
+
+      if (embedRes.ok) {
+        const embedData = await embedRes.json();
+        const embedding = embedData.embedding?.values;
+        if (embedding) {
+          const { data: matchData } = await supabase.rpc("match_victoria_knowledge", {
+            query_embedding: embedding,
+            match_threshold: 0.65,
+            match_count: 5,
+            p_user_id: user.id
+          });
+
+          const snippets = (matchData || []).map((k: any) => ({
+            id: k.id,
+            title: k.title,
+            category: k.category,
+            content: (k.content || "").slice(0, 600)
+          }));
+
+          return new Response(JSON.stringify({ snippets }), {
+            headers: { ...corsHeaders, "Content-Type": "application/json" }
+          });
+        }
+      }
+
+      return new Response(JSON.stringify({ snippets: [] }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" }
       });
     }
@@ -206,6 +257,60 @@ serve(async (req) => {
         ).join("\n")
       : "Nenhuma campanha ativa ou com investimento encontrada nos últimos 30 dias.";
 
+    // ─── C8: Dados Expandidos — Social, Clientes, Funis ─────────────────────
+    const [socialPagesRes, socialPostsRes, clientsRes, funnelsRes] = await Promise.all([
+      supabase.from("social_pages").select("page_name, facebook_followers, instagram_followers").limit(10),
+      supabase.from("social_posts").select("content, platform, status, scheduled_at, likes_count, comments_count, reach_count").order("scheduled_at", { ascending: false }).limit(8),
+      supabase.from("clients").select("name, status").order("name").limit(20),
+      supabase.from("funnels").select("name, created_at").order("created_at", { ascending: false }).limit(10)
+    ]);
+
+    const socialPages    = socialPagesRes.data   || [];
+    const socialPosts    = socialPostsRes.data   || [];
+    const clientsList    = clientsRes.data       || [];
+    const funnelsList    = funnelsRes.data       || [];
+
+    // ─── C7: Intent Detection (roteamento multiagente) ───────────────────────
+    const lastUserMsg = (messages && messages.length > 0)
+      ? String(messages[messages.length - 1]?.content || "").toLowerCase()
+      : "";
+
+    const intent: "social" | "funil" | "gestao" | "trafego" =
+      /instagram|facebook|social|seguidor|engajamento|reach|stories|reel|conteúdo digital/.test(lastUserMsg)
+        ? "social"
+        : /funil|funnel|lead|conversão|etapa|whatsapp flow|jornada do cliente/.test(lastUserMsg)
+        ? "funil"
+        : /cliente|reunião|cobrança|pagamento|contrato|prospectar|crm|relacionamento/.test(lastUserMsg)
+        ? "gestao"
+        : "trafego";
+
+    const subAgentLabel: Record<string, string> = {
+      social:  "🎨 SOCIAL MEDIA STRATEGIST — Especialista em conteúdo, engajamento e crescimento orgânico",
+      funil:   "🏗️ FUNNEL ARCHITECT — Especialista em funis de conversão, etapas e jornada do cliente",
+      gestao:  "🤝 RELATIONSHIP MANAGER — Especialista em gestão de clientes, CRM e cobranças",
+      trafego: "🚀 TRAFFIC ANALYST — Especialista em campanhas de tráfego pago, CPL e otimização de conversão"
+    };
+
+    const socialCtx = socialPages.length > 0
+      ? socialPages.map((p: any) => `- ${p.page_name} | FB: ${Number(p.facebook_followers||0).toLocaleString("pt-BR")} | IG: ${Number(p.instagram_followers||0).toLocaleString("pt-BR")}`).join("\n")
+      : "Nenhuma página conectada.";
+
+    const postsCtx = socialPosts.length > 0
+      ? socialPosts.map((p: any) => {
+          const d = p.scheduled_at ? new Date(p.scheduled_at).toLocaleDateString("pt-BR") : "?";
+          const txt = (p.content || "").slice(0, 55).replace(/\n/g, " ");
+          return `- [${d}] ${p.platform||"?"} | "${txt}..." | ${p.status} | ❤️${p.likes_count||0} 💬${p.comments_count||0} 👁️${p.reach_count||0}`;
+        }).join("\n")
+      : "Nenhum post recente.";
+
+    const clientsCtx = clientsList.length > 0
+      ? clientsList.map((c: any) => `- ${c.name} (${c.status || "ativo"})`).join("\n")
+      : "Nenhum cliente cadastrado.";
+
+    const funnelsCtx = funnelsList.length > 0
+      ? funnelsList.map((f: any) => `- ${f.name}`).join("\n")
+      : "Nenhum funil criado.";
+
     const getPrevSaturdayAndSunday = (refDate: Date) => {
       const dayOfWeek = refDate.getDay();
       const sat = new Date(refDate);
@@ -295,6 +400,24 @@ TABELA DE MÉTRICAS DIÁRIAS DETALHADAS (Use essa tabela para responder com dado
 Data | Plataforma | Campanha | Investimento | Leads | Cliques | Impressões
 ${dailySeriesText}
 
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ROTEAMENTO MULTIAGENTE — SUB-AGENTE ATIVO:
+→ ${subAgentLabel[intent]}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+DADOS SOCIAIS (Meta / Instagram / Facebook):
+PÁGINAS CONECTADAS:
+${socialCtx}
+
+POSTS RECENTES (últimos 8):
+${postsCtx}
+
+PORTFOLIO DE CLIENTES ATIVOS:
+${clientsCtx}
+
+FUNIS CADASTRADOS NO SISTEMA:
+${funnelsCtx}
+
 REGRAS DE RESPOSTA:
 1. Sempre responda em Português Brasileiro usando formatação markdown limpa.
 2. Responda diretamente e aja como uma estrategista sênior dedicada. Nunca fale como uma IA.
@@ -324,8 +447,8 @@ REGRAS DE RESPOSTA:
     // =========================================================================
     // 3. EXECUÇÃO RAG (RETRIEVAL-AUGMENTED GENERATION)
     // =========================================================================
-    let retrievedContext = "";
-    if (GEMINI_API_KEY && messages && messages.length > 0) {
+    let retrievedContext = externalContext || "";
+    if (!retrievedContext && GEMINI_API_KEY && messages && messages.length > 0) {
       const lastUserMessage = messages[messages.length - 1].content;
       if (lastUserMessage && lastUserMessage.trim() !== "") {
         try {
