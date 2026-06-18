@@ -669,26 +669,42 @@ function MetricasCampanhasPage() {
     return base.filter((c: any) => (c.t?.reach || 0) >= 1 || (c.t?.impressions || 0) >= 1 || (c.t?.cost || 0) > 0);
   }, [campaigns, periodStats]);
 
-  const listData = level === "campanhas" ? enrichedCampaigns : level === "conjuntos" ? adSets.filter((c: any) => (c.t?.reach || 0) >= 1 || (c.t?.impressions || 0) >= 1 || (c.t?.cost || 0) > 0) : ads.filter((c: any) => (c.t?.reach || 0) >= 1 || (c.t?.impressions || 0) >= 1 || (c.t?.cost || 0) > 0);
+  const listData = useMemo(() => {
+    if (level === "campanhas") return enrichedCampaigns;
+    if (level === "conjuntos") return adSets.filter((c: any) => (c.t?.reach || 0) >= 1 || (c.t?.impressions || 0) >= 1 || (c.t?.cost || 0) > 0);
+    return ads.filter((c: any) => (c.t?.reach || 0) >= 1 || (c.t?.impressions || 0) >= 1 || (c.t?.cost || 0) > 0);
+  }, [level, enrichedCampaigns, adSets, ads]);
+
   const filtered = useMemo(() => listData.filter((c: any) => !search || c.name?.toLowerCase().includes(search.toLowerCase())), [listData, search]);
 
-  const selSet    = level === "campanhas" ? selectedCamps  : level === "conjuntos" ? selectedAdSets  : selectedAds;
+  const selSet = level === "campanhas" ? selectedCamps : level === "conjuntos" ? selectedAdSets : selectedAds;
   const setSelSet = level === "campanhas" ? setSelectedCamps : level === "conjuntos" ? setSelectedAdSets : setSelectedAds;
 
-  const allSelected  = filtered.length > 0 && filtered.every((c: any) => selSet.has(c.id));
+  const allSelected = filtered.length > 0 && filtered.every((c: any) => selSet.has(c.id));
   const someSelected = filtered.some((c: any) => selSet.has(c.id));
-  const toggleAll    = useCallback(() => allSelected ? setSelSet(new Set()) : setSelSet(new Set(filtered.map((c: any) => c.id))), [allSelected, filtered, setSelSet]);
-  const toggleOne    = useCallback((id: string) => { const s = new Set(selSet); s.has(id) ? s.delete(id) : s.add(id); setSelSet(s); }, [selSet, setSelSet]);
+  const toggleAll = useCallback(() => allSelected ? setSelSet(new Set()) : setSelSet(new Set(filtered.map((c: any) => c.id))), [allSelected, filtered, setSelSet]);
+  const toggleOne = useCallback((id: string) => { const s = new Set(selSet); s.has(id) ? s.delete(id) : s.add(id); setSelSet(s); }, [selSet, setSelSet]);
 
-  const sel       = selSet.size > 0 ? filtered.filter((c: any) => selSet.has(c.id)) : filtered;
-  const totCost   = sel.reduce((s: number, c: any) => s + c.t.cost, 0);
-  const totConv   = sel.reduce((s: number, c: any) => s + c.t.conversions, 0);
-  const totImpr   = sel.reduce((s: number, c: any) => s + c.t.impressions, 0);
-  const totReach  = sel.reduce((s: number, c: any) => s + c.t.reach, 0);
-  const totClicks = sel.reduce((s: number, c: any) => s + c.t.clicks, 0);
-  const avgCpl    = totConv > 0 ? totCost / totConv : 0;
-  const avgCtr    = totImpr > 0 ? (totClicks / totImpr) * 100 : 0;
-  const avgCpm    = totImpr > 0 ? (totCost  / totImpr) * 1000 : 0;
+  const { sel, totCost, totConv, totImpr, totReach, totClicks, avgCpl, avgCtr, avgCpm } = useMemo(() => {
+    const s = selSet.size > 0 ? filtered.filter((c: any) => selSet.has(c.id)) : filtered;
+    const cost = s.reduce((sum: number, c: any) => sum + c.t.cost, 0);
+    const conv = s.reduce((sum: number, c: any) => sum + c.t.conversions, 0);
+    const impr = s.reduce((sum: number, c: any) => sum + c.t.impressions, 0);
+    const reach = s.reduce((sum: number, c: any) => sum + c.t.reach, 0);
+    const clicks = s.reduce((sum: number, c: any) => sum + c.t.clicks, 0);
+    
+    return {
+      sel: s,
+      totCost: cost,
+      totConv: conv,
+      totImpr: impr,
+      totReach: reach,
+      totClicks: clicks,
+      avgCpl: conv > 0 ? cost / conv : 0,
+      avgCtr: impr > 0 ? (clicks / impr) * 100 : 0,
+      avgCpm: impr > 0 ? (cost / impr) * 1000 : 0,
+    };
+  }, [selSet, filtered]);
 
   const maxCplThreshold = useMemo(() => {
     if (accountFilter === "all") return null;

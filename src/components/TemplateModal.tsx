@@ -77,10 +77,10 @@ export function TemplateModal({ isOpen, onClose, onSuccess, templates }: Templat
 
     let error;
     if (editingId) {
-      const res = await supabase.from("report_templates").update(payload).eq("id", editingId);
+      const res = await (supabase as any).from("report_templates").update(payload).eq("id", editingId);
       error = res.error;
     } else {
-      const res = await supabase.from("report_templates").insert(payload);
+      const res = await (supabase as any).from("report_templates").insert(payload);
       error = res.error;
     }
 

@@ -107,7 +107,7 @@ function Dashboard() {
       let currentPeriod = { cost: 0, conversions: 0, clicks: 0, impressions: 0 };
       let previousPeriod = { cost: 0, conversions: 0, clicks: 0, impressions: 0 };
 
-      (metrics || []).forEach(m => {
+      (metrics || []).forEach((m: any) => {
         if (!m.date) return;
         
         // Comparação robusta de string ISO pura YYYY-MM-DD (livre de fuso horário do navegador)

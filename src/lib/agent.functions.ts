@@ -61,7 +61,7 @@ export const chatWithVictoriaFn = createServerFn({ method: "POST" })
 
     // 1. Fetch ad accounts for the current logged-in user to ensure isolation
     const userId = context.userId;
-    const { data: userAccounts } = await supabase
+    const { data: userAccounts } = await (supabase as any)
       .from("ad_accounts")
       .select("id")
       .eq("user_id", userId);
