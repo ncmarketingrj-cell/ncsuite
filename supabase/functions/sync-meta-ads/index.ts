@@ -144,7 +144,7 @@ async function fetchAdInsights(adAccountId: string, token: string, timeParams: R
 async function fetchAdSetsWithStatus(adAccountId: string, token: string): Promise<any[]> {
   try {
     return await metaGetPaginated(`/${adAccountId}/adsets`, token, {
-      fields: "id,name,status,campaign_id",
+      fields: "id,name,status,campaign_id,daily_budget,lifetime_budget",
       limit: "500"
     })
   } catch (e: any) {
@@ -220,7 +220,12 @@ async function fetchDemographicBreakdowns(adAccountId: string, token: string, ti
 // REGRA DO META ADS MANAGER:
 //   O Gerenciador mostra o "evento de otimização primário" da campanha.
 //
-function extractConversions(actions: any[] = [], objective?: string): number {
+function extractConversions(actions: any[] = [], objective?: string, reach: number = 0): number {
+  // Se for campanha de Alcance/Reconhecimento, o Gerenciador Meta exibe o próprio Alcance como "Resultado"
+  if (objective === "OUTCOME_AWARENESS" || objective === "AWARENESS") {
+    return reach;
+  }
+
   if (!Array.isArray(actions) || actions.length === 0) return 0;
 
   const getVal = (type: string): number => {
@@ -276,9 +281,9 @@ function extractConversions(actions: any[] = [], objective?: string): number {
     // Campanhas de Mensagens: Meta Ads Manager usa "first_reply" como resultado principal
     // "total_messaging_connection" fica como último fallback pois conta retornos
     "MESSAGES": [
-      "onsite_conversion.messaging_first_reply",
       "onsite_conversion.messaging_conversation_started_7d",
       "messaging_conversation_started_7d",
+      "onsite_conversion.messaging_first_reply",
       "onsite_conversion.total_messaging_connection",
     ],
     // Instalações de App
@@ -299,10 +304,10 @@ function extractConversions(actions: any[] = [], objective?: string): number {
     // e fariam o app exibir resultados inflados quando não há mensagens reais no dia.
     // O Meta Ads Manager para campanhas de mensagem exibe APENAS as métricas de messaging abaixo.
     "OUTCOME_ENGAGEMENT": [
-      "onsite_conversion.messaging_first_reply",            // ← resultado primário para mensagens (Meta Ads Manager)
-      "onsite_conversion.messaging_conversation_started_7d",// ← alternativa
+      "onsite_conversion.messaging_conversation_started_7d", // ← Meta Manager defaults to "Conversas por mensagem iniciada"
       "messaging_conversation_started_7d",
-      "onsite_conversion.total_messaging_connection",       // ← superset (inclui retornos), só se acima = 0
+      "onsite_conversion.messaging_first_reply",            
+      "onsite_conversion.total_messaging_connection",       // ← superset (inclui retornos)
     ],
   };
 
@@ -490,7 +495,8 @@ serve(async (req) => {
         for (const row of insights) {
           const actions: any[] = row.actions || []
           const objective = objectiveMap.get(row.campaign_id)
-          const pickedConversions = extractConversions(actions, objective)
+          const reach = parseInt(row.reach) || 0
+          const pickedConversions = extractConversions(actions, objective, reach)
           auditResult.push({
             account: acc.name,
             account_id: acc.id,
@@ -733,7 +739,8 @@ serve(async (req) => {
             campaign_id,
             name: a.name || `Conjunto ${a.id}`,
             external_id: a.id,
-            status: a.status?.toLowerCase() || "active"
+            status: a.status?.toLowerCase() || "active",
+            budget: a.daily_budget ? parseFloat(a.daily_budget) / 100 : (a.lifetime_budget ? parseFloat(a.lifetime_budget) / 100 : 0)
           })
         }
       }
@@ -746,7 +753,8 @@ serve(async (req) => {
               campaign_id,
               name: row.adset_name || `Conjunto ${row.adset_id}`,
               external_id: row.adset_id,
-              status: adsetStatusMap.get(row.adset_id) || "active"
+              status: adsetStatusMap.get(row.adset_id) || "active",
+              budget: 0 // Default since we don't have budget from insights
             })
           }
         }
@@ -821,7 +829,7 @@ serve(async (req) => {
           cost: parseFloat(row.spend) || 0,
           reach: parseInt(row.reach) || 0,
           frequency: parseFloat(row.frequency || "0") || 0,
-          conversions: extractConversions(row.actions, campaignObjectiveMap.get(row.campaign_id)),
+          conversions: extractConversions(row.actions, campaignObjectiveMap.get(row.campaign_id), parseInt(row.reach) || 0),
           result_type: campaignObjectiveMap.get(row.campaign_id)
         }
       }).filter(Boolean)
@@ -848,41 +856,101 @@ serve(async (req) => {
           }
         } catch (_) {}
 
-        const periodRaw = await metaGetPaginated(`/${accountId}/insights`, token, {
-          level: "campaign",
-          fields: "campaign_id,spend,reach,impressions,frequency,actions,inline_link_clicks,date_start,date_stop",
-          limit: "500",
-          ...timeParams
-          // Sem time_increment → agrega todo o período em 1 linha por campanha
+        const [campaignPeriodRaw, adsetPeriodRaw, adPeriodRaw] = await Promise.all([
+          metaGetPaginated(`/${accountId}/insights`, token, {
+            level: "campaign",
+            fields: "campaign_id,spend,reach,impressions,frequency,actions,inline_link_clicks,date_start,date_stop",
+            limit: "500",
+            ...timeParams
+          }),
+          metaGetPaginated(`/${accountId}/insights`, token, {
+            level: "adset",
+            fields: "adset_id,campaign_id,spend,reach,impressions,frequency,actions,inline_link_clicks,date_start,date_stop",
+            limit: "500",
+            ...timeParams
+          }),
+          metaGetPaginated(`/${accountId}/insights`, token, {
+            level: "ad",
+            fields: "ad_id,campaign_id,spend,reach,impressions,frequency,actions,inline_link_clicks,date_start,date_stop",
+            limit: "500",
+            ...timeParams
+          })
+        ])
+
+        const periodStatsToUpsert: any[] = []
+
+        campaignPeriodRaw.forEach((row: any) => {
+          const campaign_id = idMap.get(row.campaign_id)
+          if (!campaign_id) return
+          const reach = parseInt(row.reach) || 0
+          const impressions = parseInt(row.impressions) || 0
+          periodStatsToUpsert.push({
+            entity_type: 'campaign',
+            entity_id: campaign_id,
+            ad_account_id: accountId,
+            start_date:   row.date_start || periodStart,
+            end_date:     row.date_stop  || periodEnd,
+            reach,
+            impressions,
+            frequency:    reach > 0 ? impressions / reach : (parseFloat(row.frequency || "0") || 0),
+            spend:        parseFloat(row.spend || "0") || 0,
+            conversions:  extractConversions(row.actions, campaignObjectiveMap.get(row.campaign_id), parseInt(row.reach) || 0),
+            clicks:       extractClicks(row.actions, row.inline_link_clicks),
+            synced_at:    new Date().toISOString(),
+          })
         })
 
-        const periodStatsToUpsert = periodRaw
-          .map((row: any) => {
-            const campaign_id = idMap.get(row.campaign_id)
-            if (!campaign_id) return null
-            const reach       = parseInt(row.reach) || 0
-            const impressions = parseInt(row.impressions) || 0
-            return {
-              campaign_id,
-              ad_account_id: accountId,
-              start_date:   row.date_start || periodStart,
-              end_date:     row.date_stop  || periodEnd,
-              reach,
-              impressions,
-              frequency:    reach > 0 ? impressions / reach : (parseFloat(row.frequency || "0") || 0),
-              spend:        parseFloat(row.spend || "0") || 0,
-              conversions:  extractConversions(row.actions, campaignObjectiveMap.get(row.campaign_id)),
-              clicks:       extractClicks(row.actions, row.inline_link_clicks),
-              synced_at:    new Date().toISOString(),
-            }
+        adsetPeriodRaw.forEach((row: any) => {
+          const ad_set_id = adsetIdMap.get(row.adset_id)
+          if (!ad_set_id) return
+          const reach = parseInt(row.reach) || 0
+          const impressions = parseInt(row.impressions) || 0
+          periodStatsToUpsert.push({
+            entity_type: 'adset',
+            entity_id: ad_set_id,
+            ad_account_id: accountId,
+            start_date:   row.date_start || periodStart,
+            end_date:     row.date_stop  || periodEnd,
+            reach,
+            impressions,
+            frequency:    reach > 0 ? impressions / reach : (parseFloat(row.frequency || "0") || 0),
+            spend:        parseFloat(row.spend || "0") || 0,
+            conversions:  extractConversions(row.actions, campaignObjectiveMap.get(row.campaign_id), parseInt(row.reach) || 0),
+            clicks:       extractClicks(row.actions, row.inline_link_clicks),
+            synced_at:    new Date().toISOString(),
           })
-          .filter(Boolean)
+        })
+
+        adPeriodRaw.forEach((row: any) => {
+          const ad_id = adIdMap.get(row.ad_id)
+          if (!ad_id) return
+          const reach = parseInt(row.reach) || 0
+          const impressions = parseInt(row.impressions) || 0
+          periodStatsToUpsert.push({
+            entity_type: 'ad',
+            entity_id: ad_id,
+            ad_account_id: accountId,
+            start_date:   row.date_start || periodStart,
+            end_date:     row.date_stop  || periodEnd,
+            reach,
+            impressions,
+            frequency:    reach > 0 ? impressions / reach : (parseFloat(row.frequency || "0") || 0),
+            spend:        parseFloat(row.spend || "0") || 0,
+            conversions:  extractConversions(row.actions, campaignObjectiveMap.get(row.campaign_id), parseInt(row.reach) || 0),
+            clicks:       extractClicks(row.actions, row.inline_link_clicks),
+            synced_at:    new Date().toISOString(),
+          })
+        })
 
         if (periodStatsToUpsert.length > 0) {
-          const { error } = await supabase
-            .from("campaign_period_stats")
-            .upsert(periodStatsToUpsert, { onConflict: "campaign_id,start_date,end_date" })
-          if (error) console.warn(`[SYNC] Period stats upsert: ${error.message}`)
+          const chunkSize = 500
+          for (let i = 0; i < periodStatsToUpsert.length; i += chunkSize) {
+            const chunk = periodStatsToUpsert.slice(i, i + chunkSize)
+            const { error } = await supabase
+              .from("meta_period_stats")
+              .upsert(chunk, { onConflict: "entity_type,entity_id,start_date,end_date" })
+            if (error) console.warn(`[SYNC] Period stats upsert: ${error.message}`)
+          }
         }
       } catch (periodErr: any) {
         console.warn(`[SYNC] Period stats fetch failed for ${accountId}:`, periodErr.message)
@@ -902,7 +970,7 @@ serve(async (req) => {
           impressions: parseInt(row.impressions) || 0,
           clicks: extractClicks(row.actions, row.inline_link_clicks),
           spend: parseFloat(row.spend) || 0,
-          conversions: extractConversions(row.actions, campaignObjectiveMap.get(row.campaign_id)),
+          conversions: extractConversions(row.actions, campaignObjectiveMap.get(row.campaign_id), parseInt(row.reach) || 0),
           reach: parseInt(row.reach) || 0
         }
       }).filter(Boolean)
@@ -927,7 +995,7 @@ serve(async (req) => {
           impressions: parseInt(row.impressions) || 0,
           clicks: extractClicks(row.actions, row.inline_link_clicks),
           spend: parseFloat(row.spend) || 0,
-          conversions: extractConversions(row.actions, campaignObjectiveMap.get(row.campaign_id)),
+          conversions: extractConversions(row.actions, campaignObjectiveMap.get(row.campaign_id), parseInt(row.reach) || 0),
           reach: parseInt(row.reach) || 0
         }
       }).filter(Boolean)
@@ -951,7 +1019,7 @@ serve(async (req) => {
           impressions: parseInt(row.impressions) || 0,
           clicks: extractClicks(row.actions, row.inline_link_clicks),
           spend: parseFloat(row.spend) || 0,
-          conversions: extractConversions(row.actions, campaignObjectiveMap.get(row.campaign_id)),
+          conversions: extractConversions(row.actions, campaignObjectiveMap.get(row.campaign_id), parseInt(row.reach) || 0),
           reach: parseInt(row.reach) || 0
         }
       }).filter(Boolean)
@@ -975,7 +1043,7 @@ serve(async (req) => {
             impressions: parseInt(row.impressions) || 0,
             clicks: extractClicks(row.actions, row.inline_link_clicks),
             cost: parseFloat(row.spend) || 0,
-            conversions: extractConversions(row.actions, campaignObjectiveMap.get(row.campaign_id)),
+            conversions: extractConversions(row.actions, campaignObjectiveMap.get(row.campaign_id), parseInt(row.reach) || 0),
             reach: parseInt(row.reach) || 0,
             frequency: parseFloat(row.frequency || "0") || 0,
             video_p25: extractVideoMetric(row, "video_p25_watched_actions"),
@@ -996,7 +1064,7 @@ serve(async (req) => {
             impressions: parseInt(row.impressions) || 0,
             clicks: extractClicks(row.actions, row.inline_link_clicks),
             cost: parseFloat(row.spend) || 0,
-            conversions: extractConversions(row.actions, campaignObjectiveMap.get(row.campaign_id)),
+            conversions: extractConversions(row.actions, campaignObjectiveMap.get(row.campaign_id), parseInt(row.reach) || 0),
             reach: parseInt(row.reach) || 0,
             frequency: parseFloat(row.frequency || "0") || 0,
             video_p25: extractVideoMetric(row, "video_p25_watched_actions"),
@@ -1039,7 +1107,7 @@ serve(async (req) => {
           impressions: parseInt(row.impressions) || 0,
           clicks: extractClicks(row.actions, row.inline_link_clicks),
           spend: parseFloat(row.spend) || 0,
-          conversions: extractConversions(row.actions, campaignObjectiveMap.get(row.campaign_id)),
+          conversions: extractConversions(row.actions, campaignObjectiveMap.get(row.campaign_id), parseInt(row.reach) || 0),
           reach: parseInt(row.reach) || 0
         }
       }).filter(Boolean)
@@ -1064,7 +1132,7 @@ serve(async (req) => {
           impressions: parseInt(row.impressions) || 0,
           clicks: extractClicks(row.actions, row.inline_link_clicks),
           spend: parseFloat(row.spend) || 0,
-          conversions: extractConversions(row.actions, campaignObjectiveMap.get(row.campaign_id)),
+          conversions: extractConversions(row.actions, campaignObjectiveMap.get(row.campaign_id), parseInt(row.reach) || 0),
           reach: parseInt(row.reach) || 0
         }
       }).filter(Boolean)

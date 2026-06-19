@@ -508,8 +508,8 @@ function MetricasCampanhasPage() {
     queryKey: ["mc-period-stats", accountFilter, startStr, endStr],
     queryFn: async () => {
       let q = (supabase as any)
-        .from("campaign_period_stats")
-        .select("campaign_id, reach, impressions, frequency, spend, conversions, clicks")
+        .from("meta_period_stats")
+        .select("entity_type, entity_id, reach, impressions, frequency, spend, conversions, clicks")
         .eq("start_date", startStr)
         .eq("end_date", endStr);
       if (accountFilter !== "all") q = q.eq("ad_account_id", accountFilter);
@@ -657,8 +657,9 @@ function MetricasCampanhasPage() {
   // Injeta alcance e frequência reais (period stats) nas campanhas — torna todas as métricas exatas
   const enrichedCampaigns = useMemo(() => {
     let base = campaigns;
-    if (periodStats.length > 0) {
-      const statsMap = new Map(periodStats.map((ps: any) => [ps.campaign_id, ps]));
+    const campaignStats = periodStats.filter((p: any) => p.entity_type === 'campaign');
+    if (campaignStats.length > 0) {
+      const statsMap = new Map(campaignStats.map((ps: any) => [ps.entity_id, ps]));
       base = campaigns.map((c: any) => {
         const ps = statsMap.get(c.id) as any;
         if (!ps) return c;
@@ -686,11 +687,61 @@ function MetricasCampanhasPage() {
     return base.filter((c: any) => (c.t?.reach || 0) >= 1 || (c.t?.impressions || 0) >= 1 || (c.t?.cost || 0) > 0);
   }, [campaigns, periodStats]);
 
+  const enrichedAdSets = useMemo(() => {
+    let base = adSets;
+    const adsetStats = periodStats.filter((p: any) => p.entity_type === 'adset');
+    if (adsetStats.length > 0) {
+      const statsMap = new Map(adsetStats.map((ps: any) => [ps.entity_id, ps]));
+      base = adSets.map((c: any) => {
+        const ps = statsMap.get(c.id) as any;
+        if (!ps) return c;
+        const cost = Number(ps.spend || 0);
+        const conversions = Number(ps.conversions || 0);
+        const clicks = Number(ps.clicks || 0);
+        const impressions = Number(ps.impressions || 0);
+        const reach = Number(ps.reach || 0);
+        const freq = reach > 0 ? impressions / reach : 0;
+        const cpl = conversions > 0 ? cost / conversions : 0;
+        const ctr = impressions > 0 ? (clicks / impressions) * 100 : 0;
+        const cpm = impressions > 0 ? (cost / impressions) * 1000 : 0;
+        const cpc = clicks > 0 ? cost / clicks : 0;
+        const roas = cost > 0 ? (conversions * 150) / cost : 0;
+        return { ...c, t: { ...c.t, cost, conversions, clicks, impressions, reach, freq, cpl, ctr, cpm, cpc, roas } };
+      });
+    }
+    return base.filter((c: any) => (c.t?.reach || 0) >= 1 || (c.t?.impressions || 0) >= 1 || (c.t?.cost || 0) > 0);
+  }, [adSets, periodStats]);
+
+  const enrichedAds = useMemo(() => {
+    let base = ads;
+    const adStats = periodStats.filter((p: any) => p.entity_type === 'ad');
+    if (adStats.length > 0) {
+      const statsMap = new Map(adStats.map((ps: any) => [ps.entity_id, ps]));
+      base = ads.map((c: any) => {
+        const ps = statsMap.get(c.id) as any;
+        if (!ps) return c;
+        const cost = Number(ps.spend || 0);
+        const conversions = Number(ps.conversions || 0);
+        const clicks = Number(ps.clicks || 0);
+        const impressions = Number(ps.impressions || 0);
+        const reach = Number(ps.reach || 0);
+        const freq = reach > 0 ? impressions / reach : 0;
+        const cpl = conversions > 0 ? cost / conversions : 0;
+        const ctr = impressions > 0 ? (clicks / impressions) * 100 : 0;
+        const cpm = impressions > 0 ? (cost / impressions) * 1000 : 0;
+        const cpc = clicks > 0 ? cost / clicks : 0;
+        const roas = cost > 0 ? (conversions * 150) / cost : 0;
+        return { ...c, t: { ...c.t, cost, conversions, clicks, impressions, reach, freq, cpl, ctr, cpm, cpc, roas } };
+      });
+    }
+    return base.filter((c: any) => (c.t?.reach || 0) >= 1 || (c.t?.impressions || 0) >= 1 || (c.t?.cost || 0) > 0);
+  }, [ads, periodStats]);
+
   const listData = useMemo(() => {
     if (level === "campanhas") return enrichedCampaigns;
-    if (level === "conjuntos") return adSets.filter((c: any) => (c.t?.reach || 0) >= 1 || (c.t?.impressions || 0) >= 1 || (c.t?.cost || 0) > 0);
-    return ads.filter((c: any) => (c.t?.reach || 0) >= 1 || (c.t?.impressions || 0) >= 1 || (c.t?.cost || 0) > 0);
-  }, [level, enrichedCampaigns, adSets, ads]);
+    if (level === "conjuntos") return enrichedAdSets;
+    return enrichedAds;
+  }, [level, enrichedCampaigns, enrichedAdSets, enrichedAds]);
 
   const filtered = useMemo(() => listData.filter((c: any) => !search || c.name?.toLowerCase().includes(search.toLowerCase())), [listData, search]);
 
