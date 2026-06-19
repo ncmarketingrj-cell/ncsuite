@@ -444,6 +444,21 @@ function SocialMediaPage() {
   const publishedPosts = useMemo(() => filteredPosts.filter((p: any) => p.status === "published"), [filteredPosts]);
   const draftPosts = useMemo(() => filteredPosts.filter((p: any) => p.status === "draft" || p.status === "pending_approval"), [filteredPosts]);
 
+  // Group posts by day for O(1) calendar access
+  const postsByDay = useMemo(() => {
+    const map = new Map<string, any[]>();
+    filteredPosts.forEach((p: any) => {
+      if (p.scheduled_at) {
+        const d = parseISO(p.scheduled_at);
+        const k = format(d, 'yyyy-MM-dd');
+        const list = map.get(k) || [];
+        list.push(p);
+        map.set(k, list);
+      }
+    });
+    return map;
+  }, [filteredPosts]);
+
   return (
     <div className="space-y-6">
       {/* Title Header */}
@@ -574,7 +589,8 @@ function SocialMediaPage() {
             {/* Grid do mês */}
             <div className="grid grid-cols-7 gap-2">
               {calendarDays.map((day, idx) => {
-                const dayPosts = filteredPosts.filter(p => p.scheduled_at && isSameDay(parseISO(p.scheduled_at), day));
+                const dayKey = format(day, "yyyy-MM-dd");
+                const dayPosts = postsByDay.get(dayKey) || [];
                 const isToday = isSameDay(day, new Date());
                 const holiday = AUTOMOTIVE_HOLIDAYS.find(h => h.day === day.getDate() && h.month === day.getMonth());
 

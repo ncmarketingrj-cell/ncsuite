@@ -20,6 +20,7 @@ import { Route as PSlugRouteImport } from './routes/p.$slug'
 import { Route as AppVictoriaRouteImport } from './routes/_app/victoria'
 import { Route as AppUtmsRouteImport } from './routes/_app/utms'
 import { Route as AppUploadRouteImport } from './routes/_app/upload'
+import { Route as AppStrategyMapRouteImport } from './routes/_app/strategy-map'
 import { Route as AppSocialRelatoriosRouteImport } from './routes/_app/social-relatorios'
 import { Route as AppSocialInsightsRouteImport } from './routes/_app/social-insights'
 import { Route as AppSocialRouteImport } from './routes/_app/social'
@@ -31,7 +32,6 @@ import { Route as AppMulticanalRouteImport } from './routes/_app/multicanal'
 import { Route as AppMetricasRouteImport } from './routes/_app/metricas'
 import { Route as AppLinkBioRouteImport } from './routes/_app/link-bio'
 import { Route as AppIntegrationsRouteImport } from './routes/_app/integrations'
-import { Route as AppStrategyMapRouteImport } from './routes/_app/strategy-map'
 import { Route as AppFunnelBuilderRouteImport } from './routes/_app/funnel-builder'
 import { Route as AppFunisRouteImport } from './routes/_app/funis'
 import { Route as AppFormularioRouteImport } from './routes/_app/formulario'
@@ -102,6 +102,11 @@ const AppUploadRoute = AppUploadRouteImport.update({
   path: '/upload',
   getParentRoute: () => AppRoute,
 } as any)
+const AppStrategyMapRoute = AppStrategyMapRouteImport.update({
+  id: '/strategy-map',
+  path: '/strategy-map',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppSocialRelatoriosRoute = AppSocialRelatoriosRouteImport.update({
   id: '/social-relatorios',
   path: '/social-relatorios',
@@ -155,11 +160,6 @@ const AppLinkBioRoute = AppLinkBioRouteImport.update({
 const AppIntegrationsRoute = AppIntegrationsRouteImport.update({
   id: '/integrations',
   path: '/integrations',
-  getParentRoute: () => AppRoute,
-} as any)
-const AppStrategyMapRoute = AppStrategyMapRouteImport.update({
-  id: '/strategy-map',
-  path: '/strategy-map',
   getParentRoute: () => AppRoute,
 } as any)
 const AppFunnelBuilderRoute = AppFunnelBuilderRouteImport.update({
@@ -256,7 +256,6 @@ export interface FileRoutesByFullPath {
   '/formulario': typeof AppFormularioRoute
   '/funis': typeof AppFunisRoute
   '/funnel-builder': typeof AppFunnelBuilderRoute
-  '/strategy-map': typeof AppStrategyMapRoute
   '/integrations': typeof AppIntegrationsRoute
   '/link-bio': typeof AppLinkBioRoute
   '/metricas': typeof AppMetricasRouteWithChildren
@@ -268,6 +267,7 @@ export interface FileRoutesByFullPath {
   '/social': typeof AppSocialRoute
   '/social-insights': typeof AppSocialInsightsRoute
   '/social-relatorios': typeof AppSocialRelatoriosRoute
+  '/strategy-map': typeof AppStrategyMapRoute
   '/upload': typeof AppUploadRoute
   '/utms': typeof AppUtmsRoute
   '/victoria': typeof AppVictoriaRoute
@@ -295,7 +295,6 @@ export interface FileRoutesByTo {
   '/formulario': typeof AppFormularioRoute
   '/funis': typeof AppFunisRoute
   '/funnel-builder': typeof AppFunnelBuilderRoute
-  '/strategy-map': typeof AppStrategyMapRoute
   '/integrations': typeof AppIntegrationsRoute
   '/link-bio': typeof AppLinkBioRoute
   '/metricas': typeof AppMetricasRouteWithChildren
@@ -307,6 +306,7 @@ export interface FileRoutesByTo {
   '/social': typeof AppSocialRoute
   '/social-insights': typeof AppSocialInsightsRoute
   '/social-relatorios': typeof AppSocialRelatoriosRoute
+  '/strategy-map': typeof AppStrategyMapRoute
   '/upload': typeof AppUploadRoute
   '/utms': typeof AppUtmsRoute
   '/victoria': typeof AppVictoriaRoute
@@ -336,7 +336,6 @@ export interface FileRoutesById {
   '/_app/formulario': typeof AppFormularioRoute
   '/_app/funis': typeof AppFunisRoute
   '/_app/funnel-builder': typeof AppFunnelBuilderRoute
-  '/_app/strategy-map': typeof AppStrategyMapRoute
   '/_app/integrations': typeof AppIntegrationsRoute
   '/_app/link-bio': typeof AppLinkBioRoute
   '/_app/metricas': typeof AppMetricasRouteWithChildren
@@ -348,6 +347,7 @@ export interface FileRoutesById {
   '/_app/social': typeof AppSocialRoute
   '/_app/social-insights': typeof AppSocialInsightsRoute
   '/_app/social-relatorios': typeof AppSocialRelatoriosRoute
+  '/_app/strategy-map': typeof AppStrategyMapRoute
   '/_app/upload': typeof AppUploadRoute
   '/_app/utms': typeof AppUtmsRoute
   '/_app/victoria': typeof AppVictoriaRoute
@@ -377,7 +377,6 @@ export interface FileRouteTypes {
     | '/formulario'
     | '/funis'
     | '/funnel-builder'
-    | '/strategy-map'
     | '/integrations'
     | '/link-bio'
     | '/metricas'
@@ -389,6 +388,7 @@ export interface FileRouteTypes {
     | '/social'
     | '/social-insights'
     | '/social-relatorios'
+    | '/strategy-map'
     | '/upload'
     | '/utms'
     | '/victoria'
@@ -416,7 +416,6 @@ export interface FileRouteTypes {
     | '/formulario'
     | '/funis'
     | '/funnel-builder'
-    | '/strategy-map'
     | '/integrations'
     | '/link-bio'
     | '/metricas'
@@ -428,6 +427,7 @@ export interface FileRouteTypes {
     | '/social'
     | '/social-insights'
     | '/social-relatorios'
+    | '/strategy-map'
     | '/upload'
     | '/utms'
     | '/victoria'
@@ -456,7 +456,6 @@ export interface FileRouteTypes {
     | '/_app/formulario'
     | '/_app/funis'
     | '/_app/funnel-builder'
-    | '/_app/strategy-map'
     | '/_app/integrations'
     | '/_app/link-bio'
     | '/_app/metricas'
@@ -468,6 +467,7 @@ export interface FileRouteTypes {
     | '/_app/social'
     | '/_app/social-insights'
     | '/_app/social-relatorios'
+    | '/_app/strategy-map'
     | '/_app/upload'
     | '/_app/utms'
     | '/_app/victoria'
@@ -568,6 +568,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppUploadRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/strategy-map': {
+      id: '/_app/strategy-map'
+      path: '/strategy-map'
+      fullPath: '/strategy-map'
+      preLoaderRoute: typeof AppStrategyMapRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/social-relatorios': {
       id: '/_app/social-relatorios'
       path: '/social-relatorios'
@@ -650,13 +657,6 @@ declare module '@tanstack/react-router' {
       path: '/funnel-builder'
       fullPath: '/funnel-builder'
       preLoaderRoute: typeof AppFunnelBuilderRouteImport
-      parentRoute: typeof AppRoute
-    }
-    '/_app/strategy-map': {
-      id: '/_app/strategy-map'
-      path: '/strategy-map'
-      fullPath: '/strategy-map'
-      preLoaderRoute: typeof AppStrategyMapRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/funis': {
@@ -809,7 +809,6 @@ interface AppRouteChildren {
   AppFormularioRoute: typeof AppFormularioRoute
   AppFunisRoute: typeof AppFunisRoute
   AppFunnelBuilderRoute: typeof AppFunnelBuilderRoute
-  AppStrategyMapRoute: typeof AppStrategyMapRoute
   AppIntegrationsRoute: typeof AppIntegrationsRoute
   AppLinkBioRoute: typeof AppLinkBioRoute
   AppMetricasRoute: typeof AppMetricasRouteWithChildren
@@ -821,6 +820,7 @@ interface AppRouteChildren {
   AppSocialRoute: typeof AppSocialRoute
   AppSocialInsightsRoute: typeof AppSocialInsightsRoute
   AppSocialRelatoriosRoute: typeof AppSocialRelatoriosRoute
+  AppStrategyMapRoute: typeof AppStrategyMapRoute
   AppUploadRoute: typeof AppUploadRoute
   AppUtmsRoute: typeof AppUtmsRoute
   AppVictoriaRoute: typeof AppVictoriaRoute
@@ -839,7 +839,6 @@ const AppRouteChildren: AppRouteChildren = {
   AppFormularioRoute: AppFormularioRoute,
   AppFunisRoute: AppFunisRoute,
   AppFunnelBuilderRoute: AppFunnelBuilderRoute,
-  AppStrategyMapRoute: AppStrategyMapRoute,
   AppIntegrationsRoute: AppIntegrationsRoute,
   AppLinkBioRoute: AppLinkBioRoute,
   AppMetricasRoute: AppMetricasRouteWithChildren,
@@ -851,6 +850,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppSocialRoute: AppSocialRoute,
   AppSocialInsightsRoute: AppSocialInsightsRoute,
   AppSocialRelatoriosRoute: AppSocialRelatoriosRoute,
+  AppStrategyMapRoute: AppStrategyMapRoute,
   AppUploadRoute: AppUploadRoute,
   AppUtmsRoute: AppUtmsRoute,
   AppVictoriaRoute: AppVictoriaRoute,

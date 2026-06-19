@@ -488,7 +488,14 @@ function Shell() {
           
           {/* LEFT: Logo & Module Switcher */}
           <div className="flex items-center gap-3 shrink-0">
-            <Link to={"/hub" as any} className="flex items-center gap-2 group">
+            <Link 
+              to={"/hub" as any} 
+              onClick={() => {
+                setActiveModule("hub");
+                localStorage.setItem("nc_active_module", "hub");
+              }}
+              className="flex items-center gap-2 group"
+            >
               <div className="relative h-8 w-8 rounded-xl bg-primary flex items-center justify-center overflow-hidden shadow-glow-sm transition-all duration-300 group-hover:shadow-glow">
                 <div className="absolute inset-x-0 top-0 h-[3px] bg-white/28 rounded-t-xl pointer-events-none" />
                 <span className="font-display font-black text-white text-xs relative z-10 tracking-normal">NC</span>
