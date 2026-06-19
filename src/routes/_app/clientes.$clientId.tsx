@@ -695,25 +695,139 @@ function TabCadastro({ client, adAccounts }: {
 
 // ─── Tab: Notas & Regras ──────────────────────────────────────────────────────
 
-function TabNotes({ client }: { client: ClientFull }) {
+type NoteItem = {
+  id: string;
+  title: string;
+  content: string;
+  category: string;
+  tags: string[];
+  created_at: string;
+};
+
+const NOTE_CATEGORIES = ["Geral", "Reunião", "Campanha", "Briefing", "Ajuste", "Financeiro"];
+const NOTE_CAT_STYLE: Record<string, { bg: string; text: string; icon: any }> = {
+  "Geral":      { bg: "bg-muted/40 border-border", text: "text-muted-foreground", icon: Clock },
+  "Reunião":    { bg: "bg-violet-500/10 border-violet-500/20", text: "text-violet-400", icon: Users },
+  "Campanha":   { bg: "bg-blue-500/10 border-blue-500/20", text: "text-blue-400", icon: TrendingUp },
+  "Briefing":   { bg: "bg-emerald-500/10 border-emerald-500/20", text: "text-emerald-400", icon: FileText },
+  "Ajuste":     { bg: "bg-amber-500/10 border-amber-500/20", text: "text-amber-400", icon: Zap },
+  "Financeiro": { bg: "bg-rose-500/10 border-rose-500/20", text: "text-rose-400", icon: DollarSign },
+};
+
+function TabNotes({ client, notes = [], notesLoading = false }: {
+  client: ClientFull;
+  notes?: NoteItem[];
+  notesLoading?: boolean;
+}) {
   const qc = useQueryClient();
-  const [notes, setNotes] = useState(client.notes ?? "");
   const [rules, setRules] = useState<RuleItem[]>(client.rules ?? []);
   const [showRuleForm, setShowRuleForm] = useState(false);
   const [editingRule, setEditingRule] = useState<RuleItem | null>(null);
   const [ruleForm, setRuleForm] = useState({ title: "", category: "Outros", content: "" });
-  const [noteDirty, setNoteDirty] = useState(false);
 
-  const saveNotes = useMutation({
-    mutationFn: async () => {
-      const { error } = await (supabase as any).from("clients").update({ notes }).eq("id", client.id);
-      if (error) throw error;
+  // Estados do histórico de notas
+  const [showNoteForm, setShowNoteForm] = useState(false);
+  const [noteForm, setNoteForm] = useState({ title: "", content: "", category: "Geral", tagsStr: "" });
+  const [searchNote, setSearchNote] = useState("");
+  const [filterNoteCategory, setFilterNoteCategory] = useState("todos");
+
+  const saveNoteMutation = useMutation({
+    mutationFn: async (newNote: { title: string; content: string; category: string; tags: string[] }) => {
+      const { data: u } = await supabase.auth.getUser();
+      
+      // 1. Tenta inserir na tabela client_notes
+      const { error: insertError } = await (supabase as any).from("client_notes").insert({
+        client_id: client.id,
+        title: newNote.title,
+        content: newNote.content,
+        category: newNote.category,
+        tags: newNote.tags,
+        created_by: u.user?.id
+      });
+
+      // 2. Fallback: Se falhar (tabela não criada), grava serializado no clients.notes
+      if (insertError) {
+        console.warn("Inserção em client_notes falhou, utilizando JSON no clients.notes:", insertError);
+        
+        let currentNotes: any[] = [];
+        if (client.notes) {
+          try {
+            const parsed = JSON.parse(client.notes);
+            if (Array.isArray(parsed)) currentNotes = parsed;
+          } catch {
+            currentNotes = [{
+              id: "legacy",
+              title: "Nota Geral (Legada)",
+              content: client.notes,
+              category: "Geral",
+              tags: ["Histórico"],
+              created_at: client.created_at || new Date().toISOString()
+            }];
+          }
+        }
+
+        const noteObj = {
+          id: crypto.randomUUID(),
+          title: newNote.title,
+          content: newNote.content,
+          category: newNote.category,
+          tags: newNote.tags,
+          created_at: new Date().toISOString()
+        };
+
+        const merged = [noteObj, ...currentNotes];
+        const { error: updateError } = await (supabase as any)
+          .from("clients")
+          .update({ notes: JSON.stringify(merged) })
+          .eq("id", client.id);
+
+        if (updateError) throw updateError;
+      }
     },
     onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["client_notes", client.id] });
       qc.invalidateQueries({ queryKey: ["client_detail", client.id] });
-      toast.success("Notas salvas");
-      setNoteDirty(false);
+      toast.success("Nota adicionada ao histórico!");
+      setNoteForm({ title: "", content: "", category: "Geral", tagsStr: "" });
+      setShowNoteForm(false);
     },
+    onError: (e: Error) => toast.error("Erro ao salvar nota: " + e.message)
+  });
+
+  const deleteNoteMutation = useMutation({
+    mutationFn: async (noteId: string) => {
+      // 1. Tenta deletar de client_notes
+      const { error: deleteError } = await (supabase as any).from("client_notes").delete().eq("id", noteId);
+
+      // 2. Fallback: deleta do JSON no clients.notes
+      if (deleteError) {
+        if (client.notes) {
+          try {
+            const parsed = JSON.parse(client.notes);
+            if (Array.isArray(parsed)) {
+              const filtered = parsed.filter((n: any) => n.id !== noteId);
+              const { error: updateError } = await (supabase as any)
+                .from("clients")
+                .update({ notes: JSON.stringify(filtered) })
+                .eq("id", client.id);
+              if (updateError) throw updateError;
+            }
+          } catch {
+            const { error: updateError } = await (supabase as any)
+              .from("clients")
+              .update({ notes: null })
+              .eq("id", client.id);
+            if (updateError) throw updateError;
+          }
+        }
+      }
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["client_notes", client.id] });
+      qc.invalidateQueries({ queryKey: ["client_detail", client.id] });
+      toast.success("Nota removida com sucesso");
+    },
+    onError: (e: Error) => toast.error("Erro ao remover nota: " + e.message)
   });
 
   const saveRules = useMutation({
@@ -759,6 +873,33 @@ function TabNotes({ client }: { client: ClientFull }) {
     saveRules.mutate(newRules);
   }
 
+  function handleAddNote() {
+    if (!noteForm.title.trim() || !noteForm.content.trim()) {
+      toast.error("Por favor preencha o título e o conteúdo da nota.");
+      return;
+    }
+    const tags = noteForm.tagsStr
+      ? noteForm.tagsStr.split(",").map(t => t.trim()).filter(t => t !== "")
+      : [];
+    saveNoteMutation.mutate({
+      title: noteForm.title,
+      content: noteForm.content,
+      category: noteForm.category,
+      tags
+    });
+  }
+
+  // Filtrar notas
+  const filteredNotes = notes.filter(n => {
+    const matchSearch = !searchNote || 
+      n.title.toLowerCase().includes(searchNote.toLowerCase()) ||
+      n.content.toLowerCase().includes(searchNote.toLowerCase()) ||
+      n.tags.some(t => t.toLowerCase().includes(searchNote.toLowerCase()));
+    
+    const matchCategory = filterNoteCategory === "todos" || n.category === filterNoteCategory;
+    return matchSearch && matchCategory;
+  });
+
   const grouped = RULE_CATEGORIES.reduce<Record<string, RuleItem[]>>((acc, cat) => {
     const items = rules.filter(r => r.category === cat);
     if (items.length > 0) acc[cat] = items;
@@ -766,58 +907,221 @@ function TabNotes({ client }: { client: ClientFull }) {
   }, {});
 
   return (
-    <div className="space-y-6">
-      {/* Notas */}
-      <div>
-        <div className="flex items-center justify-between mb-3">
-          <SectionTitle>Notas Gerais</SectionTitle>
-          <AnimatePresence>
-            {noteDirty && (
-              <motion.button
-                initial={{ opacity: 0, scale: 0.95 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.95 }}
-                onClick={() => saveNotes.mutate()}
-                disabled={saveNotes.isPending}
-                className="flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-[11px] font-black text-primary-foreground hover:opacity-90"
-              >
-                {saveNotes.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}
-                Salvar notas
-              </motion.button>
-            )}
-          </AnimatePresence>
+    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      {/* Coluna Esquerda: Timeline e Histórico de Notas */}
+      <div className="lg:col-span-2 space-y-6">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-border/40 pb-3">
+          <div>
+            <h3 className="text-sm font-black tracking-tight flex items-center gap-2">
+              <FileText className="h-4 w-4 text-primary" /> Histórico de Notas
+            </h3>
+            <p className="text-[10px] text-muted-foreground mt-0.5">Timeline e registros de reuniões, briefings e alterações estratégicas.</p>
+          </div>
+          
+          <button
+            onClick={() => setShowNoteForm(!showNoteForm)}
+            className="flex items-center gap-1.5 rounded-xl bg-primary px-3 py-2 text-xs font-black text-primary-foreground hover:opacity-90 transition-opacity whitespace-nowrap self-start sm:self-auto"
+          >
+            {showNoteForm ? <X className="h-3.5 w-3.5" /> : <Plus className="h-3.5 w-3.5" />}
+            {showNoteForm ? "Cancelar" : "Nova Nota"}
+          </button>
         </div>
-        <textarea
-          value={notes}
-          onChange={e => { setNotes(e.target.value); setNoteDirty(true); }}
-          placeholder="Escreva observações gerais sobre este cliente, estratégias que funcionam, histórico relevante..."
-          rows={5}
-          className="w-full rounded-xl border border-border bg-card px-4 py-3 text-sm font-medium placeholder:text-muted-foreground/40 focus:outline-none focus:border-primary/50 resize-none custom-scrollbar"
-        />
+
+        {/* Form para adicionar nova nota */}
+        <AnimatePresence>
+          {showNoteForm && (
+            <motion.div
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              className="rounded-xl border border-primary/20 bg-card p-4 space-y-4 shadow-lg relative overflow-hidden"
+            >
+              <div className="absolute top-0 inset-x-0 h-[2px] bg-gradient-to-r from-primary/20 via-primary to-primary/20" />
+              
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1 block">Título da Nota *</label>
+                  <input
+                    value={noteForm.title}
+                    onChange={e => setNoteForm(p => ({ ...p, title: e.target.value }))}
+                    placeholder="Ex: Alinhamento de Verba Q3"
+                    className="w-full rounded-xl border border-border bg-background px-3 py-2 text-xs font-medium focus:outline-none focus:border-primary/50"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1 block">Categoria</label>
+                  <select
+                    value={noteForm.category}
+                    onChange={e => setNoteForm(p => ({ ...p, category: e.target.value }))}
+                    className="w-full rounded-xl border border-border bg-background px-3 py-2 text-xs font-medium text-foreground focus:outline-none focus:border-primary/50"
+                  >
+                    {NOTE_CATEGORIES.map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1 block">Tags (separadas por vírgula)</label>
+                <input
+                  value={noteForm.tagsStr}
+                  onChange={e => setNoteForm(p => ({ ...p, tagsStr: e.target.value }))}
+                  placeholder="Ex: criativos, escala, urgência"
+                  className="w-full rounded-xl border border-border bg-background px-3 py-2 text-xs font-medium focus:outline-none focus:border-primary/50"
+                />
+              </div>
+
+              <div>
+                <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1 block">Conteúdo / Descrição *</label>
+                <textarea
+                  value={noteForm.content}
+                  onChange={e => setNoteForm(p => ({ ...p, content: e.target.value }))}
+                  placeholder="Descreva detalhadamente o ocorrido, as mudanças ou o briefing da reunião..."
+                  rows={4}
+                  className="w-full rounded-xl border border-border bg-background px-3 py-2 text-xs font-medium focus:outline-none focus:border-primary/50 resize-none custom-scrollbar"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2">
+                <button
+                  onClick={() => setShowNoteForm(false)}
+                  className="rounded-xl border border-border px-4 py-2 text-xs font-bold text-muted-foreground hover:bg-muted/40"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={handleAddNote}
+                  disabled={saveNoteMutation.isPending}
+                  className="flex items-center gap-1.5 rounded-xl bg-primary px-5 py-2 text-xs font-black text-primary-foreground hover:opacity-90 disabled:opacity-50"
+                >
+                  {saveNoteMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+                  Salvar Nota
+                </button>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Busca e filtros rápidos */}
+        <div className="flex flex-col sm:flex-row gap-3 sm:items-center">
+          <input
+            value={searchNote}
+            onChange={e => setSearchNote(e.target.value)}
+            placeholder="Pesquisar nas notas..."
+            className="rounded-xl border border-border bg-card px-3 py-2 text-xs placeholder:text-muted-foreground/50 focus:outline-none focus:border-primary/50 flex-1"
+          />
+          <div className="flex gap-1.5 overflow-x-auto pb-1 sm:pb-0 shrink-0">
+            {["todos", ...NOTE_CATEGORIES].map(cat => (
+              <button
+                key={cat}
+                onClick={() => setFilterNoteCategory(cat)}
+                className={`rounded-full border px-2.5 py-0.5 text-[10px] font-bold transition-all ${
+                  filterNoteCategory === cat
+                    ? "bg-primary/10 text-primary border-primary/20"
+                    : "border-border text-muted-foreground hover:border-primary/20 hover:text-foreground"
+                }`}
+              >
+                {cat === "todos" ? "Todos" : cat}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Timeline de notas */}
+        {notesLoading ? (
+          <div className="flex justify-center py-12">
+            <Loader2 className="h-5 w-5 animate-spin text-primary" />
+          </div>
+        ) : filteredNotes.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-12 text-center border border-dashed border-border rounded-xl">
+            <FileText className="h-8 w-8 text-muted-foreground/30 mb-2" />
+            <p className="text-xs font-bold text-muted-foreground">Nenhuma nota encontrada</p>
+            <p className="text-[10px] text-muted-foreground/60 mt-0.5">Adicione sua primeira nota do histórico usando o botão acima.</p>
+          </div>
+        ) : (
+          <div className="relative pl-6 border-l border-border/60 ml-3 space-y-6 py-2">
+            {filteredNotes.map((note) => {
+              const style = NOTE_CAT_STYLE[note.category] ?? NOTE_CAT_STYLE.Geral;
+              const Icon = style.icon;
+              return (
+                <motion.div
+                  key={note.id}
+                  initial={{ opacity: 0, x: -8 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  className="relative group bg-card/40 hover:bg-card border border-border rounded-xl p-4 transition-all duration-200"
+                >
+                  {/* Ponto na timeline com ícone */}
+                  <div className={`absolute -left-[35px] top-4 h-6.5 w-6.5 rounded-full border ${style.bg} flex items-center justify-center shadow-md z-10 bg-background`}>
+                    <Icon className={`h-3 w-3 ${style.text}`} />
+                  </div>
+
+                  <div className="flex items-start justify-between gap-3 mb-1.5">
+                    <div>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <h4 className="text-xs font-black text-foreground">{note.title}</h4>
+                        <span className={`rounded border px-1.5 py-0.5 text-[8px] font-black uppercase tracking-wider ${style.bg} ${style.text}`}>
+                          {note.category}
+                        </span>
+                      </div>
+                      <span className="text-[9px] text-muted-foreground font-mono">
+                        {format(new Date(note.created_at), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
+                      </span>
+                    </div>
+
+                    <button
+                      onClick={() => {
+                        if (confirm("Tem certeza que deseja excluir esta nota?")) {
+                          deleteNoteMutation.mutate(note.id);
+                        }
+                      }}
+                      className="opacity-0 group-hover:opacity-100 transition-opacity h-6 w-6 rounded-lg bg-destructive/10 flex items-center justify-center hover:bg-destructive/20"
+                      title="Deletar nota"
+                    >
+                      <Trash2 className="h-3 w-3 text-destructive" />
+                    </button>
+                  </div>
+
+                  <p className="text-xs text-muted-foreground whitespace-pre-wrap leading-relaxed">
+                    {note.content}
+                  </p>
+
+                  {note.tags && note.tags.length > 0 && (
+                    <div className="flex items-center gap-1.5 mt-3 flex-wrap">
+                      {note.tags.map(tag => (
+                        <span key={tag} className="rounded-full bg-white/[0.04] border border-border px-2 py-0.5 text-[8px] font-bold text-muted-foreground">
+                          #{tag}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </motion.div>
+              );
+            })}
+          </div>
+        )}
       </div>
 
-      {/* Regras */}
-      <div>
+      {/* Coluna Direita: Regras & Particularidades */}
+      <div className="space-y-6 border-t lg:border-t-0 lg:border-l border-border/40 pt-6 lg:pt-0 lg:pl-6">
         <div className="flex items-center justify-between mb-3">
-          <SectionTitle>Regras & Particularidades</SectionTitle>
+          <div>
+            <h3 className="text-sm font-black tracking-tight">Regras do Cliente</h3>
+            <p className="text-[10px] text-muted-foreground mt-0.5">Políticas específicas para o time operacional.</p>
+          </div>
           <button
             onClick={openNewRule}
-            className="flex items-center gap-1.5 rounded-lg border border-primary/30 bg-primary/10 px-3 py-1.5 text-[11px] font-black text-primary hover:bg-primary/20 transition-colors"
+            className="flex items-center gap-1.5 rounded-lg border border-primary/30 bg-primary/10 px-2.5 py-1.5 text-[10px] font-black text-primary hover:bg-primary/20 transition-colors"
           >
-            <Plus className="h-3.5 w-3.5" /> Nova Regra
+            <Plus className="h-3 w-3" /> Nova Regra
           </button>
         </div>
 
         {rules.length === 0 && !showRuleForm && (
-          <div className="flex flex-col items-center justify-center py-12 text-center gap-3 border border-dashed border-border rounded-xl">
-            <FileText className="h-8 w-8 text-muted-foreground/30" />
+          <div className="flex flex-col items-center justify-center py-8 text-center gap-2.5 border border-dashed border-border rounded-xl">
+            <FileText className="h-7 w-7 text-muted-foreground/30" />
             <div>
-              <p className="text-sm font-bold text-muted-foreground">Nenhuma regra cadastrada</p>
-              <p className="text-xs text-muted-foreground/60 mt-0.5">Adicione regras específicas de audiência, criativos, operação, etc.</p>
+              <p className="text-xs font-bold text-muted-foreground">Nenhuma regra cadastrada</p>
+              <p className="text-[10px] text-muted-foreground/60 mt-0.5">Adicione regras de escala, pausamento, criativos, etc.</p>
             </div>
-            <button onClick={openNewRule} className="rounded-xl bg-primary/10 border border-primary/20 px-4 py-2 text-xs font-black text-primary hover:bg-primary/20 transition-colors">
-              Adicionar Primeira Regra
-            </button>
           </div>
         )}
 
@@ -828,7 +1132,7 @@ function TabNotes({ client }: { client: ClientFull }) {
               initial={{ opacity: 0, y: -8, scale: 0.98 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: -8, scale: 0.98 }}
-              className="mb-4 rounded-xl border border-primary/25 bg-primary/5 p-4 space-y-3"
+              className="rounded-xl border border-primary/20 bg-primary/5 p-4 space-y-3"
             >
               <div className="flex items-center justify-between">
                 <p className="text-xs font-black text-primary">{editingRule ? "Editar Regra" : "Nova Regra"}</p>
@@ -836,14 +1140,14 @@ function TabNotes({ client }: { client: ClientFull }) {
                   <X className="h-3.5 w-3.5" />
                 </button>
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="space-y-3">
                 <div>
                   <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1 block">Título *</label>
                   <input
                     value={ruleForm.title}
                     onChange={e => setRuleForm(p => ({ ...p, title: e.target.value }))}
-                    placeholder="Ex: Nunca pausar em fim de semana"
-                    className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm font-medium focus:outline-none focus:border-primary/50"
+                    placeholder="Ex: Nunca pausar no final de semana"
+                    className="w-full rounded-xl border border-border bg-background px-3 py-2 text-xs font-medium focus:outline-none focus:border-primary/50"
                   />
                 </div>
                 <div>
@@ -851,32 +1155,32 @@ function TabNotes({ client }: { client: ClientFull }) {
                   <select
                     value={ruleForm.category}
                     onChange={e => setRuleForm(p => ({ ...p, category: e.target.value }))}
-                    className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm font-medium text-foreground focus:outline-none focus:border-primary/50"
+                    className="w-full rounded-xl border border-border bg-background px-3 py-2 text-xs font-medium text-foreground focus:outline-none focus:border-primary/50"
                   >
                     {RULE_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
                   </select>
                 </div>
-              </div>
-              <div>
-                <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1 block">Descrição *</label>
-                <textarea
-                  value={ruleForm.content}
-                  onChange={e => setRuleForm(p => ({ ...p, content: e.target.value }))}
-                  placeholder="Descreva a regra com detalhes e o motivo..."
-                  rows={3}
-                  className="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm font-medium focus:outline-none focus:border-primary/50 resize-none"
-                />
+                <div>
+                  <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1 block">Descrição *</label>
+                  <textarea
+                    value={ruleForm.content}
+                    onChange={e => setRuleForm(p => ({ ...p, content: e.target.value }))}
+                    placeholder="Descreva a regra com detalhes e o motivo..."
+                    rows={3}
+                    className="w-full rounded-xl border border-border bg-background px-3 py-2 text-xs font-medium focus:outline-none focus:border-primary/50 resize-none"
+                  />
+                </div>
               </div>
               <div className="flex gap-2 justify-end">
-                <button onClick={() => setShowRuleForm(false)} className="rounded-xl border border-border px-4 py-2 text-xs font-bold text-muted-foreground hover:bg-muted/40">
+                <button onClick={() => setShowRuleForm(false)} className="rounded-xl border border-border px-3 py-1.5 text-xs font-bold text-muted-foreground hover:bg-muted/40">
                   Cancelar
                 </button>
                 <button
                   onClick={submitRule}
                   disabled={!ruleForm.title.trim() || !ruleForm.content.trim() || saveRules.isPending}
-                  className="flex items-center gap-1.5 rounded-xl bg-primary px-4 py-2 text-xs font-black text-primary-foreground hover:opacity-90 disabled:opacity-50"
+                  className="flex items-center gap-1.5 rounded-xl bg-primary px-4 py-1.5 text-xs font-black text-primary-foreground hover:opacity-90 disabled:opacity-50"
                 >
-                  {saveRules.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+                  {saveRules.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}
                   {editingRule ? "Salvar" : "Adicionar"}
                 </button>
               </div>
@@ -887,38 +1191,38 @@ function TabNotes({ client }: { client: ClientFull }) {
         {/* Rules by category */}
         <div className="space-y-4">
           {Object.entries(grouped).map(([cat, items]) => (
-            <div key={cat}>
-              <div className="flex items-center gap-2 mb-2">
-                <span className={`rounded border px-2 py-0.5 text-[9px] font-black uppercase tracking-wider ${RULE_CAT_COLOR[cat]}`}>
+            <div key={cat} className="space-y-2">
+              <div className="flex items-center gap-2">
+                <span className={`rounded border px-2 py-0.5 text-[8px] font-black uppercase tracking-wider ${RULE_CAT_COLOR[cat]}`}>
                   {cat}
                 </span>
-                <span className="text-[10px] text-muted-foreground font-mono">{items.length}</span>
+                <span className="text-[9px] text-muted-foreground font-mono">{items.length}</span>
               </div>
               <div className="space-y-2">
                 {items.map(rule => (
                   <motion.div
                     key={rule.id}
                     layout
-                    className="group rounded-xl border border-border bg-card p-3.5 hover:border-primary/20 transition-colors"
+                    className="group rounded-xl border border-border bg-card/65 p-3 hover:border-primary/20 transition-colors relative"
                   >
                     <div className="flex items-start justify-between gap-2">
                       <p className="text-xs font-black text-foreground">{rule.title}</p>
                       <div className="flex items-center gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
                         <button
                           onClick={() => openEditRule(rule)}
-                          className="h-6 w-6 rounded-lg bg-muted/40 flex items-center justify-center hover:bg-muted/70 transition-colors"
+                          className="h-5 w-5 rounded bg-muted/40 flex items-center justify-center hover:bg-muted/70 transition-colors"
                         >
-                          <Edit3 className="h-3 w-3" />
+                          <Edit3 className="h-2.5 w-2.5" />
                         </button>
                         <button
                           onClick={() => deleteRule(rule.id)}
-                          className="h-6 w-6 rounded-lg bg-destructive/10 flex items-center justify-center hover:bg-destructive/20 transition-colors"
+                          className="h-5 w-5 rounded bg-destructive/10 flex items-center justify-center hover:bg-destructive/20 transition-colors"
                         >
-                          <Trash2 className="h-3 w-3 text-destructive" />
+                          <Trash2 className="h-2.5 w-2.5 text-destructive" />
                         </button>
                       </div>
                     </div>
-                    <p className="text-xs text-muted-foreground mt-1.5 leading-relaxed">{rule.content}</p>
+                    <p className="text-xs text-muted-foreground mt-1 leading-relaxed">{rule.content}</p>
                   </motion.div>
                 ))}
               </div>
@@ -977,6 +1281,47 @@ function ClientDetailPage() {
     },
     refetchInterval: 3 * 60 * 1000,
     staleTime: 0,
+  });
+
+  const { data: dbNotes = [], isLoading: notesLoading } = useQuery({
+    queryKey: ["client_notes", clientId],
+    queryFn: async () => {
+      const { data, error } = await (supabase as any)
+        .from("client_notes")
+        .select("*")
+        .eq("client_id", clientId)
+        .order("created_at", { ascending: false });
+
+      if (error || !data || data.length === 0) {
+        if (client?.notes) {
+          try {
+            const parsed = JSON.parse(client.notes);
+            if (Array.isArray(parsed)) {
+              return parsed.map((n: any, idx: number) => ({
+                id: n.id || `local-${idx}`,
+                title: n.title || "Nota Geral",
+                content: n.content || "",
+                category: n.category || "Geral",
+                tags: n.tags || [],
+                created_at: n.created_at || client?.created_at || new Date().toISOString()
+              }));
+            }
+          } catch {
+            return [{
+              id: "legacy",
+              title: "Nota Geral (Legada)",
+              content: client.notes,
+              category: "Geral",
+              tags: ["Histórico"],
+              created_at: client?.created_at || new Date().toISOString()
+            }];
+          }
+        }
+        return [];
+      }
+      return data as NoteItem[];
+    },
+    enabled: !!client,
   });
 
   // Métricas filtradas pelo range do calendário
@@ -1151,7 +1496,7 @@ function ClientDetailPage() {
           {activeTab === "overview" && <TabOverview client={client} metrics={filteredMetrics} />}
           {activeTab === "goals" && <TabGoals client={client} metrics={filteredMetrics} />}
           {activeTab === "cadastro" && <TabCadastro client={client} adAccounts={adAccounts} />}
-          {activeTab === "notes" && <TabNotes client={client} />}
+          {activeTab === "notes" && <TabNotes client={client} notes={dbNotes} notesLoading={notesLoading} />}
         </motion.div>
       </AnimatePresence>
     </div>

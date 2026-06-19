@@ -122,6 +122,9 @@ function NewClientModal({ open, onClose, adAccounts }: {
   const [name, setName] = useState("");
   const [accountId, setAccountId] = useState("");
   const [niche, setNiche] = useState("");
+  const [contactName, setContactName] = useState("");
+  const [contactPhone, setContactPhone] = useState("");
+  const [weeklyBudget, setWeeklyBudget] = useState("");
 
   const create = useMutation({
     mutationFn: async () => {
@@ -130,6 +133,9 @@ function NewClientModal({ open, onClose, adAccounts }: {
         name,
         meta_ad_account_id: accountId || null,
         niche: niche || null,
+        contact_name: contactName || null,
+        contact_phone: contactPhone || null,
+        weekly_budget_goal: weeklyBudget ? parseFloat(weeklyBudget) : null,
         status: "ativo",
         user_id: u.user?.id,
       });
@@ -137,9 +143,10 @@ function NewClientModal({ open, onClose, adAccounts }: {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["clients_full"] });
-      toast.success("Cliente criado");
+      toast.success("Cliente cadastrado com sucesso!");
       onClose();
       setName(""); setAccountId(""); setNiche("");
+      setContactName(""); setContactPhone(""); setWeeklyBudget("");
     },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -159,60 +166,100 @@ function NewClientModal({ open, onClose, adAccounts }: {
           initial={{ scale: 0.95, y: 12 }}
           animate={{ scale: 1, y: 0 }}
           exit={{ scale: 0.95, y: 12 }}
-          className="w-full max-w-md rounded-2xl border border-border bg-card p-6 shadow-2xl"
+          className="w-full max-w-xl rounded-2xl border border-border bg-card/95 backdrop-blur-xl p-6 shadow-2xl relative overflow-hidden"
         >
-          <div className="flex items-center justify-between mb-5">
+          {/* Fundo decorativo sutil */}
+          <div className="absolute -right-24 -top-24 h-48 w-48 rounded-full bg-primary/8 blur-3xl pointer-events-none" />
+          
+          <div className="flex items-center justify-between mb-5 relative z-10">
             <div>
               <h2 className="text-base font-black tracking-tight">Novo Cliente</h2>
-              <p className="text-[11px] text-muted-foreground mt-0.5">Preencha os dados básicos e complete o cadastro depois</p>
+              <p className="text-[11px] text-muted-foreground mt-0.5">Preencha os dados e configure o perfil operacional do cliente</p>
             </div>
             <button onClick={onClose} className="h-8 w-8 rounded-xl bg-muted/40 flex items-center justify-center hover:bg-muted/70 transition-colors">
               <X className="h-4 w-4" />
             </button>
           </div>
 
-          <div className="space-y-4">
-            <div>
-              <label className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider mb-1.5 block">Nome / Loja *</label>
-              <input
-                value={name}
-                onChange={e => setName(e.target.value)}
-                placeholder="Ex: Loja da Maria"
-                className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm font-medium placeholder:text-muted-foreground/50 focus:outline-none focus:border-primary/50"
-              />
+          <div className="space-y-4 relative z-10">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider mb-1.5 block">Nome da Empresa / Loja *</label>
+                <input
+                  value={name}
+                  onChange={e => setName(e.target.value)}
+                  placeholder="Ex: Loja da Maria"
+                  className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm font-medium placeholder:text-muted-foreground/30 focus:outline-none focus:border-primary/50 transition-all focus:ring-1 focus:ring-primary/20"
+                />
+              </div>
+
+              <div>
+                <label className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider mb-1.5 block">Nicho de Atuação</label>
+                <select
+                  value={niche}
+                  onChange={e => setNiche(e.target.value)}
+                  className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm font-medium text-foreground focus:outline-none focus:border-primary/50 transition-all"
+                >
+                  <option value="">Selecionar nicho...</option>
+                  {Object.keys(NICHE_COLOR).map(n => (
+                    <option key={n} value={n}>{n}</option>
+                  ))}
+                  <option value="Outro">Outro</option>
+                </select>
+              </div>
             </div>
 
-            <div>
-              <label className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider mb-1.5 block">Conta de Anúncio Meta</label>
-              <select
-                value={accountId}
-                onChange={e => setAccountId(e.target.value)}
-                className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm font-medium text-foreground focus:outline-none focus:border-primary/50"
-              >
-                <option value="">Selecionar conta...</option>
-                {adAccounts.map(a => (
-                  <option key={a.id} value={a.id}>{a.name}</option>
-                ))}
-              </select>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider mb-1.5 block">Nome do Responsável</label>
+                <input
+                  value={contactName}
+                  onChange={e => setContactName(e.target.value)}
+                  placeholder="Ex: João da Silva"
+                  className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm font-medium placeholder:text-muted-foreground/30 focus:outline-none focus:border-primary/50 transition-all"
+                />
+              </div>
+
+              <div>
+                <label className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider mb-1.5 block">WhatsApp / Contato</label>
+                <input
+                  value={contactPhone}
+                  onChange={e => setContactPhone(e.target.value)}
+                  placeholder="Ex: (11) 99999-9999"
+                  className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm font-medium placeholder:text-muted-foreground/30 focus:outline-none focus:border-primary/50 transition-all"
+                />
+              </div>
             </div>
 
-            <div>
-              <label className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider mb-1.5 block">Nicho</label>
-              <select
-                value={niche}
-                onChange={e => setNiche(e.target.value)}
-                className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm font-medium text-foreground focus:outline-none focus:border-primary/50"
-              >
-                <option value="">Selecionar nicho...</option>
-                {Object.keys(NICHE_COLOR).map(n => (
-                  <option key={n} value={n}>{n}</option>
-                ))}
-                <option value="Outro">Outro</option>
-              </select>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider mb-1.5 block">Conta de Anúncio Meta</label>
+                <select
+                  value={accountId}
+                  onChange={e => setAccountId(e.target.value)}
+                  className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm font-medium text-foreground focus:outline-none focus:border-primary/50 transition-all"
+                >
+                  <option value="">Selecionar conta...</option>
+                  {adAccounts.map(a => (
+                    <option key={a.id} value={a.id}>{a.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider mb-1.5 block">Orçamento Semanal Adicionado (R$)</label>
+                <input
+                  value={weeklyBudget}
+                  onChange={e => setWeeklyBudget(e.target.value)}
+                  type="number"
+                  placeholder="Ex: 1000"
+                  className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm font-medium placeholder:text-muted-foreground/30 focus:outline-none focus:border-primary/50 transition-all"
+                />
+              </div>
             </div>
           </div>
 
-          <div className="flex gap-3 mt-6">
+          <div className="flex gap-3 mt-6 relative z-10">
             <button onClick={onClose} className="flex-1 rounded-xl border border-border py-2.5 text-sm font-bold text-muted-foreground hover:bg-muted/40 transition-colors">
               Cancelar
             </button>
@@ -254,18 +301,33 @@ function ClientCard({ client, metrics, account, dateLabel }: {
   const lowStock = client.stock_quantity != null && client.stock_alert_threshold != null
     && client.stock_quantity <= client.stock_alert_threshold;
 
+  const nicheBgGradient: Record<string, string> = {
+    "E-commerce":    "from-blue-500/10 to-transparent",
+    "Infoproduto":   "from-violet-500/10 to-transparent",
+    "Serviços":      "from-amber-500/10 to-transparent",
+    "Varejo":        "from-emerald-500/10 to-transparent",
+    "Automotivo":    "from-red-500/10 to-transparent",
+    "Imóveis":       "from-cyan-500/10 to-transparent",
+    "Saúde":         "from-rose-500/10 to-transparent",
+    "Educação":      "from-orange-500/10 to-transparent",
+  };
+  const bgGrad = client.niche ? (nicheBgGradient[client.niche] ?? "from-white/2 to-transparent") : "from-white/2 to-transparent";
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 16 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.3 }}
-      className="group relative flex flex-col rounded-2xl border border-border bg-card overflow-hidden hover:border-primary/30 hover:shadow-glow-sm hover:-translate-y-0.5 transition-all duration-200"
+      className="group relative flex flex-col rounded-2xl border border-border/80 bg-card/60 backdrop-blur-md overflow-hidden hover:border-primary/45 hover:shadow-glow-sm hover:-translate-y-0.5 transition-all duration-300"
     >
+      {/* gradiente sutil do nicho */}
+      <div className={`absolute inset-0 bg-gradient-to-b ${bgGrad} pointer-events-none opacity-60`} />
+
       {/* racing stripe topo */}
-      <div className="absolute top-0 inset-x-0 h-[2px] bg-gradient-to-r from-transparent via-primary/40 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+      <div className="absolute top-0 inset-x-0 h-[2px] bg-gradient-to-r from-transparent via-primary/50 to-transparent opacity-0 group-hover:opacity-100 transition-opacity z-10" />
 
       {/* Header do card */}
-      <div className="flex items-start gap-3 p-4 pb-3">
+      <div className="flex items-start gap-3 p-4 pb-3 relative z-10">
         {/* Avatar */}
         <div className="h-11 w-11 shrink-0 rounded-xl overflow-hidden border border-border bg-muted/30 flex items-center justify-center">
           {client.logo_url ? (

@@ -509,7 +509,7 @@ function MetricasCampanhasPage() {
     queryFn: async () => {
       let q = (supabase as any)
         .from("campaign_period_stats")
-        .select("campaign_id, reach, impressions, frequency")
+        .select("campaign_id, reach, impressions, frequency, spend, conversions, clicks")
         .eq("start_date", startStr)
         .eq("end_date", endStr);
       if (accountFilter !== "all") q = q.eq("ad_account_id", accountFilter);
@@ -661,9 +661,26 @@ function MetricasCampanhasPage() {
       const statsMap = new Map(periodStats.map((ps: any) => [ps.campaign_id, ps]));
       base = campaigns.map((c: any) => {
         const ps = statsMap.get(c.id) as any;
-        if (!ps || (ps.reach as number) <= 0) return c;
-        const freq = (ps.impressions as number) > 0 ? (ps.impressions as number) / (ps.reach as number) : 0;
-        return { ...c, t: { ...c.t, reach: ps.reach as number, freq } };
+        if (!ps) return c;
+        const cost = Number(ps.spend || 0);
+        const conversions = Number(ps.conversions || 0);
+        const clicks = Number(ps.clicks || 0);
+        const impressions = Number(ps.impressions || 0);
+        const reach = Number(ps.reach || 0);
+        const freq = reach > 0 ? impressions / reach : 0;
+        const cpl = conversions > 0 ? cost / conversions : 0;
+        const ctr = impressions > 0 ? (clicks / impressions) * 100 : 0;
+        const cpm = impressions > 0 ? (cost / impressions) * 1000 : 0;
+        const cpc = clicks > 0 ? cost / clicks : 0;
+        const roas = cost > 0 ? (conversions * 150) / cost : 0;
+        
+        return { 
+          ...c, 
+          t: { 
+            ...c.t, 
+            cost, conversions, clicks, impressions, reach, freq, cpl, ctr, cpm, cpc, roas 
+          } 
+        };
       });
     }
     return base.filter((c: any) => (c.t?.reach || 0) >= 1 || (c.t?.impressions || 0) >= 1 || (c.t?.cost || 0) > 0);
