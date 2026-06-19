@@ -489,7 +489,7 @@ function Shell() {
           {/* LEFT: Logo & Module Switcher */}
           <div className="flex items-center gap-3 shrink-0">
             <Link 
-              to={"/hub" as any} 
+              to="/dashboard" 
               onClick={() => {
                 setActiveModule("hub");
                 localStorage.setItem("nc_active_module", "hub");
