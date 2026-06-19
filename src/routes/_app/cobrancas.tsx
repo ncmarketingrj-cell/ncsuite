@@ -358,11 +358,19 @@ function CobrancasPage() {
                       <p className="text-sm font-bold text-white mt-1">{fmtBRL(snap.amount_spent, snap.currency)}</p>
                     </div>
 
-                    <div className="bg-white/[0.02] border border-white/5 rounded-xl p-3">
-                      <span className="text-[9px] font-black text-muted-foreground/60 uppercase block">
+                    <div className={`bg-white/[0.02] border rounded-xl p-3 relative overflow-hidden ${snap.balance !== null && totalDailyBudget > 0 && snap.balance < totalDailyBudget * 1.5 ? "border-emerald-500/50 bg-emerald-500/10" : "border-white/5"}`}>
+                      {snap.balance !== null && totalDailyBudget > 0 && snap.balance < totalDailyBudget * 1.5 && (
+                        <div className="absolute top-0 right-0 p-2 opacity-10">
+                          <AlertTriangle className="h-10 w-10 text-emerald-400" />
+                        </div>
+                      )}
+                      <span className={`text-[9px] font-black uppercase block flex items-center gap-1 ${snap.balance !== null && totalDailyBudget > 0 && snap.balance < totalDailyBudget * 1.5 ? "text-emerald-400" : "text-muted-foreground/60"}`}>
                         {snap.balance !== null ? "Saldo Pré-Pago" : "Não Faturado (Ciclo)"}
+                        {snap.balance !== null && totalDailyBudget > 0 && snap.balance < totalDailyBudget * 1.5 && (
+                          <span className="bg-emerald-500/20 text-emerald-400 px-1 py-0.5 rounded text-[8px] animate-pulse">BAIXO</span>
+                        )}
                       </span>
-                      <p className="text-sm font-bold text-white mt-1">
+                      <p className={`text-sm font-bold mt-1 ${snap.balance !== null && totalDailyBudget > 0 && snap.balance < totalDailyBudget * 1.5 ? "text-emerald-400" : "text-white"}`}>
                         {snap.balance !== null 
                           ? fmtBRL(snap.balance, snap.currency) 
                           : snap.bill_immature !== null 

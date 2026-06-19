@@ -487,6 +487,12 @@ function AutomationsPage() {
                             <strong className="text-orange-400 text-[11px]">{Number(th.max_frequency).toFixed(1)}×</strong>
                           </span>
                         )}
+                        {th.alert_account_balance_enabled && th.min_account_balance !== null && th.min_account_balance !== undefined && (
+                          <span className="inline-flex items-center gap-1 rounded bg-white/5 px-2 py-1 text-[10px] font-mono text-muted-foreground">
+                            MIN SALDO:{" "}
+                            <strong className="text-emerald-400 text-[11px]">R$ {Number(th.min_account_balance).toFixed(2)}</strong>
+                          </span>
+                        )}
                         <span className={`inline-flex items-center gap-1 rounded px-2 py-1 text-[10px] font-bold ${
                           th.is_active
                             ? "bg-success/10 text-success"
@@ -804,9 +810,13 @@ function ThresholdModal({ onClose, accounts, userId, qc, editing }: any) {
   const [minSpend, setMinSpend] = useState(
     isEditing && editing.min_spend_threshold != null ? String(editing.min_spend_threshold) : "0"
   );
+  const [minAccountBalance, setMinAccountBalance] = useState(
+    isEditing && editing.min_account_balance != null ? String(editing.min_account_balance) : "100"
+  );
   const [alertCplEnabled,       setAlertCplEnabled]       = useState(isEditing ? editing.alert_cpl_enabled       !== false : true);
   const [alertBudgetEnabled,    setAlertBudgetEnabled]    = useState(isEditing ? editing.alert_budget_enabled    !== false : true);
   const [alertFrequencyEnabled, setAlertFrequencyEnabled] = useState(isEditing ? editing.alert_frequency_enabled !== false : true);
+  const [alertAccountBalanceEnabled, setAlertAccountBalanceEnabled] = useState(isEditing ? editing.alert_account_balance_enabled === true : false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Carregar campanhas da conta ativa
@@ -854,6 +864,9 @@ function ThresholdModal({ onClose, accounts, userId, qc, editing }: any) {
     if (alertFrequencyEnabled && (!maxFrequency || parseFloat(maxFrequency) <= 0)) {
       return toast.error("Informe a Frequência Máxima para ativar o alerta de frequência");
     }
+    if (alertAccountBalanceEnabled && (!minAccountBalance || parseFloat(minAccountBalance) < 0)) {
+      return toast.error("Informe o Saldo Mínimo para ativar o alerta de saldo da conta");
+    }
 
     setIsSubmitting(true);
     try {
@@ -864,9 +877,11 @@ function ThresholdModal({ onClose, accounts, userId, qc, editing }: any) {
         max_budget_pct:          maxBudgetPct ? parseInt(maxBudgetPct) : null,
         max_frequency:           maxFrequency ? parseFloat(maxFrequency) : null,
         min_spend_threshold:     minSpend ? parseFloat(minSpend) : 0,
+        min_account_balance:     minAccountBalance ? parseFloat(minAccountBalance) : 0,
         alert_cpl_enabled:       alertCplEnabled,
         alert_budget_enabled:    alertBudgetEnabled,
         alert_frequency_enabled: alertFrequencyEnabled,
+        alert_account_balance_enabled: alertAccountBalanceEnabled,
         excluded_account_ids:    accountId === "all" && excludedIds.size > 0 ? Array.from(excludedIds) : [],
       };
 
@@ -1117,6 +1132,38 @@ function ThresholdModal({ onClose, accounts, userId, qc, editing }: any) {
                   <span className="text-sm font-bold text-muted-foreground shrink-0">×</span>
                 </div>
                 <p className="text-[9px] text-muted-foreground">Alerta quando a frequência média ultrapassar este valor. Padrão 3.5× para automotivo.</p>
+              </div>
+            )}
+          </div>
+
+          {/* ── ALERTA DE SALDO DA CONTA ────────────────────────────────────── */}
+          <div className={`rounded-xl border p-4 space-y-3 transition-all ${
+            alertAccountBalanceEnabled ? "border-emerald-500/40 bg-emerald-500/5" : "border-white/10 bg-white/[0.02]"
+          }`}>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <DollarSign className={`h-4 w-4 ${alertAccountBalanceEnabled ? "text-emerald-400" : "text-muted-foreground"}`} />
+                <span className={`text-sm font-bold ${alertAccountBalanceEnabled ? "text-emerald-400" : "text-muted-foreground"}`}>Alerta de Saldo da Conta</span>
+                <span className="text-[9px] font-mono text-muted-foreground/60">Saldo Global</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setAlertAccountBalanceEnabled(v => !v)}
+                className={`relative h-5 w-9 rounded-full transition-colors shrink-0 ${alertAccountBalanceEnabled ? "bg-emerald-500" : "bg-white/15"}`}
+              >
+                <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-all ${alertAccountBalanceEnabled ? "left-4" : "left-0.5"}`} />
+              </button>
+            </div>
+            {alertAccountBalanceEnabled && (
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-bold text-muted-foreground uppercase">Saldo Mínimo de Aviso (R$)</label>
+                <input
+                  type="number" step="0.01" min="0" value={minAccountBalance}
+                  onChange={(e) => setMinAccountBalance(e.target.value)}
+                  placeholder="Ex: 100.00"
+                  className="w-full rounded-lg border border-emerald-500/30 bg-background px-3 py-2.5 text-sm focus:border-emerald-400 focus:outline-none"
+                />
+                <p className="text-[9px] text-muted-foreground">Alerta de emergência caso o saldo restante na conta (contas pré-pagas) ou não-faturado fique abaixo deste valor. Evita pausas nas campanhas.</p>
               </div>
             )}
           </div>
