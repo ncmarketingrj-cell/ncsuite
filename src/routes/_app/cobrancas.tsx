@@ -314,6 +314,9 @@ function CobrancasPage() {
             // Campanhas vinculadas a esta conta de anúncios
             const accountCampaigns = campaignStats.filter(c => c.ad_account_id === snap.ad_account_id);
             const totalAccountSpentToday = accountCampaigns.reduce((sum, c) => sum + c.todaySpend, 0);
+            const activeAccountCampaigns = accountCampaigns.filter(c => ["active", "ACTIVE"].includes(c.status));
+            const totalDailyBudget = activeAccountCampaigns.reduce((sum, c) => sum + (c.daily_budget || 0), 0);
+            const pctUsed = totalDailyBudget > 0 ? (totalAccountSpentToday / totalDailyBudget) * 100 : 0;
 
             return (
               <motion.div
@@ -381,79 +384,49 @@ function CobrancasPage() {
                     </div>
                   </div>
 
-                  {/* Campanhas Ativas da Conta com Progresso de Orçamento em Tempo Real */}
+                  {/* Monitoramento de Orçamento Diário */}
                   <div className="pt-2">
                     <h5 className="text-[10px] font-black uppercase text-muted-foreground/70 tracking-wider mb-3 flex items-center gap-1.5">
-                      <Activity className="h-3 w-3 text-primary animate-pulse" /> Campanhas vinculadas e gastos de hoje
+                      <Activity className="h-3 w-3 text-primary animate-pulse" /> Monitoramento de Orçamento Diário ({activeAccountCampaigns.length} campanhas ativas)
                     </h5>
 
-                    {accountCampaigns.length === 0 ? (
-                      <p className="text-xs text-muted-foreground/40 py-2">Nenhuma campanha registrada para esta conta.</p>
-                    ) : (
-                      <div className="space-y-3">
-                        {accountCampaigns.map((c) => {
-                          const isCampActive = ["active", "ACTIVE"].includes(c.status);
-                          const budget = c.daily_budget || 0;
-                          const pctUsed = budget > 0 ? (c.todaySpend / budget) * 100 : 0;
-
-                          return (
-                            <div key={c.id} className="bg-white/[0.01] border border-white/5 p-3 rounded-xl space-y-2">
-                              <div className="flex items-center justify-between gap-3 text-xs">
-                                <div className="flex items-center gap-2 min-w-0">
-                                  {isCampActive ? (
-                                    <span className="h-2 w-2 rounded-full bg-success shrink-0" />
-                                  ) : (
-                                    <span className="h-2 w-2 rounded-full bg-white/20 shrink-0" />
-                                  )}
-                                  <span className="font-semibold text-white truncate">{c.name}</span>
-                                </div>
-                                <div className="flex items-center gap-3 shrink-0">
-                                  <span className="text-muted-foreground font-mono">
-                                    {fmtBRL(c.todaySpend, snap.currency)} / {budget > 0 ? fmtBRL(budget, snap.currency) : "Sem limite"}
-                                  </span>
-                                  {pctUsed >= 100 && (
-                                    <div className="flex items-center gap-1.5 shrink-0">
-                                      <span className="inline-flex items-center gap-0.5 text-[9px] font-bold text-destructive bg-destructive/10 border border-destructive/20 px-1.5 py-0.5 rounded-full">
-                                        <AlertTriangle className="h-2.5 w-2.5" /> Estourado
-                                      </span>
-                                      <button
-                                        onClick={() => {
-                                          setSelectedDiagnoseCampId(c.id);
-                                          setSelectedDiagnoseCampName(c.name);
-                                          setIsDiagnoseOpen(true);
-                                        }}
-                                        className="inline-flex items-center gap-1 text-[9px] font-bold text-primary bg-primary/10 border border-primary/20 px-2 py-0.5 rounded-full hover:bg-primary/20 transition cursor-pointer"
-                                      >
-                                        <Sparkles className="h-2.5 w-2.5" /> Diagnóstico
-                                      </button>
-                                    </div>
-                                  )}
-                                </div>
-                              </div>
-
-                              {budget > 0 && (
-                                <div className="space-y-1">
-                                  <div className="w-full h-1.5 bg-white/5 rounded-full overflow-hidden">
-                                    <div 
-                                      className={`h-full rounded-full transition-all duration-500 ${
-                                        pctUsed >= 100 ? "bg-destructive shadow-glow-sm" :
-                                        pctUsed >= 85 ? "bg-amber-400" :
-                                        "bg-primary"
-                                      }`}
-                                      style={{ width: `${Math.min(100, pctUsed)}%` }}
-                                    />
-                                  </div>
-                                  <div className="flex justify-between items-center text-[9px] text-muted-foreground/60">
-                                    <span>Consumo de hoje</span>
-                                    <span>{pctUsed.toFixed(0)}%</span>
-                                  </div>
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })}
+                    <div className="bg-white/[0.01] border border-white/5 p-4 rounded-xl space-y-3">
+                      <div className="flex items-center justify-between gap-3 text-sm">
+                        <div className="flex items-center gap-2">
+                          <Wallet className="h-4 w-4 text-muted-foreground" />
+                          <span className="font-semibold text-white">Consumo Global das Campanhas</span>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <span className="text-muted-foreground font-mono font-bold">
+                            {fmtBRL(totalAccountSpentToday, snap.currency)} / {totalDailyBudget > 0 ? fmtBRL(totalDailyBudget, snap.currency) : "Sem limite"}
+                          </span>
+                          {pctUsed >= 100 && totalDailyBudget > 0 && (
+                            <span className="inline-flex items-center gap-1 text-[10px] font-bold text-destructive bg-destructive/10 border border-destructive/20 px-2 py-0.5 rounded-full">
+                              <AlertTriangle className="h-3 w-3" /> Orçamento Estourado
+                            </span>
+                          )}
+                        </div>
                       </div>
-                    )}
+
+                      {totalDailyBudget > 0 && (
+                        <div className="space-y-1.5">
+                          <div className="w-full h-2 bg-white/5 rounded-full overflow-hidden">
+                            <div 
+                              className={`h-full rounded-full transition-all duration-500 ${
+                                pctUsed >= 100 ? "bg-destructive shadow-glow-sm" :
+                                pctUsed >= 85 ? "bg-amber-400" :
+                                "bg-primary"
+                              }`}
+                              style={{ width: `${Math.min(100, pctUsed)}%` }}
+                            />
+                          </div>
+                          <div className="flex justify-between items-center text-[10px] text-muted-foreground/60 font-bold">
+                            <span>Progresso do gasto diário</span>
+                            <span className={pctUsed >= 100 ? "text-destructive" : ""}>{pctUsed.toFixed(1)}%</span>
+                          </div>
+                        </div>
+                      )}
+                    </div>
                   </div>
 
                   {/* Toggle Transações de Faturamento */}
