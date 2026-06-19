@@ -461,8 +461,7 @@ function CobrancasPage() {
                       exit={{ height: 0, opacity: 0 }}
                       className="border-t border-white/5 overflow-hidden bg-black/20"
                     >
-                      <div className="overflow-x-auto">
-                        <table className="w-full text-xs">
+                        <table className="hidden md:table w-full text-xs">
                           <thead>
                             <tr className="border-b border-white/5 bg-white/[0.01]">
                               <th className="px-5 py-3 text-left text-[9px] font-black uppercase tracking-wider text-muted-foreground/60">Data</th>
@@ -518,7 +517,52 @@ function CobrancasPage() {
                             })}
                           </tbody>
                         </table>
-                      </div>
+                        
+                        {/* --- MOBILE CARDS FOR INVOICES --- */}
+                        <div className="flex flex-col gap-2 p-3 md:hidden">
+                          {txs.map((tx: any) => {
+                            const cfg = STATUS_CONFIG[tx.status] ?? STATUS_CONFIG.PENDING;
+                            return (
+                              <div key={tx.id} className="bg-white/[0.02] border border-white/5 rounded-xl p-3 flex flex-col gap-2">
+                                <div className="flex items-start justify-between">
+                                  <div className="flex flex-col">
+                                    <span className="text-[10px] font-bold text-white">{BILLING_REASON_LABEL[tx.billing_reason] ?? tx.billing_reason ?? "—"}</span>
+                                    <span className="text-[9px] text-muted-foreground font-mono">{fmtDate(tx.created_at)}</span>
+                                  </div>
+                                  <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[9px] font-bold uppercase shrink-0 ${cfg.color}`}>
+                                    <cfg.icon className="h-2.5 w-2.5" />
+                                    {cfg.label}
+                                  </span>
+                                </div>
+                                <div className="flex items-center justify-between border-t border-white/5 pt-2 mt-1">
+                                  <span className="text-[9px] uppercase tracking-wider text-muted-foreground">Valor</span>
+                                  <span className="text-sm font-bold text-white font-mono">{fmtBRL(tx.amount, tx.currency ?? snap.currency)}</span>
+                                </div>
+                              </div>
+                            );
+                          })}
+                          {txsNoDate.map((tx: any) => {
+                            const cfg = STATUS_CONFIG[tx.status] ?? STATUS_CONFIG.PENDING;
+                            return (
+                              <div key={tx.id} className="bg-white/[0.01] border border-white/5 rounded-xl p-3 flex flex-col gap-2 opacity-65">
+                                <div className="flex items-start justify-between">
+                                  <div className="flex flex-col">
+                                    <span className="text-[10px] font-bold text-white">{BILLING_REASON_LABEL[tx.billing_reason] ?? tx.billing_reason ?? "—"}</span>
+                                    <span className="text-[9px] text-muted-foreground/50 font-mono italic">sem data registrada</span>
+                                  </div>
+                                  <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[9px] font-bold uppercase shrink-0 ${cfg.color}`}>
+                                    <cfg.icon className="h-2.5 w-2.5" />
+                                    {cfg.label}
+                                  </span>
+                                </div>
+                                <div className="flex items-center justify-between border-t border-white/5 pt-2 mt-1">
+                                  <span className="text-[9px] uppercase tracking-wider text-muted-foreground">Valor</span>
+                                  <span className="text-sm font-bold text-white/70 font-mono">{fmtBRL(tx.amount, tx.currency ?? snap.currency)}</span>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
                     </motion.div>
                   )}
                 </AnimatePresence>

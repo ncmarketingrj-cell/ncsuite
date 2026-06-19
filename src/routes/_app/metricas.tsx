@@ -1308,8 +1308,10 @@ function MetricasCampanhasPage() {
                   ) : filtered.length === 0 ? (
                     <div className="py-24 text-center text-sm text-muted-foreground">Nenhum dado encontrado.</div>
                   ) : (
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-xs border-collapse">
+                    <div className="w-full">
+                      {/* --- DESKTOP TABLE --- */}
+                      <div className="hidden lg:block overflow-x-auto">
+                        <table className="w-full text-xs border-collapse">
 
                         <thead>
                           <tr className="border-b border-white/5 bg-white/[0.02] sticky top-0 z-10">
@@ -1454,6 +1456,125 @@ function MetricasCampanhasPage() {
                         </tfoot>
                       </table>
                     </div>
+
+                    {/* --- MOBILE CARDS --- */}
+                    <div className="flex flex-col gap-3 lg:hidden mt-2">
+                      {/* Cabeçalho de Seleção Geral Mobile */}
+                      <div className="flex items-center justify-between px-2 pb-2 border-b border-white/5">
+                        <div className="flex items-center gap-2">
+                          <button onClick={toggleAll} className="text-muted-foreground hover:text-primary transition flex items-center gap-1.5">
+                            {allSelected ? <CheckSquare className="h-4 w-4 text-primary"/> : someSelected ? <CheckSquare className="h-4 w-4 text-primary/40"/> : <Square className="h-4 w-4"/>}
+                            <span className="text-[10px] font-bold uppercase tracking-widest">Selecionar Todos</span>
+                          </button>
+                        </div>
+                        <span className="text-[10px] font-black uppercase text-muted-foreground/50">{filtered.length} Itens</span>
+                      </div>
+
+                      {filtered.map((c: any) => {
+                        const isActive   = c.status?.toUpperCase() === "ACTIVE";
+                        const isLearning = c.delivery_status === "LEARNING";
+                        const isChanging = changingId === c.id;
+                        const isSel      = selSet.has(c.id);
+                        const isHighlight= searchParams.campaign === c.id;
+                        const cplOver    = maxCplThreshold && c.t.cpl > 0 && c.t.cpl > maxCplThreshold;
+                        const freqHigh   = c.t.freq >= 3;
+                        const ctrGood    = c.t.ctr >= 2;
+
+                        return (
+                          <div 
+                            key={`mobile-${c.id}`}
+                            className={`flex flex-col gap-3 rounded-2xl p-4 border transition-all ${isHighlight ? "bg-destructive/10 border-destructive/40 shadow-glow-sm" : isSel ? "bg-primary/5 border-primary/30" : "bg-white/[0.02] border-white/5"}`}
+                          >
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="flex items-start gap-2.5">
+                                <button onClick={() => toggleOne(c.id)} className="mt-1 text-muted-foreground hover:text-primary transition">
+                                  {isSel ? <CheckSquare className="h-4 w-4 text-primary"/> : <Square className="h-4 w-4"/>}
+                                </button>
+                                <div className="flex flex-col min-w-0">
+                                  <button
+                                    onClick={() => setSelectedFocusItem({ ...c, type: level })}
+                                    className="font-bold text-sm text-foreground hover:text-primary transition text-left leading-tight line-clamp-2"
+                                  >
+                                    {c.name}
+                                  </button>
+                                  <div className="flex items-center gap-2 flex-wrap mt-1">
+                                    <button
+                                      onClick={() => !isChanging && toggleMutation.mutate({ id: c.id, externalId: c.external_id, currentStatus: c.status, type: level })}
+                                      disabled={isChanging}
+                                      className={`relative h-5 w-9 rounded-full transition-all duration-300 border ${isActive ? "bg-primary/20 border-primary/40 hover:bg-primary/30" : "bg-white/5 border-white/10 hover:bg-white/10"} disabled:opacity-40 shrink-0`}
+                                    >
+                                      {isChanging ? (
+                                        <Loader2 className="h-2.5 w-2.5 animate-spin absolute inset-0 m-auto text-primary"/>
+                                      ) : (
+                                        <span className={`absolute top-0.5 h-3.5 w-3.5 rounded-full transition-all duration-300 flex items-center justify-center ${isActive ? "left-[14px] bg-primary" : "left-0.5 bg-white/30"}`} />
+                                      )}
+                                    </button>
+                                    {isLearning && <LearningBadge/>}
+                                    {level === "campanhas" && <ObjectiveBadge objective={c.objective}/>}
+                                  </div>
+                                  {c.ad_account && <span className="text-[9px] text-muted-foreground/50 font-mono mt-1.5">{(c.ad_account as any).name}</span>}
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-2 mt-1">
+                              <div className="bg-black/20 rounded-xl p-2.5 flex flex-col justify-between border border-white/5">
+                                <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/60">Gasto</span>
+                                <span className={`font-mono font-black text-sm mt-0.5 ${c.t.cost > 0 ? "text-primary" : "text-muted-foreground/40"}`}>
+                                  {c.t.cost > 0 ? `R$ ${fmtBRL(c.t.cost)}` : "—"}
+                                </span>
+                              </div>
+                              <div className="bg-black/20 rounded-xl p-2.5 flex flex-col justify-between border border-white/5">
+                                <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/60">Resultados</span>
+                                <span className={`font-mono font-black text-sm mt-0.5 ${c.t.conversions > 0 ? "text-violet-400" : "text-muted-foreground/40"}`}>
+                                  {c.t.conversions > 0 ? fmtN(c.t.conversions) : "—"}
+                                </span>
+                              </div>
+                              <div className="bg-black/20 rounded-xl p-2.5 flex flex-col justify-between border border-white/5">
+                                <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/60">CPL / CPA</span>
+                                <span className={`font-mono font-black text-sm mt-0.5 ${c.t.cpl > 0 ? (cplOver ? "text-red-400" : "text-emerald-400") : "text-muted-foreground/40"}`}>
+                                  {c.t.cpl > 0 ? `R$ ${c.t.cpl.toFixed(2)}` : "—"}
+                                </span>
+                              </div>
+                              <div className="bg-black/20 rounded-xl p-2.5 flex flex-col justify-between border border-white/5">
+                                <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/60">Frequência</span>
+                                <span className={`font-mono font-black text-sm mt-0.5 ${freqHigh ? "text-red-400" : c.t.freq > 0 ? "text-amber-400" : "text-muted-foreground/40"}`}>
+                                  {c.t.freq > 0 ? c.t.freq.toFixed(2) + "×" : "—"}
+                                </span>
+                              </div>
+                            </div>
+                            {/* Oculto em telas menores mas exibido caso precise de mais contexto em MD */}
+                            <div className="flex items-center justify-between pt-2 px-1">
+                              <span className="text-[9px] font-mono text-muted-foreground">CTR: {c.t.ctr > 0 ? `${c.t.ctr.toFixed(2)}%` : "—"}</span>
+                              <span className="text-[9px] font-mono text-muted-foreground">CPC: {c.t.cpc > 0 ? `R$ ${c.t.cpc.toFixed(2)}` : "—"}</span>
+                              <span className="text-[9px] font-mono text-muted-foreground">CPM: {c.t.cpm > 0 ? `R$ ${c.t.cpm.toFixed(2)}` : "—"}</span>
+                            </div>
+                          </div>
+                        );
+                      })}
+                      
+                      {/* Footer Totais Mobile */}
+                      <div className="mt-2 rounded-2xl p-4 bg-primary/5 border border-primary/10">
+                        <div className="flex flex-col gap-2">
+                          <span className="text-[10px] font-black uppercase tracking-widest text-primary">TOTAIS ({filtered.length} {level})</span>
+                          <div className="flex items-center justify-between border-b border-primary/10 pb-2">
+                            <span className="text-xs text-muted-foreground font-bold">Gasto</span>
+                            <span className="font-mono font-black text-primary text-sm">R$ {fmtBRL(totCost)}</span>
+                          </div>
+                          <div className="flex items-center justify-between border-b border-primary/10 pb-2">
+                            <span className="text-xs text-muted-foreground font-bold">Resultados</span>
+                            <span className="font-mono font-black text-violet-400 text-sm">{totConv > 0 ? fmtN(totConv) : "—"}</span>
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs text-muted-foreground font-bold">Custo por Res.</span>
+                            <span className="font-mono font-black text-emerald-400 text-sm">{avgCpl > 0 ? `R$ ${avgCpl.toFixed(2)}` : "—"}</span>
+                          </div>
+                        </div>
+                      </div>
+
+                    </div>
+                    {/* --- FIM MOBILE CARDS --- */}
+                  </div>
                   )}
                 </div>
               )}

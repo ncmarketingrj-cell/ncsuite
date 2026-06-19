@@ -705,8 +705,9 @@ function AutomationsPage() {
             <History className="h-4 w-4 text-primary" />
             <h3 className="text-xs font-bold uppercase tracking-widest">Histórico de Extrações (Últimos 20)</h3>
           </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
+          <div className="w-full">
+            <div className="hidden md:block overflow-x-auto">
+              <table className="w-full text-left text-sm">
               <thead className="border-b border-white/5 bg-white/5">
                 <tr>
                   <th className="p-4 font-bold text-[10px] uppercase tracking-widest text-muted-foreground">Data/Hora</th>
@@ -754,8 +755,60 @@ function AutomationsPage() {
                     </td>
                   </motion.tr>
                 ))}
-              </tbody>
-            </table>
+                </tbody>
+              </table>
+            </div>
+
+            {/* --- MOBILE CARDS FOR LOGS --- */}
+            <div className="flex flex-col gap-2 p-3 md:hidden">
+              {loadingSync ? (
+                <div className="p-8 flex justify-center"><Loader2 className="h-6 w-6 animate-spin text-primary/50" /></div>
+              ) : !syncHistory.length ? (
+                <div className="p-12 text-center text-muted-foreground italic text-xs">Nenhuma sincronização registrada.</div>
+              ) : syncHistory.map((log: any, i: number) => (
+                <motion.div
+                  key={`mobile-${log.id}`}
+                  initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: i * 0.02 }}
+                  className="bg-white/[0.02] border border-white/5 rounded-xl p-3 flex flex-col gap-2"
+                >
+                  <div className="flex items-start justify-between">
+                    <span className="font-mono text-[10px] text-muted-foreground">
+                      {new Date(log.created_at).toLocaleString("pt-BR")}
+                    </span>
+                    <span className={`inline-flex rounded-full px-2 py-0.5 text-[8px] font-black tracking-tighter shrink-0 ${
+                      log.status === "success" ? "bg-success/20 text-success" :
+                      log.status === "running" ? "bg-primary/20 text-primary animate-pulse" :
+                      log.status === "partial_success" ? "bg-orange-500/20 text-orange-400" :
+                      "bg-destructive/20 text-destructive"
+                    }`}>
+                      {log.status.toUpperCase()}
+                    </span>
+                  </div>
+                  
+                  {log.error_message && (
+                    <p className="text-[9px] text-destructive leading-tight bg-destructive/10 p-1.5 rounded" title={log.error_message}>
+                      {log.error_message}
+                    </p>
+                  )}
+
+                  <div className="flex items-center justify-between border-t border-white/5 pt-2 mt-1">
+                    <div className="flex items-center gap-4">
+                      <div className="flex flex-col">
+                        <span className="text-[8px] uppercase tracking-widest text-muted-foreground">Contas</span>
+                        <span className="font-mono font-bold text-[11px] text-foreground">{log.accounts_synced || 0}</span>
+                      </div>
+                      <div className="flex flex-col">
+                        <span className="text-[8px] uppercase tracking-widest text-muted-foreground">Campanhas</span>
+                        <span className="font-mono font-bold text-[11px] text-foreground">{log.campaigns_synced || 0}</span>
+                      </div>
+                    </div>
+                    <span className="text-[8px] font-bold text-muted-foreground uppercase bg-white/5 px-2 py-1 rounded">
+                      {log.triggered_by === "auto" ? "BACKGROUND" : "MANUAL"}
+                    </span>
+                  </div>
+                </motion.div>
+              ))}
+            </div>
           </div>
         </motion.div>
       )}

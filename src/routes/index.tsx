@@ -162,7 +162,7 @@ function LandingPage() {
   const onMouseLeave = useCallback(() => { mx.set(0); my.set(0); }, [mx, my]);
 
   return (
-    <div className="relative overflow-x-hidden">
+    <main className="relative overflow-x-hidden">
       <style>{`
         @keyframes marquee { to { transform: translateX(-50%); } }
         @keyframes shimx   { 0%{background-position:-200% center}100%{background-position:200% center} }
@@ -894,7 +894,7 @@ function LandingPage() {
             <div className="flex items-center gap-3">
               <img
                 src="/assets/nc-logo.png"
-                alt="NC"
+                alt="Logo oficial da NC Agência de Performance"
                 className="h-7 w-7 object-contain"
                 style={{ opacity: 0.28 }}
               />
@@ -915,6 +915,6 @@ function LandingPage() {
           </div>
         </footer>
       </div>
-    </div>
+    </main>
   );
 }

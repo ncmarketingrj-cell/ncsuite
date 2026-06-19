@@ -89,19 +89,21 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       meta: [
         { charSet: "utf-8" },
         { name: "viewport", content: "width=device-width, initial-scale=1, viewport-fit=cover" },
-        { title: "NC Performance Suite — Motor de tráfego pago automotivo" },
+        { title: "NC Performance | Gestão de Tráfego Automotivo" },
         { name: "description", content: "Suite SaaS para gestão e relatórios de performance Meta Ads no segmento automotivo." },
         { name: "theme-color", content: "#DC2626" },
-        { property: "og:title", content: "NC Performance Suite — Motor de tráfego pago automotivo" },
+        { property: "og:title", content: "NC Performance | Gestão de Tráfego Automotivo" },
         { property: "og:description", content: "Suite SaaS para gestão e relatórios de performance Meta Ads no segmento automotivo." },
         { property: "og:type", content: "website" },
-        { name: "twitter:title", content: "NC Performance Suite — Motor de tráfego pago automotivo" },
+        { property: "og:url", content: "https://ncperformance.com.br" },
+        { name: "twitter:title", content: "NC Performance | Gestão de Tráfego Automotivo" },
         { name: "twitter:description", content: "Suite SaaS para gestão e relatórios de performance Meta Ads no segmento automotivo." },
         { property: "og:image", content: "https://storage.googleapis.com/gpt-engineer-file-uploads/PXYT2fHT8Zd2UVh923EaGv29ll22/social-images/social-1780411155727-Captura_de_tela_2026-06-02_113859.webp" },
         { name: "twitter:image", content: "https://storage.googleapis.com/gpt-engineer-file-uploads/PXYT2fHT8Zd2UVh923EaGv29ll22/social-images/social-1780411155727-Captura_de_tela_2026-06-02_113859.webp" },
         { name: "twitter:card", content: "summary_large_image" },
       ],
       links: [
+        { rel: "canonical", href: "https://ncperformance.com.br" },
         { rel: "stylesheet", href: appCss },
         { rel: "preconnect", href: "https://fonts.googleapis.com" },
         { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "anonymous" },
@@ -121,7 +123,16 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
 function RootShell({ children }: { children: React.ReactNode }) {
   return (
     <html lang="pt-BR">
-      <head><HeadContent /></head>
+      <head>
+        <HeadContent />
+        <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify({
+          "@context": "https://schema.org",
+          "@type": "SoftwareApplication",
+          "name": "NC Performance Suite",
+          "applicationCategory": "BusinessApplication",
+          "operatingSystem": "All"
+        }) }} />
+      </head>
       <body>
         {children}
         <Scripts />
