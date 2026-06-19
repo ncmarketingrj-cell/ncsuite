@@ -728,21 +728,21 @@ function RelatoriosPage() {
     <div className="mx-auto max-w-6xl space-y-8 pb-20">
       
       {/* HEADER TÉCNICO E PREMIUM */}
-      <div className="flex flex-col gap-4 border-b border-white/5 pb-8 print:hidden sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center gap-3">
-          <Link to="/dashboard" className="flex items-center justify-center h-10 w-10 rounded-2xl bg-white/5 hover:bg-white/10 transition-colors border border-white/10">
+      <div className="flex flex-col gap-4 border-b border-white/5 pb-6 print:hidden sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-start sm:items-center gap-3">
+          <Link to="/dashboard" className="flex items-center justify-center h-10 w-10 shrink-0 rounded-2xl bg-white/5 hover:bg-white/10 transition-colors border border-white/10 mt-1 sm:mt-0">
             <ArrowLeft className="h-5 w-5 text-muted-foreground" />
           </Link>
-          <div>
+          <div className="flex flex-col">
             <div className="flex items-center gap-2">
-              <span className="h-2 w-2 rounded-full bg-primary animate-pulse" />
-              <p className="label-mono text-primary font-bold tracking-widest uppercase text-[9px]">Módulo Performance AI</p>
+              <span className="h-2 w-2 rounded-full bg-primary animate-pulse shrink-0" />
+              <p className="label-mono text-primary font-bold tracking-widest uppercase text-[11px]">Módulo Performance AI</p>
             </div>
-            <h1 className="text-3xl font-black tracking-tighter text-gradient uppercase mt-0.5">Motor de Relatórios</h1>
+            <h1 className="text-2xl sm:text-3xl font-black tracking-tighter text-gradient uppercase mt-0.5 leading-tight">Motor de Relatórios</h1>
           </div>
         </div>
 
-        <div className="flex items-center gap-4">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-3 w-full sm:w-auto">
           <button
             onClick={() => {
               setActiveReportId(null);
@@ -765,18 +765,18 @@ function RelatoriosPage() {
           </button>
 
         {/* Alternador de Origem de Dados */}
-        <div className="flex rounded-xl bg-white/5 p-1 border border-white/5">
+        <div className="flex flex-col sm:flex-row rounded-xl bg-white/5 p-1 border border-white/5">
           <button 
             onClick={() => { setSource("api"); setActiveReportId(null); }} 
-            className={`flex items-center gap-1.5 rounded-lg px-4 py-2 text-xs font-bold transition-all ${source === "api" ? "bg-primary text-background" : "text-muted-foreground hover:text-white"}`}
+            className={`flex items-center justify-center gap-1.5 rounded-lg px-4 py-2 text-[11px] sm:text-xs font-bold transition-all flex-1 ${source === "api" ? "bg-primary text-background" : "text-muted-foreground hover:text-white"}`}
           >
-            <Globe className="h-3.5 w-3.5" /> Meta Ads (Integrado)
+            <Globe className="h-3.5 w-3.5 shrink-0" /> Meta Ads (Integrado)
           </button>
           <button 
             onClick={() => { setSource("upload"); setActiveReportId(null); }} 
-            className={`flex items-center gap-1.5 rounded-lg px-4 py-2 text-xs font-bold transition-all ${source === "upload" ? "bg-primary text-background" : "text-muted-foreground hover:text-white"}`}
+            className={`flex items-center justify-center gap-1.5 rounded-lg px-4 py-2 text-[11px] sm:text-xs font-bold transition-all flex-1 ${source === "upload" ? "bg-primary text-background" : "text-muted-foreground hover:text-white"}`}
           >
-            <Sparkles className="h-3.5 w-3.5" /> Extração de Print (OCR)
+            <Sparkles className="h-3.5 w-3.5 shrink-0" /> Extração (OCR)
           </button>
         </div>
         </div>

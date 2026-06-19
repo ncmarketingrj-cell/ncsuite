@@ -141,7 +141,7 @@ function AddRuleModal({ accounts, onClose, onSave }: { accounts: any[], onClose:
       <motion.div initial={{ scale: 0.95 }} animate={{ scale: 1 }} exit={{ scale: 0.95 }} className="glass-panel w-full max-w-md p-6 space-y-4">
         <h4 className="font-display text-lg font-semibold">Nova regra de alerta</h4>
         <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Nome da regra (ex: CPL Alto)" className="w-full rounded-lg border border-white/10 bg-background/50 px-3 py-2 text-sm focus:border-primary" />
-        <div className="grid grid-cols-3 gap-2">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
           <select value={metric} onChange={(e) => setMetric(e.target.value)} className="rounded-lg border border-white/10 bg-background px-2 py-2 text-xs">
             <option value="cpl">CPL</option><option value="spend">Gasto Diário</option><option value="roas">ROAS</option>
           </select>
@@ -540,11 +540,11 @@ function TabIntegracoes() {
         </div>
       </div>
 
-      <div className="flex items-center gap-3 pt-2 mb-8">
-        <button onClick={save} className="inline-flex items-center gap-2 rounded-full bg-primary px-4 py-2 text-xs font-bold text-primary-foreground hover:shadow-glow transition">
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 pt-2 mb-8">
+        <button onClick={save} className="inline-flex items-center justify-center gap-2 rounded-full bg-primary px-4 py-3 sm:py-2 text-xs font-bold text-primary-foreground hover:shadow-glow transition w-full sm:w-auto">
           <Check className="h-3.5 w-3.5" /> SALVAR TOKEN META
         </button>
-        <button onClick={test} disabled={testing} className="inline-flex items-center gap-2 rounded-full border border-white/10 px-4 py-2 text-xs font-medium disabled:opacity-50 hover:bg-white/5">
+        <button onClick={test} disabled={testing} className="inline-flex items-center justify-center gap-2 rounded-full border border-white/10 px-4 py-3 sm:py-2 text-xs font-medium disabled:opacity-50 hover:bg-white/5 w-full sm:w-auto">
           {testing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : connected ? <Wifi className="h-3.5 w-3.5 text-success" /> : <WifiOff className="h-3.5 w-3.5" />}
           TESTAR HEARTBEAT
         </button>

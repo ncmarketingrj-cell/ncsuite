@@ -362,16 +362,18 @@ function Dashboard() {
           <div className="hidden lg:block h-6 w-px bg-white/10" />
 
           {/* Ações à direita com espaçamento destacado */}
-          <div className="flex items-center gap-3 ml-auto lg:ml-0">
-            <SyncButton mode="quick" />
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full lg:w-auto">
+            <div className="flex-1 sm:flex-none">
+              <SyncButton mode="quick" />
+            </div>
             <button 
               onClick={() => navigate({ to: "/relatorios" })}
-              className="group relative flex items-center gap-2 overflow-hidden rounded-xl bg-primary px-5 py-2.5 text-xs font-black uppercase tracking-widest text-primary-foreground transition-all hover:bg-primary/90 hover:shadow-glow-sm"
+              className="group relative flex items-center justify-center gap-2 overflow-hidden rounded-xl bg-primary px-5 py-2.5 text-[11px] sm:text-xs font-black uppercase tracking-widest text-primary-foreground transition-all hover:bg-primary/90 hover:shadow-glow-sm flex-1 sm:flex-none"
             >
               <div className="absolute inset-0 flex h-full w-full justify-center [transform:skew(-12deg)_translateX(-100%)] group-hover:duration-1000 group-hover:[transform:skew(-12deg)_translateX(100%)]">
                 <div className="relative h-full w-8 bg-white/20" />
               </div>
-              <FileText className="h-4 w-4" />
+              <FileText className="h-4 w-4 shrink-0" />
               Gerar Relatório
             </button>
           </div>
@@ -408,11 +410,11 @@ function Dashboard() {
                 <BookOpen className={`h-4 w-4 ${situacao.aprendendo > 0 ? "text-amber-500" : "text-muted-foreground"}`} />
               </div>
               <div className="min-w-0">
-                <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Aprendendo</p>
-                <p className={`text-xl font-black tabular-nums leading-none mt-0.5 ${situacao.aprendendo > 0 ? "text-amber-500" : "text-foreground"}`}>
+                <p className="text-[11px] font-black uppercase tracking-widest text-muted-foreground">Aprendendo</p>
+                <p className={`text-2xl font-black tabular-nums leading-none mt-1 ${situacao.aprendendo > 0 ? "text-amber-500" : "text-foreground"}`}>
                   {situacao.aprendendo}
                 </p>
-                <p className="text-[9px] text-muted-foreground mt-0.5">
+                <p className="text-[10px] sm:text-[11px] text-muted-foreground mt-1">
                   {situacao.aprendendo > 0 ? "Não otimizar ainda" : "Tudo estável"}
                 </p>
               </div>
@@ -436,11 +438,11 @@ function Dashboard() {
                 <AlertTriangle className={`h-4 w-4 ${situacao.freqAlta > 0 ? "text-destructive" : "text-muted-foreground"}`} />
               </div>
               <div className="min-w-0">
-                <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Freq. Alta</p>
-                <p className={`text-xl font-black tabular-nums leading-none mt-0.5 ${situacao.freqAlta > 0 ? "text-destructive" : "text-foreground"}`}>
+                <p className="text-[11px] font-black uppercase tracking-widest text-muted-foreground">Freq. Alta</p>
+                <p className={`text-2xl font-black tabular-nums leading-none mt-1 ${situacao.freqAlta > 0 ? "text-destructive" : "text-foreground"}`}>
                   {situacao.freqAlta}
                 </p>
-                <p className="text-[9px] text-muted-foreground mt-0.5">
+                <p className="text-[10px] sm:text-[11px] text-muted-foreground mt-1">
                   {situacao.freqAlta > 0 ? "Saturação iminente" : "Audiência saudável"}
                 </p>
               </div>
@@ -460,17 +462,17 @@ function Dashboard() {
                 <GaugeCircle className="h-4 w-4 text-success" />
               </div>
               <div className="min-w-0 flex-1">
-                <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Budget Pacing</p>
-                <div className="flex items-baseline gap-1.5 mt-0.5">
-                  <p className="text-xl font-black tabular-nums leading-none text-foreground">{situacao.pctDia}%</p>
-                  <span className="text-[9px] text-muted-foreground">do dia</span>
+                <p className="text-[11px] font-black uppercase tracking-widest text-muted-foreground">Budget Pacing</p>
+                <div className="flex items-baseline gap-1.5 mt-1">
+                  <p className="text-2xl font-black tabular-nums leading-none text-foreground">{situacao.pctDia}%</p>
+                  <span className="text-[10px] text-muted-foreground">do dia</span>
                 </div>
-                <div className="flex gap-2 mt-1.5">
-                  <div className="flex-1 h-1 rounded-full bg-muted overflow-hidden">
+                <div className="flex gap-2 mt-2">
+                  <div className="flex-1 h-1.5 rounded-full bg-muted overflow-hidden">
                     <div className="h-full rounded-full bg-success transition-all" style={{ width: `${Math.min(situacao.pctDia, 100)}%` }} />
                   </div>
                 </div>
-                <p className="text-[9px] text-muted-foreground mt-0.5">
+                <p className="text-[10px] sm:text-[11px] text-muted-foreground mt-1">
                   {situacao.pacingOk} ritmo · {situacao.pacingAcelerado} acelerado · {situacao.pacingAbaixo} abaixo
                 </p>
               </div>
@@ -491,11 +493,11 @@ function Dashboard() {
                 <Rocket className={`h-4 w-4 ${situacao.prontas > 0 ? "text-primary" : "text-muted-foreground"}`} />
               </div>
               <div className="min-w-0">
-                <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Escalar</p>
-                <p className={`text-xl font-black tabular-nums leading-none mt-0.5 ${situacao.prontas > 0 ? "text-primary" : "text-foreground"}`}>
+                <p className="text-[11px] font-black uppercase tracking-widest text-muted-foreground">Escalar</p>
+                <p className={`text-2xl font-black tabular-nums leading-none mt-1 ${situacao.prontas > 0 ? "text-primary" : "text-foreground"}`}>
                   {situacao.prontas}
                 </p>
-                <p className="text-[9px] text-muted-foreground mt-0.5">
+                <p className="text-[10px] sm:text-[11px] text-muted-foreground mt-1">
                   {situacao.prontas > 0 ? "CPL abaixo da média" : "Monitorar mais"}
                 </p>
               </div>

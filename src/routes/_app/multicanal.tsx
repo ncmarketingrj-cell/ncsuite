@@ -301,7 +301,8 @@ function MulticanalPage() {
             <div className="border-b border-white/5 p-5 bg-white/[0.01]">
               <p className="text-xs font-black uppercase tracking-widest text-primary">Demonstrativo Detalhado de Performance</p>
             </div>
-            <div className="overflow-x-auto custom-scrollbar">
+            {/* Tabela Desktop */}
+            <div className="hidden lg:block overflow-x-auto custom-scrollbar">
               <table className="w-full text-xs">
                 <thead>
                   <tr className="border-b border-white/5 bg-white/[0.02] text-left text-[10px] font-black uppercase tracking-widest text-muted-foreground">
@@ -332,6 +333,46 @@ function MulticanalPage() {
                   ))}
                 </tbody>
               </table>
+            </div>
+            
+            {/* Cards Mobile */}
+            <div className="grid gap-3 p-4 lg:hidden">
+              {(dashData?.campaigns || []).map((c) => (
+                <div key={c.id} className="rounded-xl border border-white/5 bg-white/[0.02] p-4 flex flex-col gap-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <p className="font-bold text-xs uppercase tracking-tight text-foreground/90 leading-snug">{c.name}</p>
+                    <span className={`shrink-0 rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-wider ${c.status?.toUpperCase() === "ACTIVE" ? "bg-success/15 text-success animate-pulse" : "bg-white/5 text-muted-foreground"}`}>
+                      {c.status?.toUpperCase() === "ACTIVE" ? "Ativo" : "Pausado"}
+                    </span>
+                  </div>
+                  
+                  <div className="grid grid-cols-2 gap-2 mt-2 pt-3 border-t border-white/5">
+                    <div>
+                      <p className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">Investido</p>
+                      <p className="font-mono text-sm font-bold text-foreground mt-0.5">R$ {(c.cost ?? 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">Budget (Dia)</p>
+                      <p className="font-mono text-sm font-medium text-foreground mt-0.5">R$ {(c.budget ?? 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-black text-muted-foreground uppercase tracking-widest mt-1">Resultados</p>
+                      <p className="font-mono text-sm font-bold text-foreground mt-0.5">{(c.conversions ?? 0).toLocaleString("pt-BR")}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-[10px] font-black text-primary uppercase tracking-widest mt-1">CPL Médio</p>
+                      <p className="font-mono text-sm font-bold text-primary mt-0.5">
+                        {c.conversions > 0 ? `R$ ${(c.cost / c.conversions).toFixed(2)}` : "—"}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              ))}
+              {(dashData?.campaigns || []).length === 0 && (
+                <div className="text-center p-6 text-xs text-muted-foreground">
+                  Nenhuma campanha encontrada neste período.
+                </div>
+              )}
             </div>
           </motion.div>
         </>

@@ -7,7 +7,7 @@ import {
   Bell, User, Bot, Sparkles, Activity, Zap,
   Sun, Moon, Menu, X, BarChart3, LineChart, Palette, Link2,
   ChevronDown, RefreshCw, Users, Store,
-  Volume2, VolumeX, LogOut, CreditCard, Share2, ArrowRight, GitBranch, Brain
+  Volume2, VolumeX, LogOut, CreditCard, Share2, ArrowRight, GitBranch, Brain, ChevronRight
 } from "lucide-react";
 import { AuthProvider, useAuth } from "@/lib/auth";
 import { supabase } from "@/integrations/supabase/client";
@@ -919,6 +919,14 @@ function Shell() {
             >
               <Bot className="h-4 w-4" />
             </button>
+
+            {/* Mobile Menu Button */}
+            <button
+              onClick={() => setMobileMenuOpen(true)}
+              className="flex lg:hidden h-8 w-8 items-center justify-center rounded-xl border border-border bg-card text-muted-foreground transition-all hover:border-primary/30 hover:text-foreground active:scale-95 ml-1"
+            >
+              <Menu className="h-4 w-4" />
+            </button>
           </div>
         </div>
 
@@ -963,8 +971,8 @@ function Shell() {
                   <X className="h-4 w-4" />
                 </button>
               </div>
-              {/* Grid de nav */}
-              <nav className="p-4 grid grid-cols-3 gap-2.5">
+              {/* Lista Vertical de Nav (Melhor Legibilidade) */}
+              <nav className="p-4 flex flex-col gap-1.5">
                 {filteredNavItems.map((item) => {
                   const isActive = path === item.to || (item.to !== "/dashboard" && path.startsWith(item.to));
                   return (
@@ -972,12 +980,15 @@ function Shell() {
                       key={item.to}
                       to={item.to}
                       onClick={() => setMobileMenuOpen(false)}
-                      className={`flex flex-col items-center gap-1.5 rounded-2xl px-2 py-3.5 text-[11px] font-bold text-center transition-all ${
-                        isActive ? "bg-primary/15 text-primary" : "bg-muted/30 text-muted-foreground"
+                      className={`flex items-center gap-3.5 rounded-2xl px-4 py-3.5 text-[13px] font-bold transition-all ${
+                        isActive ? "bg-primary/10 text-primary border border-primary/20" : "bg-transparent text-foreground hover:bg-white/[0.03] border border-transparent"
                       }`}
                     >
-                      <item.icon className="h-5 w-5" />
+                      <div className={`h-8 w-8 rounded-full flex items-center justify-center shrink-0 ${isActive ? 'bg-primary/20' : 'bg-muted/30'}`}>
+                        <item.icon className="h-4 w-4" />
+                      </div>
                       {item.label}
+                      <ChevronRight className={`h-4 w-4 ml-auto transition-transform ${isActive ? 'opacity-100 translate-x-1' : 'opacity-30'}`} />
                     </Link>
                   );
                 })}
@@ -1071,7 +1082,8 @@ function Shell() {
           MAIN CONTENT
           ═══════════════════════════════════════ */}
       <main className="relative z-[1] flex-1 overflow-y-auto overscroll-none custom-scrollbar" style={{ WebkitOverflowScrolling: 'touch' }}>
-        <div className="mx-auto max-w-[1600px] p-3 pb-28 sm:p-4 md:pb-8 md:p-6 lg:p-8">
+        {/* MOBILE REDESIGN: Paddings reduzidos de p-3 para px-2 py-4 para ganhar largura de tela */}
+        <div className="mx-auto max-w-[1600px] px-2 py-4 pb-28 sm:p-4 md:pb-8 md:p-6 lg:p-8">
           
           <Outlet />
         </div>

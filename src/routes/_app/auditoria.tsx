@@ -589,17 +589,17 @@ function AuditoriaHub() {
         </div>
 
         {/* Filtros e Controles */}
-        <div className="flex flex-wrap items-center gap-3">
+        <div className="flex flex-col sm:flex-row flex-wrap items-stretch sm:items-center gap-3 w-full xl:w-auto">
           {/* Seletor de Contas */}
-          <div className="flex items-center gap-1.5">
-            <Users className="h-4 w-4 text-muted-foreground" />
+          <div className="flex items-center gap-2 w-full sm:w-auto">
+            <Users className="h-4 w-4 text-muted-foreground shrink-0" />
             <select
               value={selectedAccountId}
               onChange={(e) => {
                 setSelectedAccountId(e.target.value);
                 setSelectedCampaignId("all"); // Reseta campanha
               }}
-              className="bg-card border border-border rounded-xl px-2.5 py-1.5 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+              className="bg-card border border-border rounded-xl px-3 py-2 sm:py-1.5 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary flex-1 sm:flex-none"
             >
               <option value="all">Todas as Contas Meta</option>
               {accounts.map(acc => (
@@ -609,12 +609,12 @@ function AuditoriaHub() {
           </div>
 
           {/* Seletor de Campanhas */}
-          <div className="flex items-center gap-1.5">
-            <GitBranch className="h-4 w-4 text-muted-foreground" />
+          <div className="flex items-center gap-2 w-full sm:w-auto">
+            <GitBranch className="h-4 w-4 text-muted-foreground shrink-0" />
             <select
               value={selectedCampaignId}
               onChange={(e) => setSelectedCampaignId(e.target.value)}
-              className="bg-card border border-border rounded-xl px-2.5 py-1.5 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary max-w-[200px]"
+              className="bg-card border border-border rounded-xl px-3 py-2 sm:py-1.5 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary w-full sm:max-w-[200px]"
             >
               <option value="all">Todas as Campanhas</option>
               {campaigns.map(camp => (
@@ -623,37 +623,39 @@ function AuditoriaHub() {
             </select>
           </div>
 
-          {/* Calendário Início */}
-          <div className="flex items-center gap-1.5">
-            <Calendar className="h-4 w-4 text-muted-foreground" />
-            <input 
-              type="date" 
-              value={startDate}
-              onChange={(e) => setStartDate(e.target.value)}
-              className="bg-card border border-border rounded-xl px-2 py-1 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-            />
-          </div>
+          <div className="flex flex-row items-center gap-3 w-full sm:w-auto">
+            {/* Calendário Início */}
+            <div className="flex items-center gap-2 flex-1 sm:flex-none">
+              <Calendar className="h-4 w-4 text-muted-foreground shrink-0" />
+              <input 
+                type="date" 
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+                className="bg-card border border-border rounded-xl px-3 py-2 sm:py-1 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary w-full sm:w-auto"
+              />
+            </div>
 
-          {/* Calendário Fim */}
-          <div className="flex items-center gap-1.5">
-            <span className="text-xs text-muted-foreground">até</span>
-            <input 
-              type="date" 
-              value={endDate}
-              onChange={(e) => setEndDate(e.target.value)}
-              className="bg-card border border-border rounded-xl px-2 py-1 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-            />
+            {/* Calendário Fim */}
+            <div className="flex items-center gap-2 flex-1 sm:flex-none">
+              <span className="text-[10px] sm:text-xs text-muted-foreground shrink-0">até</span>
+              <input 
+                type="date" 
+                value={endDate}
+                onChange={(e) => setEndDate(e.target.value)}
+                className="bg-card border border-border rounded-xl px-3 py-2 sm:py-1 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary w-full sm:w-auto"
+              />
+            </div>
           </div>
 
           <button
             onClick={exportSnapshotPdf}
             disabled={exporting}
-            className="flex items-center gap-2 bg-primary hover:bg-primary/95 text-primary-foreground rounded-xl px-4 py-1.5 text-xs font-bold transition-all active:scale-95 disabled:opacity-50"
+            className="flex items-center justify-center gap-2 bg-primary hover:bg-primary/95 text-primary-foreground rounded-xl px-4 py-2.5 sm:py-1.5 text-xs font-bold transition-all active:scale-95 disabled:opacity-50 w-full sm:w-auto mt-1 sm:mt-0"
           >
             {exporting ? (
-              <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+              <RefreshCw className="h-3.5 w-3.5 animate-spin shrink-0" />
             ) : (
-              <Download className="h-3.5 w-3.5" />
+              <Download className="h-3.5 w-3.5 shrink-0" />
             )}
             <span>Exportar Relatório PDF</span>
           </button>
