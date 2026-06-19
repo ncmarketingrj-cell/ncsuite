@@ -1,5 +1,5 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Bot, Zap, Activity, AlertTriangle, CheckCircle2, XCircle, Clock, Users, TrendingUp, TrendingDown, Loader2, Play, BarChart3, Brain, Wifi, WifiOff } from "lucide-react";
@@ -118,10 +118,13 @@ function AgentePage() {
     }
   };
 
-  // Calcular heatmap
-  const heatmap = buildHeatmap(demoData);
-  const maxCpa = Math.max(...Object.values(heatmap).map((v: any) => v.cpa ?? 0).filter(Boolean));
-  const minCpa = Math.min(...Object.values(heatmap).filter((v: any) => v.cpa !== null).map((v: any) => v.cpa));
+  // Calcular heatmap com useMemo para evitar travamento na interface
+  const { heatmap, maxCpa, minCpa } = useMemo(() => {
+    const h = buildHeatmap(demoData);
+    const max = Math.max(...Object.values(h).map((v: any) => v.cpa ?? 0).filter(Boolean));
+    const min = Math.min(...Object.values(h).filter((v: any) => v.cpa !== null).map((v: any) => v.cpa));
+    return { heatmap: h, maxCpa: max === -Infinity ? 0 : max, minCpa: min === Infinity ? 0 : min };
+  }, [demoData]);
 
   const lastSync = config?.last_heartbeat_at ? new Date(config.last_heartbeat_at) : null;
   const summary = config?.last_heartbeat_summary as any;
@@ -201,7 +204,7 @@ function AgentePage() {
                   ))}
                 </tbody>
               </table>
-              {minCpa !== Infinity && (
+              {minCpa > 0 && (
                 <div className="mt-3 flex items-center justify-between text-[10px] text-muted-foreground">
                   <span className="flex items-center gap-1"><span className="h-2 w-4 rounded bg-emerald-500/40" /> Melhor CPA: R${minCpa.toFixed(2)}</span>
                   <span className="flex items-center gap-1"><span className="h-2 w-4 rounded bg-red-500/40" /> Pior CPA: R${maxCpa.toFixed(2)}</span>
