@@ -48,6 +48,7 @@ interface FunnelState {
   setHoveredNodeId: (id: string | null) => void;
   toggleOutlineMode: () => void;
   setContextMenu: (menu: ContextMenuState | null) => void;
+  addNodeAfter: (sourceId: string, nodeKind?: string) => void;
 }
 
 export const useFunnelState = create<FunnelState>((set, get) => ({
@@ -126,5 +127,26 @@ export const useFunnelState = create<FunnelState>((set, get) => ({
 
   setContextMenu: (menu) => {
     set({ contextMenu: menu });
+  },
+
+  addNodeAfter: (sourceId, nodeKind = "Anúncio") => {
+    const { nodes, edges } = get();
+    const source = nodes.find(n => n.id === sourceId);
+    if (!source) return;
+    const existingChildren = nodes.filter(n =>
+      edges.some(e => e.source === sourceId && e.target === n.id)
+    );
+    const id = `n_${Date.now()}`;
+    const newNode: FunnelNode = {
+      id, type: "stage",
+      position: { x: source.position.x + existingChildren.length * 280, y: source.position.y + 180 },
+      data: { label: "Nova Etapa", nodeKind },
+    };
+    const newEdge: Edge = {
+      id: `e_${sourceId}_${id}`,
+      source: sourceId, target: id,
+      type: "smoothstep",
+    };
+    set({ nodes: [...nodes, newNode], edges: [...edges, newEdge] });
   },
 }));

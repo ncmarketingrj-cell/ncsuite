@@ -29,7 +29,8 @@ import {
   Loader2, CheckCircle2, List,
   Layout, Megaphone, Globe, MessageCircle, ShoppingCart,
   Bot, Target, ChevronLeft, HelpCircle, X, MousePointerClick,
-  MoveHorizontal, GitBranch, Pencil, ChevronRight, Activity
+  MoveHorizontal, GitBranch, Pencil, ChevronRight, Activity,
+  TrendingUp, TrendingDown, RefreshCcw, BarChart2, Bell,
 } from "lucide-react";
 import { Link } from "@tanstack/react-router";
 import { supabase } from "@/integrations/supabase/client";
@@ -94,6 +95,48 @@ const NODE_PALETTE = [
     icon: Target,
     color: "#f97316",
     description: "Formulário, quiz ou captação",
+  },
+  {
+    kind: "Upsell",
+    type: "stage",
+    icon: TrendingUp,
+    color: "#22c55e",
+    description: "Oferta adicional pós-compra",
+  },
+  {
+    kind: "Downsell",
+    type: "stage",
+    icon: TrendingDown,
+    color: "#f97316",
+    description: "Oferta alternativa de menor valor",
+  },
+  {
+    kind: "Cross-sell",
+    type: "stage",
+    icon: RefreshCcw,
+    color: "#a855f7",
+    description: "Venda cruzada de produto complementar",
+  },
+  {
+    kind: "Quiz/Enquete",
+    type: "stage",
+    icon: BarChart2,
+    color: "#06b6d4",
+    description: "Qualificação e coleta de dados",
+  },
+  {
+    kind: "E-mail Sequência",
+    type: "stage",
+    icon: Bell,
+    color: "#0ea5e9",
+    description: "Nutrição pós-captação por e-mail",
+  },
+  {
+    kind: "Remarketing",
+    type: "stage",
+    icon: RefreshCcw,
+    color: "#ef4444",
+    description: "Recaptura de visitantes e leads",
   },
 ];
 
