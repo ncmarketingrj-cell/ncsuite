@@ -492,6 +492,11 @@ function MetricasCampanhasPage() {
   const [changingId,     setChangingId]     = useState<string | null>(null);
   const [auditData,      setAuditData]      = useState<any[]|null>(null);
   const [isAuditing,     setIsAuditing]     = useState(false);
+  const [visibleCount,   setVisibleCount]   = useState(40);
+
+  useEffect(() => {
+    setVisibleCount(40);
+  }, [search, level, accountFilter, statusFilter]);
 
   // ── Estado de análise (charts) ──
   const [modo,            setModo]            = useState<ModoId>("geral");
@@ -1334,7 +1339,7 @@ function MetricasCampanhasPage() {
                           </tr>
                         </thead>
                         <tbody>
-                          {filtered.map((c: any) => {
+                          {filtered.slice(0, visibleCount).map((c: any) => {
                             const isActive   = c.status?.toUpperCase() === "ACTIVE";
                             const isLearning = c.delivery_status === "LEARNING";
                             const isChanging = changingId === c.id;
@@ -1470,7 +1475,7 @@ function MetricasCampanhasPage() {
                         <span className="text-[10px] font-black uppercase text-muted-foreground/50">{filtered.length} Itens</span>
                       </div>
 
-                      {filtered.map((c: any) => {
+                      {filtered.slice(0, visibleCount).map((c: any) => {
                         const isActive   = c.status?.toUpperCase() === "ACTIVE";
                         const isLearning = c.delivery_status === "LEARNING";
                         const isChanging = changingId === c.id;
@@ -1574,6 +1579,18 @@ function MetricasCampanhasPage() {
 
                     </div>
                     {/* --- FIM MOBILE CARDS --- */}
+
+                    {/* --- BOTÃO MOSTRAR MAIS --- */}
+                    {visibleCount < filtered.length && (
+                      <div className="pt-6 pb-2 flex justify-center w-full">
+                        <button 
+                          onClick={() => setVisibleCount(v => v + 40)}
+                          className="rounded-full border border-white/10 bg-white/5 px-6 py-2.5 text-xs font-bold text-foreground hover:bg-white/10 hover:border-white/20 transition-all flex items-center gap-2"
+                        >
+                          Mostrar Mais ({filtered.length - visibleCount} ocultos)
+                        </button>
+                      </div>
+                    )}
                   </div>
                   )}
                 </div>

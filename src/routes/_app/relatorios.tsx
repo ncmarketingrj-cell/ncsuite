@@ -82,7 +82,12 @@ function RelatoriosPage() {
   };
   
   const [campaignList, setCampaignList] = useState<CampaignData[]>([]);
+  const [visibleCount, setVisibleCount] = useState(40);
   const [isGenerating, setIsGenerating] = useState(false);
+
+  useEffect(() => {
+    setVisibleCount(40);
+  }, [source, selectedAccountId, dateRange, reportLevel]);
   const [generatedText, setGeneratedText] = useState("");
   const [previewOpen, setPreviewOpen] = useState(true);
   const [copied, setCopied] = useState(false);
@@ -984,7 +989,7 @@ function RelatoriosPage() {
             </div>
           ) : (
             <div className="flex-1 overflow-y-auto max-h-[350px] pr-1 space-y-2 scrollbar-thin">
-              {campaignList.map((c) => (
+              {campaignList.slice(0, visibleCount).map((c) => (
                 <div 
                   key={c.id} 
                   className={`flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 rounded-xl border transition ${c.selected ? 'bg-primary/[0.02] border-primary/20 hover:border-primary/45' : 'bg-background/40 border-white/5 hover:border-white/10'}`}
@@ -1038,6 +1043,18 @@ function RelatoriosPage() {
                   </div>
                 </div>
               ))}
+              
+              {/* Botão Mostrar Mais */}
+              {visibleCount < campaignList.length && (
+                <div className="pt-4 pb-2 flex justify-center w-full">
+                  <button 
+                    onClick={() => setVisibleCount(v => v + 40)}
+                    className="rounded-full border border-white/10 bg-white/5 px-6 py-2 text-xs font-bold text-foreground hover:bg-white/10 hover:border-white/20 transition-all flex items-center gap-2"
+                  >
+                    Mostrar Mais ({campaignList.length - visibleCount} ocultos)
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </div>

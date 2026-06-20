@@ -22,12 +22,19 @@ const COLORS = ["#00d4ff", "#9b87f5", "#f97316", "#22c55e", "#ef4444", "#eab308"
 function MulticanalPage() {
   const [clientId, setClientId] = useState("all");
   const [accountId, setAccountId] = useState("all");
+  const [visibleCount, setVisibleCount] = useState(40);
   
   // Período flexível de datas (Default: últimos 30 dias)
   const [dateRange, setDateRange] = useState<{ startDate: Date; endDate: Date }>({
     startDate: subDays(new Date(), 29),
     endDate: new Date(),
   });
+
+  // Reseta a paginação sempre que os filtros mudam
+  import { useEffect } from "react";
+  useEffect(() => {
+    setVisibleCount(40);
+  }, [clientId, accountId, dateRange]);
 
   // 1. Buscar Clientes
   const { data: clients = [] } = useQuery({
@@ -315,7 +322,7 @@ function MulticanalPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {(dashData?.campaigns || []).map((c) => (
+                  {(dashData?.campaigns || []).slice(0, visibleCount).map((c) => (
                     <tr key={c.id} className="border-b border-white/[0.02] hover:bg-white/[0.01] transition-all">
                       <td className="px-6 py-4 font-bold text-foreground/90 uppercase tracking-tight">{c.name}</td>
                       <td className="px-4 py-4">
@@ -337,7 +344,7 @@ function MulticanalPage() {
             
             {/* Cards Mobile */}
             <div className="grid gap-3 p-4 lg:hidden">
-              {(dashData?.campaigns || []).map((c) => (
+              {(dashData?.campaigns || []).slice(0, visibleCount).map((c) => (
                 <div key={c.id} className="rounded-xl border border-white/5 bg-white/[0.02] p-4 flex flex-col gap-3">
                   <div className="flex items-start justify-between gap-3">
                     <p className="font-bold text-xs uppercase tracking-tight text-foreground/90 leading-snug">{c.name}</p>
@@ -374,6 +381,18 @@ function MulticanalPage() {
                 </div>
               )}
             </div>
+
+            {/* Botão Mostrar Mais Global */}
+            {visibleCount < (dashData?.campaigns || []).length && (
+              <div className="pt-2 pb-6 flex justify-center w-full">
+                <button 
+                  onClick={() => setVisibleCount(v => v + 40)}
+                  className="rounded-full border border-white/10 bg-white/5 px-6 py-2 text-xs font-bold text-foreground hover:bg-white/10 hover:border-white/20 transition-all flex items-center gap-2"
+                >
+                  Mostrar Mais ({(dashData?.campaigns || []).length - visibleCount} ocultas)
+                </button>
+              </div>
+            )}
           </motion.div>
         </>
       )}
