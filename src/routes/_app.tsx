@@ -1126,11 +1126,15 @@ function Shell() {
       {/* ═══════════════════════════════════════
           MAIN CONTENT
           ═══════════════════════════════════════ */}
-      <main className="relative z-[1] flex-1 overflow-y-auto overscroll-none custom-scrollbar" style={{ WebkitOverflowScrolling: 'touch' }}>
-        <div className="mx-auto w-full px-2 py-4 pb-28 sm:p-4 md:pb-8 md:p-6 lg:p-8">
-          
-          <Outlet />
-        </div>
+      <main className="relative z-[1] flex flex-1 flex-col overflow-y-auto overscroll-none custom-scrollbar" style={{ WebkitOverflowScrolling: 'touch' }}>
+        {(() => {
+          const isFullScreenApp = path.startsWith('/funnel-builder') || path.startsWith('/strategy-map') || path.startsWith('/reunioes');
+          return (
+            <div className={isFullScreenApp ? "flex flex-1 flex-col w-full" : "mx-auto w-full px-2 py-4 pb-28 sm:p-4 md:pb-8 md:p-6 lg:p-8"}>
+              <Outlet />
+            </div>
+          );
+        })()}
       </main>
 
       {createPortal(

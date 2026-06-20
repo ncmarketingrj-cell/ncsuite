@@ -328,7 +328,7 @@ function FunnelBuilder() {
   const dotColor = isDark ? "#6366f1" : "#6366f1";
 
   return (
-    <div className="flex h-screen w-full" style={{ background: canvasBg }}>
+    <div className="flex flex-1 flex-col sm:flex-row w-full overflow-hidden" style={{ background: canvasBg }}>
 
       {/* ── LEFT PALETTE SIDEBAR ── */}
       <aside className="flex-shrink-0 w-[200px] border-r border-border bg-background/95 backdrop-blur-md flex flex-col z-10 shadow-md">

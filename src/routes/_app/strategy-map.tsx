@@ -519,7 +519,7 @@ function StrategyMapPage() {
     }, es)), []);
 
   return (
-    <div className="relative flex h-screen w-full flex-col bg-[#0a0a0f] overflow-hidden">
+    <div className="relative flex flex-1 w-full flex-col bg-[#0a0a0f] overflow-hidden">
 
       {/* ── Top Bar ── */}
       <div className="absolute top-0 left-0 right-0 z-30 flex items-center justify-between gap-2 px-4 py-2.5 bg-black/60 backdrop-blur-xl border-b border-white/8">

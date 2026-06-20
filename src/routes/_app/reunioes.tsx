@@ -578,7 +578,7 @@ function ReunioesPage() {
   // ═══ RENDER ═══════════════════════════════════════════════════════════════════
 
   return (
-    <div className="flex flex-col h-[calc(100vh-9rem)] min-h-[650px] overflow-hidden bg-background rounded-2xl border border-border/50 shadow-2xl">
+    <div className="flex flex-col flex-1 w-full min-h-[650px] overflow-hidden bg-background">
 
       {/* ══════════════════════════════════════════════════════
           TOP BAR — compact, all controls in one strip
