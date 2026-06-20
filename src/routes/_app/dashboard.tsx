@@ -7,13 +7,16 @@ import {
   Sparkles, Layers, Cpu, Link2, Megaphone, LineChart, Palette, Zap,
   ChevronDown, Globe, Target, TrendingUp, TrendingDown, DollarSign, MousePointer2, Users, Trophy,
   Loader2, Bot, Brain, Clock, ChevronRight, Download, Calendar,
-  AlertTriangle, BookOpen, Rocket, GaugeCircle
+  AlertTriangle, BookOpen, Rocket, GaugeCircle, PieChart as PieChartIcon
 } from "lucide-react";
+
+const COLORS = ["#00d4ff", "#9b87f5", "#f97316", "#22c55e", "#ef4444", "#eab308"];
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import { toast } from "sonner";
 import { 
-  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer
+  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+  BarChart, Bar, PieChart, Pie, Cell
 } from 'recharts';
 import { format, subDays, isAfter } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -57,12 +60,22 @@ function Dashboard() {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [selectedAccountId, setSelectedAccountId] = useState<string>("all");
+  const [selectedClientId, setSelectedClientId] = useState<string>("all");
   const [showAccounts, setShowAccounts] = useState(false);
+  const [showClients, setShowClients] = useState(false);
   
   // Período de data flexível personalizado (Padrão: últimos 30 dias)
   const [dateRange, setDateRange] = useState<{ startDate: Date; endDate: Date }>({
     startDate: subDays(new Date(), 29),
     endDate: new Date(),
+  });
+
+  const { data: clients = [] } = useQuery({
+    queryKey: ["clients"],
+    queryFn: async () => {
+      const { data } = await supabase.from("clients").select("*").order("name");
+      return (data as any[]) ?? [];
+    },
   });
 
   const { data: accounts = [] } = useQuery({
@@ -93,17 +106,21 @@ function Dashboard() {
 
       let metricsQuery = (supabase as any).from("metrics").select(`
         campaign_id, cost, conversions, impressions, clicks, reach, date,
-        campaigns!inner(ad_account_id, name)
+        campaigns!inner(ad_account_id, client_id, name)
       `).gte('date', prevStartStr).lte('date', endStr);
 
       if (selectedAccountId !== "all") {
         metricsQuery = metricsQuery.eq("campaigns.ad_account_id", selectedAccountId);
+      }
+      if (selectedClientId !== "all") {
+        metricsQuery = metricsQuery.eq("campaigns.client_id", selectedClientId);
       }
 
       const { data: metricsData } = await metricsQuery;
       const metrics = metricsData || [];
 
       const chartMap = new Map();
+      const campaignsMap = new Map();
       let currentPeriod = { cost: 0, conversions: 0, clicks: 0, impressions: 0 };
       let previousPeriod = { cost: 0, conversions: 0, clicks: 0, impressions: 0 };
 
@@ -122,6 +139,12 @@ function Dashboard() {
           current.clicks += Number(m.clicks || 0);
           chartMap.set(date, current);
 
+          const campId = m.campaign_id;
+          const camp = campaignsMap.get(campId) || { name: m.campaigns?.name || "Desconhecida", cost: 0, conversions: 0 };
+          camp.cost += Number(m.cost || 0);
+          camp.conversions += Number(m.conversions || 0);
+          campaignsMap.set(campId, camp);
+
           currentPeriod.cost += Number(m.cost || 0);
           currentPeriod.conversions += Number(m.conversions || 0);
           currentPeriod.clicks += Number(m.clicks || 0);
@@ -135,6 +158,10 @@ function Dashboard() {
       });
 
       const chartData = Array.from(chartMap.values()).sort((a, b) => a.date.localeCompare(b.date));
+      const campaignsData = Array.from(campaignsMap.values()).sort((a, b) => b.cost - a.cost);
+      
+      const barData = campaignsData.slice(0, 8).map(c => ({ name: c.name.slice(0, 16).toUpperCase(), Gasto: c.cost, Resultados: c.conversions }));
+      const pieData = campaignsData.filter(c => c.cost > 0).slice(0, 6).map(c => ({ name: c.name, value: c.cost }));
 
       const calcTrend = (curr: number, prev: number) => {
         if (prev === 0) return curr > 0 ? "+100%" : "0%";
@@ -148,6 +175,8 @@ function Dashboard() {
 
       return {
         chartData,
+        barData,
+        pieData,
         totals: currentPeriod,
         trends: {
           cost: calcTrend(currentPeriod.cost, previousPeriod.cost),
@@ -175,8 +204,9 @@ function Dashboard() {
       const yesterdayStr = `${yesterdayDate.getFullYear()}-${String(yesterdayDate.getMonth()+1).padStart(2,'0')}-${String(yesterdayDate.getDate()).padStart(2,'0')}`;
 
       // Campanhas ativas com delivery_status e orçamento
-      let campQuery = (supabase as any).from("campaigns").select("id, name, delivery_status, objective, daily_budget, lifetime_budget, budget_currency, ad_account_id").eq("status", "active");
+      let campQuery = (supabase as any).from("campaigns").select("id, name, delivery_status, objective, daily_budget, lifetime_budget, budget_currency, ad_account_id, client_id").eq("status", "active");
       if (selectedAccountId !== "all") campQuery = campQuery.eq("ad_account_id", selectedAccountId);
+      if (selectedClientId !== "all") campQuery = campQuery.eq("client_id", selectedClientId);
       const { data: campaigns = [] } = await campQuery;
 
       // Métricas de ontem + hoje para frequência e spend do dia
@@ -301,6 +331,46 @@ function Dashboard() {
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between w-full bg-card/45 border border-border/60 rounded-2xl p-3 backdrop-blur-md">
           {/* Filtros à esquerda */}
           <div className="flex flex-wrap items-center gap-3">
+            
+            <div className="relative">
+              <button 
+                onClick={() => setShowClients(!showClients)}
+                className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-xs font-black uppercase tracking-widest transition hover:border-primary/40 hover:bg-white/10"
+              >
+                <Users className="h-3.5 w-3.5 text-primary" />
+                {selectedClientId === "all" ? "Todos os Clientes" : clients.find((c: any) => c.id === selectedClientId)?.name || "Cliente"}
+                <ChevronDown className={`h-3 w-3 transition ${showClients ? "rotate-180" : ""}`} />
+              </button>
+
+              <AnimatePresence>
+                {showClients && (
+                  <motion.div 
+                    initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }}
+                    className="absolute left-0 top-full z-50 mt-2 w-72 rounded-2xl border border-white/10 bg-background/95 p-2 shadow-2xl backdrop-blur-2xl"
+                  >
+                    <button 
+                      onClick={() => { setSelectedClientId("all"); setShowClients(false); }}
+                      className={`flex w-full items-center gap-3 rounded-xl px-4 py-3 text-left text-[11px] font-bold uppercase tracking-widest transition ${selectedClientId === "all" ? "bg-primary/20 text-primary" : "hover:bg-white/5 text-muted-foreground"}`}
+                    >
+                      <Users className="h-4 w-4" /> Todos os Clientes
+                    </button>
+                    <div className="my-2 h-px bg-white/5" />
+                    <div className="max-h-[300px] overflow-y-auto custom-scrollbar">
+                      {clients.map((c: any) => (
+                        <button 
+                          key={c.id}
+                          onClick={() => { setSelectedClientId(c.id); setShowClients(false); }}
+                          className={`flex w-full items-center gap-3 rounded-xl px-4 py-3 text-left text-[11px] font-bold uppercase tracking-widest transition ${selectedClientId === c.id ? "bg-primary/20 text-primary" : "hover:bg-white/5 text-muted-foreground"}`}
+                        >
+                          {c.name}
+                        </button>
+                      ))}
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+
             <div className="relative">
               <button 
                 onClick={() => setShowAccounts(!showAccounts)}
@@ -702,9 +772,87 @@ function Dashboard() {
           </div>
         </motion.div>
       </div>
-      </div>
-      </div>
 
+      {/* ─── CHARTS ADICIONAIS MULTICANAL ─── */}
+      <div className="grid gap-8 lg:grid-cols-2 mt-8">
+        {/* Top Campanhas (Barras) */}
+        <motion.div 
+          initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }}
+          className="glass-panel p-8"
+        >
+          <div className="mb-6 flex items-center justify-between">
+            <div>
+              <h3 className="header-sport text-sm font-black tracking-widest uppercase">Top Campanhas (Gasto)</h3>
+              <p className="text-[10px] text-muted-foreground uppercase mt-1 tracking-widest">Comparativo de Resultados x Gasto</p>
+            </div>
+            <BarChart3 className="h-5 w-5 text-primary/50" />
+          </div>
+          <div className="h-[280px] w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={performanceData?.barData || []} margin={{ top: 20, right: 0, left: -20, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border) / 0.2)" vertical={false} />
+                <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 9, fontWeight: 700, fill: 'hsl(var(--muted-foreground))' }} />
+                <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 9, fontWeight: 700, fill: 'hsl(var(--muted-foreground))' }} />
+                <Tooltip 
+                  contentStyle={{ backgroundColor: 'hsl(var(--background))', borderColor: 'hsl(var(--border))', borderRadius: '12px' }}
+                  itemStyle={{ fontSize: '11px', fontWeight: 800, fontFamily: 'monospace' }}
+                  labelStyle={{ fontSize: '9px', textTransform: 'uppercase', marginBottom: '4px', color: 'hsl(var(--muted-foreground))' }}
+                  cursor={{ fill: 'hsl(var(--white) / 0.02)' }}
+                />
+                <Bar dataKey="Gasto" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} barSize={24} />
+                <Bar dataKey="Resultados" fill="hsl(262 83% 74%)" radius={[4, 4, 0, 0]} barSize={24} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </motion.div>
+
+        {/* Share de Gasto (Pizza) */}
+        <motion.div 
+          initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}
+          className="glass-panel p-8"
+        >
+          <div className="mb-6 flex items-center justify-between">
+            <div>
+              <h3 className="header-sport text-sm font-black tracking-widest uppercase">Share de Investimento</h3>
+              <p className="text-[10px] text-muted-foreground uppercase mt-1 tracking-widest">Distribuição de Verba por Campanha</p>
+            </div>
+            <PieChartIcon className="h-5 w-5 text-primary/50" />
+          </div>
+          <div className="h-[280px] w-full relative flex items-center justify-center">
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Pie
+                  data={performanceData?.pieData || []}
+                  cx="50%"
+                  cy="50%"
+                  innerRadius={70}
+                  outerRadius={100}
+                  paddingAngle={5}
+                  dataKey="value"
+                  stroke="none"
+                >
+                  {(performanceData?.pieData || []).map((_, index) => (
+                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                  ))}
+                </Pie>
+                <Tooltip 
+                  contentStyle={{ backgroundColor: 'hsl(var(--background))', borderColor: 'hsl(var(--border))', borderRadius: '12px' }}
+                  itemStyle={{ fontSize: '11px', fontWeight: 800, fontFamily: 'monospace' }}
+                  formatter={(value: any) => [`R$ ${Number(value).toFixed(2)}`, 'Gasto']}
+                />
+              </PieChart>
+            </ResponsiveContainer>
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none flex-col">
+              <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Total</span>
+              <span className="text-xl font-black font-mono mt-1 drop-shadow-sm text-foreground">
+                R$ {(performanceData?.totals?.cost || 0).toLocaleString('pt-BR', { maximumFractionDigits: 0 })}
+              </span>
+            </div>
+          </div>
+        </motion.div>
+      </div>
+      </div>
+      </div>
     </div>
   );
 }

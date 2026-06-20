@@ -73,7 +73,6 @@ const TRAFEGO_NAV_ITEMS: NavItem[] = [
   { to: "/metricas", icon: LineChart, label: "Métricas" },
   { to: "/relatorios", icon: FileText, label: "Relatórios" },
   { to: "/criativos", icon: Palette, label: "Criativos" },
-  { to: "/multicanal", icon: BarChart3, label: "Multicanal" },
   { to: "/automacoes", icon: Zap, label: "Automações" },
   { to: "/auditoria", icon: Activity, label: "Auditoria Hub" },
   { to: "/config", icon: Settings, label: "Configurações" },
