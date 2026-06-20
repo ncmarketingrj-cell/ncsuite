@@ -48,7 +48,8 @@ interface FunnelState {
   setHoveredNodeId: (id: string | null) => void;
   toggleOutlineMode: () => void;
   setContextMenu: (menu: ContextMenuState | null) => void;
-  addNodeAfter: (sourceId: string, nodeKind?: string) => void;
+  addNodeAfter: (sourceId: string, dir?: "top"|"bottom"|"left"|"right", nodeKind?: string) => void;
+  deleteNodeById: (nodeId: string) => void;
 }
 
 export const useFunnelState = create<FunnelState>((set, get) => ({
@@ -129,24 +130,55 @@ export const useFunnelState = create<FunnelState>((set, get) => ({
     set({ contextMenu: menu });
   },
 
-  addNodeAfter: (sourceId, nodeKind = "Anúncio") => {
+  addNodeAfter: (sourceId, dir = "bottom", nodeKind = "Anúncio") => {
     const { nodes, edges } = get();
     const source = nodes.find(n => n.id === sourceId);
     if (!source) return;
-    const existingChildren = nodes.filter(n =>
-      edges.some(e => e.source === sourceId && e.target === n.id)
-    );
+
+    const existingInDir = edges.filter(e => e.source === sourceId && e.sourceHandle === dir).length;
+    const OFFSETS: Record<string, [number, number]> = {
+      right:  [300,   0],
+      left:   [-300,  0],
+      top:    [0,   -200],
+      bottom: [0,    200],
+    };
+    const [dx, dy] = OFFSETS[dir] || [0, 200];
+    const jitter = existingInDir * (dir === "left" || dir === "right" ? 130 : 80);
+    const OPPOSITE: Record<string, string> = { right: "left", left: "right", top: "bottom", bottom: "top" };
+
     const id = `n_${Date.now()}`;
     const newNode: FunnelNode = {
       id, type: "stage",
-      position: { x: source.position.x + existingChildren.length * 280, y: source.position.y + 180 },
+      position: {
+        x: source.position.x + dx + (dir === "left" || dir === "right" ? 0 : jitter),
+        y: source.position.y + dy + (dir === "left" || dir === "right" ? jitter : 0),
+      },
       data: { label: "Nova Etapa", nodeKind },
     };
     const newEdge: Edge = {
-      id: `e_${sourceId}_${id}`,
-      source: sourceId, target: id,
+      id: `e_${sourceId}_${id}_${Date.now()}`,
+      source: sourceId,
+      sourceHandle: dir,
+      target: id,
+      targetHandle: `t-${OPPOSITE[dir]}`,
       type: "smoothstep",
     };
     set({ nodes: [...nodes, newNode], edges: [...edges, newEdge] });
+  },
+
+  deleteNodeById: (nodeId) => {
+    const { nodes, edges } = get();
+    // Remove o nó e todos os seus filhos diretos via arestas
+    const toDelete = new Set<string>();
+    const collect = (id: string) => {
+      toDelete.add(id);
+      edges.filter(e => e.source === id).forEach(e => collect(e.target));
+    };
+    collect(nodeId);
+    set({
+      nodes: nodes.filter(n => !toDelete.has(n.id)),
+      edges: edges.filter(e => !toDelete.has(e.source) && !toDelete.has(e.target)),
+      selectedNodeId: null,
+    });
   },
 }));

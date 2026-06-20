@@ -9,6 +9,7 @@ import {
   ReactFlowProvider,
   useReactFlow,
   addEdge,
+  ConnectionMode,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { motion, AnimatePresence } from "framer-motion";
@@ -566,6 +567,7 @@ function FunnelBuilder() {
               edgeTypes={edgeTypes}
               onNodeContextMenu={onNodeContextMenu}
               onPaneClick={onPaneClick}
+              connectionMode={ConnectionMode.Loose}
               onNodeDoubleClick={(_, node) => setSelectedNodeId(node.id)}
               fitView
               proOptions={{ hideAttribution: true }}
