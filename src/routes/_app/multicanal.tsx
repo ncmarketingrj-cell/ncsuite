@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { useQuery } from "@tanstack/react-query";
 import { 
@@ -31,7 +31,6 @@ function MulticanalPage() {
   });
 
   // Reseta a paginação sempre que os filtros mudam
-  import { useEffect } from "react";
   useEffect(() => {
     setVisibleCount(40);
   }, [clientId, accountId, dateRange]);
