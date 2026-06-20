@@ -36,10 +36,12 @@ import { Route as AppFunnelBuilderRouteImport } from './routes/_app/funnel-build
 import { Route as AppFunisRouteImport } from './routes/_app/funis'
 import { Route as AppFormularioRouteImport } from './routes/_app/formulario'
 import { Route as AppDashboardRouteImport } from './routes/_app/dashboard'
+import { Route as AppCrmRouteImport } from './routes/_app/crm'
 import { Route as AppCriativosRouteImport } from './routes/_app/criativos'
 import { Route as AppConfigRouteImport } from './routes/_app/config'
 import { Route as AppCobrancasRouteImport } from './routes/_app/cobrancas'
 import { Route as AppClientesRouteImport } from './routes/_app/clientes'
+import { Route as AppClientPortalRouteImport } from './routes/_app/client-portal'
 import { Route as AppCampanhasRouteImport } from './routes/_app/campanhas'
 import { Route as AppAutomacoesRouteImport } from './routes/_app/automacoes'
 import { Route as AppAuditoriaRouteImport } from './routes/_app/auditoria'
@@ -182,6 +184,11 @@ const AppDashboardRoute = AppDashboardRouteImport.update({
   path: '/dashboard',
   getParentRoute: () => AppRoute,
 } as any)
+const AppCrmRoute = AppCrmRouteImport.update({
+  id: '/crm',
+  path: '/crm',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppCriativosRoute = AppCriativosRouteImport.update({
   id: '/criativos',
   path: '/criativos',
@@ -200,6 +207,11 @@ const AppCobrancasRoute = AppCobrancasRouteImport.update({
 const AppClientesRoute = AppClientesRouteImport.update({
   id: '/clientes',
   path: '/clientes',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppClientPortalRoute = AppClientPortalRouteImport.update({
+  id: '/client-portal',
+  path: '/client-portal',
   getParentRoute: () => AppRoute,
 } as any)
 const AppCampanhasRoute = AppCampanhasRouteImport.update({
@@ -248,10 +260,12 @@ export interface FileRoutesByFullPath {
   '/auditoria': typeof AppAuditoriaRoute
   '/automacoes': typeof AppAutomacoesRoute
   '/campanhas': typeof AppCampanhasRouteWithChildren
+  '/client-portal': typeof AppClientPortalRoute
   '/clientes': typeof AppClientesRouteWithChildren
   '/cobrancas': typeof AppCobrancasRoute
   '/config': typeof AppConfigRoute
   '/criativos': typeof AppCriativosRoute
+  '/crm': typeof AppCrmRoute
   '/dashboard': typeof AppDashboardRoute
   '/formulario': typeof AppFormularioRoute
   '/funis': typeof AppFunisRoute
@@ -287,10 +301,12 @@ export interface FileRoutesByTo {
   '/auditoria': typeof AppAuditoriaRoute
   '/automacoes': typeof AppAutomacoesRoute
   '/campanhas': typeof AppCampanhasRouteWithChildren
+  '/client-portal': typeof AppClientPortalRoute
   '/clientes': typeof AppClientesRouteWithChildren
   '/cobrancas': typeof AppCobrancasRoute
   '/config': typeof AppConfigRoute
   '/criativos': typeof AppCriativosRoute
+  '/crm': typeof AppCrmRoute
   '/dashboard': typeof AppDashboardRoute
   '/formulario': typeof AppFormularioRoute
   '/funis': typeof AppFunisRoute
@@ -328,10 +344,12 @@ export interface FileRoutesById {
   '/_app/auditoria': typeof AppAuditoriaRoute
   '/_app/automacoes': typeof AppAutomacoesRoute
   '/_app/campanhas': typeof AppCampanhasRouteWithChildren
+  '/_app/client-portal': typeof AppClientPortalRoute
   '/_app/clientes': typeof AppClientesRouteWithChildren
   '/_app/cobrancas': typeof AppCobrancasRoute
   '/_app/config': typeof AppConfigRoute
   '/_app/criativos': typeof AppCriativosRoute
+  '/_app/crm': typeof AppCrmRoute
   '/_app/dashboard': typeof AppDashboardRoute
   '/_app/formulario': typeof AppFormularioRoute
   '/_app/funis': typeof AppFunisRoute
@@ -369,10 +387,12 @@ export interface FileRouteTypes {
     | '/auditoria'
     | '/automacoes'
     | '/campanhas'
+    | '/client-portal'
     | '/clientes'
     | '/cobrancas'
     | '/config'
     | '/criativos'
+    | '/crm'
     | '/dashboard'
     | '/formulario'
     | '/funis'
@@ -408,10 +428,12 @@ export interface FileRouteTypes {
     | '/auditoria'
     | '/automacoes'
     | '/campanhas'
+    | '/client-portal'
     | '/clientes'
     | '/cobrancas'
     | '/config'
     | '/criativos'
+    | '/crm'
     | '/dashboard'
     | '/formulario'
     | '/funis'
@@ -448,10 +470,12 @@ export interface FileRouteTypes {
     | '/_app/auditoria'
     | '/_app/automacoes'
     | '/_app/campanhas'
+    | '/_app/client-portal'
     | '/_app/clientes'
     | '/_app/cobrancas'
     | '/_app/config'
     | '/_app/criativos'
+    | '/_app/crm'
     | '/_app/dashboard'
     | '/_app/formulario'
     | '/_app/funis'
@@ -680,6 +704,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppDashboardRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/crm': {
+      id: '/_app/crm'
+      path: '/crm'
+      fullPath: '/crm'
+      preLoaderRoute: typeof AppCrmRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/criativos': {
       id: '/_app/criativos'
       path: '/criativos'
@@ -706,6 +737,13 @@ declare module '@tanstack/react-router' {
       path: '/clientes'
       fullPath: '/clientes'
       preLoaderRoute: typeof AppClientesRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/client-portal': {
+      id: '/_app/client-portal'
+      path: '/client-portal'
+      fullPath: '/client-portal'
+      preLoaderRoute: typeof AppClientPortalRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/campanhas': {
@@ -801,10 +839,12 @@ interface AppRouteChildren {
   AppAuditoriaRoute: typeof AppAuditoriaRoute
   AppAutomacoesRoute: typeof AppAutomacoesRoute
   AppCampanhasRoute: typeof AppCampanhasRouteWithChildren
+  AppClientPortalRoute: typeof AppClientPortalRoute
   AppClientesRoute: typeof AppClientesRouteWithChildren
   AppCobrancasRoute: typeof AppCobrancasRoute
   AppConfigRoute: typeof AppConfigRoute
   AppCriativosRoute: typeof AppCriativosRoute
+  AppCrmRoute: typeof AppCrmRoute
   AppDashboardRoute: typeof AppDashboardRoute
   AppFormularioRoute: typeof AppFormularioRoute
   AppFunisRoute: typeof AppFunisRoute
@@ -831,10 +871,12 @@ const AppRouteChildren: AppRouteChildren = {
   AppAuditoriaRoute: AppAuditoriaRoute,
   AppAutomacoesRoute: AppAutomacoesRoute,
   AppCampanhasRoute: AppCampanhasRouteWithChildren,
+  AppClientPortalRoute: AppClientPortalRoute,
   AppClientesRoute: AppClientesRouteWithChildren,
   AppCobrancasRoute: AppCobrancasRoute,
   AppConfigRoute: AppConfigRoute,
   AppCriativosRoute: AppCriativosRoute,
+  AppCrmRoute: AppCrmRoute,
   AppDashboardRoute: AppDashboardRoute,
   AppFormularioRoute: AppFormularioRoute,
   AppFunisRoute: AppFunisRoute,
