@@ -331,13 +331,13 @@ function Dashboard() {
         />
 
         {/* ─── FILTER BAR ESTRUTURADA (UI PREMIUM) ─── */}
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between w-full bg-card/45 border border-border/60 rounded-2xl p-3 backdrop-blur-md">
+        <div className="relative z-50 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between w-full bg-card/45 border border-border/60 rounded-2xl p-3 backdrop-blur-md">
           {/* Filtros à esquerda */}
           <div className="flex flex-wrap items-center gap-3">
             
             <div className="relative">
               <button 
-                onClick={() => setShowClients(!showClients)}
+                onClick={() => { setShowClients(!showClients); setShowAccounts(false); }}
                 className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-xs font-black uppercase tracking-widest transition hover:border-primary/40 hover:bg-white/10"
               >
                 <Users className="h-3.5 w-3.5 text-primary" />
@@ -376,7 +376,7 @@ function Dashboard() {
 
             <div className="relative">
               <button 
-                onClick={() => setShowAccounts(!showAccounts)}
+                onClick={() => { setShowAccounts(!showAccounts); setShowClients(false); }}
                 className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-xs font-black uppercase tracking-widest transition hover:border-primary/40 hover:bg-white/10"
               >
                 {selectedAccountId === "all" ? (
