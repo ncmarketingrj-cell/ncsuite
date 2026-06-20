@@ -32,6 +32,7 @@ import {
   Bot, Target, ChevronLeft, HelpCircle, X, MousePointerClick,
   MoveHorizontal, GitBranch, Pencil, ChevronRight, Activity,
   TrendingUp, TrendingDown, RefreshCcw, BarChart2, Bell,
+  Save, Plus, ChevronDown,
 } from "lucide-react";
 import { Link } from "@tanstack/react-router";
 import { supabase } from "@/integrations/supabase/client";
@@ -207,12 +208,117 @@ function FunnelBuilder() {
     isOutlineMode, toggleOutlineMode,
   } = useFunnelState();
 
-  const { isSaving, lastSaved } = useFunnelAutoSave("funnel-draft-id");
+  // ── Funnel persistence ──
+  const [funnelId, setFunnelId] = useState<string | null>(null);
+  const [funnelName, setFunnelName] = useState("Novo Funil");
+  const [funnels, setFunnels] = useState<any[]>([]);
+  const [showFunnelList, setShowFunnelList] = useState(false);
+  const [editingName, setEditingName] = useState(false);
+  const funnelNameRef = useRef("Novo Funil");
+  funnelNameRef.current = funnelName;
+
+  const { isSaving, lastSaved, saveNow } = useFunnelAutoSave(funnelId);
   const { theme } = useTheme();
   const isDark = theme === "dark";
 
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
   const { fitView } = useReactFlow();
+
+  // ── Load funnels on mount ──
+  useEffect(() => { loadFunnels(); }, []);
+
+  const loadFunnels = async () => {
+    const { data } = await (supabase as any)
+      .from("funnels")
+      .select("id, name, updated_at, created_at")
+      .order("updated_at", { ascending: false })
+      .order("created_at", { ascending: false });
+    setFunnels(data || []);
+    if (data && data.length > 0) {
+      loadFunnel(data[0]);
+    }
+    // else: keep the default initialNodes demo canvas, don't persist until user saves
+  };
+
+  const loadFunnel = (meta: any) => {
+    setFunnelId(meta.id);
+    setFunnelName(meta.name || "Sem título");
+    // Load nodes/edges from global_settings
+    const gs = meta.global_settings;
+    if (gs?.nodes?.length > 0) {
+      setNodes(gs.nodes);
+      setEdges(gs.edges || []);
+      setTimeout(() => fitView({ padding: 0.2 }), 100);
+    } else {
+      // funnel exists but is empty — keep empty canvas
+      setNodes([]);
+      setEdges([]);
+    }
+  };
+
+  const loadFunnelById = async (id: string, name: string) => {
+    const { data } = await (supabase as any)
+      .from("funnels")
+      .select("*")
+      .eq("id", id)
+      .single();
+    if (data) loadFunnel(data);
+    else { setFunnelId(id); setFunnelName(name); }
+    setShowFunnelList(false);
+  };
+
+  const createFunnel = async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) { toast.error("Faça login para criar um funil"); return; }
+    const name = `Funil ${new Date().toLocaleDateString("pt-BR")} ${funnels.length + 1}`;
+    const { data } = await (supabase as any)
+      .from("funnels")
+      .insert({ user_id: user.id, name, global_settings: { nodes: [], edges: [] } })
+      .select()
+      .single();
+    if (data) {
+      setFunnels(prev => [data, ...prev]);
+      setFunnelId(data.id);
+      setFunnelName(data.name);
+      setNodes([]);
+      setEdges([]);
+      setShowFunnelList(false);
+      toast.success("Novo funil criado!");
+    }
+  };
+
+  const renameFunnel = async (newName: string) => {
+    setFunnelName(newName);
+    if (!funnelId) return;
+    await (supabase as any).from("funnels").update({ name: newName }).eq("id", funnelId);
+    setFunnels(prev => prev.map(f => f.id === funnelId ? { ...f, name: newName } : f));
+  };
+
+  const handleSave = async () => {
+    if (!funnelId) {
+      // No funnel yet — create one first, then save
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) { toast.error("Faça login para salvar"); return; }
+      const { data } = await (supabase as any)
+        .from("funnels")
+        .insert({
+          user_id: user.id,
+          name: funnelNameRef.current,
+          global_settings: { nodes, edges },
+        })
+        .select()
+        .single();
+      if (data) {
+        setFunnelId(data.id);
+        setFunnels(prev => [data, ...prev]);
+        toast.success("Funil salvo!");
+      } else {
+        toast.error("Erro ao salvar");
+      }
+    } else {
+      await saveNow();
+    }
+  };
   const [showGuide, setShowGuide] = useState(false);
 
   // Estados para o CRO Heatmap e Auditoria de IA
@@ -299,13 +405,14 @@ function FunnelBuilder() {
     }
   };
 
+  // Carrega nós demo apenas se não há funil salvo (primeira visita)
   useEffect(() => {
-    if (nodes.length === 0) {
+    if (nodes.length === 0 && !funnelId) {
       setNodes(initialNodes);
       setEdges(initialEdges);
       setTimeout(() => fitView({ padding: 0.2 }), 100);
     }
-  }, []);
+  }, [funnelId]);
 
   const onNodeContextMenu = useCallback(
     (event: React.MouseEvent, node: any) => {
@@ -377,23 +484,64 @@ function FunnelBuilder() {
       {/* ── LEFT PALETTE SIDEBAR ── */}
       <aside className="flex-shrink-0 w-[200px] border-r border-border bg-background/95 backdrop-blur-md flex flex-col z-10 shadow-md">
         {/* Sidebar Header */}
-        <div className="px-3 pt-4 pb-3 border-b border-border">
-          <Link
-            to="/funis"
-            className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors mb-3"
-          >
-            <ChevronLeft className="w-3.5 h-3.5" />
-            Meus Funis
-          </Link>
-          <div className="flex items-center gap-2">
-            <div className="w-7 h-7 rounded-lg bg-purple-500/15 flex items-center justify-center flex-shrink-0">
-              <GitBranch className="w-3.5 h-3.5 text-purple-500" />
+        <div className="px-3 pt-4 pb-3 border-b border-border relative">
+          {/* Funnel name + list dropdown */}
+          <div className="flex items-center gap-1.5 mb-1">
+            <div className="w-6 h-6 rounded-lg bg-purple-500/15 flex items-center justify-center flex-shrink-0">
+              <GitBranch className="w-3 h-3 text-purple-500" />
             </div>
-            <div className="min-w-0">
-              <h1 className="text-xs font-black leading-none truncate">Mapa Mental</h1>
-              <p className="text-[9px] text-muted-foreground mt-0.5 truncate">Funil: Lançamento Corolla</p>
-            </div>
+            {editingName ? (
+              <input
+                autoFocus
+                value={funnelName}
+                onChange={e => setFunnelName(e.target.value)}
+                onBlur={() => { setEditingName(false); renameFunnel(funnelName); }}
+                onKeyDown={e => { if (e.key === "Enter") { setEditingName(false); renameFunnel(funnelName); } }}
+                className="flex-1 bg-muted/40 border border-primary/40 rounded-lg px-2 py-1 text-[11px] font-black text-foreground outline-none"
+              />
+            ) : (
+              <button
+                onClick={() => setShowFunnelList(v => !v)}
+                className="flex-1 flex items-center gap-1 text-[11px] font-black text-foreground/90 hover:text-foreground truncate text-left"
+              >
+                <span className="truncate">{funnelName}</span>
+                <ChevronDown className="h-2.5 w-2.5 shrink-0 text-muted-foreground" />
+              </button>
+            )}
+            <button onClick={() => setEditingName(true)} title="Renomear"
+              className="p-1 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition-colors">
+              <Pencil className="w-2.5 h-2.5" />
+            </button>
+            <button onClick={createFunnel} title="Novo funil"
+              className="p-1 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition-colors">
+              <Plus className="w-2.5 h-2.5" />
+            </button>
           </div>
+          <p className="text-[9px] text-muted-foreground/50 pl-7">
+            {funnelId ? `ID: ${funnelId.slice(0, 8)}…` : "Não salvo — clique em Salvar"}
+          </p>
+
+          {/* Dropdown lista de funis */}
+          {showFunnelList && (
+            <div className="absolute top-full left-2 right-2 z-50 bg-card border border-border rounded-xl overflow-hidden shadow-xl">
+              <div className="max-h-48 overflow-y-auto py-1">
+                {funnels.length === 0 && (
+                  <p className="text-[10px] text-muted-foreground px-3 py-2">Nenhum funil salvo ainda</p>
+                )}
+                {funnels.map(f => (
+                  <button
+                    key={f.id}
+                    onClick={() => loadFunnelById(f.id, f.name)}
+                    className={`w-full text-left px-3 py-2 text-[11px] font-medium hover:bg-muted transition-colors ${
+                      f.id === funnelId ? "text-primary bg-primary/10" : "text-foreground"
+                    }`}
+                  >
+                    <span className="truncate block">{f.name}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Palette Label */}
@@ -426,21 +574,31 @@ function FunnelBuilder() {
           ))}
         </div>
 
-        {/* Save status + Guide */}
+        {/* Save + Guide */}
         <div className="border-t border-border p-3 space-y-2">
+          {/* Save button */}
+          <button
+            onClick={handleSave}
+            disabled={isSaving}
+            className="w-full flex items-center justify-center gap-1.5 rounded-xl bg-emerald-500/15 border border-emerald-500/30 py-2 text-[10px] font-black text-emerald-400 hover:bg-emerald-500/25 disabled:opacity-50 transition-all"
+          >
+            {isSaving ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
+            {isSaving ? "Salvando..." : "Salvar Funil"}
+          </button>
+
           {/* Save status */}
           <div className="flex items-center gap-1.5">
-            {isSaving ? (
-              <>
-                <Loader2 className="w-2.5 h-2.5 text-muted-foreground animate-spin flex-shrink-0" />
-                <span className="text-[9px] text-muted-foreground font-mono">Salvando...</span>
-              </>
-            ) : (
+            {lastSaved ? (
               <>
                 <CheckCircle2 className="w-2.5 h-2.5 text-emerald-500 flex-shrink-0" />
                 <span className="text-[9px] text-emerald-600 dark:text-emerald-400 font-mono truncate">
-                  {lastSaved ? `Salvo ${formatDistanceToNow(lastSaved, { addSuffix: true, locale: ptBR })}` : "Sincronizado"}
+                  {formatDistanceToNow(lastSaved, { addSuffix: true, locale: ptBR })}
                 </span>
+              </>
+            ) : (
+              <>
+                <div className="w-2.5 h-2.5 rounded-full bg-amber-400/60 flex-shrink-0" />
+                <span className="text-[9px] text-muted-foreground font-mono">Não salvo</span>
               </>
             )}
           </div>
@@ -451,7 +609,7 @@ function FunnelBuilder() {
             className="w-full flex items-center gap-1.5 text-[10px] font-bold text-muted-foreground hover:text-foreground transition-colors"
           >
             <HelpCircle className="w-3 h-3 flex-shrink-0" />
-            Como usar o Mapa Mental
+            Como usar
             <ChevronRight className={`w-3 h-3 ml-auto transition-transform ${showGuide ? "rotate-90" : ""}`} />
           </button>
         </div>

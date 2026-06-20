@@ -262,21 +262,21 @@ const NODE_TYPES = { mind: MindNode };
 function applyRadialLayout(nodes: Node[]): Node[] {
   const childrenMap = new Map<string | null, string[]>();
   nodes.forEach(n => {
-    const pid = (n.parentId as string) || null;
+    const pid = (n.data.parentId as string) || null;
     if (!childrenMap.has(pid)) childrenMap.set(pid, []);
     childrenMap.get(pid)!.push(n.id);
   });
   const getDepth = (id: string, memo = new Map<string, number>()): number => {
     if (memo.has(id)) return memo.get(id)!;
     const node = nodes.find(n => n.id === id);
-    if (!node || !node.parentId) return 0;
-    const d = 1 + getDepth(node.parentId as string, memo);
+    if (!node || !node.data.parentId) return 0;
+    const d = 1 + getDepth(node.data.parentId as string, memo);
     memo.set(id, d); return d;
   };
   return nodes.map(n => {
     const depth = getDepth(n.id);
     if (depth === 0) return { ...n, position: { x: 0, y: 0 } };
-    const pid = n.parentId as string;
+    const pid = n.data.parentId as string;
     const siblings = childrenMap.get(pid) || [];
     const idx = siblings.indexOf(n.id);
     const radius = depth * 310;
@@ -298,7 +298,7 @@ function applyTreeLayout(nodes: Node[], edges: Edge[]): Node[] {
   });
 }
 function applyListLayout(nodes: Node[]): Node[] {
-  const roots = nodes.filter(n => !n.parentId);
+  const roots = nodes.filter(n => !n.data.parentId);
   let y = 0;
   const placed: Node[] = [];
   const place = (id: string, depth: number) => {
@@ -306,7 +306,7 @@ function applyListLayout(nodes: Node[]): Node[] {
     if (!n) return;
     placed.push({ ...n, position: { x: depth * 60, y } });
     y += 90;
-    nodes.filter(nn => nn.parentId === id).forEach(c => place(c.id, depth + 1));
+    nodes.filter(nn => nn.data.parentId === id).forEach(c => place(c.id, depth + 1));
   };
   roots.forEach(r => place(r.id, 0));
   return placed;
@@ -410,9 +410,9 @@ function StrategyMapPage() {
     const ns: Node[] = ((dbN as any[]) || []).map((n: any) => ({
       id: n.id, type: "mind",
       position: { x: Number(n.pos_x), y: Number(n.pos_y) },
-      parentId: n.parent_id || undefined,
       data: {
         label: n.label, emoji: n.emoji, note: n.note,
+        parentId: n.parent_id || undefined,
         color: n.color, bgColor: n.bg_color,
         fontSize: n.font_size, bold: n.bold,
         slideOrder: n.slide_order,
@@ -449,8 +449,23 @@ function StrategyMapPage() {
   };
 
   const saveMap = useCallback(async () => {
-    const mapId = activeMapIdRef.current;
-    if (!mapId) return;
+    let mapId = activeMapIdRef.current;
+
+    // Auto-cria o mapa se ainda não existe
+    if (!mapId) {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) { toast.error("Faça login para salvar"); return; }
+      const { data: created } = await (supabase as any).from("mind_maps").insert({
+        user_id: user.id,
+        title: mapTitleRef.current || "Novo Mapa Mental",
+        layout: layoutRef.current,
+      }).select().single();
+      if (!created) { toast.error("Erro ao criar mapa"); return; }
+      setActiveMapId(created.id);
+      setMaps(prev => [created, ...prev]);
+      mapId = created.id;
+    }
+
     setSaving(true);
     try {
       const ns = nodesRef.current;
@@ -460,7 +475,7 @@ function StrategyMapPage() {
       await (supabase as any).from("mind_map_edges").delete().eq("map_id", mapId);
       if (ns.length > 0) {
         await (supabase as any).from("mind_map_nodes").insert(ns.map(n => ({
-          id: n.id, map_id: mapId, parent_id: n.parentId || null,
+          id: n.id, map_id: mapId, parent_id: (n.data.parentId as string) || null,
           label: n.data.label || "Tópico", emoji: n.data.emoji || null, note: n.data.note || null,
           color: n.data.color || "#e11d48", bg_color: n.data.bgColor || null,
           font_size: n.data.fontSize || 13, bold: n.data.bold || false,
@@ -508,9 +523,9 @@ function StrategyMapPage() {
     const id = `n_${Date.now()}`;
     const depth = (() => {
       let d = 0, cur = parent;
-      while (cur.parentId) {
+      while (cur.data.parentId) {
         d++;
-        const p = nodesRef.current.find(n => n.id === cur.parentId);
+        const p = nodesRef.current.find(n => n.id === (cur.data.parentId as string));
         if (!p) break;
         cur = p;
       }
@@ -519,13 +534,14 @@ function StrategyMapPage() {
 
     const newNode: Node = {
       id, type: "mind",
+      // Posição absoluta no canvas (NÃO relativa ao pai — por isso não setamos parentId no nível do nó)
       position: {
         x: parent.position.x + dx + (dir === "left"||dir === "right" ? 0 : jitter),
         y: parent.position.y + dy + (dir === "left"||dir === "right" ? jitter : 0),
       },
-      parentId,
       data: {
         label: "Novo Tópico",
+        parentId,  // hierarquia guardada em data, não no nível do nó (React Flow usaria como posição relativa)
         color: LEVEL_COLORS[Math.min(depth + 1, LEVEL_COLORS.length - 1)],
         emoji: "💡", fontSize: 13, links: [],
       },
@@ -582,7 +598,7 @@ function StrategyMapPage() {
     const toDelete = new Set<string>();
     const collect = (id: string) => {
       toDelete.add(id);
-      nodesRef.current.filter(n => n.parentId === id).forEach(c => collect(c.id));
+      nodesRef.current.filter(n => n.data.parentId === id).forEach(c => collect(c.id));
     };
     collect(nodeId);
     setNodes(ns => { const u = ns.filter(n => !toDelete.has(n.id)); pushHistory(u, edgesRef.current); return u; });
@@ -652,8 +668,7 @@ function StrategyMapPage() {
       const ns: Node[] = result.nodes.map((n: any) => ({
         id: n.id, type: "mind",
         position: { x: Number(n.pos_x || 0), y: Number(n.pos_y || 0) },
-        parentId: n.parentId || undefined,
-        data: { label: n.label, emoji: n.emoji, color: n.color, fontSize: 13, links: [] },
+        data: { label: n.label, emoji: n.emoji, color: n.color, fontSize: 13, links: [], parentId: n.parentId || undefined },
       }));
       const es: Edge[] = result.edges.map((e: any) => ({
         id: e.id, source: e.source_id, target: e.target_id, type: "smoothstep",
