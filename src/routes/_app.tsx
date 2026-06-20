@@ -1127,8 +1127,7 @@ function Shell() {
           MAIN CONTENT
           ═══════════════════════════════════════ */}
       <main className="relative z-[1] flex-1 overflow-y-auto overscroll-none custom-scrollbar" style={{ WebkitOverflowScrolling: 'touch' }}>
-        {/* MOBILE REDESIGN: Paddings reduzidos de p-3 para px-2 py-4 para ganhar largura de tela */}
-        <div className="mx-auto max-w-[1600px] px-2 py-4 pb-28 sm:p-4 md:pb-8 md:p-6 lg:p-8">
+        <div className="mx-auto w-full px-2 py-4 pb-28 sm:p-4 md:pb-8 md:p-6 lg:p-8">
           
           <Outlet />
         </div>

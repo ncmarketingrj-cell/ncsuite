@@ -353,7 +353,7 @@ function Dashboard() {
   const selectedAccount = accounts.find(a => a.id === selectedAccountId);
 
   return (
-    <div className="mx-auto max-w-[1600px] p-1 pb-20">
+    <div className="w-full p-1 pb-20">
       
       {/* ─── STICKY HEADER AREA ─── */}
       <div className="sticky top-0 z-40 -mx-1 px-1 bg-background/95 backdrop-blur-xl border-b border-white/5 pb-4 pt-2 space-y-5">
@@ -828,8 +828,8 @@ function Dashboard() {
         </motion.div>
       </div>
 
-      {/* ─── CHARTS ADICIONAIS MULTICANAL ─── */}
-      <div className="grid gap-8 lg:grid-cols-2 mt-8">
+      {/* ─── CHARTS ADICIONAIS MULTICANAL E EVOLUCAO ─── */}
+      <div className="grid gap-8 lg:grid-cols-2 2xl:grid-cols-4 mt-8">
         {/* Top Campanhas (Barras) */}
         <motion.div 
           initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }}
