@@ -484,6 +484,7 @@ function MetricasCampanhasPage() {
   }, [setDateFrom, setDateTo]);
 
   const [modoExplicativo, setModoExplicativo] = useState(true);
+  const [temperatureMode, setTemperatureMode] = useState(false);
 
   // ── Estado de seleção (tabela) ──
   const [selectedCamps,  setSelectedCamps]  = useState<Set<string>>(new Set());
@@ -497,6 +498,12 @@ function MetricasCampanhasPage() {
   useEffect(() => {
     setVisibleCount(40);
   }, [search, level, accountFilter, statusFilter]);
+
+  useEffect(() => {
+    setSelectedCamps(new Set());
+    setSelectedAdSets(new Set());
+    setSelectedAds(new Set());
+  }, [accountFilter]);
 
   // ── Estado de análise (charts) ──
   const [modo,            setModo]            = useState<ModoId>("geral");
@@ -1235,10 +1242,19 @@ function MetricasCampanhasPage() {
               </button>
             )}
             {view === "gestao" && (
-              <button onClick={runAudit} disabled={isAuditing} className="flex items-center gap-1.5 rounded-xl border border-orange-400/30 bg-orange-400/10 px-3 py-1.5 text-[11px] font-bold text-orange-400 hover:bg-orange-400/20 transition-all disabled:opacity-50">
-                {isAuditing ? <Loader2 className="h-3 w-3 animate-spin"/> : <FlaskConical className="h-3 w-3"/>}
-                <span className="hidden sm:inline">Diagnóstico</span>
-              </button>
+              <>
+                <button 
+                  onClick={() => setTemperatureMode(v => !v)} 
+                  className={`flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-[11px] font-bold transition-all ${temperatureMode ? "border-rose-500/40 bg-rose-500/10 text-rose-400" : "border-white/10 bg-white/[0.02] text-muted-foreground hover:text-foreground"}`}
+                  title="Ativar cores de temperatura para Métricas (CPL, CTR, etc)"
+                >
+                  🌡️ <span className="hidden sm:inline">Temperatura</span>
+                </button>
+                <button onClick={runAudit} disabled={isAuditing} className="flex items-center gap-1.5 rounded-xl border border-orange-400/30 bg-orange-400/10 px-3 py-1.5 text-[11px] font-bold text-orange-400 hover:bg-orange-400/20 transition-all disabled:opacity-50">
+                  {isAuditing ? <Loader2 className="h-3 w-3 animate-spin"/> : <FlaskConical className="h-3 w-3"/>}
+                  <span className="hidden sm:inline">Diagnóstico</span>
+                </button>
+              </>
             )}
             {view === "analise" && (
               <button onClick={() => setShowSettings(v => !v)} className={`flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-[11px] font-bold transition-all ${showSettings ? "border-primary/40 bg-primary/10 text-primary" : "border-white/10 bg-white/[0.02] text-muted-foreground hover:text-foreground"}`}>
@@ -1349,13 +1365,18 @@ function MetricasCampanhasPage() {
                             const freqHigh   = c.t.freq >= 3;
                             const ctrGood    = c.t.ctr >= 2;
                             return (
-                              <tr id={`row-${c.id}`} key={c.id} className={`border-b border-white/[0.03] transition-colors ${isHighlight ? "bg-destructive/10 ring-1 ring-inset ring-destructive/40" : isSel ? "bg-primary/5" : "hover:bg-white/[0.015]"}`}>
+                              <tr 
+                                id={`row-${c.id}`} 
+                                key={c.id} 
+                                onClick={() => toggleOne(c.id)}
+                                className={`cursor-pointer border-b border-white/[0.03] transition-colors duration-200 ${isHighlight ? "bg-destructive/10 ring-1 ring-inset ring-destructive/40" : isSel ? "bg-primary/10 shadow-[inset_4px_0_0_0_rgba(99,102,241,1)]" : "hover:bg-white/[0.03]"}`}
+                              >
                                 {/* checkbox */}
-                                <td className="px-3 py-3 text-center">
+                                <td className="px-3 py-3 text-center" onClick={e => e.stopPropagation()}>
                                   <button onClick={() => toggleOne(c.id)} className="text-muted-foreground hover:text-primary transition">{isSel ? <CheckSquare className="h-4 w-4 text-primary"/> : <Square className="h-4 w-4"/>}</button>
                                 </td>
                                 {/* status toggle */}
-                                <td className="px-2 py-2.5 text-center">
+                                <td className="px-2 py-2.5 text-center" onClick={e => e.stopPropagation()}>
                                   <button
                                     onClick={() => !isChanging && toggleMutation.mutate({ id: c.id, externalId: c.external_id, currentStatus: c.status, type: level })}
                                     disabled={isChanging}
@@ -1372,7 +1393,7 @@ function MetricasCampanhasPage() {
                                   </button>
                                 </td>
                                 {/* nome */}
-                                <td className="px-4 py-2.5">
+                                <td className="px-4 py-2.5" onClick={e => e.stopPropagation()}>
                                   <div className="flex flex-col gap-0.5 min-w-0">
                                     <button
                                       onClick={() => setSelectedFocusItem({ ...c, type: level })}
@@ -1408,12 +1429,20 @@ function MetricasCampanhasPage() {
                                 {/* cpl */}
                                 <td className="px-4 py-2.5 text-right whitespace-nowrap">
                                   {c.t.cpl > 0 ? (
-                                    <span className={`font-mono font-black text-xs ${cplOver ? "text-red-400" : "text-green-400"}`}>R$ {c.t.cpl.toFixed(2)}</span>
+                                    <span className={`font-mono font-black text-xs transition-colors ${
+                                      temperatureMode 
+                                        ? (cplOver ? "bg-red-500/20 text-red-400 px-2 py-0.5 rounded border border-red-500/30" : "bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded border border-emerald-500/30")
+                                        : (cplOver ? "text-red-400" : "text-green-400")
+                                    }`}>R$ {c.t.cpl.toFixed(2)}</span>
                                   ) : <span className="text-muted-foreground/30 font-mono">—</span>}
                                 </td>
                                 {/* ctr */}
                                 <td className="px-4 py-2.5 text-right hidden lg:table-cell whitespace-nowrap">
-                                  <span className={`font-mono font-bold text-xs ${ctrGood ? "text-green-400" : c.t.ctr > 0 ? "text-blue-400" : "text-muted-foreground/30"}`}>{c.t.ctr > 0 ? `${c.t.ctr.toFixed(2)}%` : "—"}</span>
+                                  <span className={`font-mono font-bold text-xs transition-colors ${
+                                    temperatureMode
+                                      ? (c.t.ctr < 1 ? "bg-red-500/20 text-red-400 px-2 py-0.5 rounded border border-red-500/30" : c.t.ctr >= 2 ? "bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded border border-emerald-500/30" : "bg-amber-500/20 text-amber-400 px-2 py-0.5 rounded border border-amber-500/30")
+                                      : (ctrGood ? "text-green-400" : c.t.ctr > 0 ? "text-blue-400" : "text-muted-foreground/30")
+                                  }`}>{c.t.ctr > 0 ? `${c.t.ctr.toFixed(2)}%` : "—"}</span>
                                 </td>
                                 {/* cpc */}
                                 <td className="px-4 py-2.5 text-right font-mono text-[11px] text-muted-foreground hidden xl:table-cell whitespace-nowrap">{c.t.cpc > 0 ? `R$ ${c.t.cpc.toFixed(2)}` : "—"}</td>
