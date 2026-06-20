@@ -111,6 +111,12 @@ const VICTORIA_NAV_ITEMS: NavItem[] = [
   { to: "/config", icon: Settings, label: "Configurações" },
 ];
 
+const CRM_NAV_ITEMS: NavItem[] = [
+  { to: "/crm", icon: Users, label: "SDR Pipeline" },
+  { to: "/client-portal", icon: BarChart3, label: "Client Portal" },
+  { to: "/config", icon: Settings, label: "Configurações" },
+];
+
 const ADMIN_EMAILS = ["nc.marketingrj@gmail.com", "hc.marketing.dgt@gmail.com"];
 
 function Shell() {
@@ -145,10 +151,10 @@ function Shell() {
   const canSeeMetricas  = profileLoading || isAdmin || !!perms.metricas;
   const canSeeAutomacoes = profileLoading || isAdmin || !!perms.automacoes;
 
-  const [activeModule, setActiveModule] = useState<"hub" | "trafego" | "social" | "gestao" | "funil" | "victoria">(() => {
+  const [activeModule, setActiveModule] = useState<"hub" | "trafego" | "social" | "gestao" | "funil" | "victoria" | "crm">(() => {
     if (typeof window !== "undefined") {
       const stored = localStorage.getItem("nc_active_module");
-      return (["hub", "trafego", "social", "gestao", "funil", "victoria"].includes(stored as any) ? stored : "hub") as any;
+      return (["hub", "trafego", "social", "gestao", "funil", "victoria", "crm"].includes(stored as any) ? stored : "hub") as any;
     }
     return "hub";
   });
@@ -164,6 +170,8 @@ function Shell() {
     currentNavItems = FUNIL_NAV_ITEMS;
   } else if (activeModule === "victoria") {
     currentNavItems = VICTORIA_NAV_ITEMS;
+  } else if (activeModule === "crm") {
+    currentNavItems = CRM_NAV_ITEMS;
   }
 
   const filteredNavItems = currentNavItems.filter(item => {
@@ -371,7 +379,7 @@ function Shell() {
               </div>
             </motion.div>
 
-            {/* Card 3: Gestão / CRM */}
+            {/* Card 3: Gestão de Clientes */}
             <motion.div
               whileHover={{ y: -8, scale: 1.02 }}
               onClick={() => {
@@ -383,16 +391,41 @@ function Shell() {
             >
               <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-cyan-500 to-blue-500 rounded-t-2xl" />
               <div className="h-10 w-10 rounded-xl bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center mb-4">
-                <Users className="h-5 w-5 text-cyan-500" />
+                <Store className="h-5 w-5 text-cyan-500" />
               </div>
               <h3 className="text-base font-black text-foreground group-hover:text-cyan-500 transition-colors">
-                Gestão & CRM
+                Gestão de Clientes
               </h3>
               <p className="text-xs text-muted-foreground mt-2 leading-relaxed">
                 Gestão de carteiras de clientes, faturamento, reuniões de fechamento e o Agente IA Victoria.
               </p>
               <div className="mt-6 flex items-center gap-1.5 text-[10px] font-black uppercase text-cyan-500 tracking-wider">
                 Acessar Gestão <ArrowRight className="h-3 w-3 transition-transform group-hover:translate-x-1" />
+              </div>
+            </motion.div>
+
+            {/* Card 3.5: CRM & Vendas (Novo Hub SDR) */}
+            <motion.div
+              whileHover={{ y: -8, scale: 1.02 }}
+              onClick={() => {
+                setActiveModule("crm");
+                localStorage.setItem("nc_active_module", "crm");
+                nav({ to: "/crm" });
+              }}
+              className="group relative rounded-2xl border border-border bg-card p-6 text-left cursor-pointer transition-all duration-300 hover:border-emerald-500/40 hover:shadow-lg shadow-sm"
+            >
+              <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-emerald-500 to-teal-500 rounded-t-2xl" />
+              <div className="h-10 w-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center mb-4">
+                <Users className="h-5 w-5 text-emerald-500" />
+              </div>
+              <h3 className="text-base font-black text-foreground group-hover:text-emerald-500 transition-colors">
+                CRM & Vendas
+              </h3>
+              <p className="text-xs text-muted-foreground mt-2 leading-relaxed">
+                Pipeline de SDR, Motor de Cadência Comercial, Agendamentos e Portal do Cliente.
+              </p>
+              <div className="mt-6 flex items-center gap-1.5 text-[10px] font-black uppercase text-emerald-500 tracking-wider">
+                Acessar CRM <ArrowRight className="h-3 w-3 transition-transform group-hover:translate-x-1" />
               </div>
             </motion.div>
 
@@ -587,8 +620,21 @@ function Shell() {
                             activeModule === "gestao" ? "bg-cyan-500/10 text-cyan-500" : "text-foreground/80 hover:bg-muted"
                           }`}
                         >
-                          <span className="h-1.5 w-1.5 rounded-full bg-cyan-500" />
-                          Gestão &amp; CRM
+                          Gestão de Clientes
+                        </button>
+                        <button
+                          onClick={() => {
+                            setActiveModule("crm");
+                            localStorage.setItem("nc_active_module", "crm");
+                            setShowModuleMenu(false);
+                            nav({ to: "/crm" });
+                          }}
+                          className={`flex w-full items-center gap-2 rounded-xl px-2.5 py-2 text-xs font-bold transition-all ${
+                            activeModule === "crm" ? "bg-emerald-500/10 text-emerald-500" : "text-foreground/80 hover:bg-muted"
+                          }`}
+                        >
+                          <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                          CRM & Vendas
                         </button>
                         <button
                           onClick={() => {
