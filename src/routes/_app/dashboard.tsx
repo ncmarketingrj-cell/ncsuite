@@ -121,8 +121,8 @@ function Dashboard() {
 
       const chartMap = new Map();
       const campaignsMap = new Map();
-      let currentPeriod = { cost: 0, conversions: 0, clicks: 0, impressions: 0 };
-      let previousPeriod = { cost: 0, conversions: 0, clicks: 0, impressions: 0 };
+      let currentPeriod = { cost: 0, conversions: 0, clicks: 0, impressions: 0, reach: 0 };
+      let previousPeriod = { cost: 0, conversions: 0, clicks: 0, impressions: 0, reach: 0 };
 
       (metrics || []).forEach((m: any) => {
         if (!m.date) return;
@@ -140,7 +140,7 @@ function Dashboard() {
           chartMap.set(date, current);
 
           const campId = m.campaign_id;
-          const camp = campaignsMap.get(campId) || { name: m.campaigns?.name || "Desconhecida", cost: 0, conversions: 0 };
+          const camp = campaignsMap.get(campId) || { id: campId, name: m.campaigns?.name || "Desconhecida", cost: 0, conversions: 0 };
           camp.cost += Number(m.cost || 0);
           camp.conversions += Number(m.conversions || 0);
           campaignsMap.set(campId, camp);
@@ -149,6 +149,7 @@ function Dashboard() {
           currentPeriod.conversions += Number(m.conversions || 0);
           currentPeriod.clicks += Number(m.clicks || 0);
           currentPeriod.impressions += Number(m.impressions || 0);
+          currentPeriod.reach += Number(m.reach || m.impressions * 0.8 || 0);
         } else if (isPrevious) {
           previousPeriod.cost += Number(m.cost || 0);
           previousPeriod.conversions += Number(m.conversions || 0);
@@ -173,10 +174,44 @@ function Dashboard() {
       const cplPrev = previousPeriod.conversions > 0 ? previousPeriod.cost / previousPeriod.conversions : 0;
       const cplTrendVal = cplPrev === 0 ? 0 : ((cplCurr - cplPrev) / cplPrev) * 100;
 
+      const funnelData = [
+        { id: "reach", step: "Alcance", value: Math.max(currentPeriod.reach, currentPeriod.impressions * 0.8), fill: "hsl(var(--primary) / 0.5)" },
+        { id: "clicks", step: "Cliques", value: currentPeriod.clicks, fill: "hsl(var(--primary) / 0.8)" },
+        { id: "convs", step: "Conversões", value: currentPeriod.conversions, fill: "hsl(var(--primary))" }
+      ];
+
+      const riskReturn = campaignsData.map(c => {
+        const cpa = c.conversions > 0 ? c.cost / c.conversions : c.cost;
+        let type = "Estável";
+        if (c.conversions === 0 && c.cost > 30) type = "Ralo";
+        else if (c.conversions > 0 && cpa > cplCurr * 1.5) type = "Risco";
+        else if (c.conversions > 0 && cpa < cplCurr * 0.7) type = "Oportunidade";
+        
+        return { ...c, cpa, type };
+      });
+
+      const opportunities = riskReturn.filter(c => c.type === "Oportunidade").sort((a, b) => a.cpa - b.cpa);
+      const risks = riskReturn.filter(c => c.type === "Ralo" || c.type === "Risco").sort((a, b) => b.cost - a.cost);
+
+      let healthScore = 100;
+      if (cplTrendVal > 10) healthScore -= 15;
+      if (cplTrendVal > 30) healthScore -= 20;
+      if (cplTrendVal < 0) healthScore += 10;
+      
+      const convRate = currentPeriod.clicks > 0 ? currentPeriod.conversions / currentPeriod.clicks : 0;
+      if (convRate < 0.01) healthScore -= 10;
+      if (opportunities.length === 0 && risks.length > 0) healthScore -= 10;
+
+      healthScore = Math.max(0, Math.min(100, Math.round(healthScore)));
+
       return {
         chartData,
         barData,
         pieData,
+        funnelData,
+        opportunities,
+        risks,
+        healthScore,
         totals: currentPeriod,
         trends: {
           cost: calcTrend(currentPeriod.cost, previousPeriod.cost),
@@ -322,13 +357,51 @@ function Dashboard() {
       
       {/* ─── STICKY HEADER AREA ─── */}
       <div className="sticky top-0 z-40 -mx-1 px-1 bg-background/95 backdrop-blur-xl border-b border-white/5 pb-4 pt-2 space-y-5">
-        {/* PageHeader Corporativo Padronizado */}
-        <PageHeader 
-          eyebrow="Painel Geral"
-          title="Command Center"
-          description="Visão analítica de performance, tráfego e inteligência artificial da NC Suite."
-          compact
-        />
+        
+        {/* PageHeader Corporativo Padronizado com Health Score */}
+        <div className="flex items-start justify-between">
+          <PageHeader 
+            eyebrow="Painel Geral"
+            title="Command Center"
+            description="Visão analítica de performance, tráfego e inteligência artificial da NC Suite."
+            compact
+          />
+          
+          {/* Health Score Badge */}
+          {performanceData && (
+            <div className="flex flex-col items-end pt-1">
+              <div className="flex items-center gap-3 bg-card/40 border border-border/50 rounded-2xl p-2.5 pr-4 backdrop-blur-md transition-all hover:bg-card">
+                <div className="relative h-10 w-10 flex items-center justify-center">
+                  <svg className="w-full h-full -rotate-90 transform" viewBox="0 0 36 36">
+                    <path
+                      className="text-muted/20"
+                      strokeWidth="3"
+                      stroke="currentColor"
+                      fill="none"
+                      d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                    />
+                    <path
+                      className={performanceData.healthScore >= 80 ? "text-success" : performanceData.healthScore >= 50 ? "text-primary" : "text-destructive"}
+                      strokeDasharray={`${performanceData.healthScore}, 100`}
+                      strokeWidth="3"
+                      strokeLinecap="round"
+                      stroke="currentColor"
+                      fill="none"
+                      d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                    />
+                  </svg>
+                  <span className="absolute text-[11px] font-black">{performanceData.healthScore}</span>
+                </div>
+                <div>
+                  <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Health Score</p>
+                  <p className={`text-xs font-bold mt-0.5 ${performanceData.healthScore >= 80 ? "text-success" : performanceData.healthScore >= 50 ? "text-primary" : "text-destructive"}`}>
+                    {performanceData.healthScore >= 80 ? "Excelente" : performanceData.healthScore >= 50 ? "Atenção" : "Crítico"}
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
 
         {/* ─── FILTER BAR ESTRUTURADA (UI PREMIUM) ─── */}
         <div className="relative z-50 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between w-full bg-card/45 border border-border/60 rounded-2xl p-3 backdrop-blur-md">
@@ -621,44 +694,23 @@ function Dashboard() {
       
       <div className="pt-4 space-y-6">
 
-      {/* HUB DE FUNÇÕES */}
-      <section className="space-y-6">
-        {/* Divisor chassis-line */}
+      {/* HUB DE FUNÇÕES COMPACTO */}
+      <section className="space-y-4">
         <div className="flex items-center gap-4">
           <div className="h-px flex-1 bg-border/50" />
-          <span className="chassis-line label-mono text-muted-foreground/38">Hub de Módulos Estratégicos</span>
+          <span className="chassis-line label-mono text-muted-foreground/38">Módulos Estratégicos</span>
           <div className="h-px flex-1 bg-border/50" />
         </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-          {HUB_GROUPS.map((group) => (
-            <div key={group.label} className="space-y-4">
-              {/* Título de grupo com acento esportivo */}
-              <h3 className={`header-sport text-[10px] font-black uppercase tracking-widest ${group.color}`}>
-                {group.label}
-              </h3>
-              <div className="grid gap-3">
-                {group.items.map((item) => (
-                  <Link
-                    key={item.to}
-                    to={item.to}
-                    className="card-sport group relative flex items-center gap-4 p-4 rounded-2xl bg-white/[0.022] border border-white/5 transition-all hover:bg-white/[0.05] hover:border-primary/20 hover:translate-x-1"
-                  >
-                    <div className={`h-10 w-10 rounded-xl flex items-center justify-center transition-all ${item.tagColor} ring-1 ring-white/10 group-hover:scale-110 group-hover:shadow-glow-sm`}>
-                      <item.icon className="h-5 w-5" />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2 mb-0.5">
-                        <span className="text-xs font-bold text-foreground group-hover:text-primary transition-colors">{item.title}</span>
-                        <span className={`text-[8px] font-black px-1.5 py-0.5 rounded ${item.tagColor}`}>{item.tag}</span>
-                      </div>
-                      <p className="text-[10px] text-muted-foreground truncate">{item.desc}</p>
-                    </div>
-                    <ArrowUpRight className="h-3 w-3 text-muted-foreground/30 group-hover:text-primary transition-all group-hover:scale-110" />
-                  </Link>
-                ))}
-              </div>
-            </div>
+        <div className="flex flex-wrap gap-3 justify-center">
+          {HUB_GROUPS.flatMap(g => g.items).map((item) => (
+            <Link
+              key={item.to}
+              to={item.to}
+              className="group relative flex items-center gap-3 px-4 py-2.5 rounded-xl bg-white/[0.022] border border-white/5 transition-all hover:bg-white/[0.05] hover:border-primary/20 hover:-translate-y-0.5"
+            >
+              <item.icon className={`h-4 w-4 ${item.tagColor.split(' ')[1]}`} />
+              <span className="text-[11px] font-bold text-muted-foreground group-hover:text-foreground transition-colors">{item.title}</span>
+            </Link>
           ))}
         </div>
       </section>
@@ -851,6 +903,109 @@ function Dashboard() {
                 R$ {(performanceData?.totals?.cost || 0).toLocaleString('pt-BR', { maximumFractionDigits: 0 })}
               </span>
             </div>
+          </div>
+        </motion.div>
+
+        {/* Funil de Conversão */}
+        <motion.div 
+          initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.25 }}
+          className="glass-panel p-8"
+        >
+          <div className="mb-6 flex items-center justify-between">
+            <div>
+              <h3 className="header-sport text-sm font-black tracking-widest uppercase">Funil Global de Tráfego</h3>
+              <p className="text-[10px] text-muted-foreground uppercase mt-1 tracking-widest">Atrito de Conversão Geral</p>
+            </div>
+            <Activity className="h-5 w-5 text-primary/50" />
+          </div>
+          <div className="flex flex-col gap-3 h-[280px] justify-center">
+            {performanceData?.funnelData?.map((f: any, idx: number, arr: any[]) => {
+              const prev = idx > 0 ? arr[idx-1].value : f.value;
+              const drop = prev > 0 ? (f.value / prev) * 100 : 0;
+              return (
+                <div key={f.id} className="relative flex flex-col gap-1">
+                  <div className="flex items-center justify-between text-[11px] font-bold uppercase tracking-widest text-muted-foreground px-1">
+                    <span>{f.step}</span>
+                    <span className="font-mono text-foreground text-sm">{Math.floor(f.value).toLocaleString('pt-BR')}</span>
+                  </div>
+                  <div className="h-8 rounded-xl bg-white/5 relative overflow-hidden border border-white/5 group">
+                    <motion.div 
+                      initial={{ width: 0 }} animate={{ width: `${Math.max(drop, 2)}%` }} transition={{ duration: 1, delay: 0.5 + (idx * 0.2) }}
+                      className="absolute top-0 left-0 h-full rounded-xl transition-colors"
+                      style={{ backgroundColor: f.fill }}
+                    />
+                    <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                      <span className="text-[10px] font-black text-white mix-blend-difference">{drop.toFixed(1)}% de retenção</span>
+                    </div>
+                  </div>
+                  {idx < arr.length - 1 && (
+                    <div className="h-4 flex items-center justify-center">
+                      <ChevronDown className="h-3 w-3 text-white/20" />
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </motion.div>
+
+        {/* Risco vs Oportunidade */}
+        <motion.div 
+          initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}
+          className="glass-panel p-8"
+        >
+          <div className="mb-6 flex items-center justify-between">
+            <div>
+              <h3 className="header-sport text-sm font-black tracking-widest uppercase">Risco x Retorno</h3>
+              <p className="text-[10px] text-muted-foreground uppercase mt-1 tracking-widest">Avaliação baseada no CPA Médio</p>
+            </div>
+            <Target className="h-5 w-5 text-primary/50" />
+          </div>
+          <div className="h-[280px] overflow-y-auto custom-scrollbar pr-2 space-y-4">
+            
+            {performanceData?.opportunities && performanceData.opportunities.length > 0 && (
+              <div className="space-y-2">
+                <p className="text-[10px] font-black uppercase tracking-widest text-success mb-2 flex items-center gap-2"><TrendingUp className="h-3 w-3"/> Oportunidades (Escalar)</p>
+                {performanceData.opportunities.map((c: any) => (
+                  <div key={c.id} className="flex items-center justify-between p-3 rounded-xl bg-success/5 border border-success/10 hover:bg-success/10 transition-colors">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[11px] font-bold text-foreground truncate">{c.name}</p>
+                      <p className="text-[9px] text-muted-foreground mt-0.5">R$ {c.cost.toFixed(2)} gasto</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-sm font-black font-mono text-success">R$ {c.cpa.toFixed(2)}</p>
+                      <p className="text-[9px] text-muted-foreground">CPA</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {performanceData?.risks && performanceData.risks.length > 0 && (
+              <div className="space-y-2 mt-4">
+                <p className="text-[10px] font-black uppercase tracking-widest text-destructive mb-2 flex items-center gap-2"><AlertTriangle className="h-3 w-3"/> Ralos de Verba (Pausar)</p>
+                {performanceData.risks.map((c: any) => (
+                  <div key={c.id} className="flex items-center justify-between p-3 rounded-xl bg-destructive/5 border border-destructive/10 hover:bg-destructive/10 transition-colors">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[11px] font-bold text-foreground truncate">{c.name}</p>
+                      <p className="text-[9px] text-muted-foreground mt-0.5">{c.conversions} conversões</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-sm font-black font-mono text-destructive">R$ {c.cost.toFixed(2)}</p>
+                      <p className="text-[9px] text-muted-foreground">Gasto sem retorno</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            
+            {(!performanceData?.opportunities?.length && !performanceData?.risks?.length) && (
+              <div className="h-full flex flex-col items-center justify-center text-muted-foreground/50">
+                <Activity className="h-8 w-8 mb-2 opacity-20" />
+                <p className="text-xs">Tudo rodando dentro da média de CPA</p>
+              </div>
+            )}
+
           </div>
         </motion.div>
       </div>
