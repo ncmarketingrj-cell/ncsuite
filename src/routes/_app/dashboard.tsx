@@ -87,7 +87,7 @@ function Dashboard() {
   });
 
   const { data: performanceData, isLoading: isLoadingPerformance } = useQuery({
-    queryKey: ["dash-performance-custom", selectedAccountId, dateRange.startDate.toISOString(), dateRange.endDate.toISOString()],
+    queryKey: ["dash-performance-custom", selectedAccountId, selectedClientId, dateRange.startDate.toISOString(), dateRange.endDate.toISOString()],
     queryFn: async () => {
       const diffTime = Math.abs(dateRange.endDate.getTime() - dateRange.startDate.getTime());
       const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
@@ -195,7 +195,7 @@ function Dashboard() {
 
   // ─── Query: Painel de Situação Operacional ───────────────────────────────────
   const { data: situacao } = useQuery({
-    queryKey: ["dash-situacao", selectedAccountId],
+    queryKey: ["dash-situacao", selectedAccountId, selectedClientId],
     staleTime: 5 * 60 * 1000,
     queryFn: async () => {
       const today = new Date();
@@ -210,7 +210,10 @@ function Dashboard() {
       const { data: campaigns = [] } = await campQuery;
 
       // Métricas de ontem + hoje para frequência e spend do dia
-      let metricsQuery = (supabase as any).from("metrics").select("campaign_id, frequency, cost, date, conversions").gte("date", yesterdayStr).lte("date", todayStr);
+      let metricsQuery = (supabase as any).from("metrics").select("campaign_id, frequency, cost, date, conversions, campaigns!inner(ad_account_id, client_id)").gte("date", yesterdayStr).lte("date", todayStr);
+      if (selectedAccountId !== "all") metricsQuery = metricsQuery.eq("campaigns.ad_account_id", selectedAccountId);
+      if (selectedClientId !== "all") metricsQuery = metricsQuery.eq("campaigns.client_id", selectedClientId);
+      
       const { data: recentMetrics = [] } = await metricsQuery;
 
       // Threshold de frequência configurado
