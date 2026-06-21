@@ -23,6 +23,7 @@ import { ptBR } from 'date-fns/locale';
 import { SyncButton } from "@/components/SyncButton";
 import { DateRangePicker } from "@/components/DateRangePicker";
 import { PageHeader } from "@/components/PageHeader";
+import { useGlobalDate } from "@/contexts/DateContext";
 
 export const Route = createFileRoute("/_app/dashboard")({
   head: () => ({ meta: [{ title: "Dashboard — NC Performance Suite" }] }),
@@ -64,11 +65,29 @@ function Dashboard() {
   const [showAccounts, setShowAccounts] = useState(false);
   const [showClients, setShowClients] = useState(false);
   
-  // Período de data flexível personalizado (Padrão: últimos 30 dias)
-  const [dateRange, setDateRange] = useState<{ startDate: Date; endDate: Date }>({
-    startDate: subDays(new Date(), 29),
-    endDate: new Date(),
-  });
+  const { dateFrom, dateTo, setDateFrom, setDateTo } = useGlobalDate();
+
+  const dateRange = useMemo(() => {
+    const parseLocalDate = (str: string) => {
+      const [y, m, d] = str.split("-").map(Number);
+      return new Date(y, m - 1, d);
+    };
+    return {
+      startDate: parseLocalDate(dateFrom),
+      endDate: parseLocalDate(dateTo)
+    };
+  }, [dateFrom, dateTo]);
+
+  const handleDateChange = (start: Date, end: Date) => {
+    const getLocalDateStr = (d: Date) => {
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, "0");
+      const day = String(d.getDate()).padStart(2, "0");
+      return `${y}-${m}-${day}`;
+    };
+    setDateFrom(getLocalDateStr(start));
+    setDateTo(getLocalDateStr(end));
+  };
 
   const { data: clients = [] } = useQuery({
     queryKey: ["clients"],
@@ -87,12 +106,17 @@ function Dashboard() {
   });
 
   const { data: performanceData, isLoading: isLoadingPerformance } = useQuery({
-    queryKey: ["dash-performance-custom", selectedAccountId, selectedClientId, dateRange.startDate.toISOString(), dateRange.endDate.toISOString()],
+    queryKey: ["dash-performance-custom", selectedAccountId, selectedClientId, dateFrom, dateTo],
     queryFn: async () => {
-      const diffTime = Math.abs(dateRange.endDate.getTime() - dateRange.startDate.getTime());
+      const parseLocalDate = (str: string) => {
+        const [y, m, d] = str.split("-").map(Number);
+        return new Date(y, m - 1, d);
+      };
+      const start = parseLocalDate(dateFrom);
+      const end = parseLocalDate(dateTo);
+      const diffTime = Math.abs(end.getTime() - start.getTime());
       const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
       
-      // Helper para formatar a data local como YYYY-MM-DD de forma segura
       const getLocalDateStr = (d: Date) => {
         const y = d.getFullYear();
         const m = String(d.getMonth() + 1).padStart(2, "0");
@@ -100,9 +124,9 @@ function Dashboard() {
         return `${y}-${m}-${day}`;
       };
 
-      const startStr = getLocalDateStr(dateRange.startDate);
-      const endStr = getLocalDateStr(dateRange.endDate);
-      const prevStartStr = getLocalDateStr(subDays(dateRange.startDate, diffDays));
+      const startStr = dateFrom;
+      const endStr = dateTo;
+      const prevStartStr = getLocalDateStr(subDays(start, diffDays));
 
       let metricsQuery = (supabase as any).from("metrics").select(`
         campaign_id, cost, conversions, impressions, clicks, reach, date,
@@ -330,6 +354,92 @@ function Dashboard() {
     },
   });
 
+  // ─── Query: Tabela de Desempenho de Contas (Command Center) ───────────────────
+  const { data: accountsTableData = [], isLoading: isLoadingTable } = useQuery({
+    queryKey: ["dashboard-accounts-table-data", dateFrom, dateTo],
+    queryFn: async () => {
+      const { data: adAccounts } = await (supabase as any)
+        .from("ad_accounts")
+        .select("id, name, platform");
+
+      const { data: activeCamps } = await (supabase as any)
+        .from("campaigns")
+        .select("ad_account_id")
+        .eq("status", "active");
+
+      const activeCounts: Record<string, number> = {};
+      for (const c of (activeCamps || [])) {
+        activeCounts[c.ad_account_id] = (activeCounts[c.ad_account_id] || 0) + 1;
+      }
+
+      const { data: metricsData } = await (supabase as any)
+        .from("daily_metrics")
+        .select("ad_account_id, spend, reach, results, impressions, purchases, leads")
+        .gte("date", dateFrom)
+        .lte("date", dateTo);
+
+      const metricsMap: Record<string, {
+        spend: number;
+        reach: number;
+        results: number;
+        impressions: number;
+        purchases: number;
+        leads: number;
+      }> = {};
+
+      for (const row of (metricsData || [])) {
+        const key = row.ad_account_id;
+        if (!metricsMap[key]) {
+          metricsMap[key] = { spend: 0, reach: 0, results: 0, impressions: 0, purchases: 0, leads: 0 };
+        }
+        metricsMap[key].spend += Number(row.spend || 0);
+        metricsMap[key].reach += Number(row.reach || 0);
+        metricsMap[key].results += Number(row.results || 0);
+        metricsMap[key].impressions += Number(row.impressions || 0);
+        metricsMap[key].purchases += Number(row.purchases || 0);
+        metricsMap[key].leads += Number(row.leads || 0);
+      }
+
+      const { data: clientsData } = await (supabase as any)
+        .from("clients")
+        .select("id, name, meta_ad_account_id, logo_url");
+
+      const clientMap: Record<string, { id: string; name: string; logo_url?: string }> = {};
+      for (const client of (clientsData || [])) {
+        if (client.meta_ad_account_id) {
+          clientMap[client.meta_ad_account_id] = { id: client.id, name: client.name, logo_url: client.logo_url };
+        }
+      }
+
+      return (adAccounts || []).map((acc: any) => {
+        const metrics = metricsMap[acc.id] || { spend: 0, reach: 0, results: 0, impressions: 0, purchases: 0, leads: 0 };
+        const activeCampaignsCount = activeCounts[acc.id] || 0;
+        const linkedClient = clientMap[acc.id] || null;
+
+        return {
+          id: acc.id,
+          name: acc.name,
+          platform: acc.platform,
+          activeCampaignsCount,
+          client: linkedClient,
+          metrics
+        };
+      });
+    }
+  });
+
+  const filteredAccounts = useMemo(() => {
+    return accountsTableData.filter((acc: any) => acc.activeCampaignsCount > 0 || acc.metrics.spend > 0);
+  }, [accountsTableData]);
+
+  const sortedAccounts = useMemo(() => {
+    return [...filteredAccounts].sort((a, b) => {
+      if (a.activeCampaignsCount > 0 && b.activeCampaignsCount === 0) return -1;
+      if (a.activeCampaignsCount === 0 && b.activeCampaignsCount > 0) return 1;
+      return b.metrics.spend - a.metrics.spend;
+    });
+  }, [filteredAccounts]);
+
   const { data: config } = useQuery({
     queryKey: ["agent-config"],
     queryFn: async () => {
@@ -500,7 +610,7 @@ function Dashboard() {
             <DateRangePicker 
               startDate={dateRange.startDate} 
               endDate={dateRange.endDate} 
-              onChange={(start, end) => setDateRange({ startDate: start, endDate: end })} 
+              onChange={handleDateChange} 
             />
           </div>
 
@@ -1009,6 +1119,134 @@ function Dashboard() {
           </div>
         </motion.div>
       </div>
+
+      {/* ─── TABELA DE DESEMPENHO DE CONTAS ─── */}
+      <motion.div
+        initial={{ opacity: 0, y: 16 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="glass-panel p-8 mt-8 w-full overflow-hidden"
+      >
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+          <div>
+            <h3 className="header-sport text-base font-black tracking-widest uppercase flex items-center gap-2">
+              <Layers className="h-5 w-5 text-primary" />
+              Desempenho Geral de Contas
+            </h3>
+            <p className="text-[10px] text-muted-foreground uppercase mt-1 tracking-widest">
+              Dados consolidados do período
+            </p>
+          </div>
+          <div className="flex items-center gap-3">
+            <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Filtrar período:</span>
+            <DateRangePicker 
+              startDate={dateRange.startDate} 
+              endDate={dateRange.endDate} 
+              onChange={handleDateChange} 
+            />
+          </div>
+        </div>
+
+        {isLoadingTable ? (
+          <div className="flex items-center justify-center py-12">
+            <Loader2 className="h-6 w-6 animate-spin text-primary" />
+          </div>
+        ) : sortedAccounts.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-12 text-center text-muted-foreground/50">
+            <Activity className="h-8 w-8 mb-2 opacity-20" />
+            <p className="text-xs">Nenhuma conta com campanha ativa ou métricas no período.</p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto text-left">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="border-b border-white/5 pb-3">
+                  <th className="text-[10px] font-black uppercase tracking-wider text-muted-foreground pb-3 pl-2">Conta / Cliente</th>
+                  <th className="text-[10px] font-black uppercase tracking-wider text-muted-foreground pb-3">Status</th>
+                  <th className="text-[10px] font-black uppercase tracking-wider text-muted-foreground pb-3 text-right">Alcance</th>
+                  <th className="text-[10px] font-black uppercase tracking-wider text-muted-foreground pb-3 text-right">Visualizações</th>
+                  <th className="text-[10px] font-black uppercase tracking-wider text-muted-foreground pb-3 text-right">Mensagens</th>
+                  <th className="text-[10px] font-black uppercase tracking-wider text-muted-foreground pb-3 text-right">Compras</th>
+                  <th className="text-[10px] font-black uppercase tracking-wider text-muted-foreground pb-3 text-right">Investido</th>
+                  <th className="text-[10px] font-black uppercase tracking-wider text-muted-foreground pb-3 pr-2 text-right">Ação</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-white/5">
+                {sortedAccounts.map(row => {
+                  const hasClient = !!row.client;
+                  return (
+                    <tr 
+                      key={row.id}
+                      onClick={() => {
+                        if (row.client) {
+                          navigate({
+                            to: "/clientes/$clientId",
+                            params: { clientId: row.client.id }
+                          });
+                        } else {
+                          toast.error("Esta conta não possui um cliente associado.");
+                        }
+                      }}
+                      className={`group hover:bg-white/[0.02] transition-colors cursor-pointer ${!hasClient ? "opacity-75" : ""}`}
+                    >
+                      <td className="py-4 pl-2">
+                        <div className="flex items-center gap-3">
+                          {row.client?.logo_url ? (
+                            <img src={row.client.logo_url} alt={row.client.name} className="h-8 w-8 rounded-xl object-cover border border-white/10" />
+                          ) : (
+                            <div className="h-8 w-8 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center text-[10px] font-black text-primary">
+                              {row.name.substring(0, 2).toUpperCase()}
+                            </div>
+                          )}
+                          <div className="min-w-0 flex-1">
+                            <p className="text-xs font-black text-foreground group-hover:text-primary transition-colors truncate">
+                              {row.name}
+                            </p>
+                            <p className="text-[9px] text-muted-foreground uppercase tracking-wider mt-0.5">
+                              {row.client ? `Cliente: ${row.client.name}` : "Sem cliente vinculado"}
+                            </p>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="py-4">
+                        <div className="flex items-center gap-1.5">
+                          <span className={`h-1.5 w-1.5 rounded-full ${row.activeCampaignsCount > 0 ? "bg-success shadow-glow-sm animate-pulse" : "bg-muted-foreground/50"}`} />
+                          <span className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground">
+                            {row.activeCampaignsCount > 0 ? `${row.activeCampaignsCount} Ativas` : "Inativo"}
+                          </span>
+                        </div>
+                      </td>
+                      <td className="py-4 text-right font-mono text-[11px] font-bold tabular-nums text-foreground">
+                        {row.metrics.reach.toLocaleString('pt-BR')}
+                      </td>
+                      <td className="py-4 text-right font-mono text-[11px] font-bold tabular-nums text-foreground">
+                        {row.metrics.impressions.toLocaleString('pt-BR')}
+                      </td>
+                      <td className="py-4 text-right font-mono text-[11px] font-bold tabular-nums text-foreground">
+                        {row.metrics.results.toLocaleString('pt-BR')}
+                      </td>
+                      <td className="py-4 text-right font-mono text-[11px] font-bold tabular-nums text-foreground">
+                        {row.metrics.purchases.toLocaleString('pt-BR')}
+                      </td>
+                      <td className="py-4 text-right font-mono text-[11px] font-black tabular-nums text-primary">
+                        {row.metrics.spend.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                      </td>
+                      <td className="py-4 pr-2 text-right">
+                        {hasClient ? (
+                          <button className="inline-flex items-center justify-center h-6 w-6 rounded-lg bg-primary/10 border border-primary/20 text-primary group-hover:bg-primary group-hover:text-primary-foreground group-hover:border-transparent transition-all">
+                            <ArrowUpRight className="h-3.5 w-3.5" />
+                          </button>
+                        ) : (
+                          <span className="text-[9px] text-muted-foreground">Bloqueado</span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </motion.div>
       </div>
       </div>
     </div>
