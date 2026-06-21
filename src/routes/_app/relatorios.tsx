@@ -230,13 +230,23 @@ function RelatoriosPage() {
 
   // Auto-preencher Nome do Cliente ao selecionar conta
   useEffect(() => {
-    if (selectedAccountId !== "all" && clientsData) {
-      const client = clientsData.find(c => c.meta_ad_account_id === selectedAccountId);
-      if (client && client.name) {
-        setClientName(client.name);
+    if (source === "api" && !activeReportId) {
+      if (selectedAccountId === "all") {
+        setClientName("Consolidado");
+      } else {
+        const client = clientsData?.find(c => c.meta_ad_account_id === selectedAccountId);
+        if (client && client.name) {
+          setClientName(client.name);
+        } else {
+          // Fallback: usar o nome da própria conta conectada
+          const acc = accounts.find(a => a.id === selectedAccountId);
+          if (acc && acc.name) {
+            setClientName(acc.name);
+          }
+        }
       }
     }
-  }, [selectedAccountId, clientsData]);
+  }, [selectedAccountId, clientsData, accounts, source, activeReportId]);
 
   // Carregar dados de acordo com a origem (API ou Upload)
   const loadData = async () => {
@@ -801,18 +811,20 @@ function RelatoriosPage() {
           </div>
           
           <div className="space-y-4">
-            <div className="space-y-2">
-              <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Nome do Cliente</label>
-              <input 
-                value={clientName} 
-                onChange={(e) => {
-                  setClientName(e.target.value);
-                  setActiveReportId(null);
-                }}
-                placeholder="Ex: Pizza Bonne"
-                className="w-full rounded-xl border border-white/10 bg-background/50 px-4 py-3 text-sm font-bold focus:border-primary focus:outline-none"
-              />
-            </div>
+            {source === "upload" && (
+              <div className="space-y-2">
+                <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Nome do Cliente</label>
+                <input 
+                  value={clientName} 
+                  onChange={(e) => {
+                    setClientName(e.target.value);
+                    setActiveReportId(null);
+                  }}
+                  placeholder="Ex: Pizza Bonne"
+                  className="w-full rounded-xl border border-white/10 bg-background/50 px-4 py-3 text-sm font-bold focus:border-primary focus:outline-none"
+                />
+              </div>
+            )}
 
             {source === "upload" && (
               <div className="space-y-2">
