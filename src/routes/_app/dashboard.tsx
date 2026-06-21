@@ -1222,7 +1222,7 @@ function Dashboard() {
                         {row.metrics.impressions.toLocaleString('pt-BR')}
                       </td>
                       <td className="py-4 text-right font-mono text-[11px] font-bold tabular-nums text-foreground">
-                        {row.metrics.results.toLocaleString('pt-BR')}
+                        {row.metrics.leads.toLocaleString('pt-BR')}
                       </td>
                       <td className="py-4 text-right font-mono text-[11px] font-bold tabular-nums text-foreground">
                         {row.metrics.purchases.toLocaleString('pt-BR')}
