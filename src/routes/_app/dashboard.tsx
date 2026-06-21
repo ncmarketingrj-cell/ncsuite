@@ -1172,21 +1172,16 @@ function Dashboard() {
               </thead>
               <tbody className="divide-y divide-white/5">
                 {sortedAccounts.map(row => {
-                  const hasClient = !!row.client;
                   return (
                     <tr 
                       key={row.id}
                       onClick={() => {
-                        if (row.client) {
-                          navigate({
-                            to: "/clientes/$clientId",
-                            params: { clientId: row.client.id }
-                          });
-                        } else {
-                          toast.error("Esta conta não possui um cliente associado.");
-                        }
+                        navigate({
+                          to: "/metricas",
+                          search: { account: row.id }
+                        });
                       }}
-                      className={`group hover:bg-white/[0.02] transition-colors cursor-pointer ${!hasClient ? "opacity-75" : ""}`}
+                      className="group hover:bg-white/[0.02] transition-colors cursor-pointer"
                     >
                       <td className="py-4 pl-2">
                         <div className="flex items-center gap-3">
@@ -1231,13 +1226,9 @@ function Dashboard() {
                         {row.metrics.spend.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                       </td>
                       <td className="py-4 pr-2 text-right">
-                        {hasClient ? (
-                          <button className="inline-flex items-center justify-center h-6 w-6 rounded-lg bg-primary/10 border border-primary/20 text-primary group-hover:bg-primary group-hover:text-primary-foreground group-hover:border-transparent transition-all">
-                            <ArrowUpRight className="h-3.5 w-3.5" />
-                          </button>
-                        ) : (
-                          <span className="text-[9px] text-muted-foreground">Bloqueado</span>
-                        )}
+                        <button className="inline-flex items-center justify-center h-6 w-6 rounded-lg bg-primary/10 border border-primary/20 text-primary group-hover:bg-primary group-hover:text-primary-foreground group-hover:border-transparent transition-all">
+                          <ArrowUpRight className="h-3.5 w-3.5" />
+                        </button>
                       </td>
                     </tr>
                   );
