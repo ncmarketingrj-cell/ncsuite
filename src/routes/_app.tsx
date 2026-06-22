@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { createFileRoute, Outlet, redirect, Link, useRouterState, Navigate, useNavigate } from "@tanstack/react-router";
 import { motion, AnimatePresence } from "framer-motion";
@@ -163,7 +163,7 @@ function Shell() {
   });
 
   const path = useRouterState({ select: (s) => s.location.pathname });
-  
+
   const prevModuleRef = useRef(activeModule);
 
   useEffect(() => {
@@ -178,6 +178,8 @@ function Shell() {
       nextModule = "trafego";
     } else if (path.startsWith("/cobrancas")) {
       nextModule = "gestao";
+    } else if (path.startsWith("/strategy-map") || path.startsWith("/funis") || path.startsWith("/funnel-builder")) {
+      nextModule = "funil";
     }
 
     if (nextModule !== activeModule) {
@@ -189,6 +191,8 @@ function Shell() {
         if (nextModule === "social") moduleName = "Módulo Social";
         else if (nextModule === "crm") moduleName = "CRM Vendas";
         else if (nextModule === "trafego") moduleName = "Núcleo de Performance";
+        else if (nextModule === "gestao") moduleName = "Gestão";
+        else if (nextModule === "funil") moduleName = "Estratégia de Funil";
         
         if (moduleName) {
           toast(`Alternado para o ${moduleName}`);
@@ -198,7 +202,36 @@ function Shell() {
     }
   }, [path]);
 
-  
+  const [showModuleMenu, setShowModuleMenu] = useState(false);
+
+  let currentNavItems = TRAFEGO_NAV_ITEMS;
+
+  if (activeModule === "social") {
+    currentNavItems = SOCIAL_NAV_ITEMS;
+  } else if (activeModule === "gestao") {
+    currentNavItems = GESTAO_NAV_ITEMS;
+  } else if (activeModule === "funil") {
+    currentNavItems = FUNIL_NAV_ITEMS;
+  } else if (activeModule === "victoria") {
+    currentNavItems = VICTORIA_NAV_ITEMS;
+  } else if (activeModule === "crm") {
+    currentNavItems = CRM_NAV_ITEMS;
+  }
+
+  const filteredNavItems = currentNavItems.filter(item => hasPageAccess(item.to));
+
+  const [isAgentOpen, setIsAgentOpen] = useState(false);
+  const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const [showNotification, setShowNotification] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [showNotifications, setShowNotifications] = useState(false);
+  const [syncStatus, setSyncStatus] = useState<SyncStatus>(getSyncStatus);
+  const [showUserMenu, setShowUserMenu] = useState(false);
+  const { theme, toggleTheme } = useTheme();
+  const qc = useQueryClient();
+
+  // ── Auto-Sync a cada 30 minutos ──────────────────────────────────────────────
+  const { runSync } = useAutoSync();
 
   // ── Motor de Alertas Sonoros ──────────────────────────────────────────────────
   const { acknowledgeAll, soundEnabled, toggleSound } = useAlertEngine();
@@ -1221,7 +1254,3 @@ function Shell() {
     </div>
   );
 }
-
-
-
-
