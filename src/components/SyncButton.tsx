@@ -5,6 +5,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { formatDistanceToNow, format, subDays, subMonths, startOfMonth, endOfMonth } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { useAuth } from "@/lib/auth";
 
 interface SyncButtonProps {
   mode?: "quick" | "full" | "max" | "month1" | "month2" | "month3";
@@ -31,6 +32,19 @@ export function SyncButton({ mode = "quick" }: SyncButtonProps) {
   const qc = useQueryClient();
   const [syncing, setSyncing] = useState(false);
   const [lastStatus, setLastStatus] = useState<"idle" | "success" | "error">("idle");
+  const { user } = useAuth();
+
+  const { data: profile } = useQuery({
+    queryKey: ["sync-button-profile", user?.id],
+    queryFn: async () => {
+      if (!user) return null;
+      const { data } = await supabase.from("profiles").select("role").eq("id", user.id).maybeSingle();
+      return data;
+    },
+    enabled: !!user
+  });
+
+  const isAdmin = profile?.role === "admin" || (user?.email && ["nc.marketingrj@gmail.com"].includes(user.email));
 
   const { data: lastSyncData, refetch: refetchSyncDate } = useQuery({
     queryKey: ["last-sync-date"],
@@ -160,6 +174,10 @@ export function SyncButton({ mode = "quick" }: SyncButtonProps) {
     : isMonthMode
     ? `Busca todos os dados de ${monthRange!.label} (${monthRange!.since} a ${monthRange!.until}). Ideal para preencher lacunas de meses anteriores.`
     : "Busca 60 dias de histórico. Use na carga inicial ou ao começar um novo mês.";
+
+  if (!isAdmin) {
+    return null;
+  }
 
   return (
     <div className="flex flex-col items-end gap-1.5 md:flex-row md:items-center md:gap-4 bg-white/[0.02] border border-white/5 rounded-2xl p-2.5 px-4 shadow-inner">
