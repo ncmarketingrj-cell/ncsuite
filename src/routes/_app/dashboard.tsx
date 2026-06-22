@@ -829,7 +829,7 @@ function Dashboard() {
       <div className="grid gap-4 sm:gap-6 lg:gap-8 lg:grid-cols-3">
         <motion.div 
           initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}
-          className="glass-panel col-span-2 flex flex-col p-4 sm:p-6 lg:p-8 min-h-[280px] sm:min-h-[380px] lg:min-h-[450px]"
+          className="glass-panel col-span-2 flex flex-col p-4 sm:p-6 lg:p-8 min-h-[280px] sm:min-h-[380px] lg:min-h-[450px] min-w-0"
         >
           <div className="mb-8 flex items-center justify-between">
             <div>
@@ -941,30 +941,31 @@ function Dashboard() {
       {/* ─── CHARTS ADICIONAIS MULTICANAL E EVOLUCAO ─── */}
       <div className="grid gap-4 sm:gap-6 lg:gap-8 lg:grid-cols-2 2xl:grid-cols-4 mt-4 sm:mt-8">
         {/* Top Campanhas (Barras) */}
-        <motion.div 
+        <motion.div
           initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }}
-          className="glass-panel p-4 sm:p-6 lg:p-8"
+          className="glass-panel p-4 sm:p-6 lg:p-8 min-w-0"
         >
-          <div className="mb-6 flex items-center justify-between">
+          <div className="mb-4 flex items-center justify-between">
             <div>
               <h3 className="header-sport text-xs sm:text-sm font-black tracking-widest uppercase">Top Campanhas (Gasto)</h3>
               <p className="text-[10px] text-muted-foreground uppercase mt-1 tracking-widest">Comparativo de Resultados x Gasto</p>
             </div>
             <BarChart3 className="h-5 w-5 text-primary/50" />
           </div>
-          <div className="w-full" style={{ height: "clamp(220px, 50vw, 300px)" }}>
+          <div className="w-full" style={{ height: 280 }}>
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={performanceData?.barData || []} margin={{ top: 10, right: 4, left: -20, bottom: 50 }}>
+              <BarChart data={performanceData?.barData || []} margin={{ top: 10, right: 4, left: -20, bottom: 70 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border) / 0.2)" vertical={false} />
                 <XAxis
                   dataKey="name"
                   axisLine={false}
                   tickLine={false}
                   interval={0}
-                  angle={-35}
+                  angle={-40}
                   textAnchor="end"
+                  height={70}
                   tick={{ fontSize: 8, fontWeight: 700, fill: 'hsl(var(--muted-foreground))' }}
-                  tickFormatter={(v: string) => v.length > 14 ? v.slice(0, 13) + "…" : v}
+                  tickFormatter={(v: string) => v.length > 12 ? v.slice(0, 11) + "…" : v}
                 />
                 <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 9, fontWeight: 700, fill: 'hsl(var(--muted-foreground))' }} />
                 <Tooltip
@@ -973,35 +974,36 @@ function Dashboard() {
                   labelStyle={{ fontSize: '9px', textTransform: 'uppercase', marginBottom: '4px', color: 'hsl(var(--muted-foreground))' }}
                   cursor={{ fill: 'hsl(var(--white) / 0.02)' }}
                 />
-                <Bar dataKey="Gasto" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} barSize={14} />
-                <Bar dataKey="Resultados" fill="hsl(262 83% 74%)" radius={[4, 4, 0, 0]} barSize={14} />
+                <Bar dataKey="Gasto" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} barSize={12} />
+                <Bar dataKey="Resultados" fill="hsl(262 83% 74%)" radius={[4, 4, 0, 0]} barSize={12} />
               </BarChart>
             </ResponsiveContainer>
           </div>
         </motion.div>
 
         {/* Share de Gasto (Pizza) */}
-        <motion.div 
+        <motion.div
           initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}
-          className="glass-panel p-4 sm:p-6 lg:p-8"
+          className="glass-panel p-4 sm:p-6 lg:p-8 min-w-0"
         >
-          <div className="mb-6 flex items-center justify-between">
+          <div className="mb-4 flex items-center justify-between">
             <div>
               <h3 className="header-sport text-xs sm:text-sm font-black tracking-widest uppercase">Share de Investimento</h3>
               <p className="text-[10px] text-muted-foreground uppercase mt-1 tracking-widest">Distribuição de Verba por Campanha</p>
             </div>
             <PieChartIcon className="h-5 w-5 text-primary/50" />
           </div>
-          <div className="w-full relative overflow-hidden" style={{ height: "clamp(200px, 45vw, 280px)" }}>
+          {/* Wrapper sem overflow:hidden e sem flex — ResponsiveContainer mede width corretamente */}
+          <div className="w-full relative" style={{ height: 260 }}>
             <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
+              <PieChart margin={{ top: 0, right: 0, bottom: 0, left: 0 }}>
                 <Pie
                   data={performanceData?.pieData || []}
                   cx="50%"
                   cy="50%"
-                  innerRadius={58}
-                  outerRadius={85}
-                  paddingAngle={5}
+                  innerRadius="28%"
+                  outerRadius="42%"
+                  paddingAngle={4}
                   dataKey="value"
                   stroke="none"
                 >
@@ -1009,7 +1011,7 @@ function Dashboard() {
                     <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                   ))}
                 </Pie>
-                <Tooltip 
+                <Tooltip
                   contentStyle={{ backgroundColor: 'hsl(var(--background))', borderColor: 'hsl(var(--border))', borderRadius: '12px' }}
                   itemStyle={{ fontSize: '11px', fontWeight: 800, fontFamily: 'monospace' }}
                   formatter={(value: any) => [`R$ ${Number(value).toFixed(2)}`, 'Gasto']}
@@ -1026,9 +1028,9 @@ function Dashboard() {
         </motion.div>
 
         {/* Funil de Conversão */}
-        <motion.div 
+        <motion.div
           initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.25 }}
-          className="glass-panel p-4 sm:p-6 lg:p-8"
+          className="glass-panel p-4 sm:p-6 lg:p-8 min-w-0"
         >
           <div className="mb-6 flex items-center justify-between">
             <div>
@@ -1069,9 +1071,9 @@ function Dashboard() {
         </motion.div>
 
         {/* Risco vs Oportunidade */}
-        <motion.div 
+        <motion.div
           initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}
-          className="glass-panel p-4 sm:p-6 lg:p-8"
+          className="glass-panel p-4 sm:p-6 lg:p-8 min-w-0"
         >
           <div className="mb-6 flex items-center justify-between">
             <div>
