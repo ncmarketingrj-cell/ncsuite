@@ -1,4 +1,4 @@
-﻿// src/routes/_app/metricas.tsx
+// src/routes/_app/metricas.tsx
 // NC Performance Suite — Métricas & Campanhas (Página Unificada)
 
 import { createFileRoute, redirect, useSearch, useNavigate, useLocation } from "@tanstack/react-router";
@@ -475,6 +475,7 @@ function MetricasCampanhasPage() {
   const [level,         setLevel]         = useState<Level>("campanhas");
   const [accountFilter, setAccountFilter] = useState(searchParams.account || "all");
   const [statusFilter,  setStatusFilter]  = useState<"all"|"active"|"paused">("all");
+  const [selectedCampaignId, setSelectedCampaignId] = useState<string | null>(null);
   const [search,        setSearch]        = useState("");
   const { dateFrom, dateTo, setDateFrom, setDateTo } = useGlobalDate();
 
@@ -585,13 +586,18 @@ function MetricasCampanhasPage() {
     refetchIntervalInBackground: false,
   });
 
+  const selectedCampaignObj = useMemo(() => {
+    if (!selectedCampaignId) return null;
+    return campaigns.find((c: any) => c.id === selectedCampaignId) || null;
+  }, [selectedCampaignId, campaigns]);
+
   const { data: adSets = [], isLoading: isLoadingAdSets } = useQuery({
-    queryKey: ["mc-adsets", Array.from(selectedCamps).join(","), statusFilter, startStr, endStr],
-    enabled: level === "conjuntos" || level === "anuncios",
+    queryKey: ["mc-adsets", selectedCampaignId || Array.from(selectedCamps).join(","), statusFilter, startStr, endStr],
+    enabled: level === "conjuntos" || level === "anuncios" || !!selectedCampaignId,
     queryFn: async () => {
-      if (selectedCamps.size === 0) return [];
+      if (selectedCamps.size === 0 && !selectedCampaignId) return [];
       let q = (supabase as any).from("ad_sets").select(`id, name, status, budget, external_id, campaign_id, asset_metrics(cost, conversions, impressions, clicks, reach, date)`);
-      q = q.in("campaign_id", Array.from(selectedCamps));
+      q = q.in("campaign_id", selectedCampaignId ? [selectedCampaignId] : Array.from(selectedCamps));
       if (statusFilter !== "all") q = q.ilike("status", statusFilter === "active" ? "ACTIVE" : "PAUSED");
       const { data, error } = await q.order("name");
       if (error) throw error;
@@ -600,11 +606,12 @@ function MetricasCampanhasPage() {
   });
 
   const { data: ads = [], isLoading: isLoadingAds } = useQuery({
-    queryKey: ["mc-ads", Array.from(selectedAdSets).join(","), Array.from(selectedCamps).join(","), statusFilter, startStr, endStr],
-    enabled: level === "anuncios",
+    queryKey: ["mc-ads", Array.from(selectedAdSets).join(","), selectedCampaignId || Array.from(selectedCamps).join(","), statusFilter, startStr, endStr],
+    enabled: level === "anuncios" || !!selectedCampaignId,
     queryFn: async () => {
       let q = (supabase as any).from("ads").select(`id, name, status, external_id, campaign_id, ad_set_id, creative_url, asset_metrics(cost, conversions, impressions, clicks, reach, date)`);
       if (selectedAdSets.size > 0) q = q.in("ad_set_id", Array.from(selectedAdSets));
+      else if (selectedCampaignId) q = q.eq("campaign_id", selectedCampaignId);
       else if (selectedCamps.size > 0) q = q.in("campaign_id", Array.from(selectedCamps));
       else return [];
       if (statusFilter !== "all") q = q.ilike("status", statusFilter === "active" ? "ACTIVE" : "PAUSED");
@@ -620,7 +627,7 @@ function MetricasCampanhasPage() {
     queryFn: async () => {
       let q = (supabase as any)
         .from("meta_period_stats")
-        .select("entity_type, entity_id, reach, impressions, frequency, spend, conversions, clicks")
+        .select("entity_type, entity_id, reach, impressions, frequency, spend, conversions, clicks, quality_ranking, engagement_rate_ranking, conversion_rate_ranking")
         .eq("start_date", startStr)
         .eq("end_date", endStr);
       if (accountFilter !== "all") q = q.eq("ad_account_id", accountFilter);
@@ -665,8 +672,8 @@ function MetricasCampanhasPage() {
     enabled: view === "demograficos",
     queryFn: async () => {
       const acFilter = accountFilter !== "all";
-      const campFilter = selectedCamps.size > 0;
-      const campIds = Array.from(selectedCamps);
+      const campFilter = selectedCampaignId ? true : selectedCamps.size > 0;
+      const campIds = selectedCampaignId ? [selectedCampaignId] : Array.from(selectedCamps);
 
       let demoQ = (supabase as any).from("demographic_metrics").select("age_range, gender, platform, conversions, spend, impressions, clicks, reach").gte("date", startStr).lte("date", endStr);
       if (acFilter) demoQ = demoQ.eq("ad_account_id", accountFilter);
@@ -702,7 +709,7 @@ function MetricasCampanhasPage() {
           let statsQ = (supabase as any).from("meta_period_stats").select("entity_type, entity_id, spend, conversions, clicks, impressions").eq("start_date", startStr).eq("end_date", endStr);
           if (accountFilter !== "all") statsQ = statsQ.eq("ad_account_id", accountFilter);
           const { data: statsData } = await statsQ;
-          const targetStats = (statsData || []).filter((p: any) => p.entity_type === 'campaign' && (selectedCamps.size === 0 || selectedCamps.has(p.entity_id)));
+          const targetStats = (statsData || []).filter((p: any) => p.entity_type === 'campaign' && (!campFilter || campIds.includes(p.entity_id)));
           
           const costSum = targetStats.reduce((s: number, c: any) => s + Number(c.spend || 0), 0);
           const convSum = targetStats.reduce((s: number, c: any) => s + Number(c.conversions || 0), 0);
@@ -794,7 +801,16 @@ function MetricasCampanhasPage() {
           { name: "Desktop", conv: Math.round(totalConvVal * 0.12), cost: totalCostVal * 0.18, impr: Math.round(totalImprVal * 0.15) }
         ];
 
-        return { ageData, genderData, platData, regionData, dayOfWeekData, hourlyData, deviceData, isSimulated: true };
+        const heatMapData = Array.from({ length: 7 }, (_, d) => {
+          return Array.from({ length: 24 }, (_, h) => {
+            const isPeak = (d > 0 && d < 5) && (h >= 10 && h <= 18);
+            const conv = isPeak ? Math.round(Math.random() * 5 + 2) : Math.round(Math.random() * 2);
+            const cost = conv > 0 ? conv * (Math.random() * 10 + 15) : Math.random() * 5;
+            return { day: d, hour: h, conv, cost, cpl: conv > 0 ? cost / conv : 0 };
+          });
+        });
+
+        return { ageData, genderData, platData, regionData, dayOfWeekData, hourlyData, deviceData, heatMapData, isSimulated: true };
       }
 
       const ageMap: Record<string, any> = {};
@@ -816,7 +832,25 @@ function MetricasCampanhasPage() {
       const devMap: Record<string, any> = {};
       deviceRows.forEach((r: any) => { const k = r.device || "other"; if (!devMap[k]) devMap[k] = { name: k, conv: 0, cost: 0, impr: 0 }; devMap[k].conv += Number(r.conversions||0); devMap[k].cost += Number(r.spend||0); devMap[k].impr += Number(r.impressions||0); });
       const deviceData = Object.values(devMap).map((v: any) => ({ ...v, name: v.name === "mobile" ? "Mobile" : v.name === "desktop" ? "Desktop" : v.name }));
-      return { ageData, genderData, platData, regionData, dayOfWeekData, hourlyData, deviceData, isSimulated: false };
+
+      const heatMapData = Array.from({ length: 7 }, () => Array.from({ length: 24 }, () => ({ conv: 0, cost: 0, cpl: 0 })));
+      hourlyRows.forEach((r: any) => {
+        if (!r.date || typeof r.hour !== "number") return;
+        const d = new Date(r.date).getDay();
+        const h = r.hour;
+        if (d >= 0 && d < 7 && h >= 0 && h < 24) {
+          heatMapData[d][h].conv += Number(r.conversions || 0);
+          heatMapData[d][h].cost += Number(r.spend || 0);
+        }
+      });
+      for (let d = 0; d < 7; d++) {
+        for (let h = 0; h < 24; h++) {
+          heatMapData[d][h].cpl = heatMapData[d][h].conv > 0 ? heatMapData[d][h].cost / heatMapData[d][h].conv : 0;
+          heatMapData[d][h] = { day: d, hour: h, ...heatMapData[d][h] };
+        }
+      }
+
+      return { ageData, genderData, platData, regionData, dayOfWeekData, hourlyData, deviceData, heatMapData, isSimulated: false };
     },
   });
 
@@ -1187,6 +1221,26 @@ function MetricasCampanhasPage() {
           avgCtr={avgCtr}
           avgCpm={avgCpm}
         />
+
+        {/* Breadcrumb Contexto de Campanha (Drill-down) */}
+        {selectedCampaignObj && (
+          <motion.div 
+            initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} 
+            className="flex w-full items-center gap-2 mb-2 bg-gradient-to-r from-primary/10 to-transparent border-l-2 border-primary pl-3 py-2 rounded-r-xl"
+          >
+            <span className="text-[10px] font-black uppercase tracking-widest text-primary/70">Contexto Analítico:</span>
+            <div className="flex items-center gap-2 text-primary">
+              <span className="text-xs font-bold truncate max-w-[300px]">{selectedCampaignObj.name}</span>
+            </div>
+            <button 
+              onClick={() => setSelectedCampaignId(null)}
+              className="ml-auto mr-4 flex items-center gap-1.5 rounded-md bg-primary/10 px-2 py-1 text-[10px] font-black uppercase tracking-wider text-primary hover:bg-primary/20 transition-colors"
+            >
+              <XCircle className="h-3.5 w-3.5" />
+              Remover Contexto
+            </button>
+          </motion.div>
+        )}
 
         {/* Controles: View + Filtros */}
         <div className="flex flex-wrap items-center gap-2 pb-1">
@@ -1893,7 +1947,7 @@ function MetricasCampanhasPage() {
                   ) : (
                     <>
                       {/* â"€â"€ Motor de Decisão por Campanha â"€â"€ */}
-                      {campDecisions.length > 0 && (
+                      {(!selectedCampaignId && campDecisions.length > 0) && (
                         <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="glass-panel card-sport overflow-hidden">
                           <div className="flex items-center gap-3 border-b border-white/5 px-5 py-3.5">
                             <Target className="h-4 w-4 text-primary"/>
@@ -1917,12 +1971,16 @@ function MetricasCampanhasPage() {
                                 {campDecisions.map((c: any) => {
                                   const dc = DECISION_COLORS[c.decision.tier] || DECISION_COLORS.blue;
                                   return (
-                                    <tr key={c.id} className="border-b border-white/[0.03] hover:bg-white/[0.02] transition-colors">
+                                    <tr 
+                                      key={c.id} 
+                                      onClick={() => { setSelectedCampaignId(c.id); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+                                      className="border-b border-white/[0.03] hover:bg-white/[0.04] transition-colors cursor-pointer group"
+                                    >
                                       <td className="px-4 py-3">
                                         <div className="flex items-center gap-2">
                                           <div className={`h-1.5 w-1.5 rounded-full flex-shrink-0 ${c.status?.toUpperCase() === "ACTIVE" ? "bg-green-400" : "bg-white/20"}`}/>
                                           <div className="min-w-0">
-                                            <p className="font-semibold text-[11px] text-foreground max-w-[200px] truncate">{c.name}</p>
+                                            <p className="font-semibold text-[11px] text-foreground max-w-[200px] truncate group-hover:text-primary transition-colors">{c.name}</p>
                                             <p className="text-[9px] text-muted-foreground/50 mt-0.5 truncate max-w-[200px]">{c.decision.reason}</p>
                                           </div>
                                         </div>
@@ -1972,6 +2030,98 @@ function MetricasCampanhasPage() {
                             )}
                           </div>
                         </motion.div>
+                      )}
+
+                      {/* ── Drill-down da Campanha (Timeline + Ad Rankings) ── */}
+                      {selectedCampaignId && selectedCampaignObj && (
+                        <div className="space-y-5">
+                          {/* Timeline da Campanha */}
+                          <ChartCard
+                            icon={<TrendingUp className="h-4 w-4 text-primary"/>}
+                            title="Linha do Tempo da Campanha (Evolução)"
+                            badge="CPL vs CTR vs Frequência"
+                          >
+                            <div className="h-[250px] w-full mt-4">
+                              <ResponsiveContainer width="100%" height="100%">
+                                <ComposedChart data={(selectedCampaignObj._metrics || []).slice().sort((a:any,b:any) => a.date.localeCompare(b.date)).map((m:any) => ({
+                                  date: format(new Date(m.date), "dd/MM", { locale: ptBR }),
+                                  cpl: Number(m.conversions) > 0 ? Number(m.cost) / Number(m.conversions) : 0,
+                                  ctr: Number(m.impressions) > 0 ? (Number(m.clicks) / Number(m.impressions)) * 100 : 0,
+                                  freq: Number(m.reach) > 0 ? Number(m.impressions) / Number(m.reach) : 0,
+                                  cost: Number(m.cost)
+                                }))}>
+                                  <CartesianGrid strokeDasharray="3 3" stroke="#ffffff10" vertical={false} />
+                                  <XAxis dataKey="date" stroke="#ffffff40" fontSize={10} tickMargin={8} />
+                                  <YAxis yAxisId="left" stroke="#ffffff40" fontSize={10} tickFormatter={v => `R$${v}`} />
+                                  <YAxis yAxisId="right" orientation="right" stroke="#ffffff40" fontSize={10} tickFormatter={v => `${v}%`} />
+                                  <Tooltip content={<CustomTooltip />} />
+                                  <Legend wrapperStyle={{ fontSize: '10px' }} />
+                                  <Bar yAxisId="left" dataKey="cost" name="Gasto" fill="#6366f1" opacity={0.3} radius={[4,4,0,0]} />
+                                  <Line yAxisId="left" type="monotone" dataKey="cpl" name="CPL" stroke="#ec4899" strokeWidth={2} dot={{r: 3}} />
+                                  <Line yAxisId="right" type="monotone" dataKey="ctr" name="CTR %" stroke="#10b981" strokeWidth={2} />
+                                  <Line yAxisId="right" type="monotone" dataKey="freq" name="Frequência" stroke="#f59e0b" strokeWidth={2} strokeDasharray="4 4" />
+                                </ComposedChart>
+                              </ResponsiveContainer>
+                            </div>
+                          </ChartCard>
+
+                          {/* Motor de Decisão Meta Ads (Rankings de Qualidade) */}
+                          <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="glass-panel card-sport overflow-hidden mt-5">
+                            <div className="flex items-center gap-3 border-b border-white/5 px-5 py-3.5">
+                              <Target className="h-4 w-4 text-primary"/>
+                              <p className="text-xs font-black uppercase tracking-widest header-sport">Qualidade do Leilão (Meta Rankings)</p>
+                              <span className="ml-auto text-[9px] text-muted-foreground/50 font-mono">Diagnóstico Algorítmico</span>
+                            </div>
+                            <div className="overflow-x-auto">
+                              <table className="w-full text-xs">
+                                <thead>
+                                  <tr className="border-b border-white/5 bg-white/[0.02]">
+                                    <th className="px-4 py-2.5 text-left text-[9px] font-black uppercase tracking-widest text-muted-foreground/50">Anúncio</th>
+                                    <th className="px-4 py-2.5 text-center text-[9px] font-black uppercase tracking-widest text-muted-foreground/50">Qualidade</th>
+                                    <th className="px-4 py-2.5 text-center text-[9px] font-black uppercase tracking-widest text-muted-foreground/50">Engajamento</th>
+                                    <th className="px-4 py-2.5 text-center text-[9px] font-black uppercase tracking-widest text-muted-foreground/50">Conversão</th>
+                                    <th className="px-4 py-2.5 text-right text-[9px] font-black uppercase tracking-widest text-muted-foreground/50">CPL</th>
+                                    <th className="px-4 py-2.5 text-right text-[9px] font-black uppercase tracking-widest text-muted-foreground/50">Gasto</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {enrichedAds.length === 0 ? (
+                                    <tr><td colSpan={6} className="text-center py-6 text-muted-foreground text-[11px]">Nenhum anúncio encontrado ou rankings não disponíveis.</td></tr>
+                                  ) : enrichedAds.map((ad: any) => {
+                                    const stats = periodStats.find((p: any) => p.entity_type === 'ad' && p.entity_id === ad.id);
+                                    
+                                    const formatRanking = (val: string) => {
+                                      if (!val) return <span className="text-muted-foreground/40">—</span>;
+                                      if (val.includes("BELOW")) return <span className="text-red-400 bg-red-400/10 border border-red-400/20 px-2 py-0.5 rounded uppercase text-[8px] font-black">Abaixo da Média</span>;
+                                      if (val.includes("ABOVE")) return <span className="text-green-400 bg-green-400/10 border border-green-400/20 px-2 py-0.5 rounded uppercase text-[8px] font-black">Acima da Média</span>;
+                                      return <span className="text-yellow-400 bg-yellow-400/10 border border-yellow-400/20 px-2 py-0.5 rounded uppercase text-[8px] font-black">Na Média</span>;
+                                    };
+
+                                    return (
+                                      <tr key={ad.id} className="border-b border-white/[0.03] hover:bg-white/[0.02] transition-colors">
+                                        <td className="px-4 py-3">
+                                          <div className="flex items-center gap-2">
+                                            <div className={`h-1.5 w-1.5 rounded-full flex-shrink-0 ${ad.status?.toUpperCase() === "ACTIVE" ? "bg-green-400" : "bg-white/20"}`}/>
+                                            <p className="font-semibold text-[11px] text-foreground max-w-[200px] truncate">{ad.name}</p>
+                                          </div>
+                                        </td>
+                                        <td className="px-4 py-3 text-center">{formatRanking(stats?.quality_ranking)}</td>
+                                        <td className="px-4 py-3 text-center">{formatRanking(stats?.engagement_rate_ranking)}</td>
+                                        <td className="px-4 py-3 text-center">{formatRanking(stats?.conversion_rate_ranking)}</td>
+                                        <td className="px-4 py-3 text-right">
+                                          <span className="font-mono font-bold text-[11px] text-primary">{ad.t.cpl > 0 ? `R$ ${ad.t.cpl.toFixed(2)}` : "—"}</span>
+                                        </td>
+                                        <td className="px-4 py-3 text-right">
+                                          <span className="font-mono font-bold text-[11px] text-muted-foreground">R$ {fmtBRL(ad.t.cost)}</span>
+                                        </td>
+                                      </tr>
+                                    );
+                                  })}
+                                </tbody>
+                              </table>
+                            </div>
+                          </motion.div>
+                        </div>
                       )}
 
                       {/* Charts */}
@@ -2403,19 +2553,60 @@ function MetricasCampanhasPage() {
                     </ChartCard>
                   )}
 
-                  {/* Heatmap Horário */}
-                  {breakdowns.hourlyData.length > 0 && (
+                  {/* Heatmap Horário (7x24) */}
+                  {breakdowns.heatMapData && breakdowns.heatMapData.length === 7 && (
                     <div className="lg:col-span-2">
-                      <ChartCard icon={<Zap className="h-4 w-4 text-yellow-400"/>} title="Conversões por Hora do Dia" context="Horários de pico de conversão — programe seus anúncios para entregar mais nessas janelas." modoExplicativo={modoExplicativo} didaticInfo={{ analise: "A distribuição horária das conversões ao longo das 24 horas, identificando as janelas de máximo engajamento e receptividade do público.", decisao: "Ative o agendamento de anúncios no Gerenciador de Anúncios do Meta para intensificar a entrega nas 3—4 horas de maior pico. Reduza o bid ou pause nos horários de madrugada com zero resultado para otimizar o orçamento diário." }}>
-                        <ResponsiveContainer width="100%" height={120}>
-                          <BarChart data={breakdowns.hourlyData}>
-                            <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)"/>
-                            <XAxis dataKey="hour" tick={{ fontSize: 8, fill: "rgba(255,255,255,0.35)" }} axisLine={false} tickLine={false} tickFormatter={(v: number) => `${v}h`}/>
-                            <YAxis tick={{ fontSize: 8, fill: "rgba(255,255,255,0.35)" }} axisLine={false} tickLine={false} width={25}/>
-                            <Tooltip content={<CustomTooltip/>}/>
-                            <Bar dataKey="conv" name="Conversões" fill="#eab308" radius={[2,2,0,0]} opacity={0.85}/>
-                          </BarChart>
-                        </ResponsiveContainer>
+                      <ChartCard icon={<Zap className="h-4 w-4 text-yellow-400"/>} title="Densidade de Conversões (Mapa de Calor 7x24)" context="Custo por Lead (CPL) por dia e horário — programe seus anúncios para entregar mais nessas janelas." modoExplicativo={modoExplicativo} didaticInfo={{ analise: "A distribuição de custos e conversões ao longo de todos os horários da semana. Tons de verde indicam horários com baixo CPL (eficientes). Tons de vermelho indicam CPL alto (caros).", decisao: "Programe as campanhas no Meta Ads para pausar nas madrugadas sem conversões e concentre o orçamento nos blocos verdes de alta tração." }}>
+                        <div className="w-full mt-3 overflow-x-auto pb-4">
+                          <div className="min-w-[600px] flex flex-col gap-1 text-[9px] font-mono">
+                            <div className="flex gap-1 mb-1 ml-8">
+                              {Array.from({ length: 24 }).map((_, h) => (
+                                <div key={h} className="flex-1 text-center text-muted-foreground/60">{h}h</div>
+                              ))}
+                            </div>
+                            {["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"].map((dayName, d) => (
+                              <div key={d} className="flex gap-1 items-center">
+                                <div className="w-7 text-right pr-2 text-muted-foreground font-semibold">{dayName}</div>
+                                {breakdowns.heatMapData[d].map((cell: any, h: number) => {
+                                  const cpl = cell.cpl;
+                                  const conv = cell.conv;
+                                  let bgColor = "bg-white/[0.02]";
+                                  if (conv > 0) {
+                                    if (avgCpl > 0 && cpl < avgCpl * 0.7) bgColor = "bg-green-500/80";
+                                    else if (avgCpl > 0 && cpl < avgCpl * 1.3) bgColor = "bg-green-500/40";
+                                    else bgColor = "bg-red-500/60";
+                                  } else if (cell.cost > 0) {
+                                    bgColor = "bg-red-500/20";
+                                  }
+
+                                  return (
+                                    <div 
+                                      key={h} 
+                                      className={`flex-1 h-6 rounded-sm ${bgColor} flex items-center justify-center transition-all hover:ring-1 hover:ring-white/50 cursor-crosshair group relative`}
+                                    >
+                                      {conv > 0 && <span className="text-[7px] text-white/80">{conv}</span>}
+                                      {/* Tooltip on hover */}
+                                      <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block w-max bg-black/90 border border-white/10 p-2 rounded-lg z-50 shadow-xl pointer-events-none">
+                                        <p className="font-bold text-white mb-1">{dayName}, {h}h - {h+1}h</p>
+                                        <p className="text-white/70">Conversões: <span className="text-white font-bold">{conv}</span></p>
+                                        <p className="text-white/70">Gasto: <span className="text-white font-bold">R$ {cell.cost.toFixed(2)}</span></p>
+                                        <p className="text-white/70">CPL: <span className="text-white font-bold">R$ {cpl.toFixed(2)}</span></p>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            ))}
+                          </div>
+                          {avgCpl > 0 && (
+                            <div className="mt-4 flex items-center justify-center gap-4 text-[9px] text-muted-foreground">
+                              <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-sm bg-green-500/80"></div><span>CPL Ótimo (&lt; R$ {(avgCpl*0.7).toFixed(2)})</span></div>
+                              <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-sm bg-green-500/40"></div><span>CPL Médio</span></div>
+                              <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-sm bg-red-500/60"></div><span>CPL Alto (&gt; R$ {(avgCpl*1.3).toFixed(2)})</span></div>
+                              <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-sm bg-red-500/20"></div><span>Gasto sem Conversão</span></div>
+                            </div>
+                          )}
+                        </div>
                       </ChartCard>
                     </div>
                   )}

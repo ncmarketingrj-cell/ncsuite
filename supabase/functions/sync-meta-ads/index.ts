@@ -882,7 +882,7 @@ serve(async (req) => {
           }),
           metaGetPaginated(`/${accountId}/insights`, token, {
             level: "ad",
-            fields: "ad_id,campaign_id,spend,reach,impressions,frequency,actions,inline_link_clicks,date_start,date_stop",
+            fields: "ad_id,campaign_id,spend,reach,impressions,frequency,actions,inline_link_clicks,quality_ranking,engagement_rate_ranking,conversion_rate_ranking,date_start,date_stop",
             limit: "500",
             ...timeParams
           })
@@ -949,6 +949,9 @@ serve(async (req) => {
             spend:        parseFloat(row.spend || "0") || 0,
             conversions:  extractConversions(row.actions, campaignObjectiveMap.get(row.campaign_id), parseInt(row.reach) || 0),
             clicks:       extractClicks(row.actions, row.inline_link_clicks),
+            quality_ranking: row.quality_ranking || null,
+            engagement_rate_ranking: row.engagement_rate_ranking || null,
+            conversion_rate_ranking: row.conversion_rate_ranking || null,
             synced_at:    new Date().toISOString(),
           })
         })
@@ -1017,6 +1020,57 @@ serve(async (req) => {
           .upsert(hourlyToUpsert, { onConflict: "campaign_id,date,hour" })
         if (error) console.error(`[SYNC] Erro hourly_metrics ${accountId}:`, error.message)
       }
+
+      // Upsert Placement Metrics
+      const placementToUpsert = (placementData || []).map(row => {
+        const campaign_id = idMap.get(row.campaign_id)
+        if (!campaign_id) return null
+        return {
+          campaign_id,
+          ad_account_id: accountId,
+          date: row.date_start,
+          platform: row.publisher_platform || "facebook",
+          placement: row.placement || "unknown",
+          impressions: parseInt(row.impressions) || 0,
+          clicks: extractClicks(row.actions, row.inline_link_clicks),
+          spend: parseFloat(row.spend) || 0,
+          conversions: extractConversions(row.actions, campaignObjectiveMap.get(row.campaign_id), parseInt(row.reach) || 0),
+          reach: parseInt(row.reach) || 0
+        }
+      }).filter(Boolean)
+
+      if (placementToUpsert.length > 0) {
+        const { error } = await supabase
+          .from("meta_placement_metrics")
+          .upsert(placementToUpsert, { onConflict: "campaign_id,date,platform,placement" })
+        if (error) console.error(`[SYNC] Erro placement_metrics ${accountId}:`, error.message)
+      }
+
+      // Upsert Device Metrics
+      const deviceToUpsert = (deviceData || []).map(row => {
+        const campaign_id = idMap.get(row.campaign_id)
+        if (!campaign_id) return null
+        return {
+          campaign_id,
+          ad_account_id: accountId,
+          date: row.date_start,
+          platform: row.publisher_platform || "facebook",
+          device: row.impression_device || "unknown",
+          impressions: parseInt(row.impressions) || 0,
+          clicks: extractClicks(row.actions, row.inline_link_clicks),
+          spend: parseFloat(row.spend) || 0,
+          conversions: extractConversions(row.actions, campaignObjectiveMap.get(row.campaign_id), parseInt(row.reach) || 0),
+          reach: parseInt(row.reach) || 0
+        }
+      }).filter(Boolean)
+
+      if (deviceToUpsert.length > 0) {
+        const { error } = await supabase
+          .from("meta_device_metrics")
+          .upsert(deviceToUpsert, { onConflict: "campaign_id,date,platform,device" })
+        if (error) console.error(`[SYNC] Erro device_metrics ${accountId}:`, error.message)
+      }
+
 
       // Upsert region metrics
       const regionToUpsert = (region || []).map(row => {
