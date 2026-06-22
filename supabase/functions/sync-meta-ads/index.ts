@@ -414,13 +414,12 @@ function extractClicks(actions: any[] = [], inlineLinkClicks: string | number = 
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
 
-  const { user: authUser } = await requireAuth(req);
-
   const syncId = crypto.randomUUID()
   let syncHistoryId: string | null = null
   console.log(`[SYNC ${syncId}] Iniciando sincronização NC Performance...`)
 
   try {
+    const { user: authUser } = await requireAuth(req);
     // 1. Ler parâmetros
     // Padrão: últimos 2 dias (hoje + ontem) no fuso de Brasília
     const brtFormatter = new Intl.DateTimeFormat('pt-BR', {
@@ -1222,9 +1221,10 @@ serve(async (req) => {
       }).neq("id", "00000000-0000-0000-0000-000000000000")
     } catch(_) {}
 
-    return new Response(JSON.stringify({ error: error.message, sync_id: syncId }), {
+    // Return status 500 with detailed error so the frontend can display it
+    return new Response(JSON.stringify({ error: error.stack || error.message, sync_id: syncId }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
-      status: 200
+      status: 500
     })
   }
 })

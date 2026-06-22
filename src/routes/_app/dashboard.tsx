@@ -35,7 +35,7 @@ const HUB_GROUPS = [
     label: "Núcleo de Performance",
     color: "text-primary",
     items: [
-      { to: "/multicanal", icon: BarChart3, title: "Performance Meta", desc: "Visão consolidada multiconas.", tag: "LIVE", tagColor: "bg-success/20 text-success" },
+      { to: "/metricas", icon: BarChart3, title: "Performance Meta", desc: "Visão consolidada multiconas.", tag: "LIVE", tagColor: "bg-success/20 text-success" },
       { to: "/metricas", icon: LineChart, title: "Controle de KPIs", desc: "Análise de tendências e ROAS.", tag: "DATA", tagColor: "bg-primary/20 text-primary" },
     ]
   },
@@ -43,7 +43,8 @@ const HUB_GROUPS = [
     label: "Operação Estratégica",
     color: "text-violet-600 dark:text-violet-400",
     items: [
-      { to: "/campanhas", icon: Megaphone, title: "Gestão de Ads", desc: "Controle total de campanhas.", tag: "OPS", tagColor: "bg-violet-500/20 text-violet-600 dark:text-violet-400" },
+      { to: "/metricas", icon: Megaphone, title: "Gestão de Ads", desc: "Controle total de campanhas.", tag: "OPS", tagColor: "bg-violet-500/20 text-violet-600 dark:text-violet-400" },
+      { to: "/auditoria", icon: Activity, title: "Auditoria Hub", desc: "Análise avançada de leilões.", tag: "AUDIT", tagColor: "bg-blue-500/20 text-blue-500" },
       { to: "/upload", icon: Upload, title: "Extração de Dados", highlight: true, desc: "Processamento de planilhas.", tag: "SYNC", tagColor: "bg-amber-500/20 text-amber-500" },
     ]
   },
@@ -130,7 +131,7 @@ function Dashboard() {
 
       let metricsQuery = (supabase as any).from("metrics").select(`
         campaign_id, cost, conversions, impressions, clicks, reach, date,
-        campaigns!inner(ad_account_id, client_id, name)
+        campaigns!inner(ad_account_id, client_id, name, objective)
       `).gte('date', prevStartStr).lte('date', endStr);
 
       if (selectedAccountId !== "all") {
@@ -145,38 +146,51 @@ function Dashboard() {
 
       const chartMap = new Map();
       const campaignsMap = new Map();
-      let currentPeriod = { cost: 0, conversions: 0, clicks: 0, impressions: 0, reach: 0 };
-      let previousPeriod = { cost: 0, conversions: 0, clicks: 0, impressions: 0, reach: 0 };
+      let currentPeriod = { cost: 0, results: 0, trueConversions: 0, clicks: 0, impressions: 0, reach: 0 };
+      let previousPeriod = { cost: 0, results: 0, trueConversions: 0, clicks: 0, impressions: 0, reach: 0 };
+
+      // Ensure all dates in interval exist in chartMap to prevent broken lines
+      const { eachDayOfInterval } = await import("date-fns");
+      const daysInInterval = eachDayOfInterval({ start: new Date(startStr + "T00:00:00"), end: new Date(endStr + "T00:00:00") });
+      daysInInterval.forEach((d: any) => {
+        const ds = getLocalDateStr(d);
+        chartMap.set(ds, { date: ds, cost: 0, conversions: 0, clicks: 0 });
+      });
 
       (metrics || []).forEach((m: any) => {
         if (!m.date) return;
         
-        // Comparação robusta de string ISO pura YYYY-MM-DD (livre de fuso horário do navegador)
         const isCurrent = m.date >= startStr && m.date <= endStr;
         const isPrevious = m.date >= prevStartStr && m.date < startStr;
+        
+        const objective = m.campaigns?.objective;
+        const isVanity = objective ? ["OUTCOME_AWARENESS", "VIDEO_VIEWS", "OUTCOME_ENGAGEMENT", "LINK_CLICKS", "OUTCOME_TRAFFIC"].includes(objective) : false;
         
         if (isCurrent) {
           const date = m.date;
           const current = chartMap.get(date) || { date, cost: 0, conversions: 0, clicks: 0 };
           current.cost += Number(m.cost || 0);
-          current.conversions += Number(m.conversions || 0);
+          current.conversions += isVanity ? 0 : Number(m.conversions || 0); // Only True Conversions on the chart
           current.clicks += Number(m.clicks || 0);
           chartMap.set(date, current);
 
           const campId = m.campaign_id;
-          const camp = campaignsMap.get(campId) || { id: campId, name: m.campaigns?.name || "Desconhecida", cost: 0, conversions: 0 };
+          const camp = campaignsMap.get(campId) || { id: campId, name: m.campaigns?.name || "Desconhecida", objective, cost: 0, results: 0, trueConversions: 0 };
           camp.cost += Number(m.cost || 0);
-          camp.conversions += Number(m.conversions || 0);
+          camp.results += Number(m.conversions || 0);
+          if (!isVanity) camp.trueConversions += Number(m.conversions || 0);
           campaignsMap.set(campId, camp);
 
           currentPeriod.cost += Number(m.cost || 0);
-          currentPeriod.conversions += Number(m.conversions || 0);
+          currentPeriod.results += Number(m.conversions || 0);
+          if (!isVanity) currentPeriod.trueConversions += Number(m.conversions || 0);
           currentPeriod.clicks += Number(m.clicks || 0);
           currentPeriod.impressions += Number(m.impressions || 0);
           currentPeriod.reach += Number(m.reach || m.impressions * 0.8 || 0);
         } else if (isPrevious) {
           previousPeriod.cost += Number(m.cost || 0);
-          previousPeriod.conversions += Number(m.conversions || 0);
+          previousPeriod.results += Number(m.conversions || 0);
+          if (!isVanity) previousPeriod.trueConversions += Number(m.conversions || 0);
           previousPeriod.clicks += Number(m.clicks || 0);
           previousPeriod.impressions += Number(m.impressions || 0);
         }
@@ -185,31 +199,39 @@ function Dashboard() {
       const chartData = Array.from(chartMap.values()).sort((a, b) => a.date.localeCompare(b.date));
       const campaignsData = Array.from(campaignsMap.values()).sort((a, b) => b.cost - a.cost);
       
-      const barData = campaignsData.slice(0, 8).map(c => ({ name: c.name.slice(0, 16).toUpperCase(), Gasto: c.cost, Resultados: c.conversions }));
+      const barData = campaignsData.slice(0, 8).map(c => ({ name: c.name.slice(0, 16).toUpperCase(), Gasto: c.cost, Resultados: c.results }));
       const pieData = campaignsData.filter(c => c.cost > 0).slice(0, 6).map(c => ({ name: c.name, value: c.cost }));
 
       const calcTrend = (curr: number, prev: number) => {
-        if (prev === 0) return curr > 0 ? "+100%" : "0%";
+        if (prev === 0) return curr > 0 ? "—" : "0%";
         const diff = ((curr - prev) / prev) * 100;
         return `${diff > 0 ? '+' : ''}${diff.toFixed(1)}%`;
       };
 
-      const cplCurr = currentPeriod.conversions > 0 ? currentPeriod.cost / currentPeriod.conversions : 0;
-      const cplPrev = previousPeriod.conversions > 0 ? previousPeriod.cost / previousPeriod.conversions : 0;
+      const cplCurr = currentPeriod.trueConversions > 0 ? currentPeriod.cost / currentPeriod.trueConversions : 0;
+      const cplPrev = previousPeriod.trueConversions > 0 ? previousPeriod.cost / previousPeriod.trueConversions : 0;
       const cplTrendVal = cplPrev === 0 ? 0 : ((cplCurr - cplPrev) / cplPrev) * 100;
 
       const funnelData = [
         { id: "reach", step: "Alcance", value: Math.max(currentPeriod.reach, currentPeriod.impressions * 0.8), fill: "hsl(var(--primary) / 0.5)" },
         { id: "clicks", step: "Cliques", value: currentPeriod.clicks, fill: "hsl(var(--primary) / 0.8)" },
-        { id: "convs", step: "Conversões", value: currentPeriod.conversions, fill: "hsl(var(--primary))" }
+        { id: "convs", step: "Conversões", value: currentPeriod.trueConversions, fill: "hsl(var(--primary))" }
       ];
 
+      const isVanity = (obj: string) => ["OUTCOME_AWARENESS", "VIDEO_VIEWS", "OUTCOME_ENGAGEMENT", "LINK_CLICKS", "OUTCOME_TRAFFIC"].includes(obj);
+
       const riskReturn = campaignsData.map(c => {
-        const cpa = c.conversions > 0 ? c.cost / c.conversions : c.cost;
+        const isVanityObjective = isVanity(c.objective);
+        const cpa = c.trueConversions > 0 ? c.cost / c.trueConversions : c.cost;
         let type = "Estável";
-        if (c.conversions === 0 && c.cost > 30) type = "Ralo";
-        else if (c.conversions > 0 && cpa > cplCurr * 1.5) type = "Risco";
-        else if (c.conversions > 0 && cpa < cplCurr * 0.7) type = "Oportunidade";
+        
+        if (isVanityObjective) {
+          type = "Ignorado";
+        } else {
+          if (c.trueConversions === 0 && c.cost > 30) type = "Ralo";
+          else if (c.trueConversions > 0 && cpa > cplCurr * 1.5) type = "Risco";
+          else if (c.trueConversions > 0 && cpa < cplCurr * 0.7) type = "Oportunidade";
+        }
         
         return { ...c, cpa, type };
       });
@@ -222,7 +244,7 @@ function Dashboard() {
       if (cplTrendVal > 30) healthScore -= 20;
       if (cplTrendVal < 0) healthScore += 10;
       
-      const convRate = currentPeriod.clicks > 0 ? currentPeriod.conversions / currentPeriod.clicks : 0;
+      const convRate = currentPeriod.clicks > 0 ? currentPeriod.trueConversions / currentPeriod.clicks : 0;
       if (convRate < 0.01) healthScore -= 10;
       if (opportunities.length === 0 && risks.length > 0) healthScore -= 10;
 
@@ -236,12 +258,12 @@ function Dashboard() {
         opportunities,
         risks,
         healthScore,
-        totals: currentPeriod,
+        totals: { ...currentPeriod, conversions: currentPeriod.trueConversions },
         trends: {
           cost: calcTrend(currentPeriod.cost, previousPeriod.cost),
           costPositive: currentPeriod.cost > previousPeriod.cost,
-          conversions: calcTrend(currentPeriod.conversions, previousPeriod.conversions),
-          conversionsPositive: currentPeriod.conversions >= previousPeriod.conversions,
+          conversions: calcTrend(currentPeriod.trueConversions, previousPeriod.trueConversions),
+          conversionsPositive: currentPeriod.trueConversions >= previousPeriod.trueConversions,
           clicks: calcTrend(currentPeriod.clicks, previousPeriod.clicks),
           clicksPositive: currentPeriod.clicks >= previousPeriod.clicks,
           cpl: `${cplTrendVal > 0 ? '+' : ''}${cplTrendVal.toFixed(1)}%`,
