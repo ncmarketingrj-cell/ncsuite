@@ -44,7 +44,8 @@ export function SyncButton({ mode = "quick" }: SyncButtonProps) {
     enabled: !!user
   });
 
-  const isAdmin = profile?.role === "admin" || (user?.email && ["nc.marketingrj@gmail.com"].includes(user.email));
+  const ADMIN_EMAILS = ["nc.marketingrj@gmail.com", "hc.marketing.dgt@gmail.com"];
+  const isAdmin = profile?.role === "admin" || (user?.email && ADMIN_EMAILS.includes(user.email));
 
   const { data: lastSyncData, refetch: refetchSyncDate } = useQuery({
     queryKey: ["last-sync-date"],

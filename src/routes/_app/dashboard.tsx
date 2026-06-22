@@ -1,7 +1,7 @@
 ﻿import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { motion, AnimatePresence } from "framer-motion";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef, useEffect } from "react";
 import {
   Upload, FileText, BarChart3, Settings, ArrowUpRight, Activity,
   Sparkles, Layers, Cpu, Link2, Megaphone, LineChart, Palette, Zap,
@@ -65,6 +65,17 @@ function Dashboard() {
   const [selectedClientId, setSelectedClientId] = useState<string>("all");
   const [showAccounts, setShowAccounts] = useState(false);
   const [showClients, setShowClients] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setShowAccounts(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
   
   const { dateFrom, dateTo, setDateFrom, setDateTo } = useGlobalDate();
 
@@ -1414,6 +1425,7 @@ function StatCard({ label, value, prefix = "", icon: Icon, trend, isPositive }: 
     </div>
   );
 }
+
 
 
 
