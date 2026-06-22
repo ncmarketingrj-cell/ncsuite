@@ -1,4 +1,4 @@
-﻿// src/routes/_app/metricas.tsx
+// src/routes/_app/metricas.tsx
 // NC Performance Suite — Métricas & Campanhas (Página Unificada)
 
 import { createFileRoute, redirect, useSearch, useNavigate, useLocation } from "@tanstack/react-router";
@@ -468,7 +468,8 @@ function MetricasCampanhasPage() {
     },
     enabled: !!user?.id,
   });
-  const isAdmin = (user?.email ? ADMIN_EMAILS.includes(user.email) : false) || profileData?.role === "admin";`n  const hasAccess = isAdmin || !!profileData?.permissions?.metricas;
+  const isAdmin = (user?.email ? ADMIN_EMAILS.includes(user.email) : false) || profileData?.role === "admin";
+  const hasAccess = isAdmin || !!profileData?.permissions?.metricas;
 
   // â"€â"€ Estado global compartilhado â"€â"€
   const [view,          setView]          = useState<ViewMode>("gestao");
