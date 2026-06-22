@@ -9,16 +9,22 @@ export function LeadDrawer({
   lead,
   open,
   onClose,
-  onUpdate
+  onUpdate,
+  readOnly = false
 }: {
   lead: any;
   open: boolean;
   onClose: () => void;
   onUpdate: () => void;
+  readOnly?: boolean;
 }) {
   const { user } = useAuth();
   const [activities, setActivities] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  
+  const [sdrs, setSdrs] = useState<any[]>([]);
+  const [assignedTo, setAssignedTo] = useState<string | null>(lead?.assigned_to || null);
+  const [updatingAssignment, setUpdatingAssignment] = useState(false);
   
   const [newNote, setNewNote] = useState("");
   const [addingNote, setAddingNote] = useState(false);
@@ -29,9 +35,47 @@ export function LeadDrawer({
   useEffect(() => {
     if (open && lead) {
       loadActivities();
+      loadSdrs();
+      setAssignedTo(lead.assigned_to || null);
       setAiSummary(null);
     }
   }, [open, lead]);
+
+  const loadSdrs = async () => {
+    if (readOnly) return;
+    const { data } = await supabase
+      .from("profiles")
+      .select("id, full_name")
+      .in("role", ["agency_sdr", "admin"])
+      .order("full_name");
+    if (data) setSdrs(data);
+  };
+
+  const handleAssign = async (newSdrId: string | null) => {
+    if (readOnly) return;
+    setUpdatingAssignment(true);
+    const { error } = await supabase
+      .from("crm_leads")
+      .update({ assigned_to: newSdrId, updated_at: new Date().toISOString() })
+      .eq("id", lead.id);
+
+    if (error) {
+      toast.error("Erro ao atribuir lead.");
+    } else {
+      toast.success("Responsável atualizado com sucesso.");
+      setAssignedTo(newSdrId);
+      // Auto-register activity
+      const sdrName = newSdrId ? sdrs.find(s => s.id === newSdrId)?.full_name : "Ninguém";
+      await supabase.from("crm_activities").insert({
+        lead_id: lead.id,
+        user_id: user?.id,
+        type: "Atribuição",
+        description: `Lead atribuído a: ${sdrName}`
+      });
+      onUpdate();
+    }
+    setUpdatingAssignment(false);
+  };
 
   const loadActivities = async () => {
     setLoading(true);
@@ -50,6 +94,7 @@ export function LeadDrawer({
   };
 
   const handleAddActivity = async (type: string, description: string) => {
+    if (readOnly) return;
     if (!description.trim()) return;
     setAddingNote(true);
     
@@ -136,27 +181,62 @@ export function LeadDrawer({
             {/* Content */}
             <div className="flex-1 overflow-y-auto p-6 space-y-8 custom-scrollbar">
               
-              {/* Contatos Rápidos */}
-              <div className="flex gap-3">
-                <button 
-                  onClick={() => handleAddActivity("WhatsApp", "Tentativa de contato via WhatsApp iniciada.")}
-                  className="flex-1 flex flex-col items-center justify-center p-3 rounded-xl bg-[#25D366]/10 text-[#25D366] hover:bg-[#25D366]/20 transition-colors border border-[#25D366]/20"
-                >
-                  <MessageSquare className="h-5 w-5 mb-1" />
-                  <span className="text-xs font-bold">WhatsApp</span>
-                </button>
-                <button 
-                  onClick={() => handleAddActivity("Ligação", "Ligação efetuada para o cliente.")}
-                  className="flex-1 flex flex-col items-center justify-center p-3 rounded-xl bg-blue-500/10 text-blue-500 hover:bg-blue-500/20 transition-colors border border-blue-500/20"
-                >
-                  <Phone className="h-5 w-5 mb-1" />
-                  <span className="text-xs font-bold">Ligar</span>
-                </button>
-                <button className="flex-1 flex flex-col items-center justify-center p-3 rounded-xl bg-purple-500/10 text-purple-500 hover:bg-purple-500/20 transition-colors border border-purple-500/20">
-                  <CalendarIcon className="h-5 w-5 mb-1" />
-                  <span className="text-xs font-bold">Agendar</span>
-                </button>
+              {/* Atribuição de Lead (SDR) */}
+              <div className="flex items-center justify-between p-3 rounded-xl bg-black/10 border border-white/5">
+                <div className="space-y-0.5">
+                  <p className="text-[10px] uppercase tracking-wider font-bold text-muted-foreground">Responsável (SDR)</p>
+                  {readOnly ? (
+                    <p className="text-sm font-bold text-foreground">
+                      {assignedTo ? lead.profiles?.full_name || sdrs.find(s => s.id === assignedTo)?.full_name || "SDR Atribuído" : "Sem SDR atribuído"}
+                    </p>
+                  ) : (
+                    <select 
+                      value={assignedTo || ""}
+                      onChange={(e) => handleAssign(e.target.value || null)}
+                      disabled={updatingAssignment}
+                      className="bg-transparent border-none p-0 focus:outline-none text-sm font-bold text-primary cursor-pointer w-full disabled:opacity-50"
+                    >
+                      <option value="" className="bg-card text-foreground">Não Atribuído</option>
+                      {sdrs.map(sdr => (
+                        <option key={sdr.id} value={sdr.id} className="bg-card text-foreground">{sdr.full_name}</option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+                {!readOnly && !assignedTo && (
+                  <button 
+                    onClick={() => handleAssign(user?.id || null)}
+                    disabled={updatingAssignment}
+                    className="px-3 py-1.5 rounded-lg bg-primary/20 text-primary text-xs font-bold hover:bg-primary/30 transition-colors disabled:opacity-50"
+                  >
+                    Puxar p/ mim
+                  </button>
+                )}
               </div>
+              
+              {/* Contatos Rápidos */}
+              {!readOnly && (
+                <div className="flex gap-3">
+                  <button 
+                    onClick={() => handleAddActivity("WhatsApp", "Tentativa de contato via WhatsApp iniciada.")}
+                    className="flex-1 flex flex-col items-center justify-center p-3 rounded-xl bg-[#25D366]/10 text-[#25D366] hover:bg-[#25D366]/20 transition-colors border border-[#25D366]/20"
+                  >
+                    <MessageSquare className="h-5 w-5 mb-1" />
+                    <span className="text-xs font-bold">WhatsApp</span>
+                  </button>
+                  <button 
+                    onClick={() => handleAddActivity("Ligação", "Ligação efetuada para o cliente.")}
+                    className="flex-1 flex flex-col items-center justify-center p-3 rounded-xl bg-blue-500/10 text-blue-500 hover:bg-blue-500/20 transition-colors border border-blue-500/20"
+                  >
+                    <Phone className="h-5 w-5 mb-1" />
+                    <span className="text-xs font-bold">Ligar</span>
+                  </button>
+                  <button className="flex-1 flex flex-col items-center justify-center p-3 rounded-xl bg-purple-500/10 text-purple-500 hover:bg-purple-500/20 transition-colors border border-purple-500/20">
+                    <CalendarIcon className="h-5 w-5 mb-1" />
+                    <span className="text-xs font-bold">Agendar</span>
+                  </button>
+                </div>
+              )}
 
               {/* Copiloto Victoria AI */}
               <div className="bg-gradient-to-br from-violet-500/10 to-fuchsia-500/10 border border-violet-500/20 rounded-2xl p-4">
@@ -165,7 +245,7 @@ export function LeadDrawer({
                     <Sparkles className="h-4 w-4" />
                     <span className="text-xs font-black uppercase tracking-widest">SDR Copilot</span>
                   </div>
-                  {!aiSummary && (
+                  {!aiSummary && !readOnly && (
                     <button 
                       onClick={handleGenerateCopilot}
                       disabled={loadingAi}
@@ -191,24 +271,26 @@ export function LeadDrawer({
               </div>
 
               {/* Registrar Nova Atividade */}
-              <div>
-                <p className="text-xs font-black uppercase tracking-widest text-muted-foreground mb-3">Registrar Nota</p>
-                <div className="flex flex-col gap-2">
-                  <textarea
-                    value={newNote}
-                    onChange={(e) => setNewNote(e.target.value)}
-                    placeholder="O que foi conversado?"
-                    className="w-full bg-black/20 border border-white/10 rounded-xl p-3 text-sm focus:outline-none focus:ring-1 focus:ring-primary min-h-[80px] resize-none"
-                  />
-                  <button
-                    onClick={() => handleAddActivity("Nota", newNote)}
-                    disabled={addingNote || !newNote.trim()}
-                    className="self-end bg-primary/20 text-primary hover:bg-primary/30 px-4 py-1.5 rounded-lg text-xs font-bold transition-colors disabled:opacity-50"
-                  >
-                    Salvar Nota
-                  </button>
+              {!readOnly && (
+                <div>
+                  <p className="text-xs font-black uppercase tracking-widest text-muted-foreground mb-3">Registrar Nota</p>
+                  <div className="flex flex-col gap-2">
+                    <textarea
+                      value={newNote}
+                      onChange={(e) => setNewNote(e.target.value)}
+                      placeholder="O que foi conversado?"
+                      className="w-full bg-black/20 border border-white/10 rounded-xl p-3 text-sm focus:outline-none focus:ring-1 focus:ring-primary min-h-[80px] resize-none"
+                    />
+                    <button
+                      onClick={() => handleAddActivity("Nota", newNote)}
+                      disabled={addingNote || !newNote.trim()}
+                      className="self-end bg-primary/20 text-primary hover:bg-primary/30 px-4 py-1.5 rounded-lg text-xs font-bold transition-colors disabled:opacity-50"
+                    >
+                      Salvar Nota
+                    </button>
+                  </div>
                 </div>
-              </div>
+              )}
 
               {/* Timeline */}
               <div>

@@ -1091,20 +1091,201 @@ function TabConta() {
 }
 
 const PERMISSION_PAGES = [
-  { key: "metricas",       label: "Métricas"       },
-  { key: "automacoes",     label: "Automações"     },
-  { key: "criar_usuarios", label: "Criar Usuários" },
-  { key: "agente",         label: "Agente IA"      },
+  { key: "dashboard",      label: "Command Center"  },
+  { key: "metricas",       label: "Métricas"        },
+  { key: "clientes",       label: "Clientes"        },
+  { key: "relatorios",     label: "Relatórios"      },
+  { key: "criativos",      label: "Criativos"       },
+  { key: "social",         label: "Social Media"    },
+  { key: "automacoes",     label: "Automações"      },
+  { key: "reunioes",       label: "Reuniões"        },
+  { key: "cobrancas",      label: "Cobranças"       },
+  { key: "strategy_map",   label: "Mapa Estratégico"},
+  { key: "agente",         label: "Agente IA"       },
+  { key: "auditoria",      label: "Auditoria Hub"   },
+  { key: "criar_usuarios", label: "Gestão Usuários" },
 ] as const;
 
 const ROLE_LABEL: Record<string, string> = {
-  admin:         "ADMIN",
-  ceo:           "CEO",
-  gerente:       "GERENTE",
-  gestor_trafego:"TRÁFEGO",
-  social_media:  "SOCIAL",
-  videomaker:    "VIDEO",
-  outro:         "MEMBRO",
+  admin:           "ADMINISTRADOR",
+  diretor:         "DIRETOR",
+  ceo:             "CEO",
+  gerente:         "GERENTE",
+  gestor_trafego:  "GESTOR TRÁFEGO",
+  gestor_projetos: "GESTOR PROJETOS",
+  social_media:    "SOCIAL MEDIA",
+  desenvolvedor:   "DESENVOLVEDOR",
+  designer:        "DESIGNER",
+  sdr:             "SDR",
+  outro:           "MEMBRO",
+};
+
+const CARGO_DEFAULT_PERMISSIONS: Record<string, Record<string, "none" | "view" | "edit">> = {
+  "Gestor de Tráfego": {
+    dashboard: "edit",
+    metricas: "edit",
+    clientes: "view",
+    relatorios: "edit",
+    criativos: "edit",
+    social: "none",
+    automacoes: "edit",
+    reunioes: "none",
+    cobrancas: "none",
+    strategy_map: "edit",
+    agente: "edit",
+    auditoria: "none",
+    criar_usuarios: "none",
+  },
+  "Gestor de Projetos": {
+    dashboard: "edit",
+    metricas: "view",
+    clientes: "edit",
+    relatorios: "edit",
+    criativos: "view",
+    social: "edit",
+    automacoes: "none",
+    reunioes: "edit",
+    cobrancas: "none",
+    strategy_map: "edit",
+    agente: "edit",
+    auditoria: "none",
+    criar_usuarios: "none",
+  },
+  "Social Media": {
+    dashboard: "view",
+    metricas: "none",
+    clientes: "view",
+    relatorios: "edit",
+    criativos: "edit",
+    social: "edit",
+    automacoes: "none",
+    reunioes: "none",
+    cobrancas: "none",
+    strategy_map: "edit",
+    agente: "view",
+    auditoria: "none",
+    criar_usuarios: "none",
+  },
+  "Desenvolvedor": {
+    dashboard: "edit",
+    metricas: "edit",
+    clientes: "edit",
+    relatorios: "edit",
+    criativos: "edit",
+    social: "edit",
+    automacoes: "edit",
+    reunioes: "edit",
+    cobrancas: "edit",
+    strategy_map: "edit",
+    agente: "edit",
+    auditoria: "edit",
+    criar_usuarios: "edit",
+  },
+  "Designer": {
+    dashboard: "view",
+    metricas: "none",
+    clientes: "view",
+    relatorios: "none",
+    criativos: "edit",
+    social: "view",
+    automacoes: "none",
+    reunioes: "none",
+    cobrancas: "none",
+    strategy_map: "edit",
+    agente: "view",
+    auditoria: "none",
+    criar_usuarios: "none",
+  },
+  "Diretor": {
+    dashboard: "edit",
+    metricas: "edit",
+    clientes: "edit",
+    relatorios: "edit",
+    criativos: "edit",
+    social: "edit",
+    automacoes: "edit",
+    reunioes: "edit",
+    cobrancas: "edit",
+    strategy_map: "edit",
+    agente: "edit",
+    auditoria: "edit",
+    criar_usuarios: "edit",
+  },
+  "CEO": {
+    dashboard: "edit",
+    metricas: "edit",
+    clientes: "edit",
+    relatorios: "edit",
+    criativos: "edit",
+    social: "edit",
+    automacoes: "edit",
+    reunioes: "edit",
+    cobrancas: "edit",
+    strategy_map: "edit",
+    agente: "edit",
+    auditoria: "edit",
+    criar_usuarios: "edit",
+  },
+  "Administrador": {
+    dashboard: "edit",
+    metricas: "edit",
+    clientes: "edit",
+    relatorios: "edit",
+    criativos: "edit",
+    social: "edit",
+    automacoes: "edit",
+    reunioes: "edit",
+    cobrancas: "edit",
+    strategy_map: "edit",
+    agente: "edit",
+    auditoria: "edit",
+    criar_usuarios: "edit",
+  },
+  "SDR": {
+    dashboard: "view",
+    metricas: "none",
+    clientes: "view",
+    relatorios: "none",
+    criativos: "none",
+    social: "none",
+    automacoes: "none",
+    reunioes: "edit",
+    cobrancas: "none",
+    strategy_map: "none",
+    agente: "view",
+    auditoria: "none",
+    criar_usuarios: "none",
+  },
+  "Gerente": {
+    dashboard: "edit",
+    metricas: "edit",
+    clientes: "edit",
+    relatorios: "edit",
+    criativos: "edit",
+    social: "edit",
+    automacoes: "view",
+    reunioes: "edit",
+    cobrancas: "none",
+    strategy_map: "edit",
+    agente: "edit",
+    auditoria: "none",
+    criar_usuarios: "none",
+  },
+  "Outros": {
+    dashboard: "view",
+    metricas: "none",
+    clientes: "none",
+    relatorios: "none",
+    criativos: "none",
+    social: "none",
+    automacoes: "none",
+    reunioes: "none",
+    cobrancas: "none",
+    strategy_map: "none",
+    agente: "none",
+    auditoria: "none",
+    criar_usuarios: "none",
+  }
 };
 
 function TabUsuarios({ isAdmin }: { isAdmin: boolean }) {
@@ -1115,6 +1296,7 @@ function TabUsuarios({ isAdmin }: { isAdmin: boolean }) {
   const [editPosition, setEditPosition] = useState("Gestor de Tráfego");
   const [editName, setEditName] = useState("");
   const [editPassword, setEditPassword] = useState("");
+  const [editPermissions, setEditPermissions] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
 
   const [showAddModal, setShowAddModal] = useState(false);
@@ -1123,10 +1305,11 @@ function TabUsuarios({ isAdmin }: { isAdmin: boolean }) {
   const [newName, setNewName] = useState("");
   const [newPosition, setNewPosition] = useState("Gestor de Tráfego");
   const [newRole, setNewRole] = useState("outro");
+  const [newPermissions, setNewPermissions] = useState<Record<string, string>>({});
   const [creating, setCreating] = useState(false);
 
-  const handleTogglePermission = async (userId: string, key: string, currentPerms: any) => {
-    const updated = { ...(currentPerms ?? {}), [key]: !currentPerms?.[key] };
+  const handleSetPermissionLevel = async (userId: string, key: string, level: string, currentPerms: any) => {
+    const updated = { ...(currentPerms ?? {}), [key]: level };
     try {
       const { error } = await (supabase as any).rpc("admin_set_user_permissions", {
         target_user_id: userId,
@@ -1141,11 +1324,15 @@ function TabUsuarios({ isAdmin }: { isAdmin: boolean }) {
 
   const POSITIONS_LIST = [
     "Gestor de Tráfego",
+    "Gestor de Projetos",
     "Social Media",
-    "Gerente",
-    "Diretor",
-    "Videomaker",
+    "Desenvolvedor",
     "Designer",
+    "Diretor",
+    "CEO",
+    "Administrador",
+    "SDR",
+    "Gerente",
     "Outros",
   ];
 
@@ -1194,6 +1381,14 @@ function TabUsuarios({ isAdmin }: { isAdmin: boolean }) {
         new_password: editPassword.trim() || null
       });
       if (error) throw error;
+
+      // Update permissions
+      const { error: permErr } = await (supabase as any).rpc("admin_set_user_permissions", {
+        target_user_id: editingUser.id,
+        new_permissions: editPermissions,
+      });
+      if (permErr) throw permErr;
+
       toast.success("Dados do usuário atualizados!");
       setEditingUser(null);
       qc.invalidateQueries({ queryKey: ["admin_users_list"] });
@@ -1231,6 +1426,18 @@ function TabUsuarios({ isAdmin }: { isAdmin: boolean }) {
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
 
+      // Now set the permissions if there are any configured
+      if (data?.user_id) {
+        const { error: permErr } = await (supabase as any).rpc("admin_set_user_permissions", {
+          target_user_id: data.user_id,
+          new_permissions: newPermissions,
+        });
+        if (permErr) {
+          console.error("Erro ao definir permissões iniciais:", permErr);
+          toast.warning("Usuário criado, mas houve um erro ao definir as permissões padrão.");
+        }
+      }
+
       toast.success("Novo usuário cadastrado com sucesso!");
       setShowAddModal(false);
       setNewEmail("");
@@ -1238,6 +1445,7 @@ function TabUsuarios({ isAdmin }: { isAdmin: boolean }) {
       setNewName("");
       setNewPosition("Gestor de Tráfego");
       setNewRole("outro");
+      setNewPermissions({});
       qc.invalidateQueries({ queryKey: ["admin_users_list"] });
     } catch (err: any) {
       toast.error(err.message || "Erro ao cadastrar usuário");
@@ -1309,7 +1517,14 @@ function TabUsuarios({ isAdmin }: { isAdmin: boolean }) {
                   ) : (
                     <>
                       <button
-                        onClick={() => { setEditingUser(u); setEditRole(u.role || "outro"); setEditPosition(u.position || POSITIONS_LIST[0]); setEditName(u.full_name || ""); setEditPassword(""); }}
+                        onClick={() => {
+                          setEditingUser(u);
+                          setEditRole(u.role || "outro");
+                          setEditPosition(u.position || POSITIONS_LIST[0]);
+                          setEditName(u.full_name || "");
+                          setEditPassword("");
+                          setEditPermissions(u.permissions || {});
+                        }}
                         className="rounded-full border border-white/10 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider hover:bg-white/5 transition"
                       >
                         Editar
@@ -1332,24 +1547,29 @@ function TabUsuarios({ isAdmin }: { isAdmin: boolean }) {
                     <Lock className="h-3 w-3" /> Acesso total — permissões bloqueadas
                   </div>
                 ) : (
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/40 mr-0.5">Acesso:</span>
-                    {PERMISSION_PAGES.map(({ key, label }) => {
-                      const active = !!(u.permissions?.[key]);
-                      return (
-                        <button
-                          key={key}
-                          onClick={() => handleTogglePermission(u.id, key, u.permissions)}
-                          className={`rounded-full px-2.5 py-1 text-[9px] font-black uppercase tracking-wide border transition-all ${
-                            active
-                              ? "bg-primary/15 text-primary border-primary/30 hover:bg-primary/25"
-                              : "bg-white/[0.03] text-muted-foreground/40 border-white/5 hover:bg-white/8 hover:text-muted-foreground"
-                          }`}
-                        >
-                          {active ? "✓ " : "+ "}{label}
-                        </button>
-                      );
-                    })}
+                  <div className="space-y-2">
+                    <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/40">Configuração de Acessos:</span>
+                    <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">
+                      {PERMISSION_PAGES.map(({ key, label }) => {
+                        const level = u.permissions?.[key] || "none";
+                        return (
+                          <div key={key} className="flex flex-col gap-1 bg-white/[0.02] border border-white/5 rounded-lg p-1.5 justify-between">
+                            <span className="text-[9px] font-bold text-muted-foreground truncate">{label}</span>
+                            <select
+                              value={level}
+                              onChange={(e) => handleSetPermissionLevel(u.id, key, e.target.value, u.permissions)}
+                              className={`bg-transparent text-[10px] font-black uppercase focus:outline-none cursor-pointer border-none p-0 ${
+                                level === "edit" ? "text-primary" : level === "view" ? "text-blue-400" : "text-muted-foreground/40"
+                              }`}
+                            >
+                              <option value="none" className="bg-background text-muted-foreground">Sem Acesso</option>
+                              <option value="view" className="bg-background text-blue-400">Leitura</option>
+                              <option value="edit" className="bg-background text-primary">Escrita</option>
+                            </select>
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
                 )}
               </div>
@@ -1363,8 +1583,8 @@ function TabUsuarios({ isAdmin }: { isAdmin: boolean }) {
       <AnimatePresence>
         {showAddModal && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm p-4">
-            <motion.div initial={{ scale: 0.95 }} animate={{ scale: 1 }} exit={{ scale: 0.95 }} className="glass-panel w-full max-w-md p-6 space-y-4 shadow-2xl">
-              <h4 className="font-display text-base font-bold text-gradient">Cadastrar Novo Usuário</h4>
+            <motion.div initial={{ scale: 0.95 }} animate={{ scale: 1 }} exit={{ scale: 0.95 }} className="glass-panel w-full max-w-md p-6 space-y-4 shadow-2xl overflow-y-auto max-h-[90vh] custom-scrollbar">
+              <h4 className="font-display text-base font-bold text-gradient text-center uppercase tracking-wide">Cadastrar Novo Usuário</h4>
               
               <div className="space-y-1.5">
                 <label className="label-mono text-[10px] text-muted-foreground uppercase">Nome Completo</label>
@@ -1411,15 +1631,50 @@ function TabUsuarios({ isAdmin }: { isAdmin: boolean }) {
 
                 <div className="space-y-1.5">
                   <label className="label-mono text-[10px] text-muted-foreground uppercase">Cargo / Função</label>
-                  <select value={newPosition} onChange={(e) => setNewPosition(e.target.value)} className="w-full rounded-lg border border-white/10 bg-background px-3 py-2 text-xs text-foreground focus:outline-none">
+                  <select 
+                    value={newPosition} 
+                    onChange={(e) => {
+                      const pos = e.target.value;
+                      setNewPosition(pos);
+                      const defaults = CARGO_DEFAULT_PERMISSIONS[pos] || {};
+                      setNewPermissions(defaults);
+                    }} 
+                    className="w-full rounded-lg border border-white/10 bg-background px-3 py-2 text-xs text-foreground focus:outline-none"
+                  >
                     {POSITIONS_LIST.map(pos => <option key={pos} value={pos}>{pos}</option>)}
                   </select>
                 </div>
               </div>
 
-              <div className="flex gap-2 justify-end pt-2">
-                <button onClick={() => setShowAddModal(false)} className="rounded-full border border-white/10 px-3 py-1.5 text-xs font-bold uppercase">Cancelar</button>
-                <button onClick={handleCreateUser} disabled={creating} className="rounded-full bg-primary px-4 py-1.5 text-xs font-bold uppercase text-primary-foreground hover:shadow-glow transition disabled:opacity-50">
+              {/* Grid de Permissões Sugeridas/Customizáveis */}
+              <div className="space-y-2 border-t border-white/5 pt-3">
+                <div className="flex items-center justify-between">
+                  <label className="label-mono text-[10px] text-muted-foreground uppercase">Permissões de Acesso</label>
+                  <span className="text-[9px] font-black uppercase text-primary/80">Sugestão de Cargo Aplicada</span>
+                </div>
+                <div className="grid grid-cols-2 gap-2 max-h-[160px] overflow-y-auto pr-1 custom-scrollbar">
+                  {PERMISSION_PAGES.map(({ key, label }) => (
+                    <div key={key} className="flex items-center justify-between gap-2 rounded-lg border border-white/5 bg-background/30 p-2">
+                      <span className="text-[10px] font-bold text-foreground truncate max-w-[120px]">{label}</span>
+                      <select
+                        value={newPermissions[key] || "none"}
+                        onChange={(e) => setNewPermissions(prev => ({ ...prev, [key]: e.target.value }))}
+                        className={`rounded border border-white/10 bg-background px-1.5 py-1 text-[10px] font-black uppercase focus:outline-none ${
+                          newPermissions[key] === "edit" ? "text-primary" : newPermissions[key] === "view" ? "text-blue-400" : "text-muted-foreground/50"
+                        }`}
+                      >
+                        <option value="none" className="text-muted-foreground">Nenhum</option>
+                        <option value="view" className="text-blue-400">Leitura</option>
+                        <option value="edit" className="text-primary">Escrita</option>
+                      </select>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="flex gap-2 justify-end pt-2 border-t border-white/5">
+                <button onClick={() => setShowAddModal(false)} className="rounded-full border border-white/10 px-4 py-2 text-xs font-bold uppercase">Cancelar</button>
+                <button onClick={handleCreateUser} disabled={creating} className="rounded-full bg-primary px-5 py-2 text-xs font-bold uppercase text-primary-foreground hover:shadow-glow transition disabled:opacity-50">
                   {creating ? "Cadastrando..." : "Cadastrar Usuário"}
                 </button>
               </div>
@@ -1432,8 +1687,8 @@ function TabUsuarios({ isAdmin }: { isAdmin: boolean }) {
       <AnimatePresence>
         {editingUser && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm p-4">
-            <motion.div initial={{ scale: 0.95 }} animate={{ scale: 1 }} exit={{ scale: 0.95 }} className="glass-panel w-full max-w-md p-6 space-y-4 shadow-2xl">
-              <h4 className="font-display text-base font-bold text-gradient">Alterar Dados do Usuário</h4>
+            <motion.div initial={{ scale: 0.95 }} animate={{ scale: 1 }} exit={{ scale: 0.95 }} className="glass-panel w-full max-w-md p-6 space-y-4 shadow-2xl overflow-y-auto max-h-[90vh] custom-scrollbar">
+              <h4 className="font-display text-base font-bold text-gradient text-center uppercase tracking-wide">Alterar Dados do Usuário</h4>
 
               {editingUser?.email && (
                 <div className="space-y-1.5">
@@ -1468,7 +1723,7 @@ function TabUsuarios({ isAdmin }: { isAdmin: boolean }) {
 
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
-                  <label className="label-mono text-[10px] text-muted-foreground uppercase">Nível de Acesso</label>
+                  <label className="label-mono text-[10px] text-muted-foreground uppercase">Acesso</label>
                   <select value={editRole} onChange={(e) => setEditRole(e.target.value)} className="w-full rounded-lg border border-white/10 bg-background px-3 py-2 text-xs text-foreground focus:outline-none">
                     <option value="gestor_trafego">Gestor de Tráfego</option>
                     <option value="social_media">Social Media / Gestora de Projeto</option>
@@ -1482,15 +1737,50 @@ function TabUsuarios({ isAdmin }: { isAdmin: boolean }) {
 
                 <div className="space-y-1.5">
                   <label className="label-mono text-[10px] text-muted-foreground uppercase">Cargo / Função</label>
-                  <select value={editPosition} onChange={(e) => setEditPosition(e.target.value)} className="w-full rounded-lg border border-white/10 bg-background px-3 py-2 text-xs text-foreground focus:outline-none">
+                  <select 
+                    value={editPosition} 
+                    onChange={(e) => {
+                      const pos = e.target.value;
+                      setEditPosition(pos);
+                      const defaults = CARGO_DEFAULT_PERMISSIONS[pos] || {};
+                      setEditPermissions(defaults);
+                    }} 
+                    className="w-full rounded-lg border border-white/10 bg-background px-3 py-2 text-xs text-foreground focus:outline-none"
+                  >
                     {POSITIONS_LIST.map(pos => <option key={pos} value={pos}>{pos}</option>)}
                   </select>
                 </div>
               </div>
 
-              <div className="flex gap-2 justify-end pt-2">
-                <button onClick={() => setEditingUser(null)} className="rounded-full border border-white/10 px-3 py-1.5 text-xs font-bold uppercase">Cancelar</button>
-                <button onClick={handleUpdate} disabled={saving} className="rounded-full bg-primary px-4 py-1.5 text-xs font-bold uppercase text-primary-foreground hover:shadow-glow transition disabled:opacity-50">
+              {/* Grid de Permissões Sugeridas/Customizáveis */}
+              <div className="space-y-2 border-t border-white/5 pt-3">
+                <div className="flex items-center justify-between">
+                  <label className="label-mono text-[10px] text-muted-foreground uppercase">Permissões de Acesso</label>
+                  <span className="text-[9px] font-black uppercase text-primary/80 font-semibold">Tabela de Níveis</span>
+                </div>
+                <div className="grid grid-cols-2 gap-2 max-h-[160px] overflow-y-auto pr-1 custom-scrollbar">
+                  {PERMISSION_PAGES.map(({ key, label }) => (
+                    <div key={key} className="flex items-center justify-between gap-2 rounded-lg border border-white/5 bg-background/30 p-2">
+                      <span className="text-[10px] font-bold text-foreground truncate max-w-[120px]">{label}</span>
+                      <select
+                        value={editPermissions[key] || "none"}
+                        onChange={(e) => setEditPermissions(prev => ({ ...prev, [key]: e.target.value }))}
+                        className={`rounded border border-white/10 bg-background px-1.5 py-1 text-[10px] font-black uppercase focus:outline-none ${
+                          editPermissions[key] === "edit" ? "text-primary" : editPermissions[key] === "view" ? "text-blue-400" : "text-muted-foreground/50"
+                        }`}
+                      >
+                        <option value="none" className="text-muted-foreground">Nenhum</option>
+                        <option value="view" className="text-blue-400">Leitura</option>
+                        <option value="edit" className="text-primary">Escrita</option>
+                      </select>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="flex gap-2 justify-end pt-2 border-t border-white/5">
+                <button onClick={() => setEditingUser(null)} className="rounded-full border border-white/10 px-4 py-2 text-xs font-bold uppercase">Cancelar</button>
+                <button onClick={handleUpdate} disabled={saving} className="rounded-full bg-primary px-5 py-2 text-xs font-bold uppercase text-primary-foreground hover:shadow-glow transition disabled:opacity-50">
                   {saving ? "Salvando..." : "Salvar Alterações"}
                 </button>
               </div>

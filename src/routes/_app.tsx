@@ -7,7 +7,8 @@ import {
   Bell, User, Bot, Sparkles, Activity, Zap,
   Sun, Moon, Menu, X, BarChart3, LineChart, Palette, Link2,
   ChevronDown, RefreshCw, Users, Store,
-  Volume2, VolumeX, LogOut, CreditCard, Share2, ArrowRight, GitBranch, Brain, ChevronRight
+  Volume2, VolumeX, LogOut, CreditCard, Share2, ArrowRight, GitBranch, Brain, ChevronRight,
+  Lock
 } from "lucide-react";
 import { AuthProvider, useAuth } from "@/lib/auth";
 import { supabase } from "@/integrations/supabase/client";
@@ -21,6 +22,7 @@ import { toast } from "sonner";
 import { useAutoSync, getSyncStatus, SYNC_STATUS_EVENT, type SyncStatus } from "@/hooks/useAutoSync";
 import { useAlertEngine } from "@/hooks/useAlertEngine";
 import { DateProvider } from "@/contexts/DateContext";
+import { usePagePermission } from "@/hooks/usePagePermission";
 
 function AppErrorFallback({ error, reset }: { error: Error; reset: () => void }) {
   return (
@@ -113,7 +115,7 @@ const VICTORIA_NAV_ITEMS: NavItem[] = [
 const CRM_NAV_ITEMS: NavItem[] = [
   { to: "/crm", icon: Users, label: "SDR Pipeline" },
   { to: "/client-portal", icon: BarChart3, label: "Client Portal" },
-  { to: "/config", icon: Settings, label: "Configurações" },
+  { to: "/crm-config", icon: Settings, label: "Configurações" },
 ];
 
 const ADMIN_EMAILS = ["nc.marketingrj@gmail.com", "hc.marketing.dgt@gmail.com"];
@@ -128,28 +130,30 @@ function Shell() {
     nav({ to: "/login", replace: true });
   };
 
-  const { data: profile, isLoading: profileLoading } = useQuery({
-    queryKey: ["current_user_profile", user?.id],
-    queryFn: async () => {
-      if (!user?.id) return null;
-      const { data, error } = await supabase
-        .from("profiles")
-        .select("*")
-        .eq("id", user.id)
-        .maybeSingle();
-      if (error) return null;
-      return data;
-    },
-    enabled: !!user?.id,
-  });
+  const { profile, isAdmin, isLoading: profileLoading, perms, hasAccess } = usePagePermission();
 
-  // isAdmin: imediato via email (evita flash no carregamento) + confirmado via DB
-  const isAdmin = profile?.role === "admin" || (user?.email ? ADMIN_EMAILS.includes(user.email) : false);
-  const perms = (profile as any)?.permissions ?? {};
-  // Durante carregamento do perfil, exibe tudo (otimista) — restrições aplicadas só após carregar
-  const canSeeMetricas  = profileLoading || isAdmin || !!perms.metricas;
-  const canSeeAutomacoes = profileLoading || isAdmin || !!perms.automacoes;
-
+  const hasPageAccess = (pathname: string) => {
+    if (profileLoading || isAdmin) return true;
+    
+    if (pathname.startsWith("/metricas")) return hasAccess("metricas");
+    if (pathname.startsWith("/automacoes")) return hasAccess("automacoes");
+    if (pathname.startsWith("/dashboard")) return hasAccess("dashboard");
+    if (pathname.startsWith("/clientes")) return hasAccess("clientes");
+    if (pathname.startsWith("/relatorios")) return hasAccess("relatorios");
+    if (pathname.startsWith("/criativos")) return hasAccess("criativos");
+    if (pathname.startsWith("/social") || pathname.startsWith("/organizador") || pathname.startsWith("/link-bio") || pathname.startsWith("/quiz")) {
+      return hasAccess("social");
+    }
+    if (pathname.startsWith("/reunioes") || pathname.startsWith("/crm")) return hasAccess("reunioes");
+    if (pathname.startsWith("/cobrancas")) return hasAccess("cobrancas");
+    if (pathname.startsWith("/strategy-map") || pathname.startsWith("/funis") || pathname.startsWith("/funnel-builder")) {
+      return hasAccess("strategy_map");
+    }
+    if (pathname.startsWith("/victoria")) return hasAccess("agente");
+    if (pathname.startsWith("/auditoria")) return hasAccess("auditoria");
+    if (pathname.startsWith("/config")) return true;
+    return true;
+  };
   const [activeModule, setActiveModule] = useState<"hub" | "trafego" | "social" | "gestao" | "funil" | "victoria" | "crm">(() => {
     if (typeof window !== "undefined") {
       const stored = localStorage.getItem("nc_active_module");
@@ -157,6 +161,31 @@ function Shell() {
     }
     return "hub";
   });
+
+  const path = useRouterState({ select: (s) => s.location.pathname });
+
+  useEffect(() => {
+    if (path.startsWith("/victoria")) {
+      setActiveModule("victoria");
+      localStorage.setItem("nc_active_module", "victoria");
+    } else if (path.startsWith("/crm") || path.startsWith("/client-portal")) {
+      setActiveModule("crm");
+      localStorage.setItem("nc_active_module", "crm");
+    } else if (path.startsWith("/social") || path.startsWith("/organizador") || path.startsWith("/link-bio") || path.startsWith("/quiz")) {
+      setActiveModule("social");
+      localStorage.setItem("nc_active_module", "social");
+    } else if (path.startsWith("/dashboard") || path.startsWith("/clientes") || path.startsWith("/relatorios") || path.startsWith("/criativos") || path.startsWith("/metricas") || path.startsWith("/campanhas")) {
+      setActiveModule("trafego");
+      localStorage.setItem("nc_active_module", "trafego");
+    } else if (path.startsWith("/cobrancas")) {
+      setActiveModule("gestao");
+      localStorage.setItem("nc_active_module", "gestao");
+    } else if (path.startsWith("/strategy-map") || path.startsWith("/funis") || path.startsWith("/funnel-builder")) {
+      setActiveModule("funil");
+      localStorage.setItem("nc_active_module", "funil");
+    }
+  }, [path]);
+
   const [showModuleMenu, setShowModuleMenu] = useState(false);
 
   let currentNavItems = TRAFEGO_NAV_ITEMS;
@@ -173,13 +202,8 @@ function Shell() {
     currentNavItems = CRM_NAV_ITEMS;
   }
 
-  const filteredNavItems = currentNavItems.filter(item => {
-    if (item.to === "/metricas" && !canSeeMetricas) return false;
-    if (item.to === "/automacoes" && !canSeeAutomacoes) return false;
-    return true;
-  });
+  const filteredNavItems = currentNavItems.filter(item => hasPageAccess(item.to));
 
-  const path = useRouterState({ select: (s) => s.location.pathname });
   const [isAgentOpen, setIsAgentOpen] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [showNotification, setShowNotification] = useState(false);
@@ -1128,6 +1152,35 @@ function Shell() {
           ═══════════════════════════════════════ */}
       <main className="relative z-[1] flex flex-1 flex-col overflow-y-auto overscroll-none custom-scrollbar" style={{ WebkitOverflowScrolling: 'touch' }}>
         {(() => {
+          const isAuthorized = hasPageAccess(path);
+          if (!isAuthorized) {
+            return (
+              <div className="flex flex-1 flex-col items-center justify-center p-6 text-center my-auto">
+                <div className="glass-panel max-w-md p-8 space-y-6 shadow-2xl rounded-3xl border border-white/10 bg-background/50 backdrop-blur-md">
+                  <div className="mx-auto h-16 w-16 rounded-2xl bg-destructive/10 border border-destructive/20 flex items-center justify-center text-destructive">
+                    <Lock className="h-8 w-8" />
+                  </div>
+                  <div className="space-y-2">
+                    <h3 className="text-xl font-black tracking-tight text-foreground uppercase">Acesso Restrito</h3>
+                    <p className="text-xs text-muted-foreground leading-relaxed">
+                      Seu usuário não possui permissão para acessar esta seção. Entre em contato com um administrador para solicitar acesso.
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => {
+                      setActiveModule("hub");
+                      localStorage.setItem("nc_active_module", "hub");
+                      nav({ to: "/dashboard" });
+                    }}
+                    className="w-full rounded-full bg-primary py-2.5 text-xs font-black text-background hover:opacity-90 active:scale-95 transition"
+                  >
+                    VOLTAR AO MENU PRINCIPAL
+                  </button>
+                </div>
+              </div>
+            );
+          }
+
           const isFullScreenApp = path.startsWith('/funnel-builder') || path.startsWith('/strategy-map') || path.startsWith('/reunioes');
           return (
             <div className={isFullScreenApp ? "flex flex-1 flex-col w-full" : "mx-auto w-full px-2 py-4 pb-28 sm:p-4 md:pb-8 md:p-6 lg:p-8"}>

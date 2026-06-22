@@ -35,6 +35,7 @@ import { Route as AppFunnelBuilderRouteImport } from './routes/_app/funnel-build
 import { Route as AppFunisRouteImport } from './routes/_app/funis'
 import { Route as AppFormularioRouteImport } from './routes/_app/formulario'
 import { Route as AppDashboardRouteImport } from './routes/_app/dashboard'
+import { Route as AppCrmConfigRouteImport } from './routes/_app/crm-config'
 import { Route as AppCrmRouteImport } from './routes/_app/crm'
 import { Route as AppCriativosRouteImport } from './routes/_app/criativos'
 import { Route as AppConfigRouteImport } from './routes/_app/config'
@@ -178,6 +179,11 @@ const AppDashboardRoute = AppDashboardRouteImport.update({
   path: '/dashboard',
   getParentRoute: () => AppRoute,
 } as any)
+const AppCrmConfigRoute = AppCrmConfigRouteImport.update({
+  id: '/crm-config',
+  path: '/crm-config',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppCrmRoute = AppCrmRouteImport.update({
   id: '/crm',
   path: '/crm',
@@ -260,6 +266,7 @@ export interface FileRoutesByFullPath {
   '/config': typeof AppConfigRoute
   '/criativos': typeof AppCriativosRoute
   '/crm': typeof AppCrmRoute
+  '/crm-config': typeof AppCrmConfigRoute
   '/dashboard': typeof AppDashboardRoute
   '/formulario': typeof AppFormularioRoute
   '/funis': typeof AppFunisRoute
@@ -300,6 +307,7 @@ export interface FileRoutesByTo {
   '/config': typeof AppConfigRoute
   '/criativos': typeof AppCriativosRoute
   '/crm': typeof AppCrmRoute
+  '/crm-config': typeof AppCrmConfigRoute
   '/dashboard': typeof AppDashboardRoute
   '/formulario': typeof AppFormularioRoute
   '/funis': typeof AppFunisRoute
@@ -342,6 +350,7 @@ export interface FileRoutesById {
   '/_app/config': typeof AppConfigRoute
   '/_app/criativos': typeof AppCriativosRoute
   '/_app/crm': typeof AppCrmRoute
+  '/_app/crm-config': typeof AppCrmConfigRoute
   '/_app/dashboard': typeof AppDashboardRoute
   '/_app/formulario': typeof AppFormularioRoute
   '/_app/funis': typeof AppFunisRoute
@@ -384,6 +393,7 @@ export interface FileRouteTypes {
     | '/config'
     | '/criativos'
     | '/crm'
+    | '/crm-config'
     | '/dashboard'
     | '/formulario'
     | '/funis'
@@ -424,6 +434,7 @@ export interface FileRouteTypes {
     | '/config'
     | '/criativos'
     | '/crm'
+    | '/crm-config'
     | '/dashboard'
     | '/formulario'
     | '/funis'
@@ -465,6 +476,7 @@ export interface FileRouteTypes {
     | '/_app/config'
     | '/_app/criativos'
     | '/_app/crm'
+    | '/_app/crm-config'
     | '/_app/dashboard'
     | '/_app/formulario'
     | '/_app/funis'
@@ -685,6 +697,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppDashboardRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/crm-config': {
+      id: '/_app/crm-config'
+      path: '/crm-config'
+      fullPath: '/crm-config'
+      preLoaderRoute: typeof AppCrmConfigRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/crm': {
       id: '/_app/crm'
       path: '/crm'
@@ -826,6 +845,7 @@ interface AppRouteChildren {
   AppConfigRoute: typeof AppConfigRoute
   AppCriativosRoute: typeof AppCriativosRoute
   AppCrmRoute: typeof AppCrmRoute
+  AppCrmConfigRoute: typeof AppCrmConfigRoute
   AppDashboardRoute: typeof AppDashboardRoute
   AppFormularioRoute: typeof AppFormularioRoute
   AppFunisRoute: typeof AppFunisRoute
@@ -857,6 +877,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppConfigRoute: AppConfigRoute,
   AppCriativosRoute: AppCriativosRoute,
   AppCrmRoute: AppCrmRoute,
+  AppCrmConfigRoute: AppCrmConfigRoute,
   AppDashboardRoute: AppDashboardRoute,
   AppFormularioRoute: AppFormularioRoute,
   AppFunisRoute: AppFunisRoute,
