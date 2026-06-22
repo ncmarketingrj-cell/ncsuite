@@ -462,7 +462,7 @@ function Dashboard() {
     });
   }, [filteredAccounts]);
 
-  const { data: config } = useQuery({
+  const { data: config, isLoading: isLoadingConfig } = useQuery({
     queryKey: ["agent-config"],
     queryFn: async () => {
       const { data } = await (supabase as any).from("meta_ads_configs").select("*").order("created_at", { ascending: false }).limit(1);
@@ -644,9 +644,9 @@ function Dashboard() {
             <div className="flex-1 sm:flex-none">
               <SyncButton mode="quick" />
             </div>
-            <button 
+            <button
               onClick={() => navigate({ to: "/relatorios" })}
-              className="group relative flex items-center justify-center gap-2 overflow-hidden rounded-xl bg-primary px-5 py-2.5 text-[11px] sm:text-xs font-black uppercase tracking-widest text-primary-foreground transition-all hover:bg-primary/90 hover:shadow-glow-sm flex-1 sm:flex-none"
+              className="group relative flex items-center justify-center gap-2 overflow-hidden rounded-xl bg-primary px-5 py-2.5 text-[11px] sm:text-xs font-black uppercase tracking-widest text-primary-foreground transition-all hover:bg-primary/90 hover:shadow-glow-sm whitespace-nowrap shrink-0"
             >
               <div className="absolute inset-0 flex h-full w-full justify-center [transform:skew(-12deg)_translateX(-100%)] group-hover:duration-1000 group-hover:[transform:skew(-12deg)_translateX(100%)]">
                 <div className="relative h-full w-8 bg-white/20" />
@@ -657,18 +657,20 @@ function Dashboard() {
           </div>
         </div>
 
-        {/* Indicador de Ads Conectado */}
-        <div className="flex items-center gap-4">
-          {config ? (
-            <span className="inline-flex items-center rounded-full bg-emerald-100 px-2.5 py-1 text-[10px] font-black uppercase tracking-widest text-emerald-800 border border-emerald-200 dark:bg-emerald-950 dark:text-emerald-300 dark:border-emerald-900/50 shadow-glow-sm">
-              Ads Conectado
-            </span>
-          ) : (
-            <span className="inline-flex items-center rounded-full bg-amber-100 px-2.5 py-1 text-[10px] font-black uppercase tracking-widest text-amber-800 border border-amber-200 dark:bg-amber-950/70 dark:text-amber-300 dark:border-amber-900/30">
-              Sem Integração Ads
-            </span>
-          )}
-        </div>
+        {/* Indicador de Ads Conectado — oculto durante carregamento */}
+        {!isLoadingConfig && (
+          <div className="flex items-center gap-4">
+            {config ? (
+              <span className="inline-flex items-center rounded-full bg-emerald-100 px-2.5 py-1 text-[10px] font-black uppercase tracking-widest text-emerald-800 border border-emerald-200 dark:bg-emerald-950 dark:text-emerald-300 dark:border-emerald-900/50 shadow-glow-sm">
+                Ads Conectado
+              </span>
+            ) : (
+              <span className="inline-flex items-center rounded-full bg-amber-100 px-2.5 py-1 text-[10px] font-black uppercase tracking-widest text-amber-800 border border-amber-200 dark:bg-amber-950/70 dark:text-amber-300 dark:border-amber-900/30">
+                Sem Integração Ads
+              </span>
+            )}
+          </div>
+        )}
 
         {/* ─── PAINEL DE SITUAÇÃO OPERACIONAL ─── */}
         {situacao && situacao.totalAtivas > 0 && (
@@ -787,6 +789,12 @@ function Dashboard() {
         )}
 
         {/* Stats Layer (Dinâmico) */}
+        {(isLoadingTable) && (
+          <div className="flex items-center gap-2 text-xs text-muted-foreground/60 font-mono">
+            <div className="h-3 w-3 rounded-full bg-primary/50 animate-pulse" />
+            Atualizando dados...
+          </div>
+        )}
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard 
           label="Investimento (30d)" 
@@ -889,18 +897,27 @@ function Dashboard() {
                   tick={{ fontSize: 9, fontWeight: 700, fill: 'hsl(var(--muted-foreground))', fontFamily: 'monospace' }}
                   tickFormatter={(val) => format(new Date(val), 'dd MMM', { locale: ptBR }).toUpperCase()}
                 />
-                <YAxis 
-                  axisLine={false} 
-                  tickLine={false} 
-                  tick={{ fontSize: 9, fontWeight: 700, fill: 'hsl(var(--muted-foreground))', fontFamily: 'monospace' }} 
+                <YAxis
+                  yAxisId="cost"
+                  axisLine={false}
+                  tickLine={false}
+                  tick={{ fontSize: 9, fontWeight: 700, fill: 'hsl(var(--muted-foreground))', fontFamily: 'monospace' }}
+                  tickFormatter={(v) => `R$${v >= 1000 ? `${(v/1000).toFixed(0)}k` : v}`}
+                />
+                <YAxis
+                  yAxisId="conv"
+                  orientation="right"
+                  axisLine={false}
+                  tickLine={false}
+                  tick={{ fontSize: 9, fontWeight: 700, fill: 'hsl(262 83% 74%)', fontFamily: 'monospace' }}
                 />
                 <Tooltip 
                   contentStyle={{ backgroundColor: 'hsl(var(--background))', borderColor: 'hsl(var(--border))', borderRadius: '12px', boxShadow: '0 20px 40px rgba(0,0,0,0.5)' }}
                   itemStyle={{ fontSize: '12px', fontWeight: 800, fontFamily: 'monospace' }}
                   labelStyle={{ fontSize: '10px', color: 'hsl(var(--muted-foreground))', textTransform: 'uppercase', marginBottom: '8px' }}
                 />
-                <Area type="monotone" dataKey="cost" stroke="hsl(var(--primary))" strokeWidth={3} fillOpacity={1} fill="url(#colorCost)" />
-                <Area type="monotone" dataKey="conversions" stroke="hsl(262 83% 74%)" strokeWidth={3} fillOpacity={1} fill="url(#colorConv)" />
+                <Area yAxisId="cost" type="monotone" dataKey="cost" stroke="hsl(var(--primary))" strokeWidth={3} fillOpacity={1} fill="url(#colorCost)" />
+                <Area yAxisId="conv" type="monotone" dataKey="conversions" stroke="hsl(262 83% 74%)" strokeWidth={3} fillOpacity={1} fill="url(#colorConv)" />
               </AreaChart>
             </ResponsiveContainer>
           </div>
