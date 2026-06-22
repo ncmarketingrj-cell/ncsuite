@@ -1,4 +1,4 @@
-import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
+﻿import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { useEffect, useState, type FormEvent } from "react";
 import { motion } from "framer-motion";
 import { Loader2, Mail, Lock, ArrowRight, ArrowLeft, Sun, Moon } from "lucide-react";
@@ -26,7 +26,7 @@ function LoginPage() {
     supabase.auth.getSession().then(({ data }) => {
       if (data.session) {
         localStorage.setItem("nc_active_module", "hub");
-        nav({ to: "/dashboard", replace: true });
+        nav({ to: "/hub", replace: true });
       }
     });
   }, [nav]);
@@ -45,7 +45,7 @@ function LoginPage() {
         if (error) throw error;
         localStorage.setItem("nc_active_module", "hub");
         toast.success("Bem-vindo de volta");
-        nav({ to: "/dashboard", replace: true });
+        nav({ to: "/hub", replace: true });
       } else {
         const { error } = await supabase.auth.resetPasswordForEmail(email, {
           redirectTo: window.location.origin + "/login",
@@ -295,3 +295,4 @@ function Field({
     </div>
   );
 }
+

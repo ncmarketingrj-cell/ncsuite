@@ -31,6 +31,7 @@ import { Route as AppOrganizadorRouteImport } from './routes/_app/organizador'
 import { Route as AppMetricasRouteImport } from './routes/_app/metricas'
 import { Route as AppLinkBioRouteImport } from './routes/_app/link-bio'
 import { Route as AppIntegrationsRouteImport } from './routes/_app/integrations'
+import { Route as AppHubRouteImport } from './routes/_app/hub'
 import { Route as AppFunnelBuilderRouteImport } from './routes/_app/funnel-builder'
 import { Route as AppFunisRouteImport } from './routes/_app/funis'
 import { Route as AppFormularioRouteImport } from './routes/_app/formulario'
@@ -158,6 +159,11 @@ const AppIntegrationsRoute = AppIntegrationsRouteImport.update({
   path: '/integrations',
   getParentRoute: () => AppRoute,
 } as any)
+const AppHubRoute = AppHubRouteImport.update({
+  id: '/hub',
+  path: '/hub',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppFunnelBuilderRoute = AppFunnelBuilderRouteImport.update({
   id: '/funnel-builder',
   path: '/funnel-builder',
@@ -264,6 +270,7 @@ export interface FileRoutesByFullPath {
   '/formulario': typeof AppFormularioRoute
   '/funis': typeof AppFunisRoute
   '/funnel-builder': typeof AppFunnelBuilderRoute
+  '/hub': typeof AppHubRoute
   '/integrations': typeof AppIntegrationsRoute
   '/link-bio': typeof AppLinkBioRoute
   '/metricas': typeof AppMetricasRouteWithChildren
@@ -304,6 +311,7 @@ export interface FileRoutesByTo {
   '/formulario': typeof AppFormularioRoute
   '/funis': typeof AppFunisRoute
   '/funnel-builder': typeof AppFunnelBuilderRoute
+  '/hub': typeof AppHubRoute
   '/integrations': typeof AppIntegrationsRoute
   '/link-bio': typeof AppLinkBioRoute
   '/metricas': typeof AppMetricasRouteWithChildren
@@ -346,6 +354,7 @@ export interface FileRoutesById {
   '/_app/formulario': typeof AppFormularioRoute
   '/_app/funis': typeof AppFunisRoute
   '/_app/funnel-builder': typeof AppFunnelBuilderRoute
+  '/_app/hub': typeof AppHubRoute
   '/_app/integrations': typeof AppIntegrationsRoute
   '/_app/link-bio': typeof AppLinkBioRoute
   '/_app/metricas': typeof AppMetricasRouteWithChildren
@@ -388,6 +397,7 @@ export interface FileRouteTypes {
     | '/formulario'
     | '/funis'
     | '/funnel-builder'
+    | '/hub'
     | '/integrations'
     | '/link-bio'
     | '/metricas'
@@ -428,6 +438,7 @@ export interface FileRouteTypes {
     | '/formulario'
     | '/funis'
     | '/funnel-builder'
+    | '/hub'
     | '/integrations'
     | '/link-bio'
     | '/metricas'
@@ -469,6 +480,7 @@ export interface FileRouteTypes {
     | '/_app/formulario'
     | '/_app/funis'
     | '/_app/funnel-builder'
+    | '/_app/hub'
     | '/_app/integrations'
     | '/_app/link-bio'
     | '/_app/metricas'
@@ -657,6 +669,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppIntegrationsRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/hub': {
+      id: '/_app/hub'
+      path: '/hub'
+      fullPath: '/hub'
+      preLoaderRoute: typeof AppHubRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/funnel-builder': {
       id: '/_app/funnel-builder'
       path: '/funnel-builder'
@@ -818,6 +837,7 @@ interface AppRouteChildren {
   AppFormularioRoute: typeof AppFormularioRoute
   AppFunisRoute: typeof AppFunisRoute
   AppFunnelBuilderRoute: typeof AppFunnelBuilderRoute
+  AppHubRoute: typeof AppHubRoute
   AppIntegrationsRoute: typeof AppIntegrationsRoute
   AppLinkBioRoute: typeof AppLinkBioRoute
   AppMetricasRoute: typeof AppMetricasRouteWithChildren
@@ -850,6 +870,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppFormularioRoute: AppFormularioRoute,
   AppFunisRoute: AppFunisRoute,
   AppFunnelBuilderRoute: AppFunnelBuilderRoute,
+  AppHubRoute: AppHubRoute,
   AppIntegrationsRoute: AppIntegrationsRoute,
   AppLinkBioRoute: AppLinkBioRoute,
   AppMetricasRoute: AppMetricasRouteWithChildren,

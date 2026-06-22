@@ -124,6 +124,7 @@ function RootShell({ children }: { children: React.ReactNode }) {
   return (
     <html lang="pt-BR">
       <head>
+        <meta charSet="utf-8" />
         <HeadContent />
         <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify({
           "@context": "https://schema.org",
