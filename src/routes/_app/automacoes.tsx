@@ -24,19 +24,6 @@ import { ptBR } from "date-fns/locale";
 
 export const Route = createFileRoute("/_app/automacoes")({
   head: () => ({ meta: [{ title: "Automações e Alertas — NC Suite" }] }),
-  beforeLoad: async () => {
-    const { data: sessionData } = await supabase.auth.getSession();
-    if (!sessionData.session) throw redirect({ to: "/login" });
-    const adminEmails = ["nc.marketingrj@gmail.com", "hc.marketing.dgt@gmail.com"];
-    if (adminEmails.includes(sessionData.session.user.email || "")) return;
-    const { data: profile } = await (supabase as any)
-      .from("profiles")
-      .select("role, permissions")
-      .eq("id", sessionData.session.user.id)
-      .maybeSingle();
-    if (profile?.role === "admin") return;
-    // Sem permissão: componente exibe UI de acesso restrito em vez de redirecionar
-  },
   component: AutomationsPage,
 });
 

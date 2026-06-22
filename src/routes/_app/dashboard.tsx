@@ -1,4 +1,4 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+﻿import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { motion, AnimatePresence } from "framer-motion";
 import { useQuery } from "@tanstack/react-query";
 import { useState, useMemo } from "react";
@@ -26,34 +26,34 @@ import { PageHeader } from "@/components/PageHeader";
 import { useGlobalDate } from "@/contexts/DateContext";
 
 export const Route = createFileRoute("/_app/dashboard")({
-  head: () => ({ meta: [{ title: "Dashboard — NC Performance Suite" }] }),
+  head: () => ({ meta: [{ title: "Dashboard â€” NC Performance Suite" }] }),
   component: Dashboard,
 });
 
 const HUB_GROUPS = [
   {
-    label: "Núcleo de Performance",
+    label: "NÃºcleo de Performance",
     color: "text-primary",
     items: [
-      { to: "/metricas", icon: BarChart3, title: "Performance Meta", desc: "Visão consolidada multiconas.", tag: "LIVE", tagColor: "bg-success/20 text-success" },
-      { to: "/metricas", icon: LineChart, title: "Controle de KPIs", desc: "Análise de tendências e ROAS.", tag: "DATA", tagColor: "bg-primary/20 text-primary" },
+      { to: "/metricas", icon: BarChart3, title: "Performance Meta", desc: "VisÃ£o consolidada multiconas.", tag: "LIVE", tagColor: "bg-success/20 text-success" },
+      { to: "/metricas", icon: LineChart, title: "Controle de KPIs", desc: "AnÃ¡lise de tendÃªncias e ROAS.", tag: "DATA", tagColor: "bg-primary/20 text-primary" },
     ]
   },
   {
-    label: "Operação Estratégica",
+    label: "OperaÃ§Ã£o EstratÃ©gica",
     color: "text-violet-600 dark:text-violet-400",
     items: [
-      { to: "/metricas", icon: Megaphone, title: "Gestão de Ads", desc: "Controle total de campanhas.", tag: "OPS", tagColor: "bg-violet-500/20 text-violet-600 dark:text-violet-400" },
-      { to: "/auditoria", icon: Activity, title: "Auditoria Hub", desc: "Análise avançada de leilões.", tag: "AUDIT", tagColor: "bg-blue-500/20 text-blue-500" },
-      { to: "/upload", icon: Upload, title: "Extração de Dados", highlight: true, desc: "Processamento de planilhas.", tag: "SYNC", tagColor: "bg-amber-500/20 text-amber-500" },
+      { to: "/metricas", icon: Megaphone, title: "GestÃ£o de Ads", desc: "Controle total de campanhas.", tag: "OPS", tagColor: "bg-violet-500/20 text-violet-600 dark:text-violet-400" },
+      { to: "/auditoria", icon: Activity, title: "Auditoria Hub", desc: "AnÃ¡lise avanÃ§ada de leilÃµes.", tag: "AUDIT", tagColor: "bg-blue-500/20 text-blue-500" },
+      { to: "/upload", icon: Upload, title: "ExtraÃ§Ã£o de Dados", highlight: true, desc: "Processamento de planilhas.", tag: "SYNC", tagColor: "bg-amber-500/20 text-amber-500" },
     ]
   },
   {
-    label: "Lab & Conversão",
+    label: "Lab & ConversÃ£o",
     color: "text-accent",
     items: [
-      { to: "/criativos", icon: Palette, title: "Galeria de Criativos", desc: "Análise visual de performance.", tag: "LAB", tagColor: "bg-accent/20 text-accent" },
-      { to: "/organizador", icon: Link2, title: "Central de Links", desc: "Link Pages de alta conversão.", tag: "CONV", tagColor: "bg-accent/20 text-accent" },
+      { to: "/criativos", icon: Palette, title: "Galeria de Criativos", desc: "AnÃ¡lise visual de performance.", tag: "LAB", tagColor: "bg-accent/20 text-accent" },
+      { to: "/organizador", icon: Link2, title: "Central de Links", desc: "Link Pages de alta conversÃ£o.", tag: "CONV", tagColor: "bg-accent/20 text-accent" },
     ]
   }
 ];
@@ -199,11 +199,11 @@ function Dashboard() {
       const chartData = Array.from(chartMap.values()).sort((a, b) => a.date.localeCompare(b.date));
       const campaignsData = Array.from(campaignsMap.values()).sort((a, b) => b.cost - a.cost);
       
-      const barData = campaignsData.slice(0, 8).map(c => ({ name: c.name.slice(0, 16).toUpperCase(), Gasto: c.cost, Resultados: c.results }));
+      const barData = campaignsData.slice(0, 8).map(c => ({ name: c.name.toUpperCase(), Gasto: c.cost, Resultados: c.results }));
       const pieData = campaignsData.filter(c => c.cost > 0).slice(0, 6).map(c => ({ name: c.name, value: c.cost }));
 
       const calcTrend = (curr: number, prev: number) => {
-        if (prev === 0) return curr > 0 ? "—" : "0%";
+        if (prev === 0) return curr > 0 ? "â€”" : "0%";
         const diff = ((curr - prev) / prev) * 100;
         return `${diff > 0 ? '+' : ''}${diff.toFixed(1)}%`;
       };
@@ -215,7 +215,7 @@ function Dashboard() {
       const funnelData = [
         { id: "reach", step: "Alcance", value: Math.max(currentPeriod.reach, currentPeriod.impressions * 0.8), fill: "hsl(var(--primary) / 0.5)" },
         { id: "clicks", step: "Cliques", value: currentPeriod.clicks, fill: "hsl(var(--primary) / 0.8)" },
-        { id: "convs", step: "Conversões", value: currentPeriod.trueConversions, fill: "hsl(var(--primary))" }
+        { id: "convs", step: "ConversÃµes", value: currentPeriod.trueConversions, fill: "hsl(var(--primary))" }
       ];
 
       const isVanity = (obj: string) => ["OUTCOME_AWARENESS", "VIDEO_VIEWS", "OUTCOME_ENGAGEMENT", "LINK_CLICKS", "OUTCOME_TRAFFIC"].includes(obj);
@@ -223,7 +223,7 @@ function Dashboard() {
       const riskReturn = campaignsData.map(c => {
         const isVanityObjective = isVanity(c.objective);
         const cpa = c.trueConversions > 0 ? c.cost / c.trueConversions : c.cost;
-        let type = "Estável";
+        let type = "EstÃ¡vel";
         
         if (isVanityObjective) {
           type = "Ignorado";
@@ -247,6 +247,27 @@ function Dashboard() {
       const convRate = currentPeriod.clicks > 0 ? currentPeriod.trueConversions / currentPeriod.clicks : 0;
       if (convRate < 0.01) healthScore -= 10;
       if (opportunities.length === 0 && risks.length > 0) healthScore -= 10;
+
+      // Penalidades de Saúde Dinâmicas (Budget Pacing e Frequência)
+      let activeCamps = 0;
+      let fastPacingCamps = 0;
+      let highFreqCamps = 0;
+
+      filteredAccounts.forEach(acc => {
+        if (!acc.metrics.campaigns) return;
+        acc.metrics.campaigns.forEach(c => {
+          if (c.status === "ACTIVE") {
+            activeCamps++;
+            if (c.t.pacing > 1.2) fastPacingCamps++;
+            if (c.t.freq > 3.0) highFreqCamps++;
+          }
+        });
+      });
+
+      if (activeCamps > 0) {
+        if (fastPacingCamps / activeCamps > 0.3) healthScore -= 15;
+        if (highFreqCamps / activeCamps > 0.2) healthScore -= 15;
+      }
 
       healthScore = Math.max(0, Math.min(100, Math.round(healthScore)));
 
@@ -274,7 +295,7 @@ function Dashboard() {
     },
   });
 
-  // ─── Query: Painel de Situação Operacional ───────────────────────────────────
+  // â”€â”€â”€ Query: Painel de SituaÃ§Ã£o Operacional â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const { data: situacao } = useQuery({
     queryKey: ["dash-situacao", selectedAccountId, selectedClientId],
     staleTime: 5 * 60 * 1000,
@@ -284,25 +305,25 @@ function Dashboard() {
       const yesterdayDate = new Date(today); yesterdayDate.setDate(today.getDate()-1);
       const yesterdayStr = `${yesterdayDate.getFullYear()}-${String(yesterdayDate.getMonth()+1).padStart(2,'0')}-${String(yesterdayDate.getDate()).padStart(2,'0')}`;
 
-      // Campanhas ativas com delivery_status e orçamento
+      // Campanhas ativas com delivery_status e orÃ§amento
       let campQuery = (supabase as any).from("campaigns").select("id, name, delivery_status, objective, daily_budget, lifetime_budget, budget_currency, ad_account_id, client_id").eq("status", "active");
       if (selectedAccountId !== "all") campQuery = campQuery.eq("ad_account_id", selectedAccountId);
       if (selectedClientId !== "all") campQuery = campQuery.eq("client_id", selectedClientId);
       const { data: campaigns = [] } = await campQuery;
 
-      // Métricas de ontem + hoje para frequência e spend do dia
+      // MÃ©tricas de ontem + hoje para frequÃªncia e spend do dia
       let metricsQuery = (supabase as any).from("metrics").select("campaign_id, frequency, cost, date, conversions, campaigns!inner(ad_account_id, client_id)").gte("date", yesterdayStr).lte("date", todayStr);
       if (selectedAccountId !== "all") metricsQuery = metricsQuery.eq("campaigns.ad_account_id", selectedAccountId);
       if (selectedClientId !== "all") metricsQuery = metricsQuery.eq("campaigns.client_id", selectedClientId);
       
       const { data: recentMetrics = [] } = await metricsQuery;
 
-      // Threshold de frequência configurado
+      // Threshold de frequÃªncia configurado
       let threshQuery = (supabase as any).from("alert_thresholds").select("max_frequency, max_cpl").maybeSingle();
       const { data: threshold } = await threshQuery;
       const maxFreq = threshold?.max_frequency ?? 3.5;
 
-      // Agregar métricas por campanha (média de frequência dos últimos 2 dias)
+      // Agregar mÃ©tricas por campanha (mÃ©dia de frequÃªncia dos Ãºltimos 2 dias)
       const metricsByCampaign = new Map<string, { freq: number[], spend: number, conversions: number }>();
       for (const m of recentMetrics) {
         const existing = metricsByCampaign.get(m.campaign_id) || { freq: [], spend: 0, conversions: 0 };
@@ -315,7 +336,7 @@ function Dashboard() {
       // Campanhas em Aprendizado
       const aprendendo = campaigns.filter((c: any) => c.delivery_status === 'LEARNING');
 
-      // Campanhas com frequência alta
+      // Campanhas com frequÃªncia alta
       const freqAlta = campaigns.filter((c: any) => {
         const m = metricsByCampaign.get(c.id);
         if (!m || m.freq.length === 0) return false;
@@ -323,7 +344,7 @@ function Dashboard() {
         return avgFreq > maxFreq;
       });
 
-      // Budget Pacing — hora atual do dia (0-23) → % do dia decorrida
+      // Budget Pacing â€” hora atual do dia (0-23) â†’ % do dia decorrida
       const hour = today.getHours();
       const minutesFrac = today.getMinutes() / 60;
       const pctDia = ((hour + minutesFrac) / 24) * 100;
@@ -342,7 +363,7 @@ function Dashboard() {
       const acelerado = pacingDetails.filter((p: any) => p.status === "acelerado").length;
       const abaixo = pacingDetails.filter((p: any) => p.status === "abaixo").length;
 
-      // Prontas para escalar: CPL abaixo da média geral + conversões relevantes
+      // Prontas para escalar: CPL abaixo da mÃ©dia geral + conversÃµes relevantes
       const totalMetricas = Array.from(metricsByCampaign.values());
       const avgCpl = (() => {
         const withConv = totalMetricas.filter(m => m.conversions > 0);
@@ -376,7 +397,7 @@ function Dashboard() {
     },
   });
 
-  // ─── Query: Tabela de Desempenho de Contas (Command Center) ───────────────────
+  // â”€â”€â”€ Query: Tabela de Desempenho de Contas (Command Center) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const { data: accountsTableData = [], isLoading: isLoadingTable } = useQuery({
     queryKey: ["dashboard-accounts-table-data", dateFrom, dateTo],
     queryFn: async () => {
@@ -470,7 +491,7 @@ function Dashboard() {
     },
   });
 
-  const { data: synthesis } = useQuery({
+  const { data: synthesis, refetch: refetchSynthesis } = useQuery({
     queryKey: ["agent-synthesis"],
     queryFn: async () => {
       const { data } = await (supabase as any)
@@ -482,12 +503,26 @@ function Dashboard() {
     },
   });
 
+  const aiMutation = useMutation({
+    mutationFn: async () => {
+      const { error } = await supabase.functions.invoke("agent-heartbeat");
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      refetchSynthesis();
+      toast.success("Diagnóstico da Victoria atualizado com sucesso!");
+    },
+    onError: (e: any) => {
+      toast.error(`Falha ao gerar inteligência: ${e.message}`);
+    }
+  });
+
   const selectedAccount = accounts.find(a => a.id === selectedAccountId);
 
   return (
     <div className="w-full p-1 pb-20">
       
-      {/* ─── STICKY HEADER AREA ─── */}
+      {/* â”€â”€â”€ STICKY HEADER AREA â”€â”€â”€ */}
       <div className="sticky top-0 z-40 -mx-1 px-1 bg-background/95 backdrop-blur-xl border-b border-white/5 pb-3 pt-2 space-y-3 sm:space-y-5">
         
         {/* PageHeader Corporativo Padronizado com Health Score */}
@@ -495,7 +530,7 @@ function Dashboard() {
           <PageHeader
             eyebrow="Painel Geral"
             title="Command Center"
-            description="Visão analítica de performance, tráfego e inteligência artificial da NC Suite."
+            description="VisÃ£o analÃ­tica de performance, trÃ¡fego e inteligÃªncia artificial da NC Suite."
             compact
           />
           
@@ -527,7 +562,7 @@ function Dashboard() {
                 <div>
                   <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Health Score</p>
                   <p className={`text-xs font-bold mt-0.5 ${performanceData.healthScore >= 80 ? "text-success" : performanceData.healthScore >= 50 ? "text-primary" : "text-destructive"}`}>
-                    {performanceData.healthScore >= 80 ? "Excelente" : performanceData.healthScore >= 50 ? "Atenção" : "Crítico"}
+                    {performanceData.healthScore >= 80 ? "Excelente" : performanceData.healthScore >= 50 ? "AtenÃ§Ã£o" : "CrÃ­tico"}
                   </p>
                 </div>
               </div>
@@ -535,9 +570,9 @@ function Dashboard() {
           )}
         </div>
 
-        {/* ─── FILTER BAR ESTRUTURADA (UI PREMIUM) ─── */}
+        {/* â”€â”€â”€ FILTER BAR ESTRUTURADA (UI PREMIUM) â”€â”€â”€ */}
         <div className="relative z-50 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between w-full bg-card/45 border border-border/60 rounded-2xl p-3 backdrop-blur-md">
-          {/* Filtros à esquerda */}
+          {/* Filtros Ã  esquerda */}
           <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
             
             <div className="relative">
@@ -639,7 +674,7 @@ function Dashboard() {
           {/* Divisor vertical em telas grandes */}
           <div className="hidden lg:block h-6 w-px bg-white/10" />
 
-          {/* Ações à direita com espaçamento destacado */}
+          {/* AÃ§Ãµes Ã  direita com espaÃ§amento destacado */}
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full lg:w-auto">
             <div className="flex-1 sm:flex-none">
               <SyncButton mode="quick" />
@@ -652,12 +687,12 @@ function Dashboard() {
                 <div className="relative h-full w-8 bg-white/20" />
               </div>
               <FileText className="h-4 w-4 shrink-0" />
-              Gerar Relatório
+              Gerar RelatÃ³rio
             </button>
           </div>
         </div>
 
-        {/* Indicador de Ads Conectado — oculto durante carregamento */}
+        {/* Indicador de Ads Conectado â€” oculto durante carregamento */}
         {!isLoadingConfig && (
           <div className="flex items-center gap-4">
             {config ? (
@@ -666,13 +701,13 @@ function Dashboard() {
               </span>
             ) : (
               <span className="inline-flex items-center rounded-full bg-amber-100 px-2.5 py-1 text-[10px] font-black uppercase tracking-widest text-amber-800 border border-amber-200 dark:bg-amber-950/70 dark:text-amber-300 dark:border-amber-900/30">
-                Sem Integração Ads
+                Sem IntegraÃ§Ã£o Ads
               </span>
             )}
           </div>
         )}
 
-        {/* ─── PAINEL DE SITUAÇÃO OPERACIONAL ─── */}
+        {/* â”€â”€â”€ PAINEL DE SITUAÃ‡ÃƒO OPERACIONAL â”€â”€â”€ */}
         {situacao && situacao.totalAtivas > 0 && (
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
             {/* Campanhas Aprendendo */}
@@ -684,7 +719,7 @@ function Dashboard() {
                   : "border-border/50 bg-card/50"
               }`}
               title={situacao.aprendendoNomes.join(", ") || "Nenhuma campanha em aprendizado"}
-              onClick={() => navigate({ to: "/campanhas" })}
+              onClick={() => navigate({ to: "/metricas" })}
             >
               <div className={`h-9 w-9 shrink-0 rounded-xl flex items-center justify-center ${situacao.aprendendo > 0 ? "bg-amber-500/20" : "bg-muted"}`}>
                 <BookOpen className={`h-4 w-4 ${situacao.aprendendo > 0 ? "text-amber-500" : "text-muted-foreground"}`} />
@@ -695,7 +730,7 @@ function Dashboard() {
                   {situacao.aprendendo}
                 </p>
                 <p className="text-[10px] sm:text-[11px] text-muted-foreground mt-1">
-                  {situacao.aprendendo > 0 ? "Não otimizar ainda" : "Tudo estável"}
+                  {situacao.aprendendo > 0 ? "NÃ£o otimizar ainda" : "Tudo estÃ¡vel"}
                 </p>
               </div>
               {situacao.aprendendo > 0 && (
@@ -703,7 +738,7 @@ function Dashboard() {
               )}
             </motion.div>
 
-            {/* Frequência Alta */}
+            {/* FrequÃªncia Alta */}
             <motion.div
               initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}
               className={`group relative flex items-center gap-3 rounded-2xl border px-4 py-3 transition-all cursor-pointer hover:scale-[1.02] ${
@@ -711,8 +746,8 @@ function Dashboard() {
                   ? "border-destructive/30 bg-destructive/[0.06] hover:bg-destructive/[0.10]"
                   : "border-border/50 bg-card/50"
               }`}
-              title={situacao.freqAltaNomes.join(", ") || "Frequência dentro do limite"}
-              onClick={() => navigate({ to: "/campanhas" })}
+              title={situacao.freqAltaNomes.join(", ") || "FrequÃªncia dentro do limite"}
+              onClick={() => navigate({ to: "/metricas" })}
             >
               <div className={`h-9 w-9 shrink-0 rounded-xl flex items-center justify-center ${situacao.freqAlta > 0 ? "bg-destructive/15" : "bg-muted"}`}>
                 <AlertTriangle className={`h-4 w-4 ${situacao.freqAlta > 0 ? "text-destructive" : "text-muted-foreground"}`} />
@@ -723,7 +758,7 @@ function Dashboard() {
                   {situacao.freqAlta}
                 </p>
                 <p className="text-[10px] sm:text-[11px] text-muted-foreground mt-1">
-                  {situacao.freqAlta > 0 ? "Saturação iminente" : "Audiência saudável"}
+                  {situacao.freqAlta > 0 ? "SaturaÃ§Ã£o iminente" : "AudiÃªncia saudÃ¡vel"}
                 </p>
               </div>
               {situacao.freqAlta > 0 && (
@@ -735,8 +770,8 @@ function Dashboard() {
             <motion.div
               initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }}
               className="group relative flex items-center gap-3 rounded-2xl border border-border/50 bg-card/50 px-4 py-3 transition-all cursor-pointer hover:scale-[1.02] hover:bg-card"
-              title={`${situacao.pctDia}% do dia — ${situacao.pacingOk} no ritmo, ${situacao.pacingAcelerado} acelerado, ${situacao.pacingAbaixo} abaixo`}
-              onClick={() => navigate({ to: "/campanhas" })}
+              title={`${situacao.pctDia}% do dia â€” ${situacao.pacingOk} no ritmo, ${situacao.pacingAcelerado} acelerado, ${situacao.pacingAbaixo} abaixo`}
+              onClick={() => navigate({ to: "/metricas" })}
             >
               <div className="h-9 w-9 shrink-0 rounded-xl flex items-center justify-center bg-success/15">
                 <GaugeCircle className="h-4 w-4 text-success" />
@@ -753,7 +788,7 @@ function Dashboard() {
                   </div>
                 </div>
                 <p className="text-[10px] sm:text-[11px] text-muted-foreground mt-1">
-                  {situacao.pacingOk} ritmo · {situacao.pacingAcelerado} acelerado · {situacao.pacingAbaixo} abaixo
+                  {situacao.pacingOk} ritmo Â· {situacao.pacingAcelerado} acelerado Â· {situacao.pacingAbaixo} abaixo
                 </p>
               </div>
             </motion.div>
@@ -766,8 +801,8 @@ function Dashboard() {
                   ? "border-primary/30 bg-primary/[0.06] hover:bg-primary/[0.10]"
                   : "border-border/50 bg-card/50"
               }`}
-              title={situacao.prontasNomes.join(", ") || "Nenhuma campanha com CPL ótimo ainda"}
-              onClick={() => navigate({ to: "/campanhas" })}
+              title={situacao.prontasNomes.join(", ") || "Nenhuma campanha com CPL Ã³timo ainda"}
+              onClick={() => navigate({ to: "/metricas" })}
             >
               <div className={`h-9 w-9 shrink-0 rounded-xl flex items-center justify-center ${situacao.prontas > 0 ? "bg-primary/15" : "bg-muted"}`}>
                 <Rocket className={`h-4 w-4 ${situacao.prontas > 0 ? "text-primary" : "text-muted-foreground"}`} />
@@ -778,7 +813,7 @@ function Dashboard() {
                   {situacao.prontas}
                 </p>
                 <p className="text-[10px] sm:text-[11px] text-muted-foreground mt-1">
-                  {situacao.prontas > 0 ? "CPL abaixo da média" : "Monitorar mais"}
+                  {situacao.prontas > 0 ? "CPL abaixo da mÃ©dia" : "Monitorar mais"}
                 </p>
               </div>
               {situacao.prontas > 0 && (
@@ -788,7 +823,7 @@ function Dashboard() {
           </div>
         )}
 
-        {/* Stats Layer (Dinâmico) */}
+        {/* Stats Layer (DinÃ¢mico) */}
         {(isLoadingTable) && (
           <div className="flex items-center gap-2 text-xs text-muted-foreground/60 font-mono">
             <div className="h-3 w-3 rounded-full bg-primary/50 animate-pulse" />
@@ -806,7 +841,7 @@ function Dashboard() {
           sparklineData={performanceData?.chartData.map(d => d.cost) || []}
         />
         <StatCard 
-          label="Conversões (30d)" 
+          label="ConversÃµes (30d)" 
           value={performanceData?.totals?.conversions ?? 0} 
           icon={Trophy} 
           trend={performanceData?.trends?.conversions} 
@@ -814,7 +849,7 @@ function Dashboard() {
           sparklineData={performanceData?.chartData.map(d => d.conversions) || []}
         />
         <StatCard 
-          label="CPA Médio (30d)" 
+          label="CPA MÃ©dio (30d)" 
           value={performanceData?.cpl ?? 0} 
           prefix="R$ " 
           icon={Target} 
@@ -823,7 +858,7 @@ function Dashboard() {
           sparklineData={performanceData?.chartData.map(d => d.cost / (d.conversions || 1)) || []}
         />
         <StatCard 
-          label="Cliques Úteis (30d)" 
+          label="Cliques Ãšteis (30d)" 
           value={performanceData?.totals?.clicks ?? 0} 
           icon={MousePointer2} 
           trend={performanceData?.trends?.clicks} 
@@ -834,11 +869,11 @@ function Dashboard() {
       
       <div className="pt-4 space-y-6">
 
-      {/* HUB DE FUNÇÕES COMPACTO */}
+      {/* HUB DE FUNÃ‡Ã•ES COMPACTO */}
       <section className="space-y-4">
         <div className="flex items-center gap-4">
           <div className="h-px flex-1 bg-border/50" />
-          <span className="chassis-line label-mono text-muted-foreground/38">Módulos Estratégicos</span>
+          <span className="chassis-line label-mono text-muted-foreground/38">MÃ³dulos EstratÃ©gicos</span>
           <div className="h-px flex-1 bg-border/50" />
         </div>
         <div className="flex flex-wrap gap-3 justify-center">
@@ -864,7 +899,7 @@ function Dashboard() {
           <div className="mb-8 flex items-center justify-between">
             <div>
               <h3 className="header-sport text-base sm:text-xl font-black tracking-tight uppercase">Performance Temporal</h3>
-              <p className="text-xs text-muted-foreground font-medium mt-1">Análise volumétrica de investimento e conversão (30d)</p>
+              <p className="text-xs text-muted-foreground font-medium mt-1">AnÃ¡lise volumÃ©trica de investimento e conversÃ£o (30d)</p>
             </div>
             <div className="flex items-center gap-6">
               <div className="flex items-center gap-2 text-[9px] font-black uppercase tracking-widest">
@@ -944,7 +979,7 @@ function Dashboard() {
                 <Sparkles className="h-12 w-12 text-primary" />
               </div>
               <p className="text-[9px] font-black uppercase tracking-[0.2em] text-primary mb-3 flex items-center gap-2">
-                <Zap className="h-3 w-3 animate-pulse" /> Estratégia em Tempo Real
+                <Zap className="h-3 w-3 animate-pulse" /> EstratÃ©gia em Tempo Real
               </p>
               
               {/* Leitura do agent_memory real da base */}
@@ -955,29 +990,39 @@ function Dashboard() {
                    </p>
                    {synthesis.value.action_recommended && (
                      <div className="mt-3 inline-flex items-center gap-2 rounded-md bg-primary/10 px-2 py-1 text-[10px] font-bold text-primary">
-                        <Target className="h-3 w-3" /> Recomendação: {synthesis.value.action_recommended}
+                        <Target className="h-3 w-3" /> RecomendaÃ§Ã£o: {synthesis.value.action_recommended}
                      </div>
                    )}
                 </div>
               ) : (
                 <p className="text-xs leading-relaxed text-muted-foreground/80 font-medium">
-                  Analisando fluxos de tráfego, breakdowns de conversão e comparativo mensal para gerar o próximo insight estratégico. O agente orquestrador está rodando nos bastidores.
+                  Analisando fluxos de trÃ¡fego, breakdowns de conversÃ£o e comparativo mensal para gerar o prÃ³ximo insight estratÃ©gico. O agente orquestrador estÃ¡ rodando nos bastidores.
                 </p>
               )}
 
-              <div className="mt-4 flex items-center justify-between border-t border-white/5 pt-3">
-                  <p className="text-[9px] text-muted-foreground font-bold flex items-center gap-1">
-                    <Clock className="h-2.5 w-2.5" /> 
-                    {synthesis?.updated_at ? format(new Date(synthesis.updated_at), "dd/MM HH:mm") : "Aguardando Sync"}
-                  </p>
-                  <span className="text-[9px] font-black text-primary/50 uppercase tracking-tighter">Powered by MCP Agent</span>
-              </div>
+              <div className="mt-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-t border-white/5 pt-3">
+                    <p className="text-[9px] text-muted-foreground font-bold flex items-center gap-1">
+                      <Clock className="h-2.5 w-2.5" /> 
+                      {synthesis?.updated_at ? format(new Date(synthesis.updated_at), "dd/MM HH:mm") : "Aguardando Sync"}
+                    </p>
+                    <div className="flex items-center gap-2">
+                      <button 
+                        onClick={() => aiMutation.mutate()} 
+                        disabled={aiMutation.isPending}
+                        className="flex items-center gap-1.5 rounded-lg bg-primary/10 px-2.5 py-1 text-[9px] font-black uppercase tracking-wider text-primary hover:bg-primary/20 transition-all disabled:opacity-50"
+                      >
+                        {aiMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
+                        Forçar IA
+                      </button>
+                      <span className="text-[9px] font-black text-primary/50 uppercase tracking-tighter hidden sm:inline">Powered by MCP Agent</span>
+                    </div>
+                </div>
             </div>
           </div>
         </motion.div>
       </div>
 
-      {/* ─── CHARTS ADICIONAIS MULTICANAL E EVOLUCAO ─── */}
+      {/* â”€â”€â”€ CHARTS ADICIONAIS MULTICANAL E EVOLUCAO â”€â”€â”€ */}
       <div className="grid gap-4 sm:gap-6 lg:gap-8 lg:grid-cols-2 2xl:grid-cols-4 mt-4 sm:mt-8">
         {/* Top Campanhas (Barras) */}
         <motion.div
@@ -1004,7 +1049,7 @@ function Dashboard() {
                   textAnchor="end"
                   height={70}
                   tick={{ fontSize: 8, fontWeight: 700, fill: 'hsl(var(--muted-foreground))' }}
-                  tickFormatter={(v: string) => v.length > 12 ? v.slice(0, 11) + "…" : v}
+                  tickFormatter={(v: string) => v.length > 12 ? v.slice(0, 11) + "â€¦" : v}
                 />
                 <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 9, fontWeight: 700, fill: 'hsl(var(--muted-foreground))' }} />
                 <Tooltip
@@ -1028,11 +1073,11 @@ function Dashboard() {
           <div className="mb-4 flex items-center justify-between">
             <div>
               <h3 className="header-sport text-xs sm:text-sm font-black tracking-widest uppercase">Share de Investimento</h3>
-              <p className="text-[10px] text-muted-foreground uppercase mt-1 tracking-widest">Distribuição de Verba por Campanha</p>
+              <p className="text-[10px] text-muted-foreground uppercase mt-1 tracking-widest">DistribuiÃ§Ã£o de Verba por Campanha</p>
             </div>
             <PieChartIcon className="h-5 w-5 text-primary/50" />
           </div>
-          {/* Wrapper sem overflow:hidden e sem flex — ResponsiveContainer mede width corretamente */}
+          {/* Wrapper sem overflow:hidden e sem flex â€” ResponsiveContainer mede width corretamente */}
           <div className="w-full relative" style={{ height: 260 }}>
             <ResponsiveContainer width="100%" height="100%">
               <PieChart margin={{ top: 0, right: 0, bottom: 0, left: 0 }}>
@@ -1066,15 +1111,15 @@ function Dashboard() {
           </div>
         </motion.div>
 
-        {/* Funil de Conversão */}
+        {/* Funil de ConversÃ£o */}
         <motion.div
           initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.25 }}
           className="glass-panel p-4 sm:p-6 lg:p-8 min-w-0"
         >
           <div className="mb-6 flex items-center justify-between">
             <div>
-              <h3 className="header-sport text-xs sm:text-sm font-black tracking-widest uppercase">Funil Global de Tráfego</h3>
-              <p className="text-[10px] text-muted-foreground uppercase mt-1 tracking-widest">Atrito de Conversão Geral</p>
+              <h3 className="header-sport text-xs sm:text-sm font-black tracking-widest uppercase">Funil Global de TrÃ¡fego</h3>
+              <p className="text-[10px] text-muted-foreground uppercase mt-1 tracking-widest">Atrito de ConversÃ£o Geral</p>
             </div>
             <Activity className="h-5 w-5 text-primary/50" />
           </div>
@@ -1095,7 +1140,7 @@ function Dashboard() {
                       style={{ backgroundColor: f.fill }}
                     />
                     <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                      <span className="text-[10px] font-black text-white mix-blend-difference">{drop.toFixed(1)}% de retenção</span>
+                      <span className="text-[10px] font-black text-white mix-blend-difference">{drop.toFixed(1)}% de retenÃ§Ã£o</span>
                     </div>
                   </div>
                   {idx < arr.length - 1 && (
@@ -1117,7 +1162,7 @@ function Dashboard() {
           <div className="mb-6 flex items-center justify-between">
             <div>
               <h3 className="header-sport text-xs sm:text-sm font-black tracking-widest uppercase">Risco x Retorno</h3>
-              <p className="text-[10px] text-muted-foreground uppercase mt-1 tracking-widest">Avaliação baseada no CPA Médio</p>
+              <p className="text-[10px] text-muted-foreground uppercase mt-1 tracking-widest">AvaliaÃ§Ã£o baseada no CPA MÃ©dio</p>
             </div>
             <Target className="h-5 w-5 text-primary/50" />
           </div>
@@ -1148,7 +1193,7 @@ function Dashboard() {
                   <div key={c.id} className="flex items-center justify-between p-3 rounded-xl bg-destructive/5 border border-destructive/10 hover:bg-destructive/10 transition-colors">
                     <div className="min-w-0 flex-1">
                       <p className="text-[11px] font-bold text-foreground truncate">{c.name}</p>
-                      <p className="text-[9px] text-muted-foreground mt-0.5">{c.conversions} conversões</p>
+                      <p className="text-[9px] text-muted-foreground mt-0.5">{c.conversions} conversÃµes</p>
                     </div>
                     <div className="text-right">
                       <p className="text-sm font-black font-mono text-destructive">R$ {c.cost.toFixed(2)}</p>
@@ -1162,7 +1207,7 @@ function Dashboard() {
             {(!performanceData?.opportunities?.length && !performanceData?.risks?.length) && (
               <div className="h-full flex flex-col items-center justify-center text-muted-foreground/50">
                 <Activity className="h-8 w-8 mb-2 opacity-20" />
-                <p className="text-xs">Tudo rodando dentro da média de CPA</p>
+                <p className="text-xs">Tudo rodando dentro da mÃ©dia de CPA</p>
               </div>
             )}
 
@@ -1170,7 +1215,7 @@ function Dashboard() {
         </motion.div>
       </div>
 
-      {/* ─── TABELA DE DESEMPENHO DE CONTAS ─── */}
+      {/* â”€â”€â”€ TABELA DE DESEMPENHO DE CONTAS â”€â”€â”€ */}
       <motion.div
         initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
@@ -1183,11 +1228,11 @@ function Dashboard() {
               Desempenho Geral de Contas
             </h3>
             <p className="text-[10px] text-muted-foreground uppercase mt-1 tracking-widest">
-              Dados consolidados do período
+              Dados consolidados do perÃ­odo
             </p>
           </div>
           <div className="hidden sm:flex items-center gap-3">
-            <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Filtrar período:</span>
+            <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Filtrar perÃ­odo:</span>
             <DateRangePicker
               startDate={dateRange.startDate} 
               endDate={dateRange.endDate} 
@@ -1203,11 +1248,11 @@ function Dashboard() {
         ) : sortedAccounts.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-12 text-center text-muted-foreground/50">
             <Activity className="h-8 w-8 mb-2 opacity-20" />
-            <p className="text-xs">Nenhuma conta com campanha ativa ou métricas no período.</p>
+            <p className="text-xs">Nenhuma conta com campanha ativa ou mÃ©tricas no perÃ­odo.</p>
           </div>
         ) : (
           <>
-          {/* ── Mobile: cards por conta ── */}
+          {/* â”€â”€ Mobile: cards por conta â”€â”€ */}
           <div className="sm:hidden space-y-3">
             {sortedAccounts.map(row => (
               <button
@@ -1215,7 +1260,7 @@ function Dashboard() {
                 onClick={() => navigate({ to: "/metricas", search: { account: row.id } })}
                 className="w-full text-left p-4 rounded-2xl bg-white/[0.03] border border-white/[0.07] hover:bg-white/[0.06] transition-all active:scale-[0.98]"
               >
-                {/* Cabeçalho do card */}
+                {/* CabeÃ§alho do card */}
                 <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center gap-2.5 min-w-0">
                     {row.client?.logo_url ? (
@@ -1238,7 +1283,7 @@ function Dashboard() {
                     <ArrowUpRight className="h-4 w-4 text-muted-foreground" />
                   </div>
                 </div>
-                {/* Grid de métricas 3x2 */}
+                {/* Grid de mÃ©tricas 3x2 */}
                 <div className="grid grid-cols-3 gap-2">
                   <div className="bg-primary/5 border border-primary/10 rounded-xl p-2.5 col-span-1">
                     <p className="text-[8px] font-black uppercase tracking-widest text-muted-foreground">Investido</p>
@@ -1257,7 +1302,7 @@ function Dashboard() {
                     <p className="text-xs font-black font-mono text-foreground mt-1">
                       {row.metrics.leads > 0 
                         ? (row.metrics.spend / row.metrics.leads).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) 
-                        : "—"}
+                        : "â€”"}
                     </p>
                   </div>
                   <div className="bg-white/[0.03] border border-white/5 rounded-xl p-2.5">
@@ -1279,7 +1324,7 @@ function Dashboard() {
             ))}
           </div>
 
-          {/* ── Tablet+: tabela clássica ── */}
+          {/* â”€â”€ Tablet+: tabela clÃ¡ssica â”€â”€ */}
           <div className="hidden sm:block overflow-x-auto text-left">
             <table className="w-full text-left border-collapse">
               <thead>
@@ -1287,12 +1332,12 @@ function Dashboard() {
                   <th className="text-[10px] font-black uppercase tracking-wider text-muted-foreground pb-3 pl-2">Conta / Cliente</th>
                   <th className="text-[10px] font-black uppercase tracking-wider text-muted-foreground pb-3">Status</th>
                   <th className="text-[10px] font-black uppercase tracking-wider text-muted-foreground pb-3 text-right">Alcance</th>
-                  <th className="text-[10px] font-black uppercase tracking-wider text-muted-foreground pb-3 text-right">Visualizações</th>
+                  <th className="text-[10px] font-black uppercase tracking-wider text-muted-foreground pb-3 text-right">VisualizaÃ§Ãµes</th>
                   <th className="text-[10px] font-black uppercase tracking-wider text-muted-foreground pb-3 text-right">Mensagens</th>
                   <th className="text-[10px] font-black uppercase tracking-wider text-muted-foreground pb-3 text-right">CPL</th>
                   <th className="text-[10px] font-black uppercase tracking-wider text-muted-foreground pb-3 text-right">Compras</th>
                   <th className="text-[10px] font-black uppercase tracking-wider text-muted-foreground pb-3 text-right">Investido</th>
-                  <th className="text-[10px] font-black uppercase tracking-wider text-muted-foreground pb-3 pr-2 text-right">Ação</th>
+                  <th className="text-[10px] font-black uppercase tracking-wider text-muted-foreground pb-3 pr-2 text-right">AÃ§Ã£o</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-white/5">
@@ -1333,7 +1378,7 @@ function Dashboard() {
                     <td className="py-4 text-right font-mono text-[11px] font-bold tabular-nums text-foreground">
                       {row.metrics.leads > 0 
                         ? (row.metrics.spend / row.metrics.leads).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) 
-                        : "—"}
+                        : "â€”"}
                     </td>
                     <td className="py-4 text-right font-mono text-[11px] font-bold tabular-nums text-foreground">{row.metrics.purchases.toLocaleString('pt-BR')}</td>
                     <td className="py-4 text-right font-mono text-[11px] font-black tabular-nums text-primary">
@@ -1382,5 +1427,12 @@ function StatCard({ label, value, prefix = "", icon: Icon, trend, isPositive }: 
     </div>
   );
 }
+
+
+
+
+
+
+
 
 

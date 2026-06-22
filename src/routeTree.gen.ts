@@ -28,7 +28,6 @@ import { Route as AppReunioesRouteImport } from './routes/_app/reunioes'
 import { Route as AppRelatoriosRouteImport } from './routes/_app/relatorios'
 import { Route as AppQuizRouteImport } from './routes/_app/quiz'
 import { Route as AppOrganizadorRouteImport } from './routes/_app/organizador'
-import { Route as AppMulticanalRouteImport } from './routes/_app/multicanal'
 import { Route as AppMetricasRouteImport } from './routes/_app/metricas'
 import { Route as AppLinkBioRouteImport } from './routes/_app/link-bio'
 import { Route as AppIntegrationsRouteImport } from './routes/_app/integrations'
@@ -43,7 +42,6 @@ import { Route as AppConfigRouteImport } from './routes/_app/config'
 import { Route as AppCobrancasRouteImport } from './routes/_app/cobrancas'
 import { Route as AppClientesRouteImport } from './routes/_app/clientes'
 import { Route as AppClientPortalRouteImport } from './routes/_app/client-portal'
-import { Route as AppCampanhasRouteImport } from './routes/_app/campanhas'
 import { Route as AppAutomacoesRouteImport } from './routes/_app/automacoes'
 import { Route as AppAuditoriaRouteImport } from './routes/_app/auditoria'
 import { Route as AppAgenteRouteImport } from './routes/_app/agente'
@@ -145,11 +143,6 @@ const AppOrganizadorRoute = AppOrganizadorRouteImport.update({
   path: '/organizador',
   getParentRoute: () => AppRoute,
 } as any)
-const AppMulticanalRoute = AppMulticanalRouteImport.update({
-  id: '/multicanal',
-  path: '/multicanal',
-  getParentRoute: () => AppRoute,
-} as any)
 const AppMetricasRoute = AppMetricasRouteImport.update({
   id: '/metricas',
   path: '/metricas',
@@ -220,11 +213,6 @@ const AppClientPortalRoute = AppClientPortalRouteImport.update({
   path: '/client-portal',
   getParentRoute: () => AppRoute,
 } as any)
-const AppCampanhasRoute = AppCampanhasRouteImport.update({
-  id: '/campanhas',
-  path: '/campanhas',
-  getParentRoute: () => AppRoute,
-} as any)
 const AppAutomacoesRoute = AppAutomacoesRouteImport.update({
   id: '/automacoes',
   path: '/automacoes',
@@ -251,9 +239,9 @@ const AppClientesClientIdRoute = AppClientesClientIdRouteImport.update({
   getParentRoute: () => AppClientesRoute,
 } as any)
 const AppCampanhasGraficoRoute = AppCampanhasGraficoRouteImport.update({
-  id: '/grafico',
-  path: '/grafico',
-  getParentRoute: () => AppCampanhasRoute,
+  id: '/campanhas/grafico',
+  path: '/campanhas/grafico',
+  getParentRoute: () => AppRoute,
 } as any)
 
 export interface FileRoutesByFullPath {
@@ -265,7 +253,6 @@ export interface FileRoutesByFullPath {
   '/agente': typeof AppAgenteRoute
   '/auditoria': typeof AppAuditoriaRoute
   '/automacoes': typeof AppAutomacoesRoute
-  '/campanhas': typeof AppCampanhasRouteWithChildren
   '/client-portal': typeof AppClientPortalRoute
   '/clientes': typeof AppClientesRouteWithChildren
   '/cobrancas': typeof AppCobrancasRoute
@@ -280,7 +267,6 @@ export interface FileRoutesByFullPath {
   '/integrations': typeof AppIntegrationsRoute
   '/link-bio': typeof AppLinkBioRoute
   '/metricas': typeof AppMetricasRouteWithChildren
-  '/multicanal': typeof AppMulticanalRoute
   '/organizador': typeof AppOrganizadorRoute
   '/quiz': typeof AppQuizRoute
   '/relatorios': typeof AppRelatoriosRoute
@@ -307,7 +293,6 @@ export interface FileRoutesByTo {
   '/agente': typeof AppAgenteRoute
   '/auditoria': typeof AppAuditoriaRoute
   '/automacoes': typeof AppAutomacoesRoute
-  '/campanhas': typeof AppCampanhasRouteWithChildren
   '/client-portal': typeof AppClientPortalRoute
   '/clientes': typeof AppClientesRouteWithChildren
   '/cobrancas': typeof AppCobrancasRoute
@@ -322,7 +307,6 @@ export interface FileRoutesByTo {
   '/integrations': typeof AppIntegrationsRoute
   '/link-bio': typeof AppLinkBioRoute
   '/metricas': typeof AppMetricasRouteWithChildren
-  '/multicanal': typeof AppMulticanalRoute
   '/organizador': typeof AppOrganizadorRoute
   '/quiz': typeof AppQuizRoute
   '/relatorios': typeof AppRelatoriosRoute
@@ -351,7 +335,6 @@ export interface FileRoutesById {
   '/_app/agente': typeof AppAgenteRoute
   '/_app/auditoria': typeof AppAuditoriaRoute
   '/_app/automacoes': typeof AppAutomacoesRoute
-  '/_app/campanhas': typeof AppCampanhasRouteWithChildren
   '/_app/client-portal': typeof AppClientPortalRoute
   '/_app/clientes': typeof AppClientesRouteWithChildren
   '/_app/cobrancas': typeof AppCobrancasRoute
@@ -366,7 +349,6 @@ export interface FileRoutesById {
   '/_app/integrations': typeof AppIntegrationsRoute
   '/_app/link-bio': typeof AppLinkBioRoute
   '/_app/metricas': typeof AppMetricasRouteWithChildren
-  '/_app/multicanal': typeof AppMulticanalRoute
   '/_app/organizador': typeof AppOrganizadorRoute
   '/_app/quiz': typeof AppQuizRoute
   '/_app/relatorios': typeof AppRelatoriosRoute
@@ -395,7 +377,6 @@ export interface FileRouteTypes {
     | '/agente'
     | '/auditoria'
     | '/automacoes'
-    | '/campanhas'
     | '/client-portal'
     | '/clientes'
     | '/cobrancas'
@@ -410,7 +391,6 @@ export interface FileRouteTypes {
     | '/integrations'
     | '/link-bio'
     | '/metricas'
-    | '/multicanal'
     | '/organizador'
     | '/quiz'
     | '/relatorios'
@@ -437,7 +417,6 @@ export interface FileRouteTypes {
     | '/agente'
     | '/auditoria'
     | '/automacoes'
-    | '/campanhas'
     | '/client-portal'
     | '/clientes'
     | '/cobrancas'
@@ -452,7 +431,6 @@ export interface FileRouteTypes {
     | '/integrations'
     | '/link-bio'
     | '/metricas'
-    | '/multicanal'
     | '/organizador'
     | '/quiz'
     | '/relatorios'
@@ -480,7 +458,6 @@ export interface FileRouteTypes {
     | '/_app/agente'
     | '/_app/auditoria'
     | '/_app/automacoes'
-    | '/_app/campanhas'
     | '/_app/client-portal'
     | '/_app/clientes'
     | '/_app/cobrancas'
@@ -495,7 +472,6 @@ export interface FileRouteTypes {
     | '/_app/integrations'
     | '/_app/link-bio'
     | '/_app/metricas'
-    | '/_app/multicanal'
     | '/_app/organizador'
     | '/_app/quiz'
     | '/_app/relatorios'
@@ -660,13 +636,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppOrganizadorRouteImport
       parentRoute: typeof AppRoute
     }
-    '/_app/multicanal': {
-      id: '/_app/multicanal'
-      path: '/multicanal'
-      fullPath: '/multicanal'
-      preLoaderRoute: typeof AppMulticanalRouteImport
-      parentRoute: typeof AppRoute
-    }
     '/_app/metricas': {
       id: '/_app/metricas'
       path: '/metricas'
@@ -765,13 +734,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppClientPortalRouteImport
       parentRoute: typeof AppRoute
     }
-    '/_app/campanhas': {
-      id: '/_app/campanhas'
-      path: '/campanhas'
-      fullPath: '/campanhas'
-      preLoaderRoute: typeof AppCampanhasRouteImport
-      parentRoute: typeof AppRoute
-    }
     '/_app/automacoes': {
       id: '/_app/automacoes'
       path: '/automacoes'
@@ -809,25 +771,13 @@ declare module '@tanstack/react-router' {
     }
     '/_app/campanhas/grafico': {
       id: '/_app/campanhas/grafico'
-      path: '/grafico'
+      path: '/campanhas/grafico'
       fullPath: '/campanhas/grafico'
       preLoaderRoute: typeof AppCampanhasGraficoRouteImport
-      parentRoute: typeof AppCampanhasRoute
+      parentRoute: typeof AppRoute
     }
   }
 }
-
-interface AppCampanhasRouteChildren {
-  AppCampanhasGraficoRoute: typeof AppCampanhasGraficoRoute
-}
-
-const AppCampanhasRouteChildren: AppCampanhasRouteChildren = {
-  AppCampanhasGraficoRoute: AppCampanhasGraficoRoute,
-}
-
-const AppCampanhasRouteWithChildren = AppCampanhasRoute._addFileChildren(
-  AppCampanhasRouteChildren,
-)
 
 interface AppClientesRouteChildren {
   AppClientesClientIdRoute: typeof AppClientesClientIdRoute
@@ -857,7 +807,6 @@ interface AppRouteChildren {
   AppAgenteRoute: typeof AppAgenteRoute
   AppAuditoriaRoute: typeof AppAuditoriaRoute
   AppAutomacoesRoute: typeof AppAutomacoesRoute
-  AppCampanhasRoute: typeof AppCampanhasRouteWithChildren
   AppClientPortalRoute: typeof AppClientPortalRoute
   AppClientesRoute: typeof AppClientesRouteWithChildren
   AppCobrancasRoute: typeof AppCobrancasRoute
@@ -872,7 +821,6 @@ interface AppRouteChildren {
   AppIntegrationsRoute: typeof AppIntegrationsRoute
   AppLinkBioRoute: typeof AppLinkBioRoute
   AppMetricasRoute: typeof AppMetricasRouteWithChildren
-  AppMulticanalRoute: typeof AppMulticanalRoute
   AppOrganizadorRoute: typeof AppOrganizadorRoute
   AppQuizRoute: typeof AppQuizRoute
   AppRelatoriosRoute: typeof AppRelatoriosRoute
@@ -884,13 +832,13 @@ interface AppRouteChildren {
   AppUploadRoute: typeof AppUploadRoute
   AppUtmsRoute: typeof AppUtmsRoute
   AppVictoriaRoute: typeof AppVictoriaRoute
+  AppCampanhasGraficoRoute: typeof AppCampanhasGraficoRoute
 }
 
 const AppRouteChildren: AppRouteChildren = {
   AppAgenteRoute: AppAgenteRoute,
   AppAuditoriaRoute: AppAuditoriaRoute,
   AppAutomacoesRoute: AppAutomacoesRoute,
-  AppCampanhasRoute: AppCampanhasRouteWithChildren,
   AppClientPortalRoute: AppClientPortalRoute,
   AppClientesRoute: AppClientesRouteWithChildren,
   AppCobrancasRoute: AppCobrancasRoute,
@@ -905,7 +853,6 @@ const AppRouteChildren: AppRouteChildren = {
   AppIntegrationsRoute: AppIntegrationsRoute,
   AppLinkBioRoute: AppLinkBioRoute,
   AppMetricasRoute: AppMetricasRouteWithChildren,
-  AppMulticanalRoute: AppMulticanalRoute,
   AppOrganizadorRoute: AppOrganizadorRoute,
   AppQuizRoute: AppQuizRoute,
   AppRelatoriosRoute: AppRelatoriosRoute,
@@ -917,6 +864,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppUploadRoute: AppUploadRoute,
   AppUtmsRoute: AppUtmsRoute,
   AppVictoriaRoute: AppVictoriaRoute,
+  AppCampanhasGraficoRoute: AppCampanhasGraficoRoute,
 }
 
 const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)

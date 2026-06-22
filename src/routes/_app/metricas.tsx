@@ -571,7 +571,7 @@ function MetricasCampanhasPage() {
   const startStr = getLocalDateStr(dateRange.startDate);
   const endStr   = getLocalDateStr(dateRange.endDate);
 
-  const { data: campaigns = [], isLoading: isLoadingCamps } = useQuery({
+  const { data: campaigns = [], isFetching: isFetchingCamps, isLoading: isLoadingCamps } = useQuery({
     queryKey: ["mc-camps", accountFilter, statusFilter, startStr, endStr],
     queryFn: async () => {
       let q = (supabase as any).from("campaigns").select(`id, name, status, delivery_status, objective, daily_budget, lifetime_budget, budget_currency, external_id, ad_account_id, ad_account:ad_accounts(name), metrics(cost, conversions, impressions, clicks, reach, frequency, date)`);
@@ -1260,7 +1260,7 @@ function MetricasCampanhasPage() {
                   className={`flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-[11px] font-bold transition-all ${temperatureMode ? "border-rose-500/40 bg-rose-500/10 text-rose-400" : "border-white/10 bg-white/[0.02] text-muted-foreground hover:text-foreground"}`}
                   title="Ativar cores de temperatura para Métricas (CPL, CTR, etc)"
                 >
-                  ðŸŒ¡ï¸ <span className="hidden sm:inline">Temperatura</span>
+                  🌡️ï¸ <span className="hidden sm:inline">Temperatura</span>
                 </button>
                 <button onClick={runAudit} disabled={isAuditing} className="flex items-center gap-1.5 rounded-xl border border-orange-400/30 bg-orange-400/10 px-3 py-1.5 text-[11px] font-bold text-orange-400 hover:bg-orange-400/20 transition-all disabled:opacity-50">
                   {isAuditing ? <Loader2 className="h-3 w-3 animate-spin"/> : <FlaskConical className="h-3 w-3"/>}
@@ -1366,7 +1366,7 @@ function MetricasCampanhasPage() {
                             <th className="px-4 py-3 w-24 text-right text-[9px] font-black uppercase tracking-widest text-primary/80 whitespace-nowrap">Gasto</th>
                           </tr>
                         </thead>
-                        <tbody>
+                        <tbody className={isFetchingCamps ? "opacity-50 pointer-events-none transition-opacity duration-200" : "transition-opacity duration-200"}>
                           {filtered.slice(0, visibleCount).map((c: any) => {
                             const isActive   = c.status?.toUpperCase() === "ACTIVE";
                             const isLearning = c.delivery_status === "LEARNING";
@@ -1648,7 +1648,7 @@ function MetricasCampanhasPage() {
                   <div className="overflow-x-auto">
                     <table className="w-full text-xs">
                       <thead><tr className="border-b border-white/5 bg-white/[0.02]"><th className="px-4 py-2.5 text-left text-[9px] font-black uppercase tracking-widest text-muted-foreground/50">Campanha</th><th className="px-4 py-2.5 text-center text-[9px] font-black uppercase tracking-widest text-muted-foreground/50">Objetivo</th><th className="px-4 py-2.5 text-right text-[9px] font-black uppercase tracking-widest text-muted-foreground/50">App Conv.</th><th className="px-4 py-2.5 text-right text-[9px] font-black uppercase tracking-widest text-muted-foreground/50">Total Conv.</th></tr></thead>
-                      <tbody>
+                      <tbody className={isFetchingCamps ? "opacity-50 pointer-events-none transition-opacity duration-200" : "transition-opacity duration-200"}>
                         {auditData.map((a: any, i: number) => (
                           <tr key={i} className="border-b border-white/[0.03] hover:bg-white/[0.02]">
                             <td className="px-4 py-3 font-semibold max-w-[240px] truncate">{a.campaign_name || a.name}</td>
@@ -1676,7 +1676,7 @@ function MetricasCampanhasPage() {
                       <thead><tr className="border-b border-white/5 bg-white/[0.02]">
                         {["Placement","Plataforma","Impressões","CTR","Conversões","CPL","Gasto"].map(h => <th key={h} className={`px-4 py-2.5 text-[9px] font-black uppercase tracking-widest text-muted-foreground/50 ${h === "Placement" || h === "Plataforma" ? "text-left" : "text-right"}`}>{h}</th>)}
                       </tr></thead>
-                      <tbody>
+                      <tbody className={isFetchingCamps ? "opacity-50 pointer-events-none transition-opacity duration-200" : "transition-opacity duration-200"}>
                         {placementData.map((p: any, i: number) => {
                           const maxSpend = placementData[0]?.spend || 1;
                           return (
@@ -1913,7 +1913,7 @@ function MetricasCampanhasPage() {
                                   <th className="px-4 py-2.5 text-center text-[9px] font-black uppercase tracking-widest text-muted-foreground/50">Decisão</th>
                                 </tr>
                               </thead>
-                              <tbody>
+                              <tbody className={isFetchingCamps ? "opacity-50 pointer-events-none transition-opacity duration-200" : "transition-opacity duration-200"}>
                                 {campDecisions.map((c: any) => {
                                   const dc = DECISION_COLORS[c.decision.tier] || DECISION_COLORS.blue;
                                   return (
@@ -2573,6 +2573,8 @@ function MetricasCampanhasPage() {
     </div>
   );
 }
+
+
 
 
 
