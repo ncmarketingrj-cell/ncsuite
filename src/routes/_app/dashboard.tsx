@@ -466,11 +466,11 @@ function Dashboard() {
     <div className="w-full p-1 pb-20">
       
       {/* ─── STICKY HEADER AREA ─── */}
-      <div className="sticky top-0 z-40 -mx-1 px-1 bg-background/95 backdrop-blur-xl border-b border-white/5 pb-4 pt-2 space-y-5">
+      <div className="sticky top-0 z-40 -mx-1 px-1 bg-background/95 backdrop-blur-xl border-b border-white/5 pb-3 pt-2 space-y-3 sm:space-y-5">
         
         {/* PageHeader Corporativo Padronizado com Health Score */}
-        <div className="flex items-start justify-between">
-          <PageHeader 
+        <div className="flex items-start justify-between gap-2">
+          <PageHeader
             eyebrow="Painel Geral"
             title="Command Center"
             description="Visão analítica de performance, tráfego e inteligência artificial da NC Suite."
@@ -514,9 +514,9 @@ function Dashboard() {
         </div>
 
         {/* ─── FILTER BAR ESTRUTURADA (UI PREMIUM) ─── */}
-        <div className="relative z-50 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between w-full bg-card/45 border border-border/60 rounded-2xl p-3 backdrop-blur-md">
+        <div className="relative z-50 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between w-full bg-card/45 border border-border/60 rounded-2xl p-3 backdrop-blur-md">
           {/* Filtros à esquerda */}
-          <div className="flex flex-wrap items-center gap-3">
+          <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
             
             <div className="relative">
               <button 
@@ -826,14 +826,14 @@ function Dashboard() {
       </section>
 
       {/* Data Core: Insights & Charts */}
-      <div className="grid gap-8 lg:grid-cols-3">
+      <div className="grid gap-4 sm:gap-6 lg:gap-8 lg:grid-cols-3">
         <motion.div 
           initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}
-          className="glass-panel col-span-2 flex flex-col p-8 min-h-[450px]"
+          className="glass-panel col-span-2 flex flex-col p-4 sm:p-6 lg:p-8 min-h-[280px] sm:min-h-[380px] lg:min-h-[450px]"
         >
           <div className="mb-8 flex items-center justify-between">
             <div>
-              <h3 className="header-sport text-xl font-black tracking-tight uppercase">Performance Temporal</h3>
+              <h3 className="header-sport text-base sm:text-xl font-black tracking-tight uppercase">Performance Temporal</h3>
               <p className="text-xs text-muted-foreground font-medium mt-1">Análise volumétrica de investimento e conversão (30d)</p>
             </div>
             <div className="flex items-center gap-6">
@@ -846,8 +846,8 @@ function Dashboard() {
             </div>
           </div>
           
-          <div className="flex-1 w-full relative">
-            <ResponsiveContainer width="100%" height={320}>
+          <div className="w-full" style={{ height: "clamp(180px, 40vw, 320px)" }}>
+            <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={performanceData?.chartData || []}>
                 <defs>
                   <linearGradient id="colorCost" x1="0" y1="0" x2="0" y2="1">
@@ -887,7 +887,7 @@ function Dashboard() {
         {/* AI Synthesis Box */}
         <motion.div 
           initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}
-          className="glass-panel p-8 flex flex-col bg-gradient-to-br from-primary/[0.03] to-transparent border-primary/20"
+          className="glass-panel p-4 sm:p-6 lg:p-8 flex flex-col bg-gradient-to-br from-primary/[0.03] to-transparent border-primary/20"
         >
           <div className="flex items-center gap-3 mb-6">
             <div className="h-10 w-10 rounded-2xl bg-primary/10 flex items-center justify-center ring-1 ring-primary/20 shadow-glow-sm">
@@ -939,20 +939,20 @@ function Dashboard() {
       </div>
 
       {/* ─── CHARTS ADICIONAIS MULTICANAL E EVOLUCAO ─── */}
-      <div className="grid gap-8 lg:grid-cols-2 2xl:grid-cols-4 mt-8">
+      <div className="grid gap-4 sm:gap-6 lg:gap-8 lg:grid-cols-2 2xl:grid-cols-4 mt-4 sm:mt-8">
         {/* Top Campanhas (Barras) */}
         <motion.div 
           initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }}
-          className="glass-panel p-8"
+          className="glass-panel p-4 sm:p-6 lg:p-8"
         >
           <div className="mb-6 flex items-center justify-between">
             <div>
-              <h3 className="header-sport text-sm font-black tracking-widest uppercase">Top Campanhas (Gasto)</h3>
+              <h3 className="header-sport text-xs sm:text-sm font-black tracking-widest uppercase">Top Campanhas (Gasto)</h3>
               <p className="text-[10px] text-muted-foreground uppercase mt-1 tracking-widest">Comparativo de Resultados x Gasto</p>
             </div>
             <BarChart3 className="h-5 w-5 text-primary/50" />
           </div>
-          <div className="h-[280px] w-full">
+          <div className="w-full" style={{ height: "clamp(200px, 45vw, 280px)" }}>
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={performanceData?.barData || []} margin={{ top: 20, right: 0, left: -20, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border) / 0.2)" vertical={false} />
@@ -974,16 +974,16 @@ function Dashboard() {
         {/* Share de Gasto (Pizza) */}
         <motion.div 
           initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}
-          className="glass-panel p-8"
+          className="glass-panel p-4 sm:p-6 lg:p-8"
         >
           <div className="mb-6 flex items-center justify-between">
             <div>
-              <h3 className="header-sport text-sm font-black tracking-widest uppercase">Share de Investimento</h3>
+              <h3 className="header-sport text-xs sm:text-sm font-black tracking-widest uppercase">Share de Investimento</h3>
               <p className="text-[10px] text-muted-foreground uppercase mt-1 tracking-widest">Distribuição de Verba por Campanha</p>
             </div>
             <PieChartIcon className="h-5 w-5 text-primary/50" />
           </div>
-          <div className="h-[280px] w-full relative flex items-center justify-center">
+          <div className="w-full relative flex items-center justify-center" style={{ height: "clamp(200px, 45vw, 280px)" }}>
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
                 <Pie
@@ -1019,16 +1019,16 @@ function Dashboard() {
         {/* Funil de Conversão */}
         <motion.div 
           initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.25 }}
-          className="glass-panel p-8"
+          className="glass-panel p-4 sm:p-6 lg:p-8"
         >
           <div className="mb-6 flex items-center justify-between">
             <div>
-              <h3 className="header-sport text-sm font-black tracking-widest uppercase">Funil Global de Tráfego</h3>
+              <h3 className="header-sport text-xs sm:text-sm font-black tracking-widest uppercase">Funil Global de Tráfego</h3>
               <p className="text-[10px] text-muted-foreground uppercase mt-1 tracking-widest">Atrito de Conversão Geral</p>
             </div>
             <Activity className="h-5 w-5 text-primary/50" />
           </div>
-          <div className="flex flex-col gap-3 h-[280px] justify-center">
+          <div className="flex flex-col gap-3 justify-center" style={{ minHeight: "clamp(200px, 45vw, 280px)" }}>
             {performanceData?.funnelData?.map((f: any, idx: number, arr: any[]) => {
               const prev = idx > 0 ? arr[idx-1].value : f.value;
               const drop = prev > 0 ? (f.value / prev) * 100 : 0;
@@ -1062,16 +1062,16 @@ function Dashboard() {
         {/* Risco vs Oportunidade */}
         <motion.div 
           initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}
-          className="glass-panel p-8"
+          className="glass-panel p-4 sm:p-6 lg:p-8"
         >
           <div className="mb-6 flex items-center justify-between">
             <div>
-              <h3 className="header-sport text-sm font-black tracking-widest uppercase">Risco x Retorno</h3>
+              <h3 className="header-sport text-xs sm:text-sm font-black tracking-widest uppercase">Risco x Retorno</h3>
               <p className="text-[10px] text-muted-foreground uppercase mt-1 tracking-widest">Avaliação baseada no CPA Médio</p>
             </div>
             <Target className="h-5 w-5 text-primary/50" />
           </div>
-          <div className="h-[280px] overflow-y-auto custom-scrollbar pr-2 space-y-4">
+          <div className="overflow-y-auto custom-scrollbar pr-2 space-y-4" style={{ height: "clamp(200px, 45vw, 280px)" }}>
             
             {performanceData?.opportunities && performanceData.opportunities.length > 0 && (
               <div className="space-y-2">
@@ -1124,9 +1124,9 @@ function Dashboard() {
       <motion.div
         initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
-        className="glass-panel p-8 mt-8 w-full overflow-hidden"
+        className="glass-panel p-4 sm:p-6 lg:p-8 mt-4 sm:mt-8 w-full overflow-hidden"
       >
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 sm:mb-6">
           <div>
             <h3 className="header-sport text-base font-black tracking-widest uppercase flex items-center gap-2">
               <Layers className="h-5 w-5 text-primary" />
@@ -1136,9 +1136,9 @@ function Dashboard() {
               Dados consolidados do período
             </p>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="hidden sm:flex items-center gap-3">
             <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Filtrar período:</span>
-            <DateRangePicker 
+            <DateRangePicker
               startDate={dateRange.startDate} 
               endDate={dateRange.endDate} 
               onChange={handleDateChange} 
@@ -1156,7 +1156,77 @@ function Dashboard() {
             <p className="text-xs">Nenhuma conta com campanha ativa ou métricas no período.</p>
           </div>
         ) : (
-          <div className="overflow-x-auto text-left">
+          <>
+          {/* ── Mobile: cards por conta ── */}
+          <div className="sm:hidden space-y-3">
+            {sortedAccounts.map(row => (
+              <button
+                key={row.id}
+                onClick={() => navigate({ to: "/metricas", search: { account: row.id } })}
+                className="w-full text-left p-4 rounded-2xl bg-white/[0.03] border border-white/[0.07] hover:bg-white/[0.06] transition-all active:scale-[0.98]"
+              >
+                {/* Cabeçalho do card */}
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    {row.client?.logo_url ? (
+                      <img src={row.client.logo_url} alt={row.client.name} className="h-9 w-9 rounded-xl object-cover border border-white/10 shrink-0" />
+                    ) : (
+                      <div className="h-9 w-9 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center text-[10px] font-black text-primary shrink-0">
+                        {row.name.substring(0, 2).toUpperCase()}
+                      </div>
+                    )}
+                    <div className="min-w-0">
+                      <p className="text-xs font-black text-foreground truncate">{row.name}</p>
+                      <p className="text-[9px] text-muted-foreground mt-0.5 truncate">{row.client ? row.client.name : "Sem cliente"}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span className={`flex items-center gap-1 text-[9px] font-bold uppercase tracking-wide px-2 py-1 rounded-full ${row.activeCampaignsCount > 0 ? "bg-success/15 text-success" : "bg-muted text-muted-foreground"}`}>
+                      <span className={`h-1.5 w-1.5 rounded-full ${row.activeCampaignsCount > 0 ? "bg-success animate-pulse" : "bg-muted-foreground/50"}`} />
+                      {row.activeCampaignsCount > 0 ? `${row.activeCampaignsCount} ativas` : "Inativo"}
+                    </span>
+                    <ArrowUpRight className="h-4 w-4 text-muted-foreground" />
+                  </div>
+                </div>
+                {/* Grid de métricas 3x2 */}
+                <div className="grid grid-cols-3 gap-2">
+                  <div className="bg-primary/5 border border-primary/10 rounded-xl p-2.5 col-span-1">
+                    <p className="text-[8px] font-black uppercase tracking-widest text-muted-foreground">Investido</p>
+                    <p className="text-xs font-black font-mono text-primary mt-1">
+                      {row.metrics.spend.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                    </p>
+                  </div>
+                  <div className="bg-white/[0.03] border border-white/5 rounded-xl p-2.5">
+                    <p className="text-[8px] font-black uppercase tracking-widest text-muted-foreground">Alcance</p>
+                    <p className="text-xs font-black font-mono text-foreground mt-1">
+                      {row.metrics.reach > 999 ? `${(row.metrics.reach / 1000).toFixed(1)}k` : row.metrics.reach.toLocaleString('pt-BR')}
+                    </p>
+                  </div>
+                  <div className="bg-white/[0.03] border border-white/5 rounded-xl p-2.5">
+                    <p className="text-[8px] font-black uppercase tracking-widest text-muted-foreground">Resultados</p>
+                    <p className="text-xs font-black font-mono text-foreground mt-1">{row.metrics.results.toLocaleString('pt-BR')}</p>
+                  </div>
+                  <div className="bg-white/[0.03] border border-white/5 rounded-xl p-2.5">
+                    <p className="text-[8px] font-black uppercase tracking-widest text-muted-foreground">Mensagens</p>
+                    <p className="text-xs font-black font-mono text-foreground mt-1">{row.metrics.leads.toLocaleString('pt-BR')}</p>
+                  </div>
+                  <div className="bg-white/[0.03] border border-white/5 rounded-xl p-2.5">
+                    <p className="text-[8px] font-black uppercase tracking-widest text-muted-foreground">Compras</p>
+                    <p className="text-xs font-black font-mono text-foreground mt-1">{row.metrics.purchases.toLocaleString('pt-BR')}</p>
+                  </div>
+                  <div className="bg-white/[0.03] border border-white/5 rounded-xl p-2.5">
+                    <p className="text-[8px] font-black uppercase tracking-widest text-muted-foreground">Visualiz.</p>
+                    <p className="text-xs font-black font-mono text-foreground mt-1">
+                      {row.metrics.impressions > 999 ? `${(row.metrics.impressions / 1000).toFixed(1)}k` : row.metrics.impressions.toLocaleString('pt-BR')}
+                    </p>
+                  </div>
+                </div>
+              </button>
+            ))}
+          </div>
+
+          {/* ── Tablet+: tabela clássica ── */}
+          <div className="hidden sm:block overflow-x-auto text-left">
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="border-b border-white/5 pb-3">
@@ -1171,71 +1241,55 @@ function Dashboard() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-white/5">
-                {sortedAccounts.map(row => {
-                  return (
-                    <tr 
-                      key={row.id}
-                      onClick={() => {
-                        navigate({
-                          to: "/metricas",
-                          search: { account: row.id }
-                        });
-                      }}
-                      className="group hover:bg-white/[0.02] transition-colors cursor-pointer"
-                    >
-                      <td className="py-4 pl-2">
-                        <div className="flex items-center gap-3">
-                          {row.client?.logo_url ? (
-                            <img src={row.client.logo_url} alt={row.client.name} className="h-8 w-8 rounded-xl object-cover border border-white/10" />
-                          ) : (
-                            <div className="h-8 w-8 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center text-[10px] font-black text-primary">
-                              {row.name.substring(0, 2).toUpperCase()}
-                            </div>
-                          )}
-                          <div className="min-w-0 flex-1">
-                            <p className="text-xs font-black text-foreground group-hover:text-primary transition-colors truncate">
-                              {row.name}
-                            </p>
-                            <p className="text-[9px] text-muted-foreground uppercase tracking-wider mt-0.5">
-                              {row.client ? `Cliente: ${row.client.name}` : "Sem cliente vinculado"}
-                            </p>
+                {sortedAccounts.map(row => (
+                  <tr
+                    key={row.id}
+                    onClick={() => navigate({ to: "/metricas", search: { account: row.id } })}
+                    className="group hover:bg-white/[0.02] transition-colors cursor-pointer"
+                  >
+                    <td className="py-4 pl-2">
+                      <div className="flex items-center gap-3">
+                        {row.client?.logo_url ? (
+                          <img src={row.client.logo_url} alt={row.client.name} className="h-8 w-8 rounded-xl object-cover border border-white/10" />
+                        ) : (
+                          <div className="h-8 w-8 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center text-[10px] font-black text-primary">
+                            {row.name.substring(0, 2).toUpperCase()}
                           </div>
+                        )}
+                        <div className="min-w-0 flex-1">
+                          <p className="text-xs font-black text-foreground group-hover:text-primary transition-colors truncate">{row.name}</p>
+                          <p className="text-[9px] text-muted-foreground uppercase tracking-wider mt-0.5">
+                            {row.client ? `Cliente: ${row.client.name}` : "Sem cliente vinculado"}
+                          </p>
                         </div>
-                      </td>
-                      <td className="py-4">
-                        <div className="flex items-center gap-1.5">
-                          <span className={`h-1.5 w-1.5 rounded-full ${row.activeCampaignsCount > 0 ? "bg-success shadow-glow-sm animate-pulse" : "bg-muted-foreground/50"}`} />
-                          <span className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground">
-                            {row.activeCampaignsCount > 0 ? `${row.activeCampaignsCount} Ativas` : "Inativo"}
-                          </span>
-                        </div>
-                      </td>
-                      <td className="py-4 text-right font-mono text-[11px] font-bold tabular-nums text-foreground">
-                        {row.metrics.reach.toLocaleString('pt-BR')}
-                      </td>
-                      <td className="py-4 text-right font-mono text-[11px] font-bold tabular-nums text-foreground">
-                        {row.metrics.impressions.toLocaleString('pt-BR')}
-                      </td>
-                      <td className="py-4 text-right font-mono text-[11px] font-bold tabular-nums text-foreground">
-                        {row.metrics.leads.toLocaleString('pt-BR')}
-                      </td>
-                      <td className="py-4 text-right font-mono text-[11px] font-bold tabular-nums text-foreground">
-                        {row.metrics.purchases.toLocaleString('pt-BR')}
-                      </td>
-                      <td className="py-4 text-right font-mono text-[11px] font-black tabular-nums text-primary">
-                        {row.metrics.spend.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-                      </td>
-                      <td className="py-4 pr-2 text-right">
-                        <button className="inline-flex items-center justify-center h-6 w-6 rounded-lg bg-primary/10 border border-primary/20 text-primary group-hover:bg-primary group-hover:text-primary-foreground group-hover:border-transparent transition-all">
-                          <ArrowUpRight className="h-3.5 w-3.5" />
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
+                      </div>
+                    </td>
+                    <td className="py-4">
+                      <div className="flex items-center gap-1.5">
+                        <span className={`h-1.5 w-1.5 rounded-full ${row.activeCampaignsCount > 0 ? "bg-success shadow-glow-sm animate-pulse" : "bg-muted-foreground/50"}`} />
+                        <span className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground">
+                          {row.activeCampaignsCount > 0 ? `${row.activeCampaignsCount} Ativas` : "Inativo"}
+                        </span>
+                      </div>
+                    </td>
+                    <td className="py-4 text-right font-mono text-[11px] font-bold tabular-nums text-foreground">{row.metrics.reach.toLocaleString('pt-BR')}</td>
+                    <td className="py-4 text-right font-mono text-[11px] font-bold tabular-nums text-foreground">{row.metrics.impressions.toLocaleString('pt-BR')}</td>
+                    <td className="py-4 text-right font-mono text-[11px] font-bold tabular-nums text-foreground">{row.metrics.leads.toLocaleString('pt-BR')}</td>
+                    <td className="py-4 text-right font-mono text-[11px] font-bold tabular-nums text-foreground">{row.metrics.purchases.toLocaleString('pt-BR')}</td>
+                    <td className="py-4 text-right font-mono text-[11px] font-black tabular-nums text-primary">
+                      {row.metrics.spend.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                    </td>
+                    <td className="py-4 pr-2 text-right">
+                      <button className="inline-flex items-center justify-center h-6 w-6 rounded-lg bg-primary/10 border border-primary/20 text-primary group-hover:bg-primary group-hover:text-primary-foreground group-hover:border-transparent transition-all">
+                        <ArrowUpRight className="h-3.5 w-3.5" />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>
+          </>
         )}
       </motion.div>
       </div>
