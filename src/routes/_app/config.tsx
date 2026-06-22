@@ -306,10 +306,11 @@ function TabIntegracoes() {
 
   useEffect(() => {
     const loadConfig = async () => {
-      const { data } = await (supabase as any).from("meta_ads_configs").select("*").maybeSingle();
-      if (data) {
-        setToken(data.access_token || "");
-        setOpenaiConfigured(data.openai_key_configured || false);
+      const { data } = await (supabase as any).from("meta_ads_configs").select("*").order("created_at", { ascending: false }).limit(1);
+      if (data && data.length > 0) {
+        const firstRow = data[0];
+        setToken(firstRow.access_token || "");
+        setOpenaiConfigured(firstRow.openai_key_configured || false);
       }
       setIsLoading(false);
     };

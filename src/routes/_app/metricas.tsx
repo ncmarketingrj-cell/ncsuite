@@ -630,8 +630,8 @@ function MetricasCampanhasPage() {
   const { data: syncConfig } = useQuery({
     queryKey: ["meta-sync-config"],
     queryFn: async () => {
-      const { data } = await (supabase as any).from("meta_ads_configs").select("last_heartbeat_at").maybeSingle();
-      return data;
+      const { data } = await (supabase as any).from("meta_ads_configs").select("last_heartbeat_at").order("created_at", { ascending: false }).limit(1);
+      return data?.[0] || null;
     },
     refetchInterval: 30 * 1000,
   });

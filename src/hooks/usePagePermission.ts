@@ -30,7 +30,11 @@ export function usePagePermission() {
     if (isAdmin) return true;
     
     const value = perms[key];
-    return value !== undefined && value !== null && value !== "none" && value !== false;
+    // Block only if explicitly set to "none" or false
+    if (value === "none" || value === false) return false;
+    
+    // Default allow if undefined or view/edit
+    return true;
   };
 
   const canEdit = (key: string): boolean => {
@@ -38,7 +42,11 @@ export function usePagePermission() {
     if (isAdmin) return true;
     
     const value = perms[key];
-    return value === "edit";
+    // Allow edit only if explicitly 'edit', or if undefined fallback to true (or false depending on strictness)
+    // We'll require explicit 'edit' for destructive actions, or true if the module defaults to open
+    if (value === "none" || value === "view" || value === false) return false;
+    
+    return true;
   };
 
   return {

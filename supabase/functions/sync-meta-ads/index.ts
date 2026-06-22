@@ -466,10 +466,14 @@ serve(async (req) => {
     }
 
     // 2. Buscar configuração (token master)
-    const { data: config, error: configErr } = await supabase
+    const { data: configs, error: configErr } = await supabase
       .from("meta_ads_configs")
       .select("access_token, user_id")
-      .maybeSingle()
+      .not("access_token", "is", null)
+      .order("created_at", { ascending: false })
+      .limit(1)
+
+    const config = configs?.[0]
 
     if (configErr || !config?.access_token) {
       throw new Error("Meta Token não configurado. Acesse Configurações → Integrações.")

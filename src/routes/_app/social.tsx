@@ -88,8 +88,8 @@ function SocialMediaPage() {
   const { data: metaConfig } = useQuery({
     queryKey: ["meta_social_configs"],
     queryFn: async () => {
-      const { data } = await (supabase as any).from("meta_ads_configs").select("*").maybeSingle();
-      return data as any;
+      const { data } = await (supabase as any).from("meta_ads_configs").select("*").order("created_at", { ascending: false }).limit(1);
+      return data?.[0] || null;
     }
   });
 
