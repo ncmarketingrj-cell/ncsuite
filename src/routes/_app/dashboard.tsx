@@ -952,20 +952,29 @@ function Dashboard() {
             </div>
             <BarChart3 className="h-5 w-5 text-primary/50" />
           </div>
-          <div className="w-full" style={{ height: "clamp(200px, 45vw, 280px)" }}>
+          <div className="w-full" style={{ height: "clamp(220px, 50vw, 300px)" }}>
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={performanceData?.barData || []} margin={{ top: 20, right: 0, left: -20, bottom: 0 }}>
+              <BarChart data={performanceData?.barData || []} margin={{ top: 10, right: 4, left: -20, bottom: 50 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border) / 0.2)" vertical={false} />
-                <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 9, fontWeight: 700, fill: 'hsl(var(--muted-foreground))' }} />
+                <XAxis
+                  dataKey="name"
+                  axisLine={false}
+                  tickLine={false}
+                  interval={0}
+                  angle={-35}
+                  textAnchor="end"
+                  tick={{ fontSize: 8, fontWeight: 700, fill: 'hsl(var(--muted-foreground))' }}
+                  tickFormatter={(v: string) => v.length > 14 ? v.slice(0, 13) + "…" : v}
+                />
                 <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 9, fontWeight: 700, fill: 'hsl(var(--muted-foreground))' }} />
-                <Tooltip 
+                <Tooltip
                   contentStyle={{ backgroundColor: 'hsl(var(--background))', borderColor: 'hsl(var(--border))', borderRadius: '12px' }}
                   itemStyle={{ fontSize: '11px', fontWeight: 800, fontFamily: 'monospace' }}
                   labelStyle={{ fontSize: '9px', textTransform: 'uppercase', marginBottom: '4px', color: 'hsl(var(--muted-foreground))' }}
                   cursor={{ fill: 'hsl(var(--white) / 0.02)' }}
                 />
-                <Bar dataKey="Gasto" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} barSize={24} />
-                <Bar dataKey="Resultados" fill="hsl(262 83% 74%)" radius={[4, 4, 0, 0]} barSize={24} />
+                <Bar dataKey="Gasto" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} barSize={14} />
+                <Bar dataKey="Resultados" fill="hsl(262 83% 74%)" radius={[4, 4, 0, 0]} barSize={14} />
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -983,15 +992,15 @@ function Dashboard() {
             </div>
             <PieChartIcon className="h-5 w-5 text-primary/50" />
           </div>
-          <div className="w-full relative flex items-center justify-center" style={{ height: "clamp(200px, 45vw, 280px)" }}>
+          <div className="w-full relative overflow-hidden" style={{ height: "clamp(200px, 45vw, 280px)" }}>
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
                 <Pie
                   data={performanceData?.pieData || []}
                   cx="50%"
                   cy="50%"
-                  innerRadius={70}
-                  outerRadius={100}
+                  innerRadius={58}
+                  outerRadius={85}
                   paddingAngle={5}
                   dataKey="value"
                   stroke="none"
@@ -1203,8 +1212,12 @@ function Dashboard() {
                     </p>
                   </div>
                   <div className="bg-white/[0.03] border border-white/5 rounded-xl p-2.5">
-                    <p className="text-[8px] font-black uppercase tracking-widest text-muted-foreground">Resultados</p>
-                    <p className="text-xs font-black font-mono text-foreground mt-1">{row.metrics.results.toLocaleString('pt-BR')}</p>
+                    <p className="text-[8px] font-black uppercase tracking-widest text-muted-foreground">CPL</p>
+                    <p className="text-xs font-black font-mono text-foreground mt-1">
+                      {row.metrics.leads > 0 
+                        ? (row.metrics.spend / row.metrics.leads).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) 
+                        : "—"}
+                    </p>
                   </div>
                   <div className="bg-white/[0.03] border border-white/5 rounded-xl p-2.5">
                     <p className="text-[8px] font-black uppercase tracking-widest text-muted-foreground">Mensagens</p>
@@ -1235,6 +1248,7 @@ function Dashboard() {
                   <th className="text-[10px] font-black uppercase tracking-wider text-muted-foreground pb-3 text-right">Alcance</th>
                   <th className="text-[10px] font-black uppercase tracking-wider text-muted-foreground pb-3 text-right">Visualizações</th>
                   <th className="text-[10px] font-black uppercase tracking-wider text-muted-foreground pb-3 text-right">Mensagens</th>
+                  <th className="text-[10px] font-black uppercase tracking-wider text-muted-foreground pb-3 text-right">CPL</th>
                   <th className="text-[10px] font-black uppercase tracking-wider text-muted-foreground pb-3 text-right">Compras</th>
                   <th className="text-[10px] font-black uppercase tracking-wider text-muted-foreground pb-3 text-right">Investido</th>
                   <th className="text-[10px] font-black uppercase tracking-wider text-muted-foreground pb-3 pr-2 text-right">Ação</th>
@@ -1275,6 +1289,11 @@ function Dashboard() {
                     <td className="py-4 text-right font-mono text-[11px] font-bold tabular-nums text-foreground">{row.metrics.reach.toLocaleString('pt-BR')}</td>
                     <td className="py-4 text-right font-mono text-[11px] font-bold tabular-nums text-foreground">{row.metrics.impressions.toLocaleString('pt-BR')}</td>
                     <td className="py-4 text-right font-mono text-[11px] font-bold tabular-nums text-foreground">{row.metrics.leads.toLocaleString('pt-BR')}</td>
+                    <td className="py-4 text-right font-mono text-[11px] font-bold tabular-nums text-foreground">
+                      {row.metrics.leads > 0 
+                        ? (row.metrics.spend / row.metrics.leads).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) 
+                        : "—"}
+                    </td>
                     <td className="py-4 text-right font-mono text-[11px] font-bold tabular-nums text-foreground">{row.metrics.purchases.toLocaleString('pt-BR')}</td>
                     <td className="py-4 text-right font-mono text-[11px] font-black tabular-nums text-primary">
                       {row.metrics.spend.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
