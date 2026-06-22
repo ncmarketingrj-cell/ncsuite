@@ -1,13 +1,13 @@
-﻿import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { motion, AnimatePresence } from "framer-motion";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { useState, useMemo } from "react";
 import {
   Upload, FileText, BarChart3, Settings, ArrowUpRight, Activity,
   Sparkles, Layers, Cpu, Link2, Megaphone, LineChart, Palette, Zap,
   ChevronDown, Globe, Target, TrendingUp, TrendingDown, DollarSign, MousePointer2, Users, Trophy,
   Loader2, Bot, Brain, Clock, ChevronRight, Download, Calendar,
-  AlertTriangle, BookOpen, Rocket, GaugeCircle, PieChart as PieChartIcon
+  AlertTriangle, BookOpen, Rocket, GaugeCircle, PieChart as PieChartIcon, RefreshCw
 } from "lucide-react";
 
 const COLORS = ["#00d4ff", "#9b87f5", "#f97316", "#22c55e", "#ef4444", "#eab308"];
@@ -253,9 +253,9 @@ function Dashboard() {
       let fastPacingCamps = 0;
       let highFreqCamps = 0;
 
-      filteredAccounts.forEach(acc => {
+      filteredAccounts.forEach((acc: any) => {
         if (!acc.metrics.campaigns) return;
-        acc.metrics.campaigns.forEach(c => {
+        acc.metrics.campaigns.forEach((c: any) => {
           if (c.status === "ACTIVE") {
             activeCamps++;
             if (c.t.pacing > 1.2) fastPacingCamps++;
