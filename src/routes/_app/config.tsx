@@ -345,7 +345,8 @@ function TabIntegracoes() {
       const { error } = await (supabase as any).from("meta_ads_configs").upsert({
         user_id: u.user?.id,
         access_token: token,
-        ad_account_id: "ALL_ACCOUNTS"
+        ad_account_id: "ALL_ACCOUNTS",
+        updated_at: new Date().toISOString()
       }, { onConflict: "user_id" });
 
       if (error) throw error;
@@ -391,13 +392,52 @@ function TabIntegracoes() {
               {showTokenPlain ? "ocultar" : "mostrar"} token
             </button>
           </div>
-          <input
-            value={token}
-            onChange={(e) => setToken(e.target.value)}
-            type={showTokenPlain ? "text" : "password"}
-            placeholder="EAANmoU71vRU..."
-            className="w-full rounded-lg border border-white/10 bg-background/50 px-3 py-2 text-sm focus:border-primary focus:outline-none font-mono"
-          />
+          <div className="flex gap-2">
+            <input
+              value={token}
+              onChange={(e) => setToken(e.target.value)}
+              type={showTokenPlain ? "text" : "password"}
+              placeholder="EAANmoU71vRU..."
+              className="flex-1 rounded-lg border border-white/10 bg-background/50 px-3 py-2 text-sm focus:border-primary focus:outline-none font-mono"
+            />
+            <button onClick={save} className="inline-flex items-center justify-center gap-2 rounded-lg bg-primary px-6 py-2 text-xs font-bold text-primary-foreground hover:shadow-glow transition whitespace-nowrap">
+              <Check className="h-3.5 w-3.5" /> SALVAR TOKEN
+            </button>
+          </div>
+        </div>
+
+        {/* Sync por Mês */}
+        <div className="rounded-2xl border border-violet-500/20 bg-violet-500/5 p-4 space-y-3">
+          <div className="flex items-start gap-3">
+            <Database className="h-5 w-5 text-violet-400 shrink-0 mt-0.5" />
+            <div>
+              <p className="text-sm font-bold text-foreground">Sincronização por Mês</p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Busca o mês completo de cada período. Use para preencher dados do mês passado,
+                2 meses atrás ou 3 meses atrás sem precisar rodar o sync máximo.
+              </p>
+            </div>
+          </div>
+          <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+            <SyncButton mode="month1" />
+            <SyncButton mode="month2" />
+            <SyncButton mode="month3" />
+          </div>
+        </div>
+
+        {/* Sync Máximo */}
+        <div className="rounded-2xl border border-red-500/20 bg-red-500/5 p-4 space-y-3">
+          <div className="flex items-start gap-3">
+            <Database className="h-5 w-5 text-red-400 shrink-0 mt-0.5" />
+            <div>
+              <p className="text-sm font-bold text-foreground">Sincronização Máxima</p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Busca o máximo de histórico disponível para todas as contas vinculadas ao token.
+                Use somente na carga inicial ou ao adicionar contas novas — não há necessidade de rodar novamente após o mês estar carregado.
+              </p>
+            </div>
+          </div>
+          <SyncButton mode="max" />
         </div>
 
         <div className="rounded-xl border border-white/5 bg-white/[0.02] p-4">
@@ -542,9 +582,6 @@ function TabIntegracoes() {
       </div>
 
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 pt-2 mb-8">
-        <button onClick={save} className="inline-flex items-center justify-center gap-2 rounded-full bg-primary px-4 py-3 sm:py-2 text-xs font-bold text-primary-foreground hover:shadow-glow transition w-full sm:w-auto">
-          <Check className="h-3.5 w-3.5" /> SALVAR TOKEN META
-        </button>
         <button onClick={test} disabled={testing} className="inline-flex items-center justify-center gap-2 rounded-full border border-white/10 px-4 py-3 sm:py-2 text-xs font-medium disabled:opacity-50 hover:bg-white/5 w-full sm:w-auto">
           {testing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : connected ? <Wifi className="h-3.5 w-3.5 text-success" /> : <WifiOff className="h-3.5 w-3.5" />}
           TESTAR HEARTBEAT
@@ -614,40 +651,6 @@ function TabIntegracoes() {
       </div>
 
       <div className="h-px w-full bg-white/5 my-8" />
-
-      {/* Sync por Mês */}
-      <div className="rounded-2xl border border-violet-500/20 bg-violet-500/5 p-4 space-y-3">
-        <div className="flex items-start gap-3">
-          <Database className="h-5 w-5 text-violet-400 shrink-0 mt-0.5" />
-          <div>
-            <p className="text-sm font-bold text-foreground">Sincronização por Mês</p>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              Busca o mês completo de cada período. Use para preencher dados do mês passado,
-              2 meses atrás ou 3 meses atrás sem precisar rodar o sync máximo.
-            </p>
-          </div>
-        </div>
-        <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
-          <SyncButton mode="month1" />
-          <SyncButton mode="month2" />
-          <SyncButton mode="month3" />
-        </div>
-      </div>
-
-      {/* Sync Máximo */}
-      <div className="rounded-2xl border border-red-500/20 bg-red-500/5 p-4 space-y-3">
-        <div className="flex items-start gap-3">
-          <Database className="h-5 w-5 text-red-400 shrink-0 mt-0.5" />
-          <div>
-            <p className="text-sm font-bold text-foreground">Sincronização Máxima</p>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              Busca o máximo de histórico disponível para todas as contas vinculadas ao token.
-              Use somente na carga inicial ou ao adicionar contas novas — não há necessidade de rodar novamente após o mês estar carregado.
-            </p>
-          </div>
-        </div>
-        <SyncButton mode="max" />
-      </div>
     </div>
   );
 }
