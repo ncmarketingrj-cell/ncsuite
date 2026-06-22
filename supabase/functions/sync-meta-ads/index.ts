@@ -688,7 +688,7 @@ serve(async (req) => {
       // 2. Adicionar redundâncias vindas dos insights de histórico
       for (const row of [...insights, ...demographics, ...hourly, ...region, ...placementData, ...deviceData]) {
         if (!campaignMap.has(row.campaign_id)) {
-          const budget = budgetMap.get(row.campaign_id) || {}
+          const budget: any = budgetMap.get(row.campaign_id) || {}
           campaignMap.set(row.campaign_id, {
             name: row.campaign_name,
             platform: "Meta Ads",
@@ -705,7 +705,7 @@ serve(async (req) => {
       }
       for (const row of [...adsetInsights, ...adInsights]) {
         if (row.campaign_id && !campaignMap.has(row.campaign_id)) {
-          const budget = budgetMap.get(row.campaign_id) || {}
+          const budget: any = budgetMap.get(row.campaign_id) || {}
           campaignMap.set(row.campaign_id, {
             name: `Campanha Desconhecida (${row.campaign_id})`,
             platform: "Meta Ads",
@@ -1159,56 +1159,6 @@ serve(async (req) => {
         }
       }
 
-      // Upsert placement_metrics (Feed vs Stories vs Reels vs Marketplace)
-      const placementToUpsert = (placementData || []).map((row: any) => {
-        const campaign_id = idMap.get(row.campaign_id)
-        if (!campaign_id) return null
-        return {
-          campaign_id,
-          ad_account_id: accountId,
-          date: row.date_start,
-          placement: row.placement || "unknown",
-          publisher: row.publisher_platform || "facebook",
-          impressions: parseInt(row.impressions) || 0,
-          clicks: extractClicks(row.actions, row.inline_link_clicks),
-          spend: parseFloat(row.spend) || 0,
-          conversions: extractConversions(row.actions, campaignObjectiveMap.get(row.campaign_id), parseInt(row.reach) || 0),
-          reach: parseInt(row.reach) || 0
-        }
-      }).filter(Boolean)
-
-      if (placementToUpsert.length > 0) {
-        const { error } = await supabase
-          .from("placement_metrics")
-          .upsert(placementToUpsert, { onConflict: "campaign_id,date,placement,publisher" })
-        if (error) console.error(`[SYNC] Erro placement_metrics ${accountId}:`, error.message)
-      }
-
-      // Upsert device_metrics (mobile vs desktop por plataforma)
-      const deviceToUpsert = (deviceData || []).map((row: any) => {
-        const campaign_id = idMap.get(row.campaign_id)
-        if (!campaign_id) return null
-        return {
-          campaign_id,
-          ad_account_id: accountId,
-          date: row.date_start,
-          device: row.impression_device || "unknown",
-          platform: row.publisher_platform || "unknown",
-          impressions: parseInt(row.impressions) || 0,
-          clicks: extractClicks(row.actions, row.inline_link_clicks),
-          spend: parseFloat(row.spend) || 0,
-          conversions: extractConversions(row.actions, campaignObjectiveMap.get(row.campaign_id), parseInt(row.reach) || 0),
-          reach: parseInt(row.reach) || 0
-        }
-      }).filter(Boolean)
-
-      if (deviceToUpsert.length > 0) {
-        const { error } = await supabase
-          .from("device_metrics" as any)
-          .upsert(deviceToUpsert, { onConflict: "campaign_id,date,device,platform" })
-        if (error) console.error(`[SYNC] Erro device_metrics ${accountId}:`, error.message)
-      }
-
       // Antiga notificação diária por conta foi removida daqui e transferida para o run-automations (Resumo D-1 unificado às 08h).
     }
 
@@ -1282,3 +1232,4 @@ serve(async (req) => {
     })
   }
 })
+
