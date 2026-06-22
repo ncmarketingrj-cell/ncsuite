@@ -20,11 +20,11 @@ const META_API_BASE = "https://graph.facebook.com/v21.0"
 async function requireAuth(req: Request): Promise<Response | null> {
   const authHeader = req.headers.get("Authorization");
   if (!authHeader?.startsWith("Bearer ")) {
-    return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
   }
   const { data: { user }, error } = await supabase.auth.getUser(authHeader.replace("Bearer ", ""));
   if (error || !user) {
-    return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } });
   }
   return null;
 }
@@ -1216,7 +1216,7 @@ serve(async (req) => {
 
     return new Response(JSON.stringify({ error: error.message, sync_id: syncId }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
-      status: 500
+      status: 200
     })
   }
 })
