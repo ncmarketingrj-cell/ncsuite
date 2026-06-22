@@ -414,6 +414,8 @@ function extractClicks(actions: any[] = [], inlineLinkClicks: string | number = 
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
 
+  const { user: authUser } = await requireAuth(req);
+
   const syncId = crypto.randomUUID()
   let syncHistoryId: string | null = null
   console.log(`[SYNC ${syncId}] Iniciando sincronização NC Performance...`)
