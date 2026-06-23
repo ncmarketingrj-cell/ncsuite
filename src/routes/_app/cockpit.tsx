@@ -628,7 +628,7 @@ function useCockpitData() {
     queryFn: async () => {
       let q = (supabase as any)
         .from("campaigns")
-        .select(`id, name, ad_account_id, client_id, objective, daily_budget, metrics(cost, conversions, impressions, clicks, cpm, frequency, date)`);
+        .select(`id, name, ad_account_id, client_id, objective, daily_budget, metrics(cost, conversions, impressions, clicks, frequency, date)`);
 
       if (accountId !== "all") q = q.eq("ad_account_id", accountId);
       if (campaignId !== "all") q = q.eq("id", campaignId);
@@ -657,7 +657,7 @@ function useCockpitData() {
             conversions: m.conversions,
             impressions: m.impressions,
             clicks: m.clicks,
-            cpm: m.cpm,
+            cpm: m.impressions > 0 ? (m.cost / m.impressions) * 1000 : 0,
             frequency: m.frequency,
             date: m.date,
             campaigns: {
