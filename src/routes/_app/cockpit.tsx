@@ -627,25 +627,51 @@ function useCockpitData() {
     staleTime: 2 * 60 * 1000,
     queryFn: async () => {
       let q = (supabase as any)
-        .from("metrics")
-        .select(`campaign_id, cost, conversions, impressions, clicks, cpm, frequency, date,
-                 campaigns!inner(id, name, ad_account_id, client_id, objective, daily_budget)`)
-        .gte("date", dateFrom)
-        .lte("date", dateTo);
+        .from("campaigns")
+        .select(`id, name, ad_account_id, client_id, objective, daily_budget, metrics(cost, conversions, impressions, clicks, cpm, frequency, date)`);
 
-      if (accountId !== "all") q = q.eq("campaigns.ad_account_id", accountId);
-      if (campaignId !== "all") q = q.eq("campaign_id", campaignId);
+      if (accountId !== "all") q = q.eq("ad_account_id", accountId);
+      if (campaignId !== "all") q = q.eq("id", campaignId);
 
-      // For adSet filter: fetch metrics via asset_metrics or ad_sets → campaign_id
-      // We filter via campaign restriction since metrics table doesn't have ad_set_id directly
       if (adSetId !== "all") {
         const { data: adSetData } = await (supabase as any).from("ad_sets").select("campaign_id").eq("id", adSetId).single();
-        if (adSetData?.campaign_id) q = q.eq("campaign_id", adSetData.campaign_id);
+        if (adSetData?.campaign_id) q = q.eq("id", adSetData.campaign_id);
       }
 
       const { data, error } = await q;
       if (error) console.error("[cockpit] query error:", error);
-      return (data as any[]) ?? [];
+      
+      const campaignsWithMetrics = (data as any[]) ?? [];
+      const raw: any[] = [];
+      
+      for (const camp of campaignsWithMetrics) {
+        if (!camp.metrics) continue;
+        for (const m of camp.metrics) {
+          if (m.date) {
+             const d = m.date.split("T")[0];
+             if (d < dateFrom || d > dateTo) continue;
+          }
+          raw.push({
+            campaign_id: camp.id,
+            cost: m.cost,
+            conversions: m.conversions,
+            impressions: m.impressions,
+            clicks: m.clicks,
+            cpm: m.cpm,
+            frequency: m.frequency,
+            date: m.date,
+            campaigns: {
+              id: camp.id,
+              name: camp.name,
+              ad_account_id: camp.ad_account_id,
+              client_id: camp.client_id,
+              objective: camp.objective,
+              daily_budget: camp.daily_budget
+            }
+          });
+        }
+      }
+      return raw;
     },
   });
 
