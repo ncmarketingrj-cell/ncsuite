@@ -1,4 +1,4 @@
-import { createFileRoute, redirect, Link } from "@tanstack/react-router";
+﻿import { createFileRoute, redirect, Link } from "@tanstack/react-router";
 import { motion, AnimatePresence } from "framer-motion";
 import { useQuery } from "@tanstack/react-query";
 import { useMemo, useEffect, useRef, useState, useCallback } from "react";
@@ -15,7 +15,7 @@ import {
 import {
   Activity, Zap, TrendingUp, TrendingDown, Target, AlertTriangle, CheckCircle2,
   Radio, Rocket, DollarSign, BarChart3, Flame, ArrowUpRight, ArrowDownRight,
-  ChevronDown, RotateCcw, X,
+  ChevronDown, RotateCcw, X, Info,
 } from "lucide-react";
 
 // ─── ROUTE ──────────────────────────────────────────────────────────────────────
@@ -44,8 +44,8 @@ function pt(cx: number, cy: number, r: number, deg: number) {
 function arcD(cx: number, cy: number, r: number, startDeg: number, sweepDeg: number) {
   if (sweepDeg <= 0) return "";
   const capped = Math.min(sweepDeg, 359.99);
-  const s = pt(cx, cy, r, startDeg);
-  const e = pt(cx, cy, r, startDeg + capped);
+  const s = pt(cX, Info, cy, r, startDeg);
+  const e = pt(cX, Info, cy, r, startDeg + capped);
   const large = capped > 180 ? 1 : 0;
   return `M ${s.x.toFixed(2)} ${s.y.toFixed(2)} A ${r} ${r} 0 ${large} 1 ${e.x.toFixed(2)} ${e.y.toFixed(2)}`;
 }
@@ -76,7 +76,7 @@ interface GaugeProps {
 function CockpitGauge({ value, max = 100, label, sub, unit = "%", zones, size = 188, delay = 0 }: GaugeProps) {
   const cx = size / 2, cy = size / 2 + 8, R = size / 2 - 22;
   const arcLen = R * toRad(G_SWEEP);
-  const pct = Math.min(Math.max(value / max, 0), 1);
+  const pct = Math.min(Math.max(value / maX, Info, 0), 1);
   const valueSweep = pct * G_SWEEP;
   const offset = arcLen * (1 - pct);
 
@@ -89,12 +89,12 @@ function CockpitGauge({ value, max = 100, label, sub, unit = "%", zones, size = 
   const activeZone = [...zones_].reverse().find(z => pct >= z.from) ?? zones_[0];
   const glowColor = activeZone.color;
   const needleDeg = G_START + valueSweep;
-  const needleTip = pt(cx, cy, R - 6, needleDeg);
-  const nb1 = pt(cx, cy, 7, needleDeg + 90);
-  const nb2 = pt(cx, cy, 7, needleDeg - 90);
+  const needleTip = pt(cX, Info, cy, R - 6, needleDeg);
+  const nb1 = pt(cX, Info, cy, 7, needleDeg + 90);
+  const nb2 = pt(cX, Info, cy, 7, needleDeg - 90);
   const ticks = [0, 0.25, 0.5, 0.75, 1].map(f => {
     const deg = G_START + f * G_SWEEP;
-    return { outer: pt(cx, cy, R + 5, deg), inner: pt(cx, cy, R + 13, deg) };
+    return { outer: pt(cX, Info, cy, R + 5, deg), inner: pt(cX, Info, cy, R + 13, deg) };
   });
   const gid = label.replace(/\s/g, "-");
 
@@ -110,7 +110,7 @@ function CockpitGauge({ value, max = 100, label, sub, unit = "%", zones, size = 
         {[["top-2 left-2 border-t-2 border-l-2 rounded-tl-lg"], ["top-2 right-2 border-t-2 border-r-2 rounded-tr-lg"], ["bottom-2 left-2 border-b-2 border-l-2 rounded-bl-lg"], ["bottom-2 right-2 border-b-2 border-r-2 rounded-br-lg"]].map(([cls], i) => (
           <div key={i} className={`absolute w-3 h-3 opacity-30 ${cls}`} style={{ borderColor: glowColor }} />
         ))}
-        <div className="absolute inset-0 pointer-events-none" style={{ background: "repeating-linear-gradient(0deg, transparent, transparent 3px, rgba(0,0,0,0.03) 3px, rgba(0,0,0,0.03) 4px)", mixBlendMode: "multiply" }} />
+        <div className="absolute inset-0 pointer-events-none" style={{ background: "repeating-linear-gradient(0deg, transparent, transparent 3pX, Info, rgba(0,0,0,0.03) 3pX, Info, rgba(0,0,0,0.03) 4px)", mixBlendMode: "multiply" }} />
         <div className="flex justify-center">
           <svg width={size} height={size * 0.78} viewBox={`0 0 ${size} ${size * 0.88}`} style={{ display: "block" }}>
             <defs>
@@ -123,13 +123,13 @@ function CockpitGauge({ value, max = 100, label, sub, unit = "%", zones, size = 
                 <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
               </filter>
             </defs>
-            <path d={arcD(cx, cy, R, G_START, G_SWEEP)} stroke="rgba(255,255,255,0.06)" strokeWidth={12} fill="none" strokeLinecap="round" />
+            <path d={arcD(cX, Info, cy, R, G_START, G_SWEEP)} stroke="rgba(255,255,255,0.06)" strokeWidth={12} fill="none" strokeLinecap="round" />
             {zones_.map((z, i) => {
               const zs = z.from * G_SWEEP, ze = z.to * G_SWEEP;
-              return <path key={i} d={arcD(cx, cy, R, G_START + zs, ze - zs - 1)} stroke={z.color} strokeWidth={3} fill="none" opacity={0.22} strokeLinecap="butt" />;
+              return <path key={i} d={arcD(cX, Info, cy, R, G_START + zs, ze - zs - 1)} stroke={z.color} strokeWidth={3} fill="none" opacity={0.22} strokeLinecap="butt" />;
             })}
             <motion.path
-              d={arcD(cx, cy, R, G_START, G_SWEEP)}
+              d={arcD(cX, Info, cy, R, G_START, G_SWEEP)}
               stroke={glowColor} strokeWidth={12} fill="none" strokeLinecap="round"
               filter={`url(#glow-${gid})`}
               initial={{ strokeDashoffset: arcLen, strokeDasharray: arcLen }}
@@ -173,11 +173,11 @@ function ScoreOrb({ score, components, isLoading }: { score: number; components:
   const label = score >= 80 ? "Excelente" : score >= 55 ? "Atenção" : "Crítico";
 
   const comps = [
-    { key: "cplEfficiency", label: "Efic. CPL", weight: "25%" },
-    { key: "cpmTrend", label: "Tend. CPM", weight: "15%" },
-    { key: "fatigue", label: "Fadiga", weight: "20%" },
-    { key: "conversion", label: "Conversão", weight: "20%" },
-    { key: "funnelHealth", label: "Funil", weight: "20%" },
+    { key: "cplEfficiency", label: "Efic. CPL", weight: "25%", tooltip: "Mede se o Custo por Lead atual está batendo a meta." },
+    { key: "cpmTrend", label: "Tend. CPM", weight: "15%", tooltip: "Avalia se o leilão do mercado está encarecendo." },
+    { key: "fatigue", label: "Fadiga", weight: "20%", tooltip: "Nível de saturação visual dos criativos." },
+    { key: "conversion", label: "Conversão", weight: "20%", tooltip: "Qualidade do tráfego vs retenção na Landing Page." },
+    { key: "funnelHealth", label: "Funil", weight: "20%", tooltip: "Cliques e engajamento da primeira etapa do funil (CTR)." },
   ];
 
   return (
@@ -189,14 +189,14 @@ function ScoreOrb({ score, components, isLoading }: { score: number; components:
           </defs>
           {[...Array(36)].map((_, i) => {
             const deg = G_START + (i / 36) * G_SWEEP;
-            const outer = pt(cx, cy, R + 22, deg);
+            const outer = pt(cX, Info, cy, R + 22, deg);
             return <circle key={i} cx={outer.x} cy={outer.y} r={i % 6 === 0 ? 3 : 1.5} fill="rgba(255,255,255,0.15)" />;
           })}
-          <path d={arcD(cx, cy, R, G_START, G_SWEEP)} stroke="rgba(255,255,255,0.07)" strokeWidth={16} fill="none" strokeLinecap="round" />
+          <path d={arcD(cX, Info, cy, R, G_START, G_SWEEP)} stroke="rgba(255,255,255,0.07)" strokeWidth={16} fill="none" strokeLinecap="round" />
           {[{ from: 0, sw: 0.4 * G_SWEEP, color: "#ef4444" }, { from: 0.4 * G_SWEEP, sw: 0.3 * G_SWEEP, color: "#f59e0b" }, { from: 0.7 * G_SWEEP, sw: 0.3 * G_SWEEP - 1, color: "#22c55e" }].map((z, i) => (
-            <path key={i} d={arcD(cx, cy, R, G_START + z.from, z.sw)} stroke={z.color} strokeWidth={4} fill="none" opacity={0.25} strokeLinecap="butt" />
+            <path key={i} d={arcD(cX, Info, cy, R, G_START + z.from, z.sw)} stroke={z.color} strokeWidth={4} fill="none" opacity={0.25} strokeLinecap="butt" />
           ))}
-          <motion.path d={arcD(cx, cy, R, G_START, G_SWEEP)} stroke={color} strokeWidth={16} fill="none" strokeLinecap="round" filter="url(#orb-glow)"
+          <motion.path d={arcD(cX, Info, cy, R, G_START, G_SWEEP)} stroke={color} strokeWidth={16} fill="none" strokeLinecap="round" filter="url(#orb-glow)"
             initial={{ strokeDashoffset: arcLen, strokeDasharray: arcLen }}
             animate={{ strokeDashoffset: isLoading ? arcLen : offset, strokeDasharray: arcLen }}
             transition={{ duration: 2, delay: 0.4, ease: [0.22, 1, 0.36, 1] }} />
@@ -220,7 +220,13 @@ function ScoreOrb({ score, components, isLoading }: { score: number; components:
           return (
             <motion.div key={c.key} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 1.2 + i * 0.08 }}
               className="flex flex-col items-center gap-1 rounded-xl border p-2" style={{ borderColor: `${col}25`, background: `${col}08` }}>
-              <span className="text-[8px] font-black uppercase tracking-widest" style={{ color: col }}>{c.label}</span>
+              <div className="flex items-center justify-between w-full relative group/orb">
+                <span className="text-[8px] font-black uppercase tracking-widest" style={{ color: col }}>{c.label}</span>
+                <Info className="h-2 w-2 text-muted-foreground/40 hover:text-foreground cursor-help" />
+                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 w-32 p-1.5 rounded-lg bg-popover/95 backdrop-blur-xl border border-white/10 shadow-2xl text-[8px] leading-relaxed text-muted-foreground opacity-0 pointer-events-none group-hover/orb:opacity-100 transition-all z-50 text-center">
+                  {c.tooltip}
+                </div>
+              </div>
               <span className="text-xs font-black font-mono text-foreground">{Math.round(v)}</span>
               <div className="w-full h-1 rounded-full bg-muted overflow-hidden">
                 <motion.div className="h-full rounded-full" style={{ backgroundColor: col }}
@@ -322,7 +328,7 @@ function RecomendacoesInteligentes({ recs }: { recs: Array<{ prio: string; color
 const RADAR_COLORS: Record<string, string> = { up: "#22c55e", down: "#ef4444", stable: "#f59e0b" };
 
 function CustomDot(props: any) {
-  const { cx, cy, payload } = props;
+  const { cX, Info, cy, payload } = props;
   const r = Math.sqrt((payload.spend / Math.PI)) * 0.9 + 10;
   const col = RADAR_COLORS[payload.trend] ?? "#9b87f5";
   return (
@@ -345,10 +351,18 @@ function RadarTatico({ data }: { data: any[] }) {
   return (
     <motion.div initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, delay: 0.8 }}
       className="relative rounded-2xl border border-border bg-card overflow-hidden p-6 shadow-sm">
-      <div className="absolute inset-0 pointer-events-none" style={{ backgroundImage: "linear-gradient(currentColor 1px, transparent 1px), linear-gradient(90deg, currentColor 1px, transparent 1px)", backgroundSize: "40px 40px", opacity: 0.03 }} />
+      <div className="absolute inset-0 pointer-events-none" style={{ backgroundImage: "linear-gradient(currentColor 1pX, Info, transparent 1px), linear-gradient(90deg, currentColor 1pX, Info, transparent 1px)", backgroundSize: "40px 40px", opacity: 0.03 }} />
       <div className="relative flex items-center justify-between mb-6">
         <div>
-          <h3 className="text-sm font-black uppercase tracking-[0.2em] text-foreground">Radar Tático</h3>
+          <div className="flex items-center gap-2">
+            <h3 className="text-sm font-black uppercase tracking-[0.2em] text-foreground">Radar Tático</h3>
+            <div className="relative group/radar z-50">
+              <Info className="h-3.5 w-3.5 text-muted-foreground/40 hover:text-foreground cursor-help" />
+              <div className="absolute bottom-full left-0 mb-2 w-64 p-3 rounded-xl bg-popover/95 backdrop-blur-xl border border-white/10 shadow-2xl text-[10px] leading-relaxed text-muted-foreground opacity-0 pointer-events-none group-hover/radar:opacity-100 transition-all text-left">
+                <strong>Como ler este radar:</strong><br/>Campanhas no quadrante superior esquerdo (Verde) têm leads baratos e em volume.<br/>As do canto inferior direito estão consumindo muito e gerando pouco.
+              </div>
+            </div>
+          </div>
           <p className="text-[10px] text-muted-foreground mt-0.5 tracking-widest uppercase">CPL × Volume — Posicione campanhas no quadrante certo</p>
         </div>
         <div className="flex items-center gap-4 text-[9px] font-black uppercase tracking-wider">
@@ -627,51 +641,37 @@ function useCockpitData() {
     staleTime: 2 * 60 * 1000,
     queryFn: async () => {
       let q = (supabase as any)
-        .from("campaigns")
-        .select(`id, name, ad_account_id, client_id, objective, daily_budget, metrics(cost, conversions, impressions, clicks, frequency, date)`);
+        .from("metrics")
+        .select(`date, cost, conversions, impressions, clicks, frequency, campaign_id, campaigns!inner(id, name, ad_account_id, client_id, objective, daily_budget)`)
+        .gte("date", dateFrom)
+        .lte("date", dateTo)
+        .limit(10000);
 
-      if (accountId !== "all") q = q.eq("ad_account_id", accountId);
-      if (campaignId !== "all") q = q.eq("id", campaignId);
+      if (accountId !== "all") q = q.eq("campaigns.ad_account_id", accountId);
+      if (campaignId !== "all") q = q.eq("campaign_id", campaignId);
 
       if (adSetId !== "all") {
         const { data: adSetData } = await (supabase as any).from("ad_sets").select("campaign_id").eq("id", adSetId).single();
-        if (adSetData?.campaign_id) q = q.eq("id", adSetData.campaign_id);
+        if (adSetData?.campaign_id) q = q.eq("campaign_id", adSetData.campaign_id);
       }
 
       const { data, error } = await q;
-      if (error) console.error("[cockpit] query error:", error);
-      
-      const campaignsWithMetrics = (data as any[]) ?? [];
-      const raw: any[] = [];
-      
-      for (const camp of campaignsWithMetrics) {
-        if (!camp.metrics) continue;
-        for (const m of camp.metrics) {
-          if (m.date) {
-             const d = m.date.split("T")[0];
-             if (d < dateFrom || d > dateTo) continue;
-          }
-          raw.push({
-            campaign_id: camp.id,
-            cost: m.cost,
-            conversions: m.conversions,
-            impressions: m.impressions,
-            clicks: m.clicks,
-            cpm: m.impressions > 0 ? (m.cost / m.impressions) * 1000 : 0,
-            frequency: m.frequency,
-            date: m.date,
-            campaigns: {
-              id: camp.id,
-              name: camp.name,
-              ad_account_id: camp.ad_account_id,
-              client_id: camp.client_id,
-              objective: camp.objective,
-              daily_budget: camp.daily_budget
-            }
-          });
-        }
+      if (error) {
+        console.error("[cockpit] query error:", error);
+        return [];
       }
-      return raw;
+      
+      return (data as any[]).map((m: any) => ({
+        campaign_id: m.campaign_id,
+        cost: m.cost,
+        conversions: m.conversions,
+        impressions: m.impressions,
+        clicks: m.clicks,
+        cpm: m.impressions > 0 ? (m.cost / m.impressions) * 1000 : 0,
+        frequency: m.frequency,
+        date: m.date?.split("T")[0] || m.date,
+        campaigns: m.campaigns
+      }));
     },
   });
 
@@ -802,12 +802,12 @@ function CockpitPage() {
   const gv = g ?? {};
 
   const gaugeConfig = [
-    { label: "Velocímetro de Escala", sub: "Capacidade orçamentária utilizada", value: gv.scale ?? 0, zones: [{ from: 0, to: 0.3, color: "#ef4444" }, { from: 0.3, to: 0.6, color: "#f59e0b" }, { from: 0.6, to: 1, color: "#22c55e" }] },
-    { label: "Fadiga Criativa", sub: `Frequência média ${meta?.avgFreq ?? "--"}×`, value: gv.fatigue ?? 0, zones: [{ from: 0, to: 0.3, color: "#ef4444" }, { from: 0.3, to: 0.6, color: "#f59e0b" }, { from: 0.6, to: 1, color: "#22c55e" }] },
-    { label: "Pressão Competitiva", sub: `CPM vs histórico (${((meta?.cpmTrendRatio ?? 1) * 100 - 100).toFixed(0)}%)`, value: gv.pressure ?? 0, zones: [{ from: 0, to: 0.35, color: "#ef4444" }, { from: 0.35, to: 0.65, color: "#f59e0b" }, { from: 0.65, to: 1, color: "#22c55e" }] },
-    { label: "Taxa de Conversão", sub: `CVR ${meta?.CVR ?? "--"}% / meta 4%`, value: gv.conversion ?? 0, zones: [{ from: 0, to: 0.4, color: "#ef4444" }, { from: 0.4, to: 0.7, color: "#f59e0b" }, { from: 0.7, to: 1, color: "#22c55e" }] },
-    { label: "Saúde Orçamentária", sub: "% verba em campanhas ativas", value: gv.budgetHealth ?? 0, zones: [{ from: 0, to: 0.4, color: "#ef4444" }, { from: 0.4, to: 0.65, color: "#f59e0b" }, { from: 0.65, to: 1, color: "#22c55e" }] },
-    { label: "Momento Atual", sub: `CPL R$ ${meta?.CPL ?? "--"} | Oportunidade`, value: gv.momentum ?? 0, zones: [{ from: 0, to: 0.35, color: "#ef4444" }, { from: 0.35, to: 0.65, color: "#f59e0b" }, { from: 0.65, to: 1, color: "#22c55e" }] },
+    { label: "Velocímetro de Escala", sub: "Capacidade orçamentária utilizada", tooltip: "Mede o quanto do orçamento diário programado está sendo efetivamente consumido. Acima de 60% indica que a campanha está conseguindo gastar a verba. Abaixo de 30% indica gargalo de lance ou público muito restrito.", value: gv.scale ?? 0, zones: [{ from: 0, to: 0.3, color: "#ef4444" }, { from: 0.3, to: 0.6, color: "#f59e0b" }, { from: 0.6, to: 1, color: "#22c55e" }] },
+    { label: "Fadiga Criativa", sub: `Frequência média ${meta?.avgFreq ?? "--"}×`, tooltip: "Indica se o público está saturado de ver os mesmos anúncios. Uma nota baixa (crítico) significa que os usuários já viram o anúncio muitas vezes. O ideal é manter a barra verde para garantir CTR saudável.", value: gv.fatigue ?? 0, zones: [{ from: 0, to: 0.3, color: "#ef4444" }, { from: 0.3, to: 0.6, color: "#f59e0b" }, { from: 0.6, to: 1, color: "#22c55e" }] },
+    { label: "Pressão Competitiva", sub: `CPM vs histórico (${((meta?.cpmTrendRatio ?? 1) * 100 - 100).toFixed(0)}%)`, tooltip: "Compara o custo de atingimento atual (CPM) com o do início do período selecionado. Se a pressão for alta (crítico/vermelho), significa que o leilão do Facebook encareceu recentemente para esse público.", value: gv.pressure ?? 0, zones: [{ from: 0, to: 0.35, color: "#ef4444" }, { from: 0.35, to: 0.65, color: "#f59e0b" }, { from: 0.65, to: 1, color: "#22c55e" }] },
+    { label: "Taxa de Conversão", sub: `CVR ${meta?.CVR ?? "--"}% / meta 4%`, tooltip: "Mede a capacidade das páginas de destino (Landing Pages) de transformar cliques em leads. A nota será crítica se a conversão despencar abaixo de 1.5%. Verde significa que a página está convertendo muito bem.", value: gv.conversion ?? 0, zones: [{ from: 0, to: 0.4, color: "#ef4444" }, { from: 0.4, to: 0.7, color: "#f59e0b" }, { from: 0.7, to: 1, color: "#22c55e" }] },
+    { label: "Saúde Orçamentária", sub: "% verba em campanhas ativas", tooltip: "Mostra a proporção do seu investimento total que está rodando em campanhas ligadas. Se estiver baixo (vermelho), você tem muita verba locada em campanhas que estão pausadas no momento.", value: gv.budgetHealth ?? 0, zones: [{ from: 0, to: 0.4, color: "#ef4444" }, { from: 0.4, to: 0.65, color: "#f59e0b" }, { from: 0.65, to: 1, color: "#22c55e" }] },
+    { label: "Momento Atual", sub: `CPL R$ ${meta?.CPL ?? "--"} | Oportunidade`, tooltip: "Calculado via Inteligência Artificial cruzando conversão, CPM e CPL. Se o momento for verde (Oportunidade), o cenário está excelente para você injetar mais orçamento (escalar).", value: gv.momentum ?? 0, zones: [{ from: 0, to: 0.35, color: "#ef4444" }, { from: 0.35, to: 0.65, color: "#f59e0b" }, { from: 0.65, to: 1, color: "#22c55e" }] },
   ];
 
   const criticalCount = gaugeConfig.filter(gc => gc.value < 35).length;
@@ -815,7 +815,7 @@ function CockpitPage() {
 
   return (
     <div className="min-h-screen w-full pb-24 bg-background text-foreground relative">
-      <div className="absolute inset-0 pointer-events-none z-0" style={{ backgroundImage: "linear-gradient(currentColor 1px, transparent 1px), linear-gradient(90deg, currentColor 1px, transparent 1px)", backgroundSize: "60px 60px", opacity: 0.03 }} />
+      <div className="absolute inset-0 pointer-events-none z-0" style={{ backgroundImage: "linear-gradient(currentColor 1pX, Info, transparent 1px), linear-gradient(90deg, currentColor 1pX, Info, transparent 1px)", backgroundSize: "60px 60px", opacity: 0.03 }} />
 
       <div className="relative z-10 max-w-7xl mx-auto px-4 pt-4 space-y-5">
 
@@ -859,7 +859,21 @@ function CockpitPage() {
             {isLoading ? (
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
                 {[...Array(6)].map((_, i) => (
-                  <div key={i} className="rounded-2xl bg-muted border border-border animate-pulse" style={{ height: 200 }} />
+                  <motion.div 
+                    key={i} 
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: i * 0.05 }}
+                    className="rounded-2xl border border-border bg-card/40 backdrop-blur-sm p-6 flex flex-col items-center justify-center gap-4 relative overflow-hidden" 
+                    style={{ height: 200 }}
+                  >
+                    <div className="absolute inset-0 bg-gradient-to-br from-white/5 to-transparent opacity-0 animate-pulse" />
+                    <div className="w-24 h-24 rounded-full border-4 border-muted border-t-primary/20 animate-[spin_3s_linear_infinite]" />
+                    <div className="flex flex-col items-center gap-2 mt-2 w-full">
+                      <div className="h-2 w-24 bg-muted rounded-full animate-pulse" />
+                      <div className="h-1.5 w-16 bg-muted/50 rounded-full animate-pulse" style={{ animationDelay: "150ms" }} />
+                    </div>
+                  </motion.div>
                 ))}
               </div>
             ) : !meta ? (
@@ -870,7 +884,7 @@ function CockpitPage() {
             ) : (
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
                 {gaugeConfig.map((gc, i) => (
-                  <CockpitGauge key={gc.label} value={gc.value} max={100} label={gc.label} sub={gc.sub} unit="%" zones={gc.zones} delay={i * 0.09} />
+                  <CockpitGauge key={gc.label} value={gc.value} max={100} label={gc.label} sub={gc.sub} unit="%" zones={gc.zones} delay={i * 0.09} tooltip={gc.tooltip} />
                 ))}
               </div>
             )}
@@ -910,3 +924,10 @@ function CockpitPage() {
     </div>
   );
 }
+
+
+
+
+
+
+
