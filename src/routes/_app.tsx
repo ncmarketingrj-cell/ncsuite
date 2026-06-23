@@ -8,7 +8,7 @@ import {
   Sun, Moon, Menu, X, BarChart3, LineChart, Palette, Link2,
   ChevronDown, RefreshCw, Users, Store,
   Volume2, VolumeX, LogOut, CreditCard, Share2, ArrowRight, GitBranch, Brain, ChevronRight,
-  Lock, GaugeCircle
+  Lock, GaugeCircle, FlaskConical
 } from "lucide-react";
 import { AuthProvider, useAuth } from "@/lib/auth";
 import { supabase } from "@/integrations/supabase/client";
@@ -73,6 +73,7 @@ type NavItem = {
 const TRAFEGO_NAV_ITEMS: NavItem[] = [
   { to: "/dashboard", icon: LayoutDashboard, label: "Command Center" },
   { to: "/cockpit", icon: GaugeCircle, label: "Cockpit" },
+  { to: "/simulador", icon: FlaskConical, label: "Simulador" },
   { to: "/metricas", icon: LineChart, label: "Métricas" },
   { to: "/relatorios", icon: FileText, label: "Relatórios" },
   { to: "/criativos", icon: Palette, label: "Criativos" },
@@ -175,7 +176,7 @@ function Shell() {
       nextModule = "crm";
     } else if (path.startsWith("/social") || path.startsWith("/organizador") || path.startsWith("/link-bio") || path.startsWith("/quiz")) {
       nextModule = "social";
-    } else if (path.startsWith("/dashboard") || path.startsWith("/cockpit") || path.startsWith("/clientes") || path.startsWith("/relatorios") || path.startsWith("/criativos") || path.startsWith("/metricas") || path.startsWith("/campanhas")) {
+    } else if (path.startsWith("/dashboard") || path.startsWith("/cockpit") || path.startsWith("/simulador") || path.startsWith("/clientes") || path.startsWith("/relatorios") || path.startsWith("/criativos") || path.startsWith("/metricas") || path.startsWith("/campanhas")) {
       nextModule = "trafego";
     } else if (path.startsWith("/cobrancas")) {
       nextModule = "gestao";
