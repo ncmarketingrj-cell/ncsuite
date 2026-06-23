@@ -458,7 +458,7 @@ function CockpitFilterBar() {
     <motion.div
       initial={{ opacity: 0, y: -8 }}
       animate={{ opacity: 1, y: 0 }}
-      className="flex flex-wrap items-center gap-2 rounded-2xl border border-border bg-background/80 px-4 py-3 backdrop-blur-xl shadow-sm"
+      className="relative z-50 flex flex-wrap items-center gap-2 rounded-2xl border border-border bg-background/80 px-4 py-3 backdrop-blur-xl shadow-sm"
     >
       {/* Account selector */}
       <div ref={accountRef} className="relative">
