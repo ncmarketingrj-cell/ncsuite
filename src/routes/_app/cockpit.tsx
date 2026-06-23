@@ -105,12 +105,12 @@ function CockpitGauge({ value, max = 100, label, sub, unit = "%", zones, size = 
       transition={{ duration: 0.55, delay, type: "spring", stiffness: 120, damping: 18 }}
       className="relative"
     >
-      <div className="relative rounded-2xl bg-[#0a0a0f] border overflow-hidden"
+      <div className="relative rounded-2xl bg-card border border-border overflow-hidden"
         style={{ borderColor: `${glowColor}22`, boxShadow: `0 0 0 1px ${glowColor}14, 0 0 32px ${glowColor}09, inset 0 1px 0 rgba(255,255,255,0.04)` }}>
         {[["top-2 left-2 border-t-2 border-l-2 rounded-tl-lg"], ["top-2 right-2 border-t-2 border-r-2 rounded-tr-lg"], ["bottom-2 left-2 border-b-2 border-l-2 rounded-bl-lg"], ["bottom-2 right-2 border-b-2 border-r-2 rounded-br-lg"]].map(([cls], i) => (
           <div key={i} className={`absolute w-3 h-3 opacity-30 ${cls}`} style={{ borderColor: glowColor }} />
         ))}
-        <div className="absolute inset-0 pointer-events-none" style={{ background: "repeating-linear-gradient(0deg, transparent, transparent 3px, rgba(0,0,0,0.12) 3px, rgba(0,0,0,0.12) 4px)", mixBlendMode: "multiply" }} />
+        <div className="absolute inset-0 pointer-events-none" style={{ background: "repeating-linear-gradient(0deg, transparent, transparent 3px, rgba(0,0,0,0.03) 3px, rgba(0,0,0,0.03) 4px)", mixBlendMode: "multiply" }} />
         <div className="flex justify-center">
           <svg width={size} height={size * 0.78} viewBox={`0 0 ${size} ${size * 0.88}`} style={{ display: "block" }}>
             <defs>
@@ -143,10 +143,10 @@ function CockpitGauge({ value, max = 100, label, sub, unit = "%", zones, size = 
             <motion.g initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: delay + 1.4, duration: 0.4 }}>
               <polygon points={`${needleTip.x},${needleTip.y} ${nb1.x},${nb1.y} ${nb2.x},${nb2.y}`}
                 fill={glowColor} filter={`url(#glow2-${gid})`} opacity={0.95} />
-              <circle cx={cx} cy={cy} r={7} fill="#0a0a0f" stroke={glowColor} strokeWidth={2} />
+              <circle cx={cx} cy={cy} r={7} fill="currentColor" className="text-card" stroke={glowColor} strokeWidth={2} />
               <circle cx={cx} cy={cy} r={3} fill={glowColor} />
             </motion.g>
-            <motion.text x={cx} y={cy + 26} textAnchor="middle" fill="white" fontSize={size * 0.13}
+            <motion.text x={cx} y={cy + 26} textAnchor="middle" fill="currentColor" className="text-foreground" fontSize={size * 0.13}
               fontWeight="900" fontFamily="'Courier New', monospace" letterSpacing="-1"
               initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: delay + 0.6 }}>
               {Math.round(value)}{unit}
@@ -154,8 +154,8 @@ function CockpitGauge({ value, max = 100, label, sub, unit = "%", zones, size = 
           </svg>
         </div>
         <div className="px-3 pb-4 text-center -mt-2">
-          <p className="text-[10px] font-black uppercase tracking-[0.18em] text-white/50">{label}</p>
-          {sub && <p className="text-[8px] text-white/25 mt-0.5 tracking-wider">{sub}</p>}
+          <p className="text-[10px] font-black uppercase tracking-[0.18em] text-muted-foreground">{label}</p>
+          {sub && <p className="text-[8px] text-muted-foreground/60 mt-0.5 tracking-wider">{sub}</p>}
         </div>
         <div className="absolute bottom-0 left-0 right-0 h-0.5" style={{ background: `linear-gradient(90deg, transparent, ${glowColor}60, transparent)` }} />
       </div>
@@ -200,7 +200,7 @@ function ScoreOrb({ score, components, isLoading }: { score: number; components:
             initial={{ strokeDashoffset: arcLen, strokeDasharray: arcLen }}
             animate={{ strokeDashoffset: isLoading ? arcLen : offset, strokeDasharray: arcLen }}
             transition={{ duration: 2, delay: 0.4, ease: [0.22, 1, 0.36, 1] }} />
-          <motion.text x={cx} y={cy + 2} textAnchor="middle" fill="white" fontSize={60} fontWeight="900"
+          <motion.text x={cx} y={cy + 2} textAnchor="middle" fill="currentColor" className="text-foreground" fontSize={60} fontWeight="900"
             fontFamily="'Courier New', monospace" letterSpacing="-3"
             initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.8 }}>
             {isLoading ? "--" : <AnimCounter to={score} delay={0.5} />}
@@ -221,13 +221,13 @@ function ScoreOrb({ score, components, isLoading }: { score: number; components:
             <motion.div key={c.key} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 1.2 + i * 0.08 }}
               className="flex flex-col items-center gap-1 rounded-xl border p-2" style={{ borderColor: `${col}25`, background: `${col}08` }}>
               <span className="text-[8px] font-black uppercase tracking-widest" style={{ color: col }}>{c.label}</span>
-              <span className="text-xs font-black font-mono text-white">{Math.round(v)}</span>
-              <div className="w-full h-1 rounded-full bg-white/5 overflow-hidden">
+              <span className="text-xs font-black font-mono text-foreground">{Math.round(v)}</span>
+              <div className="w-full h-1 rounded-full bg-muted overflow-hidden">
                 <motion.div className="h-full rounded-full" style={{ backgroundColor: col }}
                   initial={{ width: 0 }} animate={{ width: `${v}%` }}
                   transition={{ duration: 1, delay: 1.4 + i * 0.08, ease: "easeOut" }} />
               </div>
-              <span className="text-[7px] text-white/25 font-mono">{c.weight}</span>
+              <span className="text-[7px] text-muted-foreground font-mono">{c.weight}</span>
             </motion.div>
           );
         })}
@@ -244,7 +244,7 @@ function ScoreHistorico({ data }: { data: Array<{ date: string; score: number }>
   return (
     <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 1.6 }} className="w-full">
       <div className="flex items-center justify-between mb-2">
-        <span className="text-[9px] font-black uppercase tracking-[0.2em] text-white/30">Tendência — {data.length} dias</span>
+        <span className="text-[9px] font-black uppercase tracking-[0.2em] text-muted-foreground">Tendência — {data.length} dias</span>
         <span className="text-[9px] font-black font-mono" style={{ color: trendColor }}>{trend >= 0 ? "+" : ""}{trend} pts</span>
       </div>
       <div className="h-[56px] w-full">
@@ -265,7 +265,7 @@ function ScoreHistorico({ data }: { data: Array<{ date: string; score: number }>
       </div>
       <div className="flex justify-between mt-1">
         {data.filter((_, i) => i === 0 || i === data.length - 1 || i % Math.ceil(data.length / 5) === 0).map((d, i) => (
-          <span key={i} className="text-[7px] font-mono text-white/20">{d.date}</span>
+          <span key={i} className="text-[7px] font-mono text-muted-foreground/60">{d.date}</span>
         ))}
       </div>
     </motion.div>
@@ -277,11 +277,11 @@ function RecomendacoesInteligentes({ recs }: { recs: Array<{ prio: string; color
   if (!recs.length) return null;
   return (
     <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.55, delay: 1.2 }}
-      className="rounded-2xl border border-white/[0.06] bg-[#0a0a0f] overflow-hidden">
-      <div className="flex items-center justify-between px-6 py-4 border-b border-white/[0.05]">
+      className="rounded-2xl border border-border bg-card overflow-hidden shadow-sm">
+      <div className="flex items-center justify-between px-6 py-4 border-b border-border">
         <div>
-          <h3 className="text-sm font-black uppercase tracking-[0.2em] text-white">Diagnóstico & Ações</h3>
-          <p className="text-[10px] text-white/30 mt-0.5 tracking-widest uppercase">O que fazer agora — baseado nos indicadores</p>
+          <h3 className="text-sm font-black uppercase tracking-[0.2em] text-foreground">Diagnóstico & Ações</h3>
+          <p className="text-[10px] text-muted-foreground mt-0.5 tracking-widest uppercase">O que fazer agora — baseado nos indicadores</p>
         </div>
         <div className="flex gap-2">
           {(["CRÍTICO", "ATENÇÃO", "OPORTUNIDADE"] as const).map(p => {
@@ -292,12 +292,12 @@ function RecomendacoesInteligentes({ recs }: { recs: Array<{ prio: string; color
           })}
         </div>
       </div>
-      <div className="divide-y divide-white/[0.04]">
+      <div className="divide-y divide-border">
         {recs.map((rec, i) => {
           const Icon = rec.icon;
           return (
             <motion.div key={i} initial={{ opacity: 0, x: -12 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 1.3 + i * 0.08 }}
-              className="flex gap-4 px-6 py-4 hover:bg-white/[0.02] transition-colors">
+              className="flex gap-4 px-6 py-4 hover:bg-muted/50 transition-colors">
               <div className="w-0.5 self-stretch rounded-full shrink-0" style={{ backgroundColor: rec.color }} />
               <div className="h-9 w-9 rounded-xl flex items-center justify-center shrink-0" style={{ background: `${rec.color}14`, border: `1px solid ${rec.color}25` }}>
                 <Icon className="h-4 w-4" style={{ color: rec.color }} />
@@ -305,9 +305,9 @@ function RecomendacoesInteligentes({ recs }: { recs: Array<{ prio: string; color
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 mb-1">
                   <span className="text-[8px] font-black px-1.5 py-0.5 rounded" style={{ color: rec.color, background: `${rec.color}12` }}>{rec.prio}</span>
-                  <span className="text-[11px] font-black text-white leading-tight">{rec.title}</span>
+                  <span className="text-[11px] font-black text-foreground leading-tight">{rec.title}</span>
                 </div>
-                <p className="text-[10px] text-white/40 leading-relaxed">{rec.desc}</p>
+                <p className="text-[10px] text-muted-foreground leading-relaxed">{rec.desc}</p>
               </div>
               <div className="shrink-0 w-6 h-6 rounded-full flex items-center justify-center text-[9px] font-black" style={{ background: `${rec.color}15`, color: rec.color }}>{i + 1}</div>
             </motion.div>
@@ -344,12 +344,12 @@ function RadarTatico({ data }: { data: any[] }) {
   const midCPL = maxCPL / 2, midLeads = maxLeads / 2;
   return (
     <motion.div initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, delay: 0.8 }}
-      className="relative rounded-2xl border border-white/[0.06] bg-[#0a0a0f] overflow-hidden p-6">
-      <div className="absolute inset-0 pointer-events-none" style={{ backgroundImage: "linear-gradient(rgba(255,255,255,0.03) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.03) 1px, transparent 1px)", backgroundSize: "40px 40px" }} />
+      className="relative rounded-2xl border border-border bg-card overflow-hidden p-6 shadow-sm">
+      <div className="absolute inset-0 pointer-events-none" style={{ backgroundImage: "linear-gradient(currentColor 1px, transparent 1px), linear-gradient(90deg, currentColor 1px, transparent 1px)", backgroundSize: "40px 40px", opacity: 0.03 }} />
       <div className="relative flex items-center justify-between mb-6">
         <div>
-          <h3 className="text-sm font-black uppercase tracking-[0.2em] text-white">Radar Tático</h3>
-          <p className="text-[10px] text-white/30 mt-0.5 tracking-widest uppercase">CPL × Volume — Posicione campanhas no quadrante certo</p>
+          <h3 className="text-sm font-black uppercase tracking-[0.2em] text-foreground">Radar Tático</h3>
+          <p className="text-[10px] text-muted-foreground mt-0.5 tracking-widest uppercase">CPL × Volume — Posicione campanhas no quadrante certo</p>
         </div>
         <div className="flex items-center gap-4 text-[9px] font-black uppercase tracking-wider">
           {[["#22c55e", "Crescendo"], ["#f59e0b", "Estável"], ["#ef4444", "Caindo"]].map(([col, lbl]) => (
@@ -367,11 +367,11 @@ function RadarTatico({ data }: { data: any[] }) {
             <ReferenceArea x1={midCPL} x2={maxCPL * 1.1} y1={midLeads} y2={maxLeads * 1.1} fill="#f59e0b" fillOpacity={0.04} />
             <ReferenceArea x1={0} x2={midCPL} y1={0} y2={midLeads} fill="#f59e0b" fillOpacity={0.03} />
             <ReferenceArea x1={midCPL} x2={maxCPL * 1.1} y1={0} y2={midLeads} fill="#ef4444" fillOpacity={0.04} />
-            <CartesianGrid strokeDasharray="4 4" stroke="rgba(255,255,255,0.04)" />
-            <XAxis dataKey="cpl" type="number" name="CPL" unit=" R$" domain={[0, "auto"]} axisLine={false} tickLine={false} tick={{ fontSize: 8, fill: "rgba(255,255,255,0.3)", fontFamily: "monospace", fontWeight: 700 }} label={{ value: "← CPL (menor = melhor)", position: "insideBottom", offset: -10, fontSize: 8, fill: "rgba(255,255,255,0.25)", fontFamily: "monospace" }} />
-            <YAxis dataKey="leads" type="number" name="Leads" axisLine={false} tickLine={false} tick={{ fontSize: 8, fill: "rgba(255,255,255,0.3)", fontFamily: "monospace", fontWeight: 700 }} label={{ value: "Leads ↑", angle: -90, position: "insideLeft", offset: 10, fontSize: 8, fill: "rgba(255,255,255,0.25)", fontFamily: "monospace" }} />
+            <CartesianGrid strokeDasharray="4 4" stroke="currentColor" strokeOpacity={0.05} />
+            <XAxis dataKey="cpl" type="number" name="CPL" unit=" R$" domain={[0, "auto"]} axisLine={false} tickLine={false} tick={{ fontSize: 8, fill: "currentColor", opacity: 0.4, fontFamily: "monospace", fontWeight: 700 }} label={{ value: "← CPL (menor = melhor)", position: "insideBottom", offset: -10, fontSize: 8, fill: "currentColor", opacity: 0.4, fontFamily: "monospace" }} />
+            <YAxis dataKey="leads" type="number" name="Leads" axisLine={false} tickLine={false} tick={{ fontSize: 8, fill: "currentColor", opacity: 0.4, fontFamily: "monospace", fontWeight: 700 }} label={{ value: "Leads ↑", angle: -90, position: "insideLeft", offset: 10, fontSize: 8, fill: "currentColor", opacity: 0.4, fontFamily: "monospace" }} />
             <ZAxis dataKey="spend" range={[200, 2400]} name="Gasto" />
-            <RTip cursor={{ stroke: "rgba(255,255,255,0.1)", strokeWidth: 1 }} contentStyle={{ background: "rgba(10,10,15,0.97)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 12, fontSize: 11, fontFamily: "monospace" }} formatter={(v: any, name: string) => name === "CPL" ? [`R$ ${Number(v).toFixed(2)}`, "CPL"] : name === "Gasto" ? [`R$ ${Number(v).toFixed(2)}`, "Gasto"] : [v, name]} />
+            <RTip cursor={{ stroke: "rgba(150,150,150,0.2)", strokeWidth: 1 }} contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 12, fontSize: 11, fontFamily: "monospace", color: "hsl(var(--foreground))" }} formatter={(v: any, name: string) => name === "CPL" ? [`R$ ${Number(v).toFixed(2)}`, "CPL"] : name === "Gasto" ? [`R$ ${Number(v).toFixed(2)}`, "Gasto"] : [v, name]} />
             <Scatter data={data} shape={<CustomDot />}>
               {data.map((d, i) => <Cell key={i} fill={RADAR_COLORS[d.trend] ?? "#9b87f5"} />)}
             </Scatter>
@@ -458,16 +458,16 @@ function CockpitFilterBar() {
     <motion.div
       initial={{ opacity: 0, y: -8 }}
       animate={{ opacity: 1, y: 0 }}
-      className="flex flex-wrap items-center gap-2 rounded-2xl border border-white/[0.07] bg-black/70 px-4 py-3 backdrop-blur-xl"
+      className="flex flex-wrap items-center gap-2 rounded-2xl border border-border bg-background/80 px-4 py-3 backdrop-blur-xl shadow-sm"
     >
       {/* Account selector */}
       <div ref={accountRef} className="relative">
         <button
           onClick={() => { setShowAccounts(!showAccounts); setShowCampaigns(false); }}
-          className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-[10px] font-black uppercase tracking-widest transition hover:bg-white/[0.08] hover:border-white/20"
-          style={accountId !== "all" ? { borderColor: "#9b87f520", color: "#9b87f5" } : { color: "rgba(255,255,255,0.45)" }}
+          className="flex items-center gap-2 rounded-xl border bg-muted/30 px-3 py-2 text-[10px] font-black uppercase tracking-widest transition hover:bg-muted/50"
+          style={accountId !== "all" ? { borderColor: "var(--primary)", color: "var(--primary)" } : { borderColor: "transparent", color: "hsl(var(--muted-foreground))" }}
         >
-          <span className="h-1.5 w-1.5 rounded-full" style={{ background: accountId !== "all" ? "#9b87f5" : "rgba(255,255,255,0.2)" }} />
+          <span className="h-1.5 w-1.5 rounded-full" style={{ background: accountId !== "all" ? "var(--primary)" : "currentColor" }} />
           {selectedAccount?.name ?? "Todas as Contas"}
           <ChevronDown className="h-3 w-3 opacity-50" />
         </button>
@@ -477,16 +477,16 @@ function CockpitFilterBar() {
               initial={{ opacity: 0, y: 4, scale: 0.97 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 4, scale: 0.97 }}
-              className="absolute top-full left-0 mt-1.5 z-50 min-w-[220px] rounded-2xl border border-white/10 bg-[#0d0d1a] shadow-2xl overflow-hidden"
+              className="absolute top-full left-0 mt-1.5 z-50 min-w-[220px] rounded-2xl border border-border bg-popover shadow-2xl overflow-hidden"
             >
               <button onClick={() => { setAccountId("all"); setShowAccounts(false); }}
-                className={`flex w-full items-center gap-2 px-4 py-3 text-[10px] font-black uppercase tracking-widest text-left transition hover:bg-white/5 ${accountId === "all" ? "text-[#9b87f5]" : "text-white/40"}`}>
-                <span className="h-1.5 w-1.5 rounded-full bg-white/20" />Todas as Contas
+                className={`flex w-full items-center gap-2 px-4 py-3 text-[10px] font-black uppercase tracking-widest text-left transition hover:bg-muted/50 ${accountId === "all" ? "text-primary" : "text-muted-foreground"}`}>
+                <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/30" />Todas as Contas
               </button>
               {accounts.map((acc: any) => (
                 <button key={acc.id} onClick={() => { setAccountId(acc.id); setShowAccounts(false); }}
-                  className={`flex w-full items-center gap-2 px-4 py-3 text-[10px] font-black uppercase tracking-widest text-left transition hover:bg-white/5 border-t border-white/[0.04] ${accountId === acc.id ? "text-[#9b87f5]" : "text-white/50"}`}>
-                  <span className="h-1.5 w-1.5 rounded-full" style={{ background: accountId === acc.id ? "#9b87f5" : "rgba(255,255,255,0.15)" }} />
+                  className={`flex w-full items-center gap-2 px-4 py-3 text-[10px] font-black uppercase tracking-widest text-left transition hover:bg-muted/50 border-t border-border/50 ${accountId === acc.id ? "text-primary" : "text-foreground/70"}`}>
+                  <span className="h-1.5 w-1.5 rounded-full" style={{ background: accountId === acc.id ? "var(--primary)" : "hsl(var(--muted-foreground)/0.3)" }} />
                   {acc.name}
                 </button>
               ))}
@@ -499,10 +499,10 @@ function CockpitFilterBar() {
       <div ref={campaignRef} className="relative">
         <button
           onClick={() => { setShowCampaigns(!showCampaigns); setShowAccounts(false); }}
-          className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-[10px] font-black uppercase tracking-widest transition hover:bg-white/[0.08] hover:border-white/20"
-          style={campaignId !== "all" ? { borderColor: "#00d4ff20", color: "#00d4ff" } : { color: "rgba(255,255,255,0.45)" }}
+          className="flex items-center gap-2 rounded-xl border bg-muted/30 px-3 py-2 text-[10px] font-black uppercase tracking-widest transition hover:bg-muted/50"
+          style={campaignId !== "all" ? { borderColor: "var(--primary)", color: "var(--primary)" } : { borderColor: "transparent", color: "hsl(var(--muted-foreground))" }}
         >
-          <span className="h-1.5 w-1.5 rounded-full" style={{ background: campaignId !== "all" ? "#00d4ff" : "rgba(255,255,255,0.2)" }} />
+          <span className="h-1.5 w-1.5 rounded-full" style={{ background: campaignId !== "all" ? "var(--primary)" : "currentColor" }} />
           {selectedCampaign?.name ? selectedCampaign.name.slice(0, 20) + (selectedCampaign.name.length > 20 ? "…" : "") : "Todas as Campanhas"}
           <ChevronDown className="h-3 w-3 opacity-50" />
         </button>
@@ -512,17 +512,17 @@ function CockpitFilterBar() {
               initial={{ opacity: 0, y: 4, scale: 0.97 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 4, scale: 0.97 }}
-              className="absolute top-full left-0 mt-1.5 z-50 min-w-[260px] max-h-[320px] overflow-y-auto rounded-2xl border border-white/10 bg-[#0d0d1a] shadow-2xl"
+              className="absolute top-full left-0 mt-1.5 z-50 min-w-[260px] max-h-[320px] overflow-y-auto rounded-2xl border border-border bg-popover shadow-2xl"
             >
               <button onClick={() => { setCampaignId("all"); setShowCampaigns(false); }}
-                className={`flex w-full items-center gap-2 px-4 py-3 text-[10px] font-black uppercase tracking-widest text-left transition hover:bg-white/5 ${campaignId === "all" ? "text-[#00d4ff]" : "text-white/40"}`}>
-                <span className="h-1.5 w-1.5 rounded-full bg-white/20" />Todas as Campanhas
+                className={`flex w-full items-center gap-2 px-4 py-3 text-[10px] font-black uppercase tracking-widest text-left transition hover:bg-muted/50 ${campaignId === "all" ? "text-primary" : "text-muted-foreground"}`}>
+                <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/30" />Todas as Campanhas
               </button>
-              {campaigns.length === 0 && <p className="px-4 py-3 text-[9px] text-white/25 font-mono">Nenhuma campanha ativa{accountId !== "all" ? " nesta conta" : ""}</p>}
+              {campaigns.length === 0 && <p className="px-4 py-3 text-[9px] text-muted-foreground font-mono">Nenhuma campanha ativa{accountId !== "all" ? " nesta conta" : ""}</p>}
               {campaigns.map((c: any) => (
                 <button key={c.id} onClick={() => { setCampaignId(c.id); setShowCampaigns(false); }}
-                  className={`flex w-full items-center gap-2 px-4 py-3 text-[10px] font-black uppercase tracking-widest text-left transition hover:bg-white/5 border-t border-white/[0.04] ${campaignId === c.id ? "text-[#00d4ff]" : "text-white/50"}`}>
-                  <span className="h-1.5 w-1.5 rounded-full" style={{ background: campaignId === c.id ? "#00d4ff" : "rgba(255,255,255,0.15)" }} />
+                  className={`flex w-full items-center gap-2 px-4 py-3 text-[10px] font-black uppercase tracking-widest text-left transition hover:bg-muted/50 border-t border-border/50 ${campaignId === c.id ? "text-primary" : "text-foreground/70"}`}>
+                  <span className="h-1.5 w-1.5 rounded-full" style={{ background: campaignId === c.id ? "var(--primary)" : "hsl(var(--muted-foreground)/0.3)" }} />
                   {c.name.slice(0, 32)}{c.name.length > 32 ? "…" : ""}
                 </button>
               ))}
@@ -535,10 +535,10 @@ function CockpitFilterBar() {
       <div ref={adSetRef} className="relative">
         <button
           onClick={() => { setShowAdSets(!showAdSets); setShowAccounts(false); setShowCampaigns(false); }}
-          className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-[10px] font-black uppercase tracking-widest transition hover:bg-white/[0.08] hover:border-white/20"
-          style={adSetId !== "all" ? { borderColor: "#22c55e20", color: "#22c55e" } : { color: "rgba(255,255,255,0.45)" }}
+          className="flex items-center gap-2 rounded-xl border bg-muted/30 px-3 py-2 text-[10px] font-black uppercase tracking-widest transition hover:bg-muted/50"
+          style={adSetId !== "all" ? { borderColor: "var(--primary)", color: "var(--primary)" } : { borderColor: "transparent", color: "hsl(var(--muted-foreground))" }}
         >
-          <span className="h-1.5 w-1.5 rounded-full" style={{ background: adSetId !== "all" ? "#22c55e" : "rgba(255,255,255,0.2)" }} />
+          <span className="h-1.5 w-1.5 rounded-full" style={{ background: adSetId !== "all" ? "var(--primary)" : "currentColor" }} />
           {selectedAdSet?.name ? selectedAdSet.name.slice(0, 18) + (selectedAdSet.name.length > 18 ? "…" : "") : "Todos os Conjuntos"}
           <ChevronDown className="h-3 w-3 opacity-50" />
         </button>
@@ -548,17 +548,17 @@ function CockpitFilterBar() {
               initial={{ opacity: 0, y: 4, scale: 0.97 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 4, scale: 0.97 }}
-              className="absolute top-full left-0 mt-1.5 z-50 min-w-[260px] max-h-[300px] overflow-y-auto rounded-2xl border border-white/10 bg-[#0d0d1a] shadow-2xl"
+              className="absolute top-full left-0 mt-1.5 z-50 min-w-[260px] max-h-[300px] overflow-y-auto rounded-2xl border border-border bg-popover shadow-2xl"
             >
               <button onClick={() => { setAdSetId("all"); setShowAdSets(false); }}
-                className={`flex w-full items-center gap-2 px-4 py-3 text-[10px] font-black uppercase tracking-widest text-left transition hover:bg-white/5 ${adSetId === "all" ? "text-[#22c55e]" : "text-white/40"}`}>
-                <span className="h-1.5 w-1.5 rounded-full bg-white/20" />Todos os Conjuntos
+                className={`flex w-full items-center gap-2 px-4 py-3 text-[10px] font-black uppercase tracking-widest text-left transition hover:bg-muted/50 ${adSetId === "all" ? "text-primary" : "text-muted-foreground"}`}>
+                <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/30" />Todos os Conjuntos
               </button>
-              {adSets.length === 0 && <p className="px-4 py-3 text-[9px] text-white/25 font-mono">Nenhum conjunto encontrado</p>}
+              {adSets.length === 0 && <p className="px-4 py-3 text-[9px] text-muted-foreground font-mono">Nenhum conjunto encontrado</p>}
               {adSets.map((s: any) => (
                 <button key={s.id} onClick={() => { setAdSetId(s.id); setShowAdSets(false); }}
-                  className={`flex w-full items-center gap-2 px-4 py-3 text-[10px] font-black uppercase tracking-widest text-left transition hover:bg-white/5 border-t border-white/[0.04] ${adSetId === s.id ? "text-[#22c55e]" : "text-white/50"}`}>
-                  <span className="h-1.5 w-1.5 rounded-full" style={{ background: adSetId === s.id ? "#22c55e" : "rgba(255,255,255,0.15)" }} />
+                  className={`flex w-full items-center gap-2 px-4 py-3 text-[10px] font-black uppercase tracking-widest text-left transition hover:bg-muted/50 border-t border-border/50 ${adSetId === s.id ? "text-primary" : "text-foreground/70"}`}>
+                  <span className="h-1.5 w-1.5 rounded-full" style={{ background: adSetId === s.id ? "var(--primary)" : "hsl(var(--muted-foreground)/0.3)" }} />
                   {s.name.slice(0, 30)}{s.name.length > 30 ? "…" : ""}
                 </button>
               ))}
@@ -568,7 +568,7 @@ function CockpitFilterBar() {
       </div>
 
       {/* Separator */}
-      <div className="h-5 w-px bg-white/[0.08]" />
+      <div className="h-5 w-px bg-border" />
 
       {/* Period pills */}
       <div className="flex items-center gap-1">
@@ -578,8 +578,8 @@ function CockpitFilterBar() {
             onClick={() => setPeriod(p.value)}
             className="rounded-lg px-2.5 py-1.5 text-[9px] font-black uppercase tracking-widest transition-all"
             style={period === p.value
-              ? { background: "rgba(155,135,245,0.18)", color: "#9b87f5", border: "1px solid rgba(155,135,245,0.35)" }
-              : { color: "rgba(255,255,255,0.3)", border: "1px solid transparent" }
+              ? { background: "hsl(var(--primary)/0.15)", color: "var(--primary)", border: "1px solid hsl(var(--primary)/0.4)" }
+              : { color: "hsl(var(--muted-foreground))", border: "1px solid transparent" }
             }
           >
             {p.label}
@@ -592,15 +592,15 @@ function CockpitFilterBar() {
         {period === "custom" && (
           <motion.div initial={{ opacity: 0, width: 0 }} animate={{ opacity: 1, width: "auto" }} exit={{ opacity: 0, width: 0 }}
             className="flex items-center gap-2 overflow-hidden">
-            <div className="h-5 w-px bg-white/[0.08]" />
+            <div className="h-5 w-px bg-border" />
             <input type="date" value={dateFrom} max={dateTo}
               onChange={e => setDateFrom(e.target.value)}
-              className="rounded-lg border border-white/10 bg-white/[0.04] px-2 py-1.5 text-[9px] font-mono text-white/60 outline-none focus:border-[#9b87f5]/40"
+              className="rounded-lg border border-border bg-background px-2 py-1.5 text-[9px] font-mono text-foreground outline-none focus:border-primary/50"
             />
-            <span className="text-white/20 text-[10px]">→</span>
+            <span className="text-muted-foreground text-[10px]">→</span>
             <input type="date" value={dateTo} min={dateFrom} max={new Date().toISOString().split("T")[0]}
               onChange={e => setDateTo(e.target.value)}
-              className="rounded-lg border border-white/10 bg-white/[0.04] px-2 py-1.5 text-[9px] font-mono text-white/60 outline-none focus:border-[#9b87f5]/40"
+              className="rounded-lg border border-border bg-background px-2 py-1.5 text-[9px] font-mono text-foreground outline-none focus:border-primary/50"
             />
           </motion.div>
         )}
@@ -610,7 +610,7 @@ function CockpitFilterBar() {
       {isFiltered && (
         <motion.button initial={{ opacity: 0, scale: 0 }} animate={{ opacity: 1, scale: 1 }}
           onClick={resetToDefault}
-          className="ml-auto flex items-center gap-1 rounded-lg border border-white/10 px-2.5 py-1.5 text-[9px] font-black uppercase tracking-widest text-white/30 hover:text-white/60 hover:border-white/20 transition-all">
+          className="ml-auto flex items-center gap-1 rounded-lg border border-border px-2.5 py-1.5 text-[9px] font-black uppercase tracking-widest text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-all">
           <X className="h-2.5 w-2.5" />Limpar
         </motion.button>
       )}
@@ -788,20 +788,20 @@ function CockpitPage() {
   const warningCount = gaugeConfig.filter(gc => gc.value >= 35 && gc.value < 65).length;
 
   return (
-    <div className="min-h-screen w-full pb-24" style={{ background: "radial-gradient(ellipse at top, #0d0d18 0%, #030307 60%)" }}>
-      <div className="fixed inset-0 pointer-events-none z-0" style={{ backgroundImage: "linear-gradient(rgba(255,255,255,0.018) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.018) 1px, transparent 1px)", backgroundSize: "60px 60px" }} />
+    <div className="min-h-screen w-full pb-24 bg-background text-foreground relative">
+      <div className="absolute inset-0 pointer-events-none z-0" style={{ backgroundImage: "linear-gradient(currentColor 1px, transparent 1px), linear-gradient(90deg, currentColor 1px, transparent 1px)", backgroundSize: "60px 60px", opacity: 0.03 }} />
 
       <div className="relative z-10 max-w-7xl mx-auto px-4 pt-4 space-y-5">
 
         {/* ── HEADER ─────────────────────────────────────────────── */}
         <div className="flex items-start justify-between gap-3 flex-wrap">
           <PageHeader eyebrow="Sistema Vital · Performance" title="Cockpit de Performance" description="Painel tático em tempo real — saúde, fadiga, pressão e momento da operação." compact />
-          <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="flex items-center gap-3 rounded-xl border border-white/[0.07] bg-black/60 px-4 py-2.5 backdrop-blur-md">
+          <motion.div initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} className="flex items-center gap-3 rounded-xl border border-border bg-card/80 px-4 py-2.5 backdrop-blur-md shadow-sm">
             <div className="flex items-center gap-2">
               <span className="h-2 w-2 rounded-full bg-[#22c55e] animate-pulse shadow-[0_0_6px_#22c55e]" />
-              <span className="text-[10px] font-black uppercase tracking-[0.2em] text-white/50">LIVE</span>
+              <span className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground">LIVE</span>
             </div>
-            <div className="text-[10px] font-mono text-white/30">{new Date().toLocaleTimeString("pt-BR")}</div>
+            <div className="text-[10px] font-mono text-muted-foreground">{new Date().toLocaleTimeString("pt-BR")}</div>
             {criticalCount > 0 && <div className="flex items-center gap-1 rounded-md bg-red-500/15 border border-red-500/25 px-2 py-1"><AlertTriangle className="h-3 w-3 text-red-400" /><span className="text-[9px] font-black text-red-400">{criticalCount} CRÍTICO{criticalCount > 1 ? "S" : ""}</span></div>}
             {warningCount > 0 && <div className="flex items-center gap-1 rounded-md bg-amber-500/15 border border-amber-500/25 px-2 py-1"><Radio className="h-3 w-3 text-amber-400" /><span className="text-[9px] font-black text-amber-400">{warningCount} ATENÇÃO</span></div>}
           </motion.div>
@@ -812,7 +812,7 @@ function CockpitPage() {
 
         {/* Context summary */}
         {(accountId !== "all" || campaignId !== "all" || adSetId !== "all") && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex items-center gap-2 text-[9px] font-mono text-white/25">
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex items-center gap-2 text-[9px] font-mono text-muted-foreground">
             <Activity className="h-3 w-3" />
             Filtrando: {accountId !== "all" ? "conta selecionada" : "todas as contas"} · {campaignId !== "all" ? "campanha selecionada" : "todas as campanhas"} · {adSetId !== "all" ? "conjunto selecionado" : "todos os conjuntos"} · {dateFrom} → {dateTo}
           </motion.div>
@@ -820,11 +820,11 @@ function CockpitPage() {
 
         {/* ── SCORE ORB + GAUGES ─────────────────────────────────── */}
         <div className="grid grid-cols-1 xl:grid-cols-[300px_1fr] gap-6 items-start">
-          <div className="flex flex-col items-center gap-4 rounded-2xl border border-white/[0.06] bg-[#080810]/80 p-6 backdrop-blur-xl">
-            <p className="text-[10px] font-black uppercase tracking-[0.25em] text-white/30">Score de Saúde</p>
+          <div className="flex flex-col items-center gap-4 rounded-2xl border border-border bg-card/60 p-6 backdrop-blur-xl shadow-sm">
+            <p className="text-[10px] font-black uppercase tracking-[0.25em] text-muted-foreground">Score de Saúde</p>
             <ScoreOrb score={score ?? 0} components={components ?? {}} isLoading={isLoading} />
             {!isLoading && dailyScores?.length > 0 && (
-              <div className="w-full border-t border-white/[0.05] pt-4">
+              <div className="w-full border-t border-border pt-4">
                 <ScoreHistorico data={dailyScores} />
               </div>
             )}
@@ -833,13 +833,13 @@ function CockpitPage() {
             {isLoading ? (
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
                 {[...Array(6)].map((_, i) => (
-                  <div key={i} className="rounded-2xl bg-[#0a0a0f] border border-white/[0.06] animate-pulse" style={{ height: 200 }} />
+                  <div key={i} className="rounded-2xl bg-muted border border-border animate-pulse" style={{ height: 200 }} />
                 ))}
               </div>
             ) : !meta ? (
-              <div className="rounded-2xl border border-white/[0.06] bg-[#0a0a0f] p-8 text-center">
-                <p className="text-white/30 text-sm font-mono">Sem dados para o período selecionado</p>
-                <p className="text-white/15 text-xs font-mono mt-1">{dateFrom} → {dateTo}</p>
+              <div className="rounded-2xl border border-border bg-card p-8 text-center shadow-sm">
+                <p className="text-muted-foreground text-sm font-mono">Sem dados para o período selecionado</p>
+                <p className="text-muted-foreground/60 text-xs font-mono mt-1">{dateFrom} → {dateTo}</p>
               </div>
             ) : (
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
