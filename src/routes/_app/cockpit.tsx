@@ -44,8 +44,8 @@ function pt(cx: number, cy: number, r: number, deg: number) {
 function arcD(cx: number, cy: number, r: number, startDeg: number, sweepDeg: number) {
   if (sweepDeg <= 0) return "";
   const capped = Math.min(sweepDeg, 359.99);
-  const s = pt(cX, Info, cy, r, startDeg);
-  const e = pt(cX, Info, cy, r, startDeg + capped);
+  const s = pt(cx, cy, r, startDeg);
+  const e = pt(cx, cy, r, startDeg + capped);
   const large = capped > 180 ? 1 : 0;
   return `M ${s.x.toFixed(2)} ${s.y.toFixed(2)} A ${r} ${r} 0 ${large} 1 ${e.x.toFixed(2)} ${e.y.toFixed(2)}`;
 }
@@ -89,12 +89,12 @@ function CockpitGauge({ value, max = 100, label, sub, unit = "%", zones, size = 
   const activeZone = [...zones_].reverse().find(z => pct >= z.from) ?? zones_[0];
   const glowColor = activeZone.color;
   const needleDeg = G_START + valueSweep;
-  const needleTip = pt(cX, Info, cy, R - 6, needleDeg);
-  const nb1 = pt(cX, Info, cy, 7, needleDeg + 90);
-  const nb2 = pt(cX, Info, cy, 7, needleDeg - 90);
+  const needleTip = pt(cx, cy, R - 6, needleDeg);
+  const nb1 = pt(cx, cy, 7, needleDeg + 90);
+  const nb2 = pt(cx, cy, 7, needleDeg - 90);
   const ticks = [0, 0.25, 0.5, 0.75, 1].map(f => {
     const deg = G_START + f * G_SWEEP;
-    return { outer: pt(cX, Info, cy, R + 5, deg), inner: pt(cX, Info, cy, R + 13, deg) };
+    return { outer: pt(cx, cy, R + 5, deg), inner: pt(cx, cy, R + 13, deg) };
   });
   const gid = label.replace(/\s/g, "-");
 
@@ -123,13 +123,13 @@ function CockpitGauge({ value, max = 100, label, sub, unit = "%", zones, size = 
                 <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
               </filter>
             </defs>
-            <path d={arcD(cX, Info, cy, R, G_START, G_SWEEP)} stroke="rgba(255,255,255,0.06)" strokeWidth={12} fill="none" strokeLinecap="round" />
+            <path d={arcD(cx, cy, R, G_START, G_SWEEP)} stroke="rgba(255,255,255,0.06)" strokeWidth={12} fill="none" strokeLinecap="round" />
             {zones_.map((z, i) => {
               const zs = z.from * G_SWEEP, ze = z.to * G_SWEEP;
-              return <path key={i} d={arcD(cX, Info, cy, R, G_START + zs, ze - zs - 1)} stroke={z.color} strokeWidth={3} fill="none" opacity={0.22} strokeLinecap="butt" />;
+              return <path key={i} d={arcD(cx, cy, R, G_START + zs, ze - zs - 1)} stroke={z.color} strokeWidth={3} fill="none" opacity={0.22} strokeLinecap="butt" />;
             })}
             <motion.path
-              d={arcD(cX, Info, cy, R, G_START, G_SWEEP)}
+              d={arcD(cx, cy, R, G_START, G_SWEEP)}
               stroke={glowColor} strokeWidth={12} fill="none" strokeLinecap="round"
               filter={`url(#glow-${gid})`}
               initial={{ strokeDashoffset: arcLen, strokeDasharray: arcLen }}
@@ -189,14 +189,14 @@ function ScoreOrb({ score, components, isLoading }: { score: number; components:
           </defs>
           {[...Array(36)].map((_, i) => {
             const deg = G_START + (i / 36) * G_SWEEP;
-            const outer = pt(cX, Info, cy, R + 22, deg);
+            const outer = pt(cx, cy, R + 22, deg);
             return <circle key={i} cx={outer.x} cy={outer.y} r={i % 6 === 0 ? 3 : 1.5} fill="rgba(255,255,255,0.15)" />;
           })}
-          <path d={arcD(cX, Info, cy, R, G_START, G_SWEEP)} stroke="rgba(255,255,255,0.07)" strokeWidth={16} fill="none" strokeLinecap="round" />
+          <path d={arcD(cx, cy, R, G_START, G_SWEEP)} stroke="rgba(255,255,255,0.07)" strokeWidth={16} fill="none" strokeLinecap="round" />
           {[{ from: 0, sw: 0.4 * G_SWEEP, color: "#ef4444" }, { from: 0.4 * G_SWEEP, sw: 0.3 * G_SWEEP, color: "#f59e0b" }, { from: 0.7 * G_SWEEP, sw: 0.3 * G_SWEEP - 1, color: "#22c55e" }].map((z, i) => (
-            <path key={i} d={arcD(cX, Info, cy, R, G_START + z.from, z.sw)} stroke={z.color} strokeWidth={4} fill="none" opacity={0.25} strokeLinecap="butt" />
+            <path key={i} d={arcD(cx, cy, R, G_START + z.from, z.sw)} stroke={z.color} strokeWidth={4} fill="none" opacity={0.25} strokeLinecap="butt" />
           ))}
-          <motion.path d={arcD(cX, Info, cy, R, G_START, G_SWEEP)} stroke={color} strokeWidth={16} fill="none" strokeLinecap="round" filter="url(#orb-glow)"
+          <motion.path d={arcD(cx, cy, R, G_START, G_SWEEP)} stroke={color} strokeWidth={16} fill="none" strokeLinecap="round" filter="url(#orb-glow)"
             initial={{ strokeDashoffset: arcLen, strokeDasharray: arcLen }}
             animate={{ strokeDashoffset: isLoading ? arcLen : offset, strokeDasharray: arcLen }}
             transition={{ duration: 2, delay: 0.4, ease: [0.22, 1, 0.36, 1] }} />
@@ -328,7 +328,7 @@ function RecomendacoesInteligentes({ recs }: { recs: Array<{ prio: string; color
 const RADAR_COLORS: Record<string, string> = { up: "#22c55e", down: "#ef4444", stable: "#f59e0b" };
 
 function CustomDot(props: any) {
-  const { cX, Info, cy, payload } = props;
+  const { cx, cy, payload } = props;
   const r = Math.sqrt((payload.spend / Math.PI)) * 0.9 + 10;
   const col = RADAR_COLORS[payload.trend] ?? "#9b87f5";
   return (
@@ -924,6 +924,7 @@ function CockpitPage() {
     </div>
   );
 }
+
 
 
 
