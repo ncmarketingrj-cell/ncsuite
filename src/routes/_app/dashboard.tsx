@@ -545,10 +545,10 @@ function Dashboard() {
             compact
           />
           
-          {/* Health Score Badge */}
+          {/* Health Score Badge → Cockpit */}
           {performanceData && (
-            <div className="flex flex-col items-end pt-1">
-              <div className="flex items-center gap-3 bg-card/40 border border-border/50 rounded-2xl p-2.5 pr-4 backdrop-blur-md transition-all hover:bg-card">
+            <div className="flex flex-col items-end pt-1 gap-1.5">
+              <Link to="/cockpit" className="group flex items-center gap-3 bg-card/40 border border-border/50 rounded-2xl p-2.5 pr-4 backdrop-blur-md transition-all hover:bg-card hover:border-primary/30 hover:shadow-[0_0_16px_rgba(var(--primary-rgb),0.08)]">
                 <div className="relative h-10 w-10 flex items-center justify-center">
                   <svg className="w-full h-full -rotate-90 transform" viewBox="0 0 36 36">
                     <path
@@ -576,7 +576,11 @@ function Dashboard() {
                     {performanceData.healthScore >= 80 ? "Excelente" : performanceData.healthScore >= 50 ? "Atenção" : "Crítico"}
                   </p>
                 </div>
-              </div>
+                <GaugeCircle className="h-3.5 w-3.5 text-muted-foreground/40 group-hover:text-primary transition-colors ml-1" />
+              </Link>
+              <span className="text-[8px] font-black uppercase tracking-[0.18em] text-muted-foreground/30 group-hover:text-primary/60 transition-colors pr-1">
+                → Cockpit
+              </span>
             </div>
           )}
         </div>

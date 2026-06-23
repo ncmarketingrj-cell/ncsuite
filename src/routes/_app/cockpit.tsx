@@ -1,15 +1,20 @@
-import { createFileRoute, redirect } from "@tanstack/react-router";
+import { createFileRoute, redirect, Link } from "@tanstack/react-router";
 import { motion, useMotionValue, animate as fmAnimate } from "framer-motion";
 import { useQuery } from "@tanstack/react-query";
 import { useMemo, useEffect, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { subDays, format } from "date-fns";
+import { subDays, format, parseISO } from "date-fns";
+import { ptBR } from "date-fns/locale";
 import { PageHeader } from "@/components/PageHeader";
 import {
   ScatterChart, Scatter, XAxis, YAxis, ZAxis,
   CartesianGrid, Tooltip as RTip, ResponsiveContainer, Cell, ReferenceArea,
+  AreaChart, Area, Tooltip as RTooltip,
 } from "recharts";
-import { Activity, Zap, TrendingUp, TrendingDown, Target, AlertTriangle, CheckCircle2, Radio } from "lucide-react";
+import {
+  Activity, Zap, TrendingUp, TrendingDown, Target, AlertTriangle, CheckCircle2,
+  Radio, Rocket, DollarSign, BarChart3, Flame, Pause, ArrowUpRight,
+} from "lucide-react";
 
 // ─── ROUTE ──────────────────────────────────────────────────────────────────────
 export const Route = createFileRoute("/_app/cockpit")({
@@ -479,6 +484,128 @@ function RadarTatico({ data }: { data: any[] }) {
   );
 }
 
+// ─── SCORE HISTÓRICO ─────────────────────────────────────────────────────────────
+function ScoreHistorico({ data }: { data: Array<{ date: string; score: number }> }) {
+  if (!data.length) return null;
+  const max = Math.max(...data.map(d => d.score), 1);
+  const trend = data[data.length - 1].score - data[0].score;
+  const trendColor = trend >= 0 ? "#22c55e" : "#ef4444";
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: 1.6 }}
+      className="w-full"
+    >
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-[9px] font-black uppercase tracking-[0.2em] text-white/30">Tendência — 7 dias</span>
+        <span className="text-[9px] font-black font-mono" style={{ color: trendColor }}>
+          {trend >= 0 ? "+" : ""}{trend} pts
+        </span>
+      </div>
+      <div className="h-[56px] w-full">
+        <ResponsiveContainer width="100%" height="100%">
+          <AreaChart data={data} margin={{ top: 4, right: 0, bottom: 0, left: 0 }}>
+            <defs>
+              <linearGradient id="scoreGrad" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="5%" stopColor="#9b87f5" stopOpacity={0.3} />
+                <stop offset="95%" stopColor="#9b87f5" stopOpacity={0} />
+              </linearGradient>
+            </defs>
+            <XAxis dataKey="date" hide />
+            <YAxis domain={[0, 100]} hide />
+            <RTooltip
+              contentStyle={{ background: "rgba(10,10,15,0.9)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 8, fontSize: 10, fontFamily: "monospace" }}
+              formatter={(v: any) => [`${v} pts`, "Score"]}
+            />
+            <Area type="monotone" dataKey="score" stroke="#9b87f5" strokeWidth={2} fill="url(#scoreGrad)" dot={{ r: 2, fill: "#9b87f5", strokeWidth: 0 }} activeDot={{ r: 4, fill: "#9b87f5" }} />
+          </AreaChart>
+        </ResponsiveContainer>
+      </div>
+      {/* Day labels */}
+      <div className="flex justify-between mt-1">
+        {data.map((d, i) => (
+          <span key={i} className="text-[7px] font-mono text-white/20">{d.date}</span>
+        ))}
+      </div>
+    </motion.div>
+  );
+}
+
+// ─── RECOMENDAÇÕES INTELIGENTES ──────────────────────────────────────────────────
+function RecomendacoesInteligentes({ recs }: { recs: Array<{ prio: string; color: string; title: string; desc: string; icon: any }> }) {
+  if (!recs.length) return null;
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.55, delay: 1.2 }}
+      className="rounded-2xl border border-white/[0.06] bg-[#0a0a0f] overflow-hidden"
+    >
+      {/* Header */}
+      <div className="flex items-center justify-between px-6 py-4 border-b border-white/[0.05]">
+        <div>
+          <h3 className="text-sm font-black uppercase tracking-[0.2em] text-white">Diagnóstico & Ações</h3>
+          <p className="text-[10px] text-white/30 mt-0.5 tracking-widest uppercase">O que fazer agora — baseado nos indicadores</p>
+        </div>
+        <div className="flex gap-2">
+          {(["CRÍTICO", "ATENÇÃO", "OPORTUNIDADE"] as const).map(p => {
+            const count = recs.filter(r => r.prio === p).length;
+            if (!count) return null;
+            const col = p === "CRÍTICO" ? "#ef4444" : p === "ATENÇÃO" ? "#f59e0b" : "#22c55e";
+            return (
+              <span key={p} className="text-[8px] font-black px-2 py-1 rounded-md border" style={{ color: col, borderColor: `${col}30`, background: `${col}10` }}>
+                {count}× {p}
+              </span>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Rec list */}
+      <div className="divide-y divide-white/[0.04]">
+        {recs.map((rec, i) => {
+          const Icon = rec.icon;
+          return (
+            <motion.div
+              key={i}
+              initial={{ opacity: 0, x: -12 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ delay: 1.3 + i * 0.08 }}
+              className="flex gap-4 px-6 py-4 hover:bg-white/[0.02] transition-colors"
+            >
+              {/* Priority stripe */}
+              <div className="w-0.5 self-stretch rounded-full shrink-0" style={{ backgroundColor: rec.color }} />
+
+              {/* Icon */}
+              <div className="h-9 w-9 rounded-xl flex items-center justify-center shrink-0" style={{ background: `${rec.color}14`, border: `1px solid ${rec.color}25` }}>
+                <Icon className="h-4 w-4" style={{ color: rec.color }} />
+              </div>
+
+              {/* Content */}
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="text-[8px] font-black px-1.5 py-0.5 rounded" style={{ color: rec.color, background: `${rec.color}12` }}>
+                    {rec.prio}
+                  </span>
+                  <span className="text-[11px] font-black text-white leading-tight">{rec.title}</span>
+                </div>
+                <p className="text-[10px] text-white/40 leading-relaxed">{rec.desc}</p>
+              </div>
+
+              {/* Number badge */}
+              <div className="shrink-0 w-6 h-6 rounded-full flex items-center justify-center text-[9px] font-black" style={{ background: `${rec.color}15`, color: rec.color }}>
+                {i + 1}
+              </div>
+            </motion.div>
+          );
+        })}
+      </div>
+    </motion.div>
+  );
+}
+
 // ─── DATA HOOK ───────────────────────────────────────────────────────────────────
 function useCockpitData() {
   const today = new Date();
@@ -592,11 +719,76 @@ function useCockpitData() {
       .sort((a, b) => b.spend - a.spend)
       .slice(0, 16);
 
+    // ── Score histórico (últimos 7 dias) ────────────────────────────────────────
+    const today2 = new Date();
+    const dailyScores = [...Array(7)].map((_, i) => {
+      const dt = format(subDays(today2, 6 - i), "yyyy-MM-dd");
+      const dayData = raw.filter((r: any) => r.date === dt);
+      const dtLabel = format(subDays(today2, 6 - i), "dd/MM", { locale: ptBR });
+
+      if (!dayData.length) return { date: dtLabel, score: 0 };
+
+      let dCost = 0, dConv = 0, dClicks = 0, dImpr = 0, dFq = 0, dFqN = 0;
+      for (const r of dayData) {
+        dCost += r.cost ?? 0;
+        dConv += r.conversions ?? 0;
+        dClicks += r.clicks ?? 0;
+        dImpr += r.impressions ?? 0;
+        if (r.frequency) { dFq += r.frequency; dFqN++; }
+      }
+      const dCPL = dConv > 0 ? dCost / dConv : 0;
+      const dCVR = dClicks > 0 ? dConv / dClicks : 0;
+      const dFreq = dFqN > 0 ? dFq / dFqN : 0;
+      const dCTR = dImpr > 0 ? dClicks / dImpr : 0;
+
+      const s1 = dCPL > 0 ? Math.min(100, (35 / dCPL) * 100) : 40;
+      const s3 = Math.max(0, 100 - Math.min(100, (dFreq / 4) * 100));
+      const s4 = Math.min(100, (dCVR / 0.04) * 100);
+      const s5 = Math.min(100, dCTR * 1000);
+      const dayScore = Math.round(s1 * 0.30 + s3 * 0.25 + s4 * 0.25 + s5 * 0.20);
+
+      return { date: dtLabel, score: dayScore };
+    });
+
+    // ── Recomendações (rule-based) ───────────────────────────────────────────────
+    type RecPrio = "CRÍTICO" | "ATENÇÃO" | "OPORTUNIDADE";
+    const recs: Array<{ prio: RecPrio; color: string; title: string; desc: string; icon: any }> = [];
+
+    if (fatigue < 30) {
+      recs.push({ prio: "CRÍTICO", color: "#ef4444", icon: Flame, title: "Fadiga criativa em nível crítico", desc: `Frequência média de ${avgFreq.toFixed(1)}×. Pause os criativos mais antigos e injete mínimo 3 novos anúncios com visuais e copy completamente diferentes.` });
+    } else if (fatigue < 55) {
+      recs.push({ prio: "ATENÇÃO", color: "#f59e0b", icon: AlertTriangle, title: "Frequência moderada — monitore nos próximos 2 dias", desc: "Se o CTR cair mais de 15% sem mudança de público, é sinal de fadiga iminente. Prepare variações criativas como backup." });
+    }
+
+    if (conversion < 30) {
+      recs.push({ prio: "CRÍTICO", color: "#ef4444", icon: Target, title: "Taxa de conversão abaixo do limiar mínimo", desc: `CVR de ${(CVR * 100).toFixed(2)}% está muito abaixo da meta de 4%. Verifique landing page, tempo de carregamento e alinhamento entre anúncio e oferta.` });
+    } else if (conversion < 55) {
+      recs.push({ prio: "ATENÇÃO", color: "#f59e0b", icon: Target, title: "Conversão abaixo da meta", desc: "CVR pode ser melhorado com testes A/B na CTA da página de destino e qualificação mais precisa da audiência." });
+    }
+
+    if (pressure < 35) {
+      recs.push({ prio: "ATENÇÃO", color: "#f59e0b", icon: TrendingUp, title: "CPM em alta — custo de atingimento crescendo", desc: `CPM ${((cpmTrendRatio - 1) * 100).toFixed(0)}% acima do histórico. Teste novos públicos lookalike e amplie o range geográfico para reduzir concorrência de leilão.` });
+    }
+
+    if (budgetHealth < 45) {
+      recs.push({ prio: "ATENÇÃO", color: "#f59e0b", icon: DollarSign, title: "Verba mal distribuída entre campanhas", desc: "Mais de 55% do orçamento alocado em campanhas pausadas ou inativas. Redistribua para campanhas com menor CPL." });
+    }
+
+    if (scale < 35) {
+      recs.push({ prio: "ATENÇÃO", color: "#f59e0b", icon: BarChart3, title: "Capacidade de escala subutilizada", desc: "Menos de 35% do budget diário está sendo consumido. Verifique limites de lance (bid cap) e amplitude do público-alvo." });
+    }
+
+    if (score >= 75 && recs.filter(r => r.prio === "CRÍTICO").length === 0) {
+      recs.push({ prio: "OPORTUNIDADE", color: "#22c55e", icon: Rocket, title: "Performance saudável — momento para escalar", desc: `Score ${score}/100. Identifique campanhas no quadrante ESCALAR do Radar Tático e aumente o orçamento diário em 20–30% de forma gradual.` });
+    }
+
     return {
       score,
       components: { cplEfficiency, cpmTrend, fatigue, conversion, funnelHealth },
       gauges: { scale, fatigue, pressure, conversion, budgetHealth, momentum, avgFreq, CPL, CVR },
       radar,
+      dailyScores,
+      recommendations: recs.slice(0, 5),
       isLoading: false,
       meta: { CPL: CPL.toFixed(2), CVR: (CVR * 100).toFixed(2), avgFreq: avgFreq.toFixed(1), cpmTrendRatio: cpmTrendRatio.toFixed(2) },
     };
@@ -605,7 +797,7 @@ function useCockpitData() {
 
 // ─── MAIN PAGE ───────────────────────────────────────────────────────────────────
 function CockpitPage() {
-  const { score, components, gauges: g, radar, isLoading, meta } = useCockpitData() as any;
+  const { score, components, gauges: g, radar, dailyScores, recommendations, isLoading, meta } = useCockpitData() as any;
   const [tick, setTick] = useState(0);
   useEffect(() => {
     const id = setInterval(() => setTick(t => t + 1), 1000);
@@ -711,9 +903,14 @@ function CockpitPage() {
         <div className="grid grid-cols-1 xl:grid-cols-[300px_1fr] gap-8 items-start">
 
           {/* Score orb — left col */}
-          <div className="flex flex-col items-center gap-2 rounded-2xl border border-white/[0.06] bg-[#080810]/80 p-6 backdrop-blur-xl">
-            <p className="text-[10px] font-black uppercase tracking-[0.25em] text-white/30 mb-2">Score de Saúde</p>
+          <div className="flex flex-col items-center gap-4 rounded-2xl border border-white/[0.06] bg-[#080810]/80 p-6 backdrop-blur-xl">
+            <p className="text-[10px] font-black uppercase tracking-[0.25em] text-white/30">Score de Saúde</p>
             <ScoreOrb score={score ?? 0} components={components ?? {}} isLoading={isLoading} />
+            {!isLoading && dailyScores?.length > 0 && (
+              <div className="w-full border-t border-white/[0.05] pt-4">
+                <ScoreHistorico data={dailyScores} />
+              </div>
+            )}
           </div>
 
           {/* 6 gauges — right col */}
@@ -737,6 +934,9 @@ function CockpitPage() {
 
         {/* ── RADAR TÁTICO ──────────────────────────────────────────── */}
         {!isLoading && radar?.length > 0 && <RadarTatico data={radar} />}
+
+        {/* ── RECOMENDAÇÕES ─────────────────────────────────────────── */}
+        {!isLoading && recommendations?.length > 0 && <RecomendacoesInteligentes recs={recommendations} />}
 
         {/* ── CALLOUTS ──────────────────────────────────────────────── */}
         {!isLoading && meta && (
