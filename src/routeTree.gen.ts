@@ -24,6 +24,7 @@ import { Route as AppStrategyMapRouteImport } from './routes/_app/strategy-map'
 import { Route as AppSocialRelatoriosRouteImport } from './routes/_app/social-relatorios'
 import { Route as AppSocialInsightsRouteImport } from './routes/_app/social-insights'
 import { Route as AppSocialRouteImport } from './routes/_app/social'
+import { Route as AppSimuladorRouteImport } from './routes/_app/simulador'
 import { Route as AppReunioesRouteImport } from './routes/_app/reunioes'
 import { Route as AppRelatoriosRouteImport } from './routes/_app/relatorios'
 import { Route as AppQuizRouteImport } from './routes/_app/quiz'
@@ -40,6 +41,7 @@ import { Route as AppCrmConfigRouteImport } from './routes/_app/crm-config'
 import { Route as AppCrmRouteImport } from './routes/_app/crm'
 import { Route as AppCriativosRouteImport } from './routes/_app/criativos'
 import { Route as AppConfigRouteImport } from './routes/_app/config'
+import { Route as AppCockpitRouteImport } from './routes/_app/cockpit'
 import { Route as AppCobrancasRouteImport } from './routes/_app/cobrancas'
 import { Route as AppClientesRouteImport } from './routes/_app/clientes'
 import { Route as AppClientPortalRouteImport } from './routes/_app/client-portal'
@@ -124,6 +126,11 @@ const AppSocialRoute = AppSocialRouteImport.update({
   path: '/social',
   getParentRoute: () => AppRoute,
 } as any)
+const AppSimuladorRoute = AppSimuladorRouteImport.update({
+  id: '/simulador',
+  path: '/simulador',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppReunioesRoute = AppReunioesRouteImport.update({
   id: '/reunioes',
   path: '/reunioes',
@@ -204,6 +211,11 @@ const AppConfigRoute = AppConfigRouteImport.update({
   path: '/config',
   getParentRoute: () => AppRoute,
 } as any)
+const AppCockpitRoute = AppCockpitRouteImport.update({
+  id: '/cockpit',
+  path: '/cockpit',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppCobrancasRoute = AppCobrancasRouteImport.update({
   id: '/cobrancas',
   path: '/cobrancas',
@@ -262,6 +274,7 @@ export interface FileRoutesByFullPath {
   '/client-portal': typeof AppClientPortalRoute
   '/clientes': typeof AppClientesRouteWithChildren
   '/cobrancas': typeof AppCobrancasRoute
+  '/cockpit': typeof AppCockpitRoute
   '/config': typeof AppConfigRoute
   '/criativos': typeof AppCriativosRoute
   '/crm': typeof AppCrmRoute
@@ -278,6 +291,7 @@ export interface FileRoutesByFullPath {
   '/quiz': typeof AppQuizRoute
   '/relatorios': typeof AppRelatoriosRoute
   '/reunioes': typeof AppReunioesRoute
+  '/simulador': typeof AppSimuladorRoute
   '/social': typeof AppSocialRoute
   '/social-insights': typeof AppSocialInsightsRoute
   '/social-relatorios': typeof AppSocialRelatoriosRoute
@@ -303,6 +317,7 @@ export interface FileRoutesByTo {
   '/client-portal': typeof AppClientPortalRoute
   '/clientes': typeof AppClientesRouteWithChildren
   '/cobrancas': typeof AppCobrancasRoute
+  '/cockpit': typeof AppCockpitRoute
   '/config': typeof AppConfigRoute
   '/criativos': typeof AppCriativosRoute
   '/crm': typeof AppCrmRoute
@@ -319,6 +334,7 @@ export interface FileRoutesByTo {
   '/quiz': typeof AppQuizRoute
   '/relatorios': typeof AppRelatoriosRoute
   '/reunioes': typeof AppReunioesRoute
+  '/simulador': typeof AppSimuladorRoute
   '/social': typeof AppSocialRoute
   '/social-insights': typeof AppSocialInsightsRoute
   '/social-relatorios': typeof AppSocialRelatoriosRoute
@@ -346,6 +362,7 @@ export interface FileRoutesById {
   '/_app/client-portal': typeof AppClientPortalRoute
   '/_app/clientes': typeof AppClientesRouteWithChildren
   '/_app/cobrancas': typeof AppCobrancasRoute
+  '/_app/cockpit': typeof AppCockpitRoute
   '/_app/config': typeof AppConfigRoute
   '/_app/criativos': typeof AppCriativosRoute
   '/_app/crm': typeof AppCrmRoute
@@ -362,6 +379,7 @@ export interface FileRoutesById {
   '/_app/quiz': typeof AppQuizRoute
   '/_app/relatorios': typeof AppRelatoriosRoute
   '/_app/reunioes': typeof AppReunioesRoute
+  '/_app/simulador': typeof AppSimuladorRoute
   '/_app/social': typeof AppSocialRoute
   '/_app/social-insights': typeof AppSocialInsightsRoute
   '/_app/social-relatorios': typeof AppSocialRelatoriosRoute
@@ -389,6 +407,7 @@ export interface FileRouteTypes {
     | '/client-portal'
     | '/clientes'
     | '/cobrancas'
+    | '/cockpit'
     | '/config'
     | '/criativos'
     | '/crm'
@@ -405,6 +424,7 @@ export interface FileRouteTypes {
     | '/quiz'
     | '/relatorios'
     | '/reunioes'
+    | '/simulador'
     | '/social'
     | '/social-insights'
     | '/social-relatorios'
@@ -430,6 +450,7 @@ export interface FileRouteTypes {
     | '/client-portal'
     | '/clientes'
     | '/cobrancas'
+    | '/cockpit'
     | '/config'
     | '/criativos'
     | '/crm'
@@ -446,6 +467,7 @@ export interface FileRouteTypes {
     | '/quiz'
     | '/relatorios'
     | '/reunioes'
+    | '/simulador'
     | '/social'
     | '/social-insights'
     | '/social-relatorios'
@@ -472,6 +494,7 @@ export interface FileRouteTypes {
     | '/_app/client-portal'
     | '/_app/clientes'
     | '/_app/cobrancas'
+    | '/_app/cockpit'
     | '/_app/config'
     | '/_app/criativos'
     | '/_app/crm'
@@ -488,6 +511,7 @@ export interface FileRouteTypes {
     | '/_app/quiz'
     | '/_app/relatorios'
     | '/_app/reunioes'
+    | '/_app/simulador'
     | '/_app/social'
     | '/_app/social-insights'
     | '/_app/social-relatorios'
@@ -620,6 +644,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppSocialRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/simulador': {
+      id: '/_app/simulador'
+      path: '/simulador'
+      fullPath: '/simulador'
+      preLoaderRoute: typeof AppSimuladorRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/reunioes': {
       id: '/_app/reunioes'
       path: '/reunioes'
@@ -732,6 +763,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppConfigRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/cockpit': {
+      id: '/_app/cockpit'
+      path: '/cockpit'
+      fullPath: '/cockpit'
+      preLoaderRoute: typeof AppCockpitRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/cobrancas': {
       id: '/_app/cobrancas'
       path: '/cobrancas'
@@ -829,6 +867,7 @@ interface AppRouteChildren {
   AppClientPortalRoute: typeof AppClientPortalRoute
   AppClientesRoute: typeof AppClientesRouteWithChildren
   AppCobrancasRoute: typeof AppCobrancasRoute
+  AppCockpitRoute: typeof AppCockpitRoute
   AppConfigRoute: typeof AppConfigRoute
   AppCriativosRoute: typeof AppCriativosRoute
   AppCrmRoute: typeof AppCrmRoute
@@ -845,6 +884,7 @@ interface AppRouteChildren {
   AppQuizRoute: typeof AppQuizRoute
   AppRelatoriosRoute: typeof AppRelatoriosRoute
   AppReunioesRoute: typeof AppReunioesRoute
+  AppSimuladorRoute: typeof AppSimuladorRoute
   AppSocialRoute: typeof AppSocialRoute
   AppSocialInsightsRoute: typeof AppSocialInsightsRoute
   AppSocialRelatoriosRoute: typeof AppSocialRelatoriosRoute
@@ -862,6 +902,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppClientPortalRoute: AppClientPortalRoute,
   AppClientesRoute: AppClientesRouteWithChildren,
   AppCobrancasRoute: AppCobrancasRoute,
+  AppCockpitRoute: AppCockpitRoute,
   AppConfigRoute: AppConfigRoute,
   AppCriativosRoute: AppCriativosRoute,
   AppCrmRoute: AppCrmRoute,
@@ -878,6 +919,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppQuizRoute: AppQuizRoute,
   AppRelatoriosRoute: AppRelatoriosRoute,
   AppReunioesRoute: AppReunioesRoute,
+  AppSimuladorRoute: AppSimuladorRoute,
   AppSocialRoute: AppSocialRoute,
   AppSocialInsightsRoute: AppSocialInsightsRoute,
   AppSocialRelatoriosRoute: AppSocialRelatoriosRoute,
