@@ -5,6 +5,7 @@ import { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { subDays, format } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { useGlobalDate } from "@/contexts/DateContext";
 import { PageHeader } from "@/components/PageHeader";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -53,18 +54,20 @@ function useAnimVal(target: number) {
 
 // ─── BASELINE DATA HOOK ──────────────────────────────────────────────────────────
 function useBaseline() {
-  const d30 = format(subDays(new Date(), 30), "yyyy-MM-dd");
-  const todayStr = format(new Date(), "yyyy-MM-dd");
+  const { dateFrom, dateTo, accountId, campaignId } = useGlobalDate();
 
   const { data: raw, isLoading } = useQuery({
-    queryKey: ["simulador-baseline"],
+    queryKey: ["simulador-baseline", dateFrom, dateTo, accountId, campaignId],
     staleTime: 5 * 60 * 1000,
     queryFn: async () => {
-      const { data } = await (supabase as any)
+      let q = (supabase as any)
         .from("metrics")
-        .select("cost, conversions, impressions, clicks, cpm, frequency, date, campaigns!inner(daily_budget)")
-        .gte("date", d30)
-        .lte("date", todayStr);
+        .select("cost, conversions, impressions, clicks, cpm, frequency, date, campaigns!inner(daily_budget, ad_account_id)")
+        .gte("date", dateFrom)
+        .lte("date", dateTo);
+      if (accountId !== "all") q = q.eq("campaigns.ad_account_id", accountId);
+      if (campaignId !== "all") q = q.eq("campaign_id", campaignId);
+      const { data } = await q;
       return (data as any[]) ?? [];
     },
   });
@@ -86,7 +89,7 @@ function useBaseline() {
       if (r.frequency) { freqSum += r.frequency; freqN++; }
     }
 
-    const days = 30;
+    const days = Math.max(1, Math.round((new Date(dateTo).getTime() - new Date(dateFrom).getTime()) / 86400000) + 1);
     const dailyCost = cost / days;
     const cpl = conv > 0 ? cost / conv : 0;
     const cvr = clicks > 0 ? conv / clicks : 0;
