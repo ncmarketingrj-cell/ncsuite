@@ -76,7 +76,7 @@ interface GaugeProps {
 function CockpitGauge({ value, max = 100, label, sub, unit = "%", zones, size = 188, delay = 0 }: GaugeProps) {
   const cx = size / 2, cy = size / 2 + 8, R = size / 2 - 22;
   const arcLen = R * toRad(G_SWEEP);
-  const pct = Math.min(Math.max(value / maX, Info, 0), 1);
+  const pct = Math.min(Math.max(value / max, 0), 1);
   const valueSweep = pct * G_SWEEP;
   const offset = arcLen * (1 - pct);
 
@@ -110,7 +110,7 @@ function CockpitGauge({ value, max = 100, label, sub, unit = "%", zones, size = 
         {[["top-2 left-2 border-t-2 border-l-2 rounded-tl-lg"], ["top-2 right-2 border-t-2 border-r-2 rounded-tr-lg"], ["bottom-2 left-2 border-b-2 border-l-2 rounded-bl-lg"], ["bottom-2 right-2 border-b-2 border-r-2 rounded-br-lg"]].map(([cls], i) => (
           <div key={i} className={`absolute w-3 h-3 opacity-30 ${cls}`} style={{ borderColor: glowColor }} />
         ))}
-        <div className="absolute inset-0 pointer-events-none" style={{ background: "repeating-linear-gradient(0deg, transparent, transparent 3pX, Info, rgba(0,0,0,0.03) 3pX, Info, rgba(0,0,0,0.03) 4px)", mixBlendMode: "multiply" }} />
+        <div className="absolute inset-0 pointer-events-none" style={{ background: "repeating-linear-gradient(0deg, transparent, transparent 3px, rgba(0,0,0,0.03) 3px, rgba(0,0,0,0.03) 4px)", mixBlendMode: "multiply" }} />
         <div className="flex justify-center">
           <svg width={size} height={size * 0.78} viewBox={`0 0 ${size} ${size * 0.88}`} style={{ display: "block" }}>
             <defs>
@@ -351,7 +351,7 @@ function RadarTatico({ data }: { data: any[] }) {
   return (
     <motion.div initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, delay: 0.8 }}
       className="relative rounded-2xl border border-border bg-card overflow-hidden p-6 shadow-sm">
-      <div className="absolute inset-0 pointer-events-none" style={{ backgroundImage: "linear-gradient(currentColor 1pX, Info, transparent 1px), linear-gradient(90deg, currentColor 1pX, Info, transparent 1px)", backgroundSize: "40px 40px", opacity: 0.03 }} />
+      <div className="absolute inset-0 pointer-events-none" style={{ backgroundImage: "linear-gradient(currentColor 1px, transparent 1px), linear-gradient(90deg, currentColor 1px, transparent 1px)", backgroundSize: "40px 40px", opacity: 0.03 }} />
       <div className="relative flex items-center justify-between mb-6">
         <div>
           <div className="flex items-center gap-2">
@@ -815,7 +815,7 @@ function CockpitPage() {
 
   return (
     <div className="min-h-screen w-full pb-24 bg-background text-foreground relative">
-      <div className="absolute inset-0 pointer-events-none z-0" style={{ backgroundImage: "linear-gradient(currentColor 1pX, Info, transparent 1px), linear-gradient(90deg, currentColor 1pX, Info, transparent 1px)", backgroundSize: "60px 60px", opacity: 0.03 }} />
+      <div className="absolute inset-0 pointer-events-none z-0" style={{ backgroundImage: "linear-gradient(currentColor 1px, transparent 1px), linear-gradient(90deg, currentColor 1px, transparent 1px)", backgroundSize: "60px 60px", opacity: 0.03 }} />
 
       <div className="relative z-10 max-w-7xl mx-auto px-4 pt-4 space-y-5">
 
@@ -924,6 +924,7 @@ function CockpitPage() {
     </div>
   );
 }
+
 
 
 
