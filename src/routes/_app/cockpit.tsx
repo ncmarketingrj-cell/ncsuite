@@ -629,7 +629,7 @@ function useCockpitData() {
       let q = (supabase as any)
         .from("metrics")
         .select(`campaign_id, cost, conversions, impressions, clicks, cpm, frequency, date,
-                 campaigns!inner(id, name, ad_account_id, client_id, objective, daily_budget)`)
+                 campaigns(id, name, ad_account_id, client_id, objective, daily_budget)`)
         .gte("date", dateFrom)
         .lte("date", dateTo);
 
