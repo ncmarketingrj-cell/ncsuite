@@ -1,4 +1,4 @@
-﻿import { createFileRoute, redirect, Link } from "@tanstack/react-router";
+import { createFileRoute, redirect, Link } from "@tanstack/react-router";
 import { motion, AnimatePresence } from "framer-motion";
 import { useQuery } from "@tanstack/react-query";
 import { useMemo, useEffect, useRef, useState, useCallback } from "react";
@@ -641,18 +641,15 @@ function useCockpitData() {
     staleTime: 2 * 60 * 1000,
     queryFn: async () => {
       let q = (supabase as any)
-        .from("metrics")
-        .select(`date, cost, conversions, impressions, clicks, frequency, campaign_id, campaigns!inner(id, name, ad_account_id, client_id, objective, daily_budget)`)
-        .gte("date", dateFrom)
-        .lte("date", dateTo)
-        .limit(10000);
+        .from("campaigns")
+        .select(`id, name, status, delivery_status, objective, daily_budget, lifetime_budget, budget_currency, external_id, ad_account_id, metrics(cost, conversions, impressions, clicks, reach, frequency, date)`);
 
-      if (accountId !== "all") q = q.eq("campaigns.ad_account_id", accountId);
-      if (campaignId !== "all") q = q.eq("campaign_id", campaignId);
+      if (accountId !== "all") q = q.eq("ad_account_id", accountId);
+      if (campaignId !== "all") q = q.eq("id", campaignId);
 
       if (adSetId !== "all") {
         const { data: adSetData } = await (supabase as any).from("ad_sets").select("campaign_id").eq("id", adSetId).single();
-        if (adSetData?.campaign_id) q = q.eq("campaign_id", adSetData.campaign_id);
+        if (adSetData?.campaign_id) q = q.eq("id", adSetData.campaign_id);
       }
 
       const { data, error } = await q;
@@ -661,17 +658,36 @@ function useCockpitData() {
         return [];
       }
       
-      return (data as any[]).map((m: any) => ({
-        campaign_id: m.campaign_id,
-        cost: m.cost,
-        conversions: m.conversions,
-        impressions: m.impressions,
-        clicks: m.clicks,
-        cpm: m.impressions > 0 ? (m.cost / m.impressions) * 1000 : 0,
-        frequency: m.frequency,
-        date: m.date?.split("T")[0] || m.date,
-        campaigns: m.campaigns
-      }));
+      const campaignsWithMetrics = (data as any[]) ?? [];
+      const raw: any[] = [];
+      
+      for (const camp of campaignsWithMetrics) {
+        if (!camp.metrics) continue;
+        for (const m of camp.metrics) {
+          if (m.date) {
+             const d = m.date.split("T")[0];
+             if (d < dateFrom || d > dateTo) continue;
+          }
+          raw.push({
+            campaign_id: camp.id,
+            cost: m.cost,
+            conversions: m.conversions,
+            impressions: m.impressions,
+            clicks: m.clicks,
+            cpm: m.impressions > 0 ? (m.cost / m.impressions) * 1000 : 0,
+            frequency: m.frequency,
+            date: m.date?.split("T")[0] || m.date,
+            campaigns: {
+              id: camp.id,
+              name: camp.name,
+              ad_account_id: camp.ad_account_id,
+              objective: camp.objective,
+              daily_budget: camp.daily_budget
+            }
+          });
+        }
+      }
+      return raw;
     },
   });
 
