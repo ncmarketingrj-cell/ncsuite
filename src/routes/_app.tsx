@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+﻿import { useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { createFileRoute, Outlet, redirect, Link, useRouterState, Navigate, useNavigate } from "@tanstack/react-router";
 import { motion, AnimatePresence } from "framer-motion";
@@ -352,7 +352,7 @@ function Shell() {
           <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full w-[800px] h-[500px] bg-gradient-to-r from-primary/8 via-violet-500/5 to-cyan-500/8 blur-[140px]" />
         </div>
 
-        <div className="w-full max-w-4xl space-y-8 text-center relative z-10 my-auto">
+        <div className="w-full max-w-5xl space-y-8 text-center relative z-10 my-auto">
           {/* Logo & Header */}
           <div className="flex flex-col items-center gap-3">
             <div className="relative h-12 w-12 rounded-2xl bg-primary flex items-center justify-center overflow-hidden shadow-glow">
@@ -369,7 +369,7 @@ function Shell() {
           </div>
 
           {/* Grid of Directional Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-6 pt-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 pt-4">
             {/* Card 1: Tráfego Pago */}
             <motion.div
               whileHover={{ y: -8, scale: 1.02 }}
@@ -1256,3 +1256,4 @@ function Shell() {
     </div>
   );
 }
+
