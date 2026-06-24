@@ -441,6 +441,7 @@ serve(async (req) => {
     let triggeredBy = "auto"
     let action = "sync"
     let togglePayload: { external_id: string; status: string } | null = null
+    let budgetPayload: { external_id: string; budget: number } | null = null
 
     try {
       const body = await req.json()
@@ -449,6 +450,13 @@ serve(async (req) => {
         togglePayload = {
           external_id: body.external_id,
           status: body.status
+        }
+      }
+      if (body.action === "update-budget") {
+        action = "update-budget"
+        budgetPayload = {
+          external_id: body.external_id,
+          budget: body.budget
         }
       }
       // Se veio um range explícito do frontend (seletor de datas), respeitar
@@ -559,6 +567,37 @@ serve(async (req) => {
         success: true,
         external_id: togglePayload.external_id,
         status: togglePayload.status
+      }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" }
+      })
+    }
+
+    // Se for ação de atualizar orçamento, executa diretamente no Facebook Ads e encerra!
+    if (action === "update-budget" && budgetPayload) {
+      console.log(`[BUDGET ${syncId}] Alterando orçamento do objeto ${budgetPayload.external_id} para R$ ${budgetPayload.budget} no Meta...`)
+      
+      const res = await fetch(`${META_API_BASE}/${budgetPayload.external_id}`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          daily_budget: Math.round(budgetPayload.budget * 100),
+          access_token: token
+        })
+      })
+      
+      const resData = await res.json()
+      if (resData.error) {
+        console.error(`[BUDGET ${syncId}] Erro na API do Meta:`, resData.error)
+        throw new Error(`Erro na API do Meta: ${resData.error.message}`)
+      }
+      
+      console.log(`[BUDGET ${syncId}] Orçamento alterado no Meta com sucesso!`)
+      return new Response(JSON.stringify({
+        success: true,
+        external_id: budgetPayload.external_id,
+        daily_budget: budgetPayload.budget
       }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" }
       })

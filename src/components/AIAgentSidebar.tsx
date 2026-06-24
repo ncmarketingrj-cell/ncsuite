@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Send, Bot, Sparkles, TrendingUp, Search, Loader2, User, X, Paperclip, Check } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
@@ -41,6 +41,15 @@ export function AIAgentSidebar({ isOpen, onClose }: AIAgentSidebarProps) {
   const [selectedImage, setSelectedImage] = useState<{ base64: string; mimeType: string } | null>(null);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [appliedActions, setAppliedActions] = useState<Record<number, boolean>>({});
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  };
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages, loading]);
 
   useEffect(() => {
     const fetchAccounts = async () => {
@@ -288,32 +297,54 @@ Atualmente, estamos gerenciando **${activeCount} campanhas ativas** com um inves
     reader.readAsDataURL(file);
   };
 
-  const handleExecuteAction = async (msgIndex: number, action: { type: string; campaignId: string; campaignName: string; value?: number }) => {
+  const handleExecuteAction = async (msgIndex: number, action: { type: string; campaignId: string; externalId?: string; campaignName: string; value?: number }) => {
     setActionLoading(action.campaignId);
     try {
+      if (!action.externalId) {
+        throw new Error("ID externo da campanha ausente. Sincronize a conta para obter o ID.");
+      }
+
       if (action.type === "update_budget") {
         if (action.value === undefined) throw new Error("Valor do orçamento não especificado.");
-        const { error } = await supabase
+        
+        // 1. Executa na Meta Oficial via Edge Function
+        const { data, error } = await supabase.functions.invoke("sync-meta-ads", { 
+          body: { action: "update-budget", external_id: action.externalId, budget: action.value } 
+        });
+        
+        if (error) throw error;
+        if (data?.error) throw new Error(data.error);
+
+        // 2. Atualiza o banco de dados local para refletir na interface sem precisar recarregar
+        await supabase
           .from("campaigns")
           .update({ budget: action.value })
           .eq("id", action.campaignId);
 
-        if (error) throw error;
-        toast.success(`Orçamento da campanha "${action.campaignName}" atualizado para R$ ${action.value.toFixed(2)}`);
+        toast.success(`Orçamento da campanha "${action.campaignName}" atualizado no Meta Ads para R$ ${action.value.toFixed(2)}`);
       } else if (action.type === "pause_campaign") {
-        const { error } = await supabase
+        
+        // 1. Executa na Meta Oficial via Edge Function
+        const { data, error } = await supabase.functions.invoke("sync-meta-ads", { 
+          body: { action: "toggle-status", external_id: action.externalId, status: "PAUSED" } 
+        });
+        
+        if (error) throw error;
+        if (data?.error) throw new Error(data.error);
+
+        // 2. Atualiza o banco de dados local para refletir na interface sem precisar recarregar
+        await supabase
           .from("campaigns")
           .update({ status: "PAUSED" })
           .eq("id", action.campaignId);
 
-        if (error) throw error;
-        toast.success(`Campanha "${action.campaignName}" pausada com sucesso!`);
+        toast.success(`Campanha "${action.campaignName}" pausada com sucesso no Meta Ads!`);
       }
 
       setAppliedActions(prev => ({ ...prev, [msgIndex]: true }));
     } catch (err: any) {
       console.error("Erro ao executar ação da Victoria:", err);
-      toast.error(`Falha ao executar ação: ${err.message || "Erro desconhecido"}`);
+      toast.error(`Falha ao executar ação no Meta: ${err.message || "Erro desconhecido"}`);
     } finally {
       setActionLoading(null);
     }
@@ -519,10 +550,17 @@ Atualmente, estamos gerenciando **${activeCount} campanhas ativas** com um inves
               </motion.div>
             ))}
             {loading && (
-              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex items-center gap-2 text-xs text-muted-foreground animate-pulse px-2">
-                <Loader2 className="h-3 w-3 animate-spin" /> Analisando dados da conta...
+              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex items-start gap-2.5">
+                <div className="h-6 w-6 rounded-lg bg-primary/10 flex items-center justify-center ring-1 ring-white/5 mt-0.5 shrink-0 shadow-glow-sm">
+                  <Bot className="h-3.5 w-3.5 text-primary" />
+                </div>
+                <div className="flex-1 rounded-2xl bg-white/5 border border-white/5 px-4 py-3 text-xs leading-relaxed text-foreground rounded-tl-none flex items-center gap-2 max-w-[200px]">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
+                  <span className="text-muted-foreground italic font-medium animate-pulse">Victoria digitando...</span>
+                </div>
               </motion.div>
             )}
+            <div ref={messagesEndRef} className="h-1" />
           </AnimatePresence>
         )}
       </div>

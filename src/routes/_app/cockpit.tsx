@@ -639,6 +639,8 @@ function useCockpitData() {
   const { data: raw, isLoading } = useQuery({
     queryKey: ["cockpit-raw", dateFrom, dateTo, accountId, campaignId, adSetId],
     staleTime: 2 * 60 * 1000,
+    refetchInterval: 60 * 1000,
+    refetchIntervalInBackground: false,
     queryFn: async () => {
       let q = (supabase as any)
         .from("campaigns")

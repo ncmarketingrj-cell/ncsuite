@@ -78,7 +78,7 @@ export const chatWithVictoriaFn = createServerFn({ method: "POST" })
         .from("metrics")
         .select(`
           cost, conversions, clicks, impressions, reach, date, client_id,
-          campaigns!inner(id, name, status, budget, platform, ad_account_id)
+          campaigns!inner(id, name, status, budget, platform, ad_account_id, external_id)
         `)
         .in("campaigns.ad_account_id", adAccountIds)
         .gte("date", startDateStr);
@@ -118,6 +118,7 @@ export const chatWithVictoriaFn = createServerFn({ method: "POST" })
         status: camp.status?.toUpperCase() || "PAUSED",
         budget: Number(camp.budget || 0),
         platform: camp.platform || "Meta Ads",
+        external_id: camp.external_id,
         cost: 0,
         conversions: 0,
         clicks: 0,
@@ -143,6 +144,7 @@ export const chatWithVictoriaFn = createServerFn({ method: "POST" })
         status: c.status,
         budget: c.budget,
         platform: c.platform,
+        external_id: c.external_id,
         totals: {
           cost: c.cost,
           conversions: c.conversions,
@@ -162,7 +164,7 @@ export const chatWithVictoriaFn = createServerFn({ method: "POST" })
 
     const contextData = campaigns.length > 0
       ? campaigns.map(c => 
-          `- ID: ${c.id} | ${c.name} | ${c.status} | Orç/dia: R$${c.budget.toFixed(2)} | Gasto: R$${c.totals.cost.toFixed(2)} | Leads: ${c.totals.conversions} | CPL: R$${c.totals.cpl.toFixed(2)} | CTR: ${c.totals.ctr.toFixed(2)}%`
+          `- ID: ${c.id} | ExtID: ${c.external_id} | ${c.name} | ${c.status} | Orç/dia: R$${c.budget.toFixed(2)} | Gasto: R$${c.totals.cost.toFixed(2)} | Leads: ${c.totals.conversions} | CPL: R$${c.totals.cpl.toFixed(2)} | CTR: ${c.totals.ctr.toFixed(2)}%`
         ).join("\n")
       : "Nenhuma campanha ativa ou com investimento encontrada nos últimos 30 dias.";
 
@@ -240,6 +242,14 @@ DIRETRIZES TÉCNICAS E ESTRATÉGICAS DE MARKETING AUTOMOTIVO:
    - **Leads no WhatsApp:** Têm alta conversão em vendas. Avise o cliente que a equipe comercial precisa responder esses leads em menos de 5 minutos, ou o lead "esfria".
    - **Formulários nativos (Lead Ads):** Se o CPL estiver muito baixo mas os leads forem desqualificados, sugira adicionar 1 ou 2 perguntas de filtro (ex: "Qual o valor da sua entrada?", "Tem carro na troca?").
    - **Campanhas de Seminovos vs Novos:** Para seminovos, sugira carrosséis com fotos reais de múltiplos veículos com preço e parcela estimada. Para novos, use a taxa zero ou financiamento facilitado como gancho.
+5. **PREVISÃO DE RESULTADOS E FORECASTING:**
+   - Ao avaliar campanhas, calcule o "Burn Rate" (ritmo de gasto e geração de leads).
+   - Mostre projeções claras. Exemplo: "Neste ritmo, você vai gerar X leads até o fim do mês". Se o CPL estiver bom, incentive aumentar o orçamento para escalar essas projeções.
+6. **MEMÓRIA ESTRATÉGICA (Contexto Automotivo):**
+   - Lembre-se SEMPRE do dia da semana atual: ${currentDayName}.
+   - O pico de visitação em concessionárias e lojas de veículos acontece na SEXTA-FEIRA à tarde e no SÁBADO.
+   - Se hoje for Quinta-Feira ou Sexta-Feira e o CPL estiver saudável, recomende agressivamente o AUMENTO DE ORÇAMENTO imediato para lotar o pátio no fim de semana.
+   - Se hoje for Segunda-Feira, analise o desempenho do "Último Fim de Semana" e sugira correções de rota.
 
 GROUNDING DE TEMPO E DATAS:
 ${timeMetadata}
@@ -272,6 +282,7 @@ REGRAS DE RESPOSTA:
    {
      "type": "update_budget",
      "campaignId": "ID_DA_CAMPANHA",
+     "externalId": "ExtID_DA_CAMPANHA",
      "campaignName": "NOME_DA_CAMPANHA",
      "value": 150.00
    }
@@ -281,10 +292,11 @@ REGRAS DE RESPOSTA:
    {
      "type": "pause_campaign",
      "campaignId": "ID_DA_CAMPANHA",
+     "externalId": "ExtID_DA_CAMPANHA",
      "campaignName": "NOME_DA_CAMPANHA"
    }
    \`\`\`
-   Use apenas e exatamente uma dessas estruturas se e somente se você recomendar essa ação no texto da resposta. O ID da campanha deve bater exatamente com os IDs listados no contexto de dados.`;
+   Use apenas e exatamente uma dessas estruturas se e somente se você recomendar essa ação no texto da resposta. O ID e ExtID da campanha devem bater exatamente com os listados no contexto de dados.`;
 
     const GEMINI_API_KEY = getEnvVariable("GEMINI_API_KEY");
     const LOVABLE_API_KEY = getEnvVariable("LOVABLE_API_KEY");
