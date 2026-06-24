@@ -1,4 +1,4 @@
-@import "tailwindcss" source(none);
+﻿@import "tailwindcss" source(none);
 @source "../src";
 @import "tw-animate-css";
 
@@ -937,3 +937,13 @@ html.light {
     padding-bottom: env(safe-area-inset-bottom, 0px);
   }
 }
+
+/* Remove Lovable Badge globally */
+[id^="lovable"], #lovable-badge, a[href*="lovable.dev"], div[class*="lovable-badge"] {
+  display: none !important;
+  opacity: 0 !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+  z-index: -9999 !important;
+}
+
