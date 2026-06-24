@@ -70,10 +70,10 @@ interface Zone { from: number; to: number; color: string }
 
 interface GaugeProps {
   value: number; max?: number; label: string; sub?: string; unit?: string;
-  zones?: Zone[]; size?: number; delay?: number;
+  zones?: Zone[]; size?: number; delay?: number; tooltip?: string;
 }
 
-function CockpitGauge({ value, max = 100, label, sub, unit = "%", zones, size = 188, delay = 0 }: GaugeProps) {
+function CockpitGauge({ value, max = 100, label, sub, unit = "%", zones, size = 188, delay = 0, tooltip }: GaugeProps) {
   const cx = size / 2, cy = size / 2 + 8, R = size / 2 - 22;
   const arcLen = R * toRad(G_SWEEP);
   const pct = Math.min(Math.max(value / max, 0), 1);
@@ -153,11 +153,79 @@ function CockpitGauge({ value, max = 100, label, sub, unit = "%", zones, size = 
             </motion.text>
           </svg>
         </div>
-        <div className="px-3 pb-4 text-center -mt-2">
-          <p className="text-[10px] font-black uppercase tracking-[0.18em] text-muted-foreground">{label}</p>
+        <div className="px-3 pb-4 text-center -mt-2 relative group/gauge">
+          <div className="flex justify-center items-center gap-1">
+            <p className="text-[10px] font-black uppercase tracking-[0.18em] text-muted-foreground">{label}</p>
+            {tooltip && <Info className="h-2.5 w-2.5 text-muted-foreground/40 hover:text-foreground cursor-help" />}
+          </div>
           {sub && <p className="text-[8px] text-muted-foreground/60 mt-0.5 tracking-wider">{sub}</p>}
+          {tooltip && (
+            <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-48 p-2 rounded-lg bg-popover/95 backdrop-blur-xl border border-white/10 shadow-2xl text-[9px] leading-relaxed text-muted-foreground opacity-0 pointer-events-none group-hover/gauge:opacity-100 transition-all z-50 text-center">
+              {tooltip}
+            </div>
+          )}
         </div>
         <div className="absolute bottom-0 left-0 right-0 h-0.5" style={{ background: `linear-gradient(90deg, transparent, ${glowColor}60, transparent)` }} />
+      </div>
+    </motion.div>
+  );
+}
+
+// ─── COCKPIT THERMOMETER ────────────────────────────────────────────────────────
+function CockpitThermometer({ pressure, label, sub, delay = 0 }: { pressure: number; label: string; sub: string; delay?: number }) {
+  const S = 188, cx = S / 2, cy = S / 2 + 8, R = S / 2 - 22;
+  
+  return (
+    <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.55, delay, type: "spring", stiffness: 120, damping: 18 }} className="relative h-full flex flex-col">
+      <div className="relative rounded-2xl bg-card border border-border overflow-hidden p-4 flex-1 flex flex-col items-center justify-center min-h-[220px] shadow-sm">
+        <div className="absolute top-3 left-3 flex items-center gap-1.5">
+          <Flame className="h-3.5 w-3.5 text-amber-500 animate-pulse" />
+          <h3 className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">{label}</h3>
+        </div>
+        
+        <div className="relative w-40 h-20 mt-5 overflow-hidden">
+          <svg className="w-full h-full" viewBox="0 0 100 50">
+            <path d="M 10 50 A 40 40 0 0 1 90 50" fill="none" stroke="currentColor" className="text-muted/20" strokeWidth="10" strokeLinecap="round" />
+            <motion.path 
+              d="M 10 50 A 40 40 0 0 1 90 50" 
+              fill="none" 
+              stroke="url(#therm-gradient)" 
+              strokeWidth="10" 
+              strokeLinecap="round"
+              initial={{ strokeDasharray: "0 126" }}
+              animate={{ strokeDasharray: `${(pressure / 100) * 126} 126` }}
+              transition={{ duration: 1.6, delay: delay + 0.25, ease: [0.22, 1, 0.36, 1] }}
+            />
+            <motion.g 
+              initial={{ rotate: -90 }} 
+              animate={{ rotate: -90 + (pressure / 100) * 180 }} 
+              transition={{ duration: 1.6, delay: delay + 0.25, ease: [0.22, 1, 0.36, 1] }}
+              style={{ transformOrigin: "50px 50px" }}
+            >
+              <line x1="50" y1="50" x2="50" y2="12" stroke="currentColor" className="text-primary" strokeWidth="2.5" strokeLinecap="round" />
+              <circle cx="50" cy="50" r="4" className="fill-foreground" />
+            </motion.g>
+            <defs>
+              <linearGradient id="therm-gradient" x1="0%" y1="0%" x2="100%" y2="0%">
+                <stop offset="0%" stopColor="#10b981" />   
+                <stop offset="50%" stopColor="#f59e0b" />  
+                <stop offset="100%" stopColor="#ef4444" /> 
+              </linearGradient>
+            </defs>
+          </svg>
+          <div className="absolute bottom-0 inset-x-0 text-center">
+            <span className="text-2xl font-black font-mono tracking-tight text-foreground">{Math.round(pressure)}%</span>
+          </div>
+        </div>
+
+        <div className="text-center mt-3 space-y-1">
+          <span className={`text-[9px] font-black uppercase px-2.5 py-0.5 rounded-full ${
+            pressure > 70 ? 'bg-red-500/10 text-red-500' : pressure > 40 ? 'bg-amber-500/10 text-amber-500' : 'bg-emerald-500/10 text-emerald-500'
+          }`}>
+            {pressure > 70 ? 'Competitividade Crítica' : pressure > 40 ? 'Competitividade Média' : 'Leilão Estável'}
+          </span>
+          <p className="text-[9px] text-muted-foreground/80 leading-snug mx-auto px-2 mt-1">{sub}</p>
+        </div>
       </div>
     </motion.div>
   );
@@ -801,11 +869,13 @@ function useCockpitData() {
     if (scale < 35) recs.push({ prio: "ATENÇÃO", color: "#f59e0b", icon: BarChart3, title: "Capacidade de escala subutilizada", desc: "Menos de 35% do budget diário sendo consumido. Verifique limites de lance e amplitude do público." });
     if (score >= 75 && !recs.some(r => r.prio === "CRÍTICO")) recs.push({ prio: "OPORTUNIDADE", color: "#22c55e", icon: Rocket, title: "Performance saudável — momento para escalar", desc: `Score ${score}/100. Identifique campanhas no quadrante ESCALAR do Radar e aumente o orçamento em 20–30%.` });
 
+    const hourlyIntensity = totalBudget > 0 ? Math.min(100, (dailyCost / totalBudget) / (Math.max(1, new Date().getHours()) / 24) * 50) : 50;
+
     return {
       score, components: { cplEfficiency, cpmTrend, fatigue, conversion, funnelHealth },
-      gauges: { scale, fatigue, pressure, conversion, budgetHealth, momentum },
+      gauges: { scale, fatigue, pressure, conversion, budgetHealth, momentum, hourlyIntensity, cplEfficiency },
       radar, dailyScores, recommendations: recs.slice(0, 5), isLoading: false,
-      meta: { CPL: CPL.toFixed(2), CVR: (CVR * 100).toFixed(2), avgFreq: R.avgFreq.toFixed(1), cpmTrendRatio: cpmTrendRatio.toFixed(2) },
+      meta: { CPL: CPL.toFixed(2), CVR: (CVR * 100).toFixed(2), avgFreq: R.avgFreq.toFixed(1), cpmTrendRatio: cpmTrendRatio.toFixed(2), activeBudget },
     };
   }, [raw, isLoading, dateFrom, dateTo, accountId, campaignId]);
 }
@@ -820,12 +890,11 @@ function CockpitPage() {
   const gv = g ?? {};
 
   const gaugeConfig = [
-    { label: "Velocímetro de Escala", sub: "Capacidade orçamentária utilizada", tooltip: "Mede o quanto do orçamento diário programado está sendo efetivamente consumido. Acima de 60% indica que a campanha está conseguindo gastar a verba. Abaixo de 30% indica gargalo de lance ou público muito restrito.", value: gv.scale ?? 0, zones: [{ from: 0, to: 0.3, color: "#ef4444" }, { from: 0.3, to: 0.6, color: "#f59e0b" }, { from: 0.6, to: 1, color: "#22c55e" }] },
-    { label: "Fadiga Criativa", sub: `Frequência média ${meta?.avgFreq ?? "--"}×`, tooltip: "Indica se o público está saturado de ver os mesmos anúncios. Uma nota baixa (crítico) significa que os usuários já viram o anúncio muitas vezes. O ideal é manter a barra verde para garantir CTR saudável.", value: gv.fatigue ?? 0, zones: [{ from: 0, to: 0.3, color: "#ef4444" }, { from: 0.3, to: 0.6, color: "#f59e0b" }, { from: 0.6, to: 1, color: "#22c55e" }] },
-    { label: "Pressão Competitiva", sub: `CPM vs histórico (${((meta?.cpmTrendRatio ?? 1) * 100 - 100).toFixed(0)}%)`, tooltip: "Compara o custo de atingimento atual (CPM) com o do início do período selecionado. Se a pressão for alta (crítico/vermelho), significa que o leilão do Facebook encareceu recentemente para esse público.", value: gv.pressure ?? 0, zones: [{ from: 0, to: 0.35, color: "#ef4444" }, { from: 0.35, to: 0.65, color: "#f59e0b" }, { from: 0.65, to: 1, color: "#22c55e" }] },
-    { label: "Taxa de Conversão", sub: `CVR ${meta?.CVR ?? "--"}% / meta 4%`, tooltip: "Mede a capacidade das páginas de destino (Landing Pages) de transformar cliques em leads. A nota será crítica se a conversão despencar abaixo de 1.5%. Verde significa que a página está convertendo muito bem.", value: gv.conversion ?? 0, zones: [{ from: 0, to: 0.4, color: "#ef4444" }, { from: 0.4, to: 0.7, color: "#f59e0b" }, { from: 0.7, to: 1, color: "#22c55e" }] },
-    { label: "Saúde Orçamentária", sub: "% verba em campanhas ativas", tooltip: "Mostra a proporção do seu investimento total que está rodando em campanhas ligadas. Se estiver baixo (vermelho), você tem muita verba locada em campanhas que estão pausadas no momento.", value: gv.budgetHealth ?? 0, zones: [{ from: 0, to: 0.4, color: "#ef4444" }, { from: 0.4, to: 0.65, color: "#f59e0b" }, { from: 0.65, to: 1, color: "#22c55e" }] },
-    { label: "Momento Atual", sub: `CPL R$ ${meta?.CPL ?? "--"} | Oportunidade`, tooltip: "Calculado via Inteligência Artificial cruzando conversão, CPM e CPL. Se o momento for verde (Oportunidade), o cenário está excelente para você injetar mais orçamento (escalar).", value: gv.momentum ?? 0, zones: [{ from: 0, to: 0.35, color: "#ef4444" }, { from: 0.35, to: 0.65, color: "#f59e0b" }, { from: 0.65, to: 1, color: "#22c55e" }] },
+    { label: "Intensidade por Horário", sub: "Ritmo de entrega de impressões", tooltip: "Analisa se a plataforma está entregando mais impressões nas horas de pico ou se está represando o tráfego.", value: gv.hourlyIntensity ?? 0, zones: [{ from: 0, to: 0.35, color: "#f59e0b" }, { from: 0.35, to: 0.7, color: "#22c55e" }, { from: 0.7, to: 1, color: "#ef4444" }] },
+    { label: "Acelerador de Verba", sub: `Gasto: R$ ${((gv.scale ?? 0) / 100 * (meta?.activeBudget ?? 0)).toFixed(0)}`, tooltip: "Mede se o orçamento diário programado está sendo consumido corretamente. Muito lento = gargalo no leilão. Muito rápido = exaustão prematura.", value: gv.scale ?? 0, zones: [{ from: 0, to: 0.3, color: "#ef4444" }, { from: 0.3, to: 0.6, color: "#f59e0b" }, { from: 0.6, to: 1, color: "#22c55e" }] },
+    { label: "Taxa de Atrito", sub: `Conversão LP: ${meta?.CVR ?? "--"}%`, tooltip: "Quantas pessoas clicam no anúncio mas desistem antes de virar Lead. O ideal é manter acima de 4%.", value: gv.conversion ?? 0, zones: [{ from: 0, to: 0.4, color: "#ef4444" }, { from: 0.4, to: 0.7, color: "#f59e0b" }, { from: 0.7, to: 1, color: "#22c55e" }] },
+    { label: "Desgaste de Peça", sub: `Frequência ${meta?.avgFreq ?? "--"}×`, tooltip: "Frequência de repetição do anúncio para a mesma pessoa. Se o ponteiro cair para a zona crítica, seu público enjoou do anúncio e os custos vão disparar.", value: gv.fatigue ?? 0, zones: [{ from: 0, to: 0.3, color: "#ef4444" }, { from: 0.3, to: 0.6, color: "#f59e0b" }, { from: 0.6, to: 1, color: "#22c55e" }] },
+    { label: "Eficiência de CPL", sub: `CPL Atual: R$ ${meta?.CPL ?? "--"}`, tooltip: "Quão barato está o custo por lead comparado com a meta ou a média histórica. Verde significa leads muito mais baratos que o normal.", value: gv.cplEfficiency ?? 0, zones: [{ from: 0, to: 0.4, color: "#ef4444" }, { from: 0.4, to: 0.7, color: "#f59e0b" }, { from: 0.7, to: 1, color: "#22c55e" }] },
   ];
 
   const criticalCount = gaugeConfig.filter(gc => gc.value < 35).length;
@@ -901,8 +970,14 @@ function CockpitPage() {
               </div>
             ) : (
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+                <CockpitThermometer 
+                  pressure={gv.pressure ?? 0} 
+                  label="Termômetro de Leilão" 
+                  sub={`CPM oscilou ${((meta?.cpmTrendRatio ?? 1) * 100 - 100).toFixed(0)}% vs histórico`}
+                  delay={0}
+                />
                 {gaugeConfig.map((gc, i) => (
-                  <CockpitGauge key={gc.label} value={gc.value} max={100} label={gc.label} sub={gc.sub} unit="%" zones={gc.zones} delay={i * 0.09} tooltip={gc.tooltip} />
+                  <CockpitGauge key={gc.label} value={gc.value} max={100} label={gc.label} sub={gc.sub} unit="%" zones={gc.zones} delay={(i + 1) * 0.09} tooltip={gc.tooltip} />
                 ))}
               </div>
             )}
