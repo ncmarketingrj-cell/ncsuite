@@ -6,6 +6,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { subDays, format, differenceInDays, parseISO } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { PageHeader } from "@/components/PageHeader";
+import { DateRangePicker } from "@/components/DateRangePicker";
 import { useGlobalDate, type Period } from "@/contexts/DateContext";
 import {
   ScatterChart, Scatter, XAxis, YAxis, ZAxis,
@@ -70,10 +71,10 @@ interface Zone { from: number; to: number; color: string }
 
 interface GaugeProps {
   value: number; max?: number; label: string; sub?: string; unit?: string;
-  zones?: Zone[]; size?: number; delay?: number; tooltip?: string;
+  zones?: Zone[]; size?: number; delay?: number; tooltip?: string; textValue?: string;
 }
 
-function CockpitGauge({ value, max = 100, label, sub, unit = "%", zones, size = 188, delay = 0, tooltip }: GaugeProps) {
+function CockpitGauge({ value, max = 100, label, sub, unit = "%", zones, size = 188, delay = 0, tooltip, textValue }: GaugeProps) {
   const cx = size / 2, cy = size / 2 + 8, R = size / 2 - 22;
   const arcLen = R * toRad(G_SWEEP);
   const pct = Math.min(Math.max(value / max, 0), 1);
@@ -146,10 +147,10 @@ function CockpitGauge({ value, max = 100, label, sub, unit = "%", zones, size = 
               <circle cx={cx} cy={cy} r={7} fill="currentColor" className="text-card" stroke={glowColor} strokeWidth={2} />
               <circle cx={cx} cy={cy} r={3} fill={glowColor} />
             </motion.g>
-            <motion.text x={cx} y={cy + 26} textAnchor="middle" fill="currentColor" className="text-foreground" fontSize={size * 0.13}
+            <motion.text x={cx} y={cy + 26} textAnchor="middle" fill="currentColor" className="text-foreground" fontSize={textValue ? size * 0.1 : size * 0.13}
               fontWeight="900" fontFamily="'Courier New', monospace" letterSpacing="-1"
               initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: delay + 0.6 }}>
-              {Math.round(value)}{unit}
+              {textValue ? textValue : `${Math.round(value)}${unit}`}
             </motion.text>
           </svg>
         </div>
@@ -196,15 +197,16 @@ function CockpitThermometer({ pressure, label, sub, delay = 0 }: { pressure: num
               animate={{ strokeDasharray: `${(pressure / 100) * 126} 126` }}
               transition={{ duration: 1.6, delay: delay + 0.25, ease: [0.22, 1, 0.36, 1] }}
             />
-            <motion.g 
-              initial={{ rotate: -90 }} 
-              animate={{ rotate: -90 + (pressure / 100) * 180 }} 
-              transition={{ duration: 1.6, delay: delay + 0.25, ease: [0.22, 1, 0.36, 1] }}
-              style={{ transformOrigin: "50px 50px" }}
+            <g 
+              style={{ 
+                transform: `rotate(${-90 + (pressure / 100) * 180}deg)`, 
+                transformOrigin: "50px 50px",
+                transition: `transform 1.6s cubic-bezier(0.22, 1, 0.36, 1) ${delay + 0.25}s`
+              }}
             >
               <line x1="50" y1="50" x2="50" y2="12" stroke="currentColor" className="text-primary" strokeWidth="2.5" strokeLinecap="round" />
               <circle cx="50" cy="50" r="4" className="fill-foreground" />
-            </motion.g>
+            </g>
             <defs>
               <linearGradient id="therm-gradient" x1="0%" y1="0%" x2="100%" y2="0%">
                 <stop offset="0%" stopColor="#10b981" />   
@@ -392,74 +394,70 @@ function RecomendacoesInteligentes({ recs }: { recs: Array<{ prio: string; color
   );
 }
 
-// ─── RADAR TÁTICO ────────────────────────────────────────────────────────────────
-const RADAR_COLORS: Record<string, string> = { up: "#22c55e", down: "#ef4444", stable: "#f59e0b" };
-
-function CustomDot(props: any) {
-  const { cx, cy, payload } = props;
-  const r = Math.sqrt((payload.spend / Math.PI)) * 0.9 + 10;
-  const col = RADAR_COLORS[payload.trend] ?? "#9b87f5";
-  return (
-    <g>
-      <circle cx={cx} cy={cy} r={r + 6} fill={col} opacity={0.08} />
-      <circle cx={cx} cy={cy} r={r} fill={col} opacity={0.85} />
-      <circle cx={cx} cy={cy} r={r * 0.45} fill="rgba(0,0,0,0.5)" />
-      <text x={cx} y={cy + r + 13} textAnchor="middle" fill="rgba(255,255,255,0.55)" fontSize={8} fontWeight="700" fontFamily="monospace">
-        {payload.name?.split(" ").slice(-2).join(" ").slice(0, 14)}
-      </text>
-    </g>
-  );
-}
-
-function RadarTatico({ data }: { data: any[] }) {
+// ─── RANKING TÁTICO ────────────────────────────────────────────────────────────────
+function RankingTatico({ data }: { data: any[] }) {
   if (!data.length) return null;
-  const maxCPL = Math.max(...data.map(d => d.cpl), 1);
-  const maxLeads = Math.max(...data.map(d => d.leads), 1);
-  const midCPL = maxCPL / 2, midLeads = maxLeads / 2;
+  
+  const topCamps = [...data].filter(d => d.leads > 0).sort((a, b) => a.cpl - b.cpl).slice(0, 3);
+  const worstCamps = [...data].sort((a, b) => {
+    if (a.leads === 0 && b.leads === 0) return b.spend - a.spend;
+    if (a.leads === 0) return -1;
+    if (b.leads === 0) return 1;
+    return b.cpl - a.cpl;
+  }).slice(0, 3);
+
+  const BRL = (v: number) => `R$ ${v?.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
   return (
     <motion.div initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, delay: 0.8 }}
-      className="relative rounded-2xl border border-border bg-card overflow-hidden p-6 shadow-sm">
-      <div className="absolute inset-0 pointer-events-none" style={{ backgroundImage: "linear-gradient(currentColor 1px, transparent 1px), linear-gradient(90deg, currentColor 1px, transparent 1px)", backgroundSize: "40px 40px", opacity: 0.03 }} />
-      <div className="relative flex items-center justify-between mb-6">
-        <div>
-          <div className="flex items-center gap-2">
-            <h3 className="text-sm font-black uppercase tracking-[0.2em] text-foreground">Radar Tático</h3>
-            <div className="relative group/radar z-50">
-              <Info className="h-3.5 w-3.5 text-muted-foreground/40 hover:text-foreground cursor-help" />
-              <div className="absolute bottom-full left-0 mb-2 w-64 p-3 rounded-xl bg-popover/95 backdrop-blur-xl border border-white/10 shadow-2xl text-[10px] leading-relaxed text-muted-foreground opacity-0 pointer-events-none group-hover/radar:opacity-100 transition-all text-left">
-                <strong>Como ler este radar:</strong><br/>Campanhas no quadrante superior esquerdo (Verde) têm leads baratos e em volume.<br/>As do canto inferior direito estão consumindo muito e gerando pouco.
+      className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-8">
+      
+      {/* Coluna Verde (Escalar) */}
+      <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/5 p-6 relative overflow-hidden shadow-sm">
+        <div className="absolute top-0 left-0 w-1 h-full bg-emerald-500" />
+        <h3 className="text-xs font-black uppercase tracking-widest text-emerald-500 flex items-center gap-2 mb-4">
+          <TrendingUp className="h-4 w-4" /> Top 3 — Escalar (Baixo CPL)
+        </h3>
+        <div className="space-y-3">
+          {topCamps.length === 0 && <p className="text-[10px] text-muted-foreground font-mono">Nenhuma campanha com leads.</p>}
+          {topCamps.map((c, i) => (
+            <div key={c.id} className="flex items-center justify-between p-3 rounded-xl bg-card border border-border shadow-sm">
+              <div className="flex-1 min-w-0 pr-4">
+                <p className="text-[10px] font-black uppercase text-foreground truncate">{c.name}</p>
+                <p className="text-[9px] text-muted-foreground font-mono mt-1">{c.leads} Leads · Gasto: {BRL(c.spend)}</p>
+              </div>
+              <div className="text-right">
+                <p className="text-[12px] font-black text-emerald-500">{BRL(c.cpl)}</p>
+                <p className="text-[8px] uppercase tracking-wider text-muted-foreground mt-0.5 text-right">CPL</p>
               </div>
             </div>
-          </div>
-          <p className="text-[10px] text-muted-foreground mt-0.5 tracking-widest uppercase">CPL × Volume — Posicione campanhas no quadrante certo</p>
-        </div>
-        <div className="flex items-center gap-4 text-[9px] font-black uppercase tracking-wider">
-          {[["#22c55e", "Crescendo"], ["#f59e0b", "Estável"], ["#ef4444", "Caindo"]].map(([col, lbl]) => (
-            <span key={lbl} className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full" style={{ background: col }} />{lbl}</span>
           ))}
         </div>
       </div>
-      <div className="relative h-[340px]">
-        {[["top-4 left-[8%] text-[#22c55e]/50", "↑ ESCALAR"], ["top-4 right-[8%] text-[#f59e0b]/50", "ANALISAR ↑"], ["bottom-8 left-[8%] text-[#f59e0b]/50", "↓ NICHO"], ["bottom-8 right-[8%] text-[#ef4444]/50", "PAUSAR ↓"]].map(([cls, lbl]) => (
-          <div key={lbl} className={`absolute text-[9px] font-black uppercase tracking-widest pointer-events-none z-10 ${cls}`}>{lbl}</div>
-        ))}
-        <ResponsiveContainer width="100%" height="100%">
-          <ScatterChart margin={{ top: 10, right: 30, bottom: 20, left: 10 }}>
-            <ReferenceArea x1={0} x2={midCPL} y1={midLeads} y2={maxLeads * 1.1} fill="#22c55e" fillOpacity={0.04} />
-            <ReferenceArea x1={midCPL} x2={maxCPL * 1.1} y1={midLeads} y2={maxLeads * 1.1} fill="#f59e0b" fillOpacity={0.04} />
-            <ReferenceArea x1={0} x2={midCPL} y1={0} y2={midLeads} fill="#f59e0b" fillOpacity={0.03} />
-            <ReferenceArea x1={midCPL} x2={maxCPL * 1.1} y1={0} y2={midLeads} fill="#ef4444" fillOpacity={0.04} />
-            <CartesianGrid strokeDasharray="4 4" stroke="currentColor" strokeOpacity={0.05} />
-            <XAxis dataKey="cpl" type="number" name="CPL" unit=" R$" domain={[0, "auto"]} axisLine={false} tickLine={false} tick={{ fontSize: 8, fill: "currentColor", opacity: 0.4, fontFamily: "monospace", fontWeight: 700 }} label={{ value: "← CPL (menor = melhor)", position: "insideBottom", offset: -10, fontSize: 8, fill: "currentColor", opacity: 0.4, fontFamily: "monospace" }} />
-            <YAxis dataKey="leads" type="number" name="Leads" axisLine={false} tickLine={false} tick={{ fontSize: 8, fill: "currentColor", opacity: 0.4, fontFamily: "monospace", fontWeight: 700 }} label={{ value: "Leads ↑", angle: -90, position: "insideLeft", offset: 10, fontSize: 8, fill: "currentColor", opacity: 0.4, fontFamily: "monospace" }} />
-            <ZAxis dataKey="spend" range={[200, 2400]} name="Gasto" />
-            <RTip cursor={{ stroke: "rgba(150,150,150,0.2)", strokeWidth: 1 }} contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 12, fontSize: 11, fontFamily: "monospace", color: "hsl(var(--foreground))" }} formatter={(v: any, name: string) => name === "CPL" ? [`R$ ${Number(v).toFixed(2)}`, "CPL"] : name === "Gasto" ? [`R$ ${Number(v).toFixed(2)}`, "Gasto"] : [v, name]} />
-            <Scatter data={data} shape={<CustomDot />}>
-              {data.map((d, i) => <Cell key={i} fill={RADAR_COLORS[d.trend] ?? "#9b87f5"} />)}
-            </Scatter>
-          </ScatterChart>
-        </ResponsiveContainer>
+
+      {/* Coluna Vermelha (Pausar) */}
+      <div className="rounded-2xl border border-red-500/20 bg-red-500/5 p-6 relative overflow-hidden shadow-sm">
+        <div className="absolute top-0 left-0 w-1 h-full bg-red-500" />
+        <h3 className="text-xs font-black uppercase tracking-widest text-red-500 flex items-center gap-2 mb-4">
+          <AlertTriangle className="h-4 w-4" /> Top 3 — Ofensoras (Alto CPL)
+        </h3>
+        <div className="space-y-3">
+          {worstCamps.length === 0 && <p className="text-[10px] text-muted-foreground font-mono">Nenhuma campanha registrada.</p>}
+          {worstCamps.map((c, i) => (
+            <div key={c.id} className="flex items-center justify-between p-3 rounded-xl bg-card border border-border shadow-sm">
+              <div className="flex-1 min-w-0 pr-4">
+                <p className="text-[10px] font-black uppercase text-foreground truncate">{c.name}</p>
+                <p className="text-[9px] text-muted-foreground font-mono mt-1">{c.leads} Leads · Gasto: {BRL(c.spend)}</p>
+              </div>
+              <div className="text-right">
+                <p className="text-[12px] font-black text-red-500">{c.leads > 0 ? BRL(c.cpl) : "SEM LEADS"}</p>
+                <p className="text-[8px] uppercase tracking-wider text-muted-foreground mt-0.5 text-right">CPL</p>
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
+
     </motion.div>
   );
 }
@@ -652,41 +650,16 @@ function CockpitFilterBar() {
       {/* Separator */}
       <div className="h-5 w-px bg-border" />
 
-      {/* Period pills */}
-      <div className="flex items-center gap-1">
-        {PERIODS.map(p => (
-          <button
-            key={p.value}
-            onClick={() => setPeriod(p.value)}
-            className="rounded-lg px-2.5 py-1.5 text-[9px] font-black uppercase tracking-widest transition-all"
-            style={period === p.value
-              ? { background: "hsl(var(--primary)/0.15)", color: "var(--primary)", border: "1px solid hsl(var(--primary)/0.4)" }
-              : { color: "hsl(var(--muted-foreground))", border: "1px solid transparent" }
-            }
-          >
-            {p.label}
-          </button>
-        ))}
-      </div>
-
-      {/* Custom date inputs */}
-      <AnimatePresence>
-        {period === "custom" && (
-          <motion.div initial={{ opacity: 0, width: 0 }} animate={{ opacity: 1, width: "auto" }} exit={{ opacity: 0, width: 0 }}
-            className="flex items-center gap-2 overflow-hidden">
-            <div className="h-5 w-px bg-border" />
-            <input type="date" value={dateFrom} max={dateTo}
-              onChange={e => setDateFrom(e.target.value)}
-              className="rounded-lg border border-border bg-background px-2 py-1.5 text-[9px] font-mono text-foreground outline-none focus:border-primary/50"
-            />
-            <span className="text-muted-foreground text-[10px]">→</span>
-            <input type="date" value={dateTo} min={dateFrom} max={new Date().toISOString().split("T")[0]}
-              onChange={e => setDateTo(e.target.value)}
-              className="rounded-lg border border-border bg-background px-2 py-1.5 text-[9px] font-mono text-foreground outline-none focus:border-primary/50"
-            />
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {/* Date Range Picker */}
+      <DateRangePicker 
+        startDate={new Date(dateFrom + "T00:00:00")} 
+        endDate={new Date(dateTo + "T00:00:00")} 
+        onChange={(start, end) => {
+          setDateFrom(format(start, "yyyy-MM-dd"));
+          setDateTo(format(end, "yyyy-MM-dd"));
+          setPeriod("custom");
+        }} 
+      />
 
       {/* Reset button */}
       {isFiltered && (
@@ -791,7 +764,8 @@ function useCockpitData() {
 
     // Component scores
     const cplEfficiency = CPL > 0 ? Math.min(100, (TARGET_CPL / CPL) * 100) : 40;
-    const cpmTrend = Math.min(100, Math.max(0, (2 - cpmTrendRatio) * 100));
+    const pressure = Math.min(100, Math.max(0, (cpmTrendRatio - 0.5) * 100));
+    const cpmTrend = 100 - pressure;
     const fatigue = Math.max(0, 100 - Math.min(100, (R.avgFreq / 4) * 100));
     const conversion = Math.min(100, (CVR / 0.04) * 100);
     const funnelHealth = R.impr > 0 && R.clicks > 0 ? Math.min(100, (R.clicks / R.impr) * 1000) : 50;
@@ -817,9 +791,8 @@ function useCockpitData() {
     const dailyCost = R.cost / Math.max(Math.ceil(totalDays / 2), 1);
 
     const scale = totalBudget > 0 ? Math.min(100, (dailyCost / totalBudget) * 100) : 50;
-    const pressure = Math.min(100, Math.max(0, (2 - cpmTrendRatio) * 100));
     const budgetHealth = totalBudget > 0 ? Math.min(100, (activeBudget / totalBudget) * 100) : 50;
-    const momentum = Math.min(100, Math.max(0, pressure * 0.5 + conversion * 0.3 + (100 - Math.min(100, R.avgFreq * 20)) * 0.2));
+    const momentum = Math.min(100, Math.max(0, (100 - pressure) * 0.5 + conversion * 0.3 + fatigue * 0.2));
 
     // Radar
     const radar = camps
@@ -871,11 +844,18 @@ function useCockpitData() {
 
     const hourlyIntensity = totalBudget > 0 ? Math.min(100, (dailyCost / totalBudget) / (Math.max(1, new Date().getHours()) / 24) * 50) : 50;
 
+    const CPC = R.clicks > 0 ? R.cost / R.clicks : 0;
+    const CTR = R.impr > 0 ? (R.clicks / R.impr) * 100 : 0;
+    const ROAS = 0; // Placeholder
+
     return {
       score, components: { cplEfficiency, cpmTrend, fatigue, conversion, funnelHealth },
       gauges: { scale, fatigue, pressure, conversion, budgetHealth, momentum, hourlyIntensity, cplEfficiency },
       radar, dailyScores, recommendations: recs.slice(0, 5), isLoading: false,
-      meta: { CPL: CPL.toFixed(2), CVR: (CVR * 100).toFixed(2), avgFreq: R.avgFreq.toFixed(1), cpmTrendRatio: cpmTrendRatio.toFixed(2), activeBudget },
+      meta: { 
+        CPL, CVR: CVR * 100, avgFreq: R.avgFreq, cpmTrendRatio, activeBudget, 
+        dailyCost, CPC, CTR, conv: R.conv, ROAS, friction: Math.max(0, 100 - (CVR * 100))
+      },
     };
   }, [raw, isLoading, dateFrom, dateTo, accountId, campaignId]);
 }
@@ -888,13 +868,29 @@ function CockpitPage() {
   useEffect(() => { const id = setInterval(() => setTick(t => t + 1), 1000); return () => clearInterval(id); }, []);
 
   const gv = g ?? {};
+  const m = meta ?? {};
+
+  // Formata moeda
+  const BRL = (v: number) => `R$ ${v?.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) ?? "0,00"}`;
+  const FMT = (v: number, unit = "") => `${v?.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) ?? "0"}${unit}`;
 
   const gaugeConfig = [
-    { label: "Intensidade por Horário", sub: "Ritmo de entrega de impressões", tooltip: "Analisa se a plataforma está entregando mais impressões nas horas de pico ou se está represando o tráfego.", value: gv.hourlyIntensity ?? 0, zones: [{ from: 0, to: 0.35, color: "#f59e0b" }, { from: 0.35, to: 0.7, color: "#22c55e" }, { from: 0.7, to: 1, color: "#ef4444" }] },
-    { label: "Acelerador de Verba", sub: `Gasto: R$ ${((gv.scale ?? 0) / 100 * (meta?.activeBudget ?? 0)).toFixed(0)}`, tooltip: "Mede se o orçamento diário programado está sendo consumido corretamente. Muito lento = gargalo no leilão. Muito rápido = exaustão prematura.", value: gv.scale ?? 0, zones: [{ from: 0, to: 0.3, color: "#ef4444" }, { from: 0.3, to: 0.6, color: "#f59e0b" }, { from: 0.6, to: 1, color: "#22c55e" }] },
-    { label: "Taxa de Atrito", sub: `Conversão LP: ${meta?.CVR ?? "--"}%`, tooltip: "Quantas pessoas clicam no anúncio mas desistem antes de virar Lead. O ideal é manter acima de 4%.", value: gv.conversion ?? 0, zones: [{ from: 0, to: 0.4, color: "#ef4444" }, { from: 0.4, to: 0.7, color: "#f59e0b" }, { from: 0.7, to: 1, color: "#22c55e" }] },
-    { label: "Desgaste de Peça", sub: `Frequência ${meta?.avgFreq ?? "--"}×`, tooltip: "Frequência de repetição do anúncio para a mesma pessoa. Se o ponteiro cair para a zona crítica, seu público enjoou do anúncio e os custos vão disparar.", value: gv.fatigue ?? 0, zones: [{ from: 0, to: 0.3, color: "#ef4444" }, { from: 0.3, to: 0.6, color: "#f59e0b" }, { from: 0.6, to: 1, color: "#22c55e" }] },
-    { label: "Eficiência de CPL", sub: `CPL Atual: R$ ${meta?.CPL ?? "--"}`, tooltip: "Quão barato está o custo por lead comparado com a meta ou a média histórica. Verde significa leads muito mais baratos que o normal.", value: gv.cplEfficiency ?? 0, zones: [{ from: 0, to: 0.4, color: "#ef4444" }, { from: 0.4, to: 0.7, color: "#f59e0b" }, { from: 0.7, to: 1, color: "#22c55e" }] },
+    // Topo de Funil
+    { label: "Gasto Diário (Burn Rate)", textValue: BRL(m.dailyCost), sub: `Orçamento: ${BRL(m.activeBudget)}`, tooltip: "Ritmo de gasto diário comparado ao orçamento da conta.", value: gv.scale ?? 0, zones: [{ from: 0, to: 0.5, color: "#ef4444" }, { from: 0.5, to: 0.8, color: "#f59e0b" }, { from: 0.8, to: 1, color: "#22c55e" }] },
+    { label: "Engajamento (CTR)", textValue: FMT(m.CTR, "%"), sub: "Cliques no link / Impressões", tooltip: "Mede o quanto seus criativos chamam atenção.", value: Math.min(100, (m.CTR / 2) * 100) || 0, zones: [{ from: 0, to: 0.3, color: "#ef4444" }, { from: 0.3, to: 0.6, color: "#f59e0b" }, { from: 0.6, to: 1, color: "#22c55e" }] },
+    { label: "Custo por Clique (CPC)", textValue: BRL(m.CPC), sub: "Valor pago por cada clique", tooltip: "O custo real de cada pessoa que clica no anúncio.", value: Math.min(100, (1 / (m.CPC || 1)) * 100) || 0, zones: [{ from: 0, to: 0.4, color: "#ef4444" }, { from: 0.4, to: 0.7, color: "#f59e0b" }, { from: 0.7, to: 1, color: "#22c55e" }] },
+    { label: "Intensidade Horária", textValue: FMT(gv.hourlyIntensity, "%"), sub: "Pressão de entrega vs Hora", tooltip: "Se a plataforma está entregando tráfego no ritmo certo.", value: gv.hourlyIntensity ?? 0, zones: [{ from: 0, to: 0.35, color: "#f59e0b" }, { from: 0.35, to: 0.7, color: "#22c55e" }, { from: 0.7, to: 1, color: "#ef4444" }] },
+    
+    // Meio de Funil
+    { label: "Fadiga Criativa", textValue: FMT(m.avgFreq, "×"), sub: "Repetição por usuário", tooltip: "Frequência de aparição. Se estiver muito alto, o público enjoou.", value: gv.fatigue ?? 0, zones: [{ from: 0, to: 0.3, color: "#ef4444" }, { from: 0.3, to: 0.6, color: "#f59e0b" }, { from: 0.6, to: 1, color: "#22c55e" }] },
+    { label: "Taxa de Atrito (LP)", textValue: FMT(m.friction, "%"), sub: "Desistências após o clique", tooltip: "Porcentagem de cliques que não viraram leads (Drop-off).", value: 100 - (m.friction || 0), zones: [{ from: 0, to: 0.8, color: "#ef4444" }, { from: 0.8, to: 0.95, color: "#f59e0b" }, { from: 0.95, to: 1, color: "#22c55e" }] },
+    { label: "Conversão Global", textValue: FMT(m.CVR, "%"), sub: "Leads gerados / Cliques", tooltip: "A taxa de conversão final da campanha.", value: gv.conversion ?? 0, zones: [{ from: 0, to: 0.4, color: "#ef4444" }, { from: 0.4, to: 0.7, color: "#f59e0b" }, { from: 0.7, to: 1, color: "#22c55e" }] },
+    
+    // Fundo de Funil
+    { label: "Custo por Lead (CPL)", textValue: BRL(m.CPL), sub: "Valor exato por conversão", tooltip: "O indicador mais importante de aquisição.", value: gv.cplEfficiency ?? 0, zones: [{ from: 0, to: 0.4, color: "#ef4444" }, { from: 0.4, to: 0.7, color: "#f59e0b" }, { from: 0.7, to: 1, color: "#22c55e" }] },
+    { label: "Volume de Leads", textValue: String(m.conv || 0), sub: "Leads totais no período", tooltip: "O total de conversões puras adquiridas.", value: Math.min(100, ((m.conv || 0) / 100) * 100) || 0, zones: [{ from: 0, to: 0.2, color: "#ef4444" }, { from: 0.2, to: 0.6, color: "#f59e0b" }, { from: 0.6, to: 1, color: "#22c55e" }] },
+    { label: "Eficiência de Escala", textValue: FMT(gv.momentum, "%"), sub: "Qualidade vs Verba gasta", tooltip: "Se o aumento de orçamento está acompanhando a mesma qualidade.", value: gv.momentum ?? 0, zones: [{ from: 0, to: 0.4, color: "#ef4444" }, { from: 0.4, to: 0.7, color: "#f59e0b" }, { from: 0.7, to: 1, color: "#22c55e" }] },
+    { label: "Saúde do Orçamento", textValue: FMT(gv.budgetHealth, "%"), sub: "Verba em campanhas ativas", tooltip: "Quantidade do orçamento da conta que está ativamente rodando.", value: gv.budgetHealth ?? 0, zones: [{ from: 0, to: 0.4, color: "#ef4444" }, { from: 0.4, to: 0.7, color: "#f59e0b" }, { from: 0.7, to: 1, color: "#22c55e" }] },
   ];
 
   const criticalCount = gaugeConfig.filter(gc => gc.value < 35).length;
@@ -969,7 +965,7 @@ function CockpitPage() {
                 <p className="text-muted-foreground/60 text-xs font-mono mt-1">{dateFrom} → {dateTo}</p>
               </div>
             ) : (
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+              <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-4">
                 <CockpitThermometer 
                   pressure={gv.pressure ?? 0} 
                   label="Termômetro de Leilão" 
@@ -977,15 +973,15 @@ function CockpitPage() {
                   delay={0}
                 />
                 {gaugeConfig.map((gc, i) => (
-                  <CockpitGauge key={gc.label} value={gc.value} max={100} label={gc.label} sub={gc.sub} unit="%" zones={gc.zones} delay={(i + 1) * 0.09} tooltip={gc.tooltip} />
+                  <CockpitGauge key={gc.label} value={gc.value} max={100} label={gc.label} sub={gc.sub} unit="%" zones={gc.zones} delay={(i + 1) * 0.09} tooltip={gc.tooltip} textValue={gc.textValue} />
                 ))}
               </div>
             )}
           </div>
         </div>
 
-        {/* ── RADAR TÁTICO ──────────────────────────────────────── */}
-        {!isLoading && radar?.length > 0 && <RadarTatico data={radar} />}
+        {/* ── RANKING TÁTICO ──────────────────────────────────────── */}
+        {!isLoading && radar?.length > 0 && <RankingTatico data={radar} />}
 
         {/* ── RECOMENDAÇÕES ─────────────────────────────────────── */}
         {!isLoading && recommendations?.length > 0 && <RecomendacoesInteligentes recs={recommendations} />}
