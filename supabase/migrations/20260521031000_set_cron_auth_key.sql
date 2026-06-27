@@ -1,1 +1,1 @@
-ALTER DATABASE postgres SET "app.supabase_service_role_key" = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inh1ZHVtemVkY3h1dWh4b2tpc3NtIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3OTEwNzI2NywiZXhwIjoyMDk0NjgzMjY3fQ.UZu6anm6Pj454Ts1rDUUT8xPQEMNcDEj9gezomnKHBc';
+-- ALTER DATABASE postgres SET "app.supabase_service_role_key" = '...';

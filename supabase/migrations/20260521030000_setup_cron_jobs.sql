@@ -1,6 +1,9 @@
 -- Migration: Recriar Cron Jobs com chave de autenticação embutida
 -- NC Performance Suite — Sync 24/7 sem depender de nenhum PC
 
+CREATE EXTENSION IF NOT EXISTS pg_cron SCHEMA extensions;
+CREATE EXTENSION IF NOT EXISTS pg_net SCHEMA extensions;
+
 -- Remover jobs anteriores (sem chave de auth)
 SELECT cron.unschedule(jobid)
 FROM cron.job
@@ -12,8 +15,8 @@ SELECT cron.schedule(
   '*/3 * * * *',
   $$
   SELECT net.http_post(
-    url := 'https://xudumzedcxuuhxokissm.supabase.co/functions/v1/sync-meta-ads',
-    headers := '{"Content-Type":"application/json","Authorization":"Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inh1ZHVtemVkY3h1dWh4b2tpc3NtIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3OTEwNzI2NywiZXhwIjoyMDk0NjgzMjY3fQ.UZu6anm6Pj454Ts1rDUUT8xPQEMNcDEj9gezomnKHBc"}'::jsonb,
+    url := 'https://uqhilsnrrmlepdjzpubq.supabase.co/functions/v1/sync-meta-ads',
+    headers := '{"Content-Type":"application/json","Authorization":"Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVxaGlsc25ycm1sZXBkanpwdWJxIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4MjUzOTE5MiwiZXhwIjoyMDk4MTE1MTkyfQ.wmIY3U327qTzfofcMwF-lB_EuF5JMVyB09EJ5KrBRDs"}'::jsonb,
     body := jsonb_build_object(
       'triggered_by', 'cron',
       'time_range', jsonb_build_object(
@@ -31,8 +34,8 @@ SELECT cron.schedule(
   '1-58/3 * * * *',
   $$
   SELECT net.http_post(
-    url := 'https://xudumzedcxuuhxokissm.supabase.co/functions/v1/run-automations',
-    headers := '{"Content-Type":"application/json","Authorization":"Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inh1ZHVtemVkY3h1dWh4b2tpc3NtIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3OTEwNzI2NywiZXhwIjoyMDk0NjgzMjY3fQ.UZu6anm6Pj454Ts1rDUUT8xPQEMNcDEj9gezomnKHBc"}'::jsonb,
+    url := 'https://uqhilsnrrmlepdjzpubq.supabase.co/functions/v1/run-automations',
+    headers := '{"Content-Type":"application/json","Authorization":"Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVxaGlsc25ycm1sZXBkanpwdWJxIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4MjUzOTE5MiwiZXhwIjoyMDk4MTE1MTkyfQ.wmIY3U327qTzfofcMwF-lB_EuF5JMVyB09EJ5KrBRDs"}'::jsonb,
     body := '{}'::jsonb
   );
   $$
