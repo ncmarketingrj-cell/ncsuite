@@ -528,62 +528,7 @@ function MetricasCampanhasPage() {
   const [aiInsightText, setAiInsightText] = useState("");
   const [isGeneratingInsight, setIsGeneratingInsight] = useState(false);
 
-  // ── Configurações de Gráficos Dinâmicos ──
-  const [activeChartTab, setActiveChartTab] = useState<"metricas" | "campanhas">("campanhas");
-  useEffect(() => {
-    if (isAdmin) {
-      setActiveChartTab("metricas");
-    }
-  }, [isAdmin]);
 
-  const { configs: metricasConfigs } = useChartConfig("metricas");
-  const { configs: campanhasConfigs } = useChartConfig("campanhas");
-
-  // Dados consolidados diários para gráficos dinâmicos
-  const chartData = useMemo(() => {
-    try {
-      const days = eachDayOfInterval({ start: dateRange.startDate, end: dateRange.endDate });
-      return days.map(d => {
-        const ds = getLocalDateStr(d);
-        const targetCamps = selectedCampaignId 
-          ? enrichedCampaigns.filter((c: any) => c.id === selectedCampaignId)
-          : enrichedCampaigns;
-          
-        const dayMetrics = targetCamps.flatMap((c: any) => 
-          (c._metrics || []).filter((m: any) => (m.date || "").split("T")[0] === ds)
-        );
-        
-        const cost = dayMetrics.reduce((s: number, m: any) => s + Number(m.cost || 0), 0);
-        const conversions = dayMetrics.reduce((s: number, m: any) => s + Number(m.conversions || 0), 0);
-        const clicks = dayMetrics.reduce((s: number, m: any) => s + Number(m.clicks || 0), 0);
-        const impressions = dayMetrics.reduce((s: number, m: any) => s + Number(m.impressions || 0), 0);
-        const reach = dayMetrics.reduce((s: number, m: any) => s + Number(m.reach || 0), 0);
-        
-        const cpl = conversions > 0 ? cost / conversions : 0;
-        const ctr = impressions > 0 ? (clicks / impressions) * 100 : 0;
-        const cpc = clicks > 0 ? cost / clicks : 0;
-        const cpm = impressions > 0 ? (cost / impressions) * 1000 : 0;
-        const frequency = reach > 0 ? impressions / reach : 0;
-
-        return {
-          day: format(d, "dd/MM", { locale: ptBR }),
-          cost,
-          conversions,
-          cpl,
-          ctr,
-          clicks,
-          impressions,
-          reach,
-          cpc,
-          cpm,
-          frequency
-        };
-      });
-    } catch (e) {
-      console.error("Erro ao consolidar dados para gráficos dinâmicos:", e);
-      return [];
-    }
-  }, [enrichedCampaigns, dateRange, selectedCampaignId]);
 
   // â"€â"€ Efeitos â"€â"€
 
@@ -1138,6 +1083,63 @@ function MetricasCampanhasPage() {
       setAiInsightText("");
     }
   }, [selectedFocusItem]);
+
+  // ── Configurações de Gráficos Dinâmicos ──
+  const [activeChartTab, setActiveChartTab] = useState<"metricas" | "campanhas">("campanhas");
+  useEffect(() => {
+    if (isAdmin) {
+      setActiveChartTab("metricas");
+    }
+  }, [isAdmin]);
+
+  const { configs: metricasConfigs } = useChartConfig("metricas");
+  const { configs: campanhasConfigs } = useChartConfig("campanhas");
+
+  // Dados consolidados diários para gráficos dinâmicos
+  const chartData = useMemo(() => {
+    try {
+      const days = eachDayOfInterval({ start: dateRange.startDate, end: dateRange.endDate });
+      return days.map(d => {
+        const ds = getLocalDateStr(d);
+        const targetCamps = selectedCampaignId 
+          ? enrichedCampaigns.filter((c: any) => c.id === selectedCampaignId)
+          : enrichedCampaigns;
+          
+        const dayMetrics = targetCamps.flatMap((c: any) => 
+          (c._metrics || []).filter((m: any) => (m.date || "").split("T")[0] === ds)
+        );
+        
+        const cost = dayMetrics.reduce((s: number, m: any) => s + Number(m.cost || 0), 0);
+        const conversions = dayMetrics.reduce((s: number, m: any) => s + Number(m.conversions || 0), 0);
+        const clicks = dayMetrics.reduce((s: number, m: any) => s + Number(m.clicks || 0), 0);
+        const impressions = dayMetrics.reduce((s: number, m: any) => s + Number(m.impressions || 0), 0);
+        const reach = dayMetrics.reduce((s: number, m: any) => s + Number(m.reach || 0), 0);
+        
+        const cpl = conversions > 0 ? cost / conversions : 0;
+        const ctr = impressions > 0 ? (clicks / impressions) * 100 : 0;
+        const cpc = clicks > 0 ? cost / clicks : 0;
+        const cpm = impressions > 0 ? (cost / impressions) * 1000 : 0;
+        const frequency = reach > 0 ? impressions / reach : 0;
+
+        return {
+          day: format(d, "dd/MM", { locale: ptBR }),
+          cost,
+          conversions,
+          cpl,
+          ctr,
+          clicks,
+          impressions,
+          reach,
+          cpc,
+          cpm,
+          frequency
+        };
+      });
+    } catch (e) {
+      console.error("Erro ao consolidar dados para gráficos dinâmicos:", e);
+      return [];
+    }
+  }, [enrichedCampaigns, dateRange, selectedCampaignId]);
 
   // Dados de gráficos — usam enrichedCampaigns para alcance/frequência reais
   const trendData = useMemo(() => {
