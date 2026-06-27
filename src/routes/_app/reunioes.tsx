@@ -13,7 +13,7 @@ import {
   AlignLeft
 } from "lucide-react";
 import { toast } from "sonner";
-import { supabase } from "@/integrations/supabase/client";
+import { supabase } from "@/integrations/supabase-external/client";
 import { DateRangePicker } from "@/components/DateRangePicker";
 import { useAuth } from "@/lib/auth";
 import { subDays, format } from "date-fns";

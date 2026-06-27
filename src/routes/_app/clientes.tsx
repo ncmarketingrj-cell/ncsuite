@@ -9,7 +9,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/PageHeader";
-import { supabase } from "@/integrations/supabase/client";
+import { supabase } from "@/integrations/supabase-external/client";
 import { useGlobalDate, getLocalDateString } from "@/contexts/DateContext";
 
 export const Route = createFileRoute("/_app/clientes")({

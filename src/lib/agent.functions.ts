@@ -1,5 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
-import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { requireSupabaseAuth } from "@/integrations/supabase-external/auth-middleware";
 import { z } from "zod";
 import fs from "node:fs";
 import path from "node:path";
@@ -101,6 +101,7 @@ export const chatWithVictoriaFn = createServerFn({ method: "POST" })
       status: string;
       budget: number;
       platform: string;
+      external_id?: string;
       cost: number;
       conversions: number;
       clicks: number;

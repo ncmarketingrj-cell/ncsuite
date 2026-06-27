@@ -8,7 +8,7 @@ import {
   ShieldAlert, Settings, ArrowLeft, ArrowUpRight, Check, Play,
   BookOpen, FolderClosed, Zap, Share2, Mic, MicOff, UploadCloud, FileText, Database
 } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
+import { supabase } from "@/integrations/supabase-external/client";
 import { useVictoriaChat, type Message, type Conversation } from "@/hooks/useVictoriaChat";
 import { ActionCard } from "@/components/victoria/ActionCard";
 import ReactMarkdown from "react-markdown";

@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, Plus, Trash2, GripVertical, Save, Edit2, Loader2, Target } from "lucide-react";
 import { toast } from "sonner";
-import { supabase } from "@/integrations/supabase/client";
+import { supabase } from "@/integrations/supabase-external/client";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { 
   DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors 

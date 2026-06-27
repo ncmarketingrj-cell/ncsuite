@@ -6,7 +6,7 @@ import {
   ArrowRight, Globe, CheckCircle2, XCircle
 } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
+import { supabase } from "@/integrations/supabase-external/client";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/_app/link-bio")({
