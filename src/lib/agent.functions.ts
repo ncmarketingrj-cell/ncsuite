@@ -101,6 +101,7 @@ export const chatWithVictoriaFn = createServerFn({ method: "POST" })
       status: string;
       budget: number;
       platform: string;
+      external_id?: string;
       cost: number;
       conversions: number;
       clicks: number;

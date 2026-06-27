@@ -847,7 +847,7 @@ function MetricasCampanhasPage() {
       for (let d = 0; d < 7; d++) {
         for (let h = 0; h < 24; h++) {
           heatMapData[d][h].cpl = heatMapData[d][h].conv > 0 ? heatMapData[d][h].cost / heatMapData[d][h].conv : 0;
-          heatMapData[d][h] = { day: d, hour: h, ...heatMapData[d][h] };
+          heatMapData[d][h] = { day: d, hour: h, ...heatMapData[d][h] } as any;
         }
       }
 

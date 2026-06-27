@@ -63,7 +63,7 @@ function CrmPage() {
                 ) : (
                   pipelines.map(p => (
                     <option key={p.id} value={p.id} className="bg-card text-foreground">
-                      {p.name} {p.clients?.name ? `(${p.clients.name})` : ""}
+                      {p.name} {(p.clients as any)?.name ? `(${(p.clients as any).name})` : ""}
                     </option>
                   ))
                 )}
