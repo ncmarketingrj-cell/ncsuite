@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Bot, Zap, Activity, AlertTriangle, CheckCircle2, XCircle, Clock, Users, TrendingUp, TrendingDown, Loader2, Play, BarChart3, Brain, Wifi, WifiOff } from "lucide-react";
 import { toast } from "sonner";
-import { supabase } from "@/integrations/supabase/client";
+import { supabase } from "@/integrations/supabase-external/client";
 import { PageHeader } from "@/components/PageHeader";
 
 const ADMIN_EMAILS = ["nc.marketingrj@gmail.com", "hc.marketing.dgt@gmail.com"];

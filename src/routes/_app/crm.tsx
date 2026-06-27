@@ -4,7 +4,7 @@ import { PageHeader } from "@/components/PageHeader";
 import { KanbanBoard } from "@/components/crm/KanbanBoard";
 import { Filter, Search, Plus, Settings, User } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
+import { supabase } from "@/integrations/supabase-external/client";
 import { PipelineManagerModal } from "@/components/crm/PipelineManagerModal";
 import { useAuth } from "@/lib/auth";
 

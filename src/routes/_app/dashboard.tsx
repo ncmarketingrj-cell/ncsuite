@@ -11,7 +11,7 @@ import {
 } from "lucide-react";
 
 const COLORS = ["#00d4ff", "#9b87f5", "#f97316", "#22c55e", "#ef4444", "#eab308"];
-import { supabase } from "@/integrations/supabase/client";
+import { supabase } from "@/integrations/supabase-external/client";
 import { useAuth } from "@/lib/auth";
 import { toast } from "sonner";
 import { 

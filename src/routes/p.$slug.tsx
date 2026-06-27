@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
-import { supabase } from "@/integrations/supabase/client";
+import { supabase } from "@/integrations/supabase-external/client";
 import { Loader2, ExternalLink, MessageSquare, Phone, MapPin, Youtube, Instagram, Facebook, Send, Car } from "lucide-react";
 import { toast } from "sonner";
 

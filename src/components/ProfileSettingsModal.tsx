@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, User, Camera, Loader2, Save } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
+import { supabase } from "@/integrations/supabase-external/client";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
 

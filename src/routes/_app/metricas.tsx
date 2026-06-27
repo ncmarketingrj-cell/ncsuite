@@ -15,7 +15,7 @@ import {
   BarChart2, PieChart as PieIcon, SlidersHorizontal,
 } from "lucide-react";
 import { toast } from "sonner";
-import { supabase } from "@/integrations/supabase/client";
+import { supabase } from "@/integrations/supabase-external/client";
 import { useAuth } from "@/lib/auth";
 import { DateRangePicker } from "@/components/DateRangePicker";
 import { useGlobalDate } from "@/contexts/DateContext";

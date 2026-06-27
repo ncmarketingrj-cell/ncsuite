@@ -10,7 +10,7 @@ import {
 import { toast } from "sonner";
 import { PageHeader } from "@/components/PageHeader";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
+import { supabase } from "@/integrations/supabase-external/client";
 import { useServerFn } from "@tanstack/react-start";
 import { analyzeCreativeFn, type CreativeAIAnalysis } from "@/lib/criativo.functions";
 

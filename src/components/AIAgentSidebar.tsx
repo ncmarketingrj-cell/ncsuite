@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Send, Bot, Sparkles, TrendingUp, Search, Loader2, User, X, Paperclip, Check } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
+import { supabase } from "@/integrations/supabase-external/client";
 import { toast } from "sonner";
 import ReactMarkdown from "react-markdown";
 import { chatWithVictoriaFn } from "@/lib/agent.functions";

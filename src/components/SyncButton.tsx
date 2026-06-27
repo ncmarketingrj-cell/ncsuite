@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQueryClient, useQuery } from "@tanstack/react-query";
 import { Zap, Loader2, CheckCircle2, AlertCircle, Info, Sparkles, Database, CalendarDays } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
+import { supabase } from "@/integrations/supabase-external/client";
 import { toast } from "sonner";
 import { formatDistanceToNow, format, subDays, subMonths, startOfMonth, endOfMonth } from "date-fns";
 import { ptBR } from "date-fns/locale";

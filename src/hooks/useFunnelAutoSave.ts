@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useFunnelState } from "./useFunnelState";
-import { supabase } from "@/integrations/supabase/client";
+import { supabase } from "@/integrations/supabase-external/client";
 import { debounce, isEqual } from "lodash";
 import { toast } from "sonner";
 

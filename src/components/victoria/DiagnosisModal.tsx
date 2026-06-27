@@ -4,7 +4,7 @@ import {
   X, AlertTriangle, Cpu, TrendingUp, HelpCircle, 
   Loader2, CheckCircle2, Copy, Check 
 } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
+import { supabase } from "@/integrations/supabase-external/client";
 
 interface DiagnosisModalProps {
   isOpen: boolean;

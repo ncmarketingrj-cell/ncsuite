@@ -8,7 +8,7 @@ import {
 import { toast } from "sonner";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { PageHeader } from "@/components/PageHeader";
-import { supabase } from "@/integrations/supabase/client";
+import { supabase } from "@/integrations/supabase-external/client";
 import { useAuth } from "@/lib/auth";
 
 export const Route = createFileRoute("/_app/crm-config")({

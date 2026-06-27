@@ -9,7 +9,7 @@ import {
   ChevronDown, ToggleLeft, ToggleRight,
   Smile, AlignLeft, ListChecks, Trophy, PieChart,
 } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
+import { supabase } from "@/integrations/supabase-external/client";
 import { format, subDays, startOfDay, endOfDay } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { toast } from "sonner";
