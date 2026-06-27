@@ -20,6 +20,8 @@ import { useAuth } from "@/lib/auth";
 import { DateRangePicker } from "@/components/DateRangePicker";
 import { useGlobalDate } from "@/contexts/DateContext";
 import { PageHeader } from "@/components/PageHeader";
+import { useChartConfig } from "@/hooks/useChartConfig";
+import { ChartEngine } from "@/components/charts/ChartEngine";
 import {
   AreaChart, Area, BarChart, Bar, RadarChart, Radar, PolarGrid, PolarAngleAxis,
   PieChart as RechartsPieChart, Pie, Cell, Treemap,
@@ -525,6 +527,63 @@ function MetricasCampanhasPage() {
   const [selectedFocusItem, setSelectedFocusItem] = useState<any | null>(null);
   const [aiInsightText, setAiInsightText] = useState("");
   const [isGeneratingInsight, setIsGeneratingInsight] = useState(false);
+
+  // ── Configurações de Gráficos Dinâmicos ──
+  const [activeChartTab, setActiveChartTab] = useState<"metricas" | "campanhas">("campanhas");
+  useEffect(() => {
+    if (isAdmin) {
+      setActiveChartTab("metricas");
+    }
+  }, [isAdmin]);
+
+  const { configs: metricasConfigs } = useChartConfig("metricas");
+  const { configs: campanhasConfigs } = useChartConfig("campanhas");
+
+  // Dados consolidados diários para gráficos dinâmicos
+  const chartData = useMemo(() => {
+    try {
+      const days = eachDayOfInterval({ start: dateRange.startDate, end: dateRange.endDate });
+      return days.map(d => {
+        const ds = getLocalDateStr(d);
+        const targetCamps = selectedCampaignId 
+          ? enrichedCampaigns.filter((c: any) => c.id === selectedCampaignId)
+          : enrichedCampaigns;
+          
+        const dayMetrics = targetCamps.flatMap((c: any) => 
+          (c._metrics || []).filter((m: any) => (m.date || "").split("T")[0] === ds)
+        );
+        
+        const cost = dayMetrics.reduce((s: number, m: any) => s + Number(m.cost || 0), 0);
+        const conversions = dayMetrics.reduce((s: number, m: any) => s + Number(m.conversions || 0), 0);
+        const clicks = dayMetrics.reduce((s: number, m: any) => s + Number(m.clicks || 0), 0);
+        const impressions = dayMetrics.reduce((s: number, m: any) => s + Number(m.impressions || 0), 0);
+        const reach = dayMetrics.reduce((s: number, m: any) => s + Number(m.reach || 0), 0);
+        
+        const cpl = conversions > 0 ? cost / conversions : 0;
+        const ctr = impressions > 0 ? (clicks / impressions) * 100 : 0;
+        const cpc = clicks > 0 ? cost / clicks : 0;
+        const cpm = impressions > 0 ? (cost / impressions) * 1000 : 0;
+        const frequency = reach > 0 ? impressions / reach : 0;
+
+        return {
+          day: format(d, "dd/MM", { locale: ptBR }),
+          cost,
+          conversions,
+          cpl,
+          ctr,
+          clicks,
+          impressions,
+          reach,
+          cpc,
+          cpm,
+          frequency
+        };
+      });
+    } catch (e) {
+      console.error("Erro ao consolidar dados para gráficos dinâmicos:", e);
+      return [];
+    }
+  }, [enrichedCampaigns, dateRange, selectedCampaignId]);
 
   // â"€â"€ Efeitos â"€â"€
 
@@ -2125,231 +2184,86 @@ function MetricasCampanhasPage() {
                         </div>
                       )}
 
-                      {/* Charts */}
-                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+                      {/* Seletor Dinâmico de Gráficos e Configuração */}
+                      <div className="flex flex-wrap items-center justify-between gap-3 bg-white/[0.02] border border-white/5 rounded-2xl p-4 mb-2">
+                        <div className="flex items-center gap-3">
+                          <SlidersHorizontal className="h-4 w-4 text-primary" />
+                          <div className="flex items-center gap-1 rounded-xl border border-white/5 bg-background/40 p-0.5">
+                            {isAdmin && (
+                              <button
+                                onClick={() => setActiveChartTab("metricas")}
+                                className={`rounded-lg px-3 py-1.5 text-[10px] font-black uppercase tracking-wider transition-all ${activeChartTab === "metricas" ? "bg-primary text-primary-foreground shadow-glow-sm" : "text-muted-foreground hover:text-foreground"}`}
+                              >
+                                Métricas da Agência (Painel Executivo)
+                              </button>
+                            )}
+                            <button
+                              onClick={() => setActiveChartTab("campanhas")}
+                              className={`rounded-lg px-3 py-1.5 text-[10px] font-black uppercase tracking-wider transition-all ${activeChartTab === "campanhas" ? "bg-primary text-primary-foreground shadow-glow-sm" : "text-muted-foreground hover:text-foreground"} ${!isAdmin ? "w-full text-center" : ""}`}
+                            >
+                              Meus Gráficos (Campanhas)
+                            </button>
+                          </div>
+                        </div>
 
-                        {/* Tendência 14 dias — sempre */}
-                        <div className="lg:col-span-2">
-                          <ChartCard
-                            icon={<TrendingUp className="h-4 w-4 text-primary"/>}
-                            title="Tendência de Performance"
-                            badge={`Últimos ${Math.min(trendData.length, 14)} dias`}
-                            context="Gasto diário vs conversões — dias de pico de conversão com gasto normal revelam quando seu melhor criativo estava ativo."
-                            modoExplicativo={modoExplicativo}
-                            didaticInfo={{
-                              analise: "Área azul = investimento diário. Barras roxas = conversões diárias. Cruzar os dois mostra a eficiência de cada dia.",
-                              decisao: "Barras sobem mas gasto não acompanha = CPL melhorando â†’ escale. Gasto sobe mas barras ficam iguais = CPL piorando â†’ revise criativo ou público imediatamente."
-                            }}
-                          >
-                          <ResponsiveContainer width="100%" height={220}>
-                            <ComposedChart data={trendData}>
-                              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)"/>
-                              <XAxis dataKey="date" tick={{ fontSize: 9, fill: "rgba(255,255,255,0.4)" }} axisLine={false} tickLine={false}/>
-                              <YAxis yAxisId="left" tick={{ fontSize: 9, fill: "rgba(255,255,255,0.4)" }} axisLine={false} tickLine={false} width={45}/>
-                              <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 9, fill: "rgba(255,255,255,0.4)" }} axisLine={false} tickLine={false} width={35}/>
-                              <Tooltip content={<CustomTooltip/>}/>
-                              <Legend iconSize={8} wrapperStyle={{ fontSize: 10 }}/>
-                              <Area yAxisId="left" type="monotone" dataKey="gasto" name="Gasto (R$)" stroke="#6366f1" fill="#6366f1" fillOpacity={0.15} strokeWidth={2}/>
-                              <Bar yAxisId="right" dataKey="conversoes" name="Conversões" fill="#8b5cf6" opacity={0.8} radius={[3,3,0,0]}/>
-                            </ComposedChart>
-                          </ResponsiveContainer>
-                        </ChartCard>
+                        {/* Botão de Edição de Layout */}
+                        <div>
+                          {activeChartTab === "metricas" ? (
+                            isAdmin && (
+                              <button
+                                onClick={() => navigate({ to: "/metricas/grafico" })}
+                                className="flex items-center gap-1.5 rounded-xl border border-primary/20 bg-primary/10 hover:bg-primary/20 px-3.5 py-1.5 text-[10px] font-black uppercase tracking-widest text-primary transition-all shadow-[0_0_12px_rgba(99,102,241,0.15)]"
+                              >
+                                <Pencil className="h-3 w-3" />
+                                Personalizar Painel Executivo
+                              </button>
+                            )
+                          ) : (
+                            <button
+                              onClick={() => navigate({ to: "/campanhas/grafico" })}
+                              className="flex items-center gap-1.5 rounded-xl border border-violet-500/20 bg-violet-500/10 hover:bg-violet-500/20 px-3.5 py-1.5 text-[10px] font-black uppercase tracking-widest text-violet-400 transition-all"
+                            >
+                              <Pencil className="h-3 w-3" />
+                              Personalizar Meus Gráficos
+                            </button>
+                          )}
+                        </div>
                       </div>
 
-                      {/* Evolução do CPL — sempre */}
-                      {cplTrendData.length > 1 && (
-                        <div className="lg:col-span-2">
-                          <ChartCard
-                            icon={<TrendingUp className="h-4 w-4 text-yellow-400"/>}
-                            title="Evolução do CPL"
-                            badge="Custo por Lead diário"
-                            context="Se a linha sobe, o CPL está piorando (mais caro por lead). Se desce, está melhorando. Linha vermelha = média do período."
-                            modoExplicativo={modoExplicativo}
-                            didaticInfo={{
-                              analise: "O custo por lead calculado dia a dia para mostrar se a eficiência está melhorando ou deteriorando ao longo do tempo.",
-                              decisao: "CPL subindo por 3+ dias consecutivos = ação urgente (público saturando, criativo cansando ou leilão aquecendo). CPL caindo consistentemente = momento ideal para aumentar budget com segurança."
-                            }}
-                          >
-                            <ResponsiveContainer width="100%" height={180}>
-                              <ComposedChart data={cplTrendData}>
-                                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)"/>
-                                <XAxis dataKey="date" tick={{ fontSize: 9, fill: "rgba(255,255,255,0.4)" }} axisLine={false} tickLine={false}/>
-                                <YAxis yAxisId="cpl" tick={{ fontSize: 9, fill: "rgba(255,255,255,0.4)" }} axisLine={false} tickLine={false} width={50} tickFormatter={(v: number) => `R$${v}`}/>
-                                <YAxis yAxisId="conv" orientation="right" tick={{ fontSize: 9, fill: "rgba(255,255,255,0.4)" }} axisLine={false} tickLine={false} width={30}/>
-                                <Tooltip content={<CustomTooltip/>}/>
-                                <Legend iconSize={8} wrapperStyle={{ fontSize: 10 }}/>
-                                {avgCpl > 0 && <ReferenceLine yAxisId="cpl" y={avgCpl} stroke="rgba(239,68,68,0.5)" strokeDasharray="4 4" label={{ value: `Média R$${avgCpl.toFixed(0)}`, fill: "rgba(239,68,68,0.6)", fontSize: 9 }}/>}
-                                <Line yAxisId="cpl" type="monotone" dataKey="cpl" name="CPL (R$)" stroke="#f59e0b" strokeWidth={2.5} dot={{ r: 3, fill: "#f59e0b" }} connectNulls/>
-                                <Bar yAxisId="conv" dataKey="conversoes" name="Conv." fill="#8b5cf6" opacity={0.45} radius={[2,2,0,0]}/>
-                              </ComposedChart>
-                            </ResponsiveContainer>
-                          </ChartCard>
-                        </div>
-                      )}
-
-                      {/* Pie Status — geral, audiencia */}
-                      {(modo === "geral" || modo === "audiencia") && (
-                        <ChartCard 
-                          icon={<PieIcon className="h-4 w-4 text-violet-400"/>} 
-                          title="Status das Campanhas" 
-                          context="Proporção ativas vs pausadas — equilíbrio saudável é ter mais ativas do que pausadas."
-                          modoExplicativo={modoExplicativo}
-                          didaticInfo={{
-                            analise: "A proporção numérica e percentual entre as campanhas em execução ativa e as campanhas em pausa.",
-                            decisao: "Garanta que seu portfólio ativo esteja alinhado com sua capacidade operacional. Excesso de campanhas pausadas indica retrabalho de testes ou problemas passados de custo por resultado."
-                          }}
-                        >
-                          <div className="flex items-center gap-5">
-                            <ResponsiveContainer width="60%" height={180}>
-                              <RechartsPieChart>
-                                <Pie data={pieData} cx="50%" cy="50%" innerRadius={50} outerRadius={80} paddingAngle={4} dataKey="value">
-                                  {pieData.map((e, i) => <Cell key={i} fill={e.color}/>)}
-                                </Pie>
-                                <Tooltip content={<CustomTooltip/>}/>
-                              </RechartsPieChart>
-                            </ResponsiveContainer>
-                            <div className="space-y-3">
-                              {pieData.map((e, i) => (
-                                <div key={i} className="flex items-center gap-2">
-                                  <div className="h-3 w-3 rounded-full flex-shrink-0" style={{ background: e.color }}/>
-                                  <div>
-                                    <p className="text-[11px] font-bold">{e.value} {e.name}</p>
-                                    <p className="text-[9px] text-muted-foreground/60">{campaigns.length > 0 ? Math.round((e.value/campaigns.length)*100) : 0}%</p>
-                                  </div>
-                                </div>
-                              ))}
+                      {/* Renderização Dinâmica dos Gráficos Configurados */}
+                      {(() => {
+                        const activeConfigs = activeChartTab === "metricas" ? metricasConfigs : campanhasConfigs;
+                        if (!activeConfigs || activeConfigs.length === 0) {
+                          return (
+                            <div className="glass-panel py-20 text-center text-sm text-muted-foreground">
+                              Carregando configurações de layout...
                             </div>
+                          );
+                        }
+
+                        return (
+                          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+                            {activeConfigs.map((config) => (
+                              <div
+                                key={config.id}
+                                className={config.layout_w === 12 ? "lg:col-span-2" : ""}
+                              >
+                                <ChartCard
+                                  icon={<TrendingUp className="h-4 w-4 text-primary" />}
+                                  title={config.title}
+                                  badge={config.metric.toUpperCase()}
+                                  context={config.description || "Gráfico de performance personalizado"}
+                                  modoExplicativo={modoExplicativo}
+                                >
+                                  <div className="h-[240px] w-full pt-2">
+                                    <ChartEngine config={config} data={chartData} />
+                                  </div>
+                                </ChartCard>
+                              </div>
+                            ))}
                           </div>
-                        </ChartCard>
-                      )}
-
-                      {/* Scatter CPL — geral, eficiencia */}
-                      {(modo === "geral" || modo === "eficiencia") && scatterData.length > 0 && (
-                        <ChartCard 
-                          icon={<Activity className="h-4 w-4 text-orange-400"/>} 
-                          title="CPL x Investimento" 
-                          context="Campanhas no canto inferior direito são as mais eficientes: muito gasto, CPL baixo."
-                          modoExplicativo={modoExplicativo}
-                          didaticInfo={{
-                            analise: "A distribuição espacial correlacionando o investimento financeiro acumulado (eixo X) e o CPL individual (eixo Y).",
-                            decisao: "Os anúncios de melhor performance estão no canto inferior direito (alto investimento com custo por lead muito baixo). Campanhas no canto superior esquerdo estão desperdiçando verba a um custo insustentável."
-                          }}
-                        >
-                          <ResponsiveContainer width="100%" height={200}>
-                            <ScatterChart>
-                              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)"/>
-                              <XAxis type="number" dataKey="x" name="Gasto R$" tick={{ fontSize: 9, fill: "rgba(255,255,255,0.4)" }} axisLine={false} tickLine={false}/>
-                              <YAxis type="number" dataKey="y" name="CPL R$"  tick={{ fontSize: 9, fill: "rgba(255,255,255,0.4)" }} axisLine={false} tickLine={false} width={45}/>
-                              <ZAxis dataKey="z" range={[40, 400]}/>
-                              {avgCpl > 0 && <ReferenceLine y={avgCpl} stroke="rgba(239,68,68,0.5)" strokeDasharray="4 4" label={{ value: `Média: R$${avgCpl.toFixed(0)}`, fill: "rgba(239,68,68,0.7)", fontSize: 9 }}/>}
-                              <Tooltip cursor={{ strokeDasharray: "3 3" }} content={({ active, payload }) => { if (!active || !payload?.length) return null; const d = payload[0]?.payload; return <div className="rounded-xl border border-white/10 bg-background/95 px-3 py-2 text-[10px] shadow-xl"><p className="font-black text-foreground mb-1">{d.name?.substring(0,30)}</p><p className="text-primary">Gasto: R$ {fmtBRL(d.x)}</p><p className="text-orange-400">CPL: R$ {d.y}</p><p className="text-violet-400">{d.z} conv.</p></div>; }}/>
-                              <Scatter data={scatterData} fill="#f59e0b" opacity={0.8}/>
-                            </ScatterChart>
-                          </ResponsiveContainer>
-                        </ChartCard>
-                      )}
-
-                      {/* Gasto por campanha — eficiencia, budget, comparativo */}
-                      {(modo === "eficiencia" || modo === "budget" || modo === "comparativo") && barData.length > 0 && (
-                        <ChartCard 
-                          icon={<BarChart3 className="h-4 w-4 text-green-400"/>} 
-                          title="Gasto vs Resultados" 
-                          badge="Top 10" 
-                          context="Redistribua budget das campanhas com alto gasto mas poucas conversões para as que convertem mais."
-                          modoExplicativo={modoExplicativo}
-                          didaticInfo={{
-                            analise: "O consumo direto de orçamento das 10 principais campanhas em relação às conversões entregues.",
-                            decisao: "Altere a alocação de orçamento: retire recursos de campanhas com alto consumo financeiro e baixas conversões, concentrando capital nas campanhas que lideram os resultados efetivos."
-                          }}
-                        >
-                          <ResponsiveContainer width="100%" height={220}>
-                            <BarChart data={barData} layout="vertical">
-                              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" horizontal={false}/>
-                              <XAxis type="number" tick={{ fontSize: 9, fill: "rgba(255,255,255,0.4)" }} axisLine={false} tickLine={false}/>
-                              <YAxis type="category" dataKey="name" tick={{ fontSize: 9, fill: "rgba(255,255,255,0.5)" }} axisLine={false} tickLine={false} width={110}/>
-                              <Tooltip content={<CustomTooltip/>}/>
-                              <Legend iconSize={8} wrapperStyle={{ fontSize: 10 }}/>
-                              <Bar dataKey="gasto" name="Gasto (R$)" fill="#6366f1" radius={[0,3,3,0]} opacity={0.85}/>
-                              <Bar dataKey="conversoes" name="Conversões" fill="#8b5cf6" radius={[0,3,3,0]} opacity={0.85}/>
-                            </BarChart>
-                          </ResponsiveContainer>
-                        </ChartCard>
-                      )}
-
-                      {/* Radar KPIs — geral, audiencia */}
-                      {(modo === "geral" || modo === "audiencia") && radarData.length > 0 && (
-                        <ChartCard 
-                          icon={<Eye className="h-4 w-4 text-cyan-400"/>} 
-                          title="Radar de KPIs" 
-                          context="Score de 0 a 100 para cada dimensão. Quanto mais preenchido, mais saudável a conta."
-                          modoExplicativo={modoExplicativo}
-                          didaticInfo={{
-                            analise: "A performance geral da conta normalizada em score de 0 a 100 em 6 dimensões cruciais do tráfego.",
-                            decisao: "Busque um desenho equilibrado e amplo. Um radar encolhido em um ponto específico (ex: CTR baixo) aponta o diagnóstico exato (neste caso, a necessidade urgente de melhorar o apelo visual do anúncio)."
-                          }}
-                        >
-                          <ResponsiveContainer width="100%" height={200}>
-                            <RadarChart data={radarData}>
-                              <PolarGrid stroke="rgba(255,255,255,0.1)"/>
-                              <PolarAngleAxis dataKey="metric" tick={{ fontSize: 9, fill: "rgba(255,255,255,0.5)" }}/>
-                              <Radar name="Score" dataKey="value" stroke="#6366f1" fill="#6366f1" fillOpacity={0.25} strokeWidth={2}/>
-                            </RadarChart>
-                          </ResponsiveContainer>
-                        </ChartCard>
-                      )}
-
-                      {/* Ranking Comparativo — comparativo */}
-                      {modo === "comparativo" && comparData.length > 0 && (
-                        <ChartCard 
-                          icon={<BarChart2 className="h-4 w-4 text-blue-400"/>} 
-                          title="Ranking Comparativo" 
-                          badge="Score 0—100" 
-                          context="Score relativo — 100 = melhor campanha naquela métrica. Use para ver quem lidera cada dimensão."
-                          modoExplicativo={modoExplicativo}
-                          didaticInfo={{
-                            analise: "A performance relativa de cada campanha com pontuação comparada (onde 100 representa a melhor campanha).",
-                            decisao: "Ideal para detectar qual campanha é líder absoluta de cliques (CTR) e qual lidera em eficiência de custos (CPL), permitindo isolar as melhores táticas."
-                          }}
-                        >
-                          <ResponsiveContainer width="100%" height={220}>
-                            <BarChart data={comparData}>
-                              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)"/>
-                              <XAxis dataKey="name" tick={{ fontSize: 8, fill: "rgba(255,255,255,0.4)" }} axisLine={false} tickLine={false}/>
-                              <YAxis tick={{ fontSize: 9, fill: "rgba(255,255,255,0.4)" }} axisLine={false} tickLine={false} domain={[0,100]}/>
-                              <Tooltip content={<CustomTooltip/>}/>
-                              <Legend iconSize={8} wrapperStyle={{ fontSize: 10 }}/>
-                              <Bar dataKey="ctr" name="CTR Score" fill="#3b82f6" radius={[3,3,0,0]} opacity={0.85}/>
-                              <Bar dataKey="cpl" name="CPL Score" fill="#10b981" radius={[3,3,0,0]} opacity={0.85}/>
-                              <Bar dataKey="freq" name="Freq. Score" fill="#f59e0b" radius={[3,3,0,0]} opacity={0.85}/>
-                            </BarChart>
-                          </ResponsiveContainer>
-                        </ChartCard>
-                      )}
-
-                      {/* Pie share de gasto — budget, comparativo */}
-                      {(modo === "budget" || modo === "comparativo") && barData.length > 0 && (
-                        <ChartCard 
-                          icon={<PieIcon className="h-4 w-4 text-green-400"/>} 
-                          title="Share de Gasto" 
-                          context="Concentração de budget — se uma campanha tiver > 60% do gasto, vale revisar."
-                          modoExplicativo={modoExplicativo}
-                          didaticInfo={{
-                            analise: "A concentração percentual do orçamento total gasto entre as suas principais campanhas.",
-                            decisao: "Evite a dependência extrema. Se uma única campanha consome mais de 60% da sua verba, a saúde do seu negócio está vulnerável a instabilidades temporárias do leilão ou bloqueios de conta."
-                          }}
-                        >
-                          <ResponsiveContainer width="100%" height={200}>
-                            <RechartsPieChart>
-                              <Pie data={budgetData.map((d: any,i: number) => ({ ...d, color: CHART_COLORS[i % CHART_COLORS.length] }))} cx="50%" cy="50%" outerRadius={80} dataKey="gasto" nameKey="name" label={({ name, percent }: any) => `${name}: ${(percent*100).toFixed(0)}%`} labelLine={false}>
-                                {budgetData.map((d: any, i: number) => <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]}/>)}
-                              </Pie>
-                              <Tooltip content={<CustomTooltip/>}/>
-                            </RechartsPieChart>
-                          </ResponsiveContainer>
-                        </ChartCard>
-                      )}
-
-                    </div>
+                        );
+                      })()}
                     </>
                   )}
                 </div>

@@ -1293,6 +1293,7 @@ const CARGO_DEFAULT_PERMISSIONS: Record<string, Record<string, "none" | "view" |
 };
 
 function TabUsuarios({ isAdmin }: { isAdmin: boolean }) {
+  const { user } = useAuth();
   const qc = useQueryClient();
   const [search, setSearch] = useState("");
   const [editingUser, setEditingUser] = useState<any | null>(null);
@@ -1312,7 +1313,12 @@ function TabUsuarios({ isAdmin }: { isAdmin: boolean }) {
   const [newPermissions, setNewPermissions] = useState<Record<string, string>>({});
   const [creating, setCreating] = useState(false);
 
-  const handleSetPermissionLevel = async (userId: string, key: string, level: string, currentPerms: any) => {
+  const handleSetPermissionLevel = async (userId: string, targetEmail: string, key: string, level: string, currentPerms: any) => {
+    if (targetEmail === "nc.marketingrj@gmail.com") {
+      toast.error("O Administrador Master possui acesso total vitalício e suas permissões não podem ser alteradas.");
+      return;
+    }
+    
     const updated = { ...(currentPerms ?? {}), [key]: level };
     try {
       const { error } = await (supabase as any).rpc("admin_set_user_permissions", {
@@ -1353,9 +1359,17 @@ function TabUsuarios({ isAdmin }: { isAdmin: boolean }) {
     }
   });
 
-  const handleDelete = async (userId: string, targetRole?: string) => {
+  const handleDelete = async (userId: string, targetEmail?: string, targetRole?: string) => {
+    if (targetEmail === "nc.marketingrj@gmail.com") {
+      toast.error("O Administrador Master (nc.marketingrj@gmail.com) é protegido e não pode ser excluído do sistema.");
+      return;
+    }
     if (targetRole === "admin" && !isAdmin) {
       toast.error("Apenas administradores podem excluir outros administradores.");
+      return;
+    }
+    if (targetRole === "admin" && user?.email !== "nc.marketingrj@gmail.com") {
+      toast.error("Apenas o Administrador Master pode excluir outras contas administrativas.");
       return;
     }
     if (!confirm("Tem certeza que deseja excluir permanentemente este usuário da Suite? Esta ação não pode ser desfeita.")) return;
@@ -1371,10 +1385,29 @@ function TabUsuarios({ isAdmin }: { isAdmin: boolean }) {
 
   const handleUpdate = async () => {
     if (!editingUser) return;
+    
+    // Protege o Master Admin contra edições de terceiros
+    if (editingUser.email === "nc.marketingrj@gmail.com" && user?.email !== "nc.marketingrj@gmail.com") {
+      toast.error("Acesso negado. Apenas o próprio Administrador Master pode editar seus dados.");
+      return;
+    }
+    
+    // Apenas o Master Admin pode criar/atualizar outras contas como Admin
+    if (editRole === "admin" && user?.email !== "nc.marketingrj@gmail.com" && editingUser.role !== "admin") {
+      toast.error("Apenas o Administrador Master pode nomear novos administradores.");
+      return;
+    }
+
     if (editingUser.role === "admin" && !isAdmin) {
       toast.error("Apenas administradores podem editar outros administradores.");
       return;
     }
+    
+    if (editingUser.role === "admin" && user?.email !== "nc.marketingrj@gmail.com" && editingUser.email !== user?.email) {
+      toast.error("Apenas o Administrador Master pode editar outras contas administrativas.");
+      return;
+    }
+
     setSaving(true);
     try {
       const { error } = await (supabase as any).rpc("admin_update_user", {
@@ -1387,11 +1420,13 @@ function TabUsuarios({ isAdmin }: { isAdmin: boolean }) {
       if (error) throw error;
 
       // Update permissions
-      const { error: permErr } = await (supabase as any).rpc("admin_set_user_permissions", {
-        target_user_id: editingUser.id,
-        new_permissions: editPermissions,
-      });
-      if (permErr) throw permErr;
+      if (editingUser.email !== "nc.marketingrj@gmail.com") {
+        const { error: permErr } = await (supabase as any).rpc("admin_set_user_permissions", {
+          target_user_id: editingUser.id,
+          new_permissions: editPermissions,
+        });
+        if (permErr) throw permErr;
+      }
 
       toast.success("Dados do usuário atualizados!");
       setEditingUser(null);
@@ -1412,6 +1447,11 @@ function TabUsuarios({ isAdmin }: { isAdmin: boolean }) {
       toast.error("A senha deve ter no mínimo 6 caracteres.");
       return;
     }
+    if (newRole === "admin" && user?.email !== "nc.marketingrj@gmail.com") {
+      toast.error("Apenas o Administrador Master pode criar contas administrativas.");
+      return;
+    }
+    
     setCreating(true);
     try {
       const { data: sessionData } = await supabase.auth.getSession();
@@ -1431,7 +1471,7 @@ function TabUsuarios({ isAdmin }: { isAdmin: boolean }) {
       if (data?.error) throw new Error(data.error);
 
       // Now set the permissions if there are any configured
-      if (data?.user_id) {
+      if (data?.user_id && newRole !== "admin") {
         const { error: permErr } = await (supabase as any).rpc("admin_set_user_permissions", {
           target_user_id: data.user_id,
           new_permissions: newPermissions,
@@ -1492,94 +1532,127 @@ function TabUsuarios({ isAdmin }: { isAdmin: boolean }) {
         <p className="py-8 text-center text-sm text-muted-foreground">Nenhum usuário encontrado.</p>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2">
-          {filteredUsers.map((u: any) => (
-            <div key={u.id} className="rounded-xl border border-white/5 bg-background/40 p-4 hover:border-primary/20 transition duration-300 space-y-3">
+          {filteredUsers.map((u: any) => {
+            const isMasterAdmin = u.email === "nc.marketingrj@gmail.com";
+            return (
+              <div key={u.id} className={`rounded-xl border bg-background/40 p-4 transition duration-300 space-y-3 ${isMasterAdmin ? "border-primary/35 shadow-glow/5" : "border-white/5 hover:border-primary/20"}`}>
 
-              {/* Linha superior: avatar + info + ações */}
-              <div className="flex items-center justify-between gap-3">
-                <div className="flex items-center gap-3 min-w-0">
-                  <div className="h-10 w-10 rounded-full bg-primary/10 border border-primary/20 overflow-hidden flex items-center justify-center shrink-0">
-                    {u.avatar_url
-                      ? <img src={u.avatar_url} alt="Avatar" className="h-full w-full object-cover" />
-                      : <User className="h-5 w-5 text-primary" />}
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-sm font-semibold truncate flex items-center gap-1.5">
-                      {u.full_name || "Membro Sem Nome"}
-                      <span className={`rounded-full px-2 py-0.5 text-[8px] font-black tracking-widest ${u.role === "admin" ? "bg-red-500/20 text-red-400" : "bg-white/5 text-muted-foreground"}`}>
-                        {ROLE_LABEL[u.role] ?? "MEMBRO"}
-                      </span>
-                    </p>
-                    <p className="text-[10px] text-muted-foreground/60 mt-0.5">{u.position || "Sem cargo"}</p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-1.5 shrink-0">
-                  {u.role === "admin" && !isAdmin ? (
-                    <span className="flex items-center gap-1 rounded-full border border-white/5 bg-white/[0.03] px-2.5 py-1.5 text-[9px] font-bold uppercase tracking-wider text-muted-foreground/40">
-                      <Lock className="h-2.5 w-2.5" /> Admin
-                    </span>
-                  ) : (
-                    <>
-                      <button
-                        onClick={() => {
-                          setEditingUser(u);
-                          setEditRole(u.role || "outro");
-                          setEditPosition(u.position || POSITIONS_LIST[0]);
-                          setEditName(u.full_name || "");
-                          setEditPassword("");
-                          setEditPermissions(u.permissions || {});
-                        }}
-                        className="rounded-full border border-white/10 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider hover:bg-white/5 transition"
-                      >
-                        Editar
-                      </button>
-                      <button
-                        onClick={() => handleDelete(u.id, u.role)}
-                        className="rounded-full border border-red-500/20 bg-red-500/5 px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-wider text-red-400 hover:bg-red-500/10 transition"
-                      >
-                        Excluir
-                      </button>
-                    </>
-                  )}
-                </div>
-              </div>
-
-              {/* Linha de permissões */}
-              <div className="border-t border-white/5 pt-3">
-                {u.role === "admin" ? (
-                  <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground/40 font-bold uppercase tracking-wider">
-                    <Lock className="h-3 w-3" /> Acesso total — permissões bloqueadas
-                  </div>
-                ) : (
-                  <div className="space-y-2">
-                    <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/40">Configuração de Acessos:</span>
-                    <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">
-                      {PERMISSION_PAGES.map(({ key, label }) => {
-                        const level = u.permissions?.[key] || "none";
-                        return (
-                          <div key={key} className="flex flex-col gap-1 bg-white/[0.02] border border-white/5 rounded-lg p-1.5 justify-between">
-                            <span className="text-[9px] font-bold text-muted-foreground truncate">{label}</span>
-                            <select
-                              value={level}
-                              onChange={(e) => handleSetPermissionLevel(u.id, key, e.target.value, u.permissions)}
-                              className={`bg-transparent text-[10px] font-black uppercase focus:outline-none cursor-pointer border-none p-0 ${
-                                level === "edit" ? "text-primary" : level === "view" ? "text-blue-400" : "text-muted-foreground/40"
-                              }`}
-                            >
-                              <option value="none" className="bg-background text-muted-foreground">Sem Acesso</option>
-                              <option value="view" className="bg-background text-blue-400">Leitura</option>
-                              <option value="edit" className="bg-background text-primary">Escrita</option>
-                            </select>
-                          </div>
-                        );
-                      })}
+                {/* Linha superior: avatar + info + ações */}
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className={`h-10 w-10 rounded-full overflow-hidden flex items-center justify-center shrink-0 border ${isMasterAdmin ? "bg-primary/20 border-primary" : "bg-primary/10 border-primary/20"}`}>
+                      {u.avatar_url
+                        ? <img src={u.avatar_url} alt="Avatar" className="h-full w-full object-cover" />
+                        : <User className={`h-5 w-5 ${isMasterAdmin ? "text-primary animate-pulse" : "text-primary"}`} />}
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold truncate flex items-center gap-1.5 flex-wrap">
+                        {u.full_name || "Membro Sem Nome"}
+                        {isMasterAdmin ? (
+                          <span className="rounded-full bg-gradient-to-r from-yellow-500 to-primary px-2.5 py-0.5 text-[8px] font-black tracking-widest text-background">
+                            MASTER ADMIN
+                          </span>
+                        ) : (
+                          <span className={`rounded-full px-2 py-0.5 text-[8px] font-black tracking-widest ${u.role === "admin" ? "bg-red-500/20 text-red-400" : "bg-white/5 text-muted-foreground"}`}>
+                            {ROLE_LABEL[u.role] ?? "MEMBRO"}
+                          </span>
+                        )}
+                      </p>
+                      <p className="text-[10px] text-muted-foreground/60 mt-0.5">{u.position || "Sem cargo"}</p>
                     </div>
                   </div>
-                )}
-              </div>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    {isMasterAdmin ? (
+                      user?.email === "nc.marketingrj@gmail.com" ? (
+                        <button
+                          onClick={() => {
+                            setEditingUser(u);
+                            setEditRole("admin");
+                            setEditPosition(u.position || POSITIONS_LIST[0]);
+                            setEditName(u.full_name || "");
+                            setEditPassword("");
+                            setEditPermissions(u.permissions || {});
+                          }}
+                          className="rounded-full border border-primary/30 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-primary hover:bg-primary/10 transition"
+                        >
+                          Editar Meus Dados
+                        </button>
+                      ) : (
+                        <span className="flex items-center gap-1 rounded-full border border-primary/20 bg-primary/5 px-2.5 py-1.5 text-[9px] font-bold uppercase tracking-wider text-primary">
+                          <Lock className="h-2.5 w-2.5" /> Protegido
+                        </span>
+                      )
+                    ) : u.role === "admin" && user?.email !== "nc.marketingrj@gmail.com" ? (
+                      <span className="flex items-center gap-1 rounded-full border border-white/5 bg-white/[0.03] px-2.5 py-1.5 text-[9px] font-bold uppercase tracking-wider text-muted-foreground/40">
+                        <Lock className="h-2.5 w-2.5" /> Admin
+                      </span>
+                    ) : (
+                      <>
+                        <button
+                          onClick={() => {
+                            setEditingUser(u);
+                            setEditRole(u.role || "outro");
+                            setEditPosition(u.position || POSITIONS_LIST[0]);
+                            setEditName(u.full_name || "");
+                            setEditPassword("");
+                            setEditPermissions(u.permissions || {});
+                          }}
+                          className="rounded-full border border-white/10 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider hover:bg-white/5 transition"
+                        >
+                          Editar
+                        </button>
+                        <button
+                          onClick={() => handleDelete(u.id, u.email, u.role)}
+                          className="rounded-full border border-red-500/20 bg-red-500/5 px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-wider text-red-400 hover:bg-red-500/10 transition"
+                        >
+                          Excluir
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </div>
 
-            </div>
-          ))}
+                {/* Linha de permissões */}
+                <div className="border-t border-white/5 pt-3">
+                  {isMasterAdmin ? (
+                    <div className="flex items-center gap-1.5 text-[10px] text-primary/80 font-black uppercase tracking-wider">
+                      <Sparkles className="h-3.5 w-3.5 text-primary" /> Administrador Master — Acesso Total Vitalício Protegido
+                    </div>
+                  ) : u.role === "admin" ? (
+                    <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground/40 font-bold uppercase tracking-wider">
+                      <Lock className="h-3 w-3" /> Acesso total — permissões bloqueadas
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/40">Configuração de Acessos:</span>
+                      <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">
+                        {PERMISSION_PAGES.map(({ key, label }) => {
+                          const level = u.permissions?.[key] || "none";
+                          return (
+                            <div key={key} className="flex flex-col gap-1 bg-white/[0.02] border border-white/5 rounded-lg p-1.5 justify-between">
+                              <span className="text-[9px] font-bold text-muted-foreground truncate">{label}</span>
+                              <select
+                                value={level}
+                                onChange={(e) => handleSetPermissionLevel(u.id, u.email, key, e.target.value, u.permissions)}
+                                className={`bg-transparent text-[10px] font-black uppercase focus:outline-none cursor-pointer border-none p-0 ${
+                                  level === "edit" ? "text-primary" : level === "view" ? "text-blue-400" : "text-muted-foreground/40"
+                                }`}
+                              >
+                                <option value="none" className="bg-background text-muted-foreground">Sem Acesso</option>
+                                <option value="view" className="bg-background text-blue-400">Leitura</option>
+                                <option value="edit" className="bg-background text-primary">Escrita</option>
+                              </select>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+              </div>
+            );
+          })}
         </div>
       )}
 
