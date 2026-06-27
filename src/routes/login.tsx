@@ -1,7 +1,7 @@
-﻿import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
+import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { useEffect, useState, type FormEvent } from "react";
 import { motion } from "framer-motion";
-import { Loader2, Mail, Lock, ArrowRight, ArrowLeft, Sun, Moon } from "lucide-react";
+import { Loader2, Mail, Lock, ArrowRight, ArrowLeft, Sun, Moon, Eye, EyeOff } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase-external/client";
 import { useTheme } from "./__root";
@@ -281,17 +281,30 @@ function Field({
   onChange: (v: string) => void;
   required?: boolean;
 }) {
+  const [showPassword, setShowPassword] = useState(false);
+  const isPassword = type === "password";
+  const inputType = isPassword ? (showPassword ? "text" : "password") : type;
+
   return (
     <div className="relative">
       <Icon className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground/55" />
       <input
-        type={type}
+        type={inputType}
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
         required={required}
-        className="w-full rounded-xl border border-border bg-muted/40 py-3 pl-12 pr-4 text-sm text-foreground placeholder:text-muted-foreground/48 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary transition-colors"
+        className="w-full rounded-xl border border-border bg-muted/40 py-3 pl-12 pr-12 text-sm text-foreground placeholder:text-muted-foreground/48 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary transition-colors"
       />
+      {isPassword && (
+        <button
+          type="button"
+          onClick={() => setShowPassword(!showPassword)}
+          className="absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground/55 hover:text-foreground transition-colors"
+        >
+          {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+        </button>
+      )}
     </div>
   );
 }
