@@ -3,7 +3,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { motion } from "framer-motion";
 import { Loader2, Mail, Lock, ArrowRight, ArrowLeft, Sun, Moon } from "lucide-react";
 import { toast } from "sonner";
-import { supabase } from "@/integrations/supabase/client";
+import { supabase } from "@/integrations/supabase-external/client";
 import { useTheme } from "./__root";
 
 export const Route = createFileRoute("/login")({

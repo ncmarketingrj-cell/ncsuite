@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { supabase } from "@/integrations/supabase/client";
+import { supabase } from "@/integrations/supabase-external/client";
 import { extractPrintFn } from "@/lib/ocr.functions";
 import { toast } from "sonner";
 

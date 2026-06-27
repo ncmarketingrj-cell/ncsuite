@@ -7,7 +7,7 @@ import {
   Instagram, Facebook, Eye, ChevronLeft, ChevronRight, MessageSquare, Heart, Bookmark,
   ThumbsUp, MessageCircle, Info, CalendarCheck, HelpCircle, X, Upload
 } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
+import { supabase } from "@/integrations/supabase-external/client";
 import { useAuth } from "@/lib/auth";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";

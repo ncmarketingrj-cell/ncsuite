@@ -8,7 +8,7 @@ import {
   Filter, Smile, Phone, Inbox, Target
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
+import { supabase } from "@/integrations/supabase-external/client";
 import { useAuth } from "@/lib/auth";
 
 export const Route = createFileRoute("/_app/client-portal")({

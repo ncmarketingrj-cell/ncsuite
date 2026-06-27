@@ -8,7 +8,7 @@ import {
   ChevronDown, ChevronUp, ShieldCheck, Coins, Play, Pause,
   DollarSign, Activity, Sparkles, AlertTriangle
 } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
+import { supabase } from "@/integrations/supabase-external/client";
 import { PageHeader } from "@/components/PageHeader";
 import { DateRangePicker } from "@/components/DateRangePicker";
 import { toast } from "sonner";

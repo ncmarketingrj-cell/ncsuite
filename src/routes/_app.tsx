@@ -11,7 +11,7 @@ import {
   Lock, GaugeCircle, FlaskConical
 } from "lucide-react";
 import { AuthProvider, useAuth } from "@/lib/auth";
-import { supabase } from "@/integrations/supabase/client";
+import { supabase } from "@/integrations/supabase-external/client";
 import { AIAgentSidebar } from "@/components/AIAgentSidebar";
 import { ProfileSettingsModal } from "@/components/ProfileSettingsModal";
 import { useQuery, useQueryClient } from "@tanstack/react-query";

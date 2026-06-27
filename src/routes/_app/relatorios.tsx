@@ -9,7 +9,7 @@ import {
   Eye, FileCheck, RefreshCw, Smartphone, Sparkles,
   Award, MessageSquare, AlertCircle, Plus
 } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
+import { supabase } from "@/integrations/supabase-external/client";
 import { format, subDays } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { toast } from "sonner";

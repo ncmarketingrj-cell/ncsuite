@@ -3,7 +3,7 @@
 
 import { useEffect, useRef, useCallback } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
+import { supabase } from "@/integrations/supabase-external/client";
 
 const REALTIME_SYNC_INTERVAL_MS = 3 * 60 * 1000; // 3 minutos
 const STORAGE_REALTIME_KEY = "nc_last_realtime_sync";

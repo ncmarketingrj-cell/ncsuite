@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X, Phone, MessageSquare, Plus, Calendar as CalendarIcon, Clock, Sparkles, Loader2 } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
+import { supabase } from "@/integrations/supabase-external/client";
 import { toast } from "sonner";
 import { useAuth } from "@/lib/auth";
 

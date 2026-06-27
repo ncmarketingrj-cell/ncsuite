@@ -35,7 +35,7 @@ import {
   Save, Plus, ChevronDown,
 } from "lucide-react";
 import { Link } from "@tanstack/react-router";
-import { supabase } from "@/integrations/supabase/client";
+import { supabase } from "@/integrations/supabase-external/client";
 import { toast } from "sonner";
 
 const nodeTypes = {

@@ -9,7 +9,7 @@ import {
   DragOverlay,
 } from "@dnd-kit/core";
 import { SortableContext, arrayMove, sortableKeyboardCoordinates } from "@dnd-kit/sortable";
-import { supabase } from "@/integrations/supabase/client";
+import { supabase } from "@/integrations/supabase-external/client";
 import { toast } from "sonner";
 import { Loader2, Target } from "lucide-react";
 import { KanbanColumn } from "./KanbanColumn";

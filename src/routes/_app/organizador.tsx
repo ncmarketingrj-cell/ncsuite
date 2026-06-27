@@ -5,7 +5,7 @@ import { Link2, Plus, Eye, ExternalLink, Loader2, Edit, Trash2, QrCode, Settings
 import { toast } from "sonner";
 import { PageHeader } from "@/components/PageHeader";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
+import { supabase } from "@/integrations/supabase-external/client";
 
 export const Route = createFileRoute("/_app/organizador")({
   head: () => ({ meta: [{ title: "Central de Funis — NC Suite" }] }),
