@@ -1,7 +1,8 @@
 // Custom external Supabase client - points to user's own Supabase project
 // (not Lovable Cloud). Anon/publishable key is safe to hardcode (public by design).
 import { createClient } from '@supabase/supabase-js';
-import type { Database } from '../supabase/types';
+// Untyped: external Supabase schema differs from auto-generated Database types.
+type Database = any;
 
 export const EXTERNAL_SUPABASE_URL = 'https://uqhilsnrrmlepdjzpubq.supabase.co';
 export const EXTERNAL_SUPABASE_ANON_KEY =

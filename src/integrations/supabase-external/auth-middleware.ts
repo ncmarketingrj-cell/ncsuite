@@ -2,7 +2,7 @@
 import { createMiddleware } from '@tanstack/react-start';
 import { getRequest } from '@tanstack/react-start/server';
 import { createClient } from '@supabase/supabase-js';
-import type { Database } from '../supabase/types';
+type Database = any;
 import { EXTERNAL_SUPABASE_URL, EXTERNAL_SUPABASE_ANON_KEY } from './client';
 
 export const requireSupabaseAuth = createMiddleware({ type: 'function' }).server(
