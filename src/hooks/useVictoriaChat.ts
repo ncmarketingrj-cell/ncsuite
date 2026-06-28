@@ -1,10 +1,6 @@
 import { useState, useEffect } from "react";
-import { supabase } from "@/integrations/supabase/client";
-import { extractPrintFn } from "@/lib/ocr.functions";
+import { supabase, EXTERNAL_SUPABASE_URL as VITE_SUPABASE_URL, EXTERNAL_SUPABASE_ANON_KEY as ANON_KEY } from "@/integrations/supabase-external/client";
 import { toast } from "sonner";
-
-const VITE_SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
-const ANON_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 
 
 export type Message = {
