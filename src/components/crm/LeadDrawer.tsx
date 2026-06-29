@@ -19,6 +19,7 @@ import {
 import { supabase } from "@/integrations/supabase-external/client";
 import { toast } from "sonner";
 import { useAuth } from "@/lib/auth";
+import { useQuery } from "@tanstack/react-query";
 
 export function LeadDrawer({
   lead,
@@ -34,6 +35,22 @@ export function LeadDrawer({
   readOnly?: boolean;
 }) {
   const { user } = useAuth();
+  
+  // Carrega dados do perfil do usuário logado para identificar se é lojista ou admin
+  const { data: profile } = useQuery({
+    queryKey: ["current_user_profile_drawer", user?.id],
+    queryFn: async () => {
+      if (!user?.id) return null;
+      const { data } = await supabase
+        .from("profiles")
+        .select("role, client_id")
+        .eq("id", user.id)
+        .maybeSingle();
+      return data;
+    },
+    enabled: !!user?.id,
+  });
+
   const [activeTab, setActiveTab] = useState<"history" | "tasks" | "appointments">("history");
   
   // States: Activities
@@ -151,7 +168,12 @@ export function LeadDrawer({
   };
 
   const handleAddActivity = async (type: string, description: string) => {
-    if (readOnly) return;
+    if (readOnly) {
+      const ADMIN_EMAILS = ["nc.marketingrj@gmail.com", "hc.marketing.dgt@gmail.com"];
+      const isUserAdmin = user?.email ? ADMIN_EMAILS.includes(user.email) : false;
+      const isClientStore = profile?.role === "client_store";
+      if (!isClientStore && !isUserAdmin && profile?.role !== "admin") return;
+    }
     if (!description.trim()) return;
     setAddingNote(true);
     
@@ -615,7 +637,7 @@ export function LeadDrawer({
               {activeTab === "history" && (
                 <div className="space-y-6">
                   {/* Registrar Nova Nota */}
-                  {!readOnly && (
+                  {(!readOnly || profile?.role === "client_store" || profile?.role === "admin" || (user?.email && ["nc.marketingrj@gmail.com", "hc.marketing.dgt@gmail.com"].includes(user.email))) && (
                     <div className="space-y-2">
                       <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">
                         Registrar Nota Manual

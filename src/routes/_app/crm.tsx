@@ -45,15 +45,44 @@ function CrmPage() {
         .select("role, client_id")
         .eq("id", user.id)
         .maybeSingle();
+      
+      // Auto-criação de perfil para resiliência de ambiente
+      if (!data && !error) {
+        const ADMIN_EMAILS = ["nc.marketingrj@gmail.com", "hc.marketing.dgt@gmail.com"];
+        const isUserAdmin = user.email ? ADMIN_EMAILS.includes(user.email) : false;
+        const defaultRole = isUserAdmin ? "admin" : "agency_sdr";
+        
+        const newProfile = {
+          id: user.id,
+          email: user.email,
+          full_name: user.user_metadata?.full_name || user.email?.split("@")[0] || "Usuário",
+          role: defaultRole,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        };
+        
+        const { data: inserted, error: insertError } = await (supabase as any)
+          .from("profiles")
+          .insert(newProfile)
+          .select("role, client_id")
+          .maybeSingle();
+          
+        if (!insertError && inserted) {
+          return inserted;
+        }
+      }
+      
       if (error) throw error;
       return data;
     },
     enabled: !!user?.id,
   });
 
-  const isAdminOrSdr = profile?.role === "admin" || profile?.role === "agency_sdr";
+  const ADMIN_EMAILS = ["nc.marketingrj@gmail.com", "hc.marketing.dgt@gmail.com"];
+  const isAdmin = profile?.role === "admin" || (user?.email ? ADMIN_EMAILS.includes(user.email) : false);
+  const isAdminOrSdr = isAdmin || profile?.role === "agency_sdr";
   const userClientId = profile?.client_id;
-  const userRole = profile?.role;
+  const userRole = isAdmin ? "admin" : profile?.role;
 
   // CRM Tabs: "dashboard" | "funnel" | "agenda"
   const [activeTab, setActiveTab] = useState<"dashboard" | "funnel" | "agenda">("funnel");

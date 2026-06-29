@@ -26,17 +26,45 @@ function ClientPortalPage() {
     queryKey: ["current_user_profile_portal", user?.id],
     queryFn: async () => {
       if (!user?.id) return null;
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from("profiles")
         .select("role, client_id")
         .eq("id", user.id)
         .maybeSingle();
+
+      // Auto-criação de perfil para resiliência de ambiente no portal do cliente
+      if (!data && !error) {
+        const ADMIN_EMAILS = ["nc.marketingrj@gmail.com", "hc.marketing.dgt@gmail.com"];
+        const isUserAdmin = user.email ? ADMIN_EMAILS.includes(user.email) : false;
+        const defaultRole = isUserAdmin ? "admin" : "agency_sdr";
+        
+        const newProfile = {
+          id: user.id,
+          email: user.email,
+          full_name: user.user_metadata?.full_name || user.email?.split("@")[0] || "Usuário",
+          role: defaultRole,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        };
+        
+        const { data: inserted, error: insertError } = await supabase
+          .from("profiles")
+          .insert(newProfile)
+          .select("role, client_id")
+          .maybeSingle();
+          
+        if (!insertError && inserted) {
+          return inserted;
+        }
+      }
+
       return data;
     },
     enabled: !!user?.id,
   });
 
-  const isAgencyUser = profile?.role === "admin" || profile?.role === "agency_sdr" || profile?.role === "gestor_trafego" || profile?.role === "ceo" || profile?.role === "gerente";
+  const ADMIN_EMAILS = ["nc.marketingrj@gmail.com", "hc.marketing.dgt@gmail.com"];
+  const isAgencyUser = profile?.role === "admin" || (user?.email ? ADMIN_EMAILS.includes(user.email) : false) || profile?.role === "agency_sdr" || profile?.role === "gestor_trafego" || profile?.role === "ceo" || profile?.role === "gerente";
 
   // 2. Carrega lista de clientes (Apenas Agência)
   const { data: clients = [] } = useQuery({
@@ -93,7 +121,7 @@ function ClientPortalPage() {
       if (!selectedPipelineId) return { leads: [], appointments: [] };
 
       let leadsQuery = supabase.from("crm_leads").select("*").eq("pipeline_id", selectedPipelineId);
-      let apptsQuery = supabase.from("crm_appointments").select("*, crm_leads!inner(name, phone, client_id, pipeline_id)").eq("crm_leads.pipeline_id", selectedPipelineId);
+      let apptsQuery = supabase.from("crm_appointments").select("*, crm_leads!inner(name, phone, client_id, pipeline_id), profiles:user_id(full_name)").eq("crm_leads.pipeline_id", selectedPipelineId);
 
       const [leadsRes, apptsRes] = await Promise.all([
         leadsQuery.order("created_at", { ascending: false }),
@@ -292,6 +320,11 @@ function ClientPortalPage() {
                         </span>
                       )}
                     </div>
+                    {appt.profiles?.full_name && (
+                      <p className="text-[10px] text-muted-foreground">
+                        Agendado por: <span className="text-primary font-bold">{appt.profiles.full_name}</span>
+                      </p>
+                    )}
                   </div>
                   <div className="flex items-center gap-2.5">
                     <div className="flex items-center gap-1.5 bg-primary/10 border border-primary/20 text-primary text-xs font-bold px-2.5 py-1 rounded-lg">
