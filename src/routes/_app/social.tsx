@@ -118,6 +118,13 @@ function SocialMediaPage() {
     return posts.filter((p: any) => selectedPageId === "all" || p.page_id === selectedPageId);
   }, [posts, selectedPageId]);
 
+  const analyticsKpis = useMemo(() => [
+    { label: "Curtidas Totais", val: filteredPosts.reduce((acc: number, p: any) => acc + (p.likes_count || 0), 0), icon: Heart, color: "text-red-500 bg-red-500/10" },
+    { label: "Comentários", val: filteredPosts.reduce((acc: number, p: any) => acc + (p.comments_count || 0), 0), icon: MessageSquare, color: "text-blue-500 bg-blue-500/10" },
+    { label: "Alcance Orgânico", val: filteredPosts.reduce((acc: number, p: any) => acc + (p.reach_count || 0), 0), icon: Share2, color: "text-primary bg-primary/10" },
+    { label: "Impressões", val: filteredPosts.reduce((acc: number, p: any) => acc + (p.impressions_count || 0), 0), icon: Eye, color: "text-violet-500 bg-violet-500/10" }
+  ], [filteredPosts]);
+
   // Fetch Meta Pages list (for fallback/display warnings)
   const isMetaConnected = socialPages.length > 0;
 
@@ -869,12 +876,7 @@ function SocialMediaPage() {
           <div className="space-y-6">
             {/* KPI Cards */}
             <div className="grid gap-4 sm:grid-cols-4">
-              {useMemo(() => [
-                { label: "Curtidas Totais", val: filteredPosts.reduce((acc: number, p: any) => acc + (p.likes_count || 0), 0), icon: Heart, color: "text-red-500 bg-red-500/10" },
-                { label: "Comentários", val: filteredPosts.reduce((acc: number, p: any) => acc + (p.comments_count || 0), 0), icon: MessageSquare, color: "text-blue-500 bg-blue-500/10" },
-                { label: "Alcance Orgânico", val: filteredPosts.reduce((acc: number, p: any) => acc + (p.reach_count || 0), 0), icon: Share2, color: "text-primary bg-primary/10" },
-                { label: "Impressões", val: filteredPosts.reduce((acc: number, p: any) => acc + (p.impressions_count || 0), 0), icon: Eye, color: "text-violet-500 bg-violet-500/10" }
-              ], [filteredPosts]).map((kpi, idx) => (
+              {analyticsKpis.map((kpi, idx) => (
                 <div key={idx} className="glass-panel p-5 space-y-2 flex flex-col justify-between">
                   <div className="flex items-center justify-between">
                     <span className="label-mono text-[9px] text-muted-foreground uppercase">{kpi.label}</span>

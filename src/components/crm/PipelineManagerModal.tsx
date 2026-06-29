@@ -32,27 +32,63 @@ export function PipelineManagerModal({
   preselectedClientId?: string;
 }) {
   const qc = useQueryClient();
+  const [selectedClientId, setSelectedClientId] = useState<string>(preselectedClientId || "");
   const [activePipelineId, setActivePipelineId] = useState<string | null>(null);
   const [pipelineName, setPipelineName] = useState("");
-  const [selectedClientId, setSelectedClientId] = useState(preselectedClientId || "");
-  const [stages, setStages] = useState<any[]>([]);
   const [isEditingName, setIsEditingName] = useState(false);
+  const [stages, setStages] = useState<any[]>([]);
+  const [newClientName, setNewClientName] = useState("");
+  const [newClientAdAccountId, setNewClientAdAccountId] = useState<string | null>(null);
+  const [pipelineCampaignId, setPipelineCampaignId] = useState<string | null>(null);
+
+  // Sincronizar o cliente pré-selecionado quando mudar ou abrir o modal
+  useEffect(() => {
+    if (isOpen) {
+      setSelectedClientId(preselectedClientId || "");
+      setActivePipelineId(null);
+    }
+  }, [preselectedClientId, isOpen]);
 
   // Queries
   const { data: clients = [] } = useQuery({
     queryKey: ["clients_list"],
     queryFn: async () => {
-      const { data } = await supabase.from("clients").select("id, name").order("name");
+      const { data } = await supabase.from("clients").select("id, name, meta_ad_account_id").order("name");
       return data || [];
     }
   });
 
-  const { data: pipelines = [], isLoading: loadingPipelines } = useQuery({
-    queryKey: ["crm_pipelines"],
+  const { data: adAccounts = [] } = useQuery({
+    queryKey: ["ad_accounts_list_modal"],
     queryFn: async () => {
-      let query = supabase.from("crm_pipelines").select("*, clients(name)").order("created_at", { ascending: false });
-      if (selectedClientId) query = query.eq("client_id", selectedClientId);
-      const { data, error } = await query;
+      const { data } = await supabase.from("ad_accounts").select("id, name").order("name");
+      return data || [];
+    }
+  });
+
+  const { data: campaigns = [] } = useQuery({
+    queryKey: ["campaigns_list_modal", selectedClientId],
+    queryFn: async () => {
+      let query = (supabase as any).from("campaigns").select("id, name").order("name");
+      if (selectedClientId && selectedClientId !== "create_new" && !selectedClientId.startsWith("ad-")) {
+        query = query.eq("client_id", selectedClientId);
+      }
+      const { data } = await query;
+      return data || [];
+    }
+  });
+
+  const { data: pipelines = [], isLoading: loadingPipelines } = useQuery<any[]>({
+    queryKey: ["crm_pipelines", selectedClientId],
+    queryFn: async () => {
+      if (!selectedClientId || selectedClientId === "create_new" || selectedClientId.startsWith("ad-")) {
+        return [];
+      }
+      const { data, error } = await (supabase as any)
+        .from("crm_pipelines")
+        .select("*, clients(name)")
+        .eq("client_id", selectedClientId)
+        .order("created_at", { ascending: false });
       if (error) throw error;
       return data || [];
     }
@@ -62,23 +98,27 @@ export function PipelineManagerModal({
   useEffect(() => {
     if (activePipelineId) {
       const fetchStages = async () => {
-        const { data } = await supabase
+        const { data } = await (supabase as any)
           .from("crm_pipeline_stages")
           .select("*")
           .eq("pipeline_id", activePipelineId)
           .order("stage_order", { ascending: true });
         
         if (data) {
-          setStages(data.map(s => ({ ...s, isNew: false, isDeleted: false, isEdited: false })));
+          setStages(data.map((s: any) => ({ ...s, isNew: false, isDeleted: false, isEdited: false })));
         }
       };
       fetchStages();
       
-      const pipe = pipelines.find(p => p.id === activePipelineId);
-      if (pipe) setPipelineName(pipe.name);
+      const pipe = pipelines.find((p: any) => p.id === activePipelineId);
+      if (pipe) {
+        setPipelineName(pipe.name);
+        setPipelineCampaignId(pipe.campaign_id || null);
+      }
     } else {
       setStages([]);
       setPipelineName("");
+      setPipelineCampaignId(null);
     }
   }, [activePipelineId, pipelines]);
 
@@ -89,14 +129,43 @@ export function PipelineManagerModal({
       if (!selectedClientId) throw new Error("Vincule a uma loja/cliente");
 
       let pid = activePipelineId;
+      let finalClientId = selectedClientId;
+
+      const isCreatingNewClient = selectedClientId === "create_new" || selectedClientId.startsWith("ad-");
+
+      if (isCreatingNewClient) {
+        if (!newClientName.trim()) throw new Error("O nome do novo cliente é obrigatório");
+        
+        const { data: u } = await supabase.auth.getUser();
+        const { data: newClient, error: clientErr } = await (supabase as any)
+          .from("clients")
+          .insert({
+            name: newClientName.trim(),
+            status: "ativo",
+            meta_ad_account_id: newClientAdAccountId || null,
+            user_id: u.user?.id
+          })
+          .select()
+          .single();
+
+        if (clientErr) throw clientErr;
+        if (!newClient) throw new Error("Erro ao criar o novo cliente");
+        finalClientId = newClient.id;
+      }
 
       // 1. Save or Update Pipeline
       if (pid && pid !== "new") {
-        await supabase.from("crm_pipelines").update({ name: pipelineName, client_id: selectedClientId }).eq("id", pid);
+        const { error } = await (supabase as any).from("crm_pipelines").update({ 
+          name: pipelineName, 
+          client_id: finalClientId,
+          campaign_id: pipelineCampaignId
+        }).eq("id", pid);
+        if (error) throw error;
       } else {
-        const { data, error } = await supabase.from("crm_pipelines").insert({
+        const { data, error } = await (supabase as any).from("crm_pipelines").insert({
           name: pipelineName,
-          client_id: selectedClientId
+          client_id: finalClientId,
+          campaign_id: pipelineCampaignId
         }).select().single();
         if (error) throw error;
         pid = data.id;
@@ -113,12 +182,12 @@ export function PipelineManagerModal({
 
       // Perform DB actions
       if (toDelete.length > 0) {
-        await supabase.from("crm_pipeline_stages").delete().in("id", toDelete);
+        await (supabase as any).from("crm_pipeline_stages").delete().in("id", toDelete);
       }
 
       for (let i = 0; i < toUpdate.length; i++) {
         const s = toUpdate[i];
-        await supabase.from("crm_pipeline_stages")
+        await (supabase as any).from("crm_pipeline_stages")
           .update({ name: s.name, color: s.color, stage_order: i })
           .eq("id", s.id);
       }
@@ -130,16 +199,26 @@ export function PipelineManagerModal({
           color: s.color,
           stage_order: toUpdate.length + index // Place after updated items
         }));
-        await supabase.from("crm_pipeline_stages").insert(createPayload);
+        await (supabase as any).from("crm_pipeline_stages").insert(createPayload);
       }
 
-      return pid;
+      return { pid, finalClientId, isNewClient: isCreatingNewClient };
     },
-    onSuccess: (pid) => {
+    onSuccess: (data) => {
       toast.success("Funil salvo com sucesso!");
+      qc.invalidateQueries({ queryKey: ["clients_list"] });
       qc.invalidateQueries({ queryKey: ["crm_pipelines"] });
+      qc.invalidateQueries({ queryKey: ["crm_pipelines_dropdown"] });
       qc.invalidateQueries({ queryKey: ["crm_pipeline_stages"] });
-      setActivePipelineId(pid);
+      qc.invalidateQueries({ queryKey: ["crm_pipeline_stages_board"] });
+      
+      if (data.isNewClient) {
+        setSelectedClientId(data.finalClientId);
+        setNewClientName("");
+        setNewClientAdAccountId(null);
+      }
+      
+      setActivePipelineId(data.pid);
       setIsEditingName(false);
     },
     onError: (err: any) => {
@@ -150,7 +229,7 @@ export function PipelineManagerModal({
   const deletePipeline = useMutation({
     mutationFn: async (id: string) => {
       if (!confirm("Tem certeza que deseja excluir este funil permanentemente? Todos os leads atrelados ficarão sem etapa e funil.")) return;
-      const { error } = await supabase.from("crm_pipelines").delete().eq("id", id);
+      const { error } = await (supabase as any).from("crm_pipelines").delete().eq("id", id);
       if (error) throw error;
     },
     onSuccess: () => {
@@ -202,6 +281,8 @@ export function PipelineManagerModal({
   if (!isOpen) return null;
 
   const visibleStages = stages.filter(s => !s.isDeleted);
+  const linkedAdAccountIds = new Set(clients.map((c: any) => c.meta_ad_account_id).filter(Boolean));
+  const unlinkedAdAccounts = adAccounts.filter((a: any) => !linkedAdAccountIds.has(a.id));
 
   return (
     <AnimatePresence>
@@ -209,7 +290,7 @@ export function PipelineManagerModal({
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
-        className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+        className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[100] flex items-center justify-center p-4"
       >
         <motion.div
           initial={{ scale: 0.95, y: 10 }}
@@ -228,7 +309,7 @@ export function PipelineManagerModal({
                 <p className="text-xs text-muted-foreground">Crie e personalize o pipeline de leads por cliente.</p>
               </div>
             </div>
-            <button onClick={onClose} className="p-2 hover:bg-white/5 rounded-full text-muted-foreground hover:text-foreground transition-all">
+            <button onClick={onClose} className="p-2 hover:bg-white/5 rounded-full text-muted-foreground hover:text-foreground transition-all cursor-pointer">
               <X className="h-5 w-5" />
             </button>
           </div>
@@ -242,27 +323,78 @@ export function PipelineManagerModal({
                   <select 
                     value={selectedClientId}
                     onChange={(e) => {
-                      setSelectedClientId(e.target.value);
+                      const val = e.target.value;
+                      setSelectedClientId(val);
                       setActivePipelineId(null);
+                      if (val === "create_new") {
+                        setNewClientName("");
+                        setNewClientAdAccountId(null);
+                      } else if (val.startsWith("ad-")) {
+                        const adId = val.substring(3);
+                        const adAcc = adAccounts.find((a: any) => a.id === adId);
+                        setNewClientName(adAcc ? adAcc.name : "");
+                        setNewClientAdAccountId(adId);
+                      } else {
+                        setNewClientName("");
+                        setNewClientAdAccountId(null);
+                      }
                     }}
-                    className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary text-foreground"
+                    className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary text-foreground bg-card cursor-pointer"
                   >
                     <option value="">Selecione uma loja...</option>
-                    {clients.map((c: any) => (
-                      <option key={c.id} value={c.id}>{c.name}</option>
-                    ))}
+                    
+                    {clients.length > 0 && (
+                      <optgroup label="Clientes Cadastrados">
+                        {clients.map((c: any) => (
+                          <option key={c.id} value={c.id}>{c.name}</option>
+                        ))}
+                      </optgroup>
+                    )}
+
+                    {unlinkedAdAccounts.length > 0 && (
+                      <optgroup label="Contas Conectadas (Importar)">
+                        {unlinkedAdAccounts.map((a: any) => (
+                          <option key={`ad-${a.id}`} value={`ad-${a.id}`}>
+                            [Meta] {a.name}
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
+
+                    <option value="create_new">+ Cadastrar Novo Cliente...</option>
                   </select>
                 </div>
+
+                {/* Campo de Texto para novo cliente */}
+                {(selectedClientId === "create_new" || selectedClientId.startsWith("ad-")) && (
+                  <div className="space-y-1">
+                    <label className="text-[10px] uppercase tracking-wider font-bold text-muted-foreground">Nome do Novo Cliente *</label>
+                    <input 
+                      type="text"
+                      value={newClientName}
+                      onChange={(e) => setNewClientName(e.target.value)}
+                      placeholder="Digite o nome..."
+                      className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary text-foreground font-medium"
+                    />
+                  </div>
+                )}
                 
                 <button 
                   onClick={() => {
                     setActivePipelineId("new");
                     setPipelineName("Novo Funil de Vendas");
-                    setStages([]);
+                    setStages([
+                      { id: `new-1-${Date.now()}`, name: "Novo Lead", color: "neutral", isNew: true, isDeleted: false, isEdited: false },
+                      { id: `new-2-${Date.now()}`, name: "Tentativa de Contato", color: "amber", isNew: true, isDeleted: false, isEdited: false },
+                      { id: `new-3-${Date.now()}`, name: "Em Negociação", color: "blue", isNew: true, isDeleted: false, isEdited: false },
+                      { id: `new-4-${Date.now()}`, name: "Visita Agendada", color: "purple", isNew: true, isDeleted: false, isEdited: false },
+                      { id: `new-5-${Date.now()}`, name: "Vendido", color: "success", isNew: true, isDeleted: false, isEdited: false },
+                      { id: `new-6-${Date.now()}`, name: "Perdido", color: "red", isNew: true, isDeleted: false, isEdited: false },
+                    ]);
                     setIsEditingName(true);
                   }}
                   disabled={!selectedClientId}
-                  className="w-full flex items-center justify-center gap-2 bg-primary/10 text-primary border border-primary/20 hover:bg-primary/20 rounded-lg px-4 py-2 text-sm font-bold transition-all disabled:opacity-50"
+                  className="w-full flex items-center justify-center gap-2 bg-primary/10 text-primary border border-primary/20 hover:bg-primary/20 rounded-lg px-4 py-2 text-sm font-bold transition-all disabled:opacity-50 cursor-pointer"
                 >
                   <Plus className="h-4 w-4" /> Criar Novo Funil
                 </button>
@@ -271,10 +403,10 @@ export function PipelineManagerModal({
               <div className="flex-1 overflow-y-auto p-2 space-y-1 custom-scrollbar">
                 {loadingPipelines ? (
                   <div className="flex justify-center p-4"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
-                ) : pipelines.filter(p => p.client_id === selectedClientId).length === 0 ? (
+                ) : pipelines.length === 0 ? (
                   <p className="text-xs text-center text-muted-foreground/50 p-4">Nenhum funil encontrado.</p>
                 ) : (
-                  pipelines.filter(p => p.client_id === selectedClientId).map(p => (
+                  pipelines.map((p: any) => (
                     <div 
                       key={p.id}
                       onClick={() => setActivePipelineId(p.id)}
@@ -291,7 +423,7 @@ export function PipelineManagerModal({
                       </div>
                       <button 
                         onClick={(e) => { e.stopPropagation(); deletePipeline.mutate(p.id); }}
-                        className="opacity-0 group-hover:opacity-100 p-1.5 text-red-400 hover:bg-red-500/20 rounded-md transition-all"
+                        className="opacity-0 group-hover:opacity-100 p-1.5 text-red-400 hover:bg-red-500/20 rounded-md transition-all cursor-pointer"
                       >
                         <Trash2 className="h-3.5 w-3.5" />
                       </button>
@@ -310,38 +442,54 @@ export function PipelineManagerModal({
                 </div>
               ) : (
                 <>
-                  <div className="p-5 border-b border-white/5 flex items-center justify-between bg-black/10">
-                    {isEditingName ? (
-                      <input 
-                        autoFocus
-                        value={pipelineName}
-                        onChange={(e) => setPipelineName(e.target.value)}
-                        onBlur={() => setIsEditingName(false)}
-                        onKeyDown={(e) => e.key === "Enter" && setIsEditingName(false)}
-                        className="bg-black/50 border border-primary/50 rounded-lg px-3 py-1.5 text-lg font-bold text-foreground focus:outline-none w-1/2"
-                      />
-                    ) : (
-                      <div className="flex items-center gap-2 group cursor-pointer" onClick={() => setIsEditingName(true)}>
-                        <h3 className="text-lg font-bold text-foreground">{pipelineName}</h3>
-                        <Edit2 className="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
-                      </div>
-                    )}
+                  <div className="p-5 border-b border-white/5 flex flex-col gap-3 bg-black/10">
+                    <div className="flex items-center justify-between">
+                      {isEditingName ? (
+                        <input 
+                          autoFocus
+                          value={pipelineName}
+                          onChange={(e) => setPipelineName(e.target.value)}
+                          onBlur={() => setIsEditingName(false)}
+                          onKeyDown={(e) => e.key === "Enter" && setIsEditingName(false)}
+                          className="bg-black/50 border border-primary/50 rounded-lg px-3 py-1.5 text-lg font-bold text-foreground focus:outline-none w-1/2"
+                        />
+                      ) : (
+                        <div className="flex items-center gap-2 group cursor-pointer" onClick={() => setIsEditingName(true)}>
+                          <h3 className="text-lg font-bold text-foreground">{pipelineName}</h3>
+                          <Edit2 className="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+                        </div>
+                      )}
 
-                    <div className="flex items-center gap-3">
-                      <button 
-                        onClick={handleAddStage}
-                        className="flex items-center gap-2 bg-white/5 hover:bg-white/10 text-foreground border border-white/10 rounded-lg px-3 py-1.5 text-xs font-bold transition-all"
+                      <div className="flex items-center gap-3">
+                        <button 
+                          onClick={handleAddStage}
+                          className="flex items-center gap-2 bg-white/5 hover:bg-white/10 text-foreground border border-white/10 rounded-lg px-3 py-1.5 text-xs font-bold transition-all cursor-pointer"
+                        >
+                          <Plus className="h-3.5 w-3.5" /> Nova Etapa
+                        </button>
+                        <button 
+                          onClick={() => savePipeline.mutate()}
+                          disabled={savePipeline.isPending}
+                          className="flex items-center gap-2 bg-primary hover:bg-primary/90 text-primary-foreground rounded-lg px-4 py-1.5 text-xs font-bold transition-all shadow-glow-sm disabled:opacity-50 cursor-pointer"
+                        >
+                          {savePipeline.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+                          Salvar Funil
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 text-xs">
+                      <span className="text-muted-foreground font-semibold">Campanha Vinculada (Opcional):</span>
+                      <select
+                        value={pipelineCampaignId || ""}
+                        onChange={(e) => setPipelineCampaignId(e.target.value || null)}
+                        className="bg-black/40 border border-white/10 rounded-lg px-2.5 py-1 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary min-w-[200px] bg-card cursor-pointer"
                       >
-                        <Plus className="h-3.5 w-3.5" /> Nova Etapa
-                      </button>
-                      <button 
-                        onClick={() => savePipeline.mutate()}
-                        disabled={savePipeline.isPending}
-                        className="flex items-center gap-2 bg-primary hover:bg-primary/90 text-primary-foreground rounded-lg px-4 py-1.5 text-xs font-bold transition-all shadow-glow-sm disabled:opacity-50"
-                      >
-                        {savePipeline.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
-                        Salvar Funil
-                      </button>
+                        <option value="">Nenhuma campanha vinculada</option>
+                        {campaigns.map((c: any) => (
+                          <option key={c.id} value={c.id}>{c.name}</option>
+                        ))}
+                      </select>
                     </div>
                   </div>
 
@@ -402,8 +550,8 @@ function SortableStageItem({ stage, onUpdate, onDelete }: { stage: any; onUpdate
       <select 
         value={stage.color}
         onChange={(e) => onUpdate(stage.id, "color", e.target.value)}
-        className={`bg-black/30 border border-white/10 rounded-lg px-2 py-1 text-xs font-bold focus:outline-none appearance-none cursor-pointer ${
-          STAGE_COLORS.find(c => c.id === stage.color)?.text || "text-white"
+        className={`bg-background border border-border rounded-lg px-2 py-1 text-xs font-bold focus:outline-none cursor-pointer bg-card ${
+          STAGE_COLORS.find(c => c.id === stage.color)?.text || "text-foreground"
         }`}
       >
         {STAGE_COLORS.map(c => (
@@ -413,7 +561,7 @@ function SortableStageItem({ stage, onUpdate, onDelete }: { stage: any; onUpdate
 
       <button 
         onClick={() => onDelete(stage.id)}
-        className="p-1.5 text-muted-foreground hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
+        className="p-1.5 text-muted-foreground hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors cursor-pointer"
       >
         <Trash2 className="h-4 w-4" />
       </button>

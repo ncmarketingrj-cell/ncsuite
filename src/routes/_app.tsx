@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { createFileRoute, Outlet, redirect, Link, useRouterState, Navigate, useNavigate } from "@tanstack/react-router";
 import { motion, AnimatePresence } from "framer-motion";
@@ -116,6 +116,7 @@ const VICTORIA_NAV_ITEMS: NavItem[] = [
 
 const CRM_NAV_ITEMS: NavItem[] = [
   { to: "/crm", icon: Users, label: "SDR Pipeline" },
+  { to: "/clientes", icon: Store, label: "Clientes" },
   { to: "/client-portal", icon: BarChart3, label: "Client Portal" },
   { to: "/crm-config", icon: Settings, label: "Configurações" },
 ];
@@ -136,6 +137,18 @@ function Shell() {
 
   const hasPageAccess = (pathname: string) => {
     if (profileLoading || isAdmin) return true;
+    
+    // SDRs da agência só podem acessar rotas de CRM, configuração, portal e lista de clientes
+    if (profile?.role === "agency_sdr") {
+      const allowed = ["/crm", "/crm-config", "/client-portal", "/config", "/clientes"];
+      return allowed.some(p => pathname === p || pathname.startsWith(p));
+    }
+
+    // Clientes lojistas só acessam o CRM (sua loja) e o portal do cliente
+    if (profile?.role === "client_store") {
+      const allowed = ["/crm", "/client-portal", "/config"];
+      return allowed.some(p => pathname === p || pathname.startsWith(p));
+    }
     
     if (pathname.startsWith("/metricas")) return hasAccess("metricas");
     if (pathname.startsWith("/automacoes")) return hasAccess("automacoes");
@@ -203,6 +216,26 @@ function Shell() {
       prevModuleRef.current = nextModule as any;
     }
   }, [path]);
+
+  // Forçar CRM para SDR e Cliente, impedindo que naveguem para fora do CRM
+  useEffect(() => {
+    if (!profileLoading && profile) {
+      const isSdr = profile.role === "agency_sdr";
+      const isClient = profile.role === "client_store";
+      if (isSdr || isClient) {
+        if (activeModule !== "crm") {
+          setActiveModule("crm");
+          localStorage.setItem("nc_active_module", "crm");
+        }
+        
+        const allowed = ["/crm", "/crm-config", "/client-portal", "/config"];
+        const isAllowed = allowed.some(p => path === p || path.startsWith(p));
+        if (!isAllowed) {
+          nav({ to: "/crm", replace: true });
+        }
+      }
+    }
+  }, [profile, profileLoading, path, activeModule]);
 
   const [showModuleMenu, setShowModuleMenu] = useState(false);
 
@@ -563,10 +596,12 @@ function Shell() {
           {/* LEFT: Logo & Module Switcher */}
           <div className="flex items-center gap-3 shrink-0">
             <Link 
-              to="/dashboard" 
+              to={profile?.role === "agency_sdr" || profile?.role === "client_store" ? "/crm" : "/dashboard"} 
               onClick={() => {
-                setActiveModule("hub");
-                localStorage.setItem("nc_active_module", "hub");
+                if (profile?.role !== "agency_sdr" && profile?.role !== "client_store") {
+                  setActiveModule("hub");
+                  localStorage.setItem("nc_active_module", "hub");
+                }
               }}
               className="flex items-center gap-2 group"
             >
@@ -585,7 +620,7 @@ function Shell() {
               </div>
             </Link>
 
-            {(activeModule as string) !== "hub" && (
+            {(activeModule as string) !== "hub" && profile?.role !== "agency_sdr" && profile?.role !== "client_store" && (
               <div className="relative ml-2">
                 <button
                   onClick={() => setShowModuleMenu(!showModuleMenu)}
