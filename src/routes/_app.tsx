@@ -189,8 +189,12 @@ function Shell() {
       nextModule = "crm";
     } else if (path.startsWith("/social") || path.startsWith("/organizador") || path.startsWith("/link-bio") || path.startsWith("/quiz")) {
       nextModule = "social";
-    } else if (path.startsWith("/dashboard") || path.startsWith("/cockpit") || path.startsWith("/simulador") || path.startsWith("/clientes") || path.startsWith("/relatorios") || path.startsWith("/criativos") || path.startsWith("/metricas") || path.startsWith("/campanhas")) {
+    } else if (path.startsWith("/dashboard") || path.startsWith("/cockpit") || path.startsWith("/simulador") || path.startsWith("/relatorios") || path.startsWith("/criativos") || path.startsWith("/metricas") || path.startsWith("/campanhas")) {
       nextModule = "trafego";
+    } else if (path.startsWith("/clientes")) {
+      if (activeModule !== "crm" && activeModule !== "gestao") {
+        nextModule = "trafego";
+      }
     } else if (path.startsWith("/cobrancas")) {
       nextModule = "gestao";
     } else if (path.startsWith("/strategy-map") || path.startsWith("/funis") || path.startsWith("/funnel-builder")) {
