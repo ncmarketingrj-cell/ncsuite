@@ -804,7 +804,7 @@ function LandingPage() {
                   <img
                     src="/assets/victoria-maia.png"
                     alt="Victoria Maia"
-                    className="w-full h-[520px] object-cover transition-all duration-700 grayscale hover:grayscale-0"
+                    className="w-full h-[520px] object-cover transition-all duration-700"
                     style={{ objectPosition: "center 15%" }}
                   />
                   <div
