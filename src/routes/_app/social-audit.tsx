@@ -501,19 +501,30 @@ function SocialAuditPage() {
                   <div key={post.id} className="glass-panel p-4 flex flex-col justify-between space-y-4 hover:border-emerald-500/30 transition-all duration-300">
                     <div className="space-y-3">
                       {/* Media Header */}
-                      <div className="relative h-40 rounded-xl overflow-hidden bg-neutral-900 border border-white/10 flex items-center justify-center">
+                      <div className="relative aspect-[9/16] h-56 rounded-xl overflow-hidden bg-neutral-950 border border-white/10 flex items-center justify-center mx-auto">
                         {post.media_url ? (
-                          <img src={post.media_url} alt={post.title} className="w-full h-full object-cover" />
+                          post.post_type === "reels" || post.media_url.includes(".mp4") || post.media_url.includes("video") ? (
+                            <video
+                              src={post.media_url}
+                              className="w-full h-full object-contain"
+                              muted
+                              playsInline
+                              loop
+                              autoPlay
+                            />
+                          ) : (
+                            <img src={post.media_url} alt={post.title} className="w-full h-full object-contain" />
+                          )
                         ) : (
                           <Zap className="w-8 h-8 text-primary/30" />
                         )}
-                        <span className="absolute top-2 left-2 px-2 py-0.5 rounded text-[8px] font-black uppercase bg-emerald-500/90 text-white flex items-center gap-1">
+                        <span className="absolute top-2 left-2 px-2 py-0.5 rounded text-[8px] font-black uppercase bg-emerald-500/90 text-white flex items-center gap-1 z-10">
                           <TrendingUp className="w-2.5 h-2.5" /> Engaj. {post.engagement_rate}%
                         </span>
                         {post.post_type === "reels" ? (
-                          <Film className="w-4 h-4 text-white absolute bottom-2 right-2 shrink-0 drop-shadow-md" />
+                          <Film className="w-4 h-4 text-white absolute bottom-2 right-2 shrink-0 drop-shadow-md z-10" />
                         ) : (
-                          <Image className="w-4 h-4 text-white absolute bottom-2 right-2 shrink-0 drop-shadow-md" />
+                          <Image className="w-4 h-4 text-white absolute bottom-2 right-2 shrink-0 drop-shadow-md z-10" />
                         )}
                       </div>
 
@@ -550,13 +561,24 @@ function SocialAuditPage() {
                   <div key={post.id} className="glass-panel p-4 flex flex-col justify-between space-y-4 hover:border-rose-500/30 transition-all duration-300">
                     <div className="space-y-3">
                       {/* Media Header */}
-                      <div className="relative h-40 rounded-xl overflow-hidden bg-neutral-900 border border-white/10 flex items-center justify-center">
+                      <div className="relative aspect-[9/16] h-56 rounded-xl overflow-hidden bg-neutral-950 border border-white/10 flex items-center justify-center mx-auto">
                         {post.media_url ? (
-                          <img src={post.media_url} alt={post.title} className="w-full h-full object-cover opacity-60" />
+                          post.post_type === "reels" || post.media_url.includes(".mp4") || post.media_url.includes("video") ? (
+                            <video
+                              src={post.media_url}
+                              className="w-full h-full object-contain opacity-60"
+                              muted
+                              playsInline
+                              loop
+                              autoPlay
+                            />
+                          ) : (
+                            <img src={post.media_url} alt={post.title} className="w-full h-full object-contain opacity-60" />
+                          )
                         ) : (
                           <Zap className="w-8 h-8 text-primary/30" />
                         )}
-                        <span className="absolute top-2 left-2 px-2 py-0.5 rounded text-[8px] font-black uppercase bg-rose-500/90 text-white flex items-center gap-1">
+                        <span className="absolute top-2 left-2 px-2 py-0.5 rounded text-[8px] font-black uppercase bg-rose-500/90 text-white flex items-center gap-1 z-10">
                           <TrendingDown className="w-2.5 h-2.5" /> Engaj. {post.engagement_rate}%
                         </span>
                       </div>

@@ -218,6 +218,7 @@ function SocialInsightsPage() {
   const [sortPostsBy, setSortPostsBy] = useState<"reach" | "likes" | "comments" | "engagement">("reach");
   const [postTypeFilter, setPostTypeFilter] = useState<"all" | "reels" | "image" | "stories">("all");
   const [selectedPostDetail, setSelectedPostDetail] = useState<string | null>(null);
+  const [mediaFit, setMediaFit] = useState<"cover" | "contain">("contain");
 
   const dateRange = useMemo(() => ({
     startDate: new Date(dateFrom + "T12:00:00"),
@@ -1079,6 +1080,9 @@ function SocialInsightsPage() {
                 const isExpanded = selectedPostDetail === post.id;
                 const engRate = (((post.likes_count + post.comments_count) / post.reach_count) * 100).toFixed(1);
                 
+                const postPageObj = activePages.find(p => p.page_id === selectedPage) || activePages[0];
+                const displayName = post.platform === "facebook" ? postPageObj.page_name : `@${postPageObj.instagram_handle || "social"}`;
+                
                 return (
                   <Fragment key={post.id}>
                     <tr className="border-b border-white/[0.02] hover:bg-white/[0.015] transition-colors cursor-pointer" onClick={() => setSelectedPostDetail(isExpanded ? null : post.id)}>
@@ -1129,32 +1133,44 @@ function SocialInsightsPage() {
                               <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
                                 
                                 {/* Coluna 1: Prévia Criativo */}
-                                <div className="lg:col-span-4 flex flex-col">
-                                  <span className="text-[9px] text-muted-foreground uppercase font-black tracking-wider mb-2 flex items-center gap-1.5">
-                                    <Image className="w-3 h-3 text-primary" /> Prévia do Criativo
-                                  </span>
+                                <div className="lg:col-span-4 flex flex-col items-center">
+                                  <div className="w-full flex justify-between items-center mb-2 px-1">
+                                    <span className="text-[9px] text-muted-foreground uppercase font-black tracking-wider flex items-center gap-1.5">
+                                      <Image className="w-3 h-3 text-primary" /> Prévia do Criativo
+                                    </span>
+                                    
+                                    <button 
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setMediaFit(prev => prev === "cover" ? "contain" : "cover");
+                                      }}
+                                      className="text-[9px] font-bold text-primary hover:text-white px-2 py-0.5 rounded bg-primary/10 border border-primary/20 cursor-pointer"
+                                    >
+                                      {mediaFit === "cover" ? "Ajustar Mídia" : "Preencher Tela"}
+                                    </button>
+                                  </div>
                                   
-                                  <div className="relative rounded-2xl border border-white/10 bg-black/60 overflow-hidden shadow-2xl flex flex-col justify-between h-[280px]">
+                                  <div className="relative w-full max-w-[240px] aspect-[9/16] rounded-[28px] border-[5px] border-neutral-800 bg-black overflow-hidden shadow-2xl flex flex-col justify-between h-[420px] transition-all">
                                     {/* Header Mockup */}
-                                    <div className="flex items-center justify-between p-2.5 bg-white/[0.02] border-b border-white/5">
+                                    <div className="flex items-center justify-between p-2.5 bg-neutral-900 border-b border-white/5 z-10 shrink-0">
                                       <div className="flex items-center gap-2">
-                                        <div className="w-5 h-5 rounded-full bg-primary/20 flex items-center justify-center text-[10px] font-bold text-primary">
-                                          NC
+                                        <div className="w-5 h-5 rounded-full bg-primary/20 flex items-center justify-center text-[9px] font-bold text-primary shrink-0 uppercase">
+                                          {displayName.replace("@", "").slice(0, 2)}
                                         </div>
-                                        <div className="flex flex-col">
-                                          <span className="text-[10px] font-bold text-white leading-tight">
-                                            {post.platform === "facebook" ? "NC Performance" : "ncmotors.br"}
+                                        <div className="flex flex-col min-w-0">
+                                          <span className="text-[10px] font-bold text-white leading-tight truncate">
+                                            {displayName}
                                           </span>
                                           <span className="text-[8px] text-muted-foreground leading-none">
                                             {post.platform === "facebook" ? "Facebook Page" : "Instagram Profile"}
                                           </span>
                                         </div>
                                       </div>
-                                      {post.platform === "facebook" ? <Facebook className="w-3.5 h-3.5 text-blue-400" /> : <Instagram className="w-3.5 h-3.5 text-pink-400" />}
+                                      {post.platform === "facebook" ? <Facebook className="w-3.5 h-3.5 text-blue-400 shrink-0" /> : <Instagram className="w-3.5 h-3.5 text-pink-400 shrink-0" />}
                                     </div>
 
                                     {/* Media Section */}
-                                    <div className="flex-1 flex items-center justify-center bg-black overflow-hidden relative group/media">
+                                    <div className="flex-1 bg-neutral-950 overflow-hidden relative group/media flex items-center justify-center">
                                       {post.media_url ? (
                                         post.post_type === "reels" || post.media_url.includes(".mp4") || post.media_url.includes("video") ? (
                                           <video
@@ -1164,13 +1180,13 @@ function SocialInsightsPage() {
                                             autoPlay
                                             loop
                                             playsInline
-                                            className="w-full h-full object-cover"
+                                            className={`w-full h-full ${mediaFit === "cover" ? "object-cover" : "object-contain"}`}
                                           />
                                         ) : (
                                           <img
                                             src={post.media_url}
                                             alt={post.title}
-                                            className="w-full h-full object-cover group-hover/media:scale-105 transition-transform duration-500"
+                                            className={`w-full h-full transition-transform duration-500 ${mediaFit === "cover" ? "object-cover group-hover/media:scale-105" : "object-contain"}`}
                                             onError={(e) => {
                                               (e.target as any).src = "https://images.unsplash.com/photo-1617788138017-80ad40651399?auto=format&fit=crop&q=80&w=400";
                                             }}
@@ -1185,7 +1201,7 @@ function SocialInsightsPage() {
                                     </div>
 
                                     {/* Action Footer */}
-                                    <div className="p-2.5 bg-white/[0.02] border-t border-white/5 flex items-center justify-between text-[10px]">
+                                    <div className="p-2.5 bg-neutral-900 border-t border-white/5 flex items-center justify-between text-[10px] shrink-0 z-10">
                                       <div className="flex items-center gap-3 text-muted-foreground font-mono">
                                         <span className="flex items-center gap-1 hover:text-white transition-colors">
                                           <Heart className="w-3.5 h-3.5 text-pink-400" /> {post.likes_count}
@@ -1200,6 +1216,7 @@ function SocialInsightsPage() {
                                           href={post.permalink}
                                           target="_blank"
                                           rel="noopener noreferrer"
+                                          onClick={(e) => e.stopPropagation()}
                                           className="flex items-center gap-1 text-[9px] font-bold text-primary hover:text-primary-foreground hover:bg-primary/20 border border-primary/20 px-2 py-0.5 rounded-lg transition-all cursor-pointer"
                                         >
                                           Ver Post <ExternalLink className="w-2.5 h-2.5" />
@@ -1214,8 +1231,8 @@ function SocialInsightsPage() {
                                   <span className="text-[9px] text-muted-foreground uppercase font-black tracking-wider mb-2 flex items-center gap-1.5">
                                     <Layers className="w-3 h-3 text-amber-400" /> Legenda / Descrição
                                   </span>
-                                  <div className="flex-1 bg-white/[0.01] border border-white/5 rounded-2xl p-4 flex flex-col justify-between h-[280px]">
-                                    <div className="overflow-y-auto text-[11px] leading-relaxed text-slate-200 pr-1 max-h-[200px] whitespace-pre-line font-medium custom-scrollbar">
+                                  <div className="flex-1 bg-white/[0.01] border border-white/5 rounded-2xl p-4 flex flex-col justify-between h-[420px]">
+                                    <div className="overflow-y-auto text-[11px] leading-relaxed text-slate-200 pr-1 max-h-[340px] whitespace-pre-line font-medium custom-scrollbar">
                                       {post.content || "Nenhuma legenda fornecida para esta publicação."}
                                     </div>
                                     <div className="border-t border-white/5 pt-2.5 flex items-center justify-between text-[9px] text-muted-foreground mt-2">
@@ -1233,7 +1250,7 @@ function SocialInsightsPage() {
                                     <Bot className="w-3 h-3 text-primary animate-pulse" /> Diagnóstico Victoria AI
                                   </span>
                                   
-                                  <div className="flex-1 bg-primary/[0.02] border border-primary/25 rounded-2xl p-4 flex flex-col justify-between h-[280px]">
+                                  <div className="flex-1 bg-primary/[0.02] border border-primary/25 rounded-2xl p-4 flex flex-col justify-between h-[420px]">
                                     <div className="space-y-4">
                                       <div className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider text-primary">
                                         <Sparkles className="w-3.5 h-3.5" /> Análise de Performance
