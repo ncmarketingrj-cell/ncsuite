@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { supabase, EXTERNAL_SUPABASE_URL as VITE_SUPABASE_URL, EXTERNAL_SUPABASE_ANON_KEY as ANON_KEY } from "@/integrations/supabase-external/client";
 import { toast } from "sonner";
+import { extractPrintFn } from "@/lib/ocr.functions";
 
 
 export type Message = {
@@ -363,17 +364,21 @@ export function useVictoriaChat(selectedAccountId: string, setSelectedAccountId:
         }
       }
 
-      // 3. Preparar histórico de mensagens para a IA
+      // 3. Preparar histórico de mensagens para a IA (limitado às últimas 15 para evitar estouro de contexto/tokens)
       const { data: dbMsgs } = await supabase
         .from("victoria_messages" as any)
         .select("role, content")
         .eq("conversation_id", convId)
-        .order("created_at", { ascending: true });
+        .order("created_at", { ascending: false })
+        .limit(15);
 
-      const requestMessages = (dbMsgs || []).map((m: any) => ({
-        role: m.role,
-        content: m.content
-      }));
+      const requestMessages = (dbMsgs || [])
+        .slice()
+        .reverse()
+        .map((m: any) => ({
+          role: m.role,
+          content: m.content
+        }));
 
       if (ocrCampaigns.length > 0) {
         const ocrDataStr = JSON.stringify(ocrCampaigns, null, 2);
@@ -851,6 +856,188 @@ export function useVictoriaChat(selectedAccountId: string, setSelectedAccountId:
     return { success: created > 0, created };
   };
 
+  // Editar uma mensagem do usuário, apagar as posteriores e pedir nova resposta da IA
+  const editMessage = async (messageId: string, newContent: string) => {
+    try {
+      setIsTyping(true);
+
+      // 1. Obter a mensagem que está sendo editada
+      const { data: editedMsg, error: fetchErr } = await supabase
+        .from("victoria_messages" as any)
+        .select("created_at, conversation_id")
+        .eq("id", messageId)
+        .single();
+
+      if (fetchErr || !editedMsg) throw new Error("Mensagem não encontrada.");
+
+      const convId = editedMsg.conversation_id;
+
+      // 2. Apagar todas as mensagens posteriores nesta conversa (reescrever histórico)
+      const { error: deleteErr } = await supabase
+        .from("victoria_messages" as any)
+        .delete()
+        .eq("conversation_id", convId)
+        .gt("created_at", editedMsg.created_at);
+
+      if (deleteErr) throw deleteErr;
+
+      // 3. Atualizar o conteúdo da mensagem editada
+      const { error: updateErr } = await supabase
+        .from("victoria_messages" as any)
+        .update({ content: newContent })
+        .eq("id", messageId);
+
+      if (updateErr) throw updateErr;
+
+      // 4. Recarregar histórico local de mensagens
+      const { data: dbMsgs } = await supabase
+        .from("victoria_messages" as any)
+        .select("*")
+        .eq("conversation_id", convId)
+        .order("created_at", { ascending: true });
+
+      setMessages(
+        (dbMsgs || []).map((m: any) => ({
+          id: m.id,
+          role: m.role,
+          content: m.content,
+          created_at: new Date(m.created_at),
+          metadata: m.metadata || {},
+        }))
+      );
+
+      // 5. Preparar histórico limitado (últimas 15 mensagens)
+      const { data: historyMsgs } = await supabase
+        .from("victoria_messages" as any)
+        .select("role, content")
+        .eq("conversation_id", convId)
+        .order("created_at", { ascending: false })
+        .limit(15);
+
+      const requestMessages = (historyMsgs || [])
+        .slice()
+        .reverse()
+        .map((m: any) => ({
+          role: m.role,
+          content: m.content
+        }));
+
+      // 6. Chamar a IA Victoria via SSE Streaming
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch(
+        `${VITE_SUPABASE_URL}/functions/v1/victoria-agent`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${session?.access_token || ""}`,
+            "apikey": ANON_KEY
+          },
+          body: JSON.stringify({
+            action: "chat",
+            messages: requestMessages,
+            selectedAccountId: selectedAccountId || undefined,
+          })
+        }
+      );
+
+      if (!res.ok) {
+        const errBody = await res.text().catch(() => "");
+        throw new Error(`HTTP ${res.status}: ${errBody.slice(0, 200) || "Erro de comunicação."}`);
+      }
+
+      const reader = res.body?.getReader();
+      const decoder = new TextDecoder();
+      if (!reader) throw new Error("Falha ao abrir stream.");
+
+      // Criar mensagem temporária do assistente
+      const assistantMessageId = crypto.randomUUID();
+      const tempAssistantMsg: Message = {
+        id: assistantMessageId,
+        role: "assistant",
+        content: "",
+        created_at: new Date(),
+        metadata: {}
+      };
+      setMessages(prev => [...prev, tempAssistantMsg]);
+
+      let responseText = "";
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed || trimmed === "data: [DONE]") continue;
+
+          if (trimmed.startsWith("data: ")) {
+            try {
+              const jsonStr = trimmed.slice(6);
+              const parsed = JSON.parse(jsonStr);
+              const chunk = parsed.choices?.[0]?.delta?.content || "";
+              if (chunk) {
+                responseText += chunk;
+                setMessages(prev =>
+                  prev.map(m => (m.id === assistantMessageId ? { ...m, content: responseText } : m))
+                );
+              }
+            } catch {}
+          }
+        }
+      }
+
+      // Processar action block
+      let responseAction: any = null;
+      const actionMatch = responseText.match(/```json:action\s*([\s\S]*?)\s*```/);
+      if (actionMatch) {
+        try {
+          responseAction = JSON.parse(actionMatch[1]);
+          responseText = responseText.replace(/```json:action[\s\S]*?```/, "").trim();
+        } catch (e) {
+          console.error("Erro ao fazer parse da action da Victoria:", e);
+        }
+      }
+
+      // Salvar a resposta no banco
+      const assistantMsgMetadata: any = {};
+      if (responseAction) {
+        assistantMsgMetadata.action = responseAction;
+        assistantMsgMetadata.actionStatus = "pending";
+      }
+
+      const { error: assistantMsgErr } = await supabase
+        .from("victoria_messages" as any)
+        .insert({
+          id: assistantMessageId,
+          conversation_id: convId,
+          role: "assistant",
+          content: responseText,
+          metadata: assistantMsgMetadata
+        });
+      if (assistantMsgErr) throw assistantMsgErr;
+
+      setMessages(prev =>
+        prev.map(m =>
+          m.id === assistantMessageId
+            ? { ...m, content: responseText, metadata: assistantMsgMetadata }
+            : m
+        )
+      );
+
+    } catch (err: any) {
+      console.error(err);
+      toast.error("Erro ao regenerar resposta: " + err.message);
+    } finally {
+      setIsTyping(false);
+    }
+  };
+
   return {
     conversations,
     activeConversationId,
@@ -864,6 +1051,7 @@ export function useVictoriaChat(selectedAccountId: string, setSelectedAccountId:
     renameConversation,
     togglePinConversation,
     sendMessage,
+    editMessage,
     executeAction,
     rejectAction,
     knowledgeList,

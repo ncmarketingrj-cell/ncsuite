@@ -18,7 +18,6 @@ export const Route = createFileRoute("/_app/config")({
 const TABS = [
   { id: "conta",       label: "Meu Perfil",          icon: User,                   adminOnly: false },
   { id: "agente",      label: "Agente Victoria",     icon: Brain,                  adminOnly: true  },
-  { id: "tutorial",   label: "NC Academy",            icon: BookOpen,               adminOnly: false },
   { id: "sac",        label: "SAC / Feedback",        icon: MessageSquareWarning,   adminOnly: false },
   { id: "usuarios",   label: "Gestão de Usuários",   icon: Users,                  adminOnly: true  },
   { id: "clientes",   label: "Gestão de Clientes",   icon: Building2,              adminOnly: true  },
@@ -30,13 +29,32 @@ type Tab = typeof TABS[number]["id"];
 
 function ConfigPage() {
   const { user } = useAuth();
-  const [tab, setTab] = useState<Tab>("tutorial");
+  const [tab, setTab] = useState<Tab>("conta");
 
   const { data: profile } = useQuery({
     queryKey: ["current_user_profile", user?.id],
     queryFn: async () => {
       if (!user?.id) return null;
-      const { data } = await (supabase as any).from("profiles").select("role, permissions").eq("id", user.id).maybeSingle();
+      let { data } = await (supabase as any).from("profiles").select("role, permissions").eq("id", user.id).maybeSingle();
+      
+      // Auto-fix master admin permissions if they were somehow demoted
+      if (user?.email === "nc.marketingrj@gmail.com" && data?.role !== "admin") {
+        await (supabase as any).from("profiles").update({
+          role: "admin",
+          position: "Administrador Master",
+          permissions: {
+            "dashboard": "edit", "metricas": "edit", "clientes": "edit",
+            "relatorios": "edit", "criativos": "edit", "social": "edit",
+            "automacoes": "edit", "reunioes": "edit", "cobrancas": "edit",
+            "strategy_map": "edit", "agente": "edit", "auditoria": "edit",
+            "criar_usuarios": "edit"
+          }
+        }).eq("id", user.id);
+        
+        // Refetch after fix
+        const retry = await (supabase as any).from("profiles").select("role, permissions").eq("id", user.id).maybeSingle();
+        data = retry.data;
+      }
       return data;
     },
     enabled: !!user?.id,
@@ -77,7 +95,6 @@ function ConfigPage() {
       >
         {tab === "conta"       && <TabConta />}
         {tab === "agente"      && isAdmin && <TabAgente />}
-        {tab === "tutorial"    && <TabTutorial />}
         {tab === "sac"         && <TabSac isAdmin={isAdmin} userId={user?.id ?? ""} />}
         {tab === "usuarios"    && canManageUsers && <TabUsuarios isAdmin={isAdmin} />}
         {tab === "clientes"    && isAdmin && <TabClientes />}
@@ -655,309 +672,6 @@ function TabIntegracoes() {
   );
 }
 
-function VisualGuide({ module, step }: { module: string, step: number }) {
-  const [isOpen, setIsOpen] = useState(false);
-  let imgSrc = "/assets/mockup-dashboard.png";
-  let altText = "Visualização do Dashboard";
-
-  if (module === "dashboard") {
-    imgSrc = "/assets/mockup-dashboard.png";
-    altText = "Painel principal e KPIs";
-  } else if (module === "agente") {
-    if (step === 2) {
-      imgSrc = "/assets/victoria-maia.png";
-      altText = "Victoria Maia - Análise Multimodal";
-    } else {
-      imgSrc = "/assets/mockup-victoria.png";
-      altText = "Interface da Victoria AI";
-    }
-  } else if (module === "relatorios") {
-    imgSrc = "/assets/mockup-reports.png";
-    altText = "Painel de Relatórios";
-  } else if (module === "campanhas") {
-    imgSrc = "/assets/mockup-dashboard.png";
-    altText = "Gestão de Campanhas de Tráfego";
-  } else if (module === "automacoes") {
-    imgSrc = "/assets/mockup-dashboard.png";
-    altText = "Configurações de Alertas e Automações";
-  } else if (module === "integracoes") {
-    imgSrc = "/assets/nc-logo.png";
-    altText = "Integrações Meta Ads e Google Ads";
-  }
-
-  return (
-    <>
-      <div 
-        onClick={() => setIsOpen(true)}
-        className="relative w-full h-64 bg-black/60 rounded-2xl border border-white/10 overflow-hidden group/guide flex items-center justify-center cursor-zoom-in mt-3"
-      >
-        <div className="absolute inset-0 bg-gradient-to-t from-background via-transparent to-transparent opacity-60 z-10" />
-        <img 
-          src={imgSrc} 
-          alt={altText}
-          className="w-full h-full object-cover transition-all duration-700 group-hover/guide:scale-105"
-        />
-        <div className="absolute bottom-3 left-3 right-3 bg-black/70 backdrop-blur-md border border-white/5 px-3 py-1.5 rounded-lg z-20 flex items-center justify-between">
-          <span className="text-[10px] font-bold text-primary uppercase tracking-wider">{altText}</span>
-          <span className="text-[9px] text-muted-foreground flex items-center gap-1">
-            <Eye className="h-3 w-3" /> Ampliar Print
-          </span>
-        </div>
-      </div>
-
-      <AnimatePresence>
-        {isOpen && (
-          <motion.div 
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            onClick={() => setIsOpen(false)}
-            className="fixed inset-0 z-[100] flex items-center justify-center bg-black/90 backdrop-blur-md p-4 md:p-8 cursor-zoom-out"
-          >
-            <button 
-              onClick={() => setIsOpen(false)}
-              className="absolute top-4 right-4 h-10 w-10 rounded-full bg-white/10 flex items-center justify-center text-white hover:bg-white/20 transition-all border border-white/10"
-            >
-              <X className="h-5 w-5" />
-            </button>
-            <motion.div 
-              initial={{ scale: 0.95 }}
-              animate={{ scale: 1 }}
-              exit={{ scale: 0.95 }}
-              className="relative max-w-5xl max-h-[90vh] overflow-hidden rounded-2xl border border-white/10 bg-background/50 shadow-2xl"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <img 
-                src={imgSrc} 
-                alt={altText}
-                className="w-full h-auto max-h-[80vh] object-contain"
-              />
-              <div className="bg-background/80 border-t border-white/10 px-6 py-4 flex items-center justify-between">
-                <div>
-                  <h4 className="text-sm font-bold text-foreground">{altText}</h4>
-                  <p className="text-xs text-muted-foreground">Print real do sistema</p>
-                </div>
-                <button 
-                  onClick={() => setIsOpen(false)}
-                  className="rounded-full bg-primary px-4 py-1.5 text-xs font-bold text-primary-foreground hover:shadow-glow"
-                >
-                  Fechar
-                </button>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </>
-  );
-}
-
-const ACADEMY_MODULES = [
-  {
-    id: "dashboard",
-    title: "1. Dashboard & KPIs",
-    desc: "Acompanhe e analise dados consolidados em tempo real",
-    icon: LayoutDashboard,
-    steps: [
-      {
-        title: "Leitura de KPIs em Tempo Real",
-        content: "No painel principal (Dashboard), você visualiza métricas consolidadas como Investimento, Leads Gerados, Cliques e Custo por Lead (CPL) Geral. As sparklines indicam a tendência do tráfego das últimas 24h.",
-      },
-      {
-        title: "Filtros de Período e Conta",
-        content: "Utilize o Date Range Picker no topo direito para escolher qualquer período de data personalizado. Use também o seletor de contas para isolar dados de uma única loja ou ver a performance agregada.",
-      }
-    ]
-  },
-  {
-    id: "agente",
-    title: "2. Victoria AI (Estrategista)",
-    desc: "Tire dúvidas e execute otimizações com Inteligência Artificial",
-    icon: Brain,
-    steps: [
-      {
-        title: "Briefing Automotivo e Análise de Período",
-        content: "Abra a Victoria AI na lateral direita. Peça briefings das contas e análises do fim de semana. Ela sabe a data de referência atual e calcula com exatidão matemática o investimento, CPL e leads gerados.",
-      },
-      {
-        title: "Action Cards (Otimização em 1-Clique)",
-        content: "A Victoria detecta campanhas com CPL alto ou CTR crítico e gera Cards de Ação interativos. Você pode pausar a campanha ou ajustar o orçamento diretamente pelo chat clicando em 'Aplicar Otimização'.",
-      },
-      {
-        title: "Análise Multimodal de Criativos",
-        content: "Envie fotos tiradas pelo celular no pátio da loja ou arquivos de criativos de tráfego. A Victoria analisará o enquadramento, iluminação e apelo comercial do carro, dando consultoria visual profissional.",
-      }
-    ]
-  },
-  {
-    id: "campanhas",
-    title: "3. Gestão de Campanhas",
-    desc: "Monitore o status e gerencie os orçamentos ativamente",
-    icon: Megaphone,
-    steps: [
-      {
-        title: "Visão Detalhada de Anúncios",
-        content: "Na aba 'Gestão de Ads', acompanhe todas as campanhas em andamento de forma organizada, exibindo status ativo/pausado, orçamento diário definido e o canal de tráfego (Meta ou Google).",
-      },
-      {
-        title: "Alteração de Orçamento e Status",
-        content: "Otimize criativos ou mude orçamentos rapidamente direto na tabela. Isso permite realizar alterações urgentes de verba sem a necessidade de acessar os gerenciadores nativos de anúncios.",
-      }
-    ]
-  },
-  {
-    id: "relatorios",
-    title: "4. Relatórios Estratégicos",
-    desc: "Crie briefings premium para clientes em segundos",
-    icon: FileText,
-    steps: [
-      {
-        title: "Gerador Automático de Briefings",
-        content: "Na aba 'Relatórios', selecione a conta de anúncio e o período. A Suite processará o histórico de dados e gerará um relatório profissional formatado em Markdown com análise tática.",
-      },
-      {
-        title: "Personalização e Download em PDF",
-        content: "Insira observações de rodapé, faça ajustes no texto gerado e clique em 'Exportar para PDF' para gerar um documento premium com a marca da agência pronto para enviar ao cliente no WhatsApp.",
-      }
-    ]
-  },
-  {
-    id: "automacoes",
-    title: "5. Automações e Alertas",
-    desc: "Regras inteligentes para proteger seu orçamento de tráfego",
-    icon: Zap,
-    steps: [
-      {
-        title: "Configurando Regras Personalizadas",
-        content: "Vá em Configurações > Regras de Automação. Adicione critérios como 'CPL maior que R$ 45,00'. O sistema monitora a conta em tempo real e emite avisos assim que o gatilho for acionado.",
-      },
-      {
-        title: "Central de Notificações",
-        content: "Acompanhe as notificações no painel superior do aplicativo para identificar anomalias rapidamente antes que comprometam o orçamento mensal.",
-      }
-    ]
-  },
-  {
-    id: "integracoes",
-    title: "6. Conexões e Setup Master",
-    desc: "Conecte fontes de dados de forma simples e segura",
-    icon: Plug,
-    steps: [
-      {
-        title: "Setup do Token de Acesso da Meta",
-        content: "Insira seu Token de Usuário do Sistema de Longa Duração da Meta na aba 'Integrações' para habilitar a extração e sincronização automática das campanhas do Facebook e Instagram.",
-      },
-      {
-        title: "Conexão Google Ads via OAuth",
-        content: "Clique em 'Nova Conexão Google Ads' para logar na sua conta do Google de forma totalmente segura, trazendo dados de campanhas de pesquisa, display, Youtube e PMax para o dashboard.",
-      }
-    ]
-  }
-];
-
-function TabTutorial() {
-  const [activeModule, setActiveModule] = useState(0);
-  const [completedSteps, setCompletedSteps] = useState<Record<string, boolean>>({});
-
-  const toggleStep = (id: string) => {
-    setCompletedSteps(prev => ({ ...prev, [id]: !prev[id] }));
-  };
-
-  const progress = (Object.keys(completedSteps).filter(k => completedSteps[k]).length / 
-                    ACADEMY_MODULES.reduce((acc, m) => acc + m.steps.length, 0)) * 100;
-
-  return (
-    <div className="space-y-8">
-      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between border-b border-white/5 pb-6">
-        <div>
-          <h3 className="header-sport text-2xl font-black uppercase tracking-tight text-gradient">NC Academy</h3>
-          <p className="text-xs text-muted-foreground font-medium">Aprenda a dominar o NC Performance Suite do zero.</p>
-        </div>
-        <div className="flex items-center gap-4">
-           <div className="text-right">
-              <p className="text-[10px] font-black uppercase tracking-widest text-primary mb-1">Seu Progresso</p>
-              <p className="text-lg font-black">{Math.round(progress)}%</p>
-           </div>
-           <div className="h-12 w-1 bg-white/5 rounded-full overflow-hidden">
-              <motion.div 
-                initial={{ height: 0 }} 
-                animate={{ height: `${progress}%` }} 
-                className="w-full bg-primary shadow-glow-sm" 
-              />
-           </div>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
-        <div className="space-y-2 lg:col-span-1">
-          {ACADEMY_MODULES.map((mod, idx) => (
-            <button
-              key={mod.id}
-              onClick={() => setActiveModule(idx)}
-              className={`w-full flex items-center gap-3 p-4 rounded-2xl transition-all border ${activeModule === idx ? "bg-primary/10 border-primary/30 text-primary" : "bg-white/[0.02] border-white/5 text-muted-foreground hover:bg-white/5"}`}
-            >
-              <div className={`h-8 w-8 rounded-xl flex items-center justify-center ${activeModule === idx ? "bg-primary/20" : "bg-white/5"}`}>
-                 <mod.icon className="h-4 w-4" />
-              </div>
-              <div className="text-left min-w-0">
-                 <p className="text-[10px] font-black uppercase tracking-tighter truncate">{mod.title}</p>
-                 <p className="text-[9px] font-medium opacity-60 truncate">{mod.desc}</p>
-              </div>
-            </button>
-          ))}
-        </div>
-
-        <div className="lg:col-span-3 space-y-6">
-          <AnimatePresence mode="wait">
-            <motion.div
-              key={activeModule}
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -20 }}
-              className="space-y-8"
-            >
-              <div className="space-y-2">
-                 <h4 className="text-xl font-bold">{ACADEMY_MODULES[activeModule].title.split(".")[1]}</h4>
-                 <p className="text-sm text-muted-foreground leading-relaxed">{ACADEMY_MODULES[activeModule].desc}</p>
-              </div>
-
-              {ACADEMY_MODULES[activeModule].steps.map((step, sIdx) => {
-                const stepId = `${ACADEMY_MODULES[activeModule].id}-${sIdx}`;
-                const isDone = completedSteps[stepId];
-                
-                return (
-                  <div key={sIdx} className={`group relative p-6 rounded-3xl border transition-all ${isDone ? "bg-success/[0.02] border-success/20" : "bg-white/[0.02] border-white/5 hover:border-white/10"}`}>
-                    <div className="flex items-start gap-4">
-                      <button 
-                        onClick={() => toggleStep(stepId)}
-                        className={`mt-1 h-6 w-6 rounded-lg border-2 flex items-center justify-center transition-all ${isDone ? "bg-success border-success text-white" : "border-white/10 hover:border-primary/50"}`}
-                      >
-                        {isDone && <Check className="h-4 w-4" />}
-                      </button>
-                      
-                      <div className="flex-1 space-y-4">
-                        <div className="flex items-center justify-between">
-                           <h5 className={`text-sm font-bold uppercase tracking-tight ${isDone ? "text-success/80 line-through" : "text-foreground"}`}>{step.title}</h5>
-                           <span className="text-[10px] font-black text-muted-foreground/30 uppercase tracking-widest">Passo {sIdx + 1}</span>
-                        </div>
-                        
-                        <p className="text-xs text-muted-foreground leading-relaxed">
-                          {step.content}
-                        </p>
-
-                        <VisualGuide module={ACADEMY_MODULES[activeModule].id} step={sIdx} />
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </motion.div>
-          </AnimatePresence>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 function TabSistema() {
   return (

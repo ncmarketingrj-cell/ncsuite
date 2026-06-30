@@ -83,10 +83,8 @@ const TRAFEGO_NAV_ITEMS: NavItem[] = [
 ];
 
 const SOCIAL_NAV_ITEMS: NavItem[] = [
-  { to: "/social", icon: Share2, label: "Social Media" },
   { to: "/social-insights", icon: BarChart3, label: "Insights Meta" },
   { to: "/organizador", icon: Link2, label: "Link Pages" },
-  { to: "/social-relatorios", icon: FileText, label: "Relatórios" },
   { to: "/config", icon: Settings, label: "Configurações" },
 ];
 
@@ -438,7 +436,7 @@ function Shell() {
               onClick={() => {
                 setActiveModule("social");
                 localStorage.setItem("nc_active_module", "social");
-                nav({ to: "/social" });
+                nav({ to: "/social-insights" });
               }}
               className="group relative rounded-2xl border border-border bg-card p-6 text-left cursor-pointer transition-all duration-300 hover:border-pink-500/40 hover:shadow-lg shadow-sm"
             >
@@ -690,7 +688,7 @@ function Shell() {
                             setActiveModule("social");
                             localStorage.setItem("nc_active_module", "social");
                             setShowModuleMenu(false);
-                            nav({ to: "/social" });
+                            nav({ to: "/social-insights" });
                           }}
                           className={`flex w-full items-center gap-2 rounded-xl px-2.5 py-2 text-xs font-bold transition-all ${
                             activeModule === "social" ? "bg-pink-500/10 text-pink-500" : "text-foreground/80 hover:bg-muted"

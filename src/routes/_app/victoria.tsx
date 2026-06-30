@@ -6,7 +6,8 @@ import {
   Bot, Send, Paperclip, X, Trash2, Pin, Plus, Search, 
   Loader2, User, Sparkles, TrendingUp, BarChart3, MessageSquare, 
   ShieldAlert, Settings, ArrowLeft, ArrowUpRight, Check, Play,
-  BookOpen, FolderClosed, Zap, Share2, Mic, MicOff, UploadCloud, FileText, Database
+  BookOpen, FolderClosed, Zap, Share2, Mic, MicOff, UploadCloud, FileText, Database,
+  Pencil
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase-external/client";
 import { useVictoriaChat, type Message, type Conversation } from "@/hooks/useVictoriaChat";
@@ -31,6 +32,8 @@ function VictoriaHubPage() {
   const [editingTitle, setEditingTitle] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [isKnowledgeOpen, setIsKnowledgeOpen] = useState(false);
+  const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
+  const [editingMessageText, setEditingMessageText] = useState("");
 
   // Estados de Nova Base de Conhecimento
   const [newKnowledgeTitle, setNewKnowledgeTitle] = useState("");
@@ -879,9 +882,21 @@ function VictoriaHubPage() {
                       <div className={`flex-1 flex flex-col gap-2 max-w-[85%] ${msg.role === "user" ? "items-end" : ""}`}>
                         {/* Metadados da mensagem: Nome e Data */}
                         <div className="flex items-center gap-2 text-[10px] text-muted-foreground font-semibold">
-                          <span>{msg.role === "user" ? "Comandante" : "Victoria AI"}</span>
+                          <span>{msg.role === "user" ? "Você" : "Victoria AI"}</span>
                           <span>•</span>
                           <span>{msg.created_at.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                          {msg.role === "user" && editingMessageId !== msg.id && (
+                            <button
+                              onClick={() => {
+                                setEditingMessageId(msg.id);
+                                setEditingMessageText(msg.content);
+                              }}
+                              className="p-1 hover:bg-white/5 rounded text-muted-foreground hover:text-foreground transition-all ml-1.5"
+                              title="Editar mensagem"
+                            >
+                              <Pencil className="h-3 w-3" />
+                            </button>
+                          )}
                         </div>
 
                         {/* Bloco de Mensagem */}
@@ -901,21 +916,52 @@ function VictoriaHubPage() {
                             </div>
                           )}
 
-                          {/* Renderizador de Markdown */}
-                          <ReactMarkdown
-                            components={{
-                              p: ({node, ...props}) => <p className="mb-3 last:mb-0 leading-relaxed text-foreground/90" {...props} />,
-                              h3: ({node, ...props}) => <h3 className="text-xs font-black text-amber-500 mt-4 mb-2 uppercase tracking-wider border-b border-border/45 pb-1 first:mt-0" {...props} />,
-                              h4: ({node, ...props}) => <h4 className="text-[11px] font-black text-foreground mt-3 mb-1 uppercase tracking-tight" {...props} />,
-                              ul: ({node, ...props}) => <ul className="list-disc pl-5 mb-3 space-y-1 text-foreground/85" {...props} />,
-                              ol: ({node, ...props}) => <ol className="list-decimal pl-5 mb-3 space-y-1 text-foreground/85" {...props} />,
-                              li: ({node, ...props}) => <li className="leading-relaxed" {...props} />,
-                              strong: ({node, ...props}) => <strong className="font-extrabold text-foreground" {...props} />,
-                              code: ({node, ...props}) => <code className="bg-white/5 px-1.5 py-0.5 rounded text-[11px] font-mono border border-white/5" {...props} />,
-                            }}
-                          >
-                            {msg.content}
-                          </ReactMarkdown>
+                          {editingMessageId === msg.id ? (
+                            <div className="flex flex-col gap-2 w-full min-w-[280px] sm:min-w-[400px]">
+                              <textarea
+                                value={editingMessageText}
+                                onChange={(e) => setEditingMessageText(e.target.value)}
+                                className="w-full bg-input/20 border border-primary/30 rounded-xl px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-primary/30 text-foreground resize-none"
+                                rows={3}
+                                autoFocus
+                              />
+                              <div className="flex justify-end gap-2">
+                                <button
+                                  onClick={() => setEditingMessageId(null)}
+                                  className="px-2.5 py-1 rounded-lg border border-border text-[10px] font-bold text-muted-foreground hover:text-foreground hover:bg-white/5 transition-all uppercase"
+                                >
+                                  Cancelar
+                                </button>
+                                <button
+                                  onClick={async () => {
+                                    const textToSubmit = editingMessageText.trim();
+                                    if (!textToSubmit) return;
+                                    setEditingMessageId(null);
+                                    await chat.editMessage(msg.id, textToSubmit);
+                                  }}
+                                  className="px-2.5 py-1 rounded-lg bg-primary text-primary-foreground text-[10px] font-black hover:brightness-110 transition-all uppercase"
+                                >
+                                  Salvar e Enviar
+                                </button>
+                              </div>
+                            </div>
+                          ) : (
+                            /* Renderizador de Markdown */
+                            <ReactMarkdown
+                              components={{
+                                p: ({node, ...props}) => <p className="mb-3 last:mb-0 leading-relaxed text-foreground/90" {...props} />,
+                                h3: ({node, ...props}) => <h3 className="text-xs font-black text-amber-500 mt-4 mb-2 uppercase tracking-wider border-b border-border/45 pb-1 first:mt-0" {...props} />,
+                                h4: ({node, ...props}) => <h4 className="text-[11px] font-black text-foreground mt-3 mb-1 uppercase tracking-tight" {...props} />,
+                                ul: ({node, ...props}) => <ul className="list-disc pl-5 mb-3 space-y-1 text-foreground/85" {...props} />,
+                                ol: ({node, ...props}) => <ol className="list-decimal pl-5 mb-3 space-y-1 text-foreground/85" {...props} />,
+                                li: ({node, ...props}) => <li className="leading-relaxed" {...props} />,
+                                strong: ({node, ...props}) => <strong className="font-extrabold text-foreground" {...props} />,
+                                code: ({node, ...props}) => <code className="bg-white/5 px-1.5 py-0.5 rounded text-[11px] font-mono border border-white/5" {...props} />,
+                              }}
+                            >
+                              {msg.content}
+                            </ReactMarkdown>
+                          )}
 
                           {/* Renderizador de Action Card (Human-in-the-loop) */}
                           {msg.metadata?.action && (

@@ -1,4 +1,4 @@
-﻿import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { motion, AnimatePresence } from "framer-motion";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useState, useMemo, useRef, useEffect } from "react";
@@ -900,15 +900,15 @@ function Dashboard() {
         >
           <div className="mb-8 flex items-center justify-between">
             <div>
-              <h3 className="header-sport text-base sm:text-xl font-black tracking-tight uppercase">Performance Temporal</h3>
-              <p className="text-xs text-muted-foreground font-medium mt-1">Análise volumétrica de investimento e conversão (30d)</p>
+              <h3 className="header-sport text-base sm:text-xl font-black tracking-tight uppercase">Evolução de Investimento x Resultados</h3>
+              <p className="text-xs text-muted-foreground font-medium mt-1">Como o gasto se compara às conversões geradas ao longo do tempo (30d)</p>
             </div>
             <div className="flex items-center gap-6">
               <div className="flex items-center gap-2 text-[9px] font-black uppercase tracking-widest">
-                <div className="h-2 w-2 rounded-full bg-primary" /> Invest
+                <div className="h-2 w-2 rounded-full bg-primary" /> Gasto (R$)
               </div>
               <div className="flex items-center gap-2 text-[9px] font-black uppercase tracking-widest">
-                <div className="h-2 w-2 rounded-full bg-violet-500" /> Conv
+                <div className="h-2 w-2 rounded-full bg-violet-500" /> Resultados (Conv.)
               </div>
             </div>
           </div>
@@ -970,8 +970,8 @@ function Dashboard() {
                <Brain className="h-5 w-5 text-primary" />
             </div>
             <div>
-               <h3 className="header-sport text-lg font-black tracking-tight uppercase">AI Synthesis</h3>
-               <p className="text-[10px] text-muted-foreground font-black tracking-widest uppercase opacity-50">Victoria v2.1 Intelligence</p>
+               <h3 className="header-sport text-lg font-black tracking-tight uppercase">Inteligência Artificial (Victoria)</h3>
+               <p className="text-[10px] text-muted-foreground font-black tracking-widest uppercase opacity-50">Diagnóstico Automatizado da Conta</p>
             </div>
           </div>
           
@@ -981,7 +981,7 @@ function Dashboard() {
                 <Sparkles className="h-12 w-12 text-primary" />
               </div>
               <p className="text-[9px] font-black uppercase tracking-[0.2em] text-primary mb-3 flex items-center gap-2">
-                <Zap className="h-3 w-3 animate-pulse" /> Estratégia em Tempo Real
+                <Zap className="h-3 w-3 animate-pulse" /> O que a IA diz sobre seus anúncios agora:
               </p>
               
               {/* Leitura do agent_memory real da base */}
@@ -998,7 +998,7 @@ function Dashboard() {
                 </div>
               ) : (
                 <p className="text-xs leading-relaxed text-muted-foreground/80 font-medium">
-                  Analisando fluxos de tráfego, breakdowns de conversão e comparativo mensal para gerar o próximo insight estratégico. O agente orquestrador está rodando nos bastidores.
+                  Aguardando a inteligência artificial analisar os dados (gastos, cliques e conversões) para gerar a próxima recomendação de como melhorar as campanhas. O agente orquestrador está rodando nos bastidores.
                 </p>
               )}
 
@@ -1033,8 +1033,8 @@ function Dashboard() {
         >
           <div className="mb-4 flex items-center justify-between">
             <div>
-              <h3 className="header-sport text-xs sm:text-sm font-black tracking-widest uppercase">Top Campanhas (Gasto)</h3>
-              <p className="text-[10px] text-muted-foreground uppercase mt-1 tracking-widest">Comparativo de Resultados x Gasto</p>
+              <h3 className="header-sport text-xs sm:text-sm font-black tracking-widest uppercase">Campanhas que Mais Gastam</h3>
+              <p className="text-[10px] text-muted-foreground uppercase mt-1 tracking-widest">Comparando o quanto gastaram vs quantas conversões trouxeram</p>
             </div>
             <BarChart3 className="h-5 w-5 text-primary/50" />
           </div>
@@ -1074,8 +1074,8 @@ function Dashboard() {
         >
           <div className="mb-4 flex items-center justify-between">
             <div>
-              <h3 className="header-sport text-xs sm:text-sm font-black tracking-widest uppercase">Share de Investimento</h3>
-              <p className="text-[10px] text-muted-foreground uppercase mt-1 tracking-widest">Distribuição de Verba por Campanha</p>
+              <h3 className="header-sport text-xs sm:text-sm font-black tracking-widest uppercase">Para Onde Vai o Dinheiro?</h3>
+              <p className="text-[10px] text-muted-foreground uppercase mt-1 tracking-widest">Divisão do investimento total entre as campanhas</p>
             </div>
             <PieChartIcon className="h-5 w-5 text-primary/50" />
           </div>
@@ -1120,8 +1120,8 @@ function Dashboard() {
         >
           <div className="mb-6 flex items-center justify-between">
             <div>
-              <h3 className="header-sport text-xs sm:text-sm font-black tracking-widest uppercase">Funil Global de Tráfego</h3>
-              <p className="text-[10px] text-muted-foreground uppercase mt-1 tracking-widest">Atrito de Conversão Geral</p>
+              <h3 className="header-sport text-xs sm:text-sm font-black tracking-widest uppercase">Funil de Vendas (Visão Geral)</h3>
+              <p className="text-[10px] text-muted-foreground uppercase mt-1 tracking-widest">Quantas pessoas viram o anúncio até converter</p>
             </div>
             <Activity className="h-5 w-5 text-primary/50" />
           </div>
@@ -1163,8 +1163,8 @@ function Dashboard() {
         >
           <div className="mb-6 flex items-center justify-between">
             <div>
-              <h3 className="header-sport text-xs sm:text-sm font-black tracking-widest uppercase">Risco x Retorno</h3>
-              <p className="text-[10px] text-muted-foreground uppercase mt-1 tracking-widest">Avaliação baseada no CPA Médio</p>
+              <h3 className="header-sport text-xs sm:text-sm font-black tracking-widest uppercase">Oportunidades e Ralos de Dinheiro</h3>
+              <p className="text-[10px] text-muted-foreground uppercase mt-1 tracking-widest">Campanhas boas (muito baratas) e ruins (muito caras)</p>
             </div>
             <Target className="h-5 w-5 text-primary/50" />
           </div>
@@ -1172,7 +1172,7 @@ function Dashboard() {
             
             {performanceData?.opportunities && performanceData.opportunities.length > 0 && (
               <div className="space-y-2">
-                <p className="text-[10px] font-black uppercase tracking-widest text-success mb-2 flex items-center gap-2"><TrendingUp className="h-3 w-3"/> Oportunidades (Escalar)</p>
+                <p className="text-[10px] font-black uppercase tracking-widest text-success mb-2 flex items-center gap-2"><TrendingUp className="h-3 w-3"/> Ótimo Desempenho (Sugerimos Escalar)</p>
                 {performanceData.opportunities.map((c: any) => (
                   <div key={c.id} className="flex items-center justify-between p-3 rounded-xl bg-success/5 border border-success/10 hover:bg-success/10 transition-colors">
                     <div className="min-w-0 flex-1">
@@ -1190,7 +1190,7 @@ function Dashboard() {
 
             {performanceData?.risks && performanceData.risks.length > 0 && (
               <div className="space-y-2 mt-4">
-                <p className="text-[10px] font-black uppercase tracking-widest text-destructive mb-2 flex items-center gap-2"><AlertTriangle className="h-3 w-3"/> Ralos de Verba (Pausar)</p>
+                <p className="text-[10px] font-black uppercase tracking-widest text-destructive mb-2 flex items-center gap-2"><AlertTriangle className="h-3 w-3"/> Baixo Desempenho (Gastando e não convertendo)</p>
                 {performanceData.risks.map((c: any) => (
                   <div key={c.id} className="flex items-center justify-between p-3 rounded-xl bg-destructive/5 border border-destructive/10 hover:bg-destructive/10 transition-colors">
                     <div className="min-w-0 flex-1">
