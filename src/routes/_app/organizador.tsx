@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Link2, Plus, Eye, ExternalLink, Loader2, Edit, Trash2, QrCode, Settings, Layout, GripVertical, X, Smartphone, Car, Phone, MessageSquare, Video, FileText, Image as ImageIcon, MapPin, UploadCloud, Layers, LayoutList, Type, AlignLeft } from "lucide-react";
+import { Link2, Plus, Eye, ExternalLink, Loader2, Edit, Trash2, QrCode, Settings, Layout, Palette, GripVertical, X, Smartphone, Car, Phone, MessageSquare, Video, FileText, Image as ImageIcon, MapPin, UploadCloud, Layers, LayoutList, Type, AlignLeft, Globe, ChevronDown, ChevronRight, Star, Zap, MousePointerClick, TrendingUp, Share2, HelpCircle, Image as BannerIcon } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/PageHeader";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -361,6 +361,7 @@ function LinkBioEditorForm({ pageId, type }: { pageId: string, type: string }) {
   if (isLoading || !page) return <div className="flex justify-center p-8"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>;
 
   const handleChange = (field: string, value: any) => { updateMutation.mutate({ [field]: value }); };
+  const handleThemeChange = (key: string, val: any) => { handleChange("theme", { ...(page.theme || {}), [key]: val }); };
 
   return (
     <div className="space-y-8 pb-10">
@@ -405,16 +406,199 @@ function LinkBioEditorForm({ pageId, type }: { pageId: string, type: string }) {
           <div>
              <label className="text-[11px] font-bold text-muted-foreground uppercase mb-1 block">Cor de Fundo</label>
              <div className="flex gap-2">
-                <input type="color" value={page.bg_color} onChange={(e) => handleChange("bg_color", e.target.value)} className="h-9 w-12 rounded bg-transparent cursor-pointer" />
-                <input value={page.bg_color} onChange={(e) => handleChange("bg_color", e.target.value)} className="flex-1 rounded-lg border border-border bg-background/50 px-3 py-2 text-sm focus:border-primary focus:outline-none uppercase font-mono text-xs" />
+                <input type="color" value={page.bg_color || "#0a0a0a"} onChange={(e) => handleChange("bg_color", e.target.value)} className="h-9 w-12 rounded bg-transparent cursor-pointer" />
+                <input value={page.bg_color || ""} onChange={(e) => handleChange("bg_color", e.target.value)} className="flex-1 rounded-lg border border-border bg-background/50 px-3 py-2 text-sm focus:border-primary focus:outline-none uppercase font-mono text-xs" />
              </div>
           </div>
           <div>
              <label className="text-[11px] font-bold text-muted-foreground uppercase mb-1 block">Cor de Destaque</label>
              <div className="flex gap-2">
-                <input type="color" value={page.accent_color} onChange={(e) => handleChange("accent_color", e.target.value)} className="h-9 w-12 rounded bg-transparent cursor-pointer" />
-                <input value={page.accent_color} onChange={(e) => handleChange("accent_color", e.target.value)} className="flex-1 rounded-lg border border-border bg-background/50 px-3 py-2 text-sm focus:border-primary focus:outline-none uppercase font-mono text-xs" />
+                <input type="color" value={page.accent_color || "#e02020"} onChange={(e) => handleChange("accent_color", e.target.value)} className="h-9 w-12 rounded bg-transparent cursor-pointer" />
+                <input value={page.accent_color || ""} onChange={(e) => handleChange("accent_color", e.target.value)} className="flex-1 rounded-lg border border-border bg-background/50 px-3 py-2 text-sm focus:border-primary focus:outline-none uppercase font-mono text-xs" />
              </div>
+          </div>
+        </div>
+
+        {/* Identidade Visual Avançada */}
+        <div className="space-y-4 border border-border p-4 rounded-xl bg-muted/10 mt-6">
+          <h4 className="text-xs font-bold text-primary uppercase flex items-center gap-1.5">
+            <Palette className="h-3.5 w-3.5" /> Identidade Visual Avançada & Rastreamento
+          </h4>
+          <div className="space-y-3">
+            {/* Tipo de Fundo */}
+            <div>
+              <label className="text-[10px] font-bold text-muted-foreground uppercase mb-1 block">Tipo de Fundo</label>
+              <select 
+                value={page.theme?.bg_type || "color"} 
+                onChange={(e) => handleThemeChange("bg_type", e.target.value)}
+                className="w-full rounded-lg border border-border bg-background/50 px-3 py-2 text-xs focus:border-primary focus:outline-none"
+              >
+                <option value="color">Cor Sólida (Padrão)</option>
+                <option value="gradient">Gradiente Customizado</option>
+                <option value="image">Imagem de Fundo</option>
+              </select>
+            </div>
+
+            {/* Gradiente */}
+            {page.theme?.bg_type === 'gradient' && (
+              <div>
+                <label className="text-[10px] font-bold text-muted-foreground uppercase mb-1 block">Código CSS do Gradiente</label>
+                <input 
+                  defaultValue={page.theme?.bg_gradient || "linear-gradient(135deg, #121212 0%, #343434 100%)"} 
+                  onBlur={(e) => handleThemeChange("bg_gradient", e.target.value)} 
+                  placeholder="Ex: linear-gradient(135deg, #000 0%, #333 100%)"
+                  className="w-full rounded-lg border border-border bg-background/50 px-3 py-2 text-xs focus:border-primary focus:outline-none font-mono"
+                />
+              </div>
+            )}
+
+            {/* Imagem de Fundo */}
+            {page.theme?.bg_type === 'image' && (
+              <div className="space-y-2">
+                <label className="text-[10px] font-bold text-muted-foreground uppercase mb-1 block">URL da Imagem de Fundo</label>
+                <input 
+                  defaultValue={page.theme?.bg_image || ""} 
+                  onBlur={(e) => handleThemeChange("bg_image", e.target.value)} 
+                  placeholder="https://exemplo.com/imagem.jpg"
+                  className="w-full rounded-lg border border-border bg-background/50 px-3 py-2 text-xs focus:border-primary focus:outline-none"
+                />
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-[9px] text-muted-foreground uppercase">Opacidade (0 a 1)</label>
+                    <input 
+                      type="number" 
+                      step="0.1" 
+                      min="0" 
+                      max="1"
+                      defaultValue={page.theme?.bg_image_opacity !== undefined ? page.theme?.bg_image_opacity : 0.3} 
+                      onChange={(e) => handleThemeChange("bg_image_opacity", parseFloat(e.target.value))} 
+                      className="w-full rounded-lg border border-border bg-background/50 px-3 py-1.5 text-xs focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[9px] text-muted-foreground uppercase">Desfoque (Blur)</label>
+                    <input 
+                      type="text" 
+                      placeholder="e.g. 5px"
+                      defaultValue={page.theme?.bg_image_blur || "0px"} 
+                      onBlur={(e) => handleThemeChange("bg_image_blur", e.target.value)} 
+                      className="w-full rounded-lg border border-border bg-background/50 px-3 py-1.5 text-xs focus:outline-none"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Fonte Customizada */}
+            <div>
+              <label className="text-[10px] font-bold text-muted-foreground uppercase mb-1 block">Tipografia (Google Fonts)</label>
+              <select 
+                value={page.theme?.font_family || page.font_family || "Outfit"} 
+                onChange={(e) => handleThemeChange("font_family", e.target.value)}
+                className="w-full rounded-lg border border-border bg-background/50 px-3 py-2 text-xs focus:border-primary focus:outline-none"
+              >
+                <option value="Outfit">Outfit (Moderna/Esportiva)</option>
+                <option value="Montserrat">Montserrat (Marcante/Premium)</option>
+                <option value="Syne">Syne (Design Avançado)</option>
+                <option value="Inter">Inter (Clean/Técnica)</option>
+                <option value="Oswald">Oswald (Rápida/Automotiva)</option>
+                <option value="Roboto">Roboto (Clássica)</option>
+              </select>
+            </div>
+
+            {/* Glassmorphism e Efeitos */}
+            <div className="space-y-2 border-t border-border pt-2">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-bold text-muted-foreground uppercase">Efeito Glassmorphism (Fosco)</span>
+                <button 
+                  type="button"
+                  onClick={() => handleThemeChange("glassmorphism", !page.theme?.glassmorphism)}
+                  className={`relative inline-flex h-4 w-8 shrink-0 cursor-pointer items-center justify-center rounded-full border-2 border-transparent transition-colors duration-200 ${page.theme?.glassmorphism ? 'bg-primary' : 'bg-muted'}`}
+                >
+                  <span className={`pointer-events-none inline-block h-3 w-3 transform rounded-full bg-white shadow transition duration-200 ${page.theme?.glassmorphism ? 'translate-x-4' : 'translate-x-0'}`} />
+                </button>
+              </div>
+              
+              {page.theme?.glassmorphism && (
+                <div className="grid grid-cols-2 gap-2 pl-2 border-l-2 border-primary/40">
+                  <div>
+                    <label className="text-[9px] text-muted-foreground uppercase">Intensidade Blur</label>
+                    <input 
+                      placeholder="e.g. 12px"
+                      defaultValue={page.theme?.blur_intensity || "12px"} 
+                      onBlur={(e) => handleThemeChange("blur_intensity", e.target.value)} 
+                      className="w-full rounded-lg border border-border bg-background/50 px-3 py-1.5 text-xs focus:outline-none"
+                    />
+                  </div>
+                  <div className="flex items-center justify-between mt-3">
+                    <span className="text-[9px] text-muted-foreground uppercase">Brilho de Borda</span>
+                    <button 
+                      type="button"
+                      onClick={() => handleThemeChange("border_glow", !page.theme?.border_glow)}
+                      className={`relative inline-flex h-3.5 w-7 shrink-0 cursor-pointer items-center justify-center rounded-full border-2 border-transparent transition-colors duration-200 ${page.theme?.border_glow ? 'bg-primary' : 'bg-muted'}`}
+                    >
+                      <span className={`pointer-events-none inline-block h-2.5 w-2.5 transform rounded-full bg-white shadow transition duration-200 ${page.theme?.border_glow ? 'translate-x-3.5' : 'translate-x-0'}`} />
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Arredondamento */}
+            <div>
+              <label className="text-[10px] font-bold text-muted-foreground uppercase mb-1 block">Arredondamento dos Elementos (Radius px)</label>
+              <input 
+                type="number" 
+                min="0" 
+                max="50"
+                placeholder="e.g. 12"
+                defaultValue={page.theme?.border_radius !== undefined ? page.theme?.border_radius : 12} 
+                onChange={(e) => handleThemeChange("border_radius", parseInt(e.target.value) || 0)} 
+                className="w-full rounded-lg border border-border bg-background/50 px-3 py-2 text-xs focus:border-primary focus:outline-none"
+              />
+            </div>
+
+            {/* Cores do Botão */}
+            <div className="grid grid-cols-2 gap-2 border-t border-border pt-2">
+              <div>
+                <label className="text-[9px] text-muted-foreground uppercase">Cor de Fundo do Botão</label>
+                <div className="flex gap-1.5">
+                  <input type="color" value={page.theme?.button_bg_color || page.accent_color || "#e02020"} onChange={(e) => handleThemeChange("button_bg_color", e.target.value)} className="h-7 w-8 rounded bg-transparent cursor-pointer" />
+                  <input value={page.theme?.button_bg_color || ""} onChange={(e) => handleThemeChange("button_bg_color", e.target.value)} placeholder="Cor" className="w-full rounded-lg border border-border bg-background/50 px-2 py-1 text-xs focus:outline-none uppercase font-mono" />
+                </div>
+              </div>
+              <div>
+                <label className="text-[9px] text-muted-foreground uppercase">Cor do Texto do Botão</label>
+                <div className="flex gap-1.5">
+                  <input type="color" value={page.theme?.button_text_color || "#ffffff"} onChange={(e) => handleThemeChange("button_text_color", e.target.value)} className="h-7 w-8 rounded bg-transparent cursor-pointer" />
+                  <input value={page.theme?.button_text_color || ""} onChange={(e) => handleThemeChange("button_text_color", e.target.value)} placeholder="Cor" className="w-full rounded-lg border border-border bg-background/50 px-2 py-1 text-xs focus:outline-none uppercase font-mono" />
+                </div>
+              </div>
+            </div>
+
+            {/* Pixel e Código Customizado */}
+            <div className="space-y-2 border-t border-border pt-2">
+              <div>
+                <label className="text-[10px] font-bold text-muted-foreground uppercase mb-1 block">Meta Pixel ID</label>
+                <input 
+                  defaultValue={page.theme?.pixel_id || ""} 
+                  onBlur={(e) => handleThemeChange("pixel_id", e.target.value)} 
+                  placeholder="Ex: 83749284719284"
+                  className="w-full rounded-lg border border-border bg-background/50 px-3 py-2 text-xs focus:border-primary focus:outline-none font-mono"
+                />
+              </div>
+              <div>
+                <label className="text-[10px] font-bold text-muted-foreground uppercase mb-1 block">CSS Customizado (Designers)</label>
+                <textarea 
+                  defaultValue={page.theme?.custom_css || ""} 
+                  onBlur={(e) => handleThemeChange("custom_css", e.target.value)} 
+                  rows={3}
+                  placeholder="Ex: .btn { box-shadow: 0 0 10px red; }"
+                  className="w-full rounded-lg border border-border bg-background/50 px-3 py-2 text-xs focus:border-primary focus:outline-none font-mono resize-none"
+                />
+              </div>
+            </div>
+
           </div>
         </div>
       </div>
@@ -442,6 +626,10 @@ function LinkBioEditorForm({ pageId, type }: { pageId: string, type: string }) {
                        <div className="flex items-center justify-between gap-2">
                           <input defaultValue={link.title} onBlur={(e) => updateLinkMutation.mutate({ id: link.id, data: { title: e.target.value } })} placeholder="Título do Botão" className="flex-1 bg-transparent border-b border-border text-sm font-bold focus:border-primary focus:outline-none py-1" />
                           <div className="flex items-center gap-2">
+                            {/* Click analytics badge */}
+                            <span className="flex items-center gap-0.5 text-[9px] font-bold text-muted-foreground bg-muted/60 px-1.5 py-0.5 rounded" title="Cliques acumulados">
+                              <MousePointerClick className="h-2.5 w-2.5" /> {link.click_count || 0}
+                            </span>
                             <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-muted uppercase">{link.type}</span>
                             <button onClick={() => updateLinkMutation.mutate({ id: link.id, data: { is_active: !link.is_active } })} className={`text-[10px] font-bold px-2 py-1 rounded ${link.is_active ? 'bg-success/20 text-success' : 'bg-muted text-muted-foreground'}`}>{link.is_active ? 'ON' : 'OFF'}</button>
                             <button onClick={() => { if(confirm('Excluir link?')) deleteLinkMutation.mutate(link.id); }} className="text-muted-foreground hover:text-destructive"><Trash2 className="h-3.5 w-3.5" /></button>
@@ -453,6 +641,22 @@ function LinkBioEditorForm({ pageId, type }: { pageId: string, type: string }) {
                            <input defaultValue={link.whatsapp_message || ""} onBlur={(e) => updateLinkMutation.mutate({ id: link.id, data: { whatsapp_message: e.target.value } })} placeholder="Mensagem pré-preenchida (ex: Olá, interesse no Civic)" className="w-full text-[11px] bg-background/50 border border-border rounded px-2 py-1.5 text-muted-foreground focus:outline-none focus:border-primary" />
                          </div>
                        )}
+                       {/* Animation Selector */}
+                       <div className="pt-1.5 border-t border-border/60 flex items-center gap-2">
+                         <Zap className="h-3 w-3 text-yellow-500/70" />
+                         <label className="text-[9px] font-bold text-muted-foreground uppercase">Animação de Atenção</label>
+                         <select
+                           value={link.animation_style || 'none'}
+                           onChange={(e) => updateLinkMutation.mutate({ id: link.id, data: { animation_style: e.target.value } })}
+                           className="ml-auto text-[9px] bg-background/50 border border-border rounded px-2 py-1 focus:outline-none"
+                         >
+                           <option value="none">Nenhuma</option>
+                           <option value="pulse">Pulso Suave</option>
+                           <option value="bounce">Bounce (Saltitar)</option>
+                           <option value="shake">Shake (Vibração)</option>
+                           <option value="glow">Glow (Brilho Neon)</option>
+                         </select>
+                       </div>
                     </div>
                  </div>
               ))}
@@ -462,9 +666,56 @@ function LinkBioEditorForm({ pageId, type }: { pageId: string, type: string }) {
         </>
       )}
 
+      {/* 4. Redes Sociais da Página */}
+      {type !== 'form' && (
+        <>
+          <hr className="border-border" />
+          <div className="space-y-3">
+            <h3 className="header-sport text-sm font-bold flex items-center gap-2"><Share2 className="h-4 w-4 text-primary" /> Barra de Redes Sociais</h3>
+            <p className="text-[11px] text-muted-foreground">Exibe ícones de redes sociais horizontalmente abaixo da bio. Cole apenas o usuário (ex: <span className="font-mono text-foreground">@ncsuite</span>).</p>
+            <div className="grid grid-cols-2 gap-3">
+              {[
+                { key: 'social_instagram', label: 'Instagram', placeholder: '@seu_perfil' },
+                { key: 'social_facebook', label: 'Facebook', placeholder: 'usuario ou URL' },
+                { key: 'social_youtube', label: 'YouTube', placeholder: '@canal ou URL' },
+                { key: 'social_tiktok', label: 'TikTok', placeholder: '@seu_tiktok' },
+                { key: 'social_linkedin', label: 'LinkedIn', placeholder: 'usuario' },
+                { key: 'social_twitter', label: 'X / Twitter', placeholder: '@handle' },
+              ].map(({ key, label, placeholder }) => (
+                <div key={key}>
+                  <label className="text-[9px] font-bold text-muted-foreground uppercase block mb-1">{label}</label>
+                  <input
+                    defaultValue={page.theme?.[key] || ''}
+                    onBlur={(e) => handleThemeChange(key, e.target.value.trim())}
+                    placeholder={placeholder}
+                    className="w-full rounded-lg border border-border bg-background/50 px-3 py-1.5 text-xs focus:border-primary focus:outline-none"
+                  />
+                </div>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* 5. Banners / Slideshow */}
+      {type !== 'form' && (
+        <>
+          <hr className="border-border" />
+          <BannersEditor page={page} onThemeChange={handleThemeChange} />
+        </>
+      )}
+
+      {/* 6. FAQ Accordion */}
+      {type !== 'form' && (
+        <>
+          <hr className="border-border" />
+          <FaqEditor page={page} onThemeChange={handleThemeChange} />
+        </>
+      )}
+
       <hr className="border-border" />
 
-      {/* 4. Captura de Leads */}
+      {/* 7. Captura de Leads */}
       <div className="space-y-4">
         <h3 className="text-sm font-bold flex items-center justify-between gap-2">
           <div className="flex items-center gap-2"><Car className="h-4 w-4 text-primary" /> Captura de Leads (Formulário)</div>
@@ -482,6 +733,144 @@ function LinkBioEditorForm({ pageId, type }: { pageId: string, type: string }) {
         )}
       </div>
 
+    </div>
+  );
+}
+
+// ---------------------------------------------------------
+// BANNERS EDITOR COMPONENT
+// ---------------------------------------------------------
+function BannersEditor({ page, onThemeChange }: { page: any; onThemeChange: (key: string, val: any) => void }) {
+  const banners: any[] = page.theme?.banners || [];
+
+  const addBanner = () => {
+    onThemeChange('banners', [...banners, { id: Date.now().toString(), image: '', url: '', title: '' }]);
+  };
+
+  const updateBanner = (id: string, field: string, val: string) => {
+    onThemeChange('banners', banners.map((b: any) => b.id === id ? { ...b, [field]: val } : b));
+  };
+
+  const removeBanner = (id: string) => {
+    onThemeChange('banners', banners.filter((b: any) => b.id !== id));
+  };
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <h3 className="header-sport text-sm font-bold flex items-center gap-2">
+          <BannerIcon className="h-4 w-4 text-primary" /> Banners / Slideshow
+        </h3>
+        <button
+          onClick={addBanner}
+          className="px-2.5 py-1 bg-primary/10 hover:bg-primary/20 text-primary rounded text-[10px] font-bold border border-primary/20 flex items-center gap-1"
+        >
+          <Plus className="h-3 w-3" /> Adicionar Banner
+        </button>
+      </div>
+      <p className="text-[11px] text-muted-foreground">Banners aparecem como um carrossel rotativo no topo da página. Ideal para veículos em destaque ou promoções.</p>
+      <div className="space-y-3">
+        {banners.map((banner: any, idx: number) => (
+          <div key={banner.id} className="glass-panel p-3 space-y-2 relative">
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-[10px] font-bold text-muted-foreground uppercase">Banner {idx + 1}</span>
+              <button onClick={() => removeBanner(banner.id)} className="text-muted-foreground hover:text-destructive transition-colors">
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
+            </div>
+            {banner.image && (
+              <img src={banner.image} alt="Preview" className="w-full h-24 object-cover rounded-lg mb-2 border border-border" />
+            )}
+            <input
+              value={banner.image}
+              onChange={(e) => updateBanner(banner.id, 'image', e.target.value)}
+              placeholder="URL da imagem (https://...)"
+              className="w-full text-xs bg-background/50 border border-border rounded-lg px-3 py-1.5 focus:outline-none focus:border-primary"
+            />
+            <div className="grid grid-cols-2 gap-2">
+              <input
+                value={banner.title || ''}
+                onChange={(e) => updateBanner(banner.id, 'title', e.target.value)}
+                placeholder="Legenda (opcional)"
+                className="text-xs bg-background/50 border border-border rounded-lg px-3 py-1.5 focus:outline-none focus:border-primary"
+              />
+              <input
+                value={banner.url || ''}
+                onChange={(e) => updateBanner(banner.id, 'url', e.target.value)}
+                placeholder="Link ao clicar (URL)"
+                className="text-xs bg-background/50 border border-border rounded-lg px-3 py-1.5 focus:outline-none focus:border-primary"
+              />
+            </div>
+          </div>
+        ))}
+        {banners.length === 0 && (
+          <p className="text-xs text-muted-foreground text-center py-4 border border-dashed border-border rounded-lg">Nenhum banner. Clique em "Adicionar Banner" para criar um carrossel.</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------
+// FAQ EDITOR COMPONENT
+// ---------------------------------------------------------
+function FaqEditor({ page, onThemeChange }: { page: any; onThemeChange: (key: string, val: any) => void }) {
+  const faqs: any[] = page.theme?.faq || [];
+
+  const addFaq = () => {
+    onThemeChange('faq', [...faqs, { id: Date.now().toString(), question: 'Aceitam troca?', answer: '' }]);
+  };
+
+  const updateFaq = (id: string, field: string, val: string) => {
+    onThemeChange('faq', faqs.map((f: any) => f.id === id ? { ...f, [field]: val } : f));
+  };
+
+  const removeFaq = (id: string) => {
+    onThemeChange('faq', faqs.filter((f: any) => f.id !== id));
+  };
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <h3 className="header-sport text-sm font-bold flex items-center gap-2">
+          <HelpCircle className="h-4 w-4 text-primary" /> Perguntas Frequentes (FAQ)
+        </h3>
+        <button
+          onClick={addFaq}
+          className="px-2.5 py-1 bg-primary/10 hover:bg-primary/20 text-primary rounded text-[10px] font-bold border border-primary/20 flex items-center gap-1"
+        >
+          <Plus className="h-3 w-3" /> Adicionar Pergunta
+        </button>
+      </div>
+      <p className="text-[11px] text-muted-foreground">Exibidas como um accordion expansível no final da página, antes do formulário de captura. Ideal para sanar dúvidas e aumentar conversão.</p>
+      <div className="space-y-2">
+        {faqs.map((faq: any, idx: number) => (
+          <div key={faq.id} className="glass-panel p-3 space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-bold text-muted-foreground uppercase">Pergunta {idx + 1}</span>
+              <button onClick={() => removeFaq(faq.id)} className="text-muted-foreground hover:text-destructive transition-colors">
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
+            </div>
+            <input
+              value={faq.question}
+              onChange={(e) => updateFaq(faq.id, 'question', e.target.value)}
+              placeholder="Ex: Vocês aceitam troca?"
+              className="w-full text-xs font-bold bg-background/50 border border-border rounded-lg px-3 py-1.5 focus:outline-none focus:border-primary"
+            />
+            <textarea
+              value={faq.answer || ''}
+              onChange={(e) => updateFaq(faq.id, 'answer', e.target.value)}
+              placeholder="Resposta completa para o cliente..."
+              rows={2}
+              className="w-full text-xs bg-background/50 border border-border rounded-lg px-3 py-1.5 focus:outline-none focus:border-primary resize-none"
+            />
+          </div>
+        ))}
+        {faqs.length === 0 && (
+          <p className="text-xs text-muted-foreground text-center py-4 border border-dashed border-border rounded-lg">Nenhuma pergunta adicionada ainda.</p>
+        )}
+      </div>
     </div>
   );
 }
@@ -525,6 +914,7 @@ function QuizEditorForm({ pageId }: { pageId: string }) {
   if (isLoading || !quiz) return <div className="flex justify-center p-8"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>;
 
   const handleChange = (field: string, value: any) => { updateMutation.mutate({ [field]: value }); };
+  const handleThemeChange = (key: string, val: any) => { handleChange("theme", { ...(quiz.theme || {}), [key]: val }); };
 
   return (
     <div className="space-y-10 max-w-3xl mx-auto pb-10">
@@ -536,8 +926,203 @@ function QuizEditorForm({ pageId }: { pageId: string }) {
         </div>
         <div><label className="text-[11px] font-bold text-muted-foreground uppercase mb-1 block">Descrição / Subtítulo</label><textarea defaultValue={quiz.description || ""} onBlur={(e) => handleChange("description", e.target.value)} rows={2} className="w-full rounded-lg border border-border bg-background/50 px-3 py-2 text-sm focus:border-primary focus:outline-none resize-none" /></div>
         <div className="grid gap-3 sm:grid-cols-2">
-          <div><label className="text-[11px] font-bold text-muted-foreground uppercase mb-1 block">Cor de Fundo</label><div className="flex gap-2"><input type="color" value={quiz.bg_color} onChange={(e) => handleChange("bg_color", e.target.value)} className="h-9 w-12 rounded bg-transparent cursor-pointer" /><input value={quiz.bg_color} onChange={(e) => handleChange("bg_color", e.target.value)} className="flex-1 rounded-lg border border-border bg-background/50 px-3 py-2 text-sm uppercase font-mono text-xs" /></div></div>
-          <div><label className="text-[11px] font-bold text-muted-foreground uppercase mb-1 block">Cor de Destaque</label><div className="flex gap-2"><input type="color" value={quiz.theme_color} onChange={(e) => handleChange("theme_color", e.target.value)} className="h-9 w-12 rounded bg-transparent cursor-pointer" /><input value={quiz.theme_color} onChange={(e) => handleChange("theme_color", e.target.value)} className="flex-1 rounded-lg border border-border bg-background/50 px-3 py-2 text-sm uppercase font-mono text-xs" /></div></div>
+          <div>
+            <label className="text-[11px] font-bold text-muted-foreground uppercase mb-1 block">Cor de Fundo</label>
+            <div className="flex gap-2">
+              <input type="color" value={quiz.bg_color || "#0a0a0a"} onChange={(e) => handleChange("bg_color", e.target.value)} className="h-9 w-12 rounded bg-transparent cursor-pointer" />
+              <input value={quiz.bg_color || ""} onChange={(e) => handleChange("bg_color", e.target.value)} className="flex-1 rounded-lg border border-border bg-background/50 px-3 py-2 text-sm uppercase font-mono text-xs" />
+            </div>
+          </div>
+          <div>
+            <label className="text-[11px] font-bold text-muted-foreground uppercase mb-1 block">Cor de Destaque</label>
+            <div className="flex gap-2">
+              <input type="color" value={quiz.theme_color || "#e02020"} onChange={(e) => handleChange("theme_color", e.target.value)} className="h-9 w-12 rounded bg-transparent cursor-pointer" />
+              <input value={quiz.theme_color || ""} onChange={(e) => handleChange("theme_color", e.target.value)} className="flex-1 rounded-lg border border-border bg-background/50 px-3 py-2 text-sm uppercase font-mono text-xs" />
+            </div>
+          </div>
+        </div>
+
+        {/* Identidade Visual Avançada do Quiz */}
+        <div className="space-y-4 border border-border p-4 rounded-xl bg-muted/10 mt-6">
+          <h4 className="text-xs font-bold text-primary uppercase flex items-center gap-1.5">
+            <Palette className="h-3.5 w-3.5" /> Identidade Visual Avançada & Rastreamento
+          </h4>
+          <div className="space-y-3">
+            {/* Tipo de Fundo */}
+            <div>
+              <label className="text-[10px] font-bold text-muted-foreground uppercase mb-1 block">Tipo de Fundo</label>
+              <select 
+                value={quiz.theme?.bg_type || "color"} 
+                onChange={(e) => handleThemeChange("bg_type", e.target.value)}
+                className="w-full rounded-lg border border-border bg-background/50 px-3 py-2 text-xs focus:border-primary focus:outline-none"
+              >
+                <option value="color">Cor Sólida (Padrão)</option>
+                <option value="gradient">Gradiente Customizado</option>
+                <option value="image">Imagem de Fundo</option>
+              </select>
+            </div>
+
+            {/* Gradiente */}
+            {quiz.theme?.bg_type === 'gradient' && (
+              <div>
+                <label className="text-[10px] font-bold text-muted-foreground uppercase mb-1 block">Código CSS do Gradiente</label>
+                <input 
+                  defaultValue={quiz.theme?.bg_gradient || "linear-gradient(135deg, #121212 0%, #343434 100%)"} 
+                  onBlur={(e) => handleThemeChange("bg_gradient", e.target.value)} 
+                  placeholder="Ex: linear-gradient(135deg, #000 0%, #333 100%)"
+                  className="w-full rounded-lg border border-border bg-background/50 px-3 py-2 text-xs focus:border-primary focus:outline-none font-mono"
+                />
+              </div>
+            )}
+
+            {/* Imagem de Fundo */}
+            {quiz.theme?.bg_type === 'image' && (
+              <div className="space-y-2">
+                <label className="text-[10px] font-bold text-muted-foreground uppercase mb-1 block">URL da Imagem de Fundo</label>
+                <input 
+                  defaultValue={quiz.theme?.bg_image || ""} 
+                  onBlur={(e) => handleThemeChange("bg_image", e.target.value)} 
+                  placeholder="https://exemplo.com/imagem.jpg"
+                  className="w-full rounded-lg border border-border bg-background/50 px-3 py-2 text-xs focus:border-primary focus:outline-none"
+                />
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-[9px] text-muted-foreground uppercase">Opacidade (0 a 1)</label>
+                    <input 
+                      type="number" 
+                      step="0.1" 
+                      min="0" 
+                      max="1"
+                      defaultValue={quiz.theme?.bg_image_opacity !== undefined ? quiz.theme?.bg_image_opacity : 0.3} 
+                      onChange={(e) => handleThemeChange("bg_image_opacity", parseFloat(e.target.value))} 
+                      className="w-full rounded-lg border border-border bg-background/50 px-3 py-1.5 text-xs focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[9px] text-muted-foreground uppercase">Desfoque (Blur)</label>
+                    <input 
+                      type="text" 
+                      placeholder="e.g. 5px"
+                      defaultValue={quiz.theme?.bg_image_blur || "0px"} 
+                      onBlur={(e) => handleThemeChange("bg_image_blur", e.target.value)} 
+                      className="w-full rounded-lg border border-border bg-background/50 px-3 py-1.5 text-xs focus:outline-none"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Fonte Customizada */}
+            <div>
+              <label className="text-[10px] font-bold text-muted-foreground uppercase mb-1 block">Tipografia (Google Fonts)</label>
+              <select 
+                value={quiz.theme?.font_family || quiz.font_family || "Outfit"} 
+                onChange={(e) => handleThemeChange("font_family", e.target.value)}
+                className="w-full rounded-lg border border-border bg-background/50 px-3 py-2 text-xs focus:border-primary focus:outline-none"
+              >
+                <option value="Outfit">Outfit (Moderna/Esportiva)</option>
+                <option value="Montserrat">Montserrat (Marcante/Premium)</option>
+                <option value="Syne">Syne (Design Avançado)</option>
+                <option value="Inter">Inter (Clean/Técnica)</option>
+                <option value="Oswald">Oswald (Rápida/Automotiva)</option>
+                <option value="Roboto">Roboto (Clássica)</option>
+              </select>
+            </div>
+
+            {/* Glassmorphism e Efeitos */}
+            <div className="space-y-2 border-t border-border pt-2">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-bold text-muted-foreground uppercase">Efeito Glassmorphism (Fosco)</span>
+                <button 
+                  type="button"
+                  onClick={() => handleThemeChange("glassmorphism", !quiz.theme?.glassmorphism)}
+                  className={`relative inline-flex h-4 w-8 shrink-0 cursor-pointer items-center justify-center rounded-full border-2 border-transparent transition-colors duration-200 ${quiz.theme?.glassmorphism ? 'bg-primary' : 'bg-muted'}`}
+                >
+                  <span className={`pointer-events-none inline-block h-3 w-3 transform rounded-full bg-white shadow transition duration-200 ${quiz.theme?.glassmorphism ? 'translate-x-4' : 'translate-x-0'}`} />
+                </button>
+              </div>
+              
+              {quiz.theme?.glassmorphism && (
+                <div className="grid grid-cols-2 gap-2 pl-2 border-l-2 border-primary/40">
+                  <div>
+                    <label className="text-[9px] text-muted-foreground uppercase">Intensidade Blur</label>
+                    <input 
+                      placeholder="e.g. 12px"
+                      defaultValue={quiz.theme?.blur_intensity || "12px"} 
+                      onBlur={(e) => handleThemeChange("blur_intensity", e.target.value)} 
+                      className="w-full rounded-lg border border-border bg-background/50 px-3 py-1.5 text-xs focus:outline-none"
+                    />
+                  </div>
+                  <div className="flex items-center justify-between mt-3">
+                    <span className="text-[9px] text-muted-foreground uppercase">Brilho de Borda</span>
+                    <button 
+                      type="button"
+                      onClick={() => handleThemeChange("border_glow", !quiz.theme?.border_glow)}
+                      className={`relative inline-flex h-3.5 w-7 shrink-0 cursor-pointer items-center justify-center rounded-full border-2 border-transparent transition-colors duration-200 ${quiz.theme?.border_glow ? 'bg-primary' : 'bg-muted'}`}
+                    >
+                      <span className={`pointer-events-none inline-block h-2.5 w-2.5 transform rounded-full bg-white shadow transition duration-200 ${quiz.theme?.border_glow ? 'translate-x-3.5' : 'translate-x-0'}`} />
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Arredondamento */}
+            <div>
+              <label className="text-[10px] font-bold text-muted-foreground uppercase mb-1 block">Arredondamento dos Elementos (Radius px)</label>
+              <input 
+                type="number" 
+                min="0" 
+                max="50"
+                placeholder="e.g. 12"
+                defaultValue={quiz.theme?.border_radius !== undefined ? quiz.theme?.border_radius : 12} 
+                onChange={(e) => handleThemeChange("border_radius", parseInt(e.target.value) || 0)} 
+                className="w-full rounded-lg border border-border bg-background/50 px-3 py-2 text-xs focus:border-primary focus:outline-none"
+              />
+            </div>
+
+            {/* Cores do Botão */}
+            <div className="grid grid-cols-2 gap-2 border-t border-border pt-2">
+              <div>
+                <label className="text-[9px] text-muted-foreground uppercase">Cor de Fundo do Botão</label>
+                <div className="flex gap-1.5">
+                  <input type="color" value={quiz.theme?.button_bg_color || quiz.theme_color || "#e02020"} onChange={(e) => handleThemeChange("button_bg_color", e.target.value)} className="h-7 w-8 rounded bg-transparent cursor-pointer" />
+                  <input value={quiz.theme?.button_bg_color || ""} onChange={(e) => handleThemeChange("button_bg_color", e.target.value)} placeholder="Cor" className="w-full rounded-lg border border-border bg-background/50 px-2 py-1 text-xs focus:outline-none uppercase font-mono" />
+                </div>
+              </div>
+              <div>
+                <label className="text-[9px] text-muted-foreground uppercase">Cor do Texto do Botão</label>
+                <div className="flex gap-1.5">
+                  <input type="color" value={quiz.theme?.button_text_color || "#ffffff"} onChange={(e) => handleThemeChange("button_text_color", e.target.value)} className="h-7 w-8 rounded bg-transparent cursor-pointer" />
+                  <input value={quiz.theme?.button_text_color || ""} onChange={(e) => handleThemeChange("button_text_color", e.target.value)} placeholder="Cor" className="w-full rounded-lg border border-border bg-background/50 px-2 py-1 text-xs focus:outline-none uppercase font-mono" />
+                </div>
+              </div>
+            </div>
+
+            {/* Pixel e Código Customizado */}
+            <div className="space-y-2 border-t border-border pt-2">
+              <div>
+                <label className="text-[10px] font-bold text-muted-foreground uppercase mb-1 block">Meta Pixel ID</label>
+                <input 
+                  defaultValue={quiz.theme?.pixel_id || ""} 
+                  onBlur={(e) => handleThemeChange("pixel_id", e.target.value)} 
+                  placeholder="Ex: 83749284719284"
+                  className="w-full rounded-lg border border-border bg-background/50 px-3 py-2 text-xs focus:border-primary focus:outline-none font-mono"
+                />
+              </div>
+              <div>
+                <label className="text-[10px] font-bold text-muted-foreground uppercase mb-1 block">CSS Customizado (Designers)</label>
+                <textarea 
+                  defaultValue={quiz.theme?.custom_css || ""} 
+                  onBlur={(e) => handleThemeChange("custom_css", e.target.value)} 
+                  rows={3}
+                  placeholder="Ex: .btn { box-shadow: 0 0 10px red; }"
+                  className="w-full rounded-lg border border-border bg-background/50 px-3 py-2 text-xs focus:border-primary focus:outline-none font-mono resize-none"
+                />
+              </div>
+            </div>
+
+          </div>
         </div>
         <div className="pt-2 flex items-center justify-between border-t border-border mt-2">
            <span className="text-[11px] font-bold text-muted-foreground uppercase">Formulário de Lead Final Ativado</span>

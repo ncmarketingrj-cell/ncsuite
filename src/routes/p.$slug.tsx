@@ -15,6 +15,12 @@ function PublicLinkPage() {
   const { slug } = Route.useParams();
   const [leadForm, setLeadForm] = useState({ name: "", email: "", phone: "", vehicle: "" });
   const [submitted, setSubmitted] = useState(false);
+  const [utms, setUtms] = useState({
+    utm_source: "",
+    utm_medium: "",
+    utm_campaign: "",
+    utm_content: ""
+  });
 
   const { data: page, isLoading, error } = useQuery({
     queryKey: ["public-link-page", slug],
@@ -41,18 +47,73 @@ function PublicLinkPage() {
     const viewKey = `viewed_${page.id}`;
     if (!sessionStorage.getItem(viewKey)) {
       (supabase as any).rpc('increment_page_view', { p_id: page.id }).then(() => {
-        // Fallback se a RPC não existir: update manual (ignora RLS se possível, ou usa edge function, mas faremos update direto se permitido)
         (supabase as any).from('link_pages').update({ views_count: (page.views_count || 0) + 1 }).eq('id', page.id).then();
       });
       sessionStorage.setItem(viewKey, 'true');
     }
   }, [page?.id]);
 
+  // Parse UTM parameters from URL
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    setUtms({
+      utm_source: params.get("utm_source") || "",
+      utm_medium: params.get("utm_medium") || "",
+      utm_campaign: params.get("utm_campaign") || "",
+      utm_content: params.get("utm_content") || ""
+    });
+  }, []);
+
+  // Dynamically load Meta Pixel if configured in theme
+  useEffect(() => {
+    const theme = page?.theme || {};
+    const pixelId = theme.pixel_id;
+    if (!pixelId) return;
+
+    if (!(window as any).fbq) {
+      (function(f: any, b: any, e: any, v: any, n?: any, t?: any, s?: any) {
+        if (f.fbq) return;
+        n = f.fbq = function() {
+          n.callMethod ? n.callMethod.apply(n, arguments) : n.queue.push(arguments);
+        };
+        if (!f._fbq) f._fbq = n;
+        n.push = n;
+        n.loaded = !0;
+        n.version = '2.0';
+        n.queue = [];
+        t = b.createElement(e);
+        t.async = !0;
+        t.src = v;
+        s = b.getElementsByTagName(e)[0];
+        s.parentNode.insertBefore(t, s);
+      })(window, document, 'script', 'https://connect.facebook.net/en_US/fbevents.js');
+      
+      (window as any).fbq('init', pixelId);
+    }
+    
+    (window as any).fbq('track', 'PageView');
+  }, [page?.id, page?.theme?.pixel_id]);
+
+  // Dynamically load Google Font if configured
+  useEffect(() => {
+    const font = page?.font_family || page?.theme?.font_family || 'Outfit';
+    if (!font) return;
+    
+    const linkId = 'dynamic-google-font-link';
+    let link = document.getElementById(linkId) as HTMLLinkElement;
+    if (!link) {
+      link = document.createElement('link');
+      link.id = linkId;
+      link.rel = 'stylesheet';
+      document.head.appendChild(link);
+    }
+    link.href = `https://fonts.googleapis.com/css2?family=${font.replace(/\s+/g, '+')}:wght@300;400;500;700;900&display=swap`;
+  }, [page?.font_family, page?.theme?.font_family]);
+
   const clickMutation = useMutation({
     mutationFn: async (itemId: string) => {
       await (supabase as any).from("link_clicks").insert({ item_id: itemId, page_id: page.id, user_agent: navigator.userAgent });
       await (supabase as any).rpc('increment_item_click', { i_id: itemId } as any).then(() => {
-        // Fallback manual
         const item = items.find(i => i.id === itemId);
         if(item) (supabase as any).from('link_items').update({ click_count: (item.click_count || 0) + 1 }).eq('id', itemId).then();
       });
@@ -69,11 +130,28 @@ function PublicLinkPage() {
         email: leadForm.email,
         phone: leadForm.phone,
         vehicle_interest: leadForm.vehicle,
-        source: 'link_page'
+        source: 'link_page',
+        utm_source: utms.utm_source || null,
+        utm_medium: utms.utm_medium || null,
+        utm_campaign: utms.utm_campaign || null,
+        utm_content: utms.utm_content || null,
+        status: 'novo'
       });
       if (error) throw error;
     },
-    onSuccess: () => { setSubmitted(true); toast.success("Contato enviado com sucesso!"); },
+    onSuccess: () => { 
+      setSubmitted(true); 
+      toast.success("Contato enviado com sucesso!");
+      
+      // Trigger Meta Pixel conversion event
+      const theme = page?.theme || {};
+      if ((window as any).fbq && theme.pixel_id) {
+        (window as any).fbq('track', 'Lead', {
+          content_name: page.title,
+          status: 'novo'
+        });
+      }
+    },
     onError: (e: Error) => toast.error(e.message),
   });
 
@@ -97,13 +175,72 @@ function PublicLinkPage() {
 
   const isCarbon = page.template === 'matte-carbon';
   const isNeon = page.template === 'racing-neon';
-  const btnRadius = page.button_style === 'pill' ? '999px' : page.button_style === 'squared' ? '4px' : '12px';
+  const theme = page.theme || {};
+  const fontStyle = theme.font_family || page.font_family || 'Outfit';
+
+  // Base background styling
+  let bgStyle: React.CSSProperties = {
+    backgroundColor: page.bg_color || '#0a0a0a',
+    fontFamily: `${fontStyle}, sans-serif`,
+  };
+
+  if (theme.bg_type === 'gradient' && theme.bg_gradient) {
+    bgStyle.background = theme.bg_gradient;
+  }
+
+  // Border radius override
+  const btnRadius = theme.border_radius !== undefined ? `${theme.border_radius}px` : (page.button_style === 'pill' ? '999px' : page.button_style === 'squared' ? '4px' : '12px');
+
+  // Button style overrides
+  const customBtnStyle: React.CSSProperties = {
+    borderRadius: btnRadius,
+  };
+  if (theme.button_bg_color) {
+    customBtnStyle.backgroundColor = theme.button_bg_color;
+    customBtnStyle.borderColor = theme.button_bg_color;
+  } else if (page.accent_color) {
+    customBtnStyle.backgroundColor = page.accent_color;
+    customBtnStyle.borderColor = page.accent_color;
+  }
+  if (theme.button_text_color) {
+    customBtnStyle.color = theme.button_text_color;
+  }
+
+  // Glassmorphism styling
+  const isGlass = theme.glassmorphism;
+  const glassStyle: React.CSSProperties = isGlass ? {
+    backdropFilter: `blur(${theme.blur_intensity || '12px'})`,
+    WebkitBackdropFilter: `blur(${theme.blur_intensity || '12px'})`,
+    backgroundColor: 'rgba(0, 0, 0, 0.4)',
+    border: theme.border_glow ? `1px solid ${page.accent_color || '#e02020'}60` : '1px solid rgba(255,255,255,0.1)',
+    boxShadow: theme.border_glow ? `0 0 20px ${page.accent_color || '#e02020'}20` : 'none',
+  } : {};
 
   return (
-    <div className="min-h-screen w-full flex justify-center selection:bg-white/30" style={{ backgroundColor: page.bg_color, fontFamily: page.font_family || 'system-ui' }}>
+    <div className="min-h-screen w-full flex justify-center selection:bg-white/30 relative overflow-x-hidden" style={bgStyle}>
       
-      {isNeon && <div className="fixed inset-0 pointer-events-none opacity-20" style={{ background: `radial-gradient(circle at 50% 0%, ${page.accent_color}, transparent 60%)` }} />}
-      {isCarbon && <div className="fixed inset-0 pointer-events-none opacity-[0.03]" style={{ backgroundImage: `repeating-linear-gradient(45deg, #000 25%, transparent 25%, transparent 75%, #000 75%, #000), repeating-linear-gradient(45deg, #000 25%, transparent 25%, transparent 75%, #000 75%, #000)`, backgroundSize: '10px 10px', backgroundPosition: '0 0, 5px 5px' }} />}
+      {/* Background Image / Overlay */}
+      {theme.bg_type === 'image' && theme.bg_image && (
+        <div 
+          className="fixed inset-0 pointer-events-none z-0" 
+          style={{
+            backgroundImage: `url(${theme.bg_image})`,
+            backgroundSize: 'cover',
+            backgroundPosition: 'center',
+            backgroundAttachment: 'fixed',
+            opacity: theme.bg_image_opacity !== undefined ? theme.bg_image_opacity : 0.3,
+            filter: `blur(${theme.bg_image_blur || '0px'})`,
+          }}
+        />
+      )}
+
+      {/* Custom CSS Injection */}
+      {theme.custom_css && (
+        <style dangerouslySetInnerHTML={{ __html: theme.custom_css }} />
+      )}
+      
+      {isNeon && <div className="fixed inset-0 pointer-events-none opacity-20 z-0" style={{ background: `radial-gradient(circle at 50% 0%, ${page.accent_color}, transparent 60%)` }} />}
+      {isCarbon && <div className="fixed inset-0 pointer-events-none opacity-[0.03] z-0" style={{ backgroundImage: `repeating-linear-gradient(45deg, #000 25%, transparent 25%, transparent 75%, #000 75%, #000), repeating-linear-gradient(45deg, #000 25%, transparent 25%, transparent 75%, #000 75%, #000)`, backgroundSize: '10px 10px', backgroundPosition: '0 0, 5px 5px' }} />}
 
       <div className="w-full max-w-md px-4 py-12 relative z-10 flex flex-col items-center">
         
@@ -116,7 +253,7 @@ function PublicLinkPage() {
             </div>
           )}
           
-          <h1 className="mt-6 text-2xl font-bold text-center" style={{ color: isCarbon ? '#fff' : page.accent_color }}>{page.title}</h1>
+          <h1 className="mt-6 text-2xl font-bold text-center" style={{ color: isCarbon ? '#fff' : (page.accent_color || '#fff') }}>{page.title}</h1>
           {page.bio && <p className="mt-2 text-sm text-center leading-relaxed" style={{ color: 'rgba(255,255,255,0.8)' }}>{page.bio}</p>}
         </motion.div>
 
@@ -126,7 +263,7 @@ function PublicLinkPage() {
               if (item.type === 'youtube') {
                 const videoId = item.url.split('v=')[1]?.split('&')[0] || item.url.split('youtu.be/')[1]?.split('?')[0];
                 return (
-                  <motion.div key={item.id} initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: i * 0.1 }} className="w-full overflow-hidden shadow-lg" style={{ borderRadius: btnRadius, border: `1px solid ${page.accent_color}30` }}>
+                  <motion.div key={item.id} initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: i * 0.1 }} className="w-full overflow-hidden shadow-lg" style={{ borderRadius: btnRadius, border: `1px solid ${(page.accent_color || '#e02020')}30` }}>
                     {videoId ? (
                       <iframe width="100%" height="200" src={`https://www.youtube.com/embed/${videoId}`} title="YouTube" frameBorder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen></iframe>
                     ) : (
@@ -144,13 +281,14 @@ function PublicLinkPage() {
                   onClick={() => handleLinkClick(item)}
                   className="w-full relative group overflow-hidden flex items-center justify-between p-4 shadow-lg transition-all"
                   style={{ 
-                    backgroundColor: isCarbon ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.03)', 
-                    border: page.button_style === 'outline' ? `1px solid ${page.accent_color}` : `1px solid ${page.accent_color}40`, 
+                    backgroundColor: isGlass ? 'rgba(0,0,0,0.2)' : (isCarbon ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.03)'), 
+                    border: page.button_style === 'outline' ? `1px solid ${page.accent_color}` : `1px solid ${(page.accent_color || '#e02020')}40`, 
                     color: '#fff', 
-                    borderRadius: btnRadius 
+                    borderRadius: btnRadius,
+                    ...glassStyle
                   }}
                 >
-                  <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity" style={{ background: `linear-gradient(90deg, transparent, ${page.accent_color}30, transparent)` }} />
+                  <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity" style={{ background: `linear-gradient(90deg, transparent, ${(page.accent_color || '#e02020')}30, transparent)` }} />
                   
                   <div className="flex items-center gap-3 relative z-10 font-medium">
                     {item.type === 'whatsapp' ? <MessageSquare className="h-5 w-5" style={{ color: page.accent_color }} /> : item.type === 'phone' ? <Phone className="h-5 w-5" style={{ color: page.accent_color }} /> : item.type === 'maps' ? <MapPin className="h-5 w-5" style={{ color: page.accent_color }} /> : null}
@@ -164,14 +302,25 @@ function PublicLinkPage() {
         </div>
 
         {page.lead_form_enabled && (
-          <motion.div initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.5 }} className="mt-12 w-full p-6 shadow-2xl relative overflow-hidden" style={{ borderRadius: btnRadius, backgroundColor: 'rgba(0,0,0,0.4)', border: `1px solid ${page.accent_color}30` }}>
-            <div className="absolute inset-x-0 top-0 h-1" style={{ backgroundColor: page.accent_color }} />
+          <motion.div 
+            initial={{ y: 20, opacity: 0 }} 
+            animate={{ y: 0, opacity: 1 }} 
+            transition={{ delay: 0.5 }} 
+            className="mt-12 w-full p-6 shadow-2xl relative overflow-hidden" 
+            style={{ 
+              borderRadius: btnRadius, 
+              backgroundColor: isGlass ? 'rgba(0,0,0,0.45)' : 'rgba(0,0,0,0.4)', 
+              border: `1px solid ${(page.accent_color || '#e02020')}30`,
+              ...glassStyle
+            }}
+          >
+            <div className="absolute inset-x-0 top-0 h-1" style={{ backgroundColor: page.accent_color || '#e02020' }} />
             <h3 className="text-lg font-bold text-white mb-2 flex items-center gap-2"><Car className="h-5 w-5" style={{ color: page.accent_color }}/> Fale com um Consultor</h3>
             <p className="text-xs text-white/60 mb-6">Deixe seus dados e entraremos em contato com as melhores ofertas de veículos.</p>
             
             {submitted ? (
               <div className="text-center py-6">
-                <div className="w-12 h-12 rounded-full mx-auto flex items-center justify-center mb-3" style={{ backgroundColor: page.accent_color + '20', color: page.accent_color }}>
+                <div className="w-12 h-12 rounded-full mx-auto flex items-center justify-center mb-3" style={{ backgroundColor: (page.accent_color || '#e02020') + '20', color: page.accent_color || '#e02020' }}>
                   <Send className="h-6 w-6" />
                 </div>
                 <p className="text-white font-medium">Contato enviado!</p>
@@ -183,7 +332,7 @@ function PublicLinkPage() {
                 <input required type="tel" value={leadForm.phone} onChange={e=>setLeadForm(p=>({...p, phone: e.target.value}))} placeholder="Telefone / WhatsApp" className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-3 text-sm text-white placeholder-white/40 focus:outline-none focus:border-white/30" />
                 <input type="email" value={leadForm.email} onChange={e=>setLeadForm(p=>({...p, email: e.target.value}))} placeholder="E-mail (opcional)" className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-3 text-sm text-white placeholder-white/40 focus:outline-none focus:border-white/30" />
                 <input value={leadForm.vehicle} onChange={e=>setLeadForm(p=>({...p, vehicle: e.target.value}))} placeholder="Qual veículo você procura? (opcional)" className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-3 text-sm text-white placeholder-white/40 focus:outline-none focus:border-white/30" />
-                <button type="submit" disabled={submitLeadMutation.isPending} className="w-full mt-2 py-3.5 rounded-lg text-sm font-bold text-white shadow-lg transition-transform active:scale-95 flex items-center justify-center gap-2" style={{ backgroundColor: page.accent_color }}>
+                <button type="submit" disabled={submitLeadMutation.isPending} className="w-full mt-2 py-3.5 rounded-lg text-sm font-bold text-white shadow-lg transition-transform active:scale-95 flex items-center justify-center gap-2" style={customBtnStyle}>
                   {submitLeadMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <><Send className="h-4 w-4" /> Solicitar Contato</>}
                 </button>
               </form>
