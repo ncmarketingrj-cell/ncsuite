@@ -40,3 +40,6 @@ dist-ssr
 .env
 .env.*
 *.env
+
+# Unignore safe frontend production variables for Lovable
+!.env.production
