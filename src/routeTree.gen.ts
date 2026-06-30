@@ -13,6 +13,7 @@ import { Route as TermsRouteImport } from './routes/terms'
 import { Route as PrivacyRouteImport } from './routes/privacy'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as DeletionRouteImport } from './routes/deletion'
+import { Route as CrmLoginRouteImport } from './routes/crm-login'
 import { Route as AppRouteImport } from './routes/_app'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as QSlugRouteImport } from './routes/q.$slug'
@@ -68,6 +69,11 @@ const LoginRoute = LoginRouteImport.update({
 const DeletionRoute = DeletionRouteImport.update({
   id: '/deletion',
   path: '/deletion',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CrmLoginRoute = CrmLoginRouteImport.update({
+  id: '/crm-login',
+  path: '/crm-login',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AppRoute = AppRouteImport.update({
@@ -252,6 +258,7 @@ const AppCampanhasGraficoRoute = AppCampanhasGraficoRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/crm-login': typeof CrmLoginRoute
   '/deletion': typeof DeletionRoute
   '/login': typeof LoginRoute
   '/privacy': typeof PrivacyRoute
@@ -293,6 +300,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/crm-login': typeof CrmLoginRoute
   '/deletion': typeof DeletionRoute
   '/login': typeof LoginRoute
   '/privacy': typeof PrivacyRoute
@@ -336,6 +344,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/_app': typeof AppRouteWithChildren
+  '/crm-login': typeof CrmLoginRoute
   '/deletion': typeof DeletionRoute
   '/login': typeof LoginRoute
   '/privacy': typeof PrivacyRoute
@@ -379,6 +388,7 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/crm-login'
     | '/deletion'
     | '/login'
     | '/privacy'
@@ -420,6 +430,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/crm-login'
     | '/deletion'
     | '/login'
     | '/privacy'
@@ -462,6 +473,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/_app'
+    | '/crm-login'
     | '/deletion'
     | '/login'
     | '/privacy'
@@ -505,6 +517,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AppRoute: typeof AppRouteWithChildren
+  CrmLoginRoute: typeof CrmLoginRoute
   DeletionRoute: typeof DeletionRoute
   LoginRoute: typeof LoginRoute
   PrivacyRoute: typeof PrivacyRoute
@@ -541,6 +554,13 @@ declare module '@tanstack/react-router' {
       path: '/deletion'
       fullPath: '/deletion'
       preLoaderRoute: typeof DeletionRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/crm-login': {
+      id: '/crm-login'
+      path: '/crm-login'
+      fullPath: '/crm-login'
+      preLoaderRoute: typeof CrmLoginRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_app': {
@@ -893,6 +913,7 @@ const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AppRoute: AppRouteWithChildren,
+  CrmLoginRoute: CrmLoginRoute,
   DeletionRoute: DeletionRoute,
   LoginRoute: LoginRoute,
   PrivacyRoute: PrivacyRoute,
