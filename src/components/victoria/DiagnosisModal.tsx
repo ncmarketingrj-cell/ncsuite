@@ -62,7 +62,7 @@ export const DiagnosisModal: React.FC<DiagnosisModalProps> = ({
       const token = session?.session?.access_token;
 
       const response = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL || "https://xudumzedcxuuhxokissm.supabase.co"}/functions/v1/victoria-agent`,
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/victoria-agent`,
         {
           method: "POST",
           headers: {

@@ -249,14 +249,21 @@ function LoginPage() {
             )}
 
             {/* ── Footer do card ── */}
-            <div className="mt-5 border-t border-border pt-4 flex items-center justify-between">
-              <Link
-                to="/"
-                className="inline-flex items-center gap-1.5 label-mono text-muted-foreground/55 hover:text-primary transition-colors"
-              >
-                <ArrowLeft className="h-3 w-3" /> Página inicial
-              </Link>
-              <span className="label-mono text-muted-foreground/28">v2.0</span>
+            <div className="mt-5 border-t border-border pt-4 flex flex-col gap-3">
+              <div className="flex items-center justify-between">
+                <Link
+                  to="/"
+                  className="inline-flex items-center gap-1.5 label-mono text-muted-foreground/55 hover:text-primary transition-colors"
+                >
+                  <ArrowLeft className="h-3 w-3" /> Página inicial
+                </Link>
+                <span className="label-mono text-muted-foreground/28">v2.0</span>
+              </div>
+              <div className="flex items-center justify-center gap-3 text-[10px] text-muted-foreground/60 font-medium pt-1">
+                <Link to="/privacy" className="hover:text-primary transition-colors uppercase tracking-wider">Política de Privacidade</Link>
+                <span className="text-muted-foreground/30">•</span>
+                <Link to="/terms" className="hover:text-primary transition-colors uppercase tracking-wider">Termos de Serviço</Link>
+              </div>
             </div>
           </div>
 

@@ -1,12 +1,13 @@
 // Custom external Supabase client - points to user's own Supabase project
-// (not Lovable Cloud). Anon/publishable key is safe to hardcode (public by design).
+// (not Lovable Cloud). Credentials read from environment variables.
 import { createClient } from '@supabase/supabase-js';
 // Untyped: external Supabase schema differs from auto-generated Database types.
 type Database = any;
 
-export const EXTERNAL_SUPABASE_URL = 'https://uqhilsnrrmlepdjzpubq.supabase.co';
+export const EXTERNAL_SUPABASE_URL =
+  (import.meta as any).env?.VITE_SUPABASE_URL || process.env.SUPABASE_URL || '';
 export const EXTERNAL_SUPABASE_ANON_KEY =
-  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVxaGlsc25ycm1sZXBkanpwdWJxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI1MzkxOTIsImV4cCI6MjA5ODExNTE5Mn0.BQOqIlmadGj07UUE2u_EWqD3rr4iv_XGF5QuiR5j_Bc';
+  (import.meta as any).env?.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || '';
 
 function createSupabaseClient() {
   return createClient<Database>(EXTERNAL_SUPABASE_URL, EXTERNAL_SUPABASE_ANON_KEY, {

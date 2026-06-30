@@ -657,7 +657,7 @@ function StrategyMapPage() {
     setAiLoading(true);
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      const SUPABASE_URL = (import.meta.env.VITE_SUPABASE_URL as string) || "https://xudumzedcxuuhxokissm.supabase.co";
+      const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
       const res = await fetch(`${SUPABASE_URL}/functions/v1/ai-mind-map-generator`, {
         method: "POST",
         headers: { "Content-Type": "application/json", "Authorization": `Bearer ${session?.access_token}` },

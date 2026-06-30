@@ -651,7 +651,7 @@ function TabIntegracoes() {
         <button 
           onClick={() => {
              // Redireciona para o Google OAuth
-             const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID || "620606037088-ndk939vngs3kpsf1jeb5u70g00b1v4vj.apps.googleusercontent.com"; 
+             const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
              const redirectUri = `${window.location.origin}/_app/config`;
              const scope = "https://www.googleapis.com/auth/adwords https://www.googleapis.com/auth/userinfo.email";
              const url = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&scope=${encodeURIComponent(scope)}&access_type=offline&prompt=consent`;
