@@ -99,8 +99,6 @@ const GESTAO_NAV_ITEMS: NavItem[] = [
 ];
 
 const FUNIL_NAV_ITEMS: NavItem[] = [
-  { to: "/funis", icon: GitBranch, label: "Meus Funis" },
-  { to: "/funnel-builder", icon: LayoutDashboard, label: "Funil Builder" },
   { to: "/strategy-map", icon: Brain, label: "Strategy Map" },
   { to: "/link-bio", icon: Link2, label: "Link Bio" },
   { to: "/formulario", icon: FileText, label: "Formulário" },
@@ -113,12 +111,7 @@ const VICTORIA_NAV_ITEMS: NavItem[] = [
   { to: "/config", icon: Settings, label: "Configurações" },
 ];
 
-const CRM_NAV_ITEMS: NavItem[] = [
-  { to: "/crm", icon: Users, label: "SDR Pipeline" },
-  { to: "/clientes", icon: Store, label: "Clientes" },
-  { to: "/client-portal", icon: BarChart3, label: "Client Portal" },
-  { to: "/crm-config", icon: Settings, label: "Configurações" },
-];
+
 
 const ADMIN_EMAILS = ["nc.marketingrj@gmail.com", "hc.marketing.dgt@gmail.com"];
 
@@ -137,18 +130,6 @@ function Shell() {
   const hasPageAccess = (pathname: string) => {
     if (profileLoading || isAdmin) return true;
     
-    // SDRs da agência só podem acessar rotas de CRM, configuração, portal e lista de clientes
-    if (profile?.role === "agency_sdr") {
-      const allowed = ["/crm", "/crm-config", "/client-portal", "/config", "/clientes"];
-      return allowed.some(p => pathname === p || pathname.startsWith(p));
-    }
-
-    // Clientes lojistas só acessam o CRM (sua loja) e o portal do cliente
-    if (profile?.role === "client_store") {
-      const allowed = ["/crm", "/client-portal", "/config"];
-      return allowed.some(p => pathname === p || pathname.startsWith(p));
-    }
-    
     if (pathname.startsWith("/metricas")) return hasAccess("metricas");
     if (pathname.startsWith("/automacoes")) return hasAccess("automacoes");
     if (pathname.startsWith("/dashboard")) return hasAccess("dashboard");
@@ -158,9 +139,9 @@ function Shell() {
     if (pathname.startsWith("/social") || pathname.startsWith("/organizador") || pathname.startsWith("/link-bio") || pathname.startsWith("/quiz")) {
       return hasAccess("social");
     }
-    if (pathname.startsWith("/reunioes") || pathname.startsWith("/crm")) return hasAccess("reunioes");
+    if (pathname.startsWith("/reunioes")) return hasAccess("reunioes");
     if (pathname.startsWith("/cobrancas")) return hasAccess("cobrancas");
-    if (pathname.startsWith("/strategy-map") || pathname.startsWith("/funis") || pathname.startsWith("/funnel-builder")) {
+    if (pathname.startsWith("/strategy-map")) {
       return hasAccess("strategy_map");
     }
     if (pathname.startsWith("/victoria")) return hasAccess("agente");
@@ -168,10 +149,10 @@ function Shell() {
     if (pathname.startsWith("/config")) return true;
     return true;
   };
-  const [activeModule, setActiveModule] = useState<"hub" | "trafego" | "social" | "gestao" | "funil" | "victoria" | "crm">(() => {
+  const [activeModule, setActiveModule] = useState<"hub" | "trafego" | "social" | "gestao" | "funil" | "victoria">(() => {
     if (typeof window !== "undefined") {
       const stored = localStorage.getItem("nc_active_module");
-      return (["hub", "trafego", "social", "gestao", "funil", "victoria", "crm"].includes(stored as any) ? stored : "hub") as any;
+      return (["hub", "trafego", "social", "gestao", "funil", "victoria"].includes(stored as any) ? stored : "hub") as any;
     }
     return "hub";
   });
@@ -184,19 +165,17 @@ function Shell() {
     let nextModule = activeModule;
     if (path.startsWith("/victoria")) {
       nextModule = "victoria";
-    } else if (path.startsWith("/crm") || path.startsWith("/client-portal")) {
-      nextModule = "crm";
     } else if (path.startsWith("/social") || path.startsWith("/organizador") || path.startsWith("/link-bio") || path.startsWith("/quiz")) {
       nextModule = "social";
     } else if (path.startsWith("/dashboard") || path.startsWith("/cockpit") || path.startsWith("/simulador") || path.startsWith("/relatorios") || path.startsWith("/criativos") || path.startsWith("/metricas") || path.startsWith("/campanhas")) {
       nextModule = "trafego";
     } else if (path.startsWith("/clientes")) {
-      if (activeModule !== "crm" && activeModule !== "gestao") {
+      if (activeModule !== "gestao") {
         nextModule = "trafego";
       }
     } else if (path.startsWith("/cobrancas")) {
       nextModule = "gestao";
-    } else if (path.startsWith("/strategy-map") || path.startsWith("/funis") || path.startsWith("/funnel-builder")) {
+    } else if (path.startsWith("/strategy-map")) {
       nextModule = "funil";
     }
 
@@ -207,7 +186,6 @@ function Shell() {
       if (prevModuleRef.current && prevModuleRef.current !== nextModule) {
         let moduleName = "";
         if (nextModule === "social") moduleName = "Módulo Social";
-        else if (nextModule === "crm") moduleName = "CRM Vendas";
         else if (nextModule === "trafego") moduleName = "Núcleo de Performance";
         else if (nextModule === "gestao") moduleName = "Gestão";
         else if (nextModule === "funil") moduleName = "Estratégia de Funil";
@@ -219,26 +197,6 @@ function Shell() {
       prevModuleRef.current = nextModule as any;
     }
   }, [path]);
-
-  // Forçar CRM para SDR e Cliente, impedindo que naveguem para fora do CRM
-  useEffect(() => {
-    if (!profileLoading && profile) {
-      const isSdr = profile.role === "agency_sdr";
-      const isClient = profile.role === "client_store";
-      if (isSdr || isClient) {
-        if (activeModule !== "crm") {
-          setActiveModule("crm");
-          localStorage.setItem("nc_active_module", "crm");
-        }
-        
-        const allowed = ["/crm", "/crm-config", "/client-portal", "/config"];
-        const isAllowed = allowed.some(p => path === p || path.startsWith(p));
-        if (!isAllowed) {
-          nav({ to: "/crm", replace: true });
-        }
-      }
-    }
-  }, [profile, profileLoading, path, activeModule]);
 
   const [showModuleMenu, setShowModuleMenu] = useState(false);
 
@@ -252,8 +210,6 @@ function Shell() {
     currentNavItems = FUNIL_NAV_ITEMS;
   } else if (activeModule === "victoria") {
     currentNavItems = VICTORIA_NAV_ITEMS;
-  } else if (activeModule === "crm") {
-    currentNavItems = CRM_NAV_ITEMS;
   }
 
   const filteredNavItems = currentNavItems.filter(item => hasPageAccess(item.to));
@@ -481,38 +437,13 @@ function Shell() {
               </div>
             </motion.div>
 
-            {/* Card 3.5: CRM & Vendas (Novo Hub SDR) */}
-            <motion.div
-              whileHover={{ y: -8, scale: 1.02 }}
-              onClick={() => {
-                setActiveModule("crm");
-                localStorage.setItem("nc_active_module", "crm");
-                nav({ to: "/crm" });
-              }}
-              className="group relative rounded-2xl border border-border bg-card p-6 text-left cursor-pointer transition-all duration-300 hover:border-emerald-500/40 hover:shadow-lg shadow-sm"
-            >
-              <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-emerald-500 to-teal-500 rounded-t-2xl" />
-              <div className="h-10 w-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center mb-4">
-                <Users className="h-5 w-5 text-emerald-500" />
-              </div>
-              <h3 className="text-base font-black text-foreground group-hover:text-emerald-500 transition-colors">
-                CRM & Vendas
-              </h3>
-              <p className="text-xs text-muted-foreground mt-2 leading-relaxed">
-                Pipeline de SDR, Motor de Cadência Comercial, Agendamentos e Portal do Cliente.
-              </p>
-              <div className="mt-6 flex items-center gap-1.5 text-[10px] font-black uppercase text-emerald-500 tracking-wider">
-                Acessar CRM <ArrowRight className="h-3 w-3 transition-transform group-hover:translate-x-1" />
-              </div>
-            </motion.div>
-
-            {/* Card 4: Funis & Mapas */}
+            {/* Card 4: Strategy Map & Funis */}
             <motion.div
               whileHover={{ y: -8, scale: 1.02 }}
               onClick={() => {
                 setActiveModule("funil");
                 localStorage.setItem("nc_active_module", "funil");
-                nav({ to: "/funis" });
+                nav({ to: "/strategy-map" });
               }}
               className="group relative rounded-2xl border border-border bg-card p-6 text-left cursor-pointer transition-all duration-300 hover:border-purple-500/40 hover:shadow-lg shadow-sm"
             >
@@ -521,13 +452,13 @@ function Shell() {
                 <GitBranch className="h-5 w-5 text-purple-500" />
               </div>
               <h3 className="text-base font-black text-foreground group-hover:text-purple-500 transition-colors">
-                Mapas & Funis
+                Strategy Map
               </h3>
               <p className="text-xs text-muted-foreground mt-2 leading-relaxed">
-                Crie funis automotivos no Mapa Mental. Defina jornadas, rastreie fricções e gerencie Link Bios, Forms e Quizzes.
+                Desenhe jornadas de clientes, planeje estratégias de vendas e crie mapas mentais interativos.
               </p>
               <div className="mt-6 flex items-center gap-1.5 text-[10px] font-black uppercase text-purple-500 tracking-wider">
-                Acessar Funis <ArrowRight className="h-3 w-3 transition-transform group-hover:translate-x-1" />
+                Acessar Mapas <ArrowRight className="h-3 w-3 transition-transform group-hover:translate-x-1" />
               </div>
             </motion.div>
 
@@ -713,31 +644,17 @@ function Shell() {
                         </button>
                         <button
                           onClick={() => {
-                            setActiveModule("crm");
-                            localStorage.setItem("nc_active_module", "crm");
-                            setShowModuleMenu(false);
-                            nav({ to: "/crm" });
-                          }}
-                          className={`flex w-full items-center gap-2 rounded-xl px-2.5 py-2 text-xs font-bold transition-all ${
-                            activeModule === "crm" ? "bg-emerald-500/10 text-emerald-500" : "text-foreground/80 hover:bg-muted"
-                          }`}
-                        >
-                          <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                          CRM & Vendas
-                        </button>
-                        <button
-                          onClick={() => {
                             setActiveModule("funil");
                             localStorage.setItem("nc_active_module", "funil");
                             setShowModuleMenu(false);
-                            nav({ to: "/funis" });
+                            nav({ to: "/strategy-map" });
                           }}
                           className={`flex w-full items-center gap-2 rounded-xl px-2.5 py-2 text-xs font-bold transition-all ${
                             activeModule === "funil" ? "bg-purple-500/10 text-purple-500" : "text-foreground/80 hover:bg-muted"
                           }`}
                         >
                           <span className="h-1.5 w-1.5 rounded-full bg-purple-500" />
-                          Mapas &amp; Funis
+                          Strategy Map
                         </button>
                         <button
                           onClick={() => {
@@ -1247,7 +1164,7 @@ function Shell() {
             );
           }
 
-          const isFullScreenApp = path.startsWith('/funnel-builder') || path.startsWith('/strategy-map') || path.startsWith('/reunioes');
+          const isFullScreenApp = path.startsWith('/strategy-map') || path.startsWith('/reunioes');
           return (
             <div className={isFullScreenApp ? "flex flex-1 flex-col w-full" : "mx-auto w-full px-2 py-4 pb-28 sm:p-4 md:pb-8 md:p-6 lg:p-8"}>
               <Outlet />

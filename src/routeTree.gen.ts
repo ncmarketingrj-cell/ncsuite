@@ -13,7 +13,6 @@ import { Route as TermsRouteImport } from './routes/terms'
 import { Route as PrivacyRouteImport } from './routes/privacy'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as DeletionRouteImport } from './routes/deletion'
-import { Route as CrmLoginRouteImport } from './routes/crm-login'
 import { Route as AppRouteImport } from './routes/_app'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as QSlugRouteImport } from './routes/q.$slug'
@@ -33,18 +32,13 @@ import { Route as AppMetricasRouteImport } from './routes/_app/metricas'
 import { Route as AppLinkBioRouteImport } from './routes/_app/link-bio'
 import { Route as AppIntegrationsRouteImport } from './routes/_app/integrations'
 import { Route as AppHubRouteImport } from './routes/_app/hub'
-import { Route as AppFunnelBuilderRouteImport } from './routes/_app/funnel-builder'
-import { Route as AppFunisRouteImport } from './routes/_app/funis'
 import { Route as AppFormularioRouteImport } from './routes/_app/formulario'
 import { Route as AppDashboardRouteImport } from './routes/_app/dashboard'
-import { Route as AppCrmConfigRouteImport } from './routes/_app/crm-config'
-import { Route as AppCrmRouteImport } from './routes/_app/crm'
 import { Route as AppCriativosRouteImport } from './routes/_app/criativos'
 import { Route as AppConfigRouteImport } from './routes/_app/config'
 import { Route as AppCockpitRouteImport } from './routes/_app/cockpit'
 import { Route as AppCobrancasRouteImport } from './routes/_app/cobrancas'
 import { Route as AppClientesRouteImport } from './routes/_app/clientes'
-import { Route as AppClientPortalRouteImport } from './routes/_app/client-portal'
 import { Route as AppAutomacoesRouteImport } from './routes/_app/automacoes'
 import { Route as AppAuditoriaRouteImport } from './routes/_app/auditoria'
 import { Route as AppAgenteRouteImport } from './routes/_app/agente'
@@ -70,11 +64,6 @@ const LoginRoute = LoginRouteImport.update({
 const DeletionRoute = DeletionRouteImport.update({
   id: '/deletion',
   path: '/deletion',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const CrmLoginRoute = CrmLoginRouteImport.update({
-  id: '/crm-login',
-  path: '/crm-login',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AppRoute = AppRouteImport.update({
@@ -171,16 +160,6 @@ const AppHubRoute = AppHubRouteImport.update({
   path: '/hub',
   getParentRoute: () => AppRoute,
 } as any)
-const AppFunnelBuilderRoute = AppFunnelBuilderRouteImport.update({
-  id: '/funnel-builder',
-  path: '/funnel-builder',
-  getParentRoute: () => AppRoute,
-} as any)
-const AppFunisRoute = AppFunisRouteImport.update({
-  id: '/funis',
-  path: '/funis',
-  getParentRoute: () => AppRoute,
-} as any)
 const AppFormularioRoute = AppFormularioRouteImport.update({
   id: '/formulario',
   path: '/formulario',
@@ -189,16 +168,6 @@ const AppFormularioRoute = AppFormularioRouteImport.update({
 const AppDashboardRoute = AppDashboardRouteImport.update({
   id: '/dashboard',
   path: '/dashboard',
-  getParentRoute: () => AppRoute,
-} as any)
-const AppCrmConfigRoute = AppCrmConfigRouteImport.update({
-  id: '/crm-config',
-  path: '/crm-config',
-  getParentRoute: () => AppRoute,
-} as any)
-const AppCrmRoute = AppCrmRouteImport.update({
-  id: '/crm',
-  path: '/crm',
   getParentRoute: () => AppRoute,
 } as any)
 const AppCriativosRoute = AppCriativosRouteImport.update({
@@ -224,11 +193,6 @@ const AppCobrancasRoute = AppCobrancasRouteImport.update({
 const AppClientesRoute = AppClientesRouteImport.update({
   id: '/clientes',
   path: '/clientes',
-  getParentRoute: () => AppRoute,
-} as any)
-const AppClientPortalRoute = AppClientPortalRouteImport.update({
-  id: '/client-portal',
-  path: '/client-portal',
   getParentRoute: () => AppRoute,
 } as any)
 const AppAutomacoesRoute = AppAutomacoesRouteImport.update({
@@ -264,7 +228,6 @@ const AppCampanhasGraficoRoute = AppCampanhasGraficoRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
-  '/crm-login': typeof CrmLoginRoute
   '/deletion': typeof DeletionRoute
   '/login': typeof LoginRoute
   '/privacy': typeof PrivacyRoute
@@ -272,18 +235,13 @@ export interface FileRoutesByFullPath {
   '/agente': typeof AppAgenteRoute
   '/auditoria': typeof AppAuditoriaRoute
   '/automacoes': typeof AppAutomacoesRoute
-  '/client-portal': typeof AppClientPortalRoute
   '/clientes': typeof AppClientesRouteWithChildren
   '/cobrancas': typeof AppCobrancasRoute
   '/cockpit': typeof AppCockpitRoute
   '/config': typeof AppConfigRoute
   '/criativos': typeof AppCriativosRoute
-  '/crm': typeof AppCrmRoute
-  '/crm-config': typeof AppCrmConfigRoute
   '/dashboard': typeof AppDashboardRoute
   '/formulario': typeof AppFormularioRoute
-  '/funis': typeof AppFunisRoute
-  '/funnel-builder': typeof AppFunnelBuilderRoute
   '/hub': typeof AppHubRoute
   '/integrations': typeof AppIntegrationsRoute
   '/link-bio': typeof AppLinkBioRoute
@@ -307,7 +265,6 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
-  '/crm-login': typeof CrmLoginRoute
   '/deletion': typeof DeletionRoute
   '/login': typeof LoginRoute
   '/privacy': typeof PrivacyRoute
@@ -315,18 +272,13 @@ export interface FileRoutesByTo {
   '/agente': typeof AppAgenteRoute
   '/auditoria': typeof AppAuditoriaRoute
   '/automacoes': typeof AppAutomacoesRoute
-  '/client-portal': typeof AppClientPortalRoute
   '/clientes': typeof AppClientesRouteWithChildren
   '/cobrancas': typeof AppCobrancasRoute
   '/cockpit': typeof AppCockpitRoute
   '/config': typeof AppConfigRoute
   '/criativos': typeof AppCriativosRoute
-  '/crm': typeof AppCrmRoute
-  '/crm-config': typeof AppCrmConfigRoute
   '/dashboard': typeof AppDashboardRoute
   '/formulario': typeof AppFormularioRoute
-  '/funis': typeof AppFunisRoute
-  '/funnel-builder': typeof AppFunnelBuilderRoute
   '/hub': typeof AppHubRoute
   '/integrations': typeof AppIntegrationsRoute
   '/link-bio': typeof AppLinkBioRoute
@@ -352,7 +304,6 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/_app': typeof AppRouteWithChildren
-  '/crm-login': typeof CrmLoginRoute
   '/deletion': typeof DeletionRoute
   '/login': typeof LoginRoute
   '/privacy': typeof PrivacyRoute
@@ -360,18 +311,13 @@ export interface FileRoutesById {
   '/_app/agente': typeof AppAgenteRoute
   '/_app/auditoria': typeof AppAuditoriaRoute
   '/_app/automacoes': typeof AppAutomacoesRoute
-  '/_app/client-portal': typeof AppClientPortalRoute
   '/_app/clientes': typeof AppClientesRouteWithChildren
   '/_app/cobrancas': typeof AppCobrancasRoute
   '/_app/cockpit': typeof AppCockpitRoute
   '/_app/config': typeof AppConfigRoute
   '/_app/criativos': typeof AppCriativosRoute
-  '/_app/crm': typeof AppCrmRoute
-  '/_app/crm-config': typeof AppCrmConfigRoute
   '/_app/dashboard': typeof AppDashboardRoute
   '/_app/formulario': typeof AppFormularioRoute
-  '/_app/funis': typeof AppFunisRoute
-  '/_app/funnel-builder': typeof AppFunnelBuilderRoute
   '/_app/hub': typeof AppHubRoute
   '/_app/integrations': typeof AppIntegrationsRoute
   '/_app/link-bio': typeof AppLinkBioRoute
@@ -397,7 +343,6 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
-    | '/crm-login'
     | '/deletion'
     | '/login'
     | '/privacy'
@@ -405,18 +350,13 @@ export interface FileRouteTypes {
     | '/agente'
     | '/auditoria'
     | '/automacoes'
-    | '/client-portal'
     | '/clientes'
     | '/cobrancas'
     | '/cockpit'
     | '/config'
     | '/criativos'
-    | '/crm'
-    | '/crm-config'
     | '/dashboard'
     | '/formulario'
-    | '/funis'
-    | '/funnel-builder'
     | '/hub'
     | '/integrations'
     | '/link-bio'
@@ -440,7 +380,6 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
-    | '/crm-login'
     | '/deletion'
     | '/login'
     | '/privacy'
@@ -448,18 +387,13 @@ export interface FileRouteTypes {
     | '/agente'
     | '/auditoria'
     | '/automacoes'
-    | '/client-portal'
     | '/clientes'
     | '/cobrancas'
     | '/cockpit'
     | '/config'
     | '/criativos'
-    | '/crm'
-    | '/crm-config'
     | '/dashboard'
     | '/formulario'
-    | '/funis'
-    | '/funnel-builder'
     | '/hub'
     | '/integrations'
     | '/link-bio'
@@ -484,7 +418,6 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/_app'
-    | '/crm-login'
     | '/deletion'
     | '/login'
     | '/privacy'
@@ -492,18 +425,13 @@ export interface FileRouteTypes {
     | '/_app/agente'
     | '/_app/auditoria'
     | '/_app/automacoes'
-    | '/_app/client-portal'
     | '/_app/clientes'
     | '/_app/cobrancas'
     | '/_app/cockpit'
     | '/_app/config'
     | '/_app/criativos'
-    | '/_app/crm'
-    | '/_app/crm-config'
     | '/_app/dashboard'
     | '/_app/formulario'
-    | '/_app/funis'
-    | '/_app/funnel-builder'
     | '/_app/hub'
     | '/_app/integrations'
     | '/_app/link-bio'
@@ -529,7 +457,6 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AppRoute: typeof AppRouteWithChildren
-  CrmLoginRoute: typeof CrmLoginRoute
   DeletionRoute: typeof DeletionRoute
   LoginRoute: typeof LoginRoute
   PrivacyRoute: typeof PrivacyRoute
@@ -566,13 +493,6 @@ declare module '@tanstack/react-router' {
       path: '/deletion'
       fullPath: '/deletion'
       preLoaderRoute: typeof DeletionRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/crm-login': {
-      id: '/crm-login'
-      path: '/crm-login'
-      fullPath: '/crm-login'
-      preLoaderRoute: typeof CrmLoginRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_app': {
@@ -708,20 +628,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppHubRouteImport
       parentRoute: typeof AppRoute
     }
-    '/_app/funnel-builder': {
-      id: '/_app/funnel-builder'
-      path: '/funnel-builder'
-      fullPath: '/funnel-builder'
-      preLoaderRoute: typeof AppFunnelBuilderRouteImport
-      parentRoute: typeof AppRoute
-    }
-    '/_app/funis': {
-      id: '/_app/funis'
-      path: '/funis'
-      fullPath: '/funis'
-      preLoaderRoute: typeof AppFunisRouteImport
-      parentRoute: typeof AppRoute
-    }
     '/_app/formulario': {
       id: '/_app/formulario'
       path: '/formulario'
@@ -734,20 +640,6 @@ declare module '@tanstack/react-router' {
       path: '/dashboard'
       fullPath: '/dashboard'
       preLoaderRoute: typeof AppDashboardRouteImport
-      parentRoute: typeof AppRoute
-    }
-    '/_app/crm-config': {
-      id: '/_app/crm-config'
-      path: '/crm-config'
-      fullPath: '/crm-config'
-      preLoaderRoute: typeof AppCrmConfigRouteImport
-      parentRoute: typeof AppRoute
-    }
-    '/_app/crm': {
-      id: '/_app/crm'
-      path: '/crm'
-      fullPath: '/crm'
-      preLoaderRoute: typeof AppCrmRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/criativos': {
@@ -783,13 +675,6 @@ declare module '@tanstack/react-router' {
       path: '/clientes'
       fullPath: '/clientes'
       preLoaderRoute: typeof AppClientesRouteImport
-      parentRoute: typeof AppRoute
-    }
-    '/_app/client-portal': {
-      id: '/_app/client-portal'
-      path: '/client-portal'
-      fullPath: '/client-portal'
-      preLoaderRoute: typeof AppClientPortalRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/automacoes': {
@@ -865,18 +750,13 @@ interface AppRouteChildren {
   AppAgenteRoute: typeof AppAgenteRoute
   AppAuditoriaRoute: typeof AppAuditoriaRoute
   AppAutomacoesRoute: typeof AppAutomacoesRoute
-  AppClientPortalRoute: typeof AppClientPortalRoute
   AppClientesRoute: typeof AppClientesRouteWithChildren
   AppCobrancasRoute: typeof AppCobrancasRoute
   AppCockpitRoute: typeof AppCockpitRoute
   AppConfigRoute: typeof AppConfigRoute
   AppCriativosRoute: typeof AppCriativosRoute
-  AppCrmRoute: typeof AppCrmRoute
-  AppCrmConfigRoute: typeof AppCrmConfigRoute
   AppDashboardRoute: typeof AppDashboardRoute
   AppFormularioRoute: typeof AppFormularioRoute
-  AppFunisRoute: typeof AppFunisRoute
-  AppFunnelBuilderRoute: typeof AppFunnelBuilderRoute
   AppHubRoute: typeof AppHubRoute
   AppIntegrationsRoute: typeof AppIntegrationsRoute
   AppLinkBioRoute: typeof AppLinkBioRoute
@@ -899,18 +779,13 @@ const AppRouteChildren: AppRouteChildren = {
   AppAgenteRoute: AppAgenteRoute,
   AppAuditoriaRoute: AppAuditoriaRoute,
   AppAutomacoesRoute: AppAutomacoesRoute,
-  AppClientPortalRoute: AppClientPortalRoute,
   AppClientesRoute: AppClientesRouteWithChildren,
   AppCobrancasRoute: AppCobrancasRoute,
   AppCockpitRoute: AppCockpitRoute,
   AppConfigRoute: AppConfigRoute,
   AppCriativosRoute: AppCriativosRoute,
-  AppCrmRoute: AppCrmRoute,
-  AppCrmConfigRoute: AppCrmConfigRoute,
   AppDashboardRoute: AppDashboardRoute,
   AppFormularioRoute: AppFormularioRoute,
-  AppFunisRoute: AppFunisRoute,
-  AppFunnelBuilderRoute: AppFunnelBuilderRoute,
   AppHubRoute: AppHubRoute,
   AppIntegrationsRoute: AppIntegrationsRoute,
   AppLinkBioRoute: AppLinkBioRoute,
@@ -934,7 +809,6 @@ const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AppRoute: AppRouteWithChildren,
-  CrmLoginRoute: CrmLoginRoute,
   DeletionRoute: DeletionRoute,
   LoginRoute: LoginRoute,
   PrivacyRoute: PrivacyRoute,
