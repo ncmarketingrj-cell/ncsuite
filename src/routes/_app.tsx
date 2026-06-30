@@ -631,10 +631,20 @@ function Shell() {
                   className="flex items-center gap-1.5 rounded-full border border-border bg-card px-3 py-1.5 text-[10px] font-black uppercase tracking-wider text-foreground hover:bg-muted/50 transition-all duration-200"
                 >
                   <span className={`h-1.5 w-1.5 rounded-full ${
-                    activeModule === "trafego" ? "bg-red-500" : activeModule === "social" ? "bg-pink-500" : activeModule === "funil" ? "bg-purple-500" : activeModule === "gestao" ? "bg-cyan-500" : "bg-amber-500"
+                    activeModule === "trafego" ? "bg-red-500" :
+                    activeModule === "social" ? "bg-pink-500" :
+                    activeModule === "funil" ? "bg-purple-500" :
+                    activeModule === "gestao" ? "bg-cyan-500" :
+                    activeModule === "crm" ? "bg-emerald-500" :
+                    "bg-amber-500"
                   }`} />
                   <span>
-                    {activeModule === "trafego" ? "Tráfego" : activeModule === "social" ? "Social" : activeModule === "funil" ? "Funis" : activeModule === "gestao" ? "Gestão" : "Victoria AI"}
+                    {activeModule === "trafego" ? "Tráfego" :
+                     activeModule === "social" ? "Social" :
+                     activeModule === "funil" ? "Funis" :
+                     activeModule === "gestao" ? "Gestão" :
+                     activeModule === "crm" ? "CRM Vendas" :
+                     "Victoria AI"}
                   </span>
                   <ChevronDown className="h-3 w-3 opacity-60" />
                 </button>
