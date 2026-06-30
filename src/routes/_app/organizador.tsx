@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Link2, Plus, Eye, ExternalLink, Loader2, Edit, Trash2, QrCode, Settings, Layout, GripVertical, X, Smartphone, Car, Phone, MessageSquare, Video, FileText, Image as ImageIcon, MapPin, UploadCloud, Layers, LayoutList, Type, AlignLeft } from "lucide-react";
 import { toast } from "sonner";
@@ -54,6 +54,23 @@ function OrganizadorPage() {
       return [...pages, ...quizzes].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()) as FunnelItem[];
     },
   });
+
+  // Auto-open editor modal if query param 'edit' is present
+  useEffect(() => {
+    if (items.length > 0) {
+      const params = new URLSearchParams(window.location.search);
+      const editId = params.get("edit");
+      if (editId) {
+        const found = items.find(item => item.id === editId);
+        if (found) {
+          setEditingItem(found);
+          // clear query param so it doesn't reopen if closed
+          const newUrl = window.location.pathname;
+          window.history.replaceState({}, '', newUrl);
+        }
+      }
+    }
+  }, [items]);
 
   const createMutation = useMutation({
     mutationFn: async (type: 'link_bio' | 'form' | 'quiz') => {

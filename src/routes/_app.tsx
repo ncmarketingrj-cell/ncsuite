@@ -85,7 +85,9 @@ const TRAFEGO_NAV_ITEMS: NavItem[] = [
 const SOCIAL_NAV_ITEMS: NavItem[] = [
   { to: "/social-insights", icon: BarChart3, label: "Insights Meta" },
   { to: "/social-audit", icon: TrendingUp, label: "Auditoria Orgânica" },
-  { to: "/organizador", icon: Link2, label: "Link Pages" },
+  { to: "/link-bio", icon: Link2, label: "Link Bio" },
+  { to: "/formulario", icon: FileText, label: "Formulário" },
+  { to: "/quiz", icon: BarChart3, label: "Quiz" },
   { to: "/config", icon: Settings, label: "Configurações" },
 ];
 
@@ -100,9 +102,6 @@ const GESTAO_NAV_ITEMS: NavItem[] = [
 
 const FUNIL_NAV_ITEMS: NavItem[] = [
   { to: "/strategy-map", icon: Brain, label: "Strategy Map" },
-  { to: "/link-bio", icon: Link2, label: "Link Bio" },
-  { to: "/formulario", icon: FileText, label: "Formulário" },
-  { to: "/quiz", icon: BarChart3, label: "Quiz" },
   { to: "/config", icon: Settings, label: "Configurações" },
 ];
 
@@ -136,7 +135,7 @@ function Shell() {
     if (pathname.startsWith("/clientes")) return hasAccess("clientes");
     if (pathname.startsWith("/relatorios")) return hasAccess("relatorios");
     if (pathname.startsWith("/criativos")) return hasAccess("criativos");
-    if (pathname.startsWith("/social") || pathname.startsWith("/organizador") || pathname.startsWith("/link-bio") || pathname.startsWith("/quiz")) {
+    if (pathname.startsWith("/social") || pathname.startsWith("/organizador") || pathname.startsWith("/link-bio") || pathname.startsWith("/quiz") || pathname.startsWith("/formulario")) {
       return hasAccess("social");
     }
     if (pathname.startsWith("/reunioes")) return hasAccess("reunioes");
@@ -165,7 +164,7 @@ function Shell() {
     let nextModule = activeModule;
     if (path.startsWith("/victoria")) {
       nextModule = "victoria";
-    } else if (path.startsWith("/social") || path.startsWith("/organizador") || path.startsWith("/link-bio") || path.startsWith("/quiz")) {
+    } else if (path.startsWith("/social") || path.startsWith("/organizador") || path.startsWith("/link-bio") || path.startsWith("/quiz") || path.startsWith("/formulario")) {
       nextModule = "social";
     } else if (path.startsWith("/dashboard") || path.startsWith("/cockpit") || path.startsWith("/simulador") || path.startsWith("/relatorios") || path.startsWith("/criativos") || path.startsWith("/metricas") || path.startsWith("/campanhas")) {
       nextModule = "trafego";

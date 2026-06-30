@@ -179,6 +179,7 @@ function FormularioPage() {
                   </button>
                   <Link
                     to="/organizador"
+                    search={{ edit: item.id } as any}
                     className="flex-1 flex items-center justify-center gap-1.5 ml-auto px-3 py-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 text-xs font-bold rounded-lg transition-colors"
                   >
                     <Edit className="w-3 h-3" />

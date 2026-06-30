@@ -52,8 +52,9 @@ const HUB_GROUPS = [
     label: "Lab & Conversão",
     color: "text-accent",
     items: [
-      { to: "/criativos", icon: Palette, title: "Galeria de Criativos", desc: "Análise visual de performance.", tag: "LAB", tagColor: "bg-accent/20 text-accent" },
-      { to: "/organizador", icon: Link2, title: "Central de Links", desc: "Link Pages de alta conversão.", tag: "CONV", tagColor: "bg-accent/20 text-accent" },
+      { to: "/link-bio", icon: Link2, title: "Link Bio", desc: "Árvore de links e botões.", tag: "CONV", tagColor: "bg-accent/20 text-accent" },
+      { to: "/formulario", icon: FileText, title: "Formulário", desc: "Landing Pages de captação.", tag: "CONV", tagColor: "bg-accent/20 text-accent" },
+      { to: "/quiz", icon: BarChart3, title: "Quiz", desc: "Perguntas de qualificação.", tag: "CONV", tagColor: "bg-accent/20 text-accent" },
     ]
   }
 ];
