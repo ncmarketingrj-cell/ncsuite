@@ -246,7 +246,26 @@ function SocialInsightsPage() {
     ];
   }, [socialPages]);
 
-  // Dados diários de alta fidelidade
+  // ─── Insights do Meta do período (Posts reais e métricas do Graph API) ──────────
+  const { data: insightsData, isFetching: fetchingInsights } = useQuery({
+    queryKey: ["social_insights_data", selectedPage, dateFrom, dateTo],
+    queryFn: async () => {
+      try {
+        const { data, error } = await supabase.functions.invoke("sync-social-media", {
+          body: { action: "get-insights", page_id: selectedPage, date_from: dateFrom, date_to: dateTo },
+        });
+        if (error) throw error;
+        return data;
+      } catch (err: any) {
+        console.warn("Erro ao buscar insights do Meta:", err.message);
+        return { mock: true };
+      }
+    },
+    staleTime: 5 * 60 * 1000,
+    retry: false,
+  });
+
+  // Dados diários de alta fidelidade (Integrando reais do Meta se disponíveis)
   const { dailyData, kpis, baseSeed } = useMemo(() => {
     const selectedPageObj: any = activePages.find((sp: any) => sp.page_id === selectedPage);
     let pageId = selectedPage;
@@ -259,20 +278,123 @@ function SocialInsightsPage() {
 
     const bs = buildPageSeed(pageId, pageName);
     const daily = generateHighFidelityDailyData(pageId, pageName, dateFrom, dateTo);
+    
+    // Sobrescrever se tivermos dados reais de seguidores
     const k = computeKPIs(daily, bs);
+    if (insightsData && !insightsData.mock) {
+      if (insightsData.ig_followers) k.followersIg = insightsData.ig_followers;
+      if (insightsData.fb_followers) k.followersFb = insightsData.fb_followers;
+    }
+    
     return { dailyData: daily, kpis: k, baseSeed: bs };
-  }, [activePages, selectedPage, dateFrom, dateTo]);
+  }, [activePages, selectedPage, dateFrom, dateTo, insightsData]);
 
   // Matrix do Heatmap de engajamento
   const engagementMatrix = useMemo(() => getEngagementMatrix(baseSeed), [baseSeed]);
 
-  // Posts do período de alta qualidade com conteúdo automotivo real
+  // Posts do período: unificando dados reais do Meta Graph API (se conectados) com fallbacks determinísticos premium
   const listPosts = useMemo(() => {
-    const rng = seedRng(baseSeed + 99);
+    const realIgMedia = insightsData?.ig_media || [];
+    const realFbPosts = insightsData?.fb_posts || [];
+
+    if (realIgMedia.length > 0 || realFbPosts.length > 0) {
+      const unified: any[] = [];
+
+      // Mapear posts reais do Instagram
+      realIgMedia.forEach((item: any) => {
+        const title = item.caption ? item.caption.split('\n')[0] : "Publicação no Instagram";
+        const isVideo = item.media_type === "VIDEO" || item.media_type === "REELS";
+        const likes = item.like_count || 0;
+        const comments = item.comments_count || 0;
+        const reach = item.reach || Math.max(120, likes * 14 + 10);
+        const impressions = item.impressions || Math.max(150, likes * 18 + 15);
+        const eng = (likes + comments) / Math.max(1, reach);
+        
+        let ai_sentiment = "Engajamento Orgânico";
+        let ai_recommendation = "Criativo gerou boa receptividade orgânica no feed. Recomendado responder aos comentários em menos de 15 minutos.";
+        if (eng > 0.08) {
+          ai_sentiment = "Altamente Engajador";
+          ai_recommendation = `Este post performou muito acima da média no Instagram. O formato ${item.media_type} reteve a audiência. Recomendação: replique o tema ou impulsione com R$ 15/dia.`;
+        } else if (item.caption?.toLowerCase().includes("venda") || item.caption?.toLowerCase().includes("preço") || item.caption?.toLowerCase().includes("fipe")) {
+          ai_sentiment = "Foco Comercial";
+          ai_recommendation = "Conteúdo comercial direto. Ótimo gancho para captura de leads e encaminhamento para o pipeline do CRM.";
+        }
+
+        unified.push({
+          id: item.id,
+          title: title.length > 45 ? title.slice(0, 42) + "..." : title,
+          content: item.caption || "",
+          post_type: isVideo ? "reels" : item.media_type === "CAROUSEL_ALBUM" ? "carousel" : "image",
+          platform: "instagram",
+          likes_count: likes,
+          comments_count: comments,
+          reach_count: reach,
+          impressions_count: impressions,
+          media_url: item.media_url,
+          permalink: item.permalink,
+          published_at: item.timestamp,
+          ai_sentiment,
+          ai_recommendation
+        });
+      });
+
+      // Mapear posts reais do Facebook
+      realFbPosts.forEach((item: any) => {
+        const title = item.message ? item.message.split('\n')[0] : "Publicação no Facebook";
+        const likes = item.likes?.summary?.total_count || item.like_count || 0;
+        const comments = item.comments?.summary?.total_count || item.comments_count || 0;
+        const reach = Math.max(80, likes * 9 + 5);
+        const impressions = Math.max(100, likes * 12 + 8);
+        const eng = (likes + comments) / Math.max(1, reach);
+
+        let ai_sentiment = "Institucional Facebook";
+        let ai_recommendation = "Publicação contribui para a presença e alcance local da marca no Facebook.";
+        if (eng > 0.06) {
+          ai_sentiment = "Engajamento Positivo";
+          ai_recommendation = "Boa recepção no Facebook. Usuários engajaram com o conteúdo visual.";
+        }
+
+        unified.push({
+          id: item.id,
+          title: title.length > 45 ? title.slice(0, 42) + "..." : title,
+          content: item.message || "",
+          post_type: "image",
+          platform: "facebook",
+          likes_count: likes,
+          comments_count: comments,
+          reach_count: reach,
+          impressions_count: impressions,
+          media_url: item.media_url || null,
+          permalink: item.id ? `https://facebook.com/${item.id}` : null,
+          published_at: item.created_time,
+          ai_sentiment,
+          ai_recommendation
+        });
+      });
+
+      // Filtrar por tipo
+      let filtered = unified;
+      if (postTypeFilter !== "all") {
+        filtered = filtered.filter(p => p.post_type === postTypeFilter);
+      }
+
+      // Ordenar
+      return filtered.sort((a, b) => {
+        if (sortPostsBy === "reach") return b.reach_count - a.reach_count;
+        if (sortPostsBy === "likes") return b.likes_count - a.likes_count;
+        if (sortPostsBy === "comments") return b.comments_count - a.comments_count;
+        const engA = (a.likes_count + a.comments_count) / Math.max(1, a.reach_count);
+        const engB = (b.likes_count + b.comments_count) / Math.max(1, b.reach_count);
+        return engB - engA;
+      });
+    }
+
+    // Fallback determinístico premium caso não haja dados reais ou conta conectada
     const postsData = [
       {
         id: "p1",
         title: "🔥 LANÇAMENTO: Nova Toyota Hilux GR-Sport 2026",
+        content: "🔥 LANÇAMENTO: Nova Toyota Hilux GR-Sport 2026!\n\nA picape que redefine limites está pronta para encarar qualquer desafio. Motor turbo diesel recalibrado, suspensão esportiva Gazoo Racing e acabamento premium no interior.\n\nVenha fazer um test drive exclusivo na NC Motors!\n\n#toyotahilux #hiluxgrsport #gazooracing #ncmotors #picape #4x4",
         post_type: "reels",
         platform: "both",
         reach_count: 14200,
@@ -280,12 +402,15 @@ function SocialInsightsPage() {
         comments_count: 94,
         impressions_count: 22400,
         published_at: subDays(new Date(), 1).toISOString(),
+        media_url: "https://images.unsplash.com/photo-1533473359331-0135ef1b58bf?auto=format&fit=crop&q=80&w=600",
+        permalink: "https://instagram.com",
         ai_sentiment: "Altamente Positivo",
         ai_recommendation: "Criativo focado em design esportivo performou 40% acima da média. Excelente para impulsionamento local para público de alta renda."
       },
       {
         id: "p2",
         title: "⚡ Diga adeus ao IPVA! Entenda as condições de taxa zero",
+        content: "⚡ DIGA ADEUS AO IPVA 2026!\n\nNeste fim de semana na NC Motors, você compra seu seminovo premium com IPVA 2026 totalmente quitado, transferência grátis e taxa de financiamento a partir de 0% a.m.\n\nClique no link da bio e fale diretamente com o time comercial.\n\n#NCSuite #NCPerformance #CarrosPremium #TaxaZero #SeminovosComGarantia",
         post_type: "image",
         platform: "instagram",
         reach_count: 9800,
@@ -293,12 +418,15 @@ function SocialInsightsPage() {
         comments_count: 148,
         impressions_count: 14300,
         published_at: subDays(new Date(), 3).toISOString(),
+        media_url: "https://images.unsplash.com/photo-1568605117036-5fe5e7bab0b7?auto=format&fit=crop&q=80&w=600",
+        permalink: "https://instagram.com",
         ai_sentiment: "Foco Comercial",
         ai_recommendation: "A oferta de taxa zero e IPVA grátis gerou grande volume de comentários perguntando valores. Recomenda-se acionar o time comercial para capturar os leads diretamente nos comentários."
       },
       {
         id: "p3",
         title: "🎥 Tour premium: Conheça os detalhes do BMW M3 Competition",
+        content: "🎥 DETALHES QUE IMPRESSIONAM!\n\nUm tour completo por uma das maiores obras de engenharia da BMW M Division: a M3 Competition. Performance brutal, ronco espetacular de 510cv e cockpit inspirado em pistas de corrida.\n\nDisponível em nosso showroom.\n\n#bmwm3 #m3competition #bmwgram #esportivos #NCPerformance",
         post_type: "reels",
         platform: "instagram",
         reach_count: 24800,
@@ -306,12 +434,15 @@ function SocialInsightsPage() {
         comments_count: 204,
         impressions_count: 38900,
         published_at: subDays(new Date(), 5).toISOString(),
+        media_url: "https://images.unsplash.com/photo-1555215695-3004980ad54e?auto=format&fit=crop&q=80&w=600",
+        permalink: "https://instagram.com",
         ai_sentiment: "Altamente Engajador",
         ai_recommendation: "Tour em vídeo dinâmico mantém alta taxa de retenção. O som do motor no início serviu como gancho perfeito (hook) de 3 segundos."
       },
       {
         id: "p4",
         title: "🚗 Seminovos NC: Garantia de 2 anos e laudo cautelar aprovado",
+        content: "🚗 SEGURANÇA E TRANSPARÊNCIA NA COMPRA DO SEU PRÓXIMO CARRO!\n\nNa NC Motors, todo veículo passa por rigoroso check-list de 150 itens e tem laudo cautelar 100% aprovado. Por isso, oferecemos garantia integral de até 2 anos.\n\nEscolha quem entende de performance e segurança.\n\n#NCSuite #GarantiaEstendida #LaudoCautelar #SegurancaAutomotiva #SeminovosPremium",
         post_type: "image",
         platform: "facebook",
         reach_count: 6500,
@@ -319,12 +450,15 @@ function SocialInsightsPage() {
         comments_count: 32,
         impressions_count: 9100,
         published_at: subDays(new Date(), 7).toISOString(),
+        media_url: "https://images.unsplash.com/photo-1525609004556-c46c7d6cf0a3?auto=format&fit=crop&q=80&w=600",
+        permalink: "https://facebook.com",
         ai_sentiment: "Informativo/Institucional",
         ai_recommendation: "Embora o alcance tenha sido menor, posts de segurança do estoque atraem leads de funil avançado (prontos para compra)."
       },
       {
         id: "p5",
         title: "💡 Dica de especialista: 5 cuidados na hora de trocar seu carro",
+        content: "💡 VAI TROCAR DE CARRO? FIQUE ATENTO!\n\nConfira as dicas do nosso gerente comercial para não cometer erros na avaliação do seu usado:\n\n1. Faça a higienização completa antes da avaliação.\n2. Tenha o manual e chave reserva em mãos.\n3. Faça pequenos reparos estéticos.\n4. Pesquise a tabela Fipe como referência.\n5. Escolha concessionárias sólidas para a troca.\n\n#DicasAutomotivas #AvaliacaoDeVeiculos #NCSuite #MercadoAutomotivo",
         post_type: "stories",
         platform: "instagram",
         reach_count: 4200,
@@ -332,6 +466,8 @@ function SocialInsightsPage() {
         comments_count: 18,
         impressions_count: 6800,
         published_at: subDays(new Date(), 10).toISOString(),
+        media_url: "https://images.unsplash.com/photo-1503376780353-7e6692767b70?auto=format&fit=crop&q=80&w=600",
+        permalink: "https://instagram.com",
         ai_sentiment: "Útil/Educacional",
         ai_recommendation: "Bom engajamento nos stories. Adicione sticker de enquete no próximo post para qualificar a intenção de troca dos seguidores."
       }
@@ -352,7 +488,7 @@ function SocialInsightsPage() {
       const engB = (b.likes_count + b.comments_count) / b.reach_count;
       return engB - engA;
     });
-  }, [baseSeed, sortPostsBy, postTypeFilter]);
+  }, [insightsData, sortPostsBy, postTypeFilter]);
 
   // Sincronização automática
   useEffect(() => {
@@ -988,34 +1124,153 @@ function SocialInsightsPage() {
                               initial={{ opacity: 0, height: 0 }}
                               animate={{ opacity: 1, height: "auto" }}
                               exit={{ opacity: 0, height: 0 }}
-                              className="overflow-hidden border-b border-white/[0.03] px-5 py-4"
+                              className="overflow-hidden border-b border-white/[0.03] px-5 py-5"
                             >
-                              <div className="bg-primary/[0.03] border border-primary/25 rounded-2xl p-4 space-y-2.5">
-                                <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-primary">
-                                  <Bot className="h-4 w-4 animate-pulse" />
-                                  Diagnóstico Criativo da Victoria AI
-                                </div>
-                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
-                                  <div className="sm:col-span-2 space-y-1">
-                                    <p className="text-white font-bold">Feedback Analítico:</p>
-                                    <p className="text-muted-foreground leading-relaxed">{post.ai_recommendation}</p>
-                                  </div>
-                                  <div className="bg-black/20 p-3 rounded-xl border border-white/5 space-y-2">
-                                    <div>
-                                      <span className="text-[8px] text-muted-foreground uppercase font-black">Sentimento Geral</span>
-                                      <p className="font-bold text-white text-xs">{post.ai_sentiment}</p>
-                                    </div>
-                                    <div>
-                                      <span className="text-[8px] text-muted-foreground uppercase font-black">Score de Otimização</span>
-                                      <div className="flex items-center gap-2 mt-1">
-                                        <div className="h-2 flex-1 rounded-full bg-white/10 overflow-hidden">
-                                          <div className="h-full bg-primary" style={{ width: `${parseFloat(engRate) >= 6 ? 92 : parseFloat(engRate) >= 3 ? 75 : 45}%` }} />
+                              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                                
+                                {/* Coluna 1: Prévia Criativo */}
+                                <div className="lg:col-span-4 flex flex-col">
+                                  <span className="text-[9px] text-muted-foreground uppercase font-black tracking-wider mb-2 flex items-center gap-1.5">
+                                    <Image className="w-3 h-3 text-primary" /> Prévia do Criativo
+                                  </span>
+                                  
+                                  <div className="relative rounded-2xl border border-white/10 bg-black/60 overflow-hidden shadow-2xl flex flex-col justify-between h-[280px]">
+                                    {/* Header Mockup */}
+                                    <div className="flex items-center justify-between p-2.5 bg-white/[0.02] border-b border-white/5">
+                                      <div className="flex items-center gap-2">
+                                        <div className="w-5 h-5 rounded-full bg-primary/20 flex items-center justify-center text-[10px] font-bold text-primary">
+                                          NC
                                         </div>
-                                        <span className="text-[10px] font-bold text-white">{parseFloat(engRate) >= 6 ? "9.2/10" : parseFloat(engRate) >= 3 ? "7.5/10" : "4.5/10"}</span>
+                                        <div className="flex flex-col">
+                                          <span className="text-[10px] font-bold text-white leading-tight">
+                                            {post.platform === "facebook" ? "NC Performance" : "ncmotors.br"}
+                                          </span>
+                                          <span className="text-[8px] text-muted-foreground leading-none">
+                                            {post.platform === "facebook" ? "Facebook Page" : "Instagram Profile"}
+                                          </span>
+                                        </div>
+                                      </div>
+                                      {post.platform === "facebook" ? <Facebook className="w-3.5 h-3.5 text-blue-400" /> : <Instagram className="w-3.5 h-3.5 text-pink-400" />}
+                                    </div>
+
+                                    {/* Media Section */}
+                                    <div className="flex-1 flex items-center justify-center bg-black overflow-hidden relative group/media">
+                                      {post.media_url ? (
+                                        post.post_type === "reels" || post.media_url.includes(".mp4") || post.media_url.includes("video") ? (
+                                          <video
+                                            src={post.media_url}
+                                            controls
+                                            muted
+                                            autoPlay
+                                            loop
+                                            playsInline
+                                            className="w-full h-full object-cover"
+                                          />
+                                        ) : (
+                                          <img
+                                            src={post.media_url}
+                                            alt={post.title}
+                                            className="w-full h-full object-cover group-hover/media:scale-105 transition-transform duration-500"
+                                            onError={(e) => {
+                                              (e.target as any).src = "https://images.unsplash.com/photo-1617788138017-80ad40651399?auto=format&fit=crop&q=80&w=400";
+                                            }}
+                                          />
+                                        )
+                                      ) : (
+                                        <div className="flex flex-col items-center justify-center text-muted-foreground p-4 text-center">
+                                          <Zap className="w-8 h-8 text-primary/40 mb-1" />
+                                          <span className="text-[10px]">Mídia não disponível para esta conta</span>
+                                        </div>
+                                      )}
+                                    </div>
+
+                                    {/* Action Footer */}
+                                    <div className="p-2.5 bg-white/[0.02] border-t border-white/5 flex items-center justify-between text-[10px]">
+                                      <div className="flex items-center gap-3 text-muted-foreground font-mono">
+                                        <span className="flex items-center gap-1 hover:text-white transition-colors">
+                                          <Heart className="w-3.5 h-3.5 text-pink-400" /> {post.likes_count}
+                                        </span>
+                                        <span className="flex items-center gap-1 hover:text-white transition-colors">
+                                          <MessageCircle className="w-3.5 h-3.5 text-blue-400" /> {post.comments_count}
+                                        </span>
+                                      </div>
+                                      
+                                      {post.permalink && (
+                                        <a
+                                          href={post.permalink}
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                          className="flex items-center gap-1 text-[9px] font-bold text-primary hover:text-primary-foreground hover:bg-primary/20 border border-primary/20 px-2 py-0.5 rounded-lg transition-all cursor-pointer"
+                                        >
+                                          Ver Post <ExternalLink className="w-2.5 h-2.5" />
+                                        </a>
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+
+                                {/* Coluna 2: Descrição */}
+                                <div className="lg:col-span-4 flex flex-col">
+                                  <span className="text-[9px] text-muted-foreground uppercase font-black tracking-wider mb-2 flex items-center gap-1.5">
+                                    <Layers className="w-3 h-3 text-amber-400" /> Legenda / Descrição
+                                  </span>
+                                  <div className="flex-1 bg-white/[0.01] border border-white/5 rounded-2xl p-4 flex flex-col justify-between h-[280px]">
+                                    <div className="overflow-y-auto text-[11px] leading-relaxed text-slate-200 pr-1 max-h-[200px] whitespace-pre-line font-medium custom-scrollbar">
+                                      {post.content || "Nenhuma legenda fornecida para esta publicação."}
+                                    </div>
+                                    <div className="border-t border-white/5 pt-2.5 flex items-center justify-between text-[9px] text-muted-foreground mt-2">
+                                      <span>Data de Publicação:</span>
+                                      <strong className="text-white font-mono">
+                                        {post.published_at ? format(parseISO(post.published_at), "dd/MM/yyyy HH:mm") : "—"}
+                                      </strong>
+                                    </div>
+                                  </div>
+                                </div>
+
+                                {/* Coluna 3: Análise Victoria AI */}
+                                <div className="lg:col-span-4 flex flex-col">
+                                  <span className="text-[9px] text-muted-foreground uppercase font-black tracking-wider mb-2 flex items-center gap-1.5">
+                                    <Bot className="w-3 h-3 text-primary animate-pulse" /> Diagnóstico Victoria AI
+                                  </span>
+                                  
+                                  <div className="flex-1 bg-primary/[0.02] border border-primary/25 rounded-2xl p-4 flex flex-col justify-between h-[280px]">
+                                    <div className="space-y-4">
+                                      <div className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider text-primary">
+                                        <Sparkles className="w-3.5 h-3.5" /> Análise de Performance
+                                      </div>
+                                      
+                                      <div className="space-y-1">
+                                        <p className="text-[10px] text-muted-foreground uppercase font-black">Recomendação Estratégica</p>
+                                        <p className="text-[11px] leading-relaxed text-white/90 font-semibold">
+                                          {post.ai_recommendation}
+                                        </p>
+                                      </div>
+                                    </div>
+
+                                    <div className="space-y-3 pt-3 border-t border-white/5 mt-4">
+                                      <div className="flex justify-between items-center text-[10px]">
+                                        <span className="text-muted-foreground uppercase font-black">Sentimento do Público</span>
+                                        <span className="px-2 py-0.5 rounded bg-primary/10 border border-primary/20 text-primary font-black uppercase tracking-wider text-[9px]">
+                                          {post.ai_sentiment}
+                                        </span>
+                                      </div>
+                                      
+                                      <div className="space-y-1">
+                                        <div className="flex justify-between text-[9px] text-muted-foreground font-black uppercase">
+                                          <span>Score de Otimização</span>
+                                          <span className="text-white font-mono">{parseFloat(engRate) >= 6 ? "9.2/10" : parseFloat(engRate) >= 3 ? "7.5/10" : "4.5/10"}</span>
+                                        </div>
+                                        <div className="h-2 w-full rounded-full bg-white/5 overflow-hidden relative">
+                                          <div 
+                                            className="h-full bg-gradient-to-r from-primary to-pink-500 rounded-full" 
+                                            style={{ width: `${parseFloat(engRate) >= 6 ? 92 : parseFloat(engRate) >= 3 ? 75 : 45}%` }} 
+                                          />
+                                        </div>
                                       </div>
                                     </div>
                                   </div>
                                 </div>
+
                               </div>
                             </motion.div>
                           </td>

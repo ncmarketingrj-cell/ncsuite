@@ -8,7 +8,7 @@ import {
   Sun, Moon, Menu, X, BarChart3, LineChart, Palette, Link2,
   ChevronDown, RefreshCw, Users, Store,
   Volume2, VolumeX, LogOut, CreditCard, Share2, ArrowRight, GitBranch, Brain, ChevronRight,
-  Lock, GaugeCircle, FlaskConical
+  Lock, GaugeCircle, FlaskConical, TrendingUp
 } from "lucide-react";
 import { AuthProvider, useAuth } from "@/lib/auth";
 import { supabase } from "@/integrations/supabase-external/client";
@@ -84,6 +84,7 @@ const TRAFEGO_NAV_ITEMS: NavItem[] = [
 
 const SOCIAL_NAV_ITEMS: NavItem[] = [
   { to: "/social-insights", icon: BarChart3, label: "Insights Meta" },
+  { to: "/social-audit", icon: TrendingUp, label: "Auditoria Orgânica" },
   { to: "/organizador", icon: Link2, label: "Link Pages" },
   { to: "/config", icon: Settings, label: "Configurações" },
 ];

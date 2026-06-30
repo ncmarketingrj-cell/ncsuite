@@ -23,6 +23,7 @@ import { Route as AppUtmsRouteImport } from './routes/_app/utms'
 import { Route as AppUploadRouteImport } from './routes/_app/upload'
 import { Route as AppStrategyMapRouteImport } from './routes/_app/strategy-map'
 import { Route as AppSocialInsightsRouteImport } from './routes/_app/social-insights'
+import { Route as AppSocialAuditRouteImport } from './routes/_app/social-audit'
 import { Route as AppSimuladorRouteImport } from './routes/_app/simulador'
 import { Route as AppReunioesRouteImport } from './routes/_app/reunioes'
 import { Route as AppRelatoriosRouteImport } from './routes/_app/relatorios'
@@ -118,6 +119,11 @@ const AppStrategyMapRoute = AppStrategyMapRouteImport.update({
 const AppSocialInsightsRoute = AppSocialInsightsRouteImport.update({
   id: '/social-insights',
   path: '/social-insights',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppSocialAuditRoute = AppSocialAuditRouteImport.update({
+  id: '/social-audit',
+  path: '/social-audit',
   getParentRoute: () => AppRoute,
 } as any)
 const AppSimuladorRoute = AppSimuladorRouteImport.update({
@@ -287,6 +293,7 @@ export interface FileRoutesByFullPath {
   '/relatorios': typeof AppRelatoriosRoute
   '/reunioes': typeof AppReunioesRoute
   '/simulador': typeof AppSimuladorRoute
+  '/social-audit': typeof AppSocialAuditRoute
   '/social-insights': typeof AppSocialInsightsRoute
   '/strategy-map': typeof AppStrategyMapRoute
   '/upload': typeof AppUploadRoute
@@ -329,6 +336,7 @@ export interface FileRoutesByTo {
   '/relatorios': typeof AppRelatoriosRoute
   '/reunioes': typeof AppReunioesRoute
   '/simulador': typeof AppSimuladorRoute
+  '/social-audit': typeof AppSocialAuditRoute
   '/social-insights': typeof AppSocialInsightsRoute
   '/strategy-map': typeof AppStrategyMapRoute
   '/upload': typeof AppUploadRoute
@@ -373,6 +381,7 @@ export interface FileRoutesById {
   '/_app/relatorios': typeof AppRelatoriosRoute
   '/_app/reunioes': typeof AppReunioesRoute
   '/_app/simulador': typeof AppSimuladorRoute
+  '/_app/social-audit': typeof AppSocialAuditRoute
   '/_app/social-insights': typeof AppSocialInsightsRoute
   '/_app/strategy-map': typeof AppStrategyMapRoute
   '/_app/upload': typeof AppUploadRoute
@@ -417,6 +426,7 @@ export interface FileRouteTypes {
     | '/relatorios'
     | '/reunioes'
     | '/simulador'
+    | '/social-audit'
     | '/social-insights'
     | '/strategy-map'
     | '/upload'
@@ -459,6 +469,7 @@ export interface FileRouteTypes {
     | '/relatorios'
     | '/reunioes'
     | '/simulador'
+    | '/social-audit'
     | '/social-insights'
     | '/strategy-map'
     | '/upload'
@@ -502,6 +513,7 @@ export interface FileRouteTypes {
     | '/_app/relatorios'
     | '/_app/reunioes'
     | '/_app/simulador'
+    | '/_app/social-audit'
     | '/_app/social-insights'
     | '/_app/strategy-map'
     | '/_app/upload'
@@ -624,6 +636,13 @@ declare module '@tanstack/react-router' {
       path: '/social-insights'
       fullPath: '/social-insights'
       preLoaderRoute: typeof AppSocialInsightsRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/social-audit': {
+      id: '/_app/social-audit'
+      path: '/social-audit'
+      fullPath: '/social-audit'
+      preLoaderRoute: typeof AppSocialAuditRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/simulador': {
@@ -867,6 +886,7 @@ interface AppRouteChildren {
   AppRelatoriosRoute: typeof AppRelatoriosRoute
   AppReunioesRoute: typeof AppReunioesRoute
   AppSimuladorRoute: typeof AppSimuladorRoute
+  AppSocialAuditRoute: typeof AppSocialAuditRoute
   AppSocialInsightsRoute: typeof AppSocialInsightsRoute
   AppStrategyMapRoute: typeof AppStrategyMapRoute
   AppUploadRoute: typeof AppUploadRoute
@@ -900,6 +920,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppRelatoriosRoute: AppRelatoriosRoute,
   AppReunioesRoute: AppReunioesRoute,
   AppSimuladorRoute: AppSimuladorRoute,
+  AppSocialAuditRoute: AppSocialAuditRoute,
   AppSocialInsightsRoute: AppSocialInsightsRoute,
   AppStrategyMapRoute: AppStrategyMapRoute,
   AppUploadRoute: AppUploadRoute,
