@@ -96,7 +96,7 @@ function AutomationsPage() {
     queryFn: async () => {
       const { data } = await (supabase as any)
         .from("alert_thresholds")
-        .select("*, ad_accounts(name), campaigns(name)")
+        .select("*, ad_accounts(name), campaigns(name), social_pages(page_name)")
         .order("created_at", { ascending: false });
       return (data as any[]) || [];
     },
@@ -109,7 +109,7 @@ function AutomationsPage() {
       const { data } = await (supabase as any)
         .from("notifications")
         .select("*")
-        .in("type", ["alert_cpl", "alert_budget", "alert_frequency"])
+        .in("type", ["alert", "alert_cpl", "alert_budget", "alert_frequency", "social_media_alert"])
         .eq("is_read", false)
         .order("created_at", { ascending: false })
         .limit(20);
@@ -122,6 +122,46 @@ function AutomationsPage() {
   useEffect(() => {
     if (!evalStatus.isEvaluating) refetchViolations();
   }, [evalStatus.isEvaluating, refetchViolations]);
+
+  // ── Configurações globais do Motor ──────────────────────────────────────────
+  const { data: configData, refetch: refetchConfig } = useQuery({
+    queryKey: ["meta_ads_configs_alerts"],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("meta_ads_configs")
+        .select("zero_delivery_enabled, zero_delivery_hour, perf_drop_enabled, perf_drop_spend_pct, client_cpa_enabled, alert_dedup_hours")
+        .limit(1)
+        .maybeSingle();
+      return data || {
+        zero_delivery_enabled: true,
+        zero_delivery_hour: 14,
+        perf_drop_enabled: true,
+        perf_drop_spend_pct: 50,
+        client_cpa_enabled: true,
+        alert_dedup_hours: 2
+      };
+    }
+  });
+
+  const updateConfigMutation = useMutation({
+    mutationFn: async (patch: any) => {
+      const { data: current } = await supabase.from("meta_ads_configs").select("id").limit(1).maybeSingle();
+      if (current?.id) {
+        const { error } = await supabase.from("meta_ads_configs").update(patch).eq("id", current.id);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase.from("meta_ads_configs").insert({ ...patch, user_id: user?.id });
+        if (error) throw error;
+      }
+    },
+    onSuccess: () => {
+      refetchConfig();
+      toast.success("Configurações do motor atualizadas com sucesso!");
+    },
+    onError: (err: any) => {
+      toast.error(`Erro ao salvar: ${err.message}`);
+    }
+  });
 
   // ── Histórico sync ──────────────────────────────────────────────────────────
   const { data: syncHistory = [], isLoading: loadingSync } = useQuery({
@@ -338,16 +378,20 @@ function AutomationsPage() {
                       className="flex items-start gap-4 px-5 py-4 hover:bg-white/[0.02] transition-colors"
                     >
                       <div className={`mt-0.5 shrink-0 h-8 w-8 rounded-xl flex items-center justify-center ${
-                        v.type === "alert_cpl"
+                        v.type === "alert_cpl" || v.type === "alert"
                           ? "bg-red-500/15 text-red-400"
                           : v.type === "alert_frequency"
                           ? "bg-orange-500/15 text-orange-400"
+                          : v.type === "social_media_alert"
+                          ? "bg-blue-500/15 text-blue-400"
                           : "bg-yellow-500/15 text-yellow-400"
                       }`}>
-                        {v.type === "alert_cpl"
+                        {v.type === "alert_cpl" || v.type === "alert"
                           ? <TrendingUp className="h-4 w-4" />
                           : v.type === "alert_frequency"
                           ? <Radio className="h-4 w-4" />
+                          : v.type === "social_media_alert"
+                          ? <BellRing className="h-4 w-4" />
                           : <DollarSign className="h-4 w-4" />}
                       </div>
 
@@ -434,15 +478,32 @@ function AutomationsPage() {
                 >
                   <div className="flex items-center gap-5">
                     <div className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-xl transition ${
-                      th.is_active ? "bg-primary/10 text-primary shadow-glow-sm" : "bg-white/5 text-muted-foreground"
+                      th.is_active 
+                        ? (th.social_page_id ? "bg-blue-500/10 text-blue-400 shadow-glow-sm" : "bg-primary/10 text-primary shadow-glow-sm")
+                        : "bg-white/5 text-muted-foreground"
                     }`}>
-                      <AlertTriangle className={`h-6 w-6 ${th.is_active ? "animate-pulse" : ""}`} />
+                      {th.social_page_id ? (
+                        <BellRing className={`h-6 w-6 ${th.is_active ? "animate-pulse" : ""}`} />
+                      ) : (
+                        <AlertTriangle className={`h-6 w-6 ${th.is_active ? "animate-pulse" : ""}`} />
+                      )}
                     </div>
                     <div>
                       <div className="flex items-center gap-2 flex-wrap">
                         <h4 className="font-bold text-base text-foreground/90">
-                          {th.campaigns?.name ? `Campanha: ${th.campaigns.name}` : (th.ad_accounts?.name || (th.ad_account_id === null ? "Todas as Contas Meta" : "Conta Desconhecida"))}
+                          {th.social_pages?.page_name 
+                            ? `Rede Social: ${th.social_pages.page_name}` 
+                            : (th.campaigns?.name 
+                                ? `Campanha: ${th.campaigns.name}` 
+                                : (th.ad_accounts?.name || (th.ad_account_id === null ? "Todas as Contas Meta" : "Conta Desconhecida"))
+                              )
+                          }
                         </h4>
+                        {th.social_page_id !== null && (
+                          <span className="inline-flex rounded px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider bg-blue-500/20 text-blue-400 border border-blue-500/30">
+                            SOCIAL MEDIA
+                          </span>
+                        )}
                         {th.campaign_id !== null && (
                           <span className="inline-flex rounded px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider bg-primary/20 text-primary border border-primary/30">
                             CAMPANHA
@@ -479,6 +540,30 @@ function AutomationsPage() {
                           <span className="inline-flex items-center gap-1 rounded bg-white/5 px-2 py-1 text-[10px] font-mono text-muted-foreground">
                             MIN SALDO:{" "}
                             <strong className="text-emerald-400 text-[11px]">R$ {Number(th.min_account_balance).toFixed(2)}</strong>
+                          </span>
+                        )}
+                        {th.min_ig_followers !== null && th.min_ig_followers !== undefined && (
+                          <span className="inline-flex items-center gap-1 rounded bg-white/5 px-2 py-1 text-[10px] font-mono text-muted-foreground">
+                            MIN SEGUIDORES IG:{" "}
+                            <strong className="text-blue-400 text-[11px]">{th.min_ig_followers}</strong>
+                          </span>
+                        )}
+                        {th.min_fb_followers !== null && th.min_fb_followers !== undefined && (
+                          <span className="inline-flex items-center gap-1 rounded bg-white/5 px-2 py-1 text-[10px] font-mono text-muted-foreground">
+                            MIN SEGUIDORES FB:{" "}
+                            <strong className="text-blue-400 text-[11px]">{th.min_fb_followers}</strong>
+                          </span>
+                        )}
+                        {th.max_days_without_posts !== null && th.max_days_without_posts !== undefined && (
+                          <span className="inline-flex items-center gap-1 rounded bg-white/5 px-2 py-1 text-[10px] font-mono text-muted-foreground">
+                            MAX DIAS INATIVO:{" "}
+                            <strong className="text-blue-400 text-[11px]">{th.max_days_without_posts} dias</strong>
+                          </span>
+                        )}
+                        {th.min_post_engagement_rate !== null && th.min_post_engagement_rate !== undefined && (
+                          <span className="inline-flex items-center gap-1 rounded bg-white/5 px-2 py-1 text-[10px] font-mono text-muted-foreground">
+                            MIN ENGAJAMENTO:{" "}
+                            <strong className="text-blue-400 text-[11px]">{th.min_post_engagement_rate}%</strong>
                           </span>
                         )}
                         <span className={`inline-flex items-center gap-1 rounded px-2 py-1 text-[10px] font-bold ${
@@ -635,8 +720,136 @@ function AutomationsPage() {
           </div>
 
           <p className="text-[10px] text-muted-foreground/50 px-1">
-            Todas as preferências são salvas localmente neste dispositivo.
+            Preferências locais salvas neste navegador.
           </p>
+
+          {/* Configurações Globais do Motor (Robô) - Apenas Administradores */}
+          {["admin", "master_admin", "ceo"].includes(profileData?.role || "") && (
+            <div className="space-y-4 pt-6 border-t border-white/10">
+              <div className="flex items-center gap-2 px-1">
+                <Settings2 className="h-4 w-4 text-primary" />
+                <h4 className="text-xs font-bold text-foreground uppercase tracking-wider">
+                  Configurações Globais do Motor (Robô)
+                </h4>
+              </div>
+
+              {/* Zero Delivery */}
+              <div className="glass-panel p-5 space-y-4">
+                <div className="flex items-center justify-between gap-4">
+                  <div className="flex items-start gap-3">
+                    <div className={`h-10 w-10 rounded-xl flex items-center justify-center shrink-0 ${configData?.zero_delivery_enabled !== false ? "bg-red-500/15 text-red-400" : "bg-muted/30 text-muted-foreground"}`}>
+                      <AlertTriangle className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-bold text-foreground">Gatilho: Falta de Entrega (Zero Delivery)</p>
+                      <p className="text-[11px] text-muted-foreground mt-0.5">Alerta se a campanha está ativa mas gastou exatamente R$ 0,00.</p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => updateConfigMutation.mutate({ zero_delivery_enabled: configData?.zero_delivery_enabled === false ? true : false })}
+                    className={`relative h-6 w-11 rounded-full transition-colors shrink-0 ${configData?.zero_delivery_enabled !== false ? "bg-red-500" : "bg-white/10"}`}
+                  >
+                    <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${configData?.zero_delivery_enabled !== false ? "left-5.5 translate-x-0.5" : "left-0.5"}`} />
+                  </button>
+                </div>
+                {configData?.zero_delivery_enabled !== false && (
+                  <div className="flex items-center gap-3 pl-13">
+                    <label className="text-[10px] font-bold text-muted-foreground uppercase">Verificar a partir das</label>
+                    <select
+                      value={configData?.zero_delivery_hour ?? 14}
+                      onChange={e => updateConfigMutation.mutate({ zero_delivery_hour: Number(e.target.value) })}
+                      className="rounded-lg border border-white/10 bg-background px-3 py-2 text-sm font-bold focus:border-primary focus:outline-none cursor-pointer shrink-0"
+                    >
+                      {[8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20].map(h => (
+                        <option key={h} value={h}>{h}:00 BRT</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+              </div>
+
+              {/* Queda de Performance */}
+              <div className="glass-panel p-5 space-y-4">
+                <div className="flex items-center justify-between gap-4">
+                  <div className="flex items-start gap-3">
+                    <div className={`h-10 w-10 rounded-xl flex items-center justify-center shrink-0 ${configData?.perf_drop_enabled !== false ? "bg-orange-500/15 text-orange-400" : "bg-muted/30 text-muted-foreground"}`}>
+                      <TrendingUp className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-bold text-foreground">Gatilho: Queda de Performance (Anomalia)</p>
+                      <p className="text-[11px] text-muted-foreground mt-0.5">Alerta se a campanha costuma dar resultado mas gastou verba com 0 conversões hoje.</p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => updateConfigMutation.mutate({ perf_drop_enabled: configData?.perf_drop_enabled === false ? true : false })}
+                    className={`relative h-6 w-11 rounded-full transition-colors shrink-0 ${configData?.perf_drop_enabled !== false ? "bg-orange-500" : "bg-white/10"}`}
+                  >
+                    <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${configData?.perf_drop_enabled !== false ? "left-5.5 translate-x-0.5" : "left-0.5"}`} />
+                  </button>
+                </div>
+                {configData?.perf_drop_enabled !== false && (
+                  <div className="flex items-center gap-3 pl-13">
+                    <label className="text-[10px] font-bold text-muted-foreground uppercase">Quando gasto atingir</label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="number"
+                        min="10"
+                        max="100"
+                        value={configData?.perf_drop_spend_pct ?? 50}
+                        onChange={e => updateConfigMutation.mutate({ perf_drop_spend_pct: Number(e.target.value) })}
+                        className="w-20 rounded-lg border border-white/10 bg-background px-3 py-2 text-sm focus:border-primary focus:outline-none"
+                      />
+                      <span className="text-sm text-muted-foreground">% do orçamento diário</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* CPA de Clientes (7d) */}
+              <div className="glass-panel p-5 flex items-center justify-between gap-4">
+                <div className="flex items-start gap-3">
+                  <div className={`h-10 w-10 rounded-xl flex items-center justify-center shrink-0 ${configData?.client_cpa_enabled !== false ? "bg-emerald-500/15 text-emerald-400" : "bg-muted/30 text-muted-foreground"}`}>
+                    <ShieldAlert className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-bold text-foreground">Gatilho: Target CPA Geral de Clientes (7 Dias)</p>
+                    <p className="text-[11px] text-muted-foreground mt-0.5">Alerta se o CPA da conta inteira do cliente nos últimos 7 dias estourar a meta.</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => updateConfigMutation.mutate({ client_cpa_enabled: configData?.client_cpa_enabled === false ? true : false })}
+                  className={`relative h-6 w-11 rounded-full transition-colors shrink-0 ${configData?.client_cpa_enabled !== false ? "bg-emerald-500" : "bg-white/10"}`}
+                >
+                  <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${configData?.client_cpa_enabled !== false ? "left-5.5 translate-x-0.5" : "left-0.5"}`} />
+                </button>
+              </div>
+
+              {/* Deduplicação do Motor de Alertas */}
+              <div className="glass-panel p-5 flex items-center justify-between gap-4">
+                <div className="flex items-start gap-3">
+                  <div className="h-10 w-10 rounded-xl flex items-center justify-center shrink-0 bg-secondary/15 text-secondary">
+                    <RotateCcw className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-bold text-foreground">Intervalo de Re-Alerta do Motor (Robô/WhatsApp)</p>
+                    <p className="text-[11px] text-muted-foreground mt-0.5">O robô não reenviará o mesmo alerta antes deste intervalo.</p>
+                  </div>
+                </div>
+                <select
+                  value={configData?.alert_dedup_hours ?? 2}
+                  onChange={e => updateConfigMutation.mutate({ alert_dedup_hours: Number(e.target.value) })}
+                  className="rounded-lg border border-white/10 bg-background px-3 py-2 text-sm font-bold focus:border-primary focus:outline-none cursor-pointer shrink-0"
+                >
+                  <option value={0.5}>30 min</option>
+                  <option value={1}>1 hora</option>
+                  <option value={2}>2 horas</option>
+                  <option value={4}>4 horas</option>
+                  <option value={8}>8 horas</option>
+                  <option value={24}>1 dia</option>
+                </select>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -963,6 +1176,35 @@ function ThresholdModal({ onClose, accounts, userId, qc, editing }: any) {
   const [alertAccountBalanceEnabled, setAlertAccountBalanceEnabled] = useState(isEditing ? editing.alert_account_balance_enabled === true : false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // Redes sociais
+  const [socialPageId, setSocialPageId] = useState<string>(
+    isEditing ? (editing.social_page_id ?? "none") : "none"
+  );
+  const [minIgFollowers, setMinIgFollowers] = useState<string>(
+    isEditing && editing.min_ig_followers != null ? String(editing.min_ig_followers) : ""
+  );
+  const [minFbFollowers, setMinFbFollowers] = useState<string>(
+    isEditing && editing.min_fb_followers != null ? String(editing.min_fb_followers) : ""
+  );
+  const [maxDaysWithoutPosts, setMaxDaysWithoutPosts] = useState<string>(
+    isEditing && editing.max_days_without_posts != null ? String(editing.max_days_without_posts) : ""
+  );
+  const [minPostEngagementRate, setMinPostEngagementRate] = useState<string>(
+    isEditing && editing.min_post_engagement_rate != null ? String(editing.min_post_engagement_rate) : ""
+  );
+  const [ruleType, setRuleType] = useState<"traffic" | "social">(
+    isEditing && editing.social_page_id ? "social" : "traffic"
+  );
+
+  // Carregar páginas de redes sociais
+  const { data: socialPages = [] } = useQuery({
+    queryKey: ["social_pages_for_modal"],
+    queryFn: async () => {
+      const { data } = await supabase.from("social_pages").select("id, page_name").order("page_name");
+      return data || [];
+    }
+  });
+
   // Carregar campanhas da conta ativa
   const { data: campaigns = [], isLoading: loadingCampaigns } = useQuery({
     queryKey: ["campaigns_for_threshold_modal", accountId],
@@ -995,38 +1237,52 @@ function ThresholdModal({ onClose, accounts, userId, qc, editing }: any) {
   };
 
   const handleSave = async () => {
-    const targetAccountId = accountId === "all" ? null : accountId;
-    if (!alertCplEnabled && !alertBudgetEnabled && !alertFrequencyEnabled) {
-      return toast.error("Ative pelo menos um tipo de alerta (CPL, Orçamento ou Frequência)");
-    }
-    if (alertCplEnabled && (!maxCpl || parseFloat(maxCpl) <= 0)) {
-      return toast.error("Informe o CPL Máximo para ativar o alerta de CPL");
-    }
-    if (alertBudgetEnabled && (!maxBudgetPct || parseInt(maxBudgetPct) <= 0)) {
-      return toast.error("Informe o % de Orçamento para ativar o alerta de budget");
-    }
-    if (alertFrequencyEnabled && (!maxFrequency || parseFloat(maxFrequency) <= 0)) {
-      return toast.error("Informe a Frequência Máxima para ativar o alerta de frequência");
-    }
-    if (alertAccountBalanceEnabled && (!minAccountBalance || parseFloat(minAccountBalance) < 0)) {
-      return toast.error("Informe o Saldo Mínimo para ativar o alerta de saldo da conta");
+    if (ruleType === "traffic") {
+      const targetAccountId = accountId === "all" ? null : accountId;
+      if (!alertCplEnabled && !alertBudgetEnabled && !alertFrequencyEnabled && !alertAccountBalanceEnabled) {
+        return toast.error("Ative pelo menos um tipo de alerta (CPL, Orçamento, Frequência ou Saldo)");
+      }
+      if (alertCplEnabled && (!maxCpl || parseFloat(maxCpl) <= 0)) {
+        return toast.error("Informe o CPL Máximo para ativar o alerta de CPL");
+      }
+      if (alertBudgetEnabled && (!maxBudgetPct || parseInt(maxBudgetPct) <= 0)) {
+        return toast.error("Informe o % de Orçamento para ativar o alerta de budget");
+      }
+      if (alertFrequencyEnabled && (!maxFrequency || parseFloat(maxFrequency) <= 0)) {
+        return toast.error("Informe a Frequência Máxima para ativar o alerta de frequência");
+      }
+      if (alertAccountBalanceEnabled && (!minAccountBalance || parseFloat(minAccountBalance) < 0)) {
+        return toast.error("Informe o Saldo Mínimo para ativar o alerta de saldo da conta");
+      }
+    } else {
+      if (socialPageId === "none") {
+        return toast.error("Selecione uma Página de Redes Sociais para monitorar");
+      }
+      if (!minIgFollowers && !minFbFollowers && !maxDaysWithoutPosts && !minPostEngagementRate) {
+        return toast.error("Informe pelo menos um limite ou métrica para monitorar (Seguidores, Dias sem postar ou Engajamento)");
+      }
     }
 
     setIsSubmitting(true);
     try {
       const commonFields = {
-        ad_account_id:           targetAccountId,
-        campaign_id:             campaignId === "all" ? null : campaignId,
-        max_cpl:                 maxCpl ? parseFloat(maxCpl) : null,
-        max_budget_pct:          maxBudgetPct ? parseInt(maxBudgetPct) : null,
-        max_frequency:           maxFrequency ? parseFloat(maxFrequency) : null,
-        min_spend_threshold:     minSpend ? parseFloat(minSpend) : 0,
-        min_account_balance:     minAccountBalance ? parseFloat(minAccountBalance) : 0,
-        alert_cpl_enabled:       alertCplEnabled,
-        alert_budget_enabled:    alertBudgetEnabled,
-        alert_frequency_enabled: alertFrequencyEnabled,
-        alert_account_balance_enabled: alertAccountBalanceEnabled,
-        excluded_account_ids:    accountId === "all" && excludedIds.size > 0 ? Array.from(excludedIds) : [],
+        ad_account_id:           ruleType === "traffic" ? (accountId === "all" ? null : accountId) : null,
+        campaign_id:             ruleType === "traffic" && campaignId !== "all" ? campaignId : null,
+        social_page_id:          ruleType === "social" && socialPageId !== "none" ? socialPageId : null,
+        max_cpl:                 ruleType === "traffic" && maxCpl ? parseFloat(maxCpl) : null,
+        max_budget_pct:          ruleType === "traffic" && maxBudgetPct ? parseInt(maxBudgetPct) : null,
+        max_frequency:           ruleType === "traffic" && maxFrequency ? parseFloat(maxFrequency) : null,
+        min_spend_threshold:     ruleType === "traffic" && minSpend ? parseFloat(minSpend) : 0,
+        min_account_balance:     ruleType === "traffic" && minAccountBalance ? parseFloat(minAccountBalance) : 0,
+        alert_cpl_enabled:       ruleType === "traffic" ? alertCplEnabled : false,
+        alert_budget_enabled:    ruleType === "traffic" ? alertBudgetEnabled : false,
+        alert_frequency_enabled: ruleType === "traffic" ? alertFrequencyEnabled : false,
+        alert_account_balance_enabled: ruleType === "traffic" ? alertAccountBalanceEnabled : false,
+        excluded_account_ids:    ruleType === "traffic" && accountId === "all" && excludedIds.size > 0 ? Array.from(excludedIds) : [],
+        min_ig_followers:        ruleType === "social" && minIgFollowers ? parseInt(minIgFollowers) : null,
+        min_fb_followers:        ruleType === "social" && minFbFollowers ? parseInt(minFbFollowers) : null,
+        max_days_without_posts:  ruleType === "social" && maxDaysWithoutPosts ? parseInt(maxDaysWithoutPosts) : null,
+        min_post_engagement_rate: ruleType === "social" && minPostEngagementRate ? parseFloat(minPostEngagementRate) : null,
       };
 
       if (isEditing) {
@@ -1097,234 +1353,361 @@ function ThresholdModal({ onClose, accounts, userId, qc, editing }: any) {
 
         {/* Formulário Scrollable (Corpo com min-h-0 para forçar flexbox scroll) */}
         <div className="flex-1 min-h-0 overflow-y-auto p-6 space-y-6 custom-scrollbar">
-          <div className="space-y-1.5">
-            <label className="text-[10px] font-bold text-muted-foreground uppercase">
-              Conta de Anúncios
-            </label>
-            <select
-              value={accountId}
-              onChange={(e) => setAccountId(e.target.value)}
-              className="w-full rounded-lg border border-white/10 bg-background px-3 py-3 text-sm focus:border-primary focus:outline-none cursor-pointer"
-            >
-              <option value="all">Todas as Contas Meta (Alerta Global)</option>
-              {accounts.map((a: any) => (
-                <option key={a.id} value={a.id}>{a.name}</option>
-              ))}
-            </select>
-          </div>
+          
+          {/* Segmented Control de Tipo de Regra */}
+          {!isEditing ? (
+            <div className="grid grid-cols-2 gap-1 bg-white/5 p-1 rounded-xl border border-white/5 shrink-0">
+              <button
+                type="button"
+                onClick={() => setRuleType("traffic")}
+                className={`py-2 text-xs font-bold rounded-lg transition-all ${
+                  ruleType === "traffic"
+                    ? "bg-primary text-black shadow-glow-sm"
+                    : "text-muted-foreground hover:text-foreground hover:bg-white/5"
+                }`}
+              >
+                Tráfego Pago
+              </button>
+              <button
+                type="button"
+                onClick={() => setRuleType("social")}
+                className={`py-2 text-xs font-bold rounded-lg transition-all ${
+                  ruleType === "social"
+                    ? "bg-blue-500 text-white shadow-glow-sm"
+                    : "text-muted-foreground hover:text-foreground hover:bg-white/5"
+                }`}
+              >
+                Redes Sociais
+              </button>
+            </div>
+          ) : (
+            <div className="flex items-center justify-between bg-white/5 px-4 py-2.5 rounded-xl border border-white/5">
+              <span className="text-[10px] font-bold text-muted-foreground uppercase">Tipo de Regra</span>
+              <span className={`text-[10px] font-black px-2 py-0.5 rounded-full uppercase ${
+                ruleType === "social" ? "bg-blue-500/20 text-blue-400 border border-blue-500/30" : "bg-primary/20 text-primary border border-primary/30"
+              }`}>
+                {ruleType === "social" ? "Redes Sociais" : "Tráfego Pago"}
+              </span>
+            </div>
+          )}
 
-          {accountId !== "all" && (
-            <div className="space-y-1.5">
-              <label className="text-[10px] font-bold text-muted-foreground uppercase">
-                Campanha (Opcional)
-              </label>
-              {loadingCampaigns ? (
-                <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" /> Carregando campanhas...
-                </div>
-              ) : (
+          {ruleType === "traffic" && (
+            <>
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-bold text-muted-foreground uppercase">
+                  Conta de Anúncios
+                </label>
                 <select
-                  value={campaignId}
-                  onChange={(e) => setCampaignId(e.target.value)}
+                  value={accountId}
+                  onChange={(e) => setAccountId(e.target.value)}
                   className="w-full rounded-lg border border-white/10 bg-background px-3 py-3 text-sm focus:border-primary focus:outline-none cursor-pointer"
                 >
-                  <option value="all">Todas as Campanhas da Conta (Alerta Geral da Conta)</option>
-                  {campaigns.map((c: any) => (
-                    <option key={c.id} value={c.id}>{c.name}</option>
+                  <option value="all">Todas as Contas Meta (Alerta Global)</option>
+                  {accounts.map((a: any) => (
+                    <option key={a.id} value={a.id}>{a.name}</option>
                   ))}
                 </select>
+              </div>
+
+              {accountId !== "all" && (
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-bold text-muted-foreground uppercase">
+                    Campanha (Opcional)
+                  </label>
+                  {loadingCampaigns ? (
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" /> Carregando campanhas...
+                    </div>
+                  ) : (
+                    <select
+                      value={campaignId}
+                      onChange={(e) => setCampaignId(e.target.value)}
+                      className="w-full rounded-lg border border-white/10 bg-background px-3 py-3 text-sm focus:border-primary focus:outline-none cursor-pointer"
+                    >
+                      <option value="all">Todas as Campanhas da Conta (Alerta Geral da Conta)</option>
+                      {campaigns.map((c: any) => (
+                        <option key={c.id} value={c.id}>{c.name}</option>
+                      ))}
+                    </select>
+                  )}
+                  <p className="text-[9px] text-muted-foreground">
+                    Selecione uma campanha específica para monitorar o CPL, Frequência e Orçamento dela.
+                  </p>
+                </div>
               )}
-              <p className="text-[9px] text-muted-foreground">
-                Selecione uma campanha específica para monitorar o CPL, Frequência e Orçamento dela.
-              </p>
-            </div>
-          )}
 
-          {accountId !== "all" && campaignId === "all" && (
-            <div className="rounded-xl border border-secondary/30 bg-secondary/10 px-4 py-3 text-[11px] text-secondary leading-relaxed">
-              <strong>Exceção de conta:</strong> esta regra substituirá o alerta global para a conta selecionada. A regra global não será avaliada para ela.
-            </div>
-          )}
+              {accountId !== "all" && campaignId === "all" && (
+                <div className="rounded-xl border border-secondary/30 bg-secondary/10 px-4 py-3 text-[11px] text-secondary leading-relaxed">
+                  <strong>Exceção de conta:</strong> esta regra substituirá o alerta global para a conta selecionada. A regra global não será avaliada para ela.
+                </div>
+              )}
 
-          {accountId === "all" && (
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <label className="text-[10px] font-bold text-muted-foreground uppercase">
-                  Excluir Contas (opcional)
-                </label>
-                {excludedIds.size > 0 && (
-                  <span className="text-[9px] font-black text-primary bg-primary/10 px-2 py-0.5 rounded-full">
-                    {excludedIds.size} excluída{excludedIds.size > 1 ? "s" : ""}
-                  </span>
+              {accountId === "all" && (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-[10px] font-bold text-muted-foreground uppercase">
+                      Excluir Contas (opcional)
+                    </label>
+                    {excludedIds.size > 0 && (
+                      <span className="text-[9px] font-black text-primary bg-primary/10 px-2 py-0.5 rounded-full">
+                        {excludedIds.size} excluída{excludedIds.size > 1 ? "s" : ""}
+                      </span>
+                    )}
+                  </div>
+                  <div className="max-h-40 overflow-y-auto rounded-lg border border-white/10 bg-background divide-y divide-white/5">
+                    {accounts.map((a: any) => (
+                      <button
+                        key={a.id}
+                        type="button"
+                        onClick={() => toggleExclusion(a.id)}
+                        className={`w-full flex items-center gap-3 px-3 py-2.5 text-left text-xs transition hover:bg-white/5 ${excludedIds.has(a.id) ? "text-destructive" : "text-foreground"}`}
+                      >
+                        <span className={`h-4 w-4 rounded border flex items-center justify-center shrink-0 transition ${excludedIds.has(a.id) ? "bg-destructive/20 border-destructive text-destructive" : "border-white/20"}`}>
+                          {excludedIds.has(a.id) && <X className="h-2.5 w-2.5" />}
+                        </span>
+                        {a.name}
+                      </button>
+                    ))}
+                  </div>
+                  {excludedIds.size > 0 && (
+                    <p className="text-[9px] text-muted-foreground">
+                      O alerta global não será disparado para as contas marcadas acima.
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {/* ── ALERTA DE CPL ───────────────────────────────────────────────── */}
+              <div className={`rounded-xl border p-4 space-y-3 transition-all ${
+                alertCplEnabled ? "border-red-500/40 bg-red-500/5" : "border-white/10 bg-white/[0.02]"
+              }`}>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <TrendingUp className={`h-4 w-4 ${alertCplEnabled ? "text-red-400" : "text-muted-foreground"}`} />
+                    <span className={`text-sm font-bold ${alertCplEnabled ? "text-red-400" : "text-muted-foreground"}`}>Alerta de CPL</span>
+                    <span className="text-[9px] font-mono text-muted-foreground/60">Custo Por Lead</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setAlertCplEnabled(v => !v)}
+                    className={`relative h-5 w-9 rounded-full transition-colors shrink-0 ${alertCplEnabled ? "bg-red-500" : "bg-white/15"}`}
+                  >
+                    <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-all ${alertCplEnabled ? "left-4" : "left-0.5"}`} />
+                  </button>
+                </div>
+                {alertCplEnabled && (
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-bold text-muted-foreground uppercase">CPL Máximo (R$)</label>
+                    <input
+                      type="number" step="0.01" min="0.01" value={maxCpl}
+                      onChange={(e) => setMaxCpl(e.target.value)}
+                      placeholder="Ex: 15.50"
+                      className="w-full rounded-lg border border-red-500/30 bg-background px-3 py-2.5 text-sm focus:border-red-400 focus:outline-none"
+                    />
+                    <p className="text-[9px] text-muted-foreground">Alerta quando CPL do dia superar este valor</p>
+                  </div>
                 )}
               </div>
-              <div className="max-h-40 overflow-y-auto rounded-lg border border-white/10 bg-background divide-y divide-white/5">
-                {accounts.map((a: any) => (
+
+              {/* ── ALERTA DE ORÇAMENTO ─────────────────────────────────────────── */}
+              <div className={`rounded-xl border p-4 space-y-3 transition-all ${
+                alertBudgetEnabled ? "border-yellow-500/40 bg-yellow-500/5" : "border-white/10 bg-white/[0.02]"
+              }`}>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <DollarSign className={`h-4 w-4 ${alertBudgetEnabled ? "text-yellow-400" : "text-muted-foreground"}`} />
+                    <span className={`text-sm font-bold ${alertBudgetEnabled ? "text-yellow-400" : "text-muted-foreground"}`}>Alerta de Orçamento</span>
+                    <span className="text-[9px] font-mono text-muted-foreground/60">Budget Diário</span>
+                  </div>
                   <button
-                    key={a.id}
                     type="button"
-                    onClick={() => toggleExclusion(a.id)}
-                    className={`w-full flex items-center gap-3 px-3 py-2.5 text-left text-xs transition hover:bg-white/5 ${excludedIds.has(a.id) ? "text-destructive" : "text-foreground"}`}
+                    onClick={() => setAlertBudgetEnabled(v => !v)}
+                    className={`relative h-5 w-9 rounded-full transition-colors shrink-0 ${alertBudgetEnabled ? "bg-yellow-500" : "bg-white/15"}`}
                   >
-                    <span className={`h-4 w-4 rounded border flex items-center justify-center shrink-0 transition ${excludedIds.has(a.id) ? "bg-destructive/20 border-destructive text-destructive" : "border-white/20"}`}>
-                      {excludedIds.has(a.id) && <X className="h-2.5 w-2.5" />}
-                    </span>
-                    {a.name}
+                    <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-all ${alertBudgetEnabled ? "left-4" : "left-0.5"}`} />
                   </button>
-                ))}
+                </div>
+                {alertBudgetEnabled && (
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-bold text-muted-foreground uppercase">Aviso quando atingir (%)</label>
+                    <input
+                      type="number" min="1" max="100" value={maxBudgetPct}
+                      onChange={(e) => setMaxBudgetPct(e.target.value)}
+                      placeholder="Ex: 90"
+                      className="w-full rounded-lg border border-yellow-500/30 bg-background px-3 py-2.5 text-sm focus:border-yellow-400 focus:outline-none"
+                    />
+                    <p className="text-[9px] text-muted-foreground">Alerta quando orçamento diário atingir este % do total</p>
+                  </div>
+                )}
               </div>
-              {excludedIds.size > 0 && (
-                <p className="text-[9px] text-muted-foreground">
-                  O alerta global não será disparado para as contas marcadas acima.
-                </p>
-              )}
-            </div>
+
+              {/* ── ALERTA DE FREQUÊNCIA ────────────────────────────────────────── */}
+              <div className={`rounded-xl border p-4 space-y-3 transition-all ${
+                alertFrequencyEnabled ? "border-orange-500/40 bg-orange-500/5" : "border-white/10 bg-white/[0.02]"
+              }`}>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Radio className={`h-4 w-4 ${alertFrequencyEnabled ? "text-orange-400" : "text-muted-foreground"}`} />
+                    <span className={`text-sm font-bold ${alertFrequencyEnabled ? "text-orange-400" : "text-muted-foreground"}`}>Alerta de Frequência</span>
+                    <span className="text-[9px] font-mono text-muted-foreground/60">Saturação de Audiência</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setAlertFrequencyEnabled(v => !v)}
+                    className={`relative h-5 w-9 rounded-full transition-colors shrink-0 ${alertFrequencyEnabled ? "bg-orange-500" : "bg-white/15"}`}
+                  >
+                    <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-all ${alertFrequencyEnabled ? "left-4" : "left-0.5"}`} />
+                  </button>
+                </div>
+                {alertFrequencyEnabled && (
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-bold text-muted-foreground uppercase">Frequência Máxima (×)</label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="number" step="0.1" min="1" max="10" value={maxFrequency}
+                        onChange={(e) => setMaxFrequency(e.target.value)}
+                        placeholder="3.5"
+                        className="w-full rounded-lg border border-orange-500/30 bg-background px-3 py-2.5 text-sm focus:border-orange-400 focus:outline-none"
+                      />
+                      <span className="text-sm font-bold text-muted-foreground shrink-0">×</span>
+                    </div>
+                    <p className="text-[9px] text-muted-foreground">Alerta quando a frequência média ultrapassar este valor. Padrão 3.5× para automotivo.</p>
+                  </div>
+                )}
+              </div>
+
+              {/* ── ALERTA DE SALDO DA CONTA ────────────────────────────────────── */}
+              <div className={`rounded-xl border p-4 space-y-3 transition-all ${
+                alertAccountBalanceEnabled ? "border-emerald-500/40 bg-emerald-500/5" : "border-white/10 bg-white/[0.02]"
+              }`}>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <DollarSign className={`h-4 w-4 ${alertAccountBalanceEnabled ? "text-emerald-400" : "text-muted-foreground"}`} />
+                    <span className={`text-sm font-bold ${alertAccountBalanceEnabled ? "text-emerald-400" : "text-muted-foreground"}`}>Alerta de Saldo da Conta</span>
+                    <span className="text-[9px] font-mono text-muted-foreground/60">Saldo Global</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setAlertAccountBalanceEnabled(v => !v)}
+                    className={`relative h-5 w-9 rounded-full transition-colors shrink-0 ${alertAccountBalanceEnabled ? "bg-emerald-500" : "bg-white/15"}`}
+                  >
+                    <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-all ${alertAccountBalanceEnabled ? "left-4" : "left-0.5"}`} />
+                  </button>
+                </div>
+                {alertAccountBalanceEnabled && (
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-bold text-muted-foreground uppercase">Saldo Mínimo de Aviso (R$)</label>
+                    <input
+                      type="number" step="0.01" min="0" value={minAccountBalance}
+                      onChange={(e) => setMinAccountBalance(e.target.value)}
+                      placeholder="Ex: 100.00"
+                      className="w-full rounded-lg border border-emerald-500/30 bg-background px-3 py-2.5 text-sm focus:border-emerald-400 focus:outline-none"
+                    />
+                    <p className="text-[9px] text-muted-foreground">Alerta de emergência caso o saldo restante na conta (contas pré-pagas) ou não-faturado fique abaixo deste valor. Evita pausas nas campanhas.</p>
+                  </div>
+                )}
+              </div>
+
+              {/* ── Gasto mínimo ───────────────────────────────────────────────── */}
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-bold text-muted-foreground uppercase">
+                  Gasto mínimo para alertar (R$)
+                </label>
+                <input
+                  type="number" step="0.01" min="0" value={minSpend}
+                  onChange={(e) => setMinSpend(e.target.value)}
+                  placeholder="0 = sempre alertar"
+                  className="w-full rounded-lg border border-white/10 bg-background px-3 py-2.5 text-sm focus:border-primary focus:outline-none"
+                />
+                <p className="text-[9px] text-muted-foreground">Ignora campanhas com gasto abaixo deste valor — evita ruído de campanhas com budget muito baixo.</p>
+              </div>
+            </>
           )}
 
-          {/* ── ALERTA DE CPL ───────────────────────────────────────────────── */}
-          <div className={`rounded-xl border p-4 space-y-3 transition-all ${
-            alertCplEnabled ? "border-red-500/40 bg-red-500/5" : "border-white/10 bg-white/[0.02]"
-          }`}>
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <TrendingUp className={`h-4 w-4 ${alertCplEnabled ? "text-red-400" : "text-muted-foreground"}`} />
-                <span className={`text-sm font-bold ${alertCplEnabled ? "text-red-400" : "text-muted-foreground"}`}>Alerta de CPL</span>
-                <span className="text-[9px] font-mono text-muted-foreground/60">Custo Por Lead</span>
-              </div>
-              <button
-                type="button"
-                onClick={() => setAlertCplEnabled(v => !v)}
-                className={`relative h-5 w-9 rounded-full transition-colors shrink-0 ${alertCplEnabled ? "bg-red-500" : "bg-white/15"}`}
-              >
-                <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-all ${alertCplEnabled ? "left-4" : "left-0.5"}`} />
-              </button>
-            </div>
-            {alertCplEnabled && (
+          {ruleType === "social" && (
+            <>
+              {/* Seleção de Página Social */}
               <div className="space-y-1.5">
-                <label className="text-[10px] font-bold text-muted-foreground uppercase">CPL Máximo (R$)</label>
-                <input
-                  type="number" step="0.01" min="0.01" value={maxCpl}
-                  onChange={(e) => setMaxCpl(e.target.value)}
-                  placeholder="Ex: 15.50"
-                  className="w-full rounded-lg border border-red-500/30 bg-background px-3 py-2.5 text-sm focus:border-red-400 focus:outline-none"
-                />
-                <p className="text-[9px] text-muted-foreground">Alerta quando CPL do dia superar este valor</p>
+                <label className="text-[10px] font-bold text-muted-foreground uppercase">
+                  Página de Redes Sociais
+                </label>
+                <select
+                  value={socialPageId}
+                  onChange={(e) => setSocialPageId(e.target.value)}
+                  className="w-full rounded-lg border border-white/10 bg-background px-3 py-3 text-sm focus:border-primary focus:outline-none cursor-pointer"
+                >
+                  <option value="none">Selecione uma Página...</option>
+                  {socialPages.map((sp: any) => (
+                    <option key={sp.id} value={sp.id}>{sp.page_name}</option>
+                  ))}
+                </select>
+                <p className="text-[9px] text-muted-foreground">
+                  Escolha a página do Instagram/Facebook vinculada que deseja monitorar.
+                </p>
               </div>
-            )}
-          </div>
 
-          {/* ── ALERTA DE ORÇAMENTO ─────────────────────────────────────────── */}
-          <div className={`rounded-xl border p-4 space-y-3 transition-all ${
-            alertBudgetEnabled ? "border-yellow-500/40 bg-yellow-500/5" : "border-white/10 bg-white/[0.02]"
-          }`}>
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <DollarSign className={`h-4 w-4 ${alertBudgetEnabled ? "text-yellow-400" : "text-muted-foreground"}`} />
-                <span className={`text-sm font-bold ${alertBudgetEnabled ? "text-yellow-400" : "text-muted-foreground"}`}>Alerta de Orçamento</span>
-                <span className="text-[9px] font-mono text-muted-foreground/60">Budget Diário</span>
-              </div>
-              <button
-                type="button"
-                onClick={() => setAlertBudgetEnabled(v => !v)}
-                className={`relative h-5 w-9 rounded-full transition-colors shrink-0 ${alertBudgetEnabled ? "bg-yellow-500" : "bg-white/15"}`}
-              >
-                <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-all ${alertBudgetEnabled ? "left-4" : "left-0.5"}`} />
-              </button>
-            </div>
-            {alertBudgetEnabled && (
-              <div className="space-y-1.5">
-                <label className="text-[10px] font-bold text-muted-foreground uppercase">Aviso quando atingir (%)</label>
-                <input
-                  type="number" min="1" max="100" value={maxBudgetPct}
-                  onChange={(e) => setMaxBudgetPct(e.target.value)}
-                  placeholder="Ex: 90"
-                  className="w-full rounded-lg border border-yellow-500/30 bg-background px-3 py-2.5 text-sm focus:border-yellow-400 focus:outline-none"
-                />
-                <p className="text-[9px] text-muted-foreground">Alerta quando orçamento diário atingir este % do total</p>
-              </div>
-            )}
-          </div>
-
-          {/* ── ALERTA DE FREQUÊNCIA ────────────────────────────────────────── */}
-          <div className={`rounded-xl border p-4 space-y-3 transition-all ${
-            alertFrequencyEnabled ? "border-orange-500/40 bg-orange-500/5" : "border-white/10 bg-white/[0.02]"
-          }`}>
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Radio className={`h-4 w-4 ${alertFrequencyEnabled ? "text-orange-400" : "text-muted-foreground"}`} />
-                <span className={`text-sm font-bold ${alertFrequencyEnabled ? "text-orange-400" : "text-muted-foreground"}`}>Alerta de Frequência</span>
-                <span className="text-[9px] font-mono text-muted-foreground/60">Saturação de Audiência</span>
-              </div>
-              <button
-                type="button"
-                onClick={() => setAlertFrequencyEnabled(v => !v)}
-                className={`relative h-5 w-9 rounded-full transition-colors shrink-0 ${alertFrequencyEnabled ? "bg-orange-500" : "bg-white/15"}`}
-              >
-                <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-all ${alertFrequencyEnabled ? "left-4" : "left-0.5"}`} />
-              </button>
-            </div>
-            {alertFrequencyEnabled && (
-              <div className="space-y-1.5">
-                <label className="text-[10px] font-bold text-muted-foreground uppercase">Frequência Máxima (×)</label>
+              {/* Métrica: Instagram Followers */}
+              <div className="rounded-xl border border-white/10 bg-white/[0.02] p-4 space-y-3">
                 <div className="flex items-center gap-2">
-                  <input
-                    type="number" step="0.1" min="1" max="10" value={maxFrequency}
-                    onChange={(e) => setMaxFrequency(e.target.value)}
-                    placeholder="3.5"
-                    className="w-full rounded-lg border border-orange-500/30 bg-background px-3 py-2.5 text-sm focus:border-orange-400 focus:outline-none"
-                  />
-                  <span className="text-sm font-bold text-muted-foreground shrink-0">×</span>
+                  <span className="text-sm font-bold text-foreground">Seguidores Mínimos (Instagram)</span>
                 </div>
-                <p className="text-[9px] text-muted-foreground">Alerta quando a frequência média ultrapassar este valor. Padrão 3.5× para automotivo.</p>
-              </div>
-            )}
-          </div>
-
-          {/* ── ALERTA DE SALDO DA CONTA ────────────────────────────────────── */}
-          <div className={`rounded-xl border p-4 space-y-3 transition-all ${
-            alertAccountBalanceEnabled ? "border-emerald-500/40 bg-emerald-500/5" : "border-white/10 bg-white/[0.02]"
-          }`}>
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <DollarSign className={`h-4 w-4 ${alertAccountBalanceEnabled ? "text-emerald-400" : "text-muted-foreground"}`} />
-                <span className={`text-sm font-bold ${alertAccountBalanceEnabled ? "text-emerald-400" : "text-muted-foreground"}`}>Alerta de Saldo da Conta</span>
-                <span className="text-[9px] font-mono text-muted-foreground/60">Saldo Global</span>
-              </div>
-              <button
-                type="button"
-                onClick={() => setAlertAccountBalanceEnabled(v => !v)}
-                className={`relative h-5 w-9 rounded-full transition-colors shrink-0 ${alertAccountBalanceEnabled ? "bg-emerald-500" : "bg-white/15"}`}
-              >
-                <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-all ${alertAccountBalanceEnabled ? "left-4" : "left-0.5"}`} />
-              </button>
-            </div>
-            {alertAccountBalanceEnabled && (
-              <div className="space-y-1.5">
-                <label className="text-[10px] font-bold text-muted-foreground uppercase">Saldo Mínimo de Aviso (R$)</label>
                 <input
-                  type="number" step="0.01" min="0" value={minAccountBalance}
-                  onChange={(e) => setMinAccountBalance(e.target.value)}
-                  placeholder="Ex: 100.00"
-                  className="w-full rounded-lg border border-emerald-500/30 bg-background px-3 py-2.5 text-sm focus:border-emerald-400 focus:outline-none"
+                  type="number"
+                  placeholder="Ex: 5000 (deixe em branco se não quiser monitorar)"
+                  value={minIgFollowers}
+                  onChange={(e) => setMinIgFollowers(e.target.value)}
+                  className="w-full rounded-lg border border-white/10 bg-background px-3 py-2.5 text-sm focus:border-primary focus:outline-none"
                 />
-                <p className="text-[9px] text-muted-foreground">Alerta de emergência caso o saldo restante na conta (contas pré-pagas) ou não-faturado fique abaixo deste valor. Evita pausas nas campanhas.</p>
+                <p className="text-[9px] text-muted-foreground">Alerta se os seguidores caírem abaixo deste valor.</p>
               </div>
-            )}
-          </div>
 
-          {/* ── Gasto mínimo ───────────────────────────────────────────────── */}
-          <div className="space-y-1.5">
-            <label className="text-[10px] font-bold text-muted-foreground uppercase">
-              Gasto mínimo para alertar (R$)
-            </label>
-            <input
-              type="number" step="0.01" min="0" value={minSpend}
-              onChange={(e) => setMinSpend(e.target.value)}
-              placeholder="0 = sempre alertar"
-              className="w-full rounded-lg border border-white/10 bg-background px-3 py-2.5 text-sm focus:border-primary focus:outline-none"
-            />
-            <p className="text-[9px] text-muted-foreground">Ignora campanhas com gasto abaixo deste valor — evita ruído de campanhas com budget muito baixo.</p>
-          </div>
+              {/* Métrica: Facebook Followers */}
+              <div className="rounded-xl border border-white/10 bg-white/[0.02] p-4 space-y-3">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-bold text-foreground">Seguidores Mínimos (Facebook)</span>
+                </div>
+                <input
+                  type="number"
+                  placeholder="Ex: 1000 (deixe em branco se não quiser monitorar)"
+                  value={minFbFollowers}
+                  onChange={(e) => setMinFbFollowers(e.target.value)}
+                  className="w-full rounded-lg border border-white/10 bg-background px-3 py-2.5 text-sm focus:border-primary focus:outline-none"
+                />
+                <p className="text-[9px] text-muted-foreground">Alerta se as curtidas/seguidores caírem abaixo deste valor.</p>
+              </div>
+
+              {/* Inatividade (Dias sem postar) */}
+              <div className="rounded-xl border border-white/10 bg-white/[0.02] p-4 space-y-3">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-bold text-foreground">Dias Máximos sem Postar</span>
+                </div>
+                <input
+                  type="number"
+                  placeholder="Ex: 7 (deixe em branco se não quiser monitorar)"
+                  value={maxDaysWithoutPosts}
+                  onChange={(e) => setMaxDaysWithoutPosts(e.target.value)}
+                  className="w-full rounded-lg border border-white/10 bg-background px-3 py-2.5 text-sm focus:border-primary focus:outline-none"
+                />
+                <p className="text-[9px] text-muted-foreground">Alerta se o perfil ficar inativo (sem novos posts) por mais que este número de dias.</p>
+              </div>
+
+              {/* Taxa de Engajamento Mínima */}
+              <div className="rounded-xl border border-white/10 bg-white/[0.02] p-4 space-y-3">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-bold text-foreground">Taxa de Engajamento Mínima (%)</span>
+                </div>
+                <input
+                  type="number"
+                  step="0.01"
+                  placeholder="Ex: 1.5 (deixe em branco se não quiser monitorar)"
+                  value={minPostEngagementRate}
+                  onChange={(e) => setMinPostEngagementRate(e.target.value)}
+                  className="w-full rounded-lg border border-white/10 bg-background px-3 py-2.5 text-sm focus:border-primary focus:outline-none"
+                />
+                <p className="text-[9px] text-muted-foreground">Alerta se a média de engajamento do post cair abaixo deste percentual.</p>
+              </div>
+            </>
+          )}
         </div>
 
         {/* Footer (Fixo embaixo) */}

@@ -77,12 +77,18 @@ serve(async (req) => {
   try {
     const { data: configMaster } = await supabase
       .from("meta_ads_configs")
-      .select("whatsapp_phone, whatsapp_gateway_url")
+      .select("whatsapp_phone, whatsapp_gateway_url, zero_delivery_enabled, zero_delivery_hour, perf_drop_enabled, perf_drop_spend_pct, client_cpa_enabled, alert_dedup_hours, user_id")
       .limit(1)
       .maybeSingle()
 
     const whatsappPhone = configMaster?.whatsapp_phone || ""
     const whatsappGateway = configMaster?.whatsapp_gateway_url || "http://localhost:3001"
+    const zeroDeliveryEnabled = configMaster?.zero_delivery_enabled !== false
+    const zeroDeliveryHour = configMaster?.zero_delivery_hour ?? 14
+    const perfDropEnabled = configMaster?.perf_drop_enabled !== false
+    const perfDropSpendPct = Number(configMaster?.perf_drop_spend_pct ?? 50)
+    const clientCpaEnabled = configMaster?.client_cpa_enabled !== false
+    const alertDedupHours = Number(configMaster?.alert_dedup_hours ?? 2)
 
     // [HIERARQUIA] Busca profiles para roteamento inteligente de WhatsApp
     const { data: profilesData } = await supabase.from("profiles").select("id, role, whatsapp_numbers")
@@ -212,8 +218,7 @@ serve(async (req) => {
 
         if (spend === 0) {
           // SMART TRIGGER: Zero Delivery (Falta de Entrega)
-          // Se já passou das 14h, a campanha tem orçamento e está ativa, mas gastou 0.
-          if (currentHourBrt >= 14 && dailyBudget > 0) {
+          if (zeroDeliveryEnabled && currentHourBrt >= zeroDeliveryHour && dailyBudget > 0) {
             alertsToInsert.push({
               user_id:     userId,
               title:       `⚠️ Sem Entrega (Zero Delivery) — ${campaign.name}`,
@@ -342,12 +347,10 @@ serve(async (req) => {
         }
         } // Fim do else de minSpend
 
-        // SMART TRIGGER: Drop de Performance (Anomalia vs. 7D)
-        const hist7d = avg7dMap.get(campaign.id);
-        if (hist7d && hist7d.days.size > 0 && currentHourBrt >= 14) {
+        if (perfDropEnabled && hist7d && hist7d.days.size > 0 && currentHourBrt >= 14) {
           const avgDailyConv = hist7d.conv / 7;
-          // Se a campanha costuma dar > 1 conversão/dia, já gastou mais de 50% do orçamento hoje, e tem 0 conversões.
-          if (avgDailyConv >= 1 && conversions === 0 && budgetUsedPct >= 50) {
+          // Se a campanha costuma dar > 1 conversão/dia, já gastou mais de perfDropSpendPct hoje, e tem 0 conversões.
+          if (avgDailyConv >= 1 && conversions === 0 && budgetUsedPct >= perfDropSpendPct) {
             alertsToInsert.push({
               user_id:     userId,
               title:       `📉 Queda de Performance — ${campaign.name}`,
@@ -376,13 +379,16 @@ serve(async (req) => {
           const alertType = alert.metadata?.alert_type
           const keyWord   = alertType === 'HIGH_CPR'       ? result.metricLabel
                           : alertType === 'BUDGET_WARNING' ? 'Orçamento'
+                          : alertType === 'PERFORMANCE_DROP' ? 'Queda de Performance'
+                          : alertType === 'ZERO_DELIVERY' ? 'Sem Entrega'
                           : 'Frequência'
 
+          const dedupLimitTime = new Date(Date.now() - alertDedupHours * 60 * 60 * 1000).toISOString()
           const { data: existing } = await supabase
             .from("notifications")
             .select("id")
             .eq("user_id", userId)
-            .gte("created_at", `${today}T00:00:00Z`)
+            .gte("created_at", dedupLimitTime)
             .ilike("title", `%${campaign.name}%`)
             .ilike("message", `%${keyWord}%`)
             .limit(1)
@@ -484,89 +490,112 @@ serve(async (req) => {
 
     // ── MIGRADO DE meta-ads-monitor: Lógica de Target CPA por Cliente (7 Dias) ──
     try {
-      const { data: clients } = await supabase
-        .from("clients")
-        .select("id, name, meta_ad_account_id, target_cpa, user_id")
-        .not("meta_ad_account_id", "is", null);
+      if (clientCpaEnabled) {
+        const { data: clients } = await supabase
+          .from("clients")
+          .select("id, name, meta_ad_account_id, target_cpa, user_id")
+          .not("meta_ad_account_id", "is", null);
 
-      if (clients && clients.length > 0) {
-        for (const client of clients) {
-          if (!client.target_cpa || client.target_cpa <= 0) continue;
+        if (clients && clients.length > 0) {
+          for (const client of clients) {
+            if (!client.target_cpa || client.target_cpa <= 0) continue;
 
-          let accountCost = 0;
-          let accountConv = 0;
-          
-          // Somar as métricas de 7 dias (avg7dMap) de todas as campanhas da conta do cliente
-          const clientCampaigns = campaigns?.filter(c => c.ad_account_id === client.meta_ad_account_id) || [];
-          for (const c of clientCampaigns) {
-            const hist = avg7dMap.get(c.id);
-            if (hist) {
-              accountCost += hist.cost;
-              accountConv += hist.conv;
+            let accountCost = 0;
+            let accountConv = 0;
+            
+            // Somar as métricas de 7 dias (avg7dMap) de todas as campanhas da conta do cliente
+            const clientCampaigns = campaigns?.filter(c => c.ad_account_id === client.meta_ad_account_id) || [];
+            for (const c of clientCampaigns) {
+              const hist = avg7dMap.get(c.id);
+              if (hist) {
+                accountCost += hist.cost;
+                accountConv += hist.conv;
+              }
             }
-          }
 
-          if (accountCost > 0) {
-            if (accountConv > 0) {
-              const currentCpa = accountCost / accountConv;
-              if (currentCpa > client.target_cpa) {
-                const msg = `O CPA da conta (R$ ${currentCpa.toFixed(2)}) nos últimos 7 dias está acima do limite aceitável (R$ ${client.target_cpa.toFixed(2)}). Gasto: R$ ${accountCost.toFixed(2)} para ${accountConv} conversões.`;
+            if (accountCost > 0) {
+              const dedupLimitTime = new Date(Date.now() - alertDedupHours * 60 * 60 * 1000).toISOString()
+              if (accountConv > 0) {
+                const currentCpa = accountCost / accountConv;
+                if (currentCpa > client.target_cpa) {
+                  const msg = `O CPA da conta (R$ ${currentCpa.toFixed(2)}) nos últimos 7 dias está acima do limite aceitável (R$ ${client.target_cpa.toFixed(2)}). Gasto: R$ ${accountCost.toFixed(2)} para ${accountConv} conversões.`;
+                  
+                  // Checar duplicata no intervalo
+                  const { data: existingClientAlert } = await supabase
+                    .from("notifications")
+                    .select("id")
+                    .eq("type", "alert")
+                    .ilike("title", `%CPA Crítico — Cliente ${client.name}%`)
+                    .gte("created_at", dedupLimitTime)
+                    .limit(1);
+
+                  if (!existingClientAlert?.length) {
+                    await supabase.from("notifications").insert({
+                      user_id:     client.user_id || configMaster?.user_id || '00000000-0000-0000-0000-000000000000',
+                      title:       `🔴 CPA Crítico — Cliente ${client.name}`,
+                      message:     msg,
+                      type:        "alert",
+                      is_critical: true,
+                      link:        `/metricas?account=${client.meta_ad_account_id}`,
+                      metadata:    { alert_type: "CLIENT_HIGH_CPA", client_id: client.id, spend: accountCost, conv: accountConv }
+                    });
+                    totalAlerts++;
+                    
+                    // Roteamento de WhatsApp hierárquico
+                    const waMsg = `🔴 *CPA CRÍTICO — CLIENTE ${client.name}*\n\n${msg}`;
+                    const recipientPhones = new Set<string>();
+                    const cUser = client.user_id || configMaster?.user_id;
+                    if (cUser) {
+                      const uPhones = userPhonesMap.get(cUser) || [];
+                      uPhones.forEach(p => recipientPhones.add(p));
+                    }
+                    adminPhones.forEach(p => recipientPhones.add(p));
+
+                    if (recipientPhones.size > 0 && whatsappGateway) {
+                      await sendWhatsAppMessages(whatsappGateway, Array.from(recipientPhones), waMsg);
+                    }
+                    console.log(`[AUTO] ⚠️ ALERTA CLIENT CPA: ${client.name} (R$${currentCpa.toFixed(2)} > R$${client.target_cpa.toFixed(2)})`);
+                  }
+                }
+              } else if (accountCost > client.target_cpa) {
+                // Sem conversões mas gastou mais que o CPA Alvo
+                const msg = `Gasto de R$ ${accountCost.toFixed(2)} nos últimos 7 dias sem NENHUMA conversão registrada. (CPA Alvo: R$ ${client.target_cpa.toFixed(2)}).`;
                 
-                // Checar duplicata no dia
                 const { data: existingClientAlert } = await supabase
                   .from("notifications")
                   .select("id")
                   .eq("type", "alert")
-                  .ilike("title", `%CPA Crítico — Cliente ${client.name}%`)
-                  .gte("created_at", `${today}T00:00:00Z`)
+                  .ilike("title", `%Alerta de Gasto — Cliente ${client.name}%`)
+                  .gte("created_at", dedupLimitTime)
                   .limit(1);
 
                 if (!existingClientAlert?.length) {
                   await supabase.from("notifications").insert({
                     user_id:     client.user_id || configMaster?.user_id || '00000000-0000-0000-0000-000000000000',
-                    title:       `🔴 CPA Crítico — Cliente ${client.name}`,
+                    title:       `🔴 Alerta de Gasto — Cliente ${client.name}`,
                     message:     msg,
                     type:        "alert",
                     is_critical: true,
                     link:        `/metricas?account=${client.meta_ad_account_id}`,
-                    metadata:    { alert_type: "CLIENT_HIGH_CPA", client_id: client.id, spend: accountCost, conv: accountConv }
+                    metadata:    { alert_type: "CLIENT_NO_CONV", client_id: client.id, spend: accountCost }
                   });
                   totalAlerts++;
                   
-                  if (whatsappPhone) {
-                    await sendWhatsAppMessage(whatsappGateway, whatsappPhone, `🔴 *CPA CRÍTICO — CLIENTE ${client.name}*\n\n${msg}`);
+                  // Roteamento de WhatsApp hierárquico
+                  const waMsg = `🔴 *ALERTA DE GASTO — CLIENTE ${client.name}*\n\n${msg}`;
+                  const recipientPhones = new Set<string>();
+                  const cUser = client.user_id || configMaster?.user_id;
+                  if (cUser) {
+                    const uPhones = userPhonesMap.get(cUser) || [];
+                    uPhones.forEach(p => recipientPhones.add(p));
                   }
-                  console.log(`[AUTO] ⚠️ ALERTA CLIENT CPA: ${client.name} (R$${currentCpa.toFixed(2)} > R$${client.target_cpa.toFixed(2)})`);
-                }
-              }
-            } else if (accountCost > client.target_cpa) {
-              // Sem conversões mas gastou mais que o CPA Alvo
-              const msg = `Gasto de R$ ${accountCost.toFixed(2)} nos últimos 7 dias sem NENHUMA conversão registrada. (CPA Alvo: R$ ${client.target_cpa.toFixed(2)}).`;
-              
-              const { data: existingClientAlert } = await supabase
-                .from("notifications")
-                .select("id")
-                .eq("type", "alert")
-                .ilike("title", `%Alerta de Gasto — Cliente ${client.name}%`)
-                .gte("created_at", `${today}T00:00:00Z`)
-                .limit(1);
+                  adminPhones.forEach(p => recipientPhones.add(p));
 
-              if (!existingClientAlert?.length) {
-                await supabase.from("notifications").insert({
-                  user_id:     client.user_id || configMaster?.user_id || '00000000-0000-0000-0000-000000000000',
-                  title:       `🔴 Alerta de Gasto — Cliente ${client.name}`,
-                  message:     msg,
-                  type:        "alert",
-                  is_critical: true,
-                  link:        `/metricas?account=${client.meta_ad_account_id}`,
-                  metadata:    { alert_type: "CLIENT_NO_CONV", client_id: client.id, spend: accountCost }
-                });
-                totalAlerts++;
-                
-                if (whatsappPhone) {
-                  await sendWhatsAppMessage(whatsappGateway, whatsappPhone, `🔴 *ALERTA DE GASTO — CLIENTE ${client.name}*\n\n${msg}`);
+                  if (recipientPhones.size > 0 && whatsappGateway) {
+                    await sendWhatsAppMessages(whatsappGateway, Array.from(recipientPhones), waMsg);
+                  }
+                  console.log(`[AUTO] ⚠️ ALERTA CLIENT NO CONV: ${client.name}`);
                 }
-                console.log(`[AUTO] ⚠️ ALERTA CLIENT NO CONV: ${client.name}`);
               }
             }
           }
@@ -574,6 +603,145 @@ serve(async (req) => {
       }
     } catch (clientErr: any) {
       console.error("[AUTO] Erro ao processar Target CPA de Clientes:", clientErr.message);
+    }
+
+    // ── NOVO: Monitoramento de Alertas de Redes Sociais (Social Media) ──────────
+    try {
+      console.log("[AUTO] Iniciando verificação de alertas de Redes Sociais...")
+      const { data: socialRules } = await supabase
+        .from("alert_thresholds")
+        .select("*, social_pages(*)")
+        .not("social_page_id", "is", null)
+        .eq("is_active", true);
+
+      if (socialRules && socialRules.length > 0) {
+        for (const rule of socialRules) {
+          const page = rule.social_pages;
+          if (!page) continue;
+
+          const alertsToInsert: any[] = [];
+          const userId = rule.user_id;
+
+          // 1. Seguidores Mínimos
+          if (rule.min_ig_followers && page.instagram_followers < rule.min_ig_followers) {
+            alertsToInsert.push({
+              user_id: userId,
+              title: `📉 Seguidores IG Baixo — ${page.page_name}`,
+              message: `Os seguidores do Instagram (${page.instagram_followers}) caíram abaixo do limite configurado de ${rule.min_ig_followers}.`,
+              type: "social_media_alert",
+              is_critical: true,
+              link: `/social-insights`,
+              metadata: { alert_type: "MIN_IG_FOLLOWERS", page_id: page.id, current: page.instagram_followers, min: rule.min_ig_followers }
+            });
+          }
+
+          if (rule.min_fb_followers && page.facebook_followers < rule.min_fb_followers) {
+            alertsToInsert.push({
+              user_id: userId,
+              title: `📉 Seguidores FB Baixo — ${page.page_name}`,
+              message: `Os seguidores do Facebook (${page.facebook_followers}) caíram abaixo do limite configurado de ${rule.min_fb_followers}.`,
+              type: "social_media_alert",
+              is_critical: true,
+              link: `/social-insights`,
+              metadata: { alert_type: "MIN_FB_FOLLOWERS", page_id: page.id, current: page.facebook_followers, min: rule.min_fb_followers }
+            });
+          }
+
+          // 2. Dias sem Postar (Inatividade)
+          if (rule.max_days_without_posts) {
+            // Buscar último post publicado
+            const { data: lastPosts } = await supabase
+              .from("social_posts")
+              .select("published_at")
+              .eq("page_id", page.page_id)
+              .eq("status", "published")
+              .order("published_at", { ascending: false })
+              .limit(1);
+
+            let daysWithout = 999;
+            if (lastPosts && lastPosts.length > 0 && lastPosts[0].published_at) {
+              const diffMs = Date.now() - new Date(lastPosts[0].published_at).getTime();
+              daysWithout = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+            }
+
+            if (daysWithout > rule.max_days_without_posts) {
+              alertsToInsert.push({
+                user_id: userId,
+                title: `📭 Inatividade de Posts — ${page.page_name}`,
+                message: `O perfil está há ${daysWithout} dias sem novas postagens (limite máximo: ${rule.max_days_without_posts} dias).`,
+                type: "social_media_alert",
+                is_critical: false,
+                link: `/organizador`,
+                metadata: { alert_type: "MAX_DAYS_WITHOUT_POSTS", page_id: page.id, days_without: daysWithout, max: rule.max_days_without_posts }
+              });
+            }
+          }
+
+          // 3. Taxa de Engajamento Mínima
+          if (rule.min_post_engagement_rate && page.instagram_followers > 0) {
+            // Média de engajamento dos últimos 5 posts
+            const { data: recentPosts } = await supabase
+              .from("social_posts")
+              .select("likes_count, comments_count")
+              .eq("page_id", page.page_id)
+              .eq("status", "published")
+              .order("published_at", { ascending: false })
+              .limit(5);
+
+            if (recentPosts && recentPosts.length > 0) {
+              const totalEngagement = recentPosts.reduce((acc, p) => acc + (p.likes_count || 0) + (p.comments_count || 0), 0);
+              const avgEngagementPerPost = totalEngagement / recentPosts.length;
+              const engagementRate = (avgEngagementPerPost / page.instagram_followers) * 100;
+
+              if (engagementRate < rule.min_post_engagement_rate) {
+                alertsToInsert.push({
+                  user_id: userId,
+                  title: `📉 Engajamento Baixo — ${page.page_name}`,
+                  message: `A taxa média de engajamento recente (${engagementRate.toFixed(2)}%) está abaixo da meta de ${rule.min_post_engagement_rate}%.`,
+                  type: "social_media_alert",
+                  is_critical: false,
+                  link: `/social-insights`,
+                  metadata: { alert_type: "MIN_POST_ENGAGEMENT_RATE", page_id: page.id, rate: engagementRate, min: rule.min_post_engagement_rate }
+                });
+              }
+            }
+          }
+
+          // Inserir alertas de Social Media respeitando o de-duplicador
+          for (const alert of alertsToInsert) {
+            const dedupLimitTime = new Date(Date.now() - alertDedupHours * 60 * 60 * 1000).toISOString();
+            const { data: existing } = await supabase
+              .from("notifications")
+              .select("id")
+              .eq("user_id", userId)
+              .gte("created_at", dedupLimitTime)
+              .ilike("title", `%${alert.title}%`)
+              .limit(1);
+
+            if (!existing?.length) {
+              await supabase.from("notifications").insert(alert);
+              totalAlerts++;
+
+              // Roteamento inteligente de WhatsApp
+              const cleanTitle = alert.title.replace(/[🚨⚠️🔴📭📉🔁⚡🌅💸]/g, "").trim();
+              const waMsg = `📱 *ALERTA REDE SOCIAL: ${cleanTitle}*\n\n${alert.message}\n\nNC Suite Dashboard`;
+              
+              const recipientPhones = new Set<string>();
+              // Envia para o criador
+              const creatorPhones = userPhonesMap.get(userId) || [];
+              creatorPhones.forEach(ph => recipientPhones.add(ph));
+              // Cópia para admins/chefes
+              adminPhones.forEach(ph => recipientPhones.add(ph));
+
+              if (recipientPhones.size > 0 && whatsappGateway) {
+                await sendWhatsAppMessages(whatsappGateway, Array.from(recipientPhones), waMsg);
+              }
+            }
+          }
+        }
+      }
+    } catch (socialErr: any) {
+      console.error("[AUTO] Erro ao processar alertas de Redes Sociais:", socialErr.message);
     }
 
     // Resumo diário D-1 às 08h BRT
