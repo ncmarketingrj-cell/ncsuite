@@ -230,6 +230,9 @@ function TabIntegracoes() {
   const [showTokenPlain, setShowTokenPlain] = useState(false);
   const [whatsappPhone, setWhatsappPhone] = useState("");
   const [whatsappGateway, setWhatsappGateway] = useState("");
+  const [whatsappProvider, setWhatsappProvider] = useState("baileys_custom");
+  const [whatsappApiKey, setWhatsappApiKey] = useState("");
+  const [whatsappInstanceName, setWhatsappInstanceName] = useState("");
   
   // Social Media states
   const [loadingPages, setLoadingPages] = useState(false);
@@ -335,6 +338,9 @@ function TabIntegracoes() {
         setOpenaiConfigured(firstRow.openai_key_configured || false);
         setWhatsappPhone(firstRow.whatsapp_phone || "");
         setWhatsappGateway(firstRow.whatsapp_gateway_url || "");
+        setWhatsappProvider(firstRow.whatsapp_provider || "baileys_custom");
+        setWhatsappApiKey(firstRow.whatsapp_api_key || "");
+        setWhatsappInstanceName(firstRow.whatsapp_instance_name || "");
       }
       setIsLoading(false);
     };
@@ -371,6 +377,9 @@ function TabIntegracoes() {
         access_token: token,
         whatsapp_phone: whatsappPhone,
         whatsapp_gateway_url: whatsappGateway,
+        whatsapp_provider: whatsappProvider,
+        whatsapp_api_key: whatsappApiKey,
+        whatsapp_instance_name: whatsappInstanceName,
         ad_account_id: "ALL_ACCOUNTS",
         updated_at: new Date().toISOString()
       }, { onConflict: "user_id" });
@@ -440,15 +449,35 @@ function TabIntegracoes() {
                 <MessageSquareWarning className="h-4.5 w-4.5" /> Gateway de Notificações WhatsApp
               </h4>
               <p className="text-[11px] text-muted-foreground leading-relaxed mt-1">
-                Conecte uma API compatível (ex: Evolution API, Z-API) que receba requisições POST em <code>/send-message</code> para receber os Alertas Críticos do Motor no celular.
+                Escolha o provedor de WhatsApp (Baileys Legado ou Evolution API) para envio de Alertas Críticos do Motor no celular.
               </p>
             </div>
-            <span className={`rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-widest ${whatsappGateway && whatsappPhone ? "bg-success/20 text-success" : "bg-muted text-muted-foreground"}`}>
-              {whatsappGateway && whatsappPhone ? "CONFIGURADO" : "PENDENTE"}
+            <span className={`rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-widest ${whatsappGateway && whatsappPhone && (whatsappProvider !== "evolution_api" || (whatsappApiKey && whatsappInstanceName)) ? "bg-success/20 text-success" : "bg-muted text-muted-foreground"}`}>
+              {whatsappGateway && whatsappPhone && (whatsappProvider !== "evolution_api" || (whatsappApiKey && whatsappInstanceName)) ? "CONFIGURADO" : "PENDENTE"}
             </span>
           </div>
 
           <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-1.5 sm:col-span-2">
+              <label className="label-mono text-[10px] text-muted-foreground uppercase">Provedor do WhatsApp</label>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setWhatsappProvider("baileys_custom")}
+                  className={`flex-1 py-2 px-3 rounded-lg border text-xs font-bold transition-all ${whatsappProvider === "baileys_custom" ? "bg-primary text-primary-foreground border-primary shadow-glow-sm" : "bg-background/50 border-white/10 text-muted-foreground hover:bg-white/[0.02]"}`}
+                >
+                  Baileys Customizado (Legado)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setWhatsappProvider("evolution_api")}
+                  className={`flex-1 py-2 px-3 rounded-lg border text-xs font-bold transition-all ${whatsappProvider === "evolution_api" ? "bg-primary text-primary-foreground border-primary shadow-glow-sm" : "bg-background/50 border-white/10 text-muted-foreground hover:bg-white/[0.02]"}`}
+                >
+                  Evolution API (Recomendado)
+                </button>
+              </div>
+            </div>
+
             <div className="space-y-1.5">
               <label className="label-mono text-[10px] text-muted-foreground uppercase">Endpoint da API (URL)</label>
               <input
@@ -467,6 +496,30 @@ function TabIntegracoes() {
                 className="w-full rounded-lg border border-white/10 bg-background/50 px-3 py-2 text-sm focus:border-primary focus:outline-none font-mono"
               />
             </div>
+
+            {whatsappProvider === "evolution_api" && (
+              <>
+                <div className="space-y-1.5">
+                  <label className="label-mono text-[10px] text-muted-foreground uppercase">Evolution API Key</label>
+                  <input
+                    value={whatsappApiKey}
+                    onChange={(e) => setWhatsappApiKey(e.target.value)}
+                    placeholder="ex: ncmarketing_evolution_..."
+                    type="password"
+                    className="w-full rounded-lg border border-white/10 bg-background/50 px-3 py-2 text-sm focus:border-primary focus:outline-none font-mono"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="label-mono text-[10px] text-muted-foreground uppercase">Nome da Instância</label>
+                  <input
+                    value={whatsappInstanceName}
+                    onChange={(e) => setWhatsappInstanceName(e.target.value)}
+                    placeholder="ex: ncmarketing-disparos"
+                    className="w-full rounded-lg border border-white/10 bg-background/50 px-3 py-2 text-sm focus:border-primary focus:outline-none font-mono"
+                  />
+                </div>
+              </>
+            )}
           </div>
           <div className="flex justify-end pt-2">
             <button onClick={save} className="inline-flex items-center justify-center gap-2 rounded-lg bg-primary/20 px-6 py-2 text-xs font-bold text-primary hover:bg-primary/30 transition whitespace-nowrap border border-primary/30">

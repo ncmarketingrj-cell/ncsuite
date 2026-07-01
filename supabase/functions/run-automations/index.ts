@@ -14,20 +14,59 @@ const supabase = createClient(
   Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
 )
 
-async function sendWhatsAppMessages(gatewayUrl: string, phones: string[], text: string) {
+async function sendWhatsAppMessages(
+  gatewayUrl: string,
+  phones: string[],
+  text: string,
+  provider = "baileys_custom",
+  apiKey = "",
+  instanceName = ""
+) {
   if (!gatewayUrl || !phones || !phones.length) return;
   for (const phone of phones) {
     if (!phone) continue;
     try {
-      let cleanPhone = phone.replace(/\D/g, "");
-      if (!cleanPhone.endsWith("@c.us")) cleanPhone = `${cleanPhone}@c.us`;
-      const res = await fetch(`${gatewayUrl}/send-message`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phone: cleanPhone, message: text })
-      });
-      if (!res.ok) throw new Error(`HTTP Status ${res.status}`);
-      console.log(`[WHATSAPP] Enviado para ${cleanPhone}`);
+      const cleanPhone = phone.replace(/\D/g, "");
+      
+      if (provider === "evolution_api") {
+        const url = `${gatewayUrl.replace(/\/$/, "")}/message/sendText/${instanceName}`;
+        const headers: Record<string, string> = { 
+          "Content-Type": "application/json" 
+        };
+        if (apiKey) {
+          headers["apikey"] = apiKey;
+        }
+        
+        const res = await fetch(url, {
+          method: "POST",
+          headers,
+          body: JSON.stringify({
+            number: cleanPhone,
+            options: {
+              delay: 1200,
+              presence: "composing"
+            },
+            textMessage: {
+              text: text
+            }
+          })
+        });
+        
+        if (!res.ok) throw new Error(`HTTP Status ${res.status}`);
+        console.log(`[WHATSAPP-EVOLUTION] Enviado para ${cleanPhone}`);
+      } else {
+        let formattedPhone = cleanPhone;
+        if (!formattedPhone.endsWith("@c.us")) formattedPhone = `${formattedPhone}@c.us`;
+        
+        const res = await fetch(`${gatewayUrl.replace(/\/$/, "")}/send-message`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ phone: formattedPhone, message: text })
+        });
+        
+        if (!res.ok) throw new Error(`HTTP Status ${res.status}`);
+        console.log(`[WHATSAPP-LEGADO] Enviado para ${formattedPhone}`);
+      }
     } catch (err: any) {
       console.error(`[WHATSAPP] Erro no disparo para ${phone}:`, err.message);
     }
@@ -77,12 +116,15 @@ serve(async (req) => {
   try {
     const { data: configMaster } = await supabase
       .from("meta_ads_configs")
-      .select("whatsapp_phone, whatsapp_gateway_url, zero_delivery_enabled, zero_delivery_hour, perf_drop_enabled, perf_drop_spend_pct, client_cpa_enabled, alert_dedup_hours, user_id")
+      .select("whatsapp_phone, whatsapp_gateway_url, whatsapp_provider, whatsapp_api_key, whatsapp_instance_name, zero_delivery_enabled, zero_delivery_hour, perf_drop_enabled, perf_drop_spend_pct, client_cpa_enabled, alert_dedup_hours, user_id")
       .limit(1)
       .maybeSingle()
 
     const whatsappPhone = configMaster?.whatsapp_phone || ""
     const whatsappGateway = configMaster?.whatsapp_gateway_url || "http://localhost:3001"
+    const whatsappProvider = configMaster?.whatsapp_provider || "baileys_custom"
+    const whatsappApiKey = configMaster?.whatsapp_api_key || ""
+    const whatsappInstanceName = configMaster?.whatsapp_instance_name || ""
     const zeroDeliveryEnabled = configMaster?.zero_delivery_enabled !== false
     const zeroDeliveryHour = configMaster?.zero_delivery_hour ?? 14
     const perfDropEnabled = configMaster?.perf_drop_enabled !== false
@@ -420,7 +462,7 @@ serve(async (req) => {
               } else {
                 text = `🔁 *ALERTA FREQUÊNCIA — NC PERFORMANCE*\n\n📣 *Campanha:* ${m.campaign_name}\n🎯 *Objetivo:* ${m.result_label}\n🔴 *Frequência:* ${m.frequency?.toFixed(1)}x (limite ${m.max_frequency}x)\n💸 *Gasto hoje:* R$ ${m.spend_today?.toFixed(2)}\n✅ *${m.result_label}(s):* ${m.conversions_today}`
               }
-              await sendWhatsAppMessages(whatsappGateway, targetPhones, text)
+              await sendWhatsAppMessages(whatsappGateway, targetPhones, text, whatsappProvider, whatsappApiKey, whatsappInstanceName)
             }
           } else {
             console.log(`[AUTO] Duplicata ignorada: ${campaign.name} (${alertType})`)
@@ -552,7 +594,7 @@ serve(async (req) => {
                     adminPhones.forEach(p => recipientPhones.add(p));
 
                     if (recipientPhones.size > 0 && whatsappGateway) {
-                      await sendWhatsAppMessages(whatsappGateway, Array.from(recipientPhones), waMsg);
+                      await sendWhatsAppMessages(whatsappGateway, Array.from(recipientPhones), waMsg, whatsappProvider, whatsappApiKey, whatsappInstanceName);
                     }
                     console.log(`[AUTO] ⚠️ ALERTA CLIENT CPA: ${client.name} (R$${currentCpa.toFixed(2)} > R$${client.target_cpa.toFixed(2)})`);
                   }
@@ -592,7 +634,7 @@ serve(async (req) => {
                   adminPhones.forEach(p => recipientPhones.add(p));
 
                   if (recipientPhones.size > 0 && whatsappGateway) {
-                    await sendWhatsAppMessages(whatsappGateway, Array.from(recipientPhones), waMsg);
+                    await sendWhatsAppMessages(whatsappGateway, Array.from(recipientPhones), waMsg, whatsappProvider, whatsappApiKey, whatsappInstanceName);
                   }
                   console.log(`[AUTO] ⚠️ ALERTA CLIENT NO CONV: ${client.name}`);
                 }
@@ -734,7 +776,7 @@ serve(async (req) => {
               adminPhones.forEach(ph => recipientPhones.add(ph));
 
               if (recipientPhones.size > 0 && whatsappGateway) {
-                await sendWhatsAppMessages(whatsappGateway, Array.from(recipientPhones), waMsg);
+                await sendWhatsAppMessages(whatsappGateway, Array.from(recipientPhones), waMsg, whatsappProvider, whatsappApiKey, whatsappInstanceName);
               }
             }
           }
@@ -793,8 +835,9 @@ serve(async (req) => {
                 })
 
                 if (whatsappPhone) {
-                  await sendWhatsAppMessage(whatsappGateway, whatsappPhone,
-                    `🌅 *FECHAMENTO DIÁRIO — NC PERFORMANCE*\n\n📅 *Período:* Ontem (${dayY} de ${monthPT})\n💸 *Total Investido:* R$ ${totalSpend.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}\n🎯 *Resultados Totais:* ${totalConv}\n👥 *Alcance Total:* ${totalReach.toLocaleString("pt-BR")}\n\nBom dia e ótimas campanhas! 🚀`
+                  await sendWhatsAppMessages(whatsappGateway, [whatsappPhone],
+                    `🌅 *FECHAMENTO DIÁRIO — NC PERFORMANCE*\n\n📅 *Período:* Ontem (${dayY} de ${monthPT})\n💸 *Total Investido:* R$ ${totalSpend.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}\n🎯 *Resultados Totais:* ${totalConv}\n👥 *Alcance Total:* ${totalReach.toLocaleString("pt-BR")}\n\nBom dia e ótimas campanhas! 🚀`,
+                    whatsappProvider, whatsappApiKey, whatsappInstanceName
                   )
                 }
 
