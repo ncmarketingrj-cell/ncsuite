@@ -260,13 +260,28 @@ serve(async (req) => {
     // ==========================================
     if (action === "fetch-pages") {
       let tokenToUse = body.accessToken
+      let configUserId = user.id
       if (!tokenToUse) {
-        const { data: config } = await supabase
+        let { data: config } = await supabase
           .from("meta_ads_configs")
-          .select("access_token")
+          .select("access_token, user_id")
           .eq("user_id", user.id)
           .maybeSingle()
+        
+        if (!config?.access_token) {
+          const { data: fallbackConfig } = await supabase
+            .from("meta_ads_configs")
+            .select("access_token, user_id")
+            .not("access_token", "is", null)
+            .order("created_at", { ascending: false })
+            .limit(1)
+            .maybeSingle()
+          config = fallbackConfig
+        }
         tokenToUse = config?.access_token
+        if (config?.user_id) {
+          configUserId = config.user_id
+        }
       }
 
       // Sem token válido → não inventar páginas, retornar vazio com mensagem clara
@@ -279,7 +294,7 @@ serve(async (req) => {
       }
 
       // Limpar páginas inventadas (mock_*) que possam ter sido salvas anteriormente
-      await supabase.from("social_pages").delete().eq("user_id", user.id).like("page_id", "mock_%")
+      await supabase.from("social_pages").delete().eq("user_id", configUserId).like("page_id", "mock_%")
 
       // Buscar páginas reais do Meta
       try {
@@ -337,7 +352,7 @@ serve(async (req) => {
           const { error: upsertErr } = await supabase
             .from("social_pages")
             .upsert({
-              user_id: user.id,
+              user_id: configUserId,
               page_id: p.page_id,
               page_name: p.page_name,
               instagram_account_id: p.instagram?.id || null,
@@ -503,14 +518,24 @@ serve(async (req) => {
       // Resolver dados da página
       let pageRecord: any = null
       if (page_id && page_id !== "all") {
-        const { data } = await supabase.from("social_pages").select("*").eq("page_id", page_id).eq("user_id", user.id).maybeSingle()
+        const { data } = await supabase.from("social_pages").select("*").eq("page_id", page_id).limit(1).maybeSingle()
         pageRecord = data
       } else {
-        const { data } = await supabase.from("social_pages").select("*").eq("user_id", user.id).order("page_name").limit(1).maybeSingle()
+        const { data } = await supabase.from("social_pages").select("*").order("page_name").limit(1).maybeSingle()
         pageRecord = data
       }
 
-      const { data: configData } = await supabase.from("meta_ads_configs").select("access_token").eq("user_id", user.id).maybeSingle()
+      let { data: configData } = await supabase.from("meta_ads_configs").select("access_token").eq("user_id", user.id).maybeSingle()
+      if (!configData?.access_token) {
+        const { data: fallbackConfig } = await supabase
+          .from("meta_ads_configs")
+          .select("access_token")
+          .not("access_token", "is", null)
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle()
+        configData = fallbackConfig
+      }
       const token = pageRecord?.access_token || configData?.access_token
 
       const isMock = !token || token.startsWith("mock_") || token.length < 20

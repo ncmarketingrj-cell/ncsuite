@@ -35,7 +35,7 @@ function ConfigPage() {
     queryKey: ["current_user_profile", user?.id],
     queryFn: async () => {
       if (!user?.id) return null;
-      let { data } = await (supabase as any).from("profiles").select("role, permissions").eq("id", user.id).maybeSingle();
+      let { data } = await (supabase as any).from("profiles").select("role, permissions, position").eq("id", user.id).maybeSingle();
       
       // Auto-fix master admin permissions if they were somehow demoted
       if (user?.email === "nc.marketingrj@gmail.com" && data?.role !== "admin") {
@@ -52,7 +52,7 @@ function ConfigPage() {
         }).eq("id", user.id);
         
         // Refetch after fix
-        const retry = await (supabase as any).from("profiles").select("role, permissions").eq("id", user.id).maybeSingle();
+        const retry = await (supabase as any).from("profiles").select("role, permissions, position").eq("id", user.id).maybeSingle();
         data = retry.data;
       }
       return data;
@@ -62,12 +62,15 @@ function ConfigPage() {
 
   const ADMIN_EMAILS = ["nc.marketingrj@gmail.com", "hc.marketing.dgt@gmail.com"];
   const isAdmin = profile?.role === "admin" || (user?.email ? ADMIN_EMAILS.includes(user.email) : false);
+  const isStaff = isAdmin || profile?.role === "staff" || 
+    /gestor|director|diretor|staff|sócio|socio|dono/i.test(profile?.position || "");
   const perms = (profile as any)?.permissions ?? {};
   const canManageUsers = isAdmin || !!perms.criar_usuarios;
 
   const visibleTabs = TABS.filter(t => {
     if (!t.adminOnly) return true;
     if (t.id === "usuarios") return canManageUsers;
+    if (t.id === "integracoes") return isStaff;
     return isAdmin;
   });
 
@@ -98,7 +101,7 @@ function ConfigPage() {
         {tab === "sac"         && <TabSac isAdmin={isAdmin} userId={user?.id ?? ""} />}
         {tab === "usuarios"    && canManageUsers && <TabUsuarios isAdmin={isAdmin} />}
         {tab === "clientes"    && isAdmin && <TabClientes />}
-        {tab === "integracoes" && isAdmin && <TabIntegracoes />}
+        {tab === "integracoes" && isStaff && <TabIntegracoes />}
         {tab === "automacoes"  && isAdmin && <TabAutomacoes />}
         {tab === "sistema"     && isAdmin && <TabSistema />}
       </motion.div>

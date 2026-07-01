@@ -475,18 +475,32 @@ serve(async (req) => {
     }
 
     // 2. Buscar configuração (token master)
-    // Se foi chamado manualmente, usa o token daquele usuario. Senao pega o ultimo.
-    let configQuery = supabase
-      .from("meta_ads_configs")
-      .select("access_token, user_id")
-      .not("access_token", "is", null);
-      
+    // Se foi chamado manualmente, tenta primeiro o do usuário logado
+    let configs: any[] | null = null;
+    let configErr: any = null;
+
     if (authUser?.id) {
-      configQuery = configQuery.eq("user_id", authUser.id);
+      const { data, error } = await supabase
+        .from("meta_ads_configs")
+        .select("access_token, user_id")
+        .not("access_token", "is", null)
+        .eq("user_id", authUser.id)
+        .limit(1);
+      configs = data;
+      configErr = error;
     }
-    
-    // Fallback: se nao tiver authUser ou não achar, tenta pegar o que foi criado/atualizado mais recente
-    const { data: configs, error: configErr } = await configQuery.order("created_at", { ascending: false }).limit(1)
+
+    // Fallback: se não tiver authUser ou não encontrar configuração, busca a mais recente da agência
+    if (!configs || configs.length === 0) {
+      const { data, error } = await supabase
+        .from("meta_ads_configs")
+        .select("access_token, user_id")
+        .not("access_token", "is", null)
+        .order("created_at", { ascending: false })
+        .limit(1);
+      configs = data;
+      if (error) configErr = error;
+    }
 
     const config = configs?.[0]
 
