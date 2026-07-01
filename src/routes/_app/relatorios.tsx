@@ -298,17 +298,60 @@ function RelatoriosPage() {
         
         let mapped: CampaignData[] = [];
 
+        // Helper para buscar com paginação para contornar limite de 1000 do Supabase
+        // E garantir que a filtragem ocorra na tabela principal usando campaign_id
+        const fetchPaginated = async (table: string, selectQuery: string, accountId: string, extraFilters?: (q: any) => any) => {
+           let campaignIds: string[] = [];
+           if (accountId !== "all") {
+             const { data: camps } = await supabase.from("campaigns").select("id").eq("ad_account_id", accountId);
+             campaignIds = (camps || []).map(c => c.id);
+             if (campaignIds.length === 0) return []; // Conta não tem campanhas
+           }
+
+           let allData: any[] = [];
+           const step = 1000;
+           
+           // Dividir em chunks de 100 para não estourar o limite da URL no IN()
+           const chunks = [];
+           if (campaignIds.length > 0) {
+             for (let i = 0; i < campaignIds.length; i += 100) {
+                chunks.push(campaignIds.slice(i, i + 100));
+             }
+           } else {
+             chunks.push([]); // "all" accounts
+           }
+
+           for (const chunk of chunks) {
+             let from = 0;
+             while (true) {
+               let q = supabase.from(table).select(selectQuery);
+               if (chunk.length > 0) {
+                 q = q.in("campaign_id", chunk);
+               }
+               if (extraFilters) {
+                 q = extraFilters(q);
+               }
+               q = q.range(from, from + step - 1);
+               const { data, error } = await q;
+               if (error) {
+                 console.error(`Erro paginação em ${table}:`, error);
+                 break;
+               }
+               if (data && data.length > 0) allData.push(...data);
+               if (!data || data.length < step) break;
+               from += step;
+             }
+             if (accountId === "all" && allData.length >= 15000) break; // Trava de segurança global
+           }
+           return allData;
+        };
+
         if (reportLevel === "adset") {
-          let query = (supabase as any).from("ad_sets").select(`
+          const dbData = await fetchPaginated("ad_sets", `
             id, name, campaign_id,
             campaigns!inner(id, name, ad_account_id),
             asset_metrics(cost, conversions, impressions, clicks, reach, date)
-          `);
-          if (selectedAccountId !== "all") {
-            query = query.eq("campaigns.ad_account_id", selectedAccountId);
-          }
-          const { data: dbData, error } = await query;
-          if (error) throw error;
+          `, selectedAccountId);
 
           mapped = (dbData || []).map((adset: any) => {
             const filteredMetrics = (adset.asset_metrics || []).filter((x: any) => {
@@ -341,17 +384,12 @@ function RelatoriosPage() {
           }).filter((c: any) => c.cost > 0 || c.impressions >= 1 || c.reach >= 1);
 
         } else if (reportLevel === "ad") {
-          let query = (supabase as any).from("ads").select(`
+          const dbData = await fetchPaginated("ads", `
             id, name, campaign_id, ad_set_id,
             campaigns!inner(id, name, ad_account_id),
             ad_sets(id, name),
             asset_metrics(cost, conversions, impressions, clicks, reach, date)
-          `);
-          if (selectedAccountId !== "all") {
-            query = query.eq("campaigns.ad_account_id", selectedAccountId);
-          }
-          const { data: dbData, error } = await query;
-          if (error) throw error;
+          `, selectedAccountId);
 
           mapped = (dbData || []).map((ad: any) => {
             const filteredMetrics = (ad.asset_metrics || []).filter((x: any) => {
@@ -386,22 +424,12 @@ function RelatoriosPage() {
 
         } else {
           // Default: campaign level
-          let metricsQuery = (supabase as any).from("metrics").select(`
+          const dbMetrics = await fetchPaginated("metrics", `
             campaign_id, cost, conversions, impressions, clicks, reach,
             campaigns!inner(id, name, ad_account_id)
-          `)
-          .gte("date", startLimit)
-          .lte("date", endLimit);
-
-          if (selectedAccountId !== "all") {
-            metricsQuery = metricsQuery.eq("campaigns.ad_account_id", selectedAccountId);
-          }
-
-          const { data: dbMetrics, error: mErr } = await metricsQuery;
-          if (mErr) {
-            console.error("Supabase Query Error:", mErr);
-            throw mErr;
-          }
+          `, selectedAccountId, (q) => {
+             return q.gte("date", startLimit).lte("date", endLimit);
+          });
 
           if (!dbMetrics || dbMetrics.length === 0) {
             setCampaignList([]);

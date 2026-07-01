@@ -30,7 +30,7 @@ export const Route = createFileRoute("/_app/automacoes")({
 const ADMIN_EMAILS = ["nc.marketingrj@gmail.com", "hc.marketing.dgt@gmail.com"];
 
 function AutomationsPage() {
-  const [activeTab, setActiveTab] = useState<"thresholds" | "sync" | "logs" | "prefs">("thresholds");
+  const [activeTab, setActiveTab] = useState<"thresholds" | "sync" | "logs" | "prefs" | "docs">("thresholds");
   const [modal, setModal] = useState(false);
   const [editingThreshold, setEditingThreshold] = useState<any | null>(null);
   const { user } = useAuth();
@@ -220,6 +220,7 @@ function AutomationsPage() {
           { id: "prefs",      label: "Preferências",            short: "Prefs",     icon: Settings2 },
           { id: "sync",       label: "Motor de Sincronização",  short: "Sync",      icon: Server },
           { id: "logs",       label: "Histórico de Sync",       short: "Histórico", icon: History },
+          { id: "docs",       label: "Como Funciona (Docs)",    short: "Docs",      icon: Sparkles },
         ].map((tab) => (
           <button
             key={tab.id}
@@ -795,6 +796,109 @@ function AutomationsPage() {
                   </div>
                 </motion.div>
               ))}
+            </div>
+          </div>
+        </motion.div>
+      )}
+
+      {/* ══ TAB: DOCS ════════════════════════════════════════════════════════════ */}
+      {activeTab === "docs" && (
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6 max-w-4xl">
+          <div className="glass-panel p-6 sm:p-8 space-y-8">
+            <div>
+              <h2 className="text-xl font-black text-foreground mb-2 flex items-center gap-2">
+                <Sparkles className="h-5 w-5 text-primary" /> Entenda o Motor de Alertas (Smart Engine)
+              </h2>
+              <p className="text-sm text-muted-foreground leading-relaxed">
+                O Motor de Alertas do NC Suite é um robô autônomo que monitora todas as contas e campanhas conectadas de forma contínua. 
+                Ele atua em duas frentes: avaliando <strong className="text-foreground">Regras Manuais (Limites)</strong> definidas por você, 
+                e ativando <strong className="text-primary">Gatilhos Inteligentes (Smart Triggers)</strong> invisíveis que detectam anomalias sozinhos.
+              </p>
+            </div>
+
+            <div className="space-y-6">
+              <h3 className="text-sm font-bold uppercase tracking-widest text-muted-foreground border-b border-white/5 pb-2">
+                1. Gatilhos Inteligentes (Automáticos)
+              </h3>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="rounded-xl border border-white/5 bg-white/[0.02] p-4 hover:bg-white/[0.04] transition">
+                  <div className="flex items-center gap-2 mb-2">
+                    <AlertCircle className="h-4 w-4 text-orange-400" />
+                    <h4 className="font-bold text-sm text-orange-400">Zero Entrega (Zero Delivery)</h4>
+                  </div>
+                  <p className="text-xs text-muted-foreground leading-relaxed">
+                    Se uma campanha estiver com o status "Ativa" no Meta Ads, tiver orçamento diário configurado, mas após as 14h tiver gasto <strong>exatamente R$ 0,00</strong>, o sistema dispara este alerta. Ideal para pegar falhas de pagamento ou rejeição fantasma.
+                  </p>
+                </div>
+                
+                <div className="rounded-xl border border-white/5 bg-white/[0.02] p-4 hover:bg-white/[0.04] transition">
+                  <div className="flex items-center gap-2 mb-2">
+                    <TrendingUp className="h-4 w-4 text-red-400" />
+                    <h4 className="font-bold text-sm text-red-400">Queda de Performance (Drop)</h4>
+                  </div>
+                  <p className="text-xs text-muted-foreground leading-relaxed">
+                    O robô lê a média de conversões dos últimos 7 dias. Se a campanha costumava dar retorno diário, mas hoje <strong>já gastou 50% ou mais da verba</strong> e gerou <strong>zero conversões</strong>, ele te avisa para investigar uma quebra súbita no leilão.
+                  </p>
+                </div>
+
+                <div className="rounded-xl border border-white/5 bg-white/[0.02] p-4 hover:bg-white/[0.04] transition sm:col-span-2">
+                  <div className="flex items-center gap-2 mb-2">
+                    <ShieldAlert className="h-4 w-4 text-primary" />
+                    <h4 className="font-bold text-sm text-primary">CPA Limite de Cliente (Antigo Meta Ads Monitor)</h4>
+                  </div>
+                  <p className="text-xs text-muted-foreground leading-relaxed">
+                    Integramos o antigo "Meta Ads Monitor" aqui. Se um cliente possui um <strong className="text-foreground">Target CPA</strong> preenchido nas configurações, o robô irá analisar a soma de toda a conta nos últimos 7 dias. Se estourar a meta global (ou se gastar verba sem nenhuma conversão na semana), você será avisado via WhatsApp e aqui no painel.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-6">
+              <h3 className="text-sm font-bold uppercase tracking-widest text-muted-foreground border-b border-white/5 pb-2">
+                2. Regras Manuais (Limites Configuráveis)
+              </h3>
+              <div className="space-y-4 text-sm text-muted-foreground leading-relaxed">
+                <p>
+                  Na aba <strong>Limites de Alerta</strong>, você pode criar regras aplicadas a uma <strong className="text-foreground">Conta inteira</strong> ou a uma <strong className="text-primary">Campanha Específica</strong>. 
+                  Sempre que um limite for atingido no mesmo dia de avaliação, você receberá a notificação.
+                </p>
+                <ul className="grid gap-3 sm:grid-cols-2">
+                  <li className="flex items-start gap-2 bg-white/[0.01] p-3 rounded-lg border border-white/5">
+                    <DollarSign className="h-4 w-4 text-primary shrink-0 mt-0.5" />
+                    <div>
+                      <strong className="text-foreground text-xs block mb-0.5">CPL / CPA Máximo</strong>
+                      <span className="text-[11px]">Se o custo por resultado hoje passar desse valor, alerta imediato.</span>
+                    </div>
+                  </li>
+                  <li className="flex items-start gap-2 bg-white/[0.01] p-3 rounded-lg border border-white/5">
+                    <Timer className="h-4 w-4 text-primary shrink-0 mt-0.5" />
+                    <div>
+                      <strong className="text-foreground text-xs block mb-0.5">Orçamento Máximo (%)</strong>
+                      <span className="text-[11px]">Avisa quando o gasto diário atinge a porcentagem estipulada.</span>
+                    </div>
+                  </li>
+                  <li className="flex items-start gap-2 bg-white/[0.01] p-3 rounded-lg border border-white/5">
+                    <Radio className="h-4 w-4 text-primary shrink-0 mt-0.5" />
+                    <div>
+                      <strong className="text-foreground text-xs block mb-0.5">Frequência Máxima</strong>
+                      <span className="text-[11px]">Avisa quando o público começa a saturar de ver o mesmo anúncio repetidas vezes.</span>
+                    </div>
+                  </li>
+                </ul>
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-primary/20 bg-primary/5 p-4 flex gap-3 items-start">
+              <BellRing className="h-5 w-5 text-primary shrink-0" />
+              <div className="text-xs text-muted-foreground leading-relaxed">
+                <strong className="text-primary block mb-1 text-sm">Onde eu recebo os alertas?</strong>
+                Os alertas são unificados! Quando uma anomalia ou limite é atingido, ela vai imediatamente para:
+                <ul className="list-disc pl-4 mt-2 space-y-1">
+                  <li>Painel de <strong>Alertas Ativos</strong> na interface (abaixo do sino superior direito).</li>
+                  <li><strong>Notificação via Navegador</strong> (desktop/celular) — ativável na aba Preferências.</li>
+                  <li><strong>WhatsApp</strong> da Agência, contendo o resumo diário D-1 às 08h e violações críticas instantâneas.</li>
+                </ul>
+              </div>
             </div>
           </div>
         </motion.div>

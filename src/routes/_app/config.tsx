@@ -228,6 +228,8 @@ function TabIntegracoes() {
   const [isLoading, setIsLoading] = useState(true);
   const [openaiConfigured, setOpenaiConfigured] = useState(false);
   const [showTokenPlain, setShowTokenPlain] = useState(false);
+  const [whatsappPhone, setWhatsappPhone] = useState("");
+  const [whatsappGateway, setWhatsappGateway] = useState("");
   
   // Social Media states
   const [loadingPages, setLoadingPages] = useState(false);
@@ -331,6 +333,8 @@ function TabIntegracoes() {
         const firstRow = data[0];
         setToken(firstRow.access_token || "");
         setOpenaiConfigured(firstRow.openai_key_configured || false);
+        setWhatsappPhone(firstRow.whatsapp_phone || "");
+        setWhatsappGateway(firstRow.whatsapp_gateway_url || "");
       }
       setIsLoading(false);
     };
@@ -365,12 +369,14 @@ function TabIntegracoes() {
       const { error } = await (supabase as any).from("meta_ads_configs").upsert({
         user_id: u.user?.id,
         access_token: token,
+        whatsapp_phone: whatsappPhone,
+        whatsapp_gateway_url: whatsappGateway,
         ad_account_id: "ALL_ACCOUNTS",
         updated_at: new Date().toISOString()
       }, { onConflict: "user_id" });
 
       if (error) throw error;
-      toast.success("✅ Token do Meta salvo com sucesso!");
+      toast.success("✅ Configurações salvas com sucesso!");
     } catch (err: any) {
       toast.error(err.message ?? "Erro ao salvar");
     }
@@ -422,6 +428,48 @@ function TabIntegracoes() {
             />
             <button onClick={save} className="inline-flex items-center justify-center gap-2 rounded-lg bg-primary px-6 py-2 text-xs font-bold text-primary-foreground hover:shadow-glow transition whitespace-nowrap">
               <Check className="h-3.5 w-3.5" /> SALVAR TOKEN
+          </div>
+        </div>
+
+        {/* WhatsApp Gateway Config */}
+        <div className="rounded-xl border border-white/5 bg-white/[0.02] p-6 space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h4 className="text-xs font-bold uppercase tracking-wider text-[#25D366] flex items-center gap-2">
+                <MessageSquareWarning className="h-4.5 w-4.5" /> Gateway de Notificações WhatsApp
+              </h4>
+              <p className="text-[11px] text-muted-foreground leading-relaxed mt-1">
+                Conecte uma API compatível (ex: Evolution API, Z-API) que receba requisições POST em <code>/send-message</code> para receber os Alertas Críticos do Motor no celular.
+              </p>
+            </div>
+            <span className={`rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-widest ${whatsappGateway && whatsappPhone ? "bg-success/20 text-success" : "bg-muted text-muted-foreground"}`}>
+              {whatsappGateway && whatsappPhone ? "CONFIGURADO" : "PENDENTE"}
+            </span>
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-1.5">
+              <label className="label-mono text-[10px] text-muted-foreground uppercase">Endpoint da API (URL)</label>
+              <input
+                value={whatsappGateway}
+                onChange={(e) => setWhatsappGateway(e.target.value)}
+                placeholder="https://api.seugateway.com/v1"
+                className="w-full rounded-lg border border-white/10 bg-background/50 px-3 py-2 text-sm focus:border-primary focus:outline-none font-mono"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <label className="label-mono text-[10px] text-muted-foreground uppercase">Número Destino (Com DDD)</label>
+              <input
+                value={whatsappPhone}
+                onChange={(e) => setWhatsappPhone(e.target.value)}
+                placeholder="5521999999999"
+                className="w-full rounded-lg border border-white/10 bg-background/50 px-3 py-2 text-sm focus:border-primary focus:outline-none font-mono"
+              />
+            </div>
+          </div>
+          <div className="flex justify-end pt-2">
+            <button onClick={save} className="inline-flex items-center justify-center gap-2 rounded-lg bg-primary/20 px-6 py-2 text-xs font-bold text-primary hover:bg-primary/30 transition whitespace-nowrap border border-primary/30">
+              <Check className="h-3.5 w-3.5" /> SALVAR WHATSAPP
             </button>
           </div>
         </div>
@@ -699,6 +747,7 @@ function TabConta() {
   const [position, setPosition] = useState("Gestor de Tráfego");
   const [avatarUrl, setAvatarUrl] = useState("");
   const [agencyName, setAgencyName] = useState("NC AGÊNCIA");
+  const [whatsappNumbers, setWhatsappNumbers] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
 
   const POSITIONS_LIST = [
@@ -728,6 +777,7 @@ function TabConta() {
       setPosition(profile.position || POSITIONS_LIST[0]);
       setAvatarUrl(profile.avatar_url || "");
       setAgencyName(profile.agency_name || "NC AGÊNCIA");
+      setWhatsappNumbers(profile.whatsapp_numbers || []);
     }
   }, [profile]);
 
@@ -741,6 +791,7 @@ function TabConta() {
         position,
         avatar_url: avatarUrl,
         agency_name: agencyName,
+        whatsapp_numbers: whatsappNumbers.filter(n => n.trim() !== ""),
         updated_at: new Date().toISOString(),
       });
       if (error) throw error;
@@ -800,6 +851,50 @@ function TabConta() {
             <label className="label-mono text-[10px] text-muted-foreground uppercase">URL da Foto de Perfil</label>
             <input value={avatarUrl} onChange={(e) => setAvatarUrl(e.target.value)} placeholder="https://exemplo.com/sua-foto.jpg" className="w-full rounded-lg border border-white/10 bg-background/50 px-3 py-2 text-sm focus:border-primary focus:outline-none font-mono" />
           </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Meus Dispositivos de Alerta */}
+      <div className="rounded-xl border border-white/10 bg-white/[0.02] p-5 space-y-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <h4 className="text-sm font-bold flex items-center gap-2">
+              <MessageSquareWarning className="h-4.5 w-4.5 text-[#25D366]" /> Meus Dispositivos de Alerta (WhatsApp)
+            </h4>
+            <p className="text-[11px] text-muted-foreground mt-0.5 max-w-lg">
+              Cadastre seu celular para receber os Alertas Críticos do Motor e mensagens importantes da plataforma.
+              {["admin", "master_admin", "ceo"].includes(profile?.role || "") ? " Você pode cadastrar até 5 números (Formato DDI+DDD+Numero, ex: 5521999999999)." : " Você pode cadastrar 1 número (Formato DDI+DDD+Numero, ex: 5521999999999)."}
+            </p>
+          </div>
+        </div>
+        
+        <div className="space-y-3">
+          {whatsappNumbers.map((num, idx) => (
+            <div key={idx} className="flex items-center gap-2">
+              <input
+                value={num}
+                onChange={(e) => {
+                  const newNums = [...whatsappNumbers];
+                  newNums[idx] = e.target.value.replace(/[^0-9+]/g, ""); // Allow digits and +
+                  setWhatsappNumbers(newNums);
+                }}
+                placeholder="Ex: 5521999999999"
+                className="flex-1 max-w-sm rounded-lg border border-white/10 bg-background/50 px-3 py-2 text-sm focus:border-primary focus:outline-none font-mono"
+              />
+              <button onClick={() => setWhatsappNumbers(whatsappNumbers.filter((_, i) => i !== idx))} className="text-muted-foreground hover:text-destructive p-2 transition">
+                <Trash2 className="h-4 w-4" />
+              </button>
+            </div>
+          ))}
+          {whatsappNumbers.length < (["admin", "master_admin", "ceo"].includes(profile?.role || "") ? 5 : 1) && (
+            <button onClick={() => setWhatsappNumbers([...whatsappNumbers, ""])} className="inline-flex items-center gap-1.5 text-xs font-bold text-primary hover:underline px-1 py-1">
+              <Plus className="h-3.5 w-3.5" /> Adicionar Número
+            </button>
+          )}
+          {whatsappNumbers.length === 0 && (
+            <p className="text-xs text-muted-foreground italic pl-1">Nenhum número cadastrado. Você não receberá alertas via WhatsApp.</p>
+          )}
         </div>
       </div>
 
