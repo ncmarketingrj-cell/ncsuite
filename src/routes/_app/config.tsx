@@ -428,6 +428,7 @@ function TabIntegracoes() {
             />
             <button onClick={save} className="inline-flex items-center justify-center gap-2 rounded-lg bg-primary px-6 py-2 text-xs font-bold text-primary-foreground hover:shadow-glow transition whitespace-nowrap">
               <Check className="h-3.5 w-3.5" /> SALVAR TOKEN
+            </button>
           </div>
         </div>
 
@@ -853,7 +854,6 @@ function TabConta() {
           </div>
           </div>
         </div>
-      </div>
 
       {/* Meus Dispositivos de Alerta */}
       <div className="rounded-xl border border-white/10 bg-white/[0.02] p-5 space-y-4">
