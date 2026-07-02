@@ -43,3 +43,14 @@ dist-ssr
 
 # Unignore safe frontend production variables for Lovable
 !.env.production
+
+# Scripts locais de debug/teste — podem conter chaves; NUNCA versionar
+scratch-*.mjs
+scratch-*.cjs
+test-*.mjs
+test-*.cjs
+test-*.js
+test-*.ts
+test_db.cjs
+check-*.cjs
+insert-token.mjs

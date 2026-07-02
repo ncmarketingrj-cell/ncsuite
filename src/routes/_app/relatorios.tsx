@@ -60,7 +60,7 @@ function RelatoriosPage() {
   
   // Parâmetros do Relatório
   const [source, setSource] = useState<"api" | "upload">(search.from === "upload" ? "upload" : "api");
-  const [clientName, setClientName] = useState("Pizza Bonne");
+  const [clientName, setClientName] = useState("");
   const [periodText, setPeriodText] = useState("");
   const [reportLevel, setReportLevel] = useState<"campaign" | "adset" | "ad">("campaign");
   const [reportMode, setReportMode] = useState<"complete" | "objective" | "campaigns">("complete");
@@ -80,10 +80,38 @@ function RelatoriosPage() {
     setPeriodText(`${selectedMonth} ${selectedYear}`);
     setActiveReportId(null);
   };
+
+  const handleSyncPeriod = async () => {
+    if (source !== "api") return;
+    setIsSyncingPeriod(true);
+    try {
+      const getLocalDateStr = (d: Date) => {
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, "0");
+        const day = String(d.getDate()).padStart(2, "0");
+        return `${y}-${m}-${day}`;
+      };
+      const timeRange = {
+        since: getLocalDateStr(dateRange.startDate),
+        until: getLocalDateStr(dateRange.endDate),
+      };
+      await Promise.all([
+        supabase.functions.invoke("sync-meta-ads", { body: { triggered_by: "manual_report", time_range: timeRange } }),
+        supabase.functions.invoke("sync-google-ads", { body: { triggered_by: "manual_report", time_range: timeRange } }),
+      ]);
+      toast.success("Sincronização do período concluída! Recarregando dados...");
+      await loadData();
+    } catch (err: any) {
+      toast.error("Falha ao sincronizar período: " + (err.message ?? "erro desconhecido"));
+    } finally {
+      setIsSyncingPeriod(false);
+    }
+  };
   
   const [campaignList, setCampaignList] = useState<CampaignData[]>([]);
   const [visibleCount, setVisibleCount] = useState(40);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [isSyncingPeriod, setIsSyncingPeriod] = useState(false);
 
   useEffect(() => {
     setVisibleCount(40);
@@ -257,7 +285,10 @@ function RelatoriosPage() {
         if (stored) {
           const parsed = JSON.parse(stored);
           const mapped: CampaignData[] = parsed.map((c: any, index: number) => {
-            const rawObj = detectObjective(c.name);
+            // Usar result_type extraído pelo OCR para classificar o objetivo
+            const rawObj = c.result_type
+              ? mapResultTypeToObjective(c.result_type)
+              : detectObjective(c.name);
             return {
               id: `ocr-${index}`,
               name: c.name || "Sem Nome",
@@ -272,11 +303,8 @@ function RelatoriosPage() {
             };
           });
           setCampaignList(mapped);
-          
-          // Tentar inferir o nome do cliente a partir do primeiro print se houver
-          if (mapped.length > 0) {
-            setClientName(storedPlat === "meta" ? "LumaCar" : "Pizza Bonne");
-          }
+          // Não sobrescrever o nome que o usuário já digitou.
+          // Se o campo ainda estiver vazio ou no valor padrão inicial, deixar em branco para preenchimento manual.
         } else {
           setCampaignList([]);
         }
@@ -488,6 +516,30 @@ function RelatoriosPage() {
     loadData();
   }, [source, selectedAccountId, dateRange, reportLevel]);
 
+  // Mapeia o result_type extraído pelo OCR diretamente para o objetivo do relatório
+  const mapResultTypeToObjective = (resultType: string): string => {
+    const rt = resultType.toLowerCase();
+    if (rt.includes("conversa") || rt.includes("mensagem") || rt.includes("whatsapp") || rt.includes("message")) {
+      return "💬 Mensagens";
+    }
+    if (rt.includes("lead") || rt.includes("cadastro") || rt.includes("formulário")) {
+      return "📧 Cadastros / Leads";
+    }
+    if (rt.includes("compra") || rt.includes("purchase") || rt.includes("venda") || rt.includes("checkout")) {
+      return "💳 Compras / Vendas";
+    }
+    if (rt.includes("clique") || rt.includes("click") || rt.includes("link")) {
+      return "👆 Cliques no Link";
+    }
+    if (rt.includes("alcance") || rt.includes("reach") || rt.includes("visualização") || rt.includes("view") || rt.includes("impressão") || rt.includes("impression")) {
+      return "👁️ Visualizações / Alcance";
+    }
+    if (rt.includes("engajamento") || rt.includes("engagement")) {
+      return "🔥 Engajamento";
+    }
+    return "🎯 Outras Conversões";
+  };
+
   // Função Heurística Inteligente para Detecção de Objetivos
   const detectObjective = (campName: string): string => {
     const name = campName.toLowerCase();
@@ -555,8 +607,6 @@ function RelatoriosPage() {
     });
 
     const totalResults = Array.from(groupedTypes.values()).reduce((sum, g) => sum + g.results, 0);
-    const totalReach = selected.reduce((sum, c) => sum + c.reach, 0);
-    const totalImps = selected.reduce((sum, c) => sum + c.impressions, 0);
     const avgCpa = totalResults > 0 ? totalCost / totalResults : 0;
     const platformString = Array.from(platforms).join(" & ");
     
@@ -738,15 +788,15 @@ function RelatoriosPage() {
       toast.warning("Selecione pelo menos uma campanha!");
       return;
     }
-    
+    if (!generatedText) {
+      toast.warning("O relatório ainda está sendo preparado — aguarde um instante.");
+      return;
+    }
     setIsGenerating(true);
-    
     setTimeout(() => {
-      // Auto-salvar o relatório sempre que compilar sem duplicar toasts
-      handleSaveReport(false);
+      handleSaveReport(true);
       setIsGenerating(false);
-      toast.success("Métricas compiladas e atualizadas em tempo real!");
-    }, 600);
+    }, 300);
   };
 
   const handleCopyToClipboard = () => {
@@ -900,8 +950,8 @@ function RelatoriosPage() {
 
                 <div className="space-y-2">
                   <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Nível de Granularidade</label>
-                  <select 
-                    value={reportLevel} 
+                  <select
+                    value={reportLevel}
                     onChange={(e) => {
                       setReportLevel(e.target.value as "campaign" | "adset" | "ad");
                       setActiveReportId(null);
@@ -913,6 +963,19 @@ function RelatoriosPage() {
                     <option value="ad">Anúncios</option>
                   </select>
                 </div>
+
+                {/* Botão de re-sincronização do período — resolve dados parciais/faltando */}
+                <button
+                  onClick={handleSyncPeriod}
+                  disabled={isSyncingPeriod}
+                  className="w-full flex items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-[10px] font-black uppercase tracking-widest text-muted-foreground hover:text-foreground hover:bg-white/10 transition disabled:opacity-50"
+                  title="Força o download de todos os dados do período selecionado direto da Meta/Google — útil quando o relatório mostra valores menores do que o esperado."
+                >
+                  {isSyncingPeriod
+                    ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Sincronizando período...</>
+                    : <><RefreshCw className="h-3.5 w-3.5" /> Re-sincronizar Período</>
+                  }
+                </button>
               </>
             )}
 
@@ -960,9 +1023,9 @@ function RelatoriosPage() {
               className="flex-1 flex items-center justify-center gap-2 rounded-xl bg-primary px-4 py-3.5 text-xs font-black uppercase tracking-widest text-background hover:shadow-glow transition hover:scale-[1.01] active:scale-95 disabled:opacity-50 disabled:pointer-events-none"
             >
               {isGenerating ? (
-                <><Loader2 className="h-4 w-4 animate-spin" /> Compilando...</>
+                <><Loader2 className="h-4 w-4 animate-spin" /> Salvando...</>
               ) : (
-                <><FileCheck className="h-4.5 w-4.5" /> COMPILAR</>
+                <><FileCheck className="h-4.5 w-4.5" /> SALVAR</>
               )}
             </button>
             <button

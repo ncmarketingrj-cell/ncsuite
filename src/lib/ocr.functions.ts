@@ -30,18 +30,26 @@ export const extractPrintFn = createServerFn({ method: "POST" })
 
     const systemPrompt = `Você é um motor de extração de dados de prints de dashboards de tráfego pago (Gerenciador de Anúncios do Meta Ads ou painel do Google Ads). Receba a imagem, identifique a plataforma do print (Meta Ads ou Google Ads) e extraia a lista de campanhas e suas métricas correspondentes.
 
-Instruções cruciais para a extração:
-1. Identifique as colunas baseando-se no cabeçalho da tabela:
-   - Nome: 'Campanha', 'Nome da campanha' ou 'Campaign name' -> name
-   - Impressões: 'Impr.', 'Impressões' ou 'Impressions' -> impressions
-   - Cliques: 'Cliques' ou 'Clicks' -> clicks
-   - Custo: 'Custo', 'Valor gasto', 'Cost' ou 'Amount spent' -> cost
-   - Conversões: 'Conversões', 'Resultados', 'Results' ou 'Conversions' -> conversions (número absoluto)
-   - Custo por conversão: 'Custo / conv.', 'Custo por resultado', 'CPL', 'CPA', 'Cost per result' -> cpl (valor monetário unitário)
-   - Alcance: 'Alcance' ou 'Reach' -> reach (frequentemente ausente no Google Ads, use null)
-   - Tipo de Resultado: 'Tipo de Resultado' ou 'Result type' -> result_type (frequentemente ausente no Google Ads)
-2. IGNORE COMPLETAMENTE linhas de Totais (ex: 'Total: conta', 'Total: todas as campanhas'). Extraia APENAS as linhas que representam campanhas individuais.
-3. Formatação: remova símbolos de moeda (R$, $) e converta para numérico (ex: "R$ 2.622,07" -> 2622.07, "960.055" -> 960055).
+REGRA MAIS IMPORTANTE — Coluna de Resultados no Meta Ads:
+No Gerenciador de Anúncios do Meta, a coluna "Resultados" frequentemente aparece como "—" (traço/vazio) quando o objetivo da campanha usa uma métrica específica como "Conversas por mensagem iniciadas", "Leads", "Compras", etc. Neste caso, OBRIGATORIAMENTE use o valor numérico da coluna de métrica específica como "conversions":
+- Se a coluna "Conversas por mensagem iniciadas" (ou "Conversas iniciadas" ou "Mensagens iniciadas") tiver um número → use como conversions, result_type = "Conversa por mensagem iniciada"
+- Se a coluna "Leads" tiver número → use como conversions, result_type = "Lead"
+- Se a coluna "Compras" tiver número → use como conversions, result_type = "Compra"
+- A coluna de custo unitário correspondente ("Custo por conversa", "Custo por lead", etc.) → use como cpl
+NUNCA deixe conversions=null ou 0 se existir QUALQUER coluna com valor numérico de resultado para aquela linha.
+
+Instruções de extração:
+1. Identifique as colunas pelo cabeçalho da tabela:
+   - Nome: 'Campanha', 'Nome da campanha', 'Campaign name' → name
+   - Impressões: 'Impr.', 'Impressões', 'Impressions' → impressions
+   - Cliques: 'Cliques', 'Clicks' → clicks
+   - Custo total: 'Valor usado', 'Custo', 'Amount spent', 'Cost' → cost
+   - Resultados/Conversões: conforme regra acima → conversions + result_type
+   - Custo por resultado: 'Custo por resultado', 'Custo por conversa', 'Custo por lead', 'CPL', 'CPA', 'Cost per result' → cpl
+   - Alcance: 'Alcance', 'Reach' → reach
+2. IGNORE linhas de Totais (ex: 'Resultados totais', 'Total: conta'). Extraia APENAS linhas de campanhas individuais.
+3. Formatação numérica: remova R$, $, separadores de milhar (ponto no padrão BR). Converta vírgula decimal para ponto. Exemplos: "R$ 2.622,07" → 2622.07 | "2.384" quando é um número inteiro → 2384 | "R$ 2,61" → 2.61
+4. Status: 'Ativo' ou veiculando → "active" | 'Pausado' → "paused" | Inativo/Não em veiculação → "other"
 
 Retorne APENAS um JSON válido com a estrutura:
 {
