@@ -1,71 +1,35 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { motion, AnimatePresence } from "framer-motion";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { useState, useMemo, useRef, useEffect } from "react";
 import {
-  Upload, FileText, BarChart3, Settings, ArrowUpRight, Activity,
-  Sparkles, Layers, Cpu, Link2, Megaphone, LineChart, Palette, Zap,
+  FileText, BarChart3, ArrowUpRight, Activity, Layers,
   ChevronDown, Globe, Target, TrendingUp, TrendingDown, DollarSign, MousePointer2, Users, Trophy,
-  Loader2, Bot, Brain, Clock, ChevronRight, Download, Calendar,
-  AlertTriangle, BookOpen, Rocket, GaugeCircle, PieChart as PieChartIcon, RefreshCw
+  Loader2, GaugeCircle, PieChart as PieChartIcon
 } from "lucide-react";
 
 const COLORS = ["#00d4ff", "#9b87f5", "#f97316", "#22c55e", "#ef4444", "#eab308"];
 import { supabase } from "@/integrations/supabase-external/client";
-import { useAuth } from "@/lib/auth";
-import { toast } from "sonner";
-import { 
+import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   BarChart, Bar, PieChart, Pie, Cell
 } from 'recharts';
-import { format, subDays, isAfter } from 'date-fns';
+import { format, subDays } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { SyncButton } from "@/components/SyncButton";
 import { DateRangePicker } from "@/components/DateRangePicker";
 import { PageHeader } from "@/components/PageHeader";
 import { useGlobalDate } from "@/contexts/DateContext";
 
 export const Route = createFileRoute("/_app/dashboard")({
-  head: () => ({ meta: [{ title: "Dashboard â€” NC Performance Suite" }] }),
+  head: () => ({ meta: [{ title: "Dashboard — NC Performance Suite" }] }),
   component: Dashboard,
 });
 
-const HUB_GROUPS = [
-  {
-    label: "Núcleo de Performance",
-    color: "text-primary",
-    items: [
-      { to: "/metricas", icon: BarChart3, title: "Performance Meta", desc: "Visão consolidada multiconas.", tag: "LIVE", tagColor: "bg-success/20 text-success" },
-      { to: "/metricas", icon: LineChart, title: "Controle de KPIs", desc: "Análise de tendências e ROAS.", tag: "DATA", tagColor: "bg-primary/20 text-primary" },
-    ]
-  },
-  {
-    label: "Operação Estratégica",
-    color: "text-violet-600 dark:text-violet-400",
-    items: [
-      { to: "/metricas", icon: Megaphone, title: "Gestão de Ads", desc: "Controle total de campanhas.", tag: "OPS", tagColor: "bg-violet-500/20 text-violet-600 dark:text-violet-400" },
-      { to: "/auditoria", icon: Activity, title: "Auditoria Hub", desc: "Análise avançada de leilões.", tag: "AUDIT", tagColor: "bg-blue-500/20 text-blue-500" },
-      { to: "/upload", icon: Upload, title: "Extração de Dados", highlight: true, desc: "Processamento de planilhas.", tag: "SYNC", tagColor: "bg-amber-500/20 text-amber-500" },
-    ]
-  },
-  {
-    label: "Lab & Conversão",
-    color: "text-accent",
-    items: [
-      { to: "/link-bio", icon: Link2, title: "Link Bio", desc: "Árvore de links e botões.", tag: "CONV", tagColor: "bg-accent/20 text-accent" },
-      { to: "/formulario", icon: FileText, title: "Formulário", desc: "Landing Pages de captação.", tag: "CONV", tagColor: "bg-accent/20 text-accent" },
-      { to: "/quiz", icon: BarChart3, title: "Quiz", desc: "Perguntas de qualificação.", tag: "CONV", tagColor: "bg-accent/20 text-accent" },
-    ]
-  }
-];
-
 function Dashboard() {
-  const { user } = useAuth();
   const navigate = useNavigate();
   const [selectedAccountId, setSelectedAccountId] = useState<string>("all");
   const [selectedClientId, setSelectedClientId] = useState<string>("all");
   const [showAccounts, setShowAccounts] = useState(false);
-  const [showClients, setShowClients] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -118,7 +82,7 @@ function Dashboard() {
     },
   });
 
-  const { data: performanceData, isLoading: isLoadingPerformance } = useQuery({
+  const { data: performanceData } = useQuery({
     queryKey: ["dash-performance-custom", selectedAccountId, selectedClientId, dateFrom, dateTo],
     queryFn: async () => {
       const parseLocalDate = (str: string) => {
@@ -215,7 +179,7 @@ function Dashboard() {
       const pieData = campaignsData.filter(c => c.cost > 0).slice(0, 6).map(c => ({ name: c.name, value: c.cost }));
 
       const calcTrend = (curr: number, prev: number) => {
-        if (prev === 0) return curr > 0 ? "â€”" : "0%";
+        if (prev === 0) return curr > 0 ? "—" : "0%";
         const diff = ((curr - prev) / prev) * 100;
         return `${diff > 0 ? '+' : ''}${diff.toFixed(1)}%`;
       };
@@ -223,12 +187,6 @@ function Dashboard() {
       const cplCurr = currentPeriod.trueConversions > 0 ? currentPeriod.cost / currentPeriod.trueConversions : 0;
       const cplPrev = previousPeriod.trueConversions > 0 ? previousPeriod.cost / previousPeriod.trueConversions : 0;
       const cplTrendVal = cplPrev === 0 ? 0 : ((cplCurr - cplPrev) / cplPrev) * 100;
-
-      const funnelData = [
-        { id: "reach", step: "Alcance", value: Math.max(currentPeriod.reach, currentPeriod.impressions * 0.8), fill: "hsl(var(--primary) / 0.5)" },
-        { id: "clicks", step: "Cliques", value: currentPeriod.clicks, fill: "hsl(var(--primary) / 0.8)" },
-        { id: "convs", step: "Conversões", value: currentPeriod.trueConversions, fill: "hsl(var(--primary))" }
-      ];
 
       const isVanity = (obj: string) => ["OUTCOME_AWARENESS", "VIDEO_VIEWS", "OUTCOME_ENGAGEMENT", "LINK_CLICKS", "OUTCOME_TRAFFIC"].includes(obj);
 
@@ -260,36 +218,12 @@ function Dashboard() {
       if (convRate < 0.01) healthScore -= 10;
       if (opportunities.length === 0 && risks.length > 0) healthScore -= 10;
 
-      // Penalidades de Saúde Dinâmicas (Budget Pacing e Frequência)
-      let activeCamps = 0;
-      let fastPacingCamps = 0;
-      let highFreqCamps = 0;
-
-      filteredAccounts.forEach((acc: any) => {
-        if (!acc.metrics.campaigns) return;
-        acc.metrics.campaigns.forEach((c: any) => {
-          if (c.status === "ACTIVE") {
-            activeCamps++;
-            if (c.t.pacing > 1.2) fastPacingCamps++;
-            if (c.t.freq > 3.0) highFreqCamps++;
-          }
-        });
-      });
-
-      if (activeCamps > 0) {
-        if (fastPacingCamps / activeCamps > 0.3) healthScore -= 15;
-        if (highFreqCamps / activeCamps > 0.2) healthScore -= 15;
-      }
-
       healthScore = Math.max(0, Math.min(100, Math.round(healthScore)));
 
       return {
         chartData,
         barData,
         pieData,
-        funnelData,
-        opportunities,
-        risks,
         healthScore,
         totals: { ...currentPeriod, conversions: currentPeriod.trueConversions },
         trends: {
@@ -307,109 +241,7 @@ function Dashboard() {
     },
   });
 
-  // â”€â”€â”€ Query: Painel de Situação Operacional â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  const { data: situacao } = useQuery({
-    queryKey: ["dash-situacao", selectedAccountId, selectedClientId],
-    staleTime: 5 * 60 * 1000,
-    queryFn: async () => {
-      const today = new Date();
-      const todayStr = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`;
-      const yesterdayDate = new Date(today); yesterdayDate.setDate(today.getDate()-1);
-      const yesterdayStr = `${yesterdayDate.getFullYear()}-${String(yesterdayDate.getMonth()+1).padStart(2,'0')}-${String(yesterdayDate.getDate()).padStart(2,'0')}`;
-
-      // Campanhas ativas com delivery_status e orçamento
-      let campQuery = (supabase as any).from("campaigns").select("id, name, delivery_status, objective, daily_budget, lifetime_budget, budget_currency, ad_account_id, client_id").eq("status", "active");
-      if (selectedAccountId !== "all") campQuery = campQuery.eq("ad_account_id", selectedAccountId);
-      if (selectedClientId !== "all") campQuery = campQuery.eq("client_id", selectedClientId);
-      const { data: campaigns = [] } = await campQuery;
-
-      // Métricas de ontem + hoje para frequência e spend do dia
-      let metricsQuery = (supabase as any).from("metrics").select("campaign_id, frequency, cost, date, conversions, campaigns!inner(ad_account_id, client_id)").gte("date", yesterdayStr).lte("date", todayStr);
-      if (selectedAccountId !== "all") metricsQuery = metricsQuery.eq("campaigns.ad_account_id", selectedAccountId);
-      if (selectedClientId !== "all") metricsQuery = metricsQuery.eq("campaigns.client_id", selectedClientId);
-      
-      const { data: recentMetrics = [] } = await metricsQuery;
-
-      // Threshold de frequência configurado
-      let threshQuery = (supabase as any).from("alert_thresholds").select("max_frequency, max_cpl").maybeSingle();
-      const { data: threshold } = await threshQuery;
-      const maxFreq = threshold?.max_frequency ?? 3.5;
-
-      // Agregar métricas por campanha (média de frequência dos últimos 2 dias)
-      const metricsByCampaign = new Map<string, { freq: number[], spend: number, conversions: number }>();
-      for (const m of recentMetrics) {
-        const existing = metricsByCampaign.get(m.campaign_id) || { freq: [], spend: 0, conversions: 0 };
-        if (m.frequency > 0) existing.freq.push(Number(m.frequency));
-        existing.spend += Number(m.cost || 0);
-        existing.conversions += Number(m.conversions || 0);
-        metricsByCampaign.set(m.campaign_id, existing);
-      }
-
-      // Campanhas em Aprendizado
-      const aprendendo = campaigns.filter((c: any) => c.delivery_status === 'LEARNING');
-
-      // Campanhas com frequência alta
-      const freqAlta = campaigns.filter((c: any) => {
-        const m = metricsByCampaign.get(c.id);
-        if (!m || m.freq.length === 0) return false;
-        const avgFreq = m.freq.reduce((a: number, b: number) => a + b, 0) / m.freq.length;
-        return avgFreq > maxFreq;
-      });
-
-      // Budget Pacing â€” hora atual do dia (0-23) â†’ % do dia decorrida
-      const hour = today.getHours();
-      const minutesFrac = today.getMinutes() / 60;
-      const pctDia = ((hour + minutesFrac) / 24) * 100;
-
-      const pacingDetails = campaigns.filter((c: any) => c.daily_budget > 0).map((c: any) => {
-        const m = metricsByCampaign.get(c.id);
-        const spendHoje = m?.spend || 0;
-        const budget = Number(c.daily_budget);
-        const pctGasto = budget > 0 ? (spendHoje / budget) * 100 : 0;
-        const diff = pctGasto - pctDia;
-        const status = diff > 15 ? "acelerado" : diff < -15 ? "abaixo" : "ritmo";
-        return { name: c.name, spendHoje, budget, pctGasto, pctDia, status };
-      });
-
-      const emRitmo = pacingDetails.filter((p: any) => p.status === "ritmo").length;
-      const acelerado = pacingDetails.filter((p: any) => p.status === "acelerado").length;
-      const abaixo = pacingDetails.filter((p: any) => p.status === "abaixo").length;
-
-      // Prontas para escalar: CPL abaixo da média geral + conversões relevantes
-      const totalMetricas = Array.from(metricsByCampaign.values());
-      const avgCpl = (() => {
-        const withConv = totalMetricas.filter(m => m.conversions > 0);
-        if (withConv.length === 0) return 0;
-        const totalSpend = withConv.reduce((a, m) => a + m.spend, 0);
-        const totalConv = withConv.reduce((a, m) => a + m.conversions, 0);
-        return totalConv > 0 ? totalSpend / totalConv : 0;
-      })();
-
-      const prontas = campaigns.filter((c: any) => {
-        const m = metricsByCampaign.get(c.id);
-        if (!m || m.conversions < 5) return false;
-        const cpl = m.conversions > 0 ? m.spend / m.conversions : Infinity;
-        return avgCpl > 0 && cpl < avgCpl * 0.8;
-      });
-
-      return {
-        aprendendo: aprendendo.length,
-        aprendendoNomes: aprendendo.slice(0,3).map((c: any) => c.name),
-        freqAlta: freqAlta.length,
-        freqAltaNomes: freqAlta.slice(0,3).map((c: any) => c.name),
-        pacingOk: emRitmo,
-        pacingAcelerado: acelerado,
-        pacingAbaixo: abaixo,
-        pacingTotal: pacingDetails.length,
-        prontas: prontas.length,
-        prontasNomes: prontas.slice(0,3).map((c: any) => c.name),
-        totalAtivas: campaigns.length,
-        pctDia: Math.round(pctDia),
-      };
-    },
-  });
-
-  // â”€â”€â”€ Query: Tabela de Desempenho de Contas (Command Center) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─── Query: Tabela de Desempenho de Contas (Command Center) ───────────────────
   const { data: accountsTableData = [], isLoading: isLoadingTable } = useQuery({
     queryKey: ["dashboard-accounts-table-data", dateFrom, dateTo],
     queryFn: async () => {
@@ -494,40 +326,6 @@ function Dashboard() {
       return b.metrics.spend - a.metrics.spend;
     });
   }, [filteredAccounts]);
-
-  const { data: config, isLoading: isLoadingConfig } = useQuery({
-    queryKey: ["agent-config"],
-    queryFn: async () => {
-      const { data } = await (supabase as any).from("meta_ads_configs").select("*").order("created_at", { ascending: false }).limit(1);
-      return data?.[0] || null;
-    },
-  });
-
-  const { data: synthesis, refetch: refetchSynthesis } = useQuery({
-    queryKey: ["agent-synthesis"],
-    queryFn: async () => {
-      const { data } = await (supabase as any)
-        .from("agent_memory")
-        .select("value, updated_at")
-        .eq("key", "strategic_synthesis")
-        .maybeSingle();
-      return data;
-    },
-  });
-
-  const aiMutation = useMutation({
-    mutationFn: async () => {
-      const { error } = await supabase.functions.invoke("agent-heartbeat");
-      if (error) throw error;
-    },
-    onSuccess: () => {
-      refetchSynthesis();
-      toast.success("Diagnóstico da Victoria atualizado com sucesso!");
-    },
-    onError: (e: any) => {
-      toast.error(`Falha ao gerar inteligência: ${e.message}`);
-    }
-  });
 
   const selectedAccount = accounts.find(a => a.id === selectedAccountId);
 
@@ -679,9 +477,6 @@ function Dashboard() {
 
           {/* Ações à direita com espaçamento destacado */}
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full lg:w-auto">
-            <div className="flex-1 sm:flex-none">
-              <SyncButton mode="quick" />
-            </div>
             <button
               onClick={() => navigate({ to: "/relatorios" })}
               className="group relative flex items-center justify-center gap-2 overflow-hidden rounded-xl bg-primary px-5 py-2.5 text-[11px] sm:text-xs font-black uppercase tracking-widest text-primary-foreground transition-all hover:bg-primary/90 hover:shadow-glow-sm whitespace-nowrap shrink-0"
@@ -695,137 +490,6 @@ function Dashboard() {
           </div>
         </div>
 
-        {/* Indicador de Ads Conectado â€” oculto durante carregamento */}
-        {!isLoadingConfig && (
-          <div className="flex items-center gap-4">
-            {config ? (
-              <span className="inline-flex items-center rounded-full bg-emerald-100 px-2.5 py-1 text-[10px] font-black uppercase tracking-widest text-emerald-800 border border-emerald-200 dark:bg-emerald-950 dark:text-emerald-300 dark:border-emerald-900/50 shadow-glow-sm">
-                Ads Conectado
-              </span>
-            ) : (
-              <span className="inline-flex items-center rounded-full bg-amber-100 px-2.5 py-1 text-[10px] font-black uppercase tracking-widest text-amber-800 border border-amber-200 dark:bg-amber-950/70 dark:text-amber-300 dark:border-amber-900/30">
-                Sem Integração Ads
-              </span>
-            )}
-          </div>
-        )}
-
-        {/* â”€â”€â”€ PAINEL DE SITUAÃ‡ÃƒO OPERACIONAL â”€â”€â”€ */}
-        {situacao && situacao.totalAtivas > 0 && (
-          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-            {/* Campanhas Aprendendo */}
-            <motion.div
-              initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }}
-              className={`group relative flex items-center gap-3 rounded-2xl border px-4 py-3 transition-all cursor-pointer hover:scale-[1.02] ${
-                situacao.aprendendo > 0
-                  ? "border-amber-500/30 bg-amber-500/[0.07] hover:bg-amber-500/[0.12]"
-                  : "border-border/50 bg-card/50"
-              }`}
-              title={situacao.aprendendoNomes.join(", ") || "Nenhuma campanha em aprendizado"}
-              onClick={() => navigate({ to: "/metricas" })}
-            >
-              <div className={`h-9 w-9 shrink-0 rounded-xl flex items-center justify-center ${situacao.aprendendo > 0 ? "bg-amber-500/20" : "bg-muted"}`}>
-                <BookOpen className={`h-4 w-4 ${situacao.aprendendo > 0 ? "text-amber-500" : "text-muted-foreground"}`} />
-              </div>
-              <div className="min-w-0">
-                <p className="text-[11px] font-black uppercase tracking-widest text-muted-foreground">Aprendendo</p>
-                <p className={`text-2xl font-black tabular-nums leading-none mt-1 ${situacao.aprendendo > 0 ? "text-amber-500" : "text-foreground"}`}>
-                  {situacao.aprendendo}
-                </p>
-                <p className="text-[10px] sm:text-[11px] text-muted-foreground mt-1">
-                  {situacao.aprendendo > 0 ? "Não otimizar ainda" : "Tudo estável"}
-                </p>
-              </div>
-              {situacao.aprendendo > 0 && (
-                <div className="absolute top-2 right-2 h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse" />
-              )}
-            </motion.div>
-
-            {/* Frequência Alta */}
-            <motion.div
-              initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}
-              className={`group relative flex items-center gap-3 rounded-2xl border px-4 py-3 transition-all cursor-pointer hover:scale-[1.02] ${
-                situacao.freqAlta > 0
-                  ? "border-destructive/30 bg-destructive/[0.06] hover:bg-destructive/[0.10]"
-                  : "border-border/50 bg-card/50"
-              }`}
-              title={situacao.freqAltaNomes.join(", ") || "Frequência dentro do limite"}
-              onClick={() => navigate({ to: "/metricas" })}
-            >
-              <div className={`h-9 w-9 shrink-0 rounded-xl flex items-center justify-center ${situacao.freqAlta > 0 ? "bg-destructive/15" : "bg-muted"}`}>
-                <AlertTriangle className={`h-4 w-4 ${situacao.freqAlta > 0 ? "text-destructive" : "text-muted-foreground"}`} />
-              </div>
-              <div className="min-w-0">
-                <p className="text-[11px] font-black uppercase tracking-widest text-muted-foreground">Freq. Alta</p>
-                <p className={`text-2xl font-black tabular-nums leading-none mt-1 ${situacao.freqAlta > 0 ? "text-destructive" : "text-foreground"}`}>
-                  {situacao.freqAlta}
-                </p>
-                <p className="text-[10px] sm:text-[11px] text-muted-foreground mt-1">
-                  {situacao.freqAlta > 0 ? "Saturação iminente" : "Audiência saudável"}
-                </p>
-              </div>
-              {situacao.freqAlta > 0 && (
-                <div className="absolute top-2 right-2 h-1.5 w-1.5 rounded-full bg-destructive animate-pulse" />
-              )}
-            </motion.div>
-
-            {/* Budget Pacing */}
-            <motion.div
-              initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }}
-              className="group relative flex items-center gap-3 rounded-2xl border border-border/50 bg-card/50 px-4 py-3 transition-all cursor-pointer hover:scale-[1.02] hover:bg-card"
-              title={`${situacao.pctDia}% do dia â€” ${situacao.pacingOk} no ritmo, ${situacao.pacingAcelerado} acelerado, ${situacao.pacingAbaixo} abaixo`}
-              onClick={() => navigate({ to: "/metricas" })}
-            >
-              <div className="h-9 w-9 shrink-0 rounded-xl flex items-center justify-center bg-success/15">
-                <GaugeCircle className="h-4 w-4 text-success" />
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="text-[11px] font-black uppercase tracking-widest text-muted-foreground">Budget Pacing</p>
-                <div className="flex items-baseline gap-1.5 mt-1">
-                  <p className="text-2xl font-black tabular-nums leading-none text-foreground">{situacao.pctDia}%</p>
-                  <span className="text-[10px] text-muted-foreground">do dia</span>
-                </div>
-                <div className="flex gap-2 mt-2">
-                  <div className="flex-1 h-1.5 rounded-full bg-muted overflow-hidden">
-                    <div className="h-full rounded-full bg-success transition-all" style={{ width: `${Math.min(situacao.pctDia, 100)}%` }} />
-                  </div>
-                </div>
-                <p className="text-[10px] sm:text-[11px] text-muted-foreground mt-1">
-                  {situacao.pacingOk} ritmo Â· {situacao.pacingAcelerado} acelerado Â· {situacao.pacingAbaixo} abaixo
-                </p>
-              </div>
-            </motion.div>
-
-            {/* Prontas para Escalar */}
-            <motion.div
-              initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}
-              className={`group relative flex items-center gap-3 rounded-2xl border px-4 py-3 transition-all cursor-pointer hover:scale-[1.02] ${
-                situacao.prontas > 0
-                  ? "border-primary/30 bg-primary/[0.06] hover:bg-primary/[0.10]"
-                  : "border-border/50 bg-card/50"
-              }`}
-              title={situacao.prontasNomes.join(", ") || "Nenhuma campanha com CPL ótimo ainda"}
-              onClick={() => navigate({ to: "/metricas" })}
-            >
-              <div className={`h-9 w-9 shrink-0 rounded-xl flex items-center justify-center ${situacao.prontas > 0 ? "bg-primary/15" : "bg-muted"}`}>
-                <Rocket className={`h-4 w-4 ${situacao.prontas > 0 ? "text-primary" : "text-muted-foreground"}`} />
-              </div>
-              <div className="min-w-0">
-                <p className="text-[11px] font-black uppercase tracking-widest text-muted-foreground">Escalar</p>
-                <p className={`text-2xl font-black tabular-nums leading-none mt-1 ${situacao.prontas > 0 ? "text-primary" : "text-foreground"}`}>
-                  {situacao.prontas}
-                </p>
-                <p className="text-[10px] sm:text-[11px] text-muted-foreground mt-1">
-                  {situacao.prontas > 0 ? "CPL abaixo da média" : "Monitorar mais"}
-                </p>
-              </div>
-              {situacao.prontas > 0 && (
-                <div className="absolute top-2 right-2 h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />
-              )}
-            </motion.div>
-          </div>
-        )}
-
         {/* Stats Layer (Dinâmico) */}
         {(isLoadingTable) && (
           <div className="flex items-center gap-2 text-xs text-muted-foreground/60 font-mono">
@@ -834,75 +498,50 @@ function Dashboard() {
           </div>
         )}
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard 
-          label="Investimento (30d)" 
-          value={performanceData?.totals?.cost ?? 0} 
-          prefix="R$ " 
-          icon={DollarSign} 
-          trend={performanceData?.trends?.cost} 
+        <StatCard
+          label="Investimento"
+          value={performanceData?.totals?.cost ?? 0}
+          prefix="R$ "
+          icon={DollarSign}
+          trend={performanceData?.trends?.cost}
           isPositive={performanceData?.trends?.costPositive}
-          sparklineData={performanceData?.chartData.map(d => d.cost) || []}
         />
-        <StatCard 
-          label="Conversões (30d)" 
-          value={performanceData?.totals?.conversions ?? 0} 
-          icon={Trophy} 
-          trend={performanceData?.trends?.conversions} 
+        <StatCard
+          label="Conversões"
+          value={performanceData?.totals?.conversions ?? 0}
+          icon={Trophy}
+          trend={performanceData?.trends?.conversions}
           isPositive={performanceData?.trends?.conversionsPositive}
-          sparklineData={performanceData?.chartData.map(d => d.conversions) || []}
         />
-        <StatCard 
-          label="CPA Médio (30d)" 
-          value={performanceData?.cpl ?? 0} 
-          prefix="R$ " 
-          icon={Target} 
-          trend={performanceData?.trends?.cpl} 
+        <StatCard
+          label="CPA Médio"
+          value={performanceData?.cpl ?? 0}
+          prefix="R$ "
+          icon={Target}
+          trend={performanceData?.trends?.cpl}
           isPositive={performanceData?.trends?.cplPositive}
-          sparklineData={performanceData?.chartData.map(d => d.cost / (d.conversions || 1)) || []}
         />
-        <StatCard 
-          label="Cliques Ãšteis (30d)" 
-          value={performanceData?.totals?.clicks ?? 0} 
-          icon={MousePointer2} 
-          trend={performanceData?.trends?.clicks} 
+        <StatCard
+          label="Cliques no Link"
+          value={performanceData?.totals?.clicks ?? 0}
+          icon={MousePointer2}
+          trend={performanceData?.trends?.clicks}
           isPositive={performanceData?.trends?.clicksPositive}
-          sparklineData={performanceData?.chartData.map(d => d.clicks) || []}
         />
       </div>
       
       <div className="pt-4 space-y-6">
 
-      {/* HUB DE FUNÃ‡Ã•ES COMPACTO */}
-      <section className="space-y-4">
-        <div className="flex items-center gap-4">
-          <div className="h-px flex-1 bg-border/50" />
-          <span className="chassis-line label-mono text-muted-foreground/38">Módulos Estratégicos</span>
-          <div className="h-px flex-1 bg-border/50" />
-        </div>
-        <div className="flex flex-wrap gap-3 justify-center">
-          {HUB_GROUPS.flatMap(g => g.items).map((item) => (
-            <Link
-              key={item.to}
-              to={item.to}
-              className="group relative flex items-center gap-3 px-4 py-2.5 rounded-xl bg-white/[0.022] border border-white/5 transition-all hover:bg-white/[0.05] hover:border-primary/20 hover:-translate-y-0.5"
-            >
-              <item.icon className={`h-4 w-4 ${item.tagColor.split(' ')[1]}`} />
-              <span className="text-[11px] font-bold text-muted-foreground group-hover:text-foreground transition-colors">{item.title}</span>
-            </Link>
-          ))}
-        </div>
-      </section>
-
-      {/* Data Core: Insights & Charts */}
-      <div className="grid gap-4 sm:gap-6 lg:gap-8 lg:grid-cols-3">
-        <motion.div 
+      {/* Gráfico principal: Evolução de Investimento x Resultados */}
+      <div className="grid gap-4 sm:gap-6 lg:gap-8">
+        <motion.div
           initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}
-          className="glass-panel col-span-2 flex flex-col p-4 sm:p-6 lg:p-8 min-h-[280px] sm:min-h-[380px] lg:min-h-[450px] min-w-0"
+          className="glass-panel flex flex-col p-4 sm:p-6 lg:p-8 min-h-[280px] sm:min-h-[380px] min-w-0"
         >
           <div className="mb-8 flex items-center justify-between">
             <div>
               <h3 className="header-sport text-base sm:text-xl font-black tracking-tight uppercase">Evolução de Investimento x Resultados</h3>
-              <p className="text-xs text-muted-foreground font-medium mt-1">Como o gasto se compara às conversões geradas ao longo do tempo (30d)</p>
+              <p className="text-xs text-muted-foreground font-medium mt-1">Como o gasto se compara às conversões geradas no período selecionado</p>
             </div>
             <div className="flex items-center gap-6">
               <div className="flex items-center gap-2 text-[9px] font-black uppercase tracking-widest">
@@ -960,73 +599,10 @@ function Dashboard() {
             </ResponsiveContainer>
           </div>
         </motion.div>
-
-        {/* AI Synthesis Box */}
-        <motion.div 
-          initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}
-          className="glass-panel p-4 sm:p-6 lg:p-8 flex flex-col bg-gradient-to-br from-primary/[0.03] to-transparent border-primary/20"
-        >
-          <div className="flex items-center gap-3 mb-6">
-            <div className="h-10 w-10 rounded-2xl bg-primary/10 flex items-center justify-center ring-1 ring-primary/20 shadow-glow-sm">
-               <Brain className="h-5 w-5 text-primary" />
-            </div>
-            <div>
-               <h3 className="header-sport text-lg font-black tracking-tight uppercase">Inteligência Artificial (Victoria)</h3>
-               <p className="text-[10px] text-muted-foreground font-black tracking-widest uppercase opacity-50">Diagnóstico Automatizado da Conta</p>
-            </div>
-          </div>
-          
-          <div className="flex-1 space-y-6">
-            <div className="rounded-2xl bg-white/[0.03] p-5 border border-white/5 relative overflow-hidden group">
-              <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition">
-                <Sparkles className="h-12 w-12 text-primary" />
-              </div>
-              <p className="text-[9px] font-black uppercase tracking-[0.2em] text-primary mb-3 flex items-center gap-2">
-                <Zap className="h-3 w-3 animate-pulse" /> O que a IA diz sobre seus anúncios agora:
-              </p>
-              
-              {/* Leitura do agent_memory real da base */}
-              {synthesis?.value?.text ? (
-                <div className="space-y-2">
-                   <p className="text-xs leading-relaxed text-foreground/90 font-medium">
-                     {synthesis.value.text}
-                   </p>
-                   {synthesis.value.action_recommended && (
-                     <div className="mt-3 inline-flex items-center gap-2 rounded-md bg-primary/10 px-2 py-1 text-[10px] font-bold text-primary">
-                        <Target className="h-3 w-3" /> Recomendação: {synthesis.value.action_recommended}
-                     </div>
-                   )}
-                </div>
-              ) : (
-                <p className="text-xs leading-relaxed text-muted-foreground/80 font-medium">
-                  Aguardando a inteligência artificial analisar os dados (gastos, cliques e conversões) para gerar a próxima recomendação de como melhorar as campanhas. O agente orquestrador está rodando nos bastidores.
-                </p>
-              )}
-
-              <div className="mt-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-t border-white/5 pt-3">
-                    <p className="text-[9px] text-muted-foreground font-bold flex items-center gap-1">
-                      <Clock className="h-2.5 w-2.5" /> 
-                      {synthesis?.updated_at ? format(new Date(synthesis.updated_at), "dd/MM HH:mm") : "Aguardando Sync"}
-                    </p>
-                    <div className="flex items-center gap-2">
-                      <button 
-                        onClick={() => aiMutation.mutate()} 
-                        disabled={aiMutation.isPending}
-                        className="flex items-center gap-1.5 rounded-lg bg-primary/10 px-2.5 py-1 text-[9px] font-black uppercase tracking-wider text-primary hover:bg-primary/20 transition-all disabled:opacity-50"
-                      >
-                        {aiMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
-                        Forçar IA
-                      </button>
-                      <span className="text-[9px] font-black text-primary/50 uppercase tracking-tighter hidden sm:inline">Powered by MCP Agent</span>
-                    </div>
-                </div>
-            </div>
-          </div>
-        </motion.div>
       </div>
 
-      {/* â”€â”€â”€ CHARTS ADICIONAIS MULTICANAL E EVOLUCAO â”€â”€â”€ */}
-      <div className="grid gap-4 sm:gap-6 lg:gap-8 lg:grid-cols-2 2xl:grid-cols-4 mt-4 sm:mt-8">
+      {/* ─── CHARTS SECUNDÁRIOS ─── */}
+      <div className="grid gap-4 sm:gap-6 lg:gap-8 lg:grid-cols-2 mt-4 sm:mt-8">
         {/* Top Campanhas (Barras) */}
         <motion.div
           initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }}
@@ -1114,108 +690,6 @@ function Dashboard() {
           </div>
         </motion.div>
 
-        {/* Funil de Conversão */}
-        <motion.div
-          initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.25 }}
-          className="glass-panel p-4 sm:p-6 lg:p-8 min-w-0"
-        >
-          <div className="mb-6 flex items-center justify-between">
-            <div>
-              <h3 className="header-sport text-xs sm:text-sm font-black tracking-widest uppercase">Funil de Vendas (Visão Geral)</h3>
-              <p className="text-[10px] text-muted-foreground uppercase mt-1 tracking-widest">Quantas pessoas viram o anúncio até converter</p>
-            </div>
-            <Activity className="h-5 w-5 text-primary/50" />
-          </div>
-          <div className="flex flex-col gap-3 justify-center" style={{ minHeight: "clamp(200px, 45vw, 280px)" }}>
-            {performanceData?.funnelData?.map((f: any, idx: number, arr: any[]) => {
-              const prev = idx > 0 ? arr[idx-1].value : f.value;
-              const drop = prev > 0 ? (f.value / prev) * 100 : 0;
-              return (
-                <div key={f.id} className="relative flex flex-col gap-1">
-                  <div className="flex items-center justify-between text-[11px] font-bold uppercase tracking-widest text-muted-foreground px-1">
-                    <span>{f.step}</span>
-                    <span className="font-mono text-foreground text-sm">{Math.floor(f.value).toLocaleString('pt-BR')}</span>
-                  </div>
-                  <div className="h-8 rounded-xl bg-white/5 relative overflow-hidden border border-white/5 group">
-                    <motion.div 
-                      initial={{ width: 0 }} animate={{ width: `${Math.max(drop, 2)}%` }} transition={{ duration: 1, delay: 0.5 + (idx * 0.2) }}
-                      className="absolute top-0 left-0 h-full rounded-xl transition-colors"
-                      style={{ backgroundColor: f.fill }}
-                    />
-                    <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                      <span className="text-[10px] font-black text-white mix-blend-difference">{drop.toFixed(1)}% de retenção</span>
-                    </div>
-                  </div>
-                  {idx < arr.length - 1 && (
-                    <div className="h-4 flex items-center justify-center">
-                      <ChevronDown className="h-3 w-3 text-white/20" />
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </motion.div>
-
-        {/* Risco vs Oportunidade */}
-        <motion.div
-          initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}
-          className="glass-panel p-4 sm:p-6 lg:p-8 min-w-0"
-        >
-          <div className="mb-6 flex items-center justify-between">
-            <div>
-              <h3 className="header-sport text-xs sm:text-sm font-black tracking-widest uppercase">Oportunidades e Ralos de Dinheiro</h3>
-              <p className="text-[10px] text-muted-foreground uppercase mt-1 tracking-widest">Campanhas boas (muito baratas) e ruins (muito caras)</p>
-            </div>
-            <Target className="h-5 w-5 text-primary/50" />
-          </div>
-          <div className="overflow-y-auto custom-scrollbar pr-2 space-y-4" style={{ height: "clamp(200px, 45vw, 280px)" }}>
-            
-            {performanceData?.opportunities && performanceData.opportunities.length > 0 && (
-              <div className="space-y-2">
-                <p className="text-[10px] font-black uppercase tracking-widest text-success mb-2 flex items-center gap-2"><TrendingUp className="h-3 w-3"/> Ótimo Desempenho (Sugerimos Escalar)</p>
-                {performanceData.opportunities.map((c: any) => (
-                  <div key={c.id} className="flex items-center justify-between p-3 rounded-xl bg-success/5 border border-success/10 hover:bg-success/10 transition-colors">
-                    <div className="min-w-0 flex-1">
-                      <p className="text-[11px] font-bold text-foreground truncate">{c.name}</p>
-                      <p className="text-[9px] text-muted-foreground mt-0.5">R$ {c.cost.toFixed(2)} gasto</p>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-sm font-black font-mono text-success">R$ {c.cpa.toFixed(2)}</p>
-                      <p className="text-[9px] text-muted-foreground">CPA</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {performanceData?.risks && performanceData.risks.length > 0 && (
-              <div className="space-y-2 mt-4">
-                <p className="text-[10px] font-black uppercase tracking-widest text-destructive mb-2 flex items-center gap-2"><AlertTriangle className="h-3 w-3"/> Baixo Desempenho (Gastando e não convertendo)</p>
-                {performanceData.risks.map((c: any) => (
-                  <div key={c.id} className="flex items-center justify-between p-3 rounded-xl bg-destructive/5 border border-destructive/10 hover:bg-destructive/10 transition-colors">
-                    <div className="min-w-0 flex-1">
-                      <p className="text-[11px] font-bold text-foreground truncate">{c.name}</p>
-                      <p className="text-[9px] text-muted-foreground mt-0.5">{c.conversions} conversões</p>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-sm font-black font-mono text-destructive">R$ {c.cost.toFixed(2)}</p>
-                      <p className="text-[9px] text-muted-foreground">Gasto sem retorno</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-            
-            {(!performanceData?.opportunities?.length && !performanceData?.risks?.length) && (
-              <div className="h-full flex flex-col items-center justify-center text-muted-foreground/50">
-                <Activity className="h-8 w-8 mb-2 opacity-20" />
-                <p className="text-xs">Tudo rodando dentro da média de CPA</p>
-              </div>
-            )}
-
-          </div>
-        </motion.div>
       </div>
 
       {/* â”€â”€â”€ TABELA DE DESEMPENHO DE CONTAS â”€â”€â”€ */}
@@ -1305,7 +779,7 @@ function Dashboard() {
                     <p className="text-xs font-black font-mono text-foreground mt-1">
                       {row.metrics.leads > 0 
                         ? (row.metrics.spend / row.metrics.leads).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) 
-                        : "â€”"}
+                        : "—"}
                     </p>
                   </div>
                   <div className="bg-white/[0.03] border border-white/5 rounded-xl p-2.5">
@@ -1381,7 +855,7 @@ function Dashboard() {
                     <td className="py-4 text-right font-mono text-[11px] font-bold tabular-nums text-foreground">
                       {row.metrics.leads > 0 
                         ? (row.metrics.spend / row.metrics.leads).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) 
-                        : "â€”"}
+                        : "—"}
                     </td>
                     <td className="py-4 text-right font-mono text-[11px] font-bold tabular-nums text-foreground">{row.metrics.purchases.toLocaleString('pt-BR')}</td>
                     <td className="py-4 text-right font-mono text-[11px] font-black tabular-nums text-primary">

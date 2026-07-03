@@ -528,8 +528,8 @@ function Shell() {
           
           {/* LEFT: Logo & Module Switcher */}
           <div className="flex items-center gap-3 shrink-0">
-            <Link 
-              to={profile?.role === "agency_sdr" || profile?.role === "client_store" ? "/crm" : "/dashboard"} 
+            <Link
+              to={(profile?.role === "agency_sdr" || profile?.role === "client_store" ? "/crm" : "/dashboard") as any}
               onClick={() => {
                 if (profile?.role !== "agency_sdr" && profile?.role !== "client_store") {
                   setActiveModule("hub");
