@@ -387,88 +387,87 @@ function Dashboard() {
         {/* â”€â”€â”€ FILTER BAR ESTRUTURADA (UI PREMIUM) â”€â”€â”€ */}
         <div className="relative z-50 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between w-full bg-card/45 border border-border/60 rounded-2xl p-3 backdrop-blur-md">
           {/* Filtros à esquerda */}
-          <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
-            
-            <div className="relative">
-                <button 
-                  onClick={() => setShowAccounts(!showAccounts)}
-                  className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-xs font-black uppercase tracking-widest transition hover:border-primary/40 hover:bg-white/10"
-                >
-                  {selectedClientId !== "all" ? (
-                    <Users className="h-3.5 w-3.5 text-primary" />
-                  ) : selectedAccountId !== "all" ? (
-                    selectedAccount?.platform === "Google Ads" ? <Globe className="h-3.5 w-3.5 text-[#4285F4]" /> : <Target className="h-3.5 w-3.5 text-primary" />
-                  ) : (
-                    <Target className="h-3.5 w-3.5 text-primary" />
-                  )}
-                  {selectedClientId !== "all" 
-                    ? clients.find((c: any) => c.id === selectedClientId)?.name || "Cliente"
-                    : selectedAccountId !== "all" 
-                      ? selectedAccount?.name 
-                      : "Geral"}
-                  <ChevronDown className={`h-3 w-3 transition ${showAccounts ? "rotate-180" : ""}`} />
-                </button>
+          <div className="flex items-center gap-2">
 
-                <AnimatePresence>
-                  {showAccounts && (
-                    <motion.div 
-                      initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }}
-                      className="absolute left-0 top-full z-50 mt-2 w-72 rounded-2xl border border-white/10 bg-background/95 p-2 shadow-2xl backdrop-blur-2xl"
+            {/* Dropdown fora do overflow para o menu absoluto não ser clippado */}
+            <div ref={dropdownRef} className="relative shrink-0">
+              <button
+                onClick={() => setShowAccounts(!showAccounts)}
+                className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-xs font-black uppercase tracking-widest transition hover:border-primary/40 hover:bg-white/10"
+              >
+                {selectedClientId !== "all" ? (
+                  <Users className="h-3.5 w-3.5 text-primary" />
+                ) : selectedAccountId !== "all" ? (
+                  selectedAccount?.platform === "Google Ads" ? <Globe className="h-3.5 w-3.5 text-[#4285F4]" /> : <Target className="h-3.5 w-3.5 text-primary" />
+                ) : (
+                  <Target className="h-3.5 w-3.5 text-primary" />
+                )}
+                {selectedClientId !== "all"
+                  ? clients.find((c: any) => c.id === selectedClientId)?.name || "Cliente"
+                  : selectedAccountId !== "all"
+                    ? selectedAccount?.name
+                    : "Geral"}
+                <ChevronDown className={`h-3 w-3 transition ${showAccounts ? "rotate-180" : ""}`} />
+              </button>
+
+              <AnimatePresence>
+                {showAccounts && (
+                  <motion.div
+                    initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }}
+                    className="absolute left-0 top-full z-50 mt-2 w-72 rounded-2xl border border-white/10 bg-background/95 p-2 shadow-2xl backdrop-blur-2xl"
+                  >
+                    <button
+                      onClick={() => { setSelectedAccountId("all"); setSelectedClientId("all"); setShowAccounts(false); }}
+                      className={`flex w-full items-center gap-3 rounded-xl px-4 py-3 text-left text-[11px] font-bold uppercase tracking-widest transition ${selectedAccountId === "all" && selectedClientId === "all" ? "bg-primary/20 text-primary" : "hover:bg-white/5 text-muted-foreground"}`}
                     >
-                      <button 
-                        onClick={() => { setSelectedAccountId("all"); setSelectedClientId("all"); setShowAccounts(false); }}
-                        className={`flex w-full items-center gap-3 rounded-xl px-4 py-3 text-left text-[11px] font-bold uppercase tracking-widest transition ${selectedAccountId === "all" && selectedClientId === "all" ? "bg-primary/20 text-primary" : "hover:bg-white/5 text-muted-foreground"}`}
-                      >
-                        <Globe className="h-4 w-4" /> Visão Geral
-                      </button>
-                      <div className="my-2 h-px bg-white/5" />
-                      
-                      {/* Section: Clients */}
-                      <div className="px-4 py-2 text-[9px] font-black uppercase tracking-widest text-muted-foreground/50">Por Cliente</div>
-                      <div className="max-h-[150px] overflow-y-auto custom-scrollbar">
-                        {clients.map((c: any) => (
-                          <button 
-                            key={`client-${c.id}`}
-                            onClick={() => { setSelectedClientId(c.id); setSelectedAccountId("all"); setShowAccounts(false); }}
-                            className={`flex w-full items-center gap-3 rounded-xl px-4 py-3 text-left text-[11px] font-bold uppercase tracking-widest transition ${selectedClientId === c.id ? "bg-primary/20 text-primary" : "hover:bg-white/5 text-muted-foreground"}`}
-                          >
-                            <Users className="h-3.5 w-3.5 opacity-50" />
-                            {c.name}
-                          </button>
-                        ))}
-                      </div>
+                      <Globe className="h-4 w-4" /> Visão Geral
+                    </button>
+                    <div className="my-2 h-px bg-white/5" />
 
-                      <div className="my-2 h-px bg-white/5" />
+                    <div className="px-4 py-2 text-[9px] font-black uppercase tracking-widest text-muted-foreground/50">Por Cliente</div>
+                    <div className="max-h-[150px] overflow-y-auto custom-scrollbar">
+                      {clients.map((c: any) => (
+                        <button
+                          key={`client-${c.id}`}
+                          onClick={() => { setSelectedClientId(c.id); setSelectedAccountId("all"); setShowAccounts(false); }}
+                          className={`flex w-full items-center gap-3 rounded-xl px-4 py-3 text-left text-[11px] font-bold uppercase tracking-widest transition ${selectedClientId === c.id ? "bg-primary/20 text-primary" : "hover:bg-white/5 text-muted-foreground"}`}
+                        >
+                          <Users className="h-3.5 w-3.5 opacity-50" />
+                          {c.name}
+                        </button>
+                      ))}
+                    </div>
 
-                      {/* Section: Accounts */}
-                      <div className="px-4 py-2 text-[9px] font-black uppercase tracking-widest text-muted-foreground/50">Por Conta de Anúncio</div>
-                      <div className="max-h-[150px] overflow-y-auto custom-scrollbar">
-                        {accounts.map((acc: any) => (
-                          <button 
-                            key={`acc-${acc.id}`}
-                            onClick={() => { setSelectedAccountId(acc.id); setSelectedClientId("all"); setShowAccounts(false); }}
-                            className={`flex w-full items-center gap-3 rounded-xl px-4 py-3 text-left text-[11px] font-bold uppercase tracking-widest transition ${selectedAccountId === acc.id ? "bg-primary/20 text-primary" : "hover:bg-white/5 text-muted-foreground"}`}
-                          >
-                            <div className="flex items-center justify-center w-4">
-                              {acc.platform === "Google Ads" ? (
-                                <Globe className={`h-3.5 w-3.5 ${selectedAccountId === acc.id ? "text-[#4285F4]" : "text-muted-foreground opacity-50"}`} />
-                              ) : (
-                                <Target className={`h-3.5 w-3.5 ${selectedAccountId === acc.id ? "text-primary" : "text-muted-foreground opacity-50"}`} />
-                              )}
-                            </div>
-                            <span className="truncate">{acc.name}</span>
-                          </button>
-                        ))}
-                      </div>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              </div>
+                    <div className="my-2 h-px bg-white/5" />
 
-            <DateRangePicker 
-              startDate={dateRange.startDate} 
-              endDate={dateRange.endDate} 
-              onChange={handleDateChange} 
+                    <div className="px-4 py-2 text-[9px] font-black uppercase tracking-widest text-muted-foreground/50">Por Conta de Anúncio</div>
+                    <div className="max-h-[150px] overflow-y-auto custom-scrollbar">
+                      {accounts.map((acc: any) => (
+                        <button
+                          key={`acc-${acc.id}`}
+                          onClick={() => { setSelectedAccountId(acc.id); setSelectedClientId("all"); setShowAccounts(false); }}
+                          className={`flex w-full items-center gap-3 rounded-xl px-4 py-3 text-left text-[11px] font-bold uppercase tracking-widest transition ${selectedAccountId === acc.id ? "bg-primary/20 text-primary" : "hover:bg-white/5 text-muted-foreground"}`}
+                        >
+                          <div className="flex items-center justify-center w-4">
+                            {acc.platform === "Google Ads" ? (
+                              <Globe className={`h-3.5 w-3.5 ${selectedAccountId === acc.id ? "text-[#4285F4]" : "text-muted-foreground opacity-50"}`} />
+                            ) : (
+                              <Target className={`h-3.5 w-3.5 ${selectedAccountId === acc.id ? "text-primary" : "text-muted-foreground opacity-50"}`} />
+                            )}
+                          </div>
+                          <span className="truncate">{acc.name}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+
+            <DateRangePicker
+              startDate={dateRange.startDate}
+              endDate={dateRange.endDate}
+              onChange={handleDateChange}
             />
           </div>
 
