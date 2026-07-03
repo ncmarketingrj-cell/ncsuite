@@ -1,7 +1,7 @@
 import { createFileRoute, Link, useSearch } from "@tanstack/react-router";
 import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { 
   FileText, Download, Printer, ArrowLeft, Target, 
   Calendar, CheckCircle2, Loader2, Globe, Brain,
@@ -57,6 +57,7 @@ interface SavedReport {
 
 function RelatoriosPage() {
   const search = useSearch({ from: "/_app/relatorios" });
+  const queryClient = useQueryClient();
   
   // Parâmetros do Relatório
   const [source, setSource] = useState<"api" | "upload">(search.from === "upload" ? "upload" : "api");
@@ -120,12 +121,33 @@ function RelatoriosPage() {
   const [previewOpen, setPreviewOpen] = useState(true);
   const [copied, setCopied] = useState(false);
 
-  const [savedReports, setSavedReports] = useState<SavedReport[]>([]);
   const [activeReportId, setActiveReportId] = useState<string | null>(null);
 
   const [isSavedReportsModalOpen, setIsSavedReportsModalOpen] = useState(false);
+  const [savedTab, setSavedTab] = useState<"api" | "upload">("upload");
   const [reportSearchTerm, setReportSearchTerm] = useState("");
   const [reportSearchPeriod, setReportSearchPeriod] = useState("");
+
+  const { data: savedReports = [] } = useQuery<SavedReport[]>({
+    queryKey: ["saved-reports"],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("reports")
+        .select("*")
+        .order("created_at", { ascending: false });
+      return (data || []).map((r: any) => ({
+        id: r.id,
+        createdAt: r.created_at,
+        clientName: r.client_name || "",
+        periodText: r.period || "",
+        reportMode: r.raw_data?.reportMode || "complete",
+        source: r.raw_data?.source || "api",
+        campaigns: r.raw_data?.campaigns || [],
+        generatedText: r.markdown || "",
+        reportLevel: r.raw_data?.reportLevel || "campaign",
+      }));
+    },
+  });
 
   // Controle de Templates
   const [isTemplateModalOpen, setIsTemplateModalOpen] = useState(false);
@@ -138,18 +160,6 @@ function RelatoriosPage() {
       return (data as any[]) ?? [];
     },
   });
-
-  // Inicializa o salvamento de relatórios no localStorage
-  useEffect(() => {
-    const saved = localStorage.getItem("nc_saved_reports");
-    if (saved) {
-      try {
-        setSavedReports(JSON.parse(saved));
-      } catch (e) {
-        console.error("Erro ao carregar relatórios salvos:", e);
-      }
-    }
-  }, []);
 
   // Monitora se veio um ID de relatório por parâmetro de busca para carregá-lo imediatamente
   useEffect(() => {
@@ -165,38 +175,37 @@ function RelatoriosPage() {
     }
   }, [search.activeReportId, savedReports]);
 
-  const handleSaveReport = (showToast = true) => {
+  const handleSaveReport = async (showToast = true) => {
     if (!generatedText) {
       toast.warning("Gere o relatório antes de salvar!");
       return;
     }
 
-    const reportId = activeReportId || `report-${Date.now()}`;
-    const newReport: SavedReport = {
-      id: reportId,
-      createdAt: new Date().toISOString(),
-      clientName,
-      periodText,
-      reportMode,
-      source,
-      campaigns: campaignList,
-      generatedText,
-      reportLevel
+    const totalInvestment = campaignList.filter(c => c.selected).reduce((s, c) => s + c.cost, 0);
+    const totalCampaigns = campaignList.filter(c => c.selected).length;
+
+    const payload = {
+      client_name: clientName,
+      period: periodText,
+      markdown: generatedText,
+      raw_data: { source, campaigns: campaignList, reportMode, reportLevel },
+      total_investment: totalInvestment,
+      total_campaigns: totalCampaigns,
     };
 
-    let updatedList = [...savedReports];
-    const index = updatedList.findIndex(r => r.id === reportId);
-    if (index >= 0) {
-      updatedList[index] = newReport;
-      if (showToast) toast.success("Relatório atualizado no histórico!");
-    } else {
-      updatedList.unshift(newReport);
-      setActiveReportId(reportId);
-      if (showToast) toast.success("Relatório salvo no histórico local!");
+    try {
+      if (activeReportId) {
+        await supabase.from("reports").update(payload).eq("id", activeReportId);
+        if (showToast) toast.success("Relatório atualizado!");
+      } else {
+        const { data } = await supabase.from("reports").insert(payload).select("id").single();
+        if (data?.id) setActiveReportId(data.id);
+        if (showToast) toast.success("Relatório salvo!");
+      }
+      queryClient.invalidateQueries({ queryKey: ["saved-reports"] });
+    } catch (err: any) {
+      toast.error("Erro ao salvar relatório: " + (err.message ?? "tente novamente"));
     }
-
-    setSavedReports(updatedList);
-    localStorage.setItem("nc_saved_reports", JSON.stringify(updatedList));
   };
 
   const handleLoadReport = (rep: SavedReport) => {
@@ -213,15 +222,12 @@ function RelatoriosPage() {
     toast.success(`Relatório de ${rep.clientName} carregado com sucesso!`);
   };
 
-  const handleDeleteReport = (id: string, e: React.MouseEvent) => {
+  const handleDeleteReport = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    const filtered = savedReports.filter(r => r.id !== id);
-    setSavedReports(filtered);
-    localStorage.setItem("nc_saved_reports", JSON.stringify(filtered));
-    if (activeReportId === id) {
-      setActiveReportId(null);
-    }
-    toast.success("Relatório removido do histórico!");
+    await supabase.from("reports").delete().eq("id", id);
+    if (activeReportId === id) setActiveReportId(null);
+    queryClient.invalidateQueries({ queryKey: ["saved-reports"] });
+    toast.success("Relatório removido!");
   };
 
   // Inicializa o período atual com o nome do mês em português (Ex: "MAIO 2026")
@@ -793,8 +799,8 @@ function RelatoriosPage() {
       return;
     }
     setIsGenerating(true);
-    setTimeout(() => {
-      handleSaveReport(true);
+    setTimeout(async () => {
+      await handleSaveReport(true);
       setIsGenerating(false);
     }, 300);
   };
@@ -855,7 +861,7 @@ function RelatoriosPage() {
           </button>
           
           <button
-            onClick={() => setIsSavedReportsModalOpen(true)}
+            onClick={() => { setSavedTab(source); setIsSavedReportsModalOpen(true); }}
             className="flex items-center gap-2 rounded-xl bg-white/5 px-4 py-2 text-xs font-black uppercase tracking-widest text-foreground hover:bg-white/10 transition-all border border-white/10 hover:border-white/20"
           >
             <FileText className="h-4 w-4" /> Salvos
@@ -1354,13 +1360,13 @@ function RelatoriosPage() {
               exit={{ opacity: 0, scale: 0.95 }}
               className="relative w-full max-w-4xl max-h-[85vh] flex flex-col overflow-hidden rounded-3xl border border-border bg-card shadow-2xl"
             >
-              {/* Header Fixo do Modal */}
+              {/* Header */}
               <div className="flex items-center justify-between border-b border-border bg-muted/20 p-6">
                 <div>
                   <h2 className="text-xl font-black uppercase tracking-tighter text-foreground flex items-center gap-2">
                     <FileText className="h-5 w-5 text-primary" /> Relatórios Salvos
                   </h2>
-                  <p className="text-xs text-muted-foreground mt-1">Carregue configurações e edite relatórios gerados anteriormente.</p>
+                  <p className="text-xs text-muted-foreground mt-1">Selecione um relatório para abrir e reeditar.</p>
                 </div>
                 <button
                   onClick={() => setIsSavedReportsModalOpen(false)}
@@ -1370,28 +1376,49 @@ function RelatoriosPage() {
                 </button>
               </div>
 
-              {/* Área de Filtros Fixa */}
-              <div className="flex flex-col sm:flex-row gap-4 border-b border-border bg-background p-6">
+              {/* Abas OCR vs API */}
+              <div className="flex gap-1 border-b border-border bg-background px-6 pt-4 pb-0">
+                <button
+                  onClick={() => { setSavedTab("upload"); setReportSearchTerm(""); setReportSearchPeriod(""); }}
+                  className={`flex items-center gap-1.5 px-4 py-2 text-[11px] font-black uppercase tracking-widest rounded-t-lg border-b-2 transition-all ${savedTab === "upload" ? "border-primary text-primary bg-primary/5" : "border-transparent text-muted-foreground hover:text-foreground"}`}
+                >
+                  <Sparkles className="h-3.5 w-3.5" />
+                  Extração OCR
+                  <span className="ml-1 rounded bg-white/10 px-1.5 py-0.5 text-[9px]">{savedReports.filter(r => r.source === "upload").length}</span>
+                </button>
+                <button
+                  onClick={() => { setSavedTab("api"); setReportSearchTerm(""); setReportSearchPeriod(""); }}
+                  className={`flex items-center gap-1.5 px-4 py-2 text-[11px] font-black uppercase tracking-widest rounded-t-lg border-b-2 transition-all ${savedTab === "api" ? "border-primary text-primary bg-primary/5" : "border-transparent text-muted-foreground hover:text-foreground"}`}
+                >
+                  <Globe className="h-3.5 w-3.5" />
+                  Contas Conectadas
+                  <span className="ml-1 rounded bg-white/10 px-1.5 py-0.5 text-[9px]">{savedReports.filter(r => r.source === "api").length}</span>
+                </button>
+              </div>
+
+              {/* Filtros */}
+              <div className="flex flex-col sm:flex-row gap-3 border-b border-border bg-background px-6 py-3">
                 <input
                   type="text"
-                  placeholder="Filtrar por Cliente..."
+                  placeholder="Filtrar por cliente..."
                   value={reportSearchTerm}
                   onChange={(e) => setReportSearchTerm(e.target.value)}
-                  className="flex-1 rounded-xl border border-border bg-muted/50 px-4 py-2.5 text-sm font-bold text-foreground focus:border-primary focus:outline-none"
+                  className="flex-1 rounded-xl border border-border bg-muted/50 px-4 py-2 text-sm font-bold text-foreground focus:border-primary focus:outline-none"
                 />
                 <input
                   type="text"
-                  placeholder="Filtrar por Período (ex: MAIO)..."
+                  placeholder="Filtrar por período (ex: JUNHO)..."
                   value={reportSearchPeriod}
                   onChange={(e) => setReportSearchPeriod(e.target.value)}
-                  className="flex-1 rounded-xl border border-border bg-muted/50 px-4 py-2.5 text-sm font-bold text-foreground focus:border-primary focus:outline-none"
+                  className="flex-1 rounded-xl border border-border bg-muted/50 px-4 py-2 text-sm font-bold text-foreground focus:border-primary focus:outline-none"
                 />
               </div>
 
-              {/* Área de Rolagem do Modal */}
+              {/* Lista */}
               <div className="flex-1 overflow-y-auto p-6">
                 {(() => {
-                  const filtered = savedReports.filter(r => 
+                  const filtered = savedReports.filter(r =>
+                    r.source === savedTab &&
                     r.clientName.toLowerCase().includes(reportSearchTerm.toLowerCase()) &&
                     r.periodText.toLowerCase().includes(reportSearchPeriod.toLowerCase())
                   );
@@ -1399,8 +1426,8 @@ function RelatoriosPage() {
                   if (filtered.length === 0) {
                     return (
                       <div className="py-12 text-center text-muted-foreground/60">
-                        <p className="text-sm font-bold">Nenhum relatório encontrado.</p>
-                        <p className="text-[10px] mt-1">Gere um relatório e ele será salvo automaticamente.</p>
+                        <p className="text-sm font-bold">Nenhum relatório {savedTab === "upload" ? "de print OCR" : "de conta conectada"} encontrado.</p>
+                        <p className="text-[10px] mt-1">Gere um relatório e ele será salvo automaticamente aqui.</p>
                       </div>
                     );
                   }
@@ -1408,46 +1435,43 @@ function RelatoriosPage() {
                   return (
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       {filtered.map((report) => (
-                        <div 
+                        <div
                           key={report.id}
-                          onClick={() => {
-                            handleLoadReport(report);
-                            setIsSavedReportsModalOpen(false);
-                          }}
-                          className={`group flex flex-col justify-between p-4 rounded-xl border cursor-pointer transition-all hover:bg-muted/50 ${
-                            activeReportId === report.id
-                              ? "bg-primary/[0.05] border-primary/30"
-                              : "bg-card border-border"
-                          }`}
+                          onClick={() => { handleLoadReport(report); setIsSavedReportsModalOpen(false); }}
+                          className={`group flex flex-col justify-between p-4 rounded-xl border cursor-pointer transition-all hover:bg-muted/50 ${activeReportId === report.id ? "bg-primary/[0.05] border-primary/30" : "bg-card border-border"}`}
                         >
                           <div className="flex items-start justify-between gap-2">
-                            <div>
-                              <h4 className="text-sm font-bold text-foreground uppercase">{report.clientName}</h4>
-                              <p className="text-[10px] text-muted-foreground font-mono mt-0.5">
-                                Período: {report.periodText} • {report.reportMode === 'complete' ? 'Completo' : report.reportMode === 'objective' ? 'Por Objetivo' : 'Por Campanhas'}
-                              </p>
-                              <div className="flex items-center gap-2 mt-2">
-                                <span className={`inline-flex rounded px-1.5 py-0.5 text-[8px] font-black uppercase tracking-wider ${report.source === 'api' ? 'bg-primary/20 text-primary border border-primary/30' : 'bg-secondary/20 text-secondary border border-secondary/30'}`}>
-                                  {report.source === 'api' ? 'API Conectada' : 'OCR Print'}
-                                </span>
-                                <span className="text-[9px] text-muted-foreground font-mono">
-                                  {report.campaigns.filter(c => c.selected).length} campanhas
-                                </span>
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-2 mb-1">
+                                {savedTab === "upload" ? (
+                                  <Sparkles className="h-3.5 w-3.5 text-violet-400 shrink-0" />
+                                ) : (
+                                  <Globe className="h-3.5 w-3.5 text-primary shrink-0" />
+                                )}
+                                <h4 className="text-sm font-black text-foreground uppercase truncate">
+                                  {report.clientName || "Sem cliente"}
+                                </h4>
                               </div>
+                              <p className="text-[10px] text-muted-foreground font-mono">
+                                {report.periodText} • {report.reportMode === 'complete' ? 'Completo' : report.reportMode === 'objective' ? 'Por Objetivo' : 'Por Campanhas'}
+                              </p>
+                              <p className="text-[10px] text-muted-foreground font-mono mt-0.5">
+                                {report.campaigns.filter(c => c.selected).length} campanha(s) selecionada(s)
+                              </p>
                             </div>
                             <button
                               onClick={(e) => handleDeleteReport(report.id, e)}
-                              className="h-8 w-8 rounded-lg bg-muted/50 hover:bg-red-500/20 hover:text-red-400 border border-border flex items-center justify-center transition"
-                              title="Excluir Relatório"
+                              className="h-8 w-8 shrink-0 rounded-lg bg-muted/50 hover:bg-red-500/20 hover:text-red-400 border border-border flex items-center justify-center transition"
+                              title="Excluir"
                             >
                               <AlertCircle className="h-4 w-4" />
                             </button>
                           </div>
-                          
-                          <div className="flex items-center justify-between border-t border-border mt-4 pt-3 text-[10px] text-muted-foreground font-mono">
-                            <span>Criado: {new Date(report.createdAt).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+
+                          <div className="flex items-center justify-between border-t border-border mt-3 pt-3 text-[10px] text-muted-foreground font-mono">
+                            <span>{new Date(report.createdAt).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
                             <span className="text-primary group-hover:translate-x-1 transition-transform flex items-center gap-0.5 font-bold uppercase tracking-wider text-[9px]">
-                              Carregar &rarr;
+                              Abrir &rarr;
                             </span>
                           </div>
                         </div>
