@@ -110,7 +110,13 @@ function UploadPage() {
                 <img src={preview} alt="Preview" className="max-h-[500px] w-full object-contain bg-background/80 transition group-hover:scale-[1.01]" />
                 <div className="absolute inset-0 bg-gradient-to-t from-background/40 to-transparent pointer-events-none" />
                 <button
-                  onClick={() => { setPreview(null); setBase64(null); setCampaigns(null); }}
+                  onClick={() => {
+                    setPreview(null);
+                    setBase64(null);
+                    setCampaigns(null);
+                    localStorage.removeItem("nc_extracted_campaigns");
+                    localStorage.removeItem("nc_extracted_platform");
+                  }}
                   className="absolute right-4 top-4 rounded-xl bg-background/90 p-3 backdrop-blur shadow-xl hover:bg-destructive hover:text-white transition"
                 >
                   <X className="h-5 w-5" />
