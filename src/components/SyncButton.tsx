@@ -100,7 +100,15 @@ export function SyncButton({ mode = "quick" }: SyncButtonProps) {
       }
 
       const { data, error } = await supabase.functions.invoke("sync-meta-ads", { body });
-      if (error) throw new Error(error.message);
+      if (error) {
+        // FunctionsHttpError esconde o corpo em error.context — extrai a mensagem real
+        let msg = error.message;
+        try {
+          const b = await (error as any).context?.json?.();
+          if (b?.error) msg = String(b.error).split("\n")[0];
+        } catch (_) { /* mantém msg genérica */ }
+        throw new Error(msg);
+      }
       if (data?.error) throw new Error(data.error);
 
       const msg = data?.message || (

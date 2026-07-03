@@ -236,6 +236,7 @@ function TabIntegracoes() {
   
   // Social Media states
   const [loadingPages, setLoadingPages] = useState(false);
+  const [syncingSocialMetrics, setSyncingSocialMetrics] = useState(false);
 
   // Social Pages Query
   const { data: socialPages = [], refetch: refetchSocialPages } = useQuery({
@@ -365,6 +366,22 @@ function TabIntegracoes() {
       toast.error(err.message ?? "Erro ao carregar páginas.");
     } finally {
       setLoadingPages(false);
+    }
+  };
+
+  const syncSocialMetrics = async () => {
+    setSyncingSocialMetrics(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("sync-social-media", {
+        body: { action: "sync-metrics" }
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      toast.success("Métricas das redes sociais sincronizadas!");
+    } catch (err: any) {
+      toast.error(err.message ?? "Erro ao sincronizar métricas sociais.");
+    } finally {
+      setSyncingSocialMetrics(false);
     }
   };
 
@@ -528,6 +545,36 @@ function TabIntegracoes() {
           </div>
         </div>
 
+        {/* Módulo de Síntese Estratégica (IA) */}
+        <div className="rounded-xl border border-white/5 bg-white/[0.02] p-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className={`h-8 w-8 rounded-full flex items-center justify-center ${openaiConfigured ? "bg-primary/20 text-primary" : "bg-muted text-muted-foreground"}`}>
+                <Brain className="h-4 w-4" />
+              </div>
+              <div>
+                <p className="text-xs font-bold uppercase tracking-tighter">Módulo de Síntese Estratégica (IA)</p>
+                <p className="text-[10px] text-muted-foreground">{openaiConfigured ? "Conectado à OpenAI API" : "Aguardando chave nas variáveis de ambiente"}</p>
+              </div>
+            </div>
+            <span className={`rounded-full px-2 py-0.5 text-[9px] font-black ${openaiConfigured ? "bg-success/20 text-success" : "bg-muted text-muted-foreground"}`}>
+              {openaiConfigured ? "ATIVO" : "INATIVO"}
+            </span>
+          </div>
+        </div>
+
+        {/* ══════════ SEÇÃO: TRÁFEGO PAGO ══════════ */}
+        <div className="flex items-center gap-3 pt-6">
+          <div className="h-9 w-9 rounded-lg bg-primary/15 border border-primary/25 flex items-center justify-center shrink-0">
+            <Zap className="h-4.5 w-4.5 text-primary" />
+          </div>
+          <div>
+            <h4 className="text-sm font-black uppercase tracking-widest text-primary">Tráfego Pago</h4>
+            <p className="text-[10px] text-muted-foreground">Campanhas e métricas de anúncios — Meta Ads e Google Ads. Os syncs abaixo NÃO afetam redes sociais.</p>
+          </div>
+          <div className="flex-1 h-px bg-primary/20" />
+        </div>
+
         {/* Sync por Mês */}
         <div className="rounded-2xl border border-violet-500/20 bg-violet-500/5 p-4 space-y-3">
           <div className="flex items-start gap-3">
@@ -562,21 +609,78 @@ function TabIntegracoes() {
           <SyncButton mode="max" />
         </div>
 
-        <div className="rounded-xl border border-white/5 bg-white/[0.02] p-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className={`h-8 w-8 rounded-full flex items-center justify-center ${openaiConfigured ? "bg-primary/20 text-primary" : "bg-muted text-muted-foreground"}`}>
-                <Brain className="h-4 w-4" />
-              </div>
-              <div>
-                <p className="text-xs font-bold uppercase tracking-tighter">Módulo de Síntese Estratégica (IA)</p>
-                <p className="text-[10px] text-muted-foreground">{openaiConfigured ? "Conectado à OpenAI API" : "Aguardando chave nas variáveis de ambiente"}</p>
-              </div>
+        {/* Google Ads (Tráfego) */}
+        <div className="rounded-2xl border border-[#4285F4]/20 bg-[#4285F4]/5 p-4 space-y-3">
+          <div className="flex items-start gap-3">
+            <Globe className="h-5 w-5 text-[#4285F4] shrink-0 mt-0.5" />
+            <div>
+              <p className="text-sm font-bold text-foreground">Google Ads Multicanal</p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Conecte sua MCC ou contas isoladas do Google Ads para unificar o seu tráfego no Dashboard.
+              </p>
             </div>
-            <span className={`rounded-full px-2 py-0.5 text-[9px] font-black ${openaiConfigured ? "bg-success/20 text-success" : "bg-muted text-muted-foreground"}`}>
-              {openaiConfigured ? "ATIVO" : "INATIVO"}
-            </span>
           </div>
+          <div className="grid gap-3">
+            {googleConfigs?.map((gc: any) => (
+              <div key={gc.id} className="rounded-xl border border-white/10 bg-white/[0.02] p-4 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="h-10 w-10 rounded-full bg-[#4285F4]/10 flex items-center justify-center">
+                    <Globe className="h-5 w-5 text-[#4285F4]" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-bold">{gc.name}</p>
+                    <p className="text-[10px] text-muted-foreground uppercase tracking-widest">{gc.email || "Sessão Ativa"}</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="rounded-full px-2 py-0.5 text-[9px] font-black bg-success/20 text-success uppercase tracking-widest">
+                    CONECTADO
+                  </span>
+                  <button
+                    onClick={async () => {
+                      if(!confirm("Remover esta conexão?")) return;
+                      await (supabase as any).from("google_ads_configs").delete().eq("id", gc.id);
+                      refetchGoogle();
+                      toast.success("Conexão removida.");
+                    }}
+                    className="text-muted-foreground hover:text-destructive transition p-2"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </div>
+              </div>
+            ))}
+
+            <button
+              onClick={() => {
+                 // Redireciona para o Google OAuth
+                 const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
+                 const redirectUri = `${window.location.origin}/_app/config`;
+                 const scope = "https://www.googleapis.com/auth/adwords https://www.googleapis.com/auth/userinfo.email";
+                 const url = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&scope=${encodeURIComponent(scope)}&access_type=offline&prompt=consent`;
+                 window.location.href = url;
+              }}
+              disabled={isProcessingAuth}
+              className="w-full flex items-center justify-center gap-3 rounded-xl border border-dashed border-[#4285F4]/30 bg-[#4285F4]/5 p-4 hover:bg-[#4285F4]/10 hover:border-[#4285F4]/50 transition cursor-pointer"
+            >
+              {isProcessingAuth ? <Loader2 className="h-5 w-5 animate-spin text-[#4285F4]" /> : <Plus className="h-5 w-5 text-[#4285F4]" />}
+              <span className="text-sm font-bold text-[#4285F4]">
+                {isProcessingAuth ? "Processando..." : "Nova Conexão Google Ads"}
+              </span>
+            </button>
+          </div>
+        </div>
+
+        {/* ══════════ SEÇÃO: SOCIAL MEDIA ══════════ */}
+        <div className="flex items-center gap-3 pt-6">
+          <div className="h-9 w-9 rounded-lg bg-pink-500/15 border border-pink-500/25 flex items-center justify-center shrink-0">
+            <Share2 className="h-4.5 w-4.5 text-pink-500" />
+          </div>
+          <div>
+            <h4 className="text-sm font-black uppercase tracking-widest text-pink-500">Social Media</h4>
+            <p className="text-[10px] text-muted-foreground">Páginas do Facebook e perfis do Instagram — conteúdo orgânico. O sync abaixo NÃO afeta campanhas de tráfego.</p>
+          </div>
+          <div className="flex-1 h-px bg-pink-500/20" />
         </div>
 
         {/* Módulo de Redes Sociais da Meta */}
@@ -588,7 +692,7 @@ function TabIntegracoes() {
           <p className="text-[11px] text-muted-foreground leading-relaxed">
             Sincronize e gerencie todas as Páginas do Facebook e contas associadas do Instagram vinculadas ao seu token de acesso.
           </p>
-          <div className="flex gap-2">
+          <div className="flex gap-2 flex-wrap">
             <button
               onClick={fetchPages}
               disabled={loadingPages || !token}
@@ -597,6 +701,16 @@ function TabIntegracoes() {
             >
               {loadingPages ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
               Sincronizar Páginas e Perfis
+            </button>
+            <button
+              onClick={syncSocialMetrics}
+              disabled={syncingSocialMetrics || socialPages.length === 0}
+              type="button"
+              title={socialPages.length === 0 ? "Sincronize as páginas primeiro" : "Busca seguidores, alcance e engajamento das páginas conectadas"}
+              className="inline-flex items-center gap-2 rounded-xl bg-pink-500/10 border border-pink-500/20 px-4 py-2 text-xs font-medium text-pink-500 hover:bg-pink-500/20 transition disabled:opacity-50 cursor-pointer"
+            >
+              {syncingSocialMetrics ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+              Sincronizar Métricas Sociais
             </button>
           </div>
 
@@ -707,68 +821,6 @@ function TabIntegracoes() {
         <button onClick={test} disabled={testing} className="inline-flex items-center justify-center gap-2 rounded-full border border-white/10 px-4 py-3 sm:py-2 text-xs font-medium disabled:opacity-50 hover:bg-white/5 w-full sm:w-auto">
           {testing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : connected ? <Wifi className="h-3.5 w-3.5 text-success" /> : <WifiOff className="h-3.5 w-3.5" />}
           TESTAR HEARTBEAT
-        </button>
-      </div>
-
-      <div className="h-px w-full bg-white/5 my-8" />
-
-      {/* GOOGLE ADS CONFIG */}
-      <div>
-        <h3 className="header-sport font-display text-lg font-semibold flex items-center gap-2 text-gradient">
-          <Globe className="h-5 w-5 text-[#4285F4]" /> Google Ads Multicanal
-        </h3>
-        <p className="text-xs text-muted-foreground mt-1">
-          Conecte sua MCC ou contas isoladas do Google Ads para unificar o seu tráfego no Dashboard.
-        </p>
-      </div>
-
-      <div className="grid gap-4">
-        {googleConfigs?.map((gc: any) => (
-          <div key={gc.id} className="rounded-xl border border-white/10 bg-white/[0.02] p-4 flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="h-10 w-10 rounded-full bg-[#4285F4]/10 flex items-center justify-center">
-                <Globe className="h-5 w-5 text-[#4285F4]" />
-              </div>
-              <div>
-                <p className="text-sm font-bold">{gc.name}</p>
-                <p className="text-[10px] text-muted-foreground uppercase tracking-widest">{gc.email || "Sessão Ativa"}</p>
-              </div>
-            </div>
-            <div className="flex items-center gap-3">
-              <span className="rounded-full px-2 py-0.5 text-[9px] font-black bg-success/20 text-success uppercase tracking-widest">
-                CONECTADO
-              </span>
-              <button 
-                onClick={async () => {
-                  if(!confirm("Remover esta conexão?")) return;
-                  await (supabase as any).from("google_ads_configs").delete().eq("id", gc.id);
-                  refetchGoogle();
-                  toast.success("Conexão removida.");
-                }}
-                className="text-muted-foreground hover:text-destructive transition p-2"
-              >
-                <Trash2 className="h-4 w-4" />
-              </button>
-            </div>
-          </div>
-        ))}
-
-        <button 
-          onClick={() => {
-             // Redireciona para o Google OAuth
-             const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
-             const redirectUri = `${window.location.origin}/_app/config`;
-             const scope = "https://www.googleapis.com/auth/adwords https://www.googleapis.com/auth/userinfo.email";
-             const url = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&scope=${encodeURIComponent(scope)}&access_type=offline&prompt=consent`;
-             window.location.href = url;
-          }}
-          disabled={isProcessingAuth}
-          className="w-full flex items-center justify-center gap-3 rounded-xl border border-dashed border-[#4285F4]/30 bg-[#4285F4]/5 p-6 hover:bg-[#4285F4]/10 hover:border-[#4285F4]/50 transition cursor-pointer"
-        >
-          {isProcessingAuth ? <Loader2 className="h-5 w-5 animate-spin text-[#4285F4]" /> : <Plus className="h-5 w-5 text-[#4285F4]" />}
-          <span className="text-sm font-bold text-[#4285F4]">
-            {isProcessingAuth ? "Processando..." : "Nova Conexão Google Ads"}
-          </span>
         </button>
       </div>
 
