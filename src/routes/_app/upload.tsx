@@ -43,14 +43,17 @@ function UploadPage() {
       const r = await extract({ data: { imageBase64: base64, mimeType: mime } });
 
       // ── Fallback determinístico ─────────────────────────────────────────────
-      // Se o AI extraiu cpl (custo por resultado) mas não extraiu conversions,
-      // calculamos: conversions = round(cost / cpl). Isso resolve o caso em que
-      // a coluna "Conversas por mensagem iniciadas" tem número mas "Resultados"
-      // aparece como traço (—) e o modelo retorna conversions=0.
       const campaigns = (r.campaigns ?? []).map(c => {
+        if (!c.cpl || c.cpl <= 0 || !c.cost || c.cost <= 0) return c;
+        const implied = Math.round(c.cost / c.cpl);
         const noConversions = !c.conversions || c.conversions === 0;
-        if (noConversions && c.cpl && c.cpl > 0 && c.cost && c.cost > 0) {
-          return { ...c, conversions: Math.round(c.cost / c.cpl) };
+        // Caso 1: conversions zerado — calcula direto.
+        if (noConversions) return { ...c, conversions: implied };
+        // Caso 2: AI pegou o número de Leads (baixo) em vez de Conversas
+        // iniciadas (alto). Se a diferença for >5x, o implied via cpl é mais
+        // confiável — substitui e ajusta result_type para Conversa.
+        if (implied > 0 && c.conversions! > 0 && implied / c.conversions! > 5) {
+          return { ...c, conversions: implied, result_type: "Conversa por mensagem iniciada" };
         }
         return c;
       });

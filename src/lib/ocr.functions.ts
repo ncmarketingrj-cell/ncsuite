@@ -30,12 +30,29 @@ export const extractPrintFn = createServerFn({ method: "POST" })
 
     const systemPrompt = `Você é um motor de extração de dados de prints de dashboards de tráfego pago (Gerenciador de Anúncios do Meta Ads ou painel do Google Ads). Receba a imagem, identifique a plataforma do print (Meta Ads ou Google Ads) e extraia a lista de campanhas e suas métricas correspondentes.
 
-REGRA MAIS IMPORTANTE — Coluna de Resultados no Meta Ads:
-No Gerenciador de Anúncios do Meta, a coluna "Resultados" frequentemente aparece como "—" (traço/vazio) quando o objetivo da campanha usa uma métrica específica como "Conversas por mensagem iniciadas", "Leads", "Compras", etc. Neste caso, OBRIGATORIAMENTE use o valor numérico da coluna de métrica específica como "conversions":
-- Se a coluna "Conversas por mensagem iniciadas" (ou "Conversas iniciadas" ou "Mensagens iniciadas") tiver um número → use como conversions, result_type = "Conversa por mensagem iniciada"
-- Se a coluna "Leads" tiver número → use como conversions, result_type = "Lead"
-- Se a coluna "Compras" tiver número → use como conversions, result_type = "Compra"
-- A coluna de custo unitário correspondente ("Custo por conversa", "Custo por lead", etc.) → use como cpl
+REGRAS MAIS IMPORTANTES — Coluna de Resultados no Meta Ads:
+A lógica de extração de conversions depende do tipo de resultado da campanha:
+
+CASO 1 — "Resultados" mostra "—" (traço/vazio):
+A campanha tem métrica específica. Use OBRIGATORIAMENTE a coluna lateral:
+- "Conversas por mensagem iniciadas" → conversions = esse número, result_type = "Conversa por mensagem iniciada"
+- "Leads" → conversions = esse número, result_type = "Lead"
+- "Compras" → conversions = esse número, result_type = "Compra"
+- cpl = coluna "Custo por conversa por mensagem iniciada" ou "Custo por lead" correspondente
+
+CASO 2 — "Resultados" mostra número com tipo "Lead" (ex: "1 [2] Lead"):
+O Lead é uma conversão de alta intenção — mas o volume real da campanha está em "Conversas por mensagem iniciadas". OBRIGATORIAMENTE:
+- conversions = valor da coluna "Conversas por mensagem iniciadas" (ex: 2.384), NÃO o número de Leads (ex: 1)
+- result_type = "Conversa por mensagem iniciada"
+- cpl = coluna "Custo por conversa por mensagem iniciada"
+Motivo: campanhas com objetivo Lead geram Leads como resultado principal, mas a métrica de volume usada no relatório é sempre o total de conversas iniciadas.
+
+CASO 3 — "Resultados" mostra número com tipo "Conversas por mensagem iniciadas":
+Comportamento normal. Use o valor da coluna "Resultados" como conversions, result_type = "Conversa por mensagem iniciada", cpl = "Custo por resultado".
+
+CASO 4 — "Resultados" mostra outro tipo (Compra, Visualização, etc.):
+Use o valor da coluna "Resultados" normalmente, result_type = o tipo descrito.
+
 NUNCA deixe conversions=null ou 0 se existir QUALQUER coluna com valor numérico de resultado para aquela linha.
 
 Instruções de extração:
