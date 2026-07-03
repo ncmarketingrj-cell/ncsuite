@@ -1,11 +1,14 @@
 // src/hooks/useAutoSync.ts
-// NC Performance Suite — Worker de Sincronização Automática a cada 3 minutos (D-1+D0, todos os níveis)
+// NC Performance Suite — Worker de Sincronização Automática (D-1+D0, todos os níveis)
+// Cadência de 10 min: cada rodada faz ~14 chamadas à API do Meta por conta;
+// a cada 3 min o Meta aplicava rate limit ("too many calls to this ad-account")
+// e bloqueava inclusive os syncs manuais de mês.
 
 import { useEffect, useRef, useCallback } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase-external/client";
 
-const REALTIME_SYNC_INTERVAL_MS = 3 * 60 * 1000; // 3 minutos
+const REALTIME_SYNC_INTERVAL_MS = 10 * 60 * 1000; // 10 minutos
 const STORAGE_REALTIME_KEY = "nc_last_realtime_sync";
 const STORAGE_SYNC_STATUS = "nc_auto_sync_status";
 
@@ -72,7 +75,7 @@ export function useAutoSync() {
         until: getLocalDateString(today)
       };
 
-      console.log(`[AUTO-SYNC] ⚡ Iniciando Sync Unificado 3min [${triggeredBy}]: ${timeRange.since} → ${timeRange.until}`);
+      console.log(`[AUTO-SYNC] ⚡ Iniciando Sync Unificado 10min [${triggeredBy}]: ${timeRange.since} → ${timeRange.until}`);
 
       // Executa todos os sincronizadores de forma concorrente em paralelo
       const syncResults = await Promise.allSettled([

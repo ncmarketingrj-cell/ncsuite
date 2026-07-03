@@ -623,22 +623,49 @@ serve(async (req) => {
     
     syncHistoryId = syncRecord?.id || null
 
-    // 4. Buscar contas de TODOS os tokens (deduplicadas — o primeiro token
-    // que enxerga a conta é usado para sincronizá-la)
-    console.log(`[SYNC ${syncId}] Buscando contas vinculadas em ${orderedConfigs.length} token(s)...`)
+    // 4. Montar lista de contas SEM chamar /me/adaccounts a cada sync.
+    // Chamar a API de listagem em todo sync automático estoura o rate limit do
+    // Meta ("too many calls to this ad-account"). Contas já conhecidas vêm do
+    // banco (ad_accounts); a descoberta via API só roda em sync manual ou
+    // quando o banco ainda não conhece a conta pedida.
+    const configByUser = new Map(orderedConfigs.map((c: any) => [c.user_id, c.access_token]))
     const accountEntries: { acc: any; token: string; userId: string }[] = []
     const seenAccounts = new Set<string>()
 
-    for (const cfg of orderedConfigs) {
-      try {
-        const accounts = await fetchAdAccounts(cfg.access_token)
-        for (const acc of accounts) {
-          if (seenAccounts.has(acc.id)) continue
-          seenAccounts.add(acc.id)
-          accountEntries.push({ acc, token: cfg.access_token, userId: cfg.user_id })
+    const { data: dbAccounts } = await supabase
+      .from("ad_accounts")
+      .select("id, name, currency, status, user_id")
+
+    for (const a of dbAccounts || []) {
+      const cfgToken = configByUser.get(a.user_id)
+      if (!cfgToken || seenAccounts.has(a.id)) continue
+      seenAccounts.add(a.id)
+      accountEntries.push({
+        acc: { id: a.id, name: a.name, currency: a.currency, account_status: a.status },
+        token: cfgToken,
+        userId: a.user_id
+      })
+    }
+
+    const needsDiscovery =
+      accountEntries.length === 0 ||
+      (targetAccountId && !seenAccounts.has(targetAccountId)) ||
+      (triggeredBy !== "auto" && !targetAccountId)
+
+    if (needsDiscovery) {
+      console.log(`[SYNC ${syncId}] Descoberta via API em ${orderedConfigs.length} token(s)...`)
+      for (const cfg of orderedConfigs) {
+        try {
+          const accounts = await fetchAdAccounts(cfg.access_token)
+          for (const acc of accounts) {
+            if (seenAccounts.has(acc.id)) continue
+            seenAccounts.add(acc.id)
+            accountEntries.push({ acc, token: cfg.access_token, userId: cfg.user_id })
+          }
+        } catch (e: any) {
+          // Rate limit na listagem não derruba o sync — seguimos com as contas do banco
+          console.error(`[SYNC ${syncId}] Token de ${cfg.user_id} falhou ao listar contas:`, e.message)
         }
-      } catch (e: any) {
-        console.error(`[SYNC ${syncId}] Token de ${cfg.user_id} falhou ao listar contas:`, e.message)
       }
     }
 

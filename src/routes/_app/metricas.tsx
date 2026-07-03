@@ -521,7 +521,6 @@ function MetricasCampanhasPage() {
   const [refreshInterval, setRefreshInterval] = useState(0);
   const [lastRefresh,     setLastRefresh]     = useState(new Date());
   const intervalRef    = useRef<ReturnType<typeof setInterval>|null>(null);
-  const autoSyncMutRef = useRef<any>(null);
 
   // â"€â"€ Estado do Campaign Inspector â"€â"€
   const [selectedFocusItem, setSelectedFocusItem] = useState<any | null>(null);
@@ -552,15 +551,10 @@ function MetricasCampanhasPage() {
     return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
   }, [refreshInterval, qc]);
 
-  // Auto-sync a cada 3 minutos quando a aba está visível
-  useEffect(() => {
-    const iv = setInterval(() => {
-      if (document.visibilityState === "visible" && !autoSyncMutRef.current?.isPending) {
-        autoSyncMutRef.current?.mutate();
-      }
-    }, 3 * 60 * 1000);
-    return () => clearInterval(iv);
-  }, []);
+  // Auto-sync desta página REMOVIDO: ele re-sincronizava o período inteiro
+  // selecionado (até um mês!) a cada 3 min, estourando o rate limit da API do
+  // Meta ("too many calls to this ad-account"). O useAutoSync global já mantém
+  // D-1+D0 atualizados; períodos maiores são sincronizados pelo botão Sync.
 
   // â"€â"€â"€ QUERIES â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 
@@ -889,9 +883,6 @@ function MetricasCampanhasPage() {
     },
     onError: (e: any) => toast.error(`Erro: ${e.message}`),
   });
-
-  // Mantém ref atualizada para o auto-sync sem recria o interval
-  autoSyncMutRef.current = syncMutation;
 
   const toggleMutation = useMutation({
     mutationFn: async ({ id, externalId, currentStatus, type }: any) => {
