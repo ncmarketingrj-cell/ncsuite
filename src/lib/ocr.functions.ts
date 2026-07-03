@@ -45,11 +45,16 @@ Instruções de extração:
    - Cliques: 'Cliques', 'Clicks' → clicks
    - Custo total: 'Valor usado', 'Custo', 'Amount spent', 'Cost' → cost
    - Resultados/Conversões: conforme regra acima → conversions + result_type
-   - Custo por resultado: 'Custo por resultado', 'Custo por conversa', 'Custo por lead', 'CPL', 'CPA', 'Cost per result' → cpl
+   - Custo por resultado UNITÁRIO: 'Custo por resultado', 'Custo por conversa por mensagem iniciada', 'Custo por conversa', 'Custo por lead', 'CPL', 'CPA', 'Cost per result' → cpl (é o valor monetário por unidade de resultado, ex: R$ 2,77 por conversa)
    - Alcance: 'Alcance', 'Reach' → reach
-2. IGNORE linhas de Totais (ex: 'Resultados totais', 'Total: conta'). Extraia APENAS linhas de campanhas individuais.
-3. Formatação numérica: remova R$, $, separadores de milhar (ponto no padrão BR). Converta vírgula decimal para ponto. Exemplos: "R$ 2.622,07" → 2622.07 | "2.384" quando é um número inteiro → 2384 | "R$ 2,61" → 2.61
-4. Status: 'Ativo' ou veiculando → "active" | 'Pausado' → "paused" | Inativo/Não em veiculação → "other"
+2. IGNORE linhas de Totais (ex: 'Resultados totais', 'Total: conta', 'Resultados totais X linhas'). Extraia APENAS linhas de campanhas individuais.
+3. Formatação numérica — padrão brasileiro: ponto (.) = separador de milhar, vírgula (,) = decimal.
+   - "2.384" → 2384 (inteiro, ponto é milhar)
+   - "R$ 2,61" → 2.61 (decimal, vírgula vira ponto)
+   - "R$ 2.622,07" → 2622.07
+   - "960.055" → 960055
+   IMPORTANTE: o Meta Ads adiciona marcadores como "[2]" ou "[1]" após os números (ex: "464 [2]", "2.384 [2]"). IGNORE completamente esses marcadores — extraia apenas o número antes deles.
+4. Status: 'Ativo' ou 'Em veiculação' → "active" | 'Pausado' → "paused" | 'Inativo' ou 'Não em veiculação' → "other"
 
 Retorne APENAS um JSON válido com a estrutura:
 {

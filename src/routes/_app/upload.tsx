@@ -41,13 +41,27 @@ function UploadPage() {
     setLoading(true);
     try {
       const r = await extract({ data: { imageBase64: base64, mimeType: mime } });
-      setCampaigns(r.campaigns);
+
+      // ── Fallback determinístico ─────────────────────────────────────────────
+      // Se o AI extraiu cpl (custo por resultado) mas não extraiu conversions,
+      // calculamos: conversions = round(cost / cpl). Isso resolve o caso em que
+      // a coluna "Conversas por mensagem iniciadas" tem número mas "Resultados"
+      // aparece como traço (—) e o modelo retorna conversions=0.
+      const campaigns = (r.campaigns ?? []).map(c => {
+        const noConversions = !c.conversions || c.conversions === 0;
+        if (noConversions && c.cpl && c.cpl > 0 && c.cost && c.cost > 0) {
+          return { ...c, conversions: Math.round(c.cost / c.cpl) };
+        }
+        return c;
+      });
+
+      setCampaigns(campaigns);
       setDetectedPlatform(r.platform as any);
-      if (!r.campaigns.length) toast.warning("Nenhuma campanha identificada — tente um print mais nítido");
+      if (!campaigns.length) toast.warning("Nenhuma campanha identificada — tente um print mais nítido");
       else {
-        localStorage.setItem("nc_extracted_campaigns", JSON.stringify(r.campaigns));
+        localStorage.setItem("nc_extracted_campaigns", JSON.stringify(campaigns));
         localStorage.setItem("nc_extracted_platform", r.platform ?? "meta");
-        toast.success(`${r.campaigns.length} campanha(s) extraída(s) via ${r.platform === 'meta' ? 'Meta Ads' : 'Google Ads'}`);
+        toast.success(`${campaigns.length} campanha(s) extraída(s) via ${r.platform === 'meta' ? 'Meta Ads' : 'Google Ads'}`);
       }
     } catch (err: any) {
       toast.error(err.message ?? "Falha na extração");

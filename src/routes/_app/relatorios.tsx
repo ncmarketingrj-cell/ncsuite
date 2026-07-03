@@ -865,8 +865,8 @@ function RelatoriosPage() {
           >
             <Globe className="h-3.5 w-3.5 shrink-0" /> Meta Ads (Integrado)
           </button>
-          <button 
-            onClick={() => { setSource("upload"); setActiveReportId(null); }} 
+          <button
+            onClick={() => { setSource("upload"); setActiveReportId(null); setClientName(""); }}
             className={`flex items-center justify-center gap-1.5 rounded-lg px-4 py-2 text-[11px] sm:text-xs font-bold transition-all flex-1 ${source === "upload" ? "bg-primary text-background" : "text-muted-foreground hover:text-white"}`}
           >
             <Sparkles className="h-3.5 w-3.5 shrink-0" /> Extração (OCR)
