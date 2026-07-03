@@ -866,7 +866,16 @@ function MetricasCampanhasPage() {
       const payload: any = { time_range: { since: startStr, until: endStr } };
       if (accountFilter !== "all") payload.account_id = accountFilter;
       const { data, error } = await supabase.functions.invoke("sync-meta-ads", { body: payload });
-      if (error) throw new Error(error.message);
+      if (error) {
+        // FunctionsHttpError esconde o corpo da resposta em error.context —
+        // extrai a mensagem real em vez do genérico "non-2xx status code"
+        let msg = error.message;
+        try {
+          const body = await (error as any).context?.json?.();
+          if (body?.error) msg = String(body.error).split("\n")[0];
+        } catch (_) { /* mantém msg genérica */ }
+        throw new Error(msg);
+      }
       if (data?.error) throw new Error(data.error);
       return data;
     },

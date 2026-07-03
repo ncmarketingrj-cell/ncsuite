@@ -474,56 +474,53 @@ serve(async (req) => {
       console.log(`[SYNC ${syncId}] Body vazio — usando janela padrão D0+D-1 (${yesterdayStr} → ${todayStr})`)
     }
 
-    // 2. Buscar configuração (token master)
-    // Se foi chamado manualmente, tenta primeiro o do usuário logado
-    let configs: any[] | null = null;
-    let configErr: any = null;
+    // 2. Buscar TODAS as configurações com token — a agência pode ter múltiplos
+    // tokens (BMs diferentes), cada um enxergando um conjunto distinto de contas.
+    // Usar apenas um token deixava contas dos outros BMs permanentemente sem sync.
+    const { data: allConfigs, error: configErr } = await supabase
+      .from("meta_ads_configs")
+      .select("access_token, user_id")
+      .not("access_token", "is", null)
+      .order("created_at", { ascending: false });
 
-    if (authUser?.id) {
-      const { data, error } = await supabase
-        .from("meta_ads_configs")
-        .select("access_token, user_id")
-        .not("access_token", "is", null)
-        .eq("user_id", authUser.id)
-        .limit(1);
-      configs = data;
-      configErr = error;
-    }
-
-    // Fallback: se não tiver authUser ou não encontrar configuração, busca a mais recente da agência
-    if (!configs || configs.length === 0) {
-      const { data, error } = await supabase
-        .from("meta_ads_configs")
-        .select("access_token, user_id")
-        .not("access_token", "is", null)
-        .order("created_at", { ascending: false })
-        .limit(1);
-      configs = data;
-      if (error) configErr = error;
-    }
-
-    const config = configs?.[0]
-
-    if (configErr || !config?.access_token) {
+    if (configErr || !allConfigs || allConfigs.length === 0) {
       throw new Error("Meta Token não configurado. Acesse Configurações → Integrações.")
     }
 
-    const token = config.access_token
-    const userId = config.user_id
+    // Token do usuário logado tem prioridade (primário para toggle/budget)
+    const orderedConfigs = authUser?.id
+      ? [...allConfigs].sort((a, b) => (b.user_id === authUser.id ? 1 : 0) - (a.user_id === authUser.id ? 1 : 0))
+      : allConfigs;
+
+    const token = orderedConfigs[0].access_token
+    const userId = orderedConfigs[0].user_id
 
     // ─── MODO AUDITORIA — retorna o que o Meta está enviando sem salvar nada ─────
     // Útil para diagnosticar divergências: mostra todos os action_types recebidos por
     // campanha e o que o extractConversions escolheria — comparar com Meta Ads Manager
     if (action === "audit") {
       console.log(`[AUDIT ${syncId}] Iniciando auditoria de action_types...`)
-      let auditAccounts = await fetchAdAccounts(token)
-      if (targetAccountId) auditAccounts = auditAccounts.filter((a: any) => a.id === targetAccountId)
+      let auditEntries: { acc: any; token: string }[] = []
+      const auditSeen = new Set<string>()
+      for (const cfg of orderedConfigs) {
+        try {
+          const accounts = await fetchAdAccounts(cfg.access_token)
+          for (const acc of accounts) {
+            if (auditSeen.has(acc.id)) continue
+            auditSeen.add(acc.id)
+            auditEntries.push({ acc, token: cfg.access_token })
+          }
+        } catch (e: any) {
+          console.error(`[AUDIT ${syncId}] Token falhou ao listar contas:`, e.message)
+        }
+      }
+      if (targetAccountId) auditEntries = auditEntries.filter(e => e.acc.id === targetAccountId)
 
       const auditResult: any[] = []
-      for (const acc of auditAccounts) {
-        const campaignsData = await fetchCampaignsWithBudgets(acc.id, token)
+      for (const { acc, token: accToken } of auditEntries) {
+        const campaignsData = await fetchCampaignsWithBudgets(acc.id, accToken)
         const objectiveMap = new Map(campaignsData.map((c: any) => [c.id, c.objective as string | undefined]))
-        const insights = await fetchCampaignInsights(acc.id, token, timeParams)
+        const insights = await fetchCampaignInsights(acc.id, accToken, timeParams)
 
         for (const row of insights) {
           const actions: any[] = row.actions || []
@@ -626,31 +623,49 @@ serve(async (req) => {
     
     syncHistoryId = syncRecord?.id || null
 
-    // 4. Buscar contas
-    console.log(`[SYNC ${syncId}] Buscando contas vinculadas...`)
-    let adAccounts = await fetchAdAccounts(token)
-    
-    if (adAccounts.length === 0) {
-      throw new Error("Nenhuma conta de anúncios encontrada. Verifique as permissões do token.")
+    // 4. Buscar contas de TODOS os tokens (deduplicadas — o primeiro token
+    // que enxerga a conta é usado para sincronizá-la)
+    console.log(`[SYNC ${syncId}] Buscando contas vinculadas em ${orderedConfigs.length} token(s)...`)
+    const accountEntries: { acc: any; token: string; userId: string }[] = []
+    const seenAccounts = new Set<string>()
+
+    for (const cfg of orderedConfigs) {
+      try {
+        const accounts = await fetchAdAccounts(cfg.access_token)
+        for (const acc of accounts) {
+          if (seenAccounts.has(acc.id)) continue
+          seenAccounts.add(acc.id)
+          accountEntries.push({ acc, token: cfg.access_token, userId: cfg.user_id })
+        }
+      } catch (e: any) {
+        console.error(`[SYNC ${syncId}] Token de ${cfg.user_id} falhou ao listar contas:`, e.message)
+      }
     }
 
-    if (targetAccountId) {
-      adAccounts = adAccounts.filter((a: any) => a.id === targetAccountId);
-      if (adAccounts.length === 0) throw new Error("A conta selecionada não pertence a este token.");
+    if (accountEntries.length === 0) {
+      throw new Error("Nenhuma conta de anúncios encontrada. Verifique as permissões dos tokens.")
     }
+
+    let entriesToSync = accountEntries
+    if (targetAccountId) {
+      entriesToSync = accountEntries.filter(e => e.acc.id === targetAccountId)
+      if (entriesToSync.length === 0) throw new Error(`A conta ${targetAccountId} não é visível por nenhum token configurado. Reconecte em Configurações → Integrações a conta Meta que tem acesso a ela.`)
+    }
+
+    const adAccounts = entriesToSync.map(e => e.acc)
 
     await supabase.from("ad_accounts").upsert(
-      adAccounts.map((acc: any) => ({
+      entriesToSync.map(({ acc, userId: accUserId }) => ({
         id: acc.id,
         name: acc.name,
         currency: acc.currency,
         status: acc.account_status,
-        user_id: userId,
+        user_id: accUserId,
         last_sync: new Date().toISOString()
       }))
     )
 
-    console.log(`[SYNC ${syncId}] ${adAccounts.length} contas. Sincronizando...`)
+    console.log(`[SYNC ${syncId}] ${entriesToSync.length} contas. Sincronizando...`)
 
     const syncResults = []
     const apiErrors: string[] = []
@@ -658,12 +673,12 @@ serve(async (req) => {
     let totalDemographics = 0
     let totalCampaigns = 0
 
-    for (const acc of adAccounts) {
+    for (const { acc, token: accToken } of entriesToSync) {
       try {
         console.log(`[SYNC] Conta: ${acc.id}`)
-        
+
         // Buscar campanhas com orçamentos (sempre)
-        const campaignsWithBudgets = await fetchCampaignsWithBudgets(acc.id, token)
+        const campaignsWithBudgets = await fetchCampaignsWithBudgets(acc.id, accToken)
         const budgetMap = new Map(campaignsWithBudgets.map((c: any) => [c.id, {
           name: c.name || "Campanha Meta",
           status: c.status ? c.status.toLowerCase() : "active",
@@ -677,14 +692,14 @@ serve(async (req) => {
 
         // Buscar TUDO em paralelo — insights (range selecionado) + status completo (toda a conta)
         const [insights, breakDownsData, adsetInsights, adInsights, adsetsWithStatus, adsWithStatus, placementData, deviceData] = await Promise.all([
-          fetchCampaignInsights(acc.id, token, timeParams),
-          fetchDemographicBreakdowns(acc.id, token, timeParams),
-          fetchAdSetInsights(acc.id, token, timeParams),
-          fetchAdInsights(acc.id, token, timeParams),
-          fetchAdSetsWithStatus(acc.id, token),
-          fetchAdsWithStatus(acc.id, token),
-          fetchPlacementBreakdowns(acc.id, token, timeParams),
-          fetchDeviceBreakdowns(acc.id, token, timeParams)
+          fetchCampaignInsights(acc.id, accToken, timeParams),
+          fetchDemographicBreakdowns(acc.id, accToken, timeParams),
+          fetchAdSetInsights(acc.id, accToken, timeParams),
+          fetchAdInsights(acc.id, accToken, timeParams),
+          fetchAdSetsWithStatus(acc.id, accToken),
+          fetchAdsWithStatus(acc.id, accToken),
+          fetchPlacementBreakdowns(acc.id, accToken, timeParams),
+          fetchDeviceBreakdowns(acc.id, accToken, timeParams)
         ])
 
         const { demographics = [], hourly = [], region = [] } = breakDownsData;
@@ -694,6 +709,7 @@ serve(async (req) => {
         syncResults.push({
           accountId: acc.id,
           accountName: acc.name,
+          accountToken: accToken,
           insights,
           demographics,
           hourly,
@@ -716,7 +732,7 @@ serve(async (req) => {
       }
     }
 
-    for (const { accountId, insights, demographics, hourly, region, placementData = [], deviceData = [], adsetInsights, adInsights, adsetsWithStatus = [], adsWithStatus = [], budgetMap, campaignsWithBudgets = [], campaignObjectiveMap = new Map() } of syncResults) {
+    for (const { accountId, accountToken, insights, demographics, hourly, region, placementData = [], deviceData = [], adsetInsights, adInsights, adsetsWithStatus = [], adsWithStatus = [], budgetMap, campaignsWithBudgets = [], campaignObjectiveMap = new Map() } of syncResults) {
       // Upsert campanhas com status reais
       const campaignMap = new Map<string, any>()
 
@@ -921,19 +937,19 @@ serve(async (req) => {
         } catch (_) {}
 
         const [campaignPeriodRaw, adsetPeriodRaw, adPeriodRaw] = await Promise.all([
-          metaGetPaginated(`/${accountId}/insights`, token, {
+          metaGetPaginated(`/${accountId}/insights`, accountToken, {
             level: "campaign",
             fields: "campaign_id,spend,reach,impressions,frequency,actions,inline_link_clicks,date_start,date_stop",
             limit: "500",
             ...timeParams
           }),
-          metaGetPaginated(`/${accountId}/insights`, token, {
+          metaGetPaginated(`/${accountId}/insights`, accountToken, {
             level: "adset",
             fields: "adset_id,campaign_id,spend,reach,impressions,frequency,actions,inline_link_clicks,date_start,date_stop",
             limit: "500",
             ...timeParams
           }),
-          metaGetPaginated(`/${accountId}/insights`, token, {
+          metaGetPaginated(`/${accountId}/insights`, accountToken, {
             level: "ad",
             fields: "ad_id,campaign_id,spend,reach,impressions,frequency,actions,inline_link_clicks,quality_ranking,engagement_rate_ranking,conversion_rate_ranking,date_start,date_stop",
             limit: "500",
@@ -1215,19 +1231,22 @@ serve(async (req) => {
       // Antiga notificação diária por conta foi removida daqui e transferida para o run-automations (Resumo D-1 unificado às 08h).
     }
 
-    // Atualizar config com heartbeat
-    await supabase.from("meta_ads_configs").update({
-      is_connected: true,
-      last_heartbeat_at: new Date().toISOString(),
-      last_heartbeat_status: "success",
-      last_heartbeat_summary: {
-        accounts: adAccounts.length,
-        campaigns: totalCampaigns,
-        metrics: totalMetrics,
-        demographic_records: totalDemographics,
-        sync_id: syncId
-      }
-    }).eq("user_id", userId)
+    // Atualizar heartbeat de todas as configs cujas contas participaram do sync
+    const involvedUserIds = [...new Set(entriesToSync.map(e => e.userId))]
+    for (const uid of involvedUserIds) {
+      await supabase.from("meta_ads_configs").update({
+        is_connected: true,
+        last_heartbeat_at: new Date().toISOString(),
+        last_heartbeat_status: "success",
+        last_heartbeat_summary: {
+          accounts: adAccounts.length,
+          campaigns: totalCampaigns,
+          metrics: totalMetrics,
+          demographic_records: totalDemographics,
+          sync_id: syncId
+        }
+      }).eq("user_id", uid)
+    }
 
     // Atualizar histórico de sync
     if (syncHistoryId) {
