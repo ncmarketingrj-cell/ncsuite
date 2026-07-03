@@ -838,16 +838,15 @@ function RelatoriosPage() {
         <div className="flex flex-col sm:flex-row sm:items-center gap-3 w-full sm:w-auto">
           <button
             onClick={() => {
-              // Limpa tudo: estado, relatório ativo e dados do localStorage
               setActiveReportId(null);
+              setSource("upload");
               setCampaignList([]);
               setGeneratedText("");
               setClientName("");
               setPeriodText("");
               localStorage.removeItem("nc_extracted_campaigns");
               localStorage.removeItem("nc_extracted_platform");
-              // Se estava em modo upload, mantém; senão reseta para API
-              toast.success("Pronto! Dados limpos. Pode começar uma nova extração.");
+              toast.success("Pronto! Clique em 'Ir para Upload' para extrair um novo print.");
             }}
             className="flex items-center gap-2 rounded-xl bg-primary/10 px-4 py-2 text-xs font-black uppercase tracking-widest text-primary hover:bg-primary/20 transition-all border border-primary/20"
             title="Limpa todos os dados e começa do zero"
