@@ -4,6 +4,7 @@ import { z } from "zod";
 const Input = z.object({
   imageBase64: z.string().min(1),
   mimeType: z.string().default("image/png"),
+  platform: z.enum(["meta", "google"]).default("meta"),
 });
 
 export type ExtractedCampaign = {
@@ -16,19 +17,20 @@ export type ExtractedCampaign = {
   conversions?: number;
   reach?: number;
   cpl?: number;
+  cpc?: number;
+  cpm?: number;
+  ctr?: number;
+  interaction_rate?: number;
+  conv_value?: number;
   result_type?: string;
+  campaign_type?: string;
   platform?: "meta" | "google";
 };
 
-export const extractPrintFn = createServerFn({ method: "POST" })
-  .inputValidator((d: unknown) => Input.parse(d))
-  .handler(async ({ data }) => {
-    const apiKey = process.env.LOVABLE_API_KEY;
-    if (!apiKey) {
-      throw new Error("LOVABLE_API_KEY não configurada");
-    }
-
-    const systemPrompt = `Você é um motor de extração de dados de prints de dashboards de tráfego pago (Gerenciador de Anúncios do Meta Ads ou painel do Google Ads). Receba a imagem, identifique a plataforma do print (Meta Ads ou Google Ads) e extraia a lista de campanhas e suas métricas correspondentes.
+// ═══════════════════════════════════════════════════════════════════════════════
+// PROMPT ESPECIALIZADO — META ADS
+// ═══════════════════════════════════════════════════════════════════════════════
+const META_PROMPT = `Você é um motor de extração ESPECIALIZADO em prints do Gerenciador de Anúncios do Meta Ads (Facebook/Instagram). Você SÓ sabe ler prints do Meta Ads. Se a imagem NÃO for do Meta Ads, retorne campaigns: [] com platform: "meta".
 
 REGRAS MAIS IMPORTANTES — Coluna de Resultados no Meta Ads:
 A lógica de extração de conversions depende do tipo de resultado da campanha:
@@ -45,7 +47,6 @@ O Lead é uma conversão de alta intenção — mas o volume real da campanha es
 - conversions = valor da coluna "Conversas por mensagem iniciadas" (ex: 2.384), NÃO o número de Leads (ex: 1)
 - result_type = "Conversa por mensagem iniciada"
 - cpl = coluna "Custo por conversa por mensagem iniciada"
-Motivo: campanhas com objetivo Lead geram Leads como resultado principal, mas a métrica de volume usada no relatório é sempre o total de conversas iniciadas.
 
 CASO 3 — "Resultados" mostra número com tipo "Conversas por mensagem iniciadas":
 Comportamento normal. Use o valor da coluna "Resultados" como conversions, result_type = "Conversa por mensagem iniciada", cpl = "Custo por resultado".
@@ -62,20 +63,17 @@ Instruções de extração:
    - Cliques: 'Cliques', 'Clicks' → clicks
    - Custo total: 'Valor usado', 'Custo', 'Amount spent', 'Cost' → cost
    - Resultados/Conversões: conforme regra acima → conversions + result_type
-   - Custo por resultado UNITÁRIO: 'Custo por resultado', 'Custo por conversa por mensagem iniciada', 'Custo por conversa', 'Custo por lead', 'CPL', 'CPA', 'Cost per result' → cpl (é o valor monetário por unidade de resultado, ex: R$ 2,77 por conversa)
+   - Custo por resultado UNITÁRIO: 'Custo por resultado', 'Custo por conversa por mensagem iniciada', 'Custo por conversa', 'Custo por lead', 'CPL', 'CPA', 'Cost per result' → cpl
    - Alcance: 'Alcance', 'Reach' → reach
-2. IGNORE linhas de Totais (ex: 'Resultados totais', 'Total: conta', 'Resultados totais X linhas'). Extraia APENAS linhas de campanhas individuais.
+2. IGNORE linhas de Totais. Extraia APENAS linhas de campanhas individuais.
 3. Formatação numérica — padrão brasileiro: ponto (.) = separador de milhar, vírgula (,) = decimal.
-   - "2.384" → 2384 (inteiro, ponto é milhar)
-   - "R$ 2,61" → 2.61 (decimal, vírgula vira ponto)
-   - "R$ 2.622,07" → 2622.07
-   - "960.055" → 960055
-   IMPORTANTE: o Meta Ads adiciona marcadores como "[2]" ou "[1]" após os números (ex: "464 [2]", "2.384 [2]"). IGNORE completamente esses marcadores — extraia apenas o número antes deles.
-4. Status: 'Ativo' ou 'Em veiculação' → "active" | 'Pausado' → "paused" | 'Inativo' ou 'Não em veiculação' → "other"
+   - "2.384" → 2384, "R$ 2,61" → 2.61, "R$ 2.622,07" → 2622.07
+   IGNORE marcadores como "[2]" ou "[1]" após números.
+4. Status: 'Ativo'/'Em veiculação' → "active" | 'Pausado' → "paused" | outros → "other"
 
-Retorne APENAS um JSON válido com a estrutura:
+Retorne APENAS um JSON válido:
 {
-  "platform": "meta" | "google",
+  "platform": "meta",
   "campaigns": [
     {
       "name": "string",
@@ -91,7 +89,93 @@ Retorne APENAS um JSON válido com a estrutura:
     }
   ]
 }
-Não invente dados. Se não conseguir ler um campo com precisão, use null. Não inclua texto ou formatação Markdown fora do JSON.`;
+Não invente dados. Se não conseguir ler, use null. Sem Markdown.`;
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// PROMPT ESPECIALIZADO — GOOGLE ADS
+// ═══════════════════════════════════════════════════════════════════════════════
+const GOOGLE_PROMPT = `Você é um motor de extração ESPECIALIZADO em prints do painel do Google Ads (ads.google.com). Você SÓ sabe ler prints do Google Ads. Se a imagem NÃO for do Google Ads, retorne campaigns: [] com platform: "google".
+
+CONTEXTO DO LAYOUT DO GOOGLE ADS:
+O painel de campanhas do Google Ads exibe uma tabela com as seguintes colunas típicas (da esquerda para a direita):
+- Checkbox, Ícone de tipo, **Campanha** (nome), **Orçamento**, **Status**, **Opt.** (pontuação de otimização), **Tipo de campanha** (Performance Max, Pesquisa, Display, Vídeo, Geração de demanda, etc.), **Impr.** (impressões), **CPM médio**, **Cliques**, **Interações**, **Taxa de interação**, **Custo médio** (CPC), **Conv.** ou **Conversões**, **Custo**, **CPC méd.**, **CPM**, **Bid strategy type**, **Taxa de conv.**, **Custo/conv.**.
+
+Nem todas as colunas estão sempre visíveis — o layout depende da personalização do usuário. Extraia o que estiver visível.
+
+REGRAS DE EXTRAÇÃO:
+1. Mapeamento de colunas:
+   - 'Campanha' ou 'Campaign' → name
+   - 'Status' → status ("Qualificado"/"Ativada"/"Ativa" → "active", "Pausada" → "paused", "Limitada pelo orçamento" → "active", outros → "other")
+   - 'Orçamento' → budget (número com R$, ex: "R$ 100,00" → 100.00)
+   - 'Tipo de campanha' ou 'Campaign type' → campaign_type (ex: "Performance Max", "Pesquisa", "Display", "Vídeo", "Geração de demanda")
+   - 'Custo' ou 'Cost' → cost (gasto TOTAL da campanha no período, NÃO confundir com CPC)
+   - 'Impr.' ou 'Impressões' ou 'Impressions' → impressions
+   - 'Cliques' ou 'Clicks' → clicks
+   - 'Conv.' ou 'Conversões' ou 'Conversions' → conversions
+   - 'Custo/conv.' ou 'Cost/conv.' → cpl (custo por conversão unitário)
+   - 'CPC méd.' ou 'CPC' ou 'Avg. CPC' → cpc (custo por clique médio)
+   - 'CPM médio' ou 'Avg. CPM' ou 'CPM méd.' → cpm
+   - 'Taxa de interação' ou 'Interaction rate' → interaction_rate (percentual, ex: "4,86%" → 4.86)
+   - 'CTR' → ctr (percentual, ex: "15,47%" → 15.47)
+   - 'Valor conv.' → conv_value (valor monetário total das conversões)
+
+2. ATENÇÃO ESPECIAL — Não confundir colunas:
+   - **Custo** = gasto total no período (geralmente a coluna com maior valor em R$)
+   - **CPC méd.** = custo por clique (valor pequeno, ex: R$ 0,11)
+   - **CPM** = custo por mil impressões (ex: R$ 5,39)
+   - **Custo/conv.** = custo por conversão (pode ser — se não houver conversões)
+
+3. IGNORE COMPLETAMENTE:
+   - Linha "Total: All enabled ca..." ou "Total: conta" ou qualquer linha de totais
+   - Cabeçalho da página com métricas globais (o banner azul no topo com Impr., Custo, Conversões, Cliques)
+   - Extraia APENAS as linhas individuais de campanhas na tabela
+
+4. Formatação numérica — padrão brasileiro:
+   - Ponto (.) = separador de milhar: "25.711" → 25711
+   - Vírgula (,) = decimal: "R$ 9.681,46" → 9681.46, "R$ 0,11" → 0.11
+   - Percentual: "4,86%" → 4.86
+   - "—" ou vazio → null
+
+5. Google Ads NÃO tem coluna "Alcance" — sempre retorne reach: null.
+
+Retorne APENAS um JSON válido:
+{
+  "platform": "google",
+  "campaigns": [
+    {
+      "name": "string",
+      "status": "active" | "paused" | "other",
+      "budget": number | null,
+      "cost": number | null,
+      "impressions": number | null,
+      "clicks": number | null,
+      "conversions": number | null,
+      "reach": null,
+      "cpl": number | null,
+      "cpc": number | null,
+      "cpm": number | null,
+      "ctr": number | null,
+      "interaction_rate": number | null,
+      "conv_value": number | null,
+      "result_type": "string | null",
+      "campaign_type": "string | null"
+    }
+  ]
+}
+Não invente dados. Se não conseguir ler, use null. Sem Markdown.`;
+
+export const extractPrintFn = createServerFn({ method: "POST" })
+  .inputValidator((d: unknown) => Input.parse(d))
+  .handler(async ({ data }) => {
+    const apiKey = process.env.LOVABLE_API_KEY;
+    if (!apiKey) {
+      throw new Error("LOVABLE_API_KEY não configurada");
+    }
+
+    const systemPrompt = data.platform === "google" ? GOOGLE_PROMPT : META_PROMPT;
+    const userMessage = data.platform === "google"
+      ? "Extraia TODAS as campanhas deste print do Google Ads. Identifique cada linha de campanha na tabela e extraia todas as métricas visíveis."
+      : "Extraia TODAS as campanhas deste print do Meta Ads. Identifique cada linha de campanha e extraia todas as métricas, especialmente conversas iniciadas.";
 
     const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
@@ -106,7 +190,7 @@ Não invente dados. Se não conseguir ler um campo com precisão, use null. Não
           {
             role: "user",
             content: [
-              { type: "text", text: "Extraia as campanhas e identifique a plataforma deste print." },
+              { type: "text", text: userMessage },
               { type: "image_url", image_url: { url: `data:${data.mimeType};base64,${data.imageBase64}` } },
             ],
           },
@@ -130,7 +214,7 @@ Não invente dados. Se não conseguir ler um campo com precisão, use null. Não
       const match = cleaned.match(/\{[\s\S]*\}/);
       if (match) parsed = JSON.parse(match[0]);
     }
-    const detectedPlatform = parsed.platform ?? "meta";
+    const detectedPlatform = data.platform; // Usa a plataforma escolhida pelo usuário
     const mappedCampaigns = (parsed.campaigns ?? []).map(c => ({
       ...c,
       platform: detectedPlatform
