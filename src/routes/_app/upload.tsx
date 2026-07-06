@@ -43,8 +43,26 @@ function UploadPage() {
     try {
       const r = await extract({ data: { imageBase64: base64, mimeType: mime, platform: selectedPlatform } });
 
-      // ── Fallback determinístico (apenas Meta) ──────────────────────────────
+      // ── Fallback determinístico Meta ───────────────────────────────────────
+      // ── Fallback determinístico Google ────────────────────────────────────
       const processed = (r.campaigns ?? []).map(c => {
+        // ── GOOGLE: campanhas de tráfego (conv=0 ou nome sugere cliques) ──
+        if (selectedPlatform === "google") {
+          const noConv = !c.conversions || c.conversions === 0;
+          const trafficName = /visita|site|trafego|tráfego|click|clique/i.test(c.name || "");
+          if (noConv || trafficName) {
+            const derivedCpc = c.cpc || (c.cost && c.clicks ? c.cost / c.clicks : null);
+            return {
+              ...c,
+              conversions: c.clicks || c.conversions || 0,
+              cpl: derivedCpc,
+              result_type: "Clique no site",
+            };
+          }
+          return c;
+        }
+
+        // ── META: fallback matemático para Lead mal extraído ───────────────
         if (selectedPlatform !== "meta") return c;
         if (!c.cpl || c.cpl <= 0 || !c.cost || c.cost <= 0) return c;
         const implied = Math.round(c.cost / c.cpl);

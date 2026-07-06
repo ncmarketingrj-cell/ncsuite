@@ -96,49 +96,56 @@ Não invente dados. Se não conseguir ler, use null. Sem Markdown.`;
 // ═══════════════════════════════════════════════════════════════════════════════
 const GOOGLE_PROMPT = `Você é um motor de extração ESPECIALIZADO em prints do painel do Google Ads (ads.google.com). Você SÓ sabe ler prints do Google Ads. Se a imagem NÃO for do Google Ads, retorne campaigns: [] com platform: "google".
 
-CONTEXTO DO LAYOUT DO GOOGLE ADS:
-O painel de campanhas do Google Ads exibe uma tabela com as seguintes colunas típicas (da esquerda para a direita):
-- Checkbox, Ícone de tipo, **Campanha** (nome), **Orçamento**, **Status**, **Opt.** (pontuação de otimização), **Tipo de campanha** (Performance Max, Pesquisa, Display, Vídeo, Geração de demanda, etc.), **Impr.** (impressões), **CPM médio**, **Cliques**, **Interações**, **Taxa de interação**, **Custo médio** (CPC), **Conv.** ou **Conversões**, **Custo**, **CPC méd.**, **CPM**, **Bid strategy type**, **Taxa de conv.**, **Custo/conv.**.
+LAYOUT TÍPICO DO GOOGLE ADS — colunas da tabela de campanhas (esquerda → direita):
+Checkbox | Campanha (nome) | Orçamento | Status | Opt. | Tipo de campanha | Impr. | Cliques | CPM médio | Interações | Taxa de interação | Conv. | Custo médio | Custo | CPC méd. | Bid strategy type | Taxa de conv. | Custo/conv.
 
-Nem todas as colunas estão sempre visíveis — o layout depende da personalização do usuário. Extraia o que estiver visível.
+ATENÇÃO CRÍTICA — CUSTO vs CUSTO MÉDIO (erro mais comum):
+- "Custo" = gasto TOTAL da campanha no período. Exemplo: R$ 2.599,37 ou R$ 7.082,08. Esta é a coluna mais importante.
+- "Custo médio" = custo por clique individual (CPC). Exemplo: R$ 0,08 ou R$ 0,05. É muito menor que o Custo total.
+- "CPC méd." = mesma coisa que Custo médio — custo por clique.
+- NUNCA confunda: se você vê R$ 0,08 ao lado de R$ 2.599,37, o custo da campanha é R$ 2.599,37, e R$ 0,08 é o CPC.
+- O Custo total de cada campanha NUNCA é menor que R$ 1,00 em uma conta ativa.
 
-REGRAS DE EXTRAÇÃO:
-1. Mapeamento de colunas:
-   - 'Campanha' ou 'Campaign' → name
-   - 'Status' → status ("Qualificado"/"Ativada"/"Ativa" → "active", "Pausada" → "paused", "Limitada pelo orçamento" → "active", outros → "other")
-   - 'Orçamento' → budget (número com R$, ex: "R$ 100,00" → 100.00)
-   - 'Tipo de campanha' ou 'Campaign type' → campaign_type (ex: "Performance Max", "Pesquisa", "Display", "Vídeo", "Geração de demanda")
-   - 'Custo' ou 'Cost' → cost (gasto TOTAL da campanha no período, NÃO confundir com CPC)
-   - 'Impr.' ou 'Impressões' ou 'Impressions' → impressions
-   - 'Cliques' ou 'Clicks' → clicks
-   - 'Conv.' ou 'Conversões' ou 'Conversions' → conversions
-   - 'Custo/conv.' ou 'Cost/conv.' → cpl (custo por conversão unitário)
-   - 'CPC méd.' ou 'CPC' ou 'Avg. CPC' → cpc (custo por clique médio)
-   - 'CPM médio' ou 'Avg. CPM' ou 'CPM méd.' → cpm
-   - 'Taxa de interação' ou 'Interaction rate' → interaction_rate (percentual, ex: "4,86%" → 4.86)
-   - 'CTR' → ctr (percentual, ex: "15,47%" → 15.47)
-   - 'Valor conv.' → conv_value (valor monetário total das conversões)
+REGRAS DE EXTRAÇÃO — MAPEAMENTO DE COLUNAS:
+- 'Campanha' → name
+- 'Orçamento' → budget (ex: "R$ 100,00" → 100.0)
+- 'Status': "Qualificada"/"Ativada"/"Ativa"/"Limitada pelo orçamento" → "active", "Pausada" → "paused"
+- 'Tipo de campanha' → campaign_type (Performance Max, Pesquisa, Display, Geração de demanda, etc.)
+- 'Impr.' / 'Impressões' → impressions
+- 'Cliques' → clicks (ex: "23.621" → 23621)
+- 'Conv.' / 'Conversões' → conversions (número de conversões rastreadas pelo Google)
+- 'Custo' → cost (gasto TOTAL — o número maior em R$, ex: "R$ 2.599,37" → 2599.37)
+- 'Custo médio' / 'CPC méd.' → cpc (custo por clique — número pequeno, ex: "R$ 0,11" → 0.11)
+- 'CPM médio' → cpm
+- 'Taxa de interação' → interaction_rate (ex: "4,08%" → 4.08)
+- 'Custo/conv.' → (ignorar se "—"; se houver valor, usar como cpl)
+- Google Ads NÃO tem alcance → reach: null sempre
 
-2. ATENÇÃO ESPECIAL — Não confundir colunas:
-   - **Custo** = gasto total no período (geralmente a coluna com maior valor em R$)
-   - **CPC méd.** = custo por clique (valor pequeno, ex: R$ 0,11)
-   - **CPM** = custo por mil impressões (ex: R$ 5,39)
-   - **Custo/conv.** = custo por conversão (pode ser — se não houver conversões)
+REGRA PARA CAMPANHAS DE TRÁFEGO (cliques para o site):
+Quando a campanha NÃO é de lead/venda mas sim de tráfego para o site:
+  Indicadores: Conv. = 0,00 OU nome contém "VISITA"/"SITE"/"TRAFEGO"/"TRÁFEGO"/"CLICK"/"CLIQUE" OU Custo/conv. = "—"
+  Nesses casos OBRIGATORIAMENTE:
+  - result_type = "Clique no site"
+  - conversions = valor da coluna "Cliques" (NÃO da coluna "Conv.")
+  - cpl = valor de "CPC méd." (custo por clique)
 
-3. IGNORE COMPLETAMENTE:
-   - Linha "Total: All enabled ca..." ou "Total: conta" ou qualquer linha de totais
-   - Cabeçalho da página com métricas globais (o banner azul no topo com Impr., Custo, Conversões, Cliques)
-   - Extraia APENAS as linhas individuais de campanhas na tabela
+Quando a campanha é de conversão (leads, vendas, formulários):
+  - result_type = "Conversão"
+  - conversions = valor da coluna "Conv."
+  - cpl = valor de "Custo/conv." (se disponível)
 
-4. Formatação numérica — padrão brasileiro:
-   - Ponto (.) = separador de milhar: "25.711" → 25711
-   - Vírgula (,) = decimal: "R$ 9.681,46" → 9681.46, "R$ 0,11" → 0.11
-   - Percentual: "4,86%" → 4.86
-   - "—" ou vazio → null
+IGNORAR COMPLETAMENTE:
+- Linhas "Total: All enabled ca..." ou "Total: conta" — são totais, NÃO são campanhas
+- Os cards de resumo no topo da página (ex: o card azul "Impr. 1.094.799 | Custo R$ 9.681,46 | Conversões 414 | Cliques 25.711") — esses são TOTAIS GLOBAIS, não dados de campanhas individuais
+- Extraia APENAS as linhas individuais de campanhas
 
-5. Google Ads NÃO tem coluna "Alcance" — sempre retorne reach: null.
+FORMATAÇÃO NUMÉRICA — padrão brasileiro:
+- Ponto (.) = separador de milhar: "25.711" → 25711, "1.094.799" → 1094799
+- Vírgula (,) = decimal: "R$ 2.599,37" → 2599.37, "R$ 0,11" → 0.11
+- Percentual: "4,08%" → 4.08
+- "—" ou vazio → null
 
-Retorne APENAS um JSON válido:
+Retorne APENAS um JSON válido (sem Markdown, sem explicações):
 {
   "platform": "google",
   "campaigns": [
@@ -161,8 +168,7 @@ Retorne APENAS um JSON válido:
       "campaign_type": "string | null"
     }
   ]
-}
-Não invente dados. Se não conseguir ler, use null. Sem Markdown.`;
+}`;
 
 export const extractPrintFn = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => Input.parse(d))
