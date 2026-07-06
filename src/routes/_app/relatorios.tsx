@@ -597,7 +597,7 @@ function RelatoriosPage() {
 
       // Calcular resultado base
       const isClickBased = c.objective.includes("Cliques");
-      const isReachBased = c.objective.includes("Alcance") || c.objective.includes("Visualizações") || c.objective.includes("Engajamento");
+      const isReachBased = c.objective.includes("Alcance") || c.objective.includes("Visualizações") || c.objective.includes("Engajamento") || c.objective.includes("Impressões") || c.objective.includes("Thru-Play");
       
       let resultValue = c.conversions;
       if (isClickBased) resultValue = c.clicks;
@@ -700,21 +700,36 @@ function RelatoriosPage() {
     }
 
     // --- Lógica para os Relatórios Padrão (Sem Template Customizado) ---
+    const totalReach = selected.reduce((s, c) => s + c.reach, 0);
+    const totalImps = selected.reduce((s, c) => s + c.impressions, 0);
+
     const buildHeader = (title: string) => {
       return `📊 *${title}*\n━━━━━━━━━━━━━━━━━━━━\n🏢 *Cliente:* ${clientName}\n📅 *Período:* ${displayPeriod}\n📱 *Plataformas:* ${platformString}\n\n`;
     };
 
+    // Bloco de totais gerais — presente em TODOS os modos de relatório
+    const buildTotais = () => {
+      let txt = `━━━━━━━━━━━━━━━━━━━━\n*📊 TOTAIS GERAIS*\n━━━━━━━━━━━━━━━━━━━━\n`;
+      txt += `💵 *Investimento Total:* R$ ${totalCost.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n`;
+      txt += `📈 *Resultados Totais:* ${totalResults.toLocaleString("pt-BR")}\n`;
+      txt += `💲 *CPA Médio Geral:* R$ ${avgCpa > 0 ? avgCpa.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "—"}\n`;
+      if (totalReach > 0) txt += `👥 *Alcance Total:* ${totalReach.toLocaleString("pt-BR")}\n`;
+      if (totalImps > 0) txt += `👁️ *Impressões Totais:* ${totalImps.toLocaleString("pt-BR")}\n`;
+      txt += `📌 *Campanhas no Relatório:* ${selected.length}\n\n`;
+      return txt;
+    };
+
     const buildResultsByType = () => {
-      let txt = `━━━━━━━━━━━━━━━━━━━━\n*RESUMO POR OBJETIVO*\n━━━━━━━━━━━━━━━━━━━━\n\n`;
+      let txt = `━━━━━━━━━━━━━━━━━━━━\n*RESULTADOS POR OBJETIVO*\n━━━━━━━━━━━━━━━━━━━━\n\n`;
       groupedTypes.forEach((data, type) => {
         const isClick = type.includes("Cliques");
-        const isReach = type.includes("Alcance") || type.includes("Visualizações") || type.includes("Engajamento");
+        const isReach = type.includes("Alcance") || type.includes("Visualizações") || type.includes("Engajamento") || type.includes("Impressões") || type.includes("Thru-Play");
         
         const cpl = data.results > 0 ? (isReach ? (data.cost / data.results) * 1000 : data.cost / data.results) : 0;
         
         let resultLabel = "Resultados";
         if (isClick) resultLabel = "Visitas";
-        if (isReach) resultLabel = "Impressões";
+        if (isReach) resultLabel = "Impressões / Plays";
         
         let costLabel = "CPA";
         if (isClick) costLabel = "Custo por Visita";
@@ -737,16 +752,18 @@ function RelatoriosPage() {
       if (reportLevel === "ad") levelTitle = "DETALHAMENTO DE ANÚNCIOS";
 
       let txt = `━━━━━━━━━━━━━━━━━━━━\n*${levelTitle}*\n━━━━━━━━━━━━━━━━━━━━\n\n`;
-      // Agrupa por plataforma para a listagem
       ['google', 'meta'].forEach(plat => {
         const platCampaigns = selected.filter(c => c.platform === plat);
         if (platCampaigns.length === 0) return;
         
         txt += `*— ${plat === 'google' ? 'GOOGLE ADS' : 'META ADS'} —*\n\n`;
         platCampaigns.forEach(c => {
-          const resultValue = c.objective.includes("Cliques") ? c.clicks : c.conversions;
-          const costPerRes = resultValue > 0 ? c.cost / resultValue : 0;
-          const typeLabel = c.objective.substring(2).trim(); // Remove emoji
+          const isClickObj = c.objective.includes("Cliques");
+          const isReachObj = c.objective.includes("Alcance") || c.objective.includes("Visualizações") || c.objective.includes("Engajamento") || c.objective.includes("Impressões") || c.objective.includes("Thru-Play");
+          const resultValue = isClickObj ? c.clicks : c.conversions;
+          const costPerRes = resultValue > 0 ? (isReachObj ? (c.cost / resultValue) * 1000 : c.cost / resultValue) : 0;
+          const costLabel = isReachObj ? "CPM" : "Custo/Resultado";
+          const typeLabel = c.objective.substring(2).trim();
           
           txt += `📌 *${c.name.toUpperCase()}*\n`;
           if (reportLevel === "adset" && c.campaignName) {
@@ -757,7 +774,7 @@ function RelatoriosPage() {
           }
           txt += `   💵 Invest: R$ ${c.cost.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n`;
           txt += `   📈 Result: ${resultValue.toLocaleString("pt-BR")} (${typeLabel})\n`;
-          txt += `   💲 Custo/Res: R$ ${costPerRes.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n\n`;
+          txt += `   💲 ${costLabel}: R$ ${costPerRes.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n\n`;
         });
       });
       return txt;
@@ -771,16 +788,18 @@ function RelatoriosPage() {
     if (reportMode === "complete") {
       setActivePdfLayout("classic");
       finalText += buildHeader(reportTitle);
+      finalText += buildTotais();
       finalText += buildResultsByType();
       finalText += buildCampaignDetails();
     } else if (reportMode === "objective") {
       setActivePdfLayout("analytical");
       finalText += buildHeader("RELATÓRIO DE RESULTADOS");
+      finalText += buildTotais();
       finalText += buildResultsByType();
     } else { // campaigns mode
       setActivePdfLayout("minimalist");
       finalText += buildHeader(reportTitle);
-      finalText += `🎯 *CPA Médio Geral:* R$ ${avgCpa.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n\n`;
+      finalText += buildTotais();
       finalText += buildCampaignDetails();
     }
 
@@ -1142,18 +1161,23 @@ function RelatoriosPage() {
                       onChange={(e) => handleUpdateObjective(c.id, e.target.value)}
                       className="rounded-lg border border-white/10 bg-background/50 px-3 py-2 text-[10px] font-bold text-white focus:outline-none focus:border-primary/50 transition-colors w-full sm:w-40"
                     >
-                      <optgroup label="Fundo de Funil (Conversão)">
-                        <option value="💬 Mensagens">💬 Mensagens (WPP/Direct)</option>
-                        <option value="📧 Cadastros / Leads">📧 Cadastros (Leads)</option>
-                        <option value="🛒 Adições ao Carrinho">🛒 Adições ao Carrinho</option>
-                        <option value="💳 Compras / Vendas">💳 Finalizações de Compra</option>
-                        <option value="📲 Instalações de App">📲 Instalações de App</option>
-                        <option value="🎯 Outras Conversões">🎯 Outras Conversões</option>
+                      <optgroup label="💬 Mensagens">
+                        <option value="💬 Mensagens">💬 Mensagens / WhatsApp</option>
+                        <option value="💬 Msgs Direct">💬 Msgs Direct (Instagram)</option>
                       </optgroup>
-                      <optgroup label="Meio/Topo de Funil">
-                        <option value="👆 Cliques no Link">👆 Cliques no Link</option>
-                        <option value="👁️ Visualizações / Alcance">👁️ Alcance / Impressões</option>
+                      <optgroup label="▶️ Vídeo / Alcance">
+                        <option value="▶️ Thru-Play">▶️ Thru-Play (Vídeo)</option>
+                        <option value="🌐 Visualizações na Página">🌐 Visualizações na Página</option>
+                        <option value="👁️ Alcance e Impressões">👁️ Alcance e Impressões</option>
+                      </optgroup>
+                      <optgroup label="🔥 Topo de Funil">
                         <option value="🔥 Engajamento">🔥 Engajamento</option>
+                        <option value="👆 Cliques no Link">👆 Cliques no Link</option>
+                      </optgroup>
+                      <optgroup label="🎯 Conversão">
+                        <option value="💳 Conversões / Compras">💳 Conversões / Compras</option>
+                        <option value="📧 Cadastros / Leads">📧 Cadastros / Leads</option>
+                        <option value="🎯 Outros">🎯 Outros</option>
                       </optgroup>
                     </select>
                   </div>
