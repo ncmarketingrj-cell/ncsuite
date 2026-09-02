@@ -54,3 +54,5 @@ test-*.ts
 test_db.cjs
 check-*.cjs
 insert-token.mjs
+supabase/.temp/
+
