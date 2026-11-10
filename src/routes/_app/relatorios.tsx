@@ -996,53 +996,49 @@ function RelatoriosPage() {
         ? ((numOrders / visitsCount) * 100).toFixed(2).replace(".", ",")
         : "0,00";
 
-      let txt = `📊 RELATÓRIO DE RESULTADOS\n`;
-      txt += `━━━━━━━━━━━━━━━━━━━━\n`;
-      txt += `🏢 Cliente: ${clientName || "Pizza Bonne"}\n`;
-      txt += `📅 Período: ${periodText.toUpperCase() || displayPeriod.toUpperCase()}\n`;
-      txt += `📱 Plataformas: ${platformString || "Meta Ads"}\n\n`;
+      const months = ["JANEIRO", "FEVEREIRO", "MARÇO", "ABRIL", "MAIO", "JUNHO", "JULHO", "AGOSTO", "SETEMBRO", "OUTUBRO", "NOVEMBRO", "DEZEMBRO"];
+      const activePeriod = periodText.toUpperCase() || `${months[dateRange.startDate.getMonth()]} ${dateRange.startDate.getFullYear()}`;
+      const storeName = clientName && clientName !== "Consolidado" 
+        ? clientName 
+        : (accounts.find(a => a.id === selectedAccountId)?.name || clientName || "Pizza Bonne");
 
-      txt += `━━━━━━━━━━━━━━━━━━━━\n`;
-      txt += `📊 TOTAIS GERAIS\n`;
-      txt += `━━━━━━━━━━━━━━━━━━━━\n`;
-      txt += `💵 Investimento Total: R$ ${totalInvest.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n`;
-      txt += `👥 Alcance Total: ${totalReach.toLocaleString("pt-BR")}\n`;
-      txt += `👁️ Impressões Totais: ${totalImps.toLocaleString("pt-BR")}\n`;
-      txt += `📈 Taxa de conversão: ${convRate}%\n\n`;
+      let txt = `Relatório mensal: \n`;
+      if (storeName) {
+        txt += `Loja: ${storeName}\n`;
+      }
+      txt += ` *Período:* ${activePeriod}\n\n`;
 
-      txt += `Cálculo da taxa:\n`;
-      txt += `${numOrders.toLocaleString("pt-BR")} pedidos ÷ ${visitsCount.toLocaleString("pt-BR")} visualizações no site × 100 = ${convRate}%\n\n`;
+      txt += `*Totais Gerais:*\n`;
+      txt += ` Investimento Total: R$ ${totalInvest.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n`;
+      if (totalReach > 0) txt += ` Alcance Total: ${totalReach.toLocaleString("pt-BR")}\n`;
+      if (totalImps > 0) txt += ` Impressões Totais: ${totalImps.toLocaleString("pt-BR")}\n`;
+      txt += ` Taxa de conversão: ${convRate}%\n`;
+      txt += ` Cálculo da taxa: ${numOrders.toLocaleString("pt-BR")} pedidos ÷ ${visitsCount.toLocaleString("pt-BR")} visualizações no site × 100 = ${convRate}%\n\n`;
 
-      txt += `━━━━━━━━━━━━━━━━━━━━\n`;
-      txt += `RESULTADOS POR OBJETIVO\n`;
-      txt += `━━━━━━━━━━━━━━━━━━━━\n\n`;
+      txt += `*Visualizações na Página:*\n`;
+      txt += ` Investimento: R$ ${investViews.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n`;
+      txt += ` Resultados: ${visitsCount.toLocaleString("pt-BR")} visitas\n`;
+      txt += ` Custo por visualizações: R$ ${costPerView.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n`;
+      txt += ` Impressões / Plays: ${impsViews.toLocaleString("pt-BR")}\n`;
+      txt += ` CPM: R$ ${cpmViews.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n\n`;
 
-      txt += `🌐 Visualizações na Página\n`;
-      txt += `💵 Investimento: R$ ${investViews.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n`;
-      txt += `📈 Resultados: ${visitsCount.toLocaleString("pt-BR")} visitas\n`;
-      txt += `💲 Custo por visualizações: R$ ${costPerView.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n`;
-      txt += `📈 Impressões / Plays: ${impsViews.toLocaleString("pt-BR")}\n`;
-      txt += `💲 CPM: R$ ${cpmViews.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (Custo por mil visualizações das impressões)\n\n`;
+      txt += `*Conversões / Compras:*\n`;
+      txt += ` Investimento: R$ ${investSales.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n`;
+      txt += ` Resultados: ${purchasesMeta.toLocaleString("pt-BR")}\n`;
+      txt += ` CPA: R$ ${cpaSales.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n`;
+      if (reachSales > 0) txt += ` Alcance: ${reachSales.toLocaleString("pt-BR")}\n`;
+      if (impsSales > 0) txt += ` Impressões: ${impsSales.toLocaleString("pt-BR")}\n`;
+      txt += `\n`;
 
-      txt += `💳 Conversões / Compras\n`;
-      txt += `💵 Investimento: R$ ${investSales.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n`;
-      txt += `📈 Resultados: ${purchasesMeta.toLocaleString("pt-BR")}\n`;
-      txt += `💲 CPA: R$ ${cpaSales.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n`;
-      txt += `👥 Alcance: ${reachSales.toLocaleString("pt-BR")}\n`;
-      txt += `👁️ Impressões: ${impsSales.toLocaleString("pt-BR")}\n\n`;
-
-      txt += `🌐 No site/Cardápio\n`;
-      txt += `💲 Faturamento Liquido: R$ ${formattedRevenue}\n`;
-      txt += `📈 Resultados: ${numOrders.toLocaleString("pt-BR")} pedidos finalizados\n\n`;
+      txt += `*No site/Cardápio:*\n`;
+      txt += ` Faturamento Liquido: R$ ${formattedRevenue}\n`;
+      txt += ` Resultados: ${numOrders.toLocaleString("pt-BR")} pedidos finalizados\n\n`;
 
       if (purchasesMeta > 0 && numOrders > 0) {
-        txt += `OBS: Temos campanhas de venda com ${purchasesMeta} pedidos, esses ${purchasesMeta} pedidos estão inclusos nos ${numOrders.toLocaleString("pt-BR")} pedidos finalizados.\n\n`;
+        txt += `*OBS:* Temos campanhas de venda com ${purchasesMeta} pedidos, esses ${purchasesMeta} pedidos estão inclusos nos ${numOrders.toLocaleString("pt-BR")} pedidos finalizados.\n`;
       }
 
-      txt += `━━━━━━━━━━━━━━━━━━━━\n`;
-      txt += `${agencyName.toUpperCase()}`;
-
-      setGeneratedText(txt);
+      setGeneratedText(txt.trim());
       return;
     }
 
