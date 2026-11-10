@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Settings, User, Building2, Plug, BookOpen, Cpu, Plus, Trash2, Globe, Check, X, Loader2, Wifi, WifiOff, ChevronDown, Zap, Brain, LayoutDashboard, FileText, Target, Upload, Send, Users, Database, Lock, MessageSquareWarning, Bug, Lightbulb, Frown, HelpCircle, StickyNote, Filter, Eye, Clock, Megaphone, Share2, RefreshCw, Instagram } from "lucide-react";
+import { Settings, User, Building2, Plug, BookOpen, Cpu, Plus, Trash2, Globe, Check, X, Loader2, Wifi, WifiOff, ChevronDown, Zap, Brain, LayoutDashboard, FileText, Target, Upload, Send, Users, Database, Lock, MessageSquareWarning, Bug, Lightbulb, Frown, HelpCircle, StickyNote, Filter, Eye, Clock, Megaphone, Share2, RefreshCw, Instagram, Sparkles } from "lucide-react";
 import { SyncButton } from "@/components/SyncButton";
 import { toast } from "sonner";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -389,17 +389,16 @@ function TabIntegracoes() {
     if (!token.trim()) { toast.error("Preencha o Token"); return; }
     try {
       const { data: u } = await supabase.auth.getUser();
-      const { error } = await (supabase as any).from("meta_ads_configs").upsert({
+      const payload: Record<string, any> = {
         user_id: u.user?.id,
-        access_token: token,
-        whatsapp_phone: whatsappPhone,
-        whatsapp_gateway_url: whatsappGateway,
-        whatsapp_provider: whatsappProvider,
-        whatsapp_api_key: whatsappApiKey,
-        whatsapp_instance_name: whatsappInstanceName,
+        access_token: token.trim(),
+        whatsapp_phone: whatsappPhone || null,
+        whatsapp_gateway_url: whatsappGateway || null,
         ad_account_id: "ALL_ACCOUNTS",
         updated_at: new Date().toISOString()
-      }, { onConflict: "user_id" });
+      };
+
+      const { error } = await (supabase as any).from("meta_ads_configs").upsert(payload, { onConflict: "user_id" });
 
       if (error) throw error;
       toast.success("✅ Configurações salvas com sucesso!");

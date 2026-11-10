@@ -148,10 +148,10 @@ function Shell() {
     if (pathname.startsWith("/config")) return true;
     return true;
   };
-  const [activeModule, setActiveModule] = useState<"hub" | "trafego" | "social" | "gestao" | "funil" | "victoria">(() => {
+  const [activeModule, setActiveModule] = useState<"hub" | "trafego" | "social" | "gestao" | "funil" | "victoria" | "crm">(() => {
     if (typeof window !== "undefined") {
       const stored = localStorage.getItem("nc_active_module");
-      return (["hub", "trafego", "social", "gestao", "funil", "victoria"].includes(stored as any) ? stored : "hub") as any;
+      return (["hub", "trafego", "social", "gestao", "funil", "victoria", "crm"].includes(stored as any) ? stored : "hub") as any;
     }
     return "hub";
   });
