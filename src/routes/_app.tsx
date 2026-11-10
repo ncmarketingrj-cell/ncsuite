@@ -324,7 +324,7 @@ function Shell() {
   }
 
   if (!user) {
-    return <Navigate to="/login" />;
+    return <Navigate to="/login" search={{ redirect: path }} />;
   }
 
   // Se o activeModule for "hub", renderiza a tela de seleção de módulos (Cards direcionais)

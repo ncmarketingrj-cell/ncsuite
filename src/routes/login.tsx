@@ -1,14 +1,20 @@
 import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { useEffect, useState, type FormEvent } from "react";
 import { motion } from "framer-motion";
-import { Loader2, Mail, Lock, ArrowRight, ArrowLeft, Sun, Moon, Eye, EyeOff } from "lucide-react";
+import { Loader2, Mail, Lock, ArrowRight, ArrowLeft, Sun, Moon, Eye, EyeOff, KeyRound } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase-external/client";
 import { useTheme } from "./__root";
 
+type LoginSearch = {
+  redirect?: string;
+};
+
 export const Route = createFileRoute("/login")({
   head: () => ({ meta: [{ title: "Entrar — NC Performance Suite" }] }),
-  validateSearch: (_: Record<string, unknown>) => ({}),
+  validateSearch: (search: Record<string, unknown>): LoginSearch => ({
+    redirect: typeof search.redirect === "string" ? search.redirect : undefined,
+  }),
   component: LoginPage,
 });
 
@@ -20,21 +26,43 @@ const BRAND_FEATURES = [
 
 function LoginPage() {
   const nav = useNavigate();
+  const { redirect } = Route.useSearch();
   const { theme, toggleTheme } = useTheme();
 
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
-      if (data.session) {
-        localStorage.setItem("nc_active_module", "hub");
-        nav({ to: "/hub", replace: true });
-      }
-    });
-  }, [nav]);
-
-  const [mode, setMode] = useState<"login" | "forgot">("login");
+  const [mode, setMode] = useState<"login" | "forgot" | "reset">("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    // 1. Detecta fluxo de recuperação de senha via hash da URL
+    const isRecoveryHash = typeof window !== "undefined" && window.location.hash.includes("type=recovery");
+    if (isRecoveryHash) {
+      setMode("reset");
+    }
+
+    // 2. Ouvinte de evento de recuperação disparado pelo Supabase
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+      if (event === "PASSWORD_RECOVERY") {
+        setMode("reset");
+      }
+    });
+
+    // 3. Verifica sessão ativa (se já autenticado e não estiver recuperando senha)
+    supabase.auth.getSession().then(({ data }) => {
+      const isRecovery = typeof window !== "undefined" && window.location.hash.includes("type=recovery");
+      if (data.session && !isRecovery && mode !== "reset") {
+        const dest = redirect || "/hub";
+        localStorage.setItem("nc_active_module", dest === "/hub" ? "hub" : "trafego");
+        nav({ to: dest as any, replace: true });
+      }
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, [nav, redirect, mode]);
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
@@ -43,16 +71,34 @@ function LoginPage() {
       if (mode === "login") {
         const { error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
-        localStorage.setItem("nc_active_module", "hub");
+        const dest = redirect || "/hub";
+        localStorage.setItem("nc_active_module", dest === "/hub" ? "hub" : "trafego");
         toast.success("Bem-vindo de volta");
-        nav({ to: "/hub", replace: true });
-      } else {
+        nav({ to: dest as any, replace: true });
+      } else if (mode === "forgot") {
         const { error } = await supabase.auth.resetPasswordForEmail(email, {
-          redirectTo: window.location.origin + "/login",
+          redirectTo: `${window.location.origin}/login`,
         });
         if (error) throw error;
         toast.success("E-mail de recuperação enviado com sucesso!");
         setMode("login");
+      } else if (mode === "reset") {
+        if (password !== confirmPassword) {
+          toast.error("As senhas não coincidem");
+          setLoading(false);
+          return;
+        }
+        if (password.length < 6) {
+          toast.error("A nova senha deve ter no mínimo 6 caracteres");
+          setLoading(false);
+          return;
+        }
+        const { error } = await supabase.auth.updateUser({ password });
+        if (error) throw error;
+        toast.success("Senha alterada com sucesso! Bem-vindo.");
+        const dest = redirect || "/hub";
+        localStorage.setItem("nc_active_module", dest === "/hub" ? "hub" : "trafego");
+        nav({ to: dest as any, replace: true });
       }
     } catch (err: any) {
       toast.error(err.message ?? "Falha na autenticação");
@@ -188,20 +234,62 @@ function LoginPage() {
                 />
               </div>
               <div className="text-center">
-                <p className="label-mono text-primary">Acesso da Equipe</p>
+                <p className="label-mono text-primary">
+                  {mode === "reset" ? "Segurança da Conta" : "Acesso da Equipe"}
+                </p>
                 <h1 className="mt-2 font-display text-2xl font-black text-foreground">
-                  {mode === "login" ? "Entrar na Suite" : "Recuperar senha"}
+                  {mode === "login"
+                    ? "Entrar na Suite"
+                    : mode === "forgot"
+                    ? "Recuperar senha"
+                    : "Definir nova senha"}
                 </h1>
               </div>
             </div>
 
-
             {/* ── Formulário ── */}
             <form onSubmit={submit} className="space-y-3.5">
-              <Field icon={Mail} type="email" placeholder="email@agencia.com" value={email} onChange={setEmail} required />
+              {mode !== "reset" && (
+                <Field
+                  icon={Mail}
+                  type="email"
+                  placeholder="email@agencia.com"
+                  value={email}
+                  onChange={setEmail}
+                  required
+                />
+              )}
 
               {mode === "login" && (
-                <Field icon={Lock} type="password" placeholder="Senha" value={password} onChange={setPassword} required />
+                <Field
+                  icon={Lock}
+                  type="password"
+                  placeholder="Senha"
+                  value={password}
+                  onChange={setPassword}
+                  required
+                />
+              )}
+
+              {mode === "reset" && (
+                <>
+                  <Field
+                    icon={KeyRound}
+                    type="password"
+                    placeholder="Nova senha (mínimo 6 caracteres)"
+                    value={password}
+                    onChange={setPassword}
+                    required
+                  />
+                  <Field
+                    icon={Lock}
+                    type="password"
+                    placeholder="Confirmar nova senha"
+                    value={confirmPassword}
+                    onChange={setConfirmPassword}
+                    required
+                  />
+                </>
               )}
 
               {mode === "login" && (
@@ -227,7 +315,11 @@ function LoginPage() {
                   <Loader2 className="h-4 w-4 animate-spin" />
                 ) : (
                   <>
-                    {mode === "login" ? "Entrar na Suite" : "Enviar link de recuperação"}
+                    {mode === "login"
+                      ? "Entrar na Suite"
+                      : mode === "forgot"
+                      ? "Enviar link de recuperação"
+                      : "Salvar nova senha"}
                     <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
                   </>
                 )}
@@ -244,6 +336,19 @@ function LoginPage() {
                   className="font-semibold text-primary hover:text-primary/80 transition-colors"
                 >
                   Voltar para o login
+                </button>
+              </div>
+            )}
+
+            {mode === "reset" && (
+              <div className="mt-6 text-center text-xs text-muted-foreground/80">
+                Deseja cancelar?{" "}
+                <button
+                  type="button"
+                  onClick={() => setMode("login")}
+                  className="font-semibold text-primary hover:text-primary/80 transition-colors"
+                >
+                  Ir para o login
                 </button>
               </div>
             )}
@@ -315,4 +420,3 @@ function Field({
     </div>
   );
 }
-
