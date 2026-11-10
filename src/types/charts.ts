@@ -26,6 +26,9 @@ export interface ChartConfig {
   targetId?: string | null; // Id opcional (ex: campanha ou conta específica)
   position: number;
   created_at?: string;
+  layout_w?: number;
+  metric?: string;
+  description?: string;
 }
 
 export interface MetricDefinition {

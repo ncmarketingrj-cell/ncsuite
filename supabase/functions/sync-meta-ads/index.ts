@@ -623,49 +623,58 @@ serve(async (req) => {
     
     syncHistoryId = syncRecord?.id || null
 
-    // 4. Montar lista de contas SEM chamar /me/adaccounts a cada sync.
-    // Chamar a API de listagem em todo sync automático estoura o rate limit do
-    // Meta ("too many calls to this ad-account"). Contas já conhecidas vêm do
-    // banco (ad_accounts); a descoberta via API só roda em sync manual ou
-    // quando o banco ainda não conhece a conta pedida.
+    // 4. Montar lista de contas autorizadas pelo token atual diretamente da Meta API
     const configByUser = new Map(orderedConfigs.map((c: any) => [c.user_id, c.access_token]))
     const accountEntries: { acc: any; token: string; userId: string }[] = []
     const seenAccounts = new Set<string>()
 
-    const { data: dbAccounts } = await supabase
-      .from("ad_accounts")
-      .select("id, name, currency, status, user_id")
-
-    for (const a of dbAccounts || []) {
-      const cfgToken = configByUser.get(a.user_id)
-      if (!cfgToken || seenAccounts.has(a.id)) continue
-      seenAccounts.add(a.id)
-      accountEntries.push({
-        acc: { id: a.id, name: a.name, currency: a.currency, account_status: a.status },
-        token: cfgToken,
-        userId: a.user_id
-      })
+    console.log(`[SYNC ${syncId}] Buscando lista oficial de contas na Meta API para os tokens configurados...`)
+    for (const cfg of orderedConfigs) {
+      try {
+        const accounts = await fetchAdAccounts(cfg.access_token)
+        for (const acc of accounts) {
+          if (seenAccounts.has(acc.id)) continue
+          seenAccounts.add(acc.id)
+          accountEntries.push({ acc, token: cfg.access_token, userId: cfg.user_id })
+        }
+      } catch (e: any) {
+        console.error(`[SYNC ${syncId}] Token de ${cfg.user_id} falhou ao listar contas:`, e.message)
+      }
     }
 
-    const needsDiscovery =
-      accountEntries.length === 0 ||
-      (targetAccountId && !seenAccounts.has(targetAccountId)) ||
-      (triggeredBy !== "auto" && !targetAccountId)
+    // Se a listagem pela API foi bem-sucedida, PURGA do banco qualquer conta que não pertença mais ao token
+    if (accountEntries.length > 0 && !targetAccountId) {
+      const activeIds = new Set(accountEntries.map(e => e.acc.id))
+      const { data: dbAccounts } = await supabase.from("ad_accounts").select("id")
+      const obsoleteIds = (dbAccounts || []).map((a: any) => a.id).filter((id: string) => !activeIds.has(id))
 
-    if (needsDiscovery) {
-      console.log(`[SYNC ${syncId}] Descoberta via API em ${orderedConfigs.length} token(s)...`)
-      for (const cfg of orderedConfigs) {
+      if (obsoleteIds.length > 0) {
+        console.log(`[SYNC ${syncId}] 🧹 Purgando ${obsoleteIds.length} conta(s) órfã(s) que não pertencem ao token ativo...`)
         try {
-          const accounts = await fetchAdAccounts(cfg.access_token)
-          for (const acc of accounts) {
-            if (seenAccounts.has(acc.id)) continue
-            seenAccounts.add(acc.id)
-            accountEntries.push({ acc, token: cfg.access_token, userId: cfg.user_id })
+          const { data: obsoleteCamps } = await supabase.from("campaigns").select("id").in("ad_account_id", obsoleteIds)
+          const obsoleteCampIds = (obsoleteCamps || []).map((c: any) => c.id)
+          if (obsoleteCampIds.length > 0) {
+            await supabase.from("metrics").delete().in("campaign_id", obsoleteCampIds)
+            await supabase.from("campaigns").delete().in("id", obsoleteCampIds)
           }
-        } catch (e: any) {
-          // Rate limit na listagem não derruba o sync — seguimos com as contas do banco
-          console.error(`[SYNC ${syncId}] Token de ${cfg.user_id} falhou ao listar contas:`, e.message)
+          await supabase.from("ad_accounts").delete().in("id", obsoleteIds)
+          console.log(`[SYNC ${syncId}] ✅ Contas obsoletas removidas com sucesso: ${obsoleteIds.join(", ")}`)
+        } catch (purgeErr: any) {
+          console.error(`[SYNC ${syncId}] Erro ao purgar contas antigas:`, purgeErr.message)
         }
+      }
+    } else if (accountEntries.length === 0) {
+      // Fallback de emergência (apenas se a Meta API retornar erro de rede/rate limit na listagem)
+      const { data: dbAccounts } = await supabase.from("ad_accounts").select("id, name, currency, status, user_id")
+      for (const a of dbAccounts || []) {
+        const cfgToken = configByUser.get(a.user_id)
+        if (!cfgToken || seenAccounts.has(a.id)) continue
+        seenAccounts.add(a.id)
+        accountEntries.push({
+          acc: { id: a.id, name: a.name, currency: a.currency, account_status: a.status },
+          token: cfgToken,
+          userId: a.user_id
+        })
       }
     }
 
