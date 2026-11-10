@@ -917,7 +917,17 @@ function RelatoriosPage() {
       const leadsCons = consignadoCampaigns.reduce((s, c) => s + (c.conversions > 0 ? c.conversions : 0), 0);
       const cplCons = leadsCons > 0 ? costCons / leadsCons : 0;
 
-      let txt = `Relatório mensal: \n *Período:* ${periodText.toUpperCase() || displayPeriod.toUpperCase()}\n\n`;
+      const months = ["JANEIRO", "FEVEREIRO", "MARÇO", "ABRIL", "MAIO", "JUNHO", "JULHO", "AGOSTO", "SETEMBRO", "OUTUBRO", "NOVEMBRO", "DEZEMBRO"];
+      const activePeriod = periodText.toUpperCase() || `${months[dateRange.startDate.getMonth()]} ${dateRange.startDate.getFullYear()}`;
+      const storeName = clientName && clientName !== "Consolidado" 
+        ? clientName 
+        : (accounts.find(a => a.id === selectedAccountId)?.name || clientName || "");
+
+      let txt = `Relatório mensal: \n`;
+      if (storeName) {
+        txt += `Loja: ${storeName}\n`;
+      }
+      txt += ` *Período:* ${activePeriod}\n\n`;
 
       txt += `*Campanha de mensagens nos veiculos:*\n`;
       txt += ` Investimento: R$ ${costMsg.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n`;
@@ -1056,7 +1066,7 @@ function RelatoriosPage() {
 
     finalText += `━━━━━━━━━━━━━━━━━━━━\n*${agencyName.toUpperCase()}*`;
     setGeneratedText(finalText);
-  }, [campaignList, reportMode, clientName, periodText, templatesData, reportLevel, salesRevenue, salesOrders]);
+  }, [campaignList, reportMode, clientName, periodText, templatesData, reportLevel, salesRevenue, salesOrders, dateRange, selectedAccountId]);
 
   const handleGenerate = () => {
     const selected = campaignList.filter(c => c.selected);
@@ -1172,20 +1182,18 @@ function RelatoriosPage() {
           </div>
           
           <div className="space-y-4">
-            {source === "upload" && (
-              <div className="space-y-2">
-                <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Nome do Cliente</label>
-                <input 
-                  value={clientName} 
-                  onChange={(e) => {
-                    setClientName(e.target.value);
-                    setActiveReportId(null);
-                  }}
-                  placeholder="Ex: Pizza Bonne"
-                  className="w-full rounded-xl border border-white/10 bg-background/50 px-4 py-3 text-sm font-bold focus:border-primary focus:outline-none"
-                />
-              </div>
-            )}
+            <div className="space-y-2">
+              <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Loja / Nome do Cliente</label>
+              <input 
+                value={clientName} 
+                onChange={(e) => {
+                  setClientName(e.target.value);
+                  setActiveReportId(null);
+                }}
+                placeholder="Ex: LumaCar"
+                className="w-full rounded-xl border border-white/10 bg-background/50 px-4 py-3 text-sm font-bold focus:border-primary focus:outline-none"
+              />
+            </div>
 
             {source === "upload" && (
               <div className="space-y-2">

@@ -465,12 +465,12 @@ function UploadPage() {
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                       <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground block mb-1">
-                        Nome do Cliente
+                        Loja / Nome da Conta
                       </label>
                       <input
                         value={clientName}
                         onChange={(e) => setClientName(e.target.value)}
-                        placeholder="Ex: AlfaCar Veículos"
+                        placeholder="Ex: LumaCar"
                         className="w-full rounded-xl border border-white/10 bg-background/80 px-3.5 py-2.5 text-xs font-bold text-white focus:outline-none focus:border-primary"
                       />
                     </div>
