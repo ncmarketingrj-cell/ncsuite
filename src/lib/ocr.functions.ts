@@ -7,6 +7,12 @@ const Input = z.object({
   platform: z.enum(["meta", "google"]).default("meta"),
 });
 
+export type ExtractedAccountInfo = {
+  account_name?: string | null;
+  period?: string | null;
+  detected_mode?: "ecommerce_sales" | "standard_auto";
+};
+
 export type ExtractedCampaign = {
   name: string;
   status?: string;
@@ -32,48 +38,48 @@ export type ExtractedCampaign = {
 // ═══════════════════════════════════════════════════════════════════════════════
 const META_PROMPT = `Você é um motor de extração ESPECIALIZADO em prints do Gerenciador de Anúncios do Meta Ads (Facebook/Instagram). Você SÓ sabe ler prints do Meta Ads. Se a imagem NÃO for do Meta Ads, retorne campaigns: [] com platform: "meta".
 
-REGRAS MAIS IMPORTANTES — Coluna de Resultados no Meta Ads:
-A lógica de extração de conversions depende do tipo de resultado da campanha:
+REGRAS DE OURO:
 
-CASO 1 — "Resultados" mostra "—" (traço/vazio):
-A campanha tem métrica específica. Use OBRIGATORIAMENTE a coluna lateral:
-- "Conversas por mensagem iniciadas" → conversions = esse número, result_type = "Conversa por mensagem iniciada"
-- "Leads" → conversions = esse número, result_type = "Lead"
-- "Compras" → conversions = esse número, result_type = "Compra"
-- cpl = coluna "Custo por conversa por mensagem iniciada" ou "Custo por lead" correspondente
+1. LIMPEZA TOTAL DE TAGS E BADGES NO NOME DA CAMPANHA:
+No Meta Ads, é comum aparecerem badges e avisos dentro da célula de nome da campanha:
+- "Edições não publicadas" ou "Edição não publicada"
+- "Alto desempenho"
+- "1 recomendação", "X recomendações", "Recomendações"
+- Avisos de veiculação (Ex: "Ativo", "Pausado", "Concluído")
+NUNCA inclua esses textos no campo "name"!
+Exemplo: Se o texto for "NC | RAISSA - MENSAGENS Edições não publicadas", extraia ESTRITAMENTE: "NC | RAISSA - MENSAGENS".
+Se for "6697 - Consignado", extraia "6697 - Consignado".
+Preserve maiúsculas, códigos numéricos, colchetes e símbolos reais da campanha.
 
-CASO 2 — "Resultados" mostra número com tipo "Lead" (ex: "1 [2] Lead"):
-O Lead é uma conversão de alta intenção — mas o volume real da campanha está em "Conversas por mensagem iniciadas". OBRIGATORIAMENTE:
-- conversions = valor da coluna "Conversas por mensagem iniciadas" (ex: 2.384), NÃO o número de Leads (ex: 1)
-- result_type = "Conversa por mensagem iniciada"
-- cpl = coluna "Custo por conversa por mensagem iniciada"
+2. COLUNA DE RESULTADOS E RESULT_TYPE:
+A coluna "Resultados" define a métrica principal:
+- Se a coluna indicar "Conversas por mensagem iniciadas" (ou nome da campanha tiver "MENSAGENS", "WHATSAPP", "QUALIDADE", "MSG") → result_type = "Conversas por mensagem iniciadas", conversions = número de conversas, cpl = custo por resultado.
+- Se indicar "Visualizações da página de destino" ou visitas a site/cardápio (ex: campanhas com "SITE", "CARDAPIO", "PÁGINA") → result_type = "Visualizações da página de destino", conversions = visualizações da página, cpl = custo por visualização.
+- Se indicar "Compras no site" ou compras/pedidos/vendas (ex: "NC | CMP de Vendas", "Compras") → result_type = "Compras no site", conversions = número de compras, cpl = custo por compra (CPA).
+- Se indicar "Visitas ao perfil do Instagram" ou reconhecimento → result_type = "Visitas ao perfil do Instagram".
+- Se indicar "Alcance", "Impressões" ou reproduções de vídeo/plays → result_type = "Alcance".
+- Caso a coluna Resultados mostre "—", busque o valor numérico na coluna lateral específica. NUNCA deixe conversions = null ou 0 se existir qualquer coluna com resultado numérico.
 
-CASO 3 — "Resultados" mostra número com tipo "Conversas por mensagem iniciadas":
-Comportamento normal. Use o valor da coluna "Resultados" como conversions, result_type = "Conversa por mensagem iniciada", cpl = "Custo por resultado".
+3. DETECÇÃO DO CLIENTE / CONTA E PERÍODO:
+- Verifique se no topo há o seletor de conta de anúncios (ex: "pizzariabonne21", "AlfaCar", "NC Veículos") → preencha "account_name".
+- Verifique o seletor de período no canto superior direito (ex: "Mês passado: 1 de abr de 2026 a 30 de abr de 2026" → "ABRIL 2026", ou "OUTUBRO 2026") → preencha "period".
+- Classifique "detected_mode":
+  - "ecommerce_sales" se as campanhas envolverem Compras no site, Visualizações da página de destino, Site, Cardápio, Vendas.
+  - "standard_auto" se as campanhas forem de Mensagens, Veículos, Consignado, Leads, WhatsApp.
 
-CASO 4 — "Resultados" mostra outro tipo (Compra, Visualização, etc.):
-Use o valor da coluna "Resultados" normalmente, result_type = o tipo descrito.
+4. FORMATAÇÃO NUMÉRICA BRASILEIRA:
+- Ponto (.) = separador de milhar: "1.559" → 1559, "36.675" → 36675.
+- Vírgula (,) = separador decimal: "R$ 299,88" → 299.88, "R$ 0,19" → 0.19.
+- Ignore sufixos como "[2]" ou "[1]".
 
-NUNCA deixe conversions=null ou 0 se existir QUALQUER coluna com valor numérico de resultado para aquela linha.
-
-Instruções de extração:
-1. Identifique as colunas pelo cabeçalho da tabela:
-   - Nome: 'Campanha', 'Nome da campanha', 'Campaign name' → name
-   - Impressões: 'Impr.', 'Impressões', 'Impressions' → impressions
-   - Cliques: 'Cliques', 'Clicks' → clicks
-   - Custo total: 'Valor usado', 'Custo', 'Amount spent', 'Cost' → cost
-   - Resultados/Conversões: conforme regra acima → conversions + result_type
-   - Custo por resultado UNITÁRIO: 'Custo por resultado', 'Custo por conversa por mensagem iniciada', 'Custo por conversa', 'Custo por lead', 'CPL', 'CPA', 'Cost per result' → cpl
-   - Alcance: 'Alcance', 'Reach' → reach
-2. IGNORE linhas de Totais. Extraia APENAS linhas de campanhas individuais.
-3. Formatação numérica — padrão brasileiro: ponto (.) = separador de milhar, vírgula (,) = decimal.
-   - "2.384" → 2384, "R$ 2,61" → 2.61, "R$ 2.622,07" → 2622.07
-   IGNORE marcadores como "[2]" ou "[1]" após números.
-4. Status: 'Ativo'/'Em veiculação' → "active" | 'Pausado' → "paused" | outros → "other"
-
-Retorne APENAS um JSON válido:
+Retorne APENAS um JSON válido no formato:
 {
   "platform": "meta",
+  "account_info": {
+    "account_name": "string | null",
+    "period": "string | null",
+    "detected_mode": "ecommerce_sales" | "standard_auto"
+  },
   "campaigns": [
     {
       "name": "string",
@@ -89,7 +95,7 @@ Retorne APENAS um JSON válido:
     }
   ]
 }
-Não invente dados. Se não conseguir ler, use null. Sem Markdown.`;
+Não invente dados. Sem Markdown.`;
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // PROMPT ESPECIALIZADO — GOOGLE ADS
@@ -213,17 +219,58 @@ export const extractPrintFn = createServerFn({ method: "POST" })
     const json = await res.json();
     const content: string = json.choices?.[0]?.message?.content ?? "";
     const cleaned = content.replace(/```json\s*/g, "").replace(/```/g, "").trim();
-    let parsed: { platform?: "meta" | "google"; campaigns: ExtractedCampaign[] } = { campaigns: [] };
+    let parsed: { 
+      platform?: "meta" | "google"; 
+      account_info?: ExtractedAccountInfo; 
+      campaigns: ExtractedCampaign[];
+    } = { campaigns: [] };
+
     try {
       parsed = JSON.parse(cleaned);
     } catch {
       const match = cleaned.match(/\{[\s\S]*\}/);
       if (match) parsed = JSON.parse(match[0]);
     }
+
     const detectedPlatform = data.platform; // Usa a plataforma escolhida pelo usuário
+
+    // Sanitização rigorosa do nome das campanhas para remover tags da interface do Meta
+    const cleanCampaignName = (rawName: string = "") => {
+      return rawName
+        .replace(/\bEdiç(?:ão|ões)\s+não\s+publicadas?\b/gi, "")
+        .replace(/\bAlto\s+desempenho\b/gi, "")
+        .replace(/\b\d+\s+recomendaç(?:ão|ões)\b/gi, "")
+        .replace(/\bRecomendações\b/gi, "")
+        .replace(/\[\d+\]/g, "")
+        .replace(/\s+/g, " ")
+        .trim();
+    };
+
     const mappedCampaigns = (parsed.campaigns ?? []).map(c => ({
       ...c,
+      name: cleanCampaignName(c.name),
       platform: detectedPlatform
     }));
-    return { platform: detectedPlatform, campaigns: mappedCampaigns };
+
+    // Detectar automaticamente o modo de conta caso a IA não tenha inferido
+    let detectedMode: "ecommerce_sales" | "standard_auto" = parsed.account_info?.detected_mode || "standard_auto";
+    const hasSalesOrSite = mappedCampaigns.some(c => 
+      /visualizaç(?:ão|ões)\s+da\s+página|compra|venda|cardapio|cardápio|site/i.test(c.result_type || "") ||
+      /site|cardapio|cardápio|cmp\s+de\s+vendas|vendas|compras/i.test(c.name || "")
+    );
+    if (hasSalesOrSite) {
+      detectedMode = "ecommerce_sales";
+    }
+
+    const accountInfo: ExtractedAccountInfo = {
+      account_name: parsed.account_info?.account_name || null,
+      period: parsed.account_info?.period || null,
+      detected_mode: detectedMode
+    };
+
+    return { 
+      platform: detectedPlatform, 
+      account_info: accountInfo, 
+      campaigns: mappedCampaigns 
+    };
   });

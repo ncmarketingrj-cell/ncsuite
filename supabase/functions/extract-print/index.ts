@@ -45,15 +45,16 @@ serve(async (req) => {
 OBJETIVO: extrair com PRECISÃO ABSOLUTA cada campanha visível no print, sem inventar e sem omitir.
 
 REGRAS RÍGIDAS:
-1. Liste CADA linha de campanha visível com seu NOME EXATO (preserve maiúsculas, símbolos, emojis, "|", traços).
+1. Liste CADA linha de campanha visível com seu NOME REAL (remova badges do Meta Ads como 'Edições não publicadas', 'Alto desempenho', '1 recomendação', 'Recomendações'). Preserve maiúsculas, códigos e símbolos.
 2. Determine o TIPO DE RESULTADO (result_type) mapeando de forma INTELIGENTE cruzando o nome da campanha com a coluna de resultados/custo por resultado.
-   - Se o nome da campanha tiver "mensagem" mas a métrica de resultado não for custo por mensagem, mensure pela métrica real que estiver lá.
-   - Se o nome tiver "mensagem" e a métrica for "custo por mensagem", a categoria é "Mensagens".
-   - Se o nome da campanha for "alcance" e o resultado for "alcance", a categoria é "Alcance".
-   - Se o nome tiver "audiência" ou "alcance", mas o resultado ou custo apontar para "visualizações de página", a categoria é "Visualizações de página".
-   - Cruze sempre o nome da campanha com o nome da métrica real da tabela. Categorias canônicas aceitas:
-   - "Mensagens", "Leads", "Cliques", "Visualizações de página", "Conversões", "Engajamentos", "Alcance", "Visualizações de vídeo", "Outros".
-3. Para cada campanha extraia TODOS os números visíveis: investimento (R$), resultados (qtd), custo por resultado (CPL), alcance, impressões, frequência, CTR.
+   - "Conversas por mensagem iniciadas" / "Mensagens" / "WhatsApp"
+   - "Consignado" (campanhas de consignado de veículos)
+   - "Visualizações da página de destino" / "Visualizações de página" / visitas ao site/cardápio
+   - "Compras no site" / "Compras" / "Vendas" / "Conversões"
+   - "Visitas ao perfil do Instagram"
+   - "Alcance", "Impressões", "Visualizações de vídeo / Plays"
+3. Extraia o nome da conta ou cliente no topo se visível (ex: pizzariabonne21) e o período no canto superior direito (ex: OUTUBRO 2026).
+4. Para cada campanha extraia TODOS os números visíveis: investimento (R$), resultados (qtd), custo por resultado (CPL/CPA), alcance, impressões, frequência, CTR.
 4. NÃO agrupe automaticamente. Retorne cada campanha separada.
 5. SUGIRA agrupamentos em "suggested_groups" quando dois ou mais nomes parecem ser variações da mesma campanha (ex: "NC | CMP MENSAGENS RAQUEL" + "NC | CMP MSG RAQUEL"). Inclua justificativa curta.
 6. Coloque em "ambiguities" qualquer dúvida (texto cortado, números ilegíveis, etc).

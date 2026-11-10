@@ -2,9 +2,13 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useState, type ChangeEvent } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Upload as UploadIcon, Loader2, Check, X, FileSearch, ArrowRight, Zap, Globe, Target } from "lucide-react";
+import { 
+  Upload as UploadIcon, Loader2, Check, X, FileSearch, 
+  ArrowRight, Zap, Globe, Target, ShoppingBag, Car, 
+  Sparkles, DollarSign, Calculator 
+} from "lucide-react";
 import { toast } from "sonner";
-import { extractPrintFn, type ExtractedCampaign } from "@/lib/ocr.functions";
+import { extractPrintFn, type ExtractedCampaign, type ExtractedAccountInfo } from "@/lib/ocr.functions";
 
 export const Route = createFileRoute("/_app/upload")({
   head: () => ({ meta: [{ title: "Extração de Dados — NC Suite" }] }),
@@ -21,6 +25,14 @@ function UploadPage() {
   const [loading, setLoading] = useState(false);
   const [campaigns, setCampaigns] = useState<ExtractedCampaign[] | null>(null);
   const [detectedPlatform, setDetectedPlatform] = useState<"meta" | "google" | null>(null);
+
+  // Estados inteligentes de conta e template pós-extração
+  const [accountInfo, setAccountInfo] = useState<ExtractedAccountInfo | null>(null);
+  const [clientName, setClientName] = useState("");
+  const [periodText, setPeriodText] = useState("");
+  const [salesRevenue, setSalesRevenue] = useState("");
+  const [salesOrders, setSalesOrders] = useState("");
+  const [templateMode, setTemplateMode] = useState<"standard_auto" | "ecommerce_sales">("standard_auto");
 
   const onFile = (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -76,8 +88,23 @@ function UploadPage() {
 
       setCampaigns(processed);
       setDetectedPlatform(r.platform as any);
-      if (!processed.length) toast.warning("Nenhuma campanha identificada — tente um print mais nítido");
-      else {
+
+      // Extração de metadados da conta
+      const acc = (r as any).account_info as ExtractedAccountInfo | undefined;
+      setAccountInfo(acc || null);
+      if (acc?.account_name) setClientName(acc.account_name);
+      if (acc?.period) setPeriodText(acc.period);
+
+      // Classifica se é e-commerce / cardápio / vendas
+      const isEcom = acc?.detected_mode === "ecommerce_sales" || processed.some(c => 
+        /visualizaç(?:ão|ões)\s+da\s+página|compra|venda|cardapio|cardápio|site/i.test(c.result_type || "") ||
+        /site|cardapio|cardápio|cmp\s+de\s+vendas|vendas|compras/i.test(c.name || "")
+      );
+      setTemplateMode(isEcom ? "ecommerce_sales" : "standard_auto");
+
+      if (!processed.length) {
+        toast.warning("Nenhuma campanha identificada — tente um print mais nítido");
+      } else {
         localStorage.setItem("nc_extracted_campaigns", JSON.stringify(processed));
         localStorage.setItem("nc_extracted_platform", r.platform ?? selectedPlatform);
         toast.success(`${processed.length} campanha(s) extraída(s) via ${selectedPlatform === 'meta' ? 'Meta Ads' : 'Google Ads'}`);
@@ -91,6 +118,17 @@ function UploadPage() {
 
   const goToReport = () => {
     if (!campaigns?.length) return;
+    localStorage.setItem("nc_extracted_campaigns", JSON.stringify(campaigns));
+    localStorage.setItem("nc_extracted_platform", detectedPlatform ?? selectedPlatform ?? "meta");
+    if (clientName) localStorage.setItem("nc_extracted_client", clientName);
+    if (periodText) localStorage.setItem("nc_extracted_period", periodText);
+    localStorage.setItem("nc_extracted_template_mode", templateMode);
+    if (templateMode === "ecommerce_sales") {
+      localStorage.setItem("nc_extracted_ecommerce_data", JSON.stringify({
+        revenue: salesRevenue,
+        orders: salesOrders,
+      }));
+    }
     nav({ to: "/relatorios", search: { from: "upload" } as any });
   };
 
@@ -100,8 +138,18 @@ function UploadPage() {
     setCampaigns(null);
     setDetectedPlatform(null);
     setSelectedPlatform(null);
+    setAccountInfo(null);
+    setClientName("");
+    setPeriodText("");
+    setSalesRevenue("");
+    setSalesOrders("");
+    setTemplateMode("standard_auto");
     localStorage.removeItem("nc_extracted_campaigns");
     localStorage.removeItem("nc_extracted_platform");
+    localStorage.removeItem("nc_extracted_client");
+    localStorage.removeItem("nc_extracted_period");
+    localStorage.removeItem("nc_extracted_template_mode");
+    localStorage.removeItem("nc_extracted_ecommerce_data");
   };
 
   const isGoogle = selectedPlatform === "google" || detectedPlatform === "google";
@@ -283,8 +331,175 @@ function UploadPage() {
                 disabled={!campaigns.length}
                 className="group flex items-center gap-2 rounded-full bg-primary px-6 py-2.5 text-xs font-black text-background uppercase tracking-widest hover:shadow-glow transition hover:scale-105 active:scale-95 disabled:opacity-50"
               >
-                Gerar Relatório Profissional <ArrowRight className="h-4 w-4 transition group-hover:translate-x-1" />
+                Gerar Relatório <ArrowRight className="h-4 w-4 transition group-hover:translate-x-1" />
               </button>
+            </div>
+
+            {/* ═══ INTERFACE INTERATIVA DE CONFIGURAÇÃO PÓS-EXTRAÇÃO ═══ */}
+            <div className="p-6 border-b border-white/5 bg-white/[0.01]">
+              {templateMode === "ecommerce_sales" ? (
+                <div className="rounded-2xl border border-primary/30 bg-primary/[0.03] p-5 sm:p-6 space-y-5">
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      <div className="h-10 w-10 rounded-xl bg-primary/20 border border-primary/40 flex items-center justify-center text-primary shrink-0">
+                        <ShoppingBag className="h-5 w-5" />
+                      </div>
+                      <div>
+                        <h3 className="text-sm sm:text-base font-black text-white uppercase tracking-tight flex items-center gap-2">
+                          Conta de Vendas / E-commerce / Delivery Detectada
+                          <span className="text-[9px] px-2 py-0.5 rounded-full bg-primary/20 text-primary border border-primary/30 font-mono">Modo Compras</span>
+                        </h3>
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          Informe o fechamento do site/cardápio para o cálculo exato da taxa de conversão e faturamento:
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => setTemplateMode("standard_auto")}
+                      className="text-[10px] uppercase font-bold text-muted-foreground hover:text-primary transition self-start sm:self-center"
+                    >
+                      Mudar para Modelo Veículos / Leads
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <div>
+                      <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground block mb-1">
+                        Nome do Cliente
+                      </label>
+                      <input
+                        value={clientName}
+                        onChange={(e) => setClientName(e.target.value)}
+                        placeholder="Ex: Pizza Bonne"
+                        className="w-full rounded-xl border border-white/10 bg-background/80 px-3.5 py-2.5 text-xs font-bold text-white focus:outline-none focus:border-primary"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground block mb-1">
+                        Período do Relatório
+                      </label>
+                      <input
+                        value={periodText}
+                        onChange={(e) => setPeriodText(e.target.value)}
+                        placeholder="Ex: OUTUBRO 2026"
+                        className="w-full rounded-xl border border-white/10 bg-background/80 px-3.5 py-2.5 text-xs font-bold text-white focus:outline-none focus:border-primary"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-black uppercase tracking-widest text-emerald-400 block mb-1">
+                        Faturamento Líquido (R$) *
+                      </label>
+                      <input
+                        value={salesRevenue}
+                        onChange={(e) => setSalesRevenue(e.target.value)}
+                        placeholder="Ex: 25.538,08"
+                        className="w-full rounded-xl border border-emerald-500/30 bg-emerald-950/20 px-3.5 py-2.5 text-xs font-bold text-emerald-300 focus:outline-none focus:border-emerald-500 font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-black uppercase tracking-widest text-primary block mb-1">
+                        Pedidos Finalizados no Site *
+                      </label>
+                      <input
+                        value={salesOrders}
+                        onChange={(e) => setSalesOrders(e.target.value)}
+                        placeholder="Ex: 244"
+                        className="w-full rounded-xl border border-primary/30 bg-primary/10 px-3.5 py-2.5 text-xs font-bold text-white focus:outline-none focus:border-primary font-mono"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Prévia dinâmica do cálculo */}
+                  {(() => {
+                    const visits = campaigns.filter(c => /visualizaç|site|cardapio|cardápio|página/i.test(c.result_type || c.name || "")).reduce((s, c) => s + (c.conversions || c.clicks || 0), 0);
+                    const orders = Number(salesOrders.replace(/\./g, "").replace(",", ".")) || 0;
+                    const taxa = visits > 0 && orders > 0 ? ((orders / visits) * 100).toFixed(2).replace(".", ",") : "0,00";
+                    return (
+                      <div className="flex flex-wrap items-center justify-between gap-4 p-4 rounded-xl bg-black/40 border border-white/10">
+                        <div className="flex items-center gap-3 text-xs flex-wrap">
+                          <span className="flex items-center gap-1.5 text-muted-foreground">
+                            <Sparkles className="h-4 w-4 text-primary" /> Cálculo da Taxa:
+                          </span>
+                          <span className="font-mono text-white">
+                            {orders || 0} pedidos ÷ {visits || 0} visualizações × 100 =
+                          </span>
+                          <span className="font-mono font-black text-primary px-2.5 py-1 rounded bg-primary/20 border border-primary/30">
+                            {taxa}%
+                          </span>
+                        </div>
+                        <button
+                          onClick={goToReport}
+                          className="flex items-center gap-2 rounded-xl bg-primary px-6 py-2.5 text-xs font-black text-background uppercase tracking-wider hover:shadow-glow transition hover:scale-105 active:scale-95"
+                        >
+                          Gerar Mensagem Pronta <ArrowRight className="h-4 w-4" />
+                        </button>
+                      </div>
+                    );
+                  })()}
+                </div>
+              ) : (
+                <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-5 sm:p-6 space-y-5">
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      <div className="h-10 w-10 rounded-xl bg-primary/20 border border-primary/40 flex items-center justify-center text-primary shrink-0">
+                        <Car className="h-5 w-5" />
+                      </div>
+                      <div>
+                        <h3 className="text-sm sm:text-base font-black text-white uppercase tracking-tight flex items-center gap-2">
+                          Template Padrão: Veículos, Mensagens e Consignado
+                          <span className="text-[9px] px-2 py-0.5 rounded-full bg-white/10 text-muted-foreground border border-white/20 font-mono">Modo Padrão</span>
+                        </h3>
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          O motor agrupará as campanhas em Mensagens nos veículos, Consignado e Alcance/Impressões.
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => setTemplateMode("ecommerce_sales")}
+                      className="text-[10px] uppercase font-bold text-muted-foreground hover:text-primary transition self-start sm:self-center"
+                    >
+                      Mudar para Modelo Vendas / Delivery
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground block mb-1">
+                        Nome do Cliente
+                      </label>
+                      <input
+                        value={clientName}
+                        onChange={(e) => setClientName(e.target.value)}
+                        placeholder="Ex: AlfaCar Veículos"
+                        className="w-full rounded-xl border border-white/10 bg-background/80 px-3.5 py-2.5 text-xs font-bold text-white focus:outline-none focus:border-primary"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground block mb-1">
+                        Período do Relatório
+                      </label>
+                      <input
+                        value={periodText}
+                        onChange={(e) => setPeriodText(e.target.value)}
+                        placeholder="Ex: OUTUBRO 2026"
+                        className="w-full rounded-xl border border-white/10 bg-background/80 px-3.5 py-2.5 text-xs font-bold text-white focus:outline-none focus:border-primary"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap items-center justify-between gap-4 p-4 rounded-xl bg-black/40 border border-white/10">
+                    <p className="text-xs text-muted-foreground">
+                      Tudo pronto! O relatório será formatado no novo padrão oficial para WhatsApp.
+                    </p>
+                    <button
+                      onClick={goToReport}
+                      className="flex items-center gap-2 rounded-xl bg-primary px-6 py-2.5 text-xs font-black text-background uppercase tracking-wider hover:shadow-glow transition hover:scale-105 active:scale-95"
+                    >
+                      Gerar Mensagem Pronta <ArrowRight className="h-4 w-4" />
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
             
             <div className="overflow-x-auto">

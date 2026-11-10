@@ -64,7 +64,11 @@ function RelatoriosPage() {
   const [clientName, setClientName] = useState("");
   const [periodText, setPeriodText] = useState("");
   const [reportLevel, setReportLevel] = useState<"campaign" | "adset" | "ad">("campaign");
-  const [reportMode, setReportMode] = useState<"complete" | "objective" | "campaigns">("complete");
+  const [reportMode, setReportMode] = useState<string>("standard_auto");
+
+  // Dados para Relatório de Vendas / E-commerce / Pizzaria / Cardápio
+  const [salesRevenue, setSalesRevenue] = useState("");
+  const [salesOrders, setSalesOrders] = useState("");
   
   const [selectedAccountId, setSelectedAccountId] = useState<string>("all");
   const [dateRange, setDateRange] = useState({
@@ -188,7 +192,7 @@ function RelatoriosPage() {
       client_name: clientName,
       period: periodText,
       markdown: generatedText,
-      raw_data: { source, campaigns: campaignList, reportMode, reportLevel },
+      raw_data: { source, campaigns: campaignList, reportMode, reportLevel, salesRevenue, salesOrders },
       total_investment: totalInvestment,
       total_campaigns: totalCampaigns,
     };
@@ -212,10 +216,16 @@ function RelatoriosPage() {
     setSource(rep.source);
     setClientName(rep.clientName);
     setPeriodText(rep.periodText);
-    setReportMode(rep.reportMode as "campaigns" | "complete" | "objective");
+    setReportMode(rep.reportMode);
     setCampaignList(rep.campaigns);
     setGeneratedText(rep.generatedText);
     setActiveReportId(rep.id);
+    if ((rep as any).raw_data?.salesRevenue) {
+      setSalesRevenue((rep as any).raw_data.salesRevenue);
+    }
+    if ((rep as any).raw_data?.salesOrders) {
+      setSalesOrders((rep as any).raw_data.salesOrders);
+    }
     if (rep.reportLevel) {
       setReportLevel(rep.reportLevel);
     }
@@ -293,7 +303,7 @@ function RelatoriosPage() {
           const mapped: CampaignData[] = parsed.map((c: any, index: number) => {
             // Usar result_type extraído pelo OCR para classificar o objetivo
             const rawObj = c.result_type
-              ? mapResultTypeToObjective(c.result_type)
+              ? mapResultTypeToObjective(c.result_type, c.name)
               : detectObjective(c.name);
             return {
               id: `ocr-${index}`,
@@ -309,8 +319,31 @@ function RelatoriosPage() {
             };
           });
           setCampaignList(mapped);
-          // Não sobrescrever o nome que o usuário já digitou.
-          // Se o campo ainda estiver vazio ou no valor padrão inicial, deixar em branco para preenchimento manual.
+
+          // Carregar informações extraídas de cliente, período e modelo
+          const storedClient = localStorage.getItem("nc_extracted_client");
+          if (storedClient && (!clientName || clientName === "Consolidado")) {
+            setClientName(storedClient);
+          }
+
+          const storedPeriod = localStorage.getItem("nc_extracted_period");
+          if (storedPeriod) {
+            setPeriodText(storedPeriod);
+          }
+
+          const storedTemplateMode = localStorage.getItem("nc_extracted_template_mode");
+          if (storedTemplateMode) {
+            setReportMode(storedTemplateMode);
+          }
+
+          const storedEcom = localStorage.getItem("nc_extracted_ecommerce_data");
+          if (storedEcom) {
+            try {
+              const parsedEcom = JSON.parse(storedEcom);
+              if (parsedEcom.revenue) setSalesRevenue(parsedEcom.revenue);
+              if (parsedEcom.orders) setSalesOrders(parsedEcom.orders);
+            } catch {}
+          }
         } else {
           setCampaignList([]);
         }
@@ -523,43 +556,109 @@ function RelatoriosPage() {
   }, [source, selectedAccountId, dateRange, reportLevel]);
 
   // Mapeia o result_type extraído pelo OCR diretamente para o objetivo do relatório
-  const mapResultTypeToObjective = (resultType: string): string => {
+  const mapResultTypeToObjective = (resultType: string = "", campName: string = ""): string => {
     const rt = resultType.toLowerCase();
-    if (rt.includes("conversa") || rt.includes("mensagem") || rt.includes("whatsapp") || rt.includes("message")) {
-      return "💬 Mensagens";
+    const name = campName.toLowerCase();
+
+    // 1. Consignado
+    if (rt.includes("consignado") || name.includes("consignado")) {
+      return "🚗 Consignado";
     }
-    if (rt.includes("lead") || rt.includes("cadastro") || rt.includes("formulário")) {
-      return "📧 Cadastros / Leads";
+    // 2. Visualizações na Página / Site / Cardápio
+    if (
+      rt.includes("visualizaç") || 
+      rt.includes("página") || 
+      rt.includes("pagina") || 
+      rt.includes("landing") ||
+      name.includes("site") || 
+      name.includes("cardapio") || 
+      name.includes("cardápio")
+    ) {
+      return "🌐 Visualizações na Página";
     }
-    if (rt.includes("compra") || rt.includes("purchase") || rt.includes("venda") || rt.includes("checkout")) {
-      return "💳 Compras / Vendas";
+    // 3. Compras / Vendas
+    if (
+      rt.includes("compra") || 
+      rt.includes("purchase") || 
+      rt.includes("venda") || 
+      rt.includes("checkout") || 
+      rt.includes("pedido") ||
+      name.includes("cmp de vendas") ||
+      name.includes("vendas")
+    ) {
+      return "💳 Conversões / Compras";
     }
-    if (rt.includes("clique") || rt.includes("click") || rt.includes("link")) {
-      return "👆 Cliques no Link";
+    // 4. Mensagens nos veículos / WhatsApp / Leads
+    if (
+      rt.includes("conversa") || 
+      rt.includes("mensagem") || 
+      rt.includes("whatsapp") || 
+      rt.includes("message") ||
+      name.includes("veiculo") || 
+      name.includes("veículo") ||
+      name.includes("mensagens") ||
+      name.includes("qualidade") ||
+      name.includes("vaga") ||
+      name.includes("lead")
+    ) {
+      return "🚗 Mensagens nos veículos";
     }
-    if (rt.includes("alcance") || rt.includes("reach") || rt.includes("visualização") || rt.includes("view") || rt.includes("impressão") || rt.includes("impression")) {
-      return "👁️ Visualizações / Alcance";
+    // 5. Alcance e Impressões
+    if (
+      rt.includes("alcance") || 
+      rt.includes("reach") || 
+      rt.includes("visualização de vídeo") || 
+      rt.includes("view") || 
+      rt.includes("impressão") || 
+      rt.includes("impression") ||
+      rt.includes("perfil") ||
+      name.includes("alcance") ||
+      name.includes("reconhecimento") ||
+      name.includes("artes") ||
+      name.includes("criativo")
+    ) {
+      return "👁️ Alcance e Impressões";
     }
     if (rt.includes("engajamento") || rt.includes("engagement")) {
       return "🔥 Engajamento";
     }
-    return "🎯 Outras Conversões";
+    if (rt.includes("clique") || rt.includes("click") || rt.includes("link")) {
+      return "👆 Cliques no Link";
+    }
+    return "🎯 Conversões";
   };
 
   // Função Heurística Inteligente para Detecção de Objetivos
-  const detectObjective = (campName: string): string => {
+  const detectObjective = (campName: string = ""): string => {
     const name = campName.toLowerCase();
-    if (name.includes("atendimento") || name.includes("mensagem") || name.includes("whatsapp") || name.includes("msg") || name.includes("conversa")) {
-      return "💬 Mensagens";
+    if (name.includes("consignado")) {
+      return "🚗 Consignado";
     }
-    if (name.includes("clique") || name.includes("click") || name.includes("link") || name.includes("trafego") || name.includes("site") || name.includes("cardapio") || name.includes("visita")) {
-      return "👆 Cliques";
+    if (name.includes("site") || name.includes("cardapio") || name.includes("cardápio") || name.includes("pagina") || name.includes("página")) {
+      return "🌐 Visualizações na Página";
     }
-    if (name.includes("compra") || name.includes("conversao") || name.includes("venda") || name.includes("pedido") || name.includes("checkout") || name.includes("leads") || name.includes("concluido")) {
-      return "🎯 Compras/pedido concluido";
+    if (name.includes("compra") || name.includes("venda") || name.includes("pedido") || name.includes("checkout") || name.includes("cmp de vendas")) {
+      return "💳 Conversões / Compras";
     }
-    if (name.includes("alcance") || name.includes("reconhecimento") || name.includes("reach") || name.includes("brand")) {
-      return "👁️ Alcance";
+    if (
+      name.includes("mensagem") || 
+      name.includes("whatsapp") || 
+      name.includes("msg") || 
+      name.includes("conversa") || 
+      name.includes("atendimento") || 
+      name.includes("veiculo") || 
+      name.includes("veículo") || 
+      name.includes("qualidade") || 
+      name.includes("vaga") ||
+      name.includes("lead")
+    ) {
+      return "🚗 Mensagens nos veículos";
+    }
+    if (name.includes("alcance") || name.includes("reconhecimento") || name.includes("reach") || name.includes("brand") || name.includes("artes")) {
+      return "👁️ Alcance e Impressões";
+    }
+    if (name.includes("clique") || name.includes("click") || name.includes("link") || name.includes("trafego") || name.includes("visita")) {
+      return "👆 Cliques no Link";
     }
     return "🎯 Conversões";
   };
@@ -785,6 +884,158 @@ function RelatoriosPage() {
     if (reportLevel === "adset") reportTitle = "RELATÓRIO DE CONJUNTOS DE ANÚNCIOS";
     if (reportLevel === "ad") reportTitle = "RELATÓRIO DE ANÚNCIOS DE PERFORMANCE";
 
+    if (reportMode === "standard_auto") {
+      setActivePdfLayout("minimalist");
+
+      const isConsignado = (c: CampaignData) => 
+        /consignado/i.test(c.name) || c.objective.toLowerCase().includes("consignado");
+
+      const isReachOrImpression = (c: CampaignData) => 
+        c.objective.includes("Alcance") || 
+        c.objective.includes("Visualizações") || 
+        c.objective.includes("Impressões") || 
+        c.objective.includes("Thru-Play") || 
+        c.objective.includes("Vídeo") ||
+        /alcance|reconhecimento|impress[õo]es|plays|vídeo|video|artes/i.test(c.name);
+
+      const msgCampaigns = selected.filter(c => !isConsignado(c) && !isReachOrImpression(c));
+      const reachCampaigns = selected.filter(c => isReachOrImpression(c) && !isConsignado(c));
+      const consignadoCampaigns = selected.filter(c => isConsignado(c));
+
+      // Totais Mensagens nos veículos
+      const costMsg = msgCampaigns.reduce((s, c) => s + c.cost, 0);
+      const leadsMsg = msgCampaigns.reduce((s, c) => s + (c.conversions > 0 ? c.conversions : (c.clicks > 0 ? c.clicks : 0)), 0);
+      const cplMsg = leadsMsg > 0 ? costMsg / leadsMsg : 0;
+
+      // Totais Alcance e Impressões
+      const costReach = reachCampaigns.reduce((s, c) => s + c.cost, 0);
+      const impsReach = reachCampaigns.reduce((s, c) => s + (c.impressions > 0 ? c.impressions : c.reach), 0);
+      const cpmReach = impsReach > 0 ? (costReach / impsReach) * 1000 : 0;
+
+      // Totais Consignado
+      const costCons = consignadoCampaigns.reduce((s, c) => s + c.cost, 0);
+      const leadsCons = consignadoCampaigns.reduce((s, c) => s + (c.conversions > 0 ? c.conversions : 0), 0);
+      const cplCons = leadsCons > 0 ? costCons / leadsCons : 0;
+
+      let txt = `Relatório mensal: \n *Período:* ${periodText.toUpperCase() || displayPeriod.toUpperCase()}\n\n`;
+
+      txt += `*Campanha de mensagens nos veiculos:*\n`;
+      txt += ` Investimento: R$ ${costMsg.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n`;
+      txt += ` Total de leads: ${leadsMsg.toLocaleString("pt-BR")}\n`;
+      txt += ` Custo por lead: R$ ${cplMsg.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n\n`;
+
+      txt += `*Campanha de Alcance e Impressões:*\n`;
+      txt += `Investimento: R$ ${costReach.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n`;
+      txt += `Impressões / Plays: ${impsReach.toLocaleString("pt-BR")}\n`;
+      txt += `CPM: R$ ${cpmReach.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n\n`;
+
+      if (consignadoCampaigns.length > 0 || costCons > 0 || leadsCons > 0) {
+        txt += `*Campanha de consignado* \n`;
+        txt += `Total de leads: ${leadsCons.toLocaleString("pt-BR")}\n`;
+        txt += `Custo por leads: ${cplCons.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n`;
+        txt += `Investimento: ${costCons.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n`;
+      }
+
+      setGeneratedText(txt.trim());
+      return;
+    }
+
+    if (reportMode === "ecommerce_sales") {
+      setActivePdfLayout("analytical");
+
+      const isPageViews = (c: CampaignData) => 
+        c.objective.includes("Visualizações") || 
+        c.objective.includes("Cliques") ||
+        /site|cardapio|cardápio|página|destino|landing/i.test(c.name);
+
+      const isSales = (c: CampaignData) =>
+        c.objective.includes("Compras") ||
+        c.objective.includes("Vendas") ||
+        /compra|venda|vendas|purchase|pedido/i.test(c.name);
+
+      const pageViewCampaigns = selected.filter(c => isPageViews(c));
+      const salesCampaigns = selected.filter(c => isSales(c));
+
+      // Totais Gerais
+      const totalInvest = selected.reduce((s, c) => s + c.cost, 0);
+      const totalReach = selected.reduce((s, c) => s + c.reach, 0);
+      const totalImps = selected.reduce((s, c) => s + c.impressions, 0);
+
+      // Visualizações na Página
+      const investViews = pageViewCampaigns.reduce((s, c) => s + c.cost, 0);
+      const visitsCount = pageViewCampaigns.reduce((s, c) => s + (c.conversions > 0 ? c.conversions : c.clicks), 0);
+      const costPerView = visitsCount > 0 ? investViews / visitsCount : 0;
+      const impsViews = pageViewCampaigns.reduce((s, c) => s + c.impressions, 0);
+      const cpmViews = impsViews > 0 ? (investViews / impsViews) * 1000 : 0;
+
+      // Conversões / Compras
+      const investSales = salesCampaigns.reduce((s, c) => s + c.cost, 0);
+      const purchasesMeta = salesCampaigns.reduce((s, c) => s + c.conversions, 0);
+      const cpaSales = purchasesMeta > 0 ? investSales / purchasesMeta : 0;
+      const reachSales = salesCampaigns.reduce((s, c) => s + c.reach, 0);
+      const impsSales = salesCampaigns.reduce((s, c) => s + c.impressions, 0);
+
+      // Fechamento informado pelo usuário
+      const numOrders = Number(String(salesOrders).replace(/\./g, "").replace(",", ".")) || 0;
+      const parsedRevenue = Number(String(salesRevenue).replace(/[^\d.,]/g, "").replace(/\./g, "").replace(",", ".")) || 0;
+      const formattedRevenue = parsedRevenue > 0 
+        ? parsedRevenue.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+        : (salesRevenue || "0,00");
+
+      const convRate = visitsCount > 0 && numOrders > 0 
+        ? ((numOrders / visitsCount) * 100).toFixed(2).replace(".", ",")
+        : "0,00";
+
+      let txt = `📊 RELATÓRIO DE RESULTADOS\n`;
+      txt += `━━━━━━━━━━━━━━━━━━━━\n`;
+      txt += `🏢 Cliente: ${clientName || "Pizza Bonne"}\n`;
+      txt += `📅 Período: ${periodText.toUpperCase() || displayPeriod.toUpperCase()}\n`;
+      txt += `📱 Plataformas: ${platformString || "Meta Ads"}\n\n`;
+
+      txt += `━━━━━━━━━━━━━━━━━━━━\n`;
+      txt += `📊 TOTAIS GERAIS\n`;
+      txt += `━━━━━━━━━━━━━━━━━━━━\n`;
+      txt += `💵 Investimento Total: R$ ${totalInvest.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n`;
+      txt += `👥 Alcance Total: ${totalReach.toLocaleString("pt-BR")}\n`;
+      txt += `👁️ Impressões Totais: ${totalImps.toLocaleString("pt-BR")}\n`;
+      txt += `📈 Taxa de conversão: ${convRate}%\n\n`;
+
+      txt += `Cálculo da taxa:\n`;
+      txt += `${numOrders.toLocaleString("pt-BR")} pedidos ÷ ${visitsCount.toLocaleString("pt-BR")} visualizações no site × 100 = ${convRate}%\n\n`;
+
+      txt += `━━━━━━━━━━━━━━━━━━━━\n`;
+      txt += `RESULTADOS POR OBJETIVO\n`;
+      txt += `━━━━━━━━━━━━━━━━━━━━\n\n`;
+
+      txt += `🌐 Visualizações na Página\n`;
+      txt += `💵 Investimento: R$ ${investViews.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n`;
+      txt += `📈 Resultados: ${visitsCount.toLocaleString("pt-BR")} visitas\n`;
+      txt += `💲 Custo por visualizações: R$ ${costPerView.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n`;
+      txt += `📈 Impressões / Plays: ${impsViews.toLocaleString("pt-BR")}\n`;
+      txt += `💲 CPM: R$ ${cpmViews.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (Custo por mil visualizações das impressões)\n\n`;
+
+      txt += `💳 Conversões / Compras\n`;
+      txt += `💵 Investimento: R$ ${investSales.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n`;
+      txt += `📈 Resultados: ${purchasesMeta.toLocaleString("pt-BR")}\n`;
+      txt += `💲 CPA: R$ ${cpaSales.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n`;
+      txt += `👥 Alcance: ${reachSales.toLocaleString("pt-BR")}\n`;
+      txt += `👁️ Impressões: ${impsSales.toLocaleString("pt-BR")}\n\n`;
+
+      txt += `🌐 No site/Cardápio\n`;
+      txt += `💲 Faturamento Liquido: R$ ${formattedRevenue}\n`;
+      txt += `📈 Resultados: ${numOrders.toLocaleString("pt-BR")} pedidos finalizados\n\n`;
+
+      if (purchasesMeta > 0 && numOrders > 0) {
+        txt += `OBS: Temos campanhas de venda com ${purchasesMeta} pedidos, esses ${purchasesMeta} pedidos estão inclusos nos ${numOrders.toLocaleString("pt-BR")} pedidos finalizados.\n\n`;
+      }
+
+      txt += `━━━━━━━━━━━━━━━━━━━━\n`;
+      txt += `${agencyName.toUpperCase()}`;
+
+      setGeneratedText(txt);
+      return;
+    }
+
     if (reportMode === "complete") {
       setActivePdfLayout("classic");
       finalText += buildHeader(reportTitle);
@@ -805,7 +1056,7 @@ function RelatoriosPage() {
 
     finalText += `━━━━━━━━━━━━━━━━━━━━\n*${agencyName.toUpperCase()}*`;
     setGeneratedText(finalText);
-  }, [campaignList, reportMode, clientName, periodText, templatesData, reportLevel]);
+  }, [campaignList, reportMode, clientName, periodText, templatesData, reportLevel, salesRevenue, salesOrders]);
 
   const handleGenerate = () => {
     const selected = campaignList.filter(c => c.selected);
@@ -1021,9 +1272,11 @@ function RelatoriosPage() {
                 onChange={(e) => setReportMode(e.target.value as any)}
                 className="w-full rounded-xl border border-white/10 bg-background/50 px-4 py-3 text-sm font-bold focus:border-primary focus:outline-none"
               >
-                <option value="complete">Completo (Tipo + Detalhe de Campanha)</option>
-                <option value="objective">Apenas por Tipo / Objetivo</option>
-                <option value="campaigns">Apenas Métrica de Campanhas</option>
+                <option value="standard_auto">⭐ Padrão NC (Veículos / Leads / Consignado)</option>
+                <option value="ecommerce_sales">🍕 Vendas / Cardápio / E-commerce (Site & Pedidos)</option>
+                <option value="complete">📊 Completo Analítico (Tipo + Detalhe)</option>
+                <option value="objective">🎯 Apenas por Tipo / Objetivo</option>
+                <option value="campaigns">📌 Apenas Métrica de Campanhas</option>
                 {templatesData && templatesData.filter(t => !t.is_system).length > 0 && (
                   <optgroup label="Templates Customizados">
                     {templatesData.filter(t => !t.is_system).map(t => (
@@ -1033,6 +1286,34 @@ function RelatoriosPage() {
                 )}
               </select>
             </div>
+
+            {reportMode === "ecommerce_sales" && (
+              <div className="p-4 rounded-xl border border-primary/30 bg-primary/[0.04] space-y-3">
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-black uppercase tracking-widest text-white flex items-center gap-1.5">
+                    🛒 Fechamento do Site / Cardápio
+                  </span>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[9px] font-black uppercase tracking-widest text-emerald-400 ml-1">Faturamento Líquido (R$)</label>
+                  <input 
+                    value={salesRevenue} 
+                    onChange={(e) => setSalesRevenue(e.target.value)}
+                    placeholder="Ex: 25.538,08"
+                    className="w-full rounded-lg border border-emerald-500/30 bg-emerald-950/20 px-3 py-2 text-xs font-mono font-bold text-emerald-300 focus:outline-none focus:border-emerald-500"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[9px] font-black uppercase tracking-widest text-primary ml-1">Pedidos Finalizados no Site / Cardápio</label>
+                  <input 
+                    value={salesOrders} 
+                    onChange={(e) => setSalesOrders(e.target.value)}
+                    placeholder="Ex: 244"
+                    className="w-full rounded-lg border border-primary/30 bg-primary/10 px-3 py-2 text-xs font-mono font-bold text-white focus:outline-none focus:border-primary"
+                  />
+                </div>
+              </div>
+            )}
 
             <div className="space-y-2">
               <div className="flex items-center justify-between ml-1">
@@ -1159,23 +1440,23 @@ function RelatoriosPage() {
                     <select
                       value={c.objective}
                       onChange={(e) => handleUpdateObjective(c.id, e.target.value)}
-                      className="rounded-lg border border-white/10 bg-background/50 px-3 py-2 text-[10px] font-bold text-white focus:outline-none focus:border-primary/50 transition-colors w-full sm:w-40"
+                      className="rounded-lg border border-white/10 bg-background/50 px-3 py-2 text-[10px] font-bold text-white focus:outline-none focus:border-primary/50 transition-colors w-full sm:w-44"
                     >
-                      <optgroup label="💬 Mensagens">
+                      <optgroup label="🚗 Veículos / Leads">
+                        <option value="🚗 Mensagens nos veículos">🚗 Mensagens nos veículos</option>
+                        <option value="🚗 Consignado">🚗 Campanha de Consignado</option>
                         <option value="💬 Mensagens">💬 Mensagens / WhatsApp</option>
                         <option value="💬 Msgs Direct">💬 Msgs Direct (Instagram)</option>
                       </optgroup>
-                      <optgroup label="▶️ Vídeo / Alcance">
-                        <option value="▶️ Thru-Play">▶️ Thru-Play (Vídeo)</option>
+                      <optgroup label="🛒 Vendas / Cardápio">
                         <option value="🌐 Visualizações na Página">🌐 Visualizações na Página</option>
-                        <option value="👁️ Alcance e Impressões">👁️ Alcance e Impressões</option>
-                      </optgroup>
-                      <optgroup label="🔥 Topo de Funil">
-                        <option value="🔥 Engajamento">🔥 Engajamento</option>
+                        <option value="💳 Conversões / Compras">💳 Conversões / Compras</option>
                         <option value="👆 Cliques no Link">👆 Cliques no Link</option>
                       </optgroup>
-                      <optgroup label="🎯 Conversão">
-                        <option value="💳 Conversões / Compras">💳 Conversões / Compras</option>
+                      <optgroup label="👁️ Alcance / Topo">
+                        <option value="👁️ Alcance e Impressões">👁️ Alcance e Impressões</option>
+                        <option value="▶️ Thru-Play">▶️ Thru-Play (Vídeo)</option>
+                        <option value="🔥 Engajamento">🔥 Engajamento</option>
                         <option value="📧 Cadastros / Leads">📧 Cadastros / Leads</option>
                         <option value="🎯 Outros">🎯 Outros</option>
                       </optgroup>
@@ -1477,7 +1758,7 @@ function RelatoriosPage() {
                                 </h4>
                               </div>
                               <p className="text-[10px] text-muted-foreground font-mono">
-                                {report.periodText} • {report.reportMode === 'complete' ? 'Completo' : report.reportMode === 'objective' ? 'Por Objetivo' : 'Por Campanhas'}
+                                {report.periodText} • {report.reportMode === 'standard_auto' ? 'Padrão (Veículos)' : report.reportMode === 'ecommerce_sales' ? 'Vendas / Site' : report.reportMode === 'complete' ? 'Completo' : report.reportMode === 'objective' ? 'Por Objetivo' : 'Por Campanhas'}
                               </p>
                               <p className="text-[10px] text-muted-foreground font-mono mt-0.5">
                                 {report.campaigns.filter(c => c.selected).length} campanha(s) selecionada(s)
