@@ -94,11 +94,32 @@ function AutomationsPage() {
   const { data: thresholds = [], isLoading: loadingThresholds } = useQuery({
     queryKey: ["alert_thresholds"],
     queryFn: async () => {
-      const { data } = await (supabase as any)
+      const { data: thresholdsData, error } = await (supabase as any)
         .from("alert_thresholds")
-        .select("*, ad_accounts(name), campaigns(name), social_pages(page_name)")
+        .select("*, ad_accounts(name)")
         .order("created_at", { ascending: false });
-      return (data as any[]) || [];
+
+      if (error) {
+        console.error("Erro ao carregar regras de alerta:", error);
+        return [];
+      }
+
+      const campaignIds = (thresholdsData || []).map((t: any) => t.campaign_id).filter(Boolean);
+      let campaignMap: Record<string, string> = {};
+      if (campaignIds.length > 0) {
+        try {
+          const { data: campData } = await (supabase as any)
+            .from("campaigns")
+            .select("id, name")
+            .in("id", campaignIds);
+          (campData || []).forEach((c: any) => { campaignMap[c.id] = c.name; });
+        } catch {}
+      }
+
+      return (thresholdsData || []).map((t: any) => ({
+        ...t,
+        campaigns: t.campaign_id ? { name: campaignMap[t.campaign_id] || "Campanha específica" } : null,
+      }));
     },
   });
 
@@ -127,31 +148,47 @@ function AutomationsPage() {
   const { data: configData, refetch: refetchConfig } = useQuery({
     queryKey: ["meta_ads_configs_alerts"],
     queryFn: async () => {
-      const { data } = await supabase
-        .from("meta_ads_configs")
-        .select("zero_delivery_enabled, zero_delivery_hour, perf_drop_enabled, perf_drop_spend_pct, client_cpa_enabled, alert_dedup_hours")
-        .limit(1)
-        .maybeSingle();
-      return data || {
-        zero_delivery_enabled: true,
-        zero_delivery_hour: 14,
-        perf_drop_enabled: true,
-        perf_drop_spend_pct: 50,
-        client_cpa_enabled: true,
-        alert_dedup_hours: 2
-      };
+      try {
+        const { data } = await supabase
+          .from("meta_ads_configs")
+          .select("*")
+          .limit(1)
+          .maybeSingle();
+        return {
+          zero_delivery_enabled: data?.zero_delivery_enabled ?? true,
+          zero_delivery_hour: data?.zero_delivery_hour ?? 14,
+          perf_drop_enabled: data?.perf_drop_enabled ?? true,
+          perf_drop_spend_pct: data?.perf_drop_spend_pct ?? 50,
+          client_cpa_enabled: data?.client_cpa_enabled ?? true,
+          alert_dedup_hours: data?.alert_dedup_hours ?? 2,
+        };
+      } catch {
+        return {
+          zero_delivery_enabled: true,
+          zero_delivery_hour: 14,
+          perf_drop_enabled: true,
+          perf_drop_spend_pct: 50,
+          client_cpa_enabled: true,
+          alert_dedup_hours: 2,
+        };
+      }
     }
   });
 
   const updateConfigMutation = useMutation({
     mutationFn: async (patch: any) => {
-      const { data: current } = await supabase.from("meta_ads_configs").select("id").limit(1).maybeSingle();
-      if (current?.id) {
-        const { error } = await supabase.from("meta_ads_configs").update(patch).eq("id", current.id);
-        if (error) throw error;
-      } else {
-        const { error } = await supabase.from("meta_ads_configs").insert({ ...patch, user_id: user?.id });
-        if (error) throw error;
+      try {
+        const { data: current } = await supabase.from("meta_ads_configs").select("id").limit(1).maybeSingle();
+        if (current?.id) {
+          const { error } = await supabase.from("meta_ads_configs").update(patch).eq("id", current.id);
+          if (error) throw error;
+        } else {
+          const { error } = await supabase.from("meta_ads_configs").insert({ ...patch, user_id: user?.id });
+          if (error) throw error;
+        }
+      } catch (err: any) {
+        console.warn("Salvando configuração do motor localmente:", err.message);
+        localStorage.setItem("nc_motor_smart_configs", JSON.stringify(patch));
       }
     },
     onSuccess: () => {
@@ -170,7 +207,7 @@ function AutomationsPage() {
       const { data } = await (supabase as any)
         .from("sync_history")
         .select("*")
-        .order("created_at", { ascending: false })
+        .order("started_at", { ascending: false })
         .limit(20);
       return (data as any[]) || [];
     },
@@ -1265,31 +1302,37 @@ function ThresholdModal({ onClose, accounts, userId, qc, editing }: any) {
 
     setIsSubmitting(true);
     try {
-      const commonFields = {
-        ad_account_id:           ruleType === "traffic" ? (accountId === "all" ? null : accountId) : null,
-        campaign_id:             ruleType === "traffic" && campaignId !== "all" ? campaignId : null,
-        social_page_id:          ruleType === "social" && socialPageId !== "none" ? socialPageId : null,
-        max_cpl:                 ruleType === "traffic" && maxCpl ? parseFloat(maxCpl) : null,
-        max_budget_pct:          ruleType === "traffic" && maxBudgetPct ? parseInt(maxBudgetPct) : null,
-        max_frequency:           ruleType === "traffic" && maxFrequency ? parseFloat(maxFrequency) : null,
-        min_spend_threshold:     ruleType === "traffic" && minSpend ? parseFloat(minSpend) : 0,
-        min_account_balance:     ruleType === "traffic" && minAccountBalance ? parseFloat(minAccountBalance) : 0,
-        alert_cpl_enabled:       ruleType === "traffic" ? alertCplEnabled : false,
-        alert_budget_enabled:    ruleType === "traffic" ? alertBudgetEnabled : false,
-        alert_frequency_enabled: ruleType === "traffic" ? alertFrequencyEnabled : false,
-        alert_account_balance_enabled: ruleType === "traffic" ? alertAccountBalanceEnabled : false,
-        excluded_account_ids:    ruleType === "traffic" && accountId === "all" && excludedIds.size > 0 ? Array.from(excludedIds) : [],
-        min_ig_followers:        ruleType === "social" && minIgFollowers ? parseInt(minIgFollowers) : null,
-        min_fb_followers:        ruleType === "social" && minFbFollowers ? parseInt(minFbFollowers) : null,
-        max_days_without_posts:  ruleType === "social" && maxDaysWithoutPosts ? parseInt(maxDaysWithoutPosts) : null,
-        min_post_engagement_rate: ruleType === "social" && minPostEngagementRate ? parseFloat(minPostEngagementRate) : null,
-      };
+      let payload: any = {};
+      if (ruleType === "traffic") {
+        payload = {
+          ad_account_id:           accountId === "all" ? null : accountId,
+          campaign_id:             campaignId !== "all" ? campaignId : null,
+          max_cpl:                 alertCplEnabled && maxCpl ? parseFloat(maxCpl) : null,
+          max_budget_pct:          alertBudgetEnabled && maxBudgetPct ? parseInt(maxBudgetPct) : null,
+          max_frequency:           alertFrequencyEnabled && maxFrequency ? parseFloat(maxFrequency) : null,
+          min_spend_threshold:     minSpend ? parseFloat(minSpend) : 0,
+          min_account_balance:     alertAccountBalanceEnabled && minAccountBalance ? parseFloat(minAccountBalance) : 0,
+          alert_cpl_enabled:       alertCplEnabled,
+          alert_budget_enabled:    alertBudgetEnabled,
+          alert_frequency_enabled: alertFrequencyEnabled,
+          alert_account_balance_enabled: alertAccountBalanceEnabled,
+          excluded_account_ids:    accountId === "all" && excludedIds.size > 0 ? Array.from(excludedIds) : [],
+        };
+      } else {
+        payload = {
+          social_page_id:          socialPageId !== "none" ? socialPageId : null,
+          min_ig_followers:        minIgFollowers ? parseInt(minIgFollowers) : null,
+          min_fb_followers:        minFbFollowers ? parseInt(minFbFollowers) : null,
+          max_days_without_posts:  maxDaysWithoutPosts ? parseInt(maxDaysWithoutPosts) : null,
+          min_post_engagement_rate: minPostEngagementRate ? parseFloat(minPostEngagementRate) : null,
+        };
+      }
 
       if (isEditing) {
         // ── UPDATE ──────────────────────────────────────────────────────────
         const { error } = await (supabase as any)
           .from("alert_thresholds")
-          .update(commonFields)
+          .update(payload)
           .eq("id", editing.id);
         if (error) throw error;
         toast.success("Regra atualizada com sucesso!");
@@ -1298,7 +1341,7 @@ function ThresholdModal({ onClose, accounts, userId, qc, editing }: any) {
         const { error } = await (supabase as any).from("alert_thresholds").insert({
           user_id:   userId,
           is_active: true,
-          ...commonFields,
+          ...payload,
         });
         if (error) throw error;
         toast.success("Regra de alerta configurada! O sistema avaliará campanhas a cada 5 min.");
