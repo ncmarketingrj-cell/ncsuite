@@ -162,3 +162,4 @@ export async function deleteNotification(id: string): Promise<boolean> {
     return false;
   }
 }
+
