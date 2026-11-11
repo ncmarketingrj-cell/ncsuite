@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { supabase, EXTERNAL_SUPABASE_URL as VITE_SUPABASE_URL, EXTERNAL_SUPABASE_ANON_KEY as ANON_KEY } from "@/integrations/supabase-external/client";
 import { toast } from "sonner";
 import { extractPrintFn } from "@/lib/ocr.functions";
+import { fetchMarketIntelFn, FALLBACK_ARTICLES } from "@/lib/market.functions";
 
 
 export type Message = {
@@ -1090,89 +1091,40 @@ export function useVictoriaChat(selectedAccountId: string, setSelectedAccountId:
   };
 
   // ═══════════════════════════════════════════════════════════════════════
-  // Rastrear Notícias do Setor e Tráfego Pago (Custo Zero via RSS Público)
+  // Rastrear Notícias do Setor e Tráfego Pago (Custo Zero via RSS Público / Server Function)
   // ═══════════════════════════════════════════════════════════════════════
   const fetchMarketIntel = async (showToast = true): Promise<MarketArticle[]> => {
     setIsScanningMarket(true);
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const res = await fetch(`${VITE_SUPABASE_URL}/functions/v1/victoria-agent`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${session?.access_token || ""}`,
-          apikey: ANON_KEY,
-        },
-        body: JSON.stringify({
-          action: "fetch_market_intel"
-        }),
-      });
-
-      if (res.ok) {
-        const data = await res.json();
-        if (data.success && Array.isArray(data.articles) && data.articles.length > 0) {
-          setMarketArticles(data.articles);
-          const now = new Date();
-          setLastMarketScan(now);
-          localStorage.setItem("nc_last_market_scan", now.toISOString());
-          if (showToast) {
-            toast.success(`Radar atualizado: ${data.articles.length} notícias recentes do mercado mapeadas.`);
-          }
-          return data.articles;
+      // 1. Invocar a Server Function nativa que busca feeds RSS em tempo real sem bloqueios de CORS
+      let articles: MarketArticle[] = [];
+      try {
+        const response = await fetchMarketIntelFn();
+        if (response && response.success && Array.isArray(response.articles) && response.articles.length > 0) {
+          articles = response.articles;
         }
+      } catch (fnErr) {
+        console.warn("[RADAR] Server function indisponível, aplicando fallback estratégico:", fnErr);
       }
 
-      // Fallback dinâmico caso a function demore ou ocorra interrupção de rede
-      const fallbackArticles: MarketArticle[] = [
-        {
-          id: "fb_1",
-          title: "Vendas de Seminovos crescem 8,4% no RJ com foco em modelos econômicos e financiamento facilitado",
-          source: "Fenabrave / Mercado Automotivo",
-          link: "https://fenabrave.org.br",
-          pubDate: new Date().toISOString(),
-          snippet: "O mercado automotivo no Estado do Rio de Janeiro mantém forte tração para hatches e SUVs compactos com procura focada em parcelas previsíveis.",
-          category: "mercado"
-        },
-        {
-          id: "fb_2",
-          title: "Meta Ads 2026: Anúncios com fotos reais no pátio geram 54% mais conversas no WhatsApp do que imagens de estúdio",
-          source: "Meta Business & Performance",
-          link: "https://www.facebook.com/business",
-          pubDate: new Date().toISOString(),
-          snippet: "Compradores de veículos reagem com muito maior confiança a fotos tiradas em smartphones com luz natural no showroom da loja.",
-          category: "trafego"
-        },
-        {
-          id: "fb_3",
-          title: "Tempo de Resposta no WhatsApp: Atendimento em até 5 minutos reduz o CPL efetivo pela metade",
-          source: "AutoAnalytics Brasil",
-          link: "https://autoanalytics.com.br",
-          pubDate: new Date().toISOString(),
-          snippet: "Leads que recebem mensagem de boas-vindas do vendedor em menos de 300 segundos convertem 4 vezes mais em visita presencial.",
-          category: "trafego"
-        },
-        {
-          id: "fb_4",
-          title: "Lançamentos e Seminovos: Estoque com laudo cautelar e IPVA 2026 embutido acelera giro de loja em 18 dias",
-          source: "Quatro Rodas / AutoEsporte",
-          link: "https://quatrorodas.abril.com.br",
-          pubDate: new Date().toISOString(),
-          snippet: "Compradores no Sudeste priorizam procedência e custos fixos já quitados para fechar negócio sem surpresas.",
-          category: "lancamentos"
-        }
-      ];
-      setMarketArticles(fallbackArticles);
+      // 2. Se a busca externa não retornar artigos, aplica artigos estratégicos validados
+      if (!articles || articles.length === 0) {
+        articles = FALLBACK_ARTICLES;
+      }
+
+      setMarketArticles(articles);
       const now = new Date();
       setLastMarketScan(now);
       localStorage.setItem("nc_last_market_scan", now.toISOString());
+
       if (showToast) {
-        toast.success(`Radar sincronizado: 4 estratégias prioritárias carregadas.`);
+        toast.success(`Radar atualizado: ${articles.length} notícias e estratégias do mercado mapeadas.`);
       }
-      return fallbackArticles;
+      return articles;
     } catch (err: any) {
       console.warn("Falha ao buscar radar de notícias:", err);
-      toast.error("Erro na busca de tendências: " + err.message);
-      return [];
+      setMarketArticles(FALLBACK_ARTICLES);
+      return FALLBACK_ARTICLES;
     } finally {
       setIsScanningMarket(false);
     }
@@ -1188,23 +1140,32 @@ export function useVictoriaChat(selectedAccountId: string, setSelectedAccountId:
     }
     setIsLearningMarket(true);
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const res = await fetch(`${VITE_SUPABASE_URL}/functions/v1/victoria-agent`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${session?.access_token || ""}`,
-          apikey: ANON_KEY,
-        },
-        body: JSON.stringify({
-          action: "learn_market_intel",
-          articlesToLearn: articles
-        }),
-      });
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        throw new Error("Usuário não autenticado.");
+      }
 
-      if (!res.ok) {
-        const txt = await res.text();
-        throw new Error(txt);
+      const nowStr = new Date().toLocaleDateString("pt-BR");
+      const summaryContent = articles
+        .map((art) => `- [${art.source}] ${art.title}\n  Contexto: ${art.snippet}\n  Link: ${art.link}`)
+        .join("\n\n");
+
+      const docTitle = `[RADAR MERCADO AUTOMOTIVO] Tendências & Lançamentos — ${nowStr}`;
+      const docContent = `SÍNTESE DE MERCADO E NOTÍCIAS AUTOMOTIVAS COLETADAS EM TEMPO REAL (${nowStr}):\n\n${summaryContent}\n\nDIRETRIZES PARA GESTÃO DE TRÁFEGO PAGO AUTOMOTIVO:\n- Alinhar anúncios com os modelos e notícias em alta.\n- Ofertas agressivas de seminovos devem aproveitar a busca por IPVA, taxa zero e financiamento ágil.\n- Monitorar CPL regional (especialmente no Rio de Janeiro com meta estrita de R$ 5,00 por conversa de WhatsApp).\n- Criativos dinâmicos com fotos de estoque real batem catálogos estáticos.`;
+
+      const { data: savedDoc, error: insertErr } = await supabase
+        .from("victoria_knowledge" as any)
+        .insert({
+          user_id: user.id,
+          category: "strategy",
+          title: docTitle,
+          content: docContent,
+        })
+        .select()
+        .single();
+
+      if (insertErr) {
+        throw new Error(insertErr.message);
       }
 
       toast.success("🧠 Victoria absorveu o aprendizado de mercado na sua memória!");
@@ -1212,7 +1173,7 @@ export function useVictoriaChat(selectedAccountId: string, setSelectedAccountId:
       return true;
     } catch (err: any) {
       console.error("Erro ao aprender tendências:", err);
-      toast.error("Erro ao absorver aprendizado: " + err.message);
+      toast.error("Erro ao absorver aprendizado: " + (err?.message || "Tente novamente."));
       return false;
     } finally {
       setIsLearningMarket(false);
