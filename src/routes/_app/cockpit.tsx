@@ -1,7 +1,7 @@
 import { createFileRoute, redirect, Link } from "@tanstack/react-router";
 import { motion, AnimatePresence } from "framer-motion";
 import { useQuery } from "@tanstack/react-query";
-import { useMemo, useEffect, useRef, useState, useCallback } from "react";
+import { useMemo, useEffect, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase-external/client";
 import { subDays, format, differenceInDays, parseISO } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -15,6 +15,7 @@ import {
   Activity, Zap, TrendingUp, TrendingDown, Target, AlertTriangle, CheckCircle2,
   Radio, Rocket, DollarSign, BarChart3, Flame, ArrowUpRight, ArrowDownRight,
   ChevronDown, RotateCcw, X, Info, Eye, MousePointerClick, ShieldCheck, Compass,
+  MessageCircle, PhoneCall, Users, AlertOctagon,
 } from "lucide-react";
 
 // ─── ROUTE ──────────────────────────────────────────────────────────────────────
@@ -31,9 +32,108 @@ export const Route = createFileRoute("/_app/cockpit")({
   component: CockpitPage,
 });
 
+// ─── CLASSIFICAÇÃO DE OBJETIVOS (SEPARA COMPRADORES DE CLIQUES) ────────────────
+export function classifyCampaignType(
+  campName = "",
+  resultType = "",
+  metaObjective = ""
+): {
+  isLead: boolean;
+  typeLabel: string;
+  metricType: "MENSAGEM" | "CADASTRO" | "CLIQUES" | "ENGAJAMENTO" | "ALCANCE" | "OUTRO";
+} {
+  const name = (campName || "").toLowerCase();
+  const rt = (resultType || "").toLowerCase();
+  const obj = (metaObjective || "").toUpperCase();
+
+  // 1. Conversas por Mensagem / WhatsApp / Direct (Compradores Reais da Loja)
+  if (
+    rt.includes("conversa") ||
+    rt.includes("mensagem") ||
+    rt.includes("messaging") ||
+    rt.includes("whatsapp") ||
+    rt.includes("direct") ||
+    obj === "MESSAGES" ||
+    name.includes("mensagem") ||
+    name.includes("mensagens") ||
+    name.includes("whatsapp") ||
+    name.includes("wpp") ||
+    name.includes("msg") ||
+    name.includes("conversa") ||
+    name.includes("vendedores") ||
+    name.includes("atendimento") ||
+    name.includes("grupo de vendedores")
+  ) {
+    return { isLead: true, typeLabel: "Conversas no WhatsApp", metricType: "MENSAGEM" };
+  }
+
+  // 2. Cadastros / Leads (Formulários Instantâneos)
+  if (
+    rt.includes("cadastro") ||
+    rt.includes("lead") ||
+    name.includes("formulario") ||
+    name.includes("formulário") ||
+    name.includes("cadastro") ||
+    obj === "OUTCOME_LEADS" ||
+    obj === "LEAD_GENERATION"
+  ) {
+    return { isLead: true, typeLabel: "Cadastros / Formulários", metricType: "CADASTRO" };
+  }
+
+  // 3. Consignado / Compra de Veículos
+  if (
+    rt.includes("consignado") ||
+    name.includes("consignado") ||
+    name.includes("compramos seu carro") ||
+    name.includes("avaliacao") ||
+    name.includes("avaliação")
+  ) {
+    return { isLead: true, typeLabel: "Leads Consignado", metricType: "CADASTRO" };
+  }
+
+  // 4. Tráfego / Cliques no link (Visitantes - NÃO são leads nem conversas!)
+  if (
+    rt.includes("clique") ||
+    rt.includes("link_click") ||
+    name.includes("trafego") ||
+    name.includes("tráfego") ||
+    obj === "OUTCOME_TRAFFIC" ||
+    obj === "LINK_CLICKS"
+  ) {
+    return { isLead: false, typeLabel: "Cliques no Link (Tráfego)", metricType: "CLIQUES" };
+  }
+
+  // 5. Visitas ao Perfil / Instagram / Engajamento
+  if (
+    rt.includes("perfil") ||
+    name.includes("visita ao perfil") ||
+    name.includes("post do instagram") ||
+    name.includes("| insta") ||
+    name.endsWith("insta")
+  ) {
+    return { isLead: false, typeLabel: "Visitas ao Perfil do IG", metricType: "ENGAJAMENTO" };
+  }
+
+  // 6. Vídeo / Alcance / Reconhecimento
+  if (rt.includes("thruplay") || rt.includes("video") || obj === "VIDEO_VIEWS") {
+    return { isLead: false, typeLabel: "Visualizações de Vídeo", metricType: "ALCANCE" };
+  }
+
+  if (rt.includes("alcance") || obj === "OUTCOME_AWARENESS") {
+    return { isLead: false, typeLabel: "Alcance / Marca", metricType: "ALCANCE" };
+  }
+
+  // Fallback automotivo: se campanha tem "carro/veiculo/estoque" no nome
+  if (name.includes("veiculo") || name.includes("carro") || name.includes("estoque")) {
+    return { isLead: true, typeLabel: "Mensagens nos Veículos", metricType: "MENSAGEM" };
+  }
+
+  return { isLead: false, typeLabel: "Tráfego Geral", metricType: "OUTRO" };
+}
+
 // ─── SVG GAUGE MATH ─────────────────────────────────────────────────────────────
 const G_START = 140; // Ângulo inicial (inferior esquerdo)
-const G_SWEEP = 260; // Arco total de varredura (passa pelo topo e vai até inferior direito)
+const G_SWEEP = 260; // Arco total de varredura
 const toRad = (d: number) => (d * Math.PI) / 180;
 
 function pt(cx: number, cy: number, r: number, deg: number) {
@@ -93,12 +193,14 @@ interface GaugeProps {
   value: number;
   max?: number;
   label: string;
+  techLabel?: string;
   sub?: string;
   unit?: string;
   zones?: Zone[];
   size?: number;
   delay?: number;
   textValue?: string;
+  decisionBadge?: { label: string; color: string };
   info?: GaugeTelemetryInfo;
   alignTooltip?: "left" | "center" | "right";
 }
@@ -108,12 +210,14 @@ function CockpitGauge({
   value,
   max = 100,
   label,
+  techLabel,
   sub,
   unit = "%",
   zones,
   size = 196,
   delay = 0,
   textValue,
+  decisionBadge,
   info,
   alignTooltip = "center",
 }: GaugeProps) {
@@ -139,7 +243,7 @@ function CockpitGauge({
 
   // Status diagnosis text
   const statusLabel =
-    pct >= 0.70 ? "NOMINAL" : pct >= 0.35 ? "ATENÇÃO" : "CRÍTICO";
+    pct >= 0.70 ? "EXCELENTE" : pct >= 0.35 ? "ATENÇÃO" : "CRÍTICO";
   const currentAction =
     pct >= 0.70
       ? info?.actionGood ?? "Desempenho excelente. Mantenha os parâmetros vigentes."
@@ -195,7 +299,6 @@ function CockpitGauge({
           <div className="absolute top-2 right-2 w-2.5 h-2.5 border-t border-r opacity-30" style={{ borderColor: glowColor }} />
           <div className="absolute bottom-2 left-2 w-2.5 h-2.5 border-b border-l opacity-30" style={{ borderColor: glowColor }} />
           <div className="absolute bottom-2 right-2 w-2.5 h-2.5 border-b border-r opacity-30" style={{ borderColor: glowColor }} />
-          <div className="absolute inset-0 pointer-events-none opacity-[0.02]" style={{ backgroundImage: "repeating-linear-gradient(0deg, currentColor, currentColor 1px, transparent 1px, transparent 3px)" }} />
         </div>
 
         {/* ── UPPER ZONE: DIAL SVG ───────────────────────────────────────────── */}
@@ -323,7 +426,6 @@ function CockpitGauge({
                 strokeLinecap="round"
                 opacity={0.9}
               />
-              {/* Counter-pivot balance tab */}
               <circle cx={cx} cy={cy + 8} r={2.5} fill="currentColor" className="text-muted-foreground/40" />
             </motion.g>
 
@@ -335,24 +437,46 @@ function CockpitGauge({
         </div>
 
         {/* ── LOWER ZONE: HUD DIGITAL READOUT BOX (ZERO OVERLAPS) ─────────────── */}
-        <div className="mt-2 px-3 py-2 rounded-xl bg-muted/20 border border-border/70 flex flex-col items-center justify-center text-center shadow-inner relative z-10">
+        <div className="mt-2 px-3 py-2.5 rounded-xl bg-muted/20 border border-border/70 flex flex-col items-center justify-center text-center shadow-inner relative z-10">
           <span className="text-xl sm:text-2xl font-black font-mono tracking-tight text-foreground leading-none">
             {textValue ?? `${Math.round(value)}${unit}`}
           </span>
-          <div className="flex items-center justify-center gap-1.5 mt-1.5 w-full">
+
+          {/* Nome Didático Principal em Destaque */}
+          <div className="flex items-center justify-center gap-1.5 mt-2 w-full">
             <span className="w-1.5 h-1.5 rounded-full shrink-0 animate-pulse" style={{ backgroundColor: glowColor }} />
-            <p className="text-[10px] font-black uppercase tracking-[0.16em] text-foreground/90 truncate max-w-[140px]">
+            <p className="text-[11px] font-black uppercase tracking-wider text-foreground truncate max-w-[155px]">
               {label}
             </p>
             {info && (
               <Info className="h-3 w-3 text-muted-foreground/60 hover:text-foreground shrink-0 cursor-help transition-colors" />
             )}
           </div>
-          {sub && (
-            <p className="text-[9px] font-medium text-muted-foreground/80 mt-0.5 tracking-wide truncate max-w-[160px]">
+
+          {/* Nome Técnico (Sub) */}
+          {techLabel && (
+            <span className="text-[8px] font-mono font-bold tracking-widest uppercase text-muted-foreground/80 mt-0.5">
+              {techLabel}
+            </span>
+          )}
+
+          {/* Tomada de Decisão / Subtítulo */}
+          {decisionBadge ? (
+            <span
+              className="text-[8px] font-black uppercase px-2 py-0.5 rounded-full mt-1.5 tracking-wider truncate max-w-[160px]"
+              style={{
+                backgroundColor: `${decisionBadge.color}15`,
+                color: decisionBadge.color,
+                border: `1px solid ${decisionBadge.color}30`,
+              }}
+            >
+              {decisionBadge.label}
+            </span>
+          ) : sub ? (
+            <p className="text-[9px] font-medium text-muted-foreground/85 mt-1 tracking-wide truncate max-w-[160px]">
               {sub}
             </p>
-          )}
+          ) : null}
         </div>
 
         {/* Dynamic bottom accent line */}
@@ -399,47 +523,47 @@ function CockpitGauge({
 
           {/* Body Content */}
           <div className="space-y-2.5 text-[10px] leading-relaxed text-zinc-300">
-            {/* O Que Mede */}
+            {/* O Que Mede em Palavras Simples */}
             <div>
               <span className="text-[8px] font-black uppercase tracking-widest text-zinc-400 block mb-0.5">
-                O QUE MEDE
+                O QUE SIGNIFICA NA PRÁTICA
               </span>
               <p className="text-[10px] text-zinc-300 leading-snug">{info.what}</p>
             </div>
 
             {/* Fórmula */}
             <div className="p-2 rounded-lg bg-white/5 border border-white/10 font-mono text-[9px] text-zinc-300 flex items-center justify-between">
-              <span className="text-[8px] font-black text-zinc-400 uppercase">FÓRMULA:</span>
+              <span className="text-[8px] font-black text-zinc-400 uppercase">FÓRMULA MATEMÁTICA:</span>
               <span className="text-primary font-bold text-[9px]">{info.formula}</span>
             </div>
 
             {/* Benchmark Automotivo */}
             <div>
               <span className="text-[8px] font-black uppercase tracking-widest text-zinc-400 block mb-1">
-                BENCHMARK NC AUTOMOTIVO
+                PADRÃO DO MERCADO AUTOMOTIVO
               </span>
               <div className="grid grid-cols-3 gap-1.5 text-[8px] text-center font-mono">
                 <div className="p-1.5 rounded-md bg-red-500/15 text-red-300 border border-red-500/25">
-                  <span className="block text-[7px] text-red-400 font-sans font-bold">ALERTA</span>
+                  <span className="block text-[7px] text-red-400 font-sans font-bold">PREJUÍZO/ALERTA</span>
                   {info.benchmark.bad}
                 </div>
                 <div className="p-1.5 rounded-md bg-amber-500/15 text-amber-300 border border-amber-500/25">
-                  <span className="block text-[7px] text-amber-400 font-sans font-bold">MÉDIA</span>
+                  <span className="block text-[7px] text-amber-400 font-sans font-bold">MÉDIA NORMAL</span>
                   {info.benchmark.mid}
                 </div>
                 <div className="p-1.5 rounded-md bg-emerald-500/15 text-emerald-300 border border-emerald-500/25">
-                  <span className="block text-[7px] text-emerald-400 font-sans font-bold">IDEAL</span>
+                  <span className="block text-[7px] text-emerald-400 font-sans font-bold">IDEAL/LUCRO</span>
                   {info.benchmark.good}
                 </div>
               </div>
             </div>
 
-            {/* Diagnóstico & Ação */}
+            {/* Diagnóstico & Tomada de Decisão */}
             <div className="pt-2 border-t border-white/10">
-              <span className="text-[8px] font-black uppercase tracking-widest text-zinc-400 block mb-0.5">
-                DIAGNÓSTICO & AÇÃO TÁTICA
+              <span className="text-[8px] font-black uppercase tracking-widest text-emerald-400 block mb-0.5">
+                TOMADA DE DECISÃO RECOMENDADA
               </span>
-              <p className="text-[9px] text-zinc-200 leading-snug font-medium">{currentAction}</p>
+              <p className="text-[10px] text-zinc-100 leading-snug font-medium">{currentAction}</p>
             </div>
           </div>
 
@@ -478,12 +602,12 @@ function CockpitThermometer({
   const cy = 76;
   const R = 54;
   const pct = Math.min(Math.max(pressure / 100, 0), 1);
-  const rotDeg = -90 + pct * 180; // Sweeps from -90° (left, 0%) to +90° (right, 100%)
+  const rotDeg = -90 + pct * 180;
 
   const col =
     pressure > 70 ? "#ef4444" : pressure > 40 ? "#f59e0b" : "#10b981";
-  const statusLabel =
-    pressure > 70 ? "LEILÃO CRÍTICO" : pressure > 40 ? "COMPETIÇÃO MÉDIA" : "LEILÃO ESTÁVEL";
+  const decisionText =
+    pressure > 70 ? "LEILÃO DISPUTADO: EXPANDIR RAIO" : pressure > 40 ? "LEILÃO NORMAL: MANTER" : "LEILÃO BARATO: ESCALAR";
 
   return (
     <motion.div
@@ -605,31 +729,34 @@ function CockpitThermometer({
           </svg>
         </div>
 
-        {/* Readout Box (Separated, zero overlap) */}
-        <div className="mt-2 px-3 py-2 rounded-xl bg-muted/20 border border-border/70 flex flex-col items-center justify-center text-center shadow-inner relative z-10">
+        {/* Readout Box */}
+        <div className="mt-2 px-3 py-2.5 rounded-xl bg-muted/20 border border-border/70 flex flex-col items-center justify-center text-center shadow-inner relative z-10">
           <span className="text-xl sm:text-2xl font-black font-mono tracking-tight text-foreground leading-none">
             {Math.round(pressure)}%
           </span>
-          <div className="flex items-center justify-center gap-1.5 mt-1.5 w-full">
+          <div className="flex items-center justify-center gap-1.5 mt-2 w-full">
             <Flame className="h-3.5 w-3.5 text-amber-500 animate-pulse shrink-0" />
-            <p className="text-[10px] font-black uppercase tracking-[0.16em] text-foreground/90 truncate max-w-[140px]">
+            <p className="text-[11px] font-black uppercase tracking-wider text-foreground truncate max-w-[155px]">
               {label}
             </p>
             {info && (
               <Info className="h-3 w-3 text-muted-foreground/60 hover:text-foreground shrink-0 cursor-help transition-colors" />
             )}
           </div>
+          <span className="text-[8px] font-mono font-bold tracking-widest uppercase text-muted-foreground/80 mt-0.5">
+            CUSTO DE IMPRESSÃO (CPM)
+          </span>
           <span
-            className="text-[8px] font-black uppercase px-2 py-0.5 rounded-full mt-1 tracking-wider"
+            className="text-[8px] font-black uppercase px-2 py-0.5 rounded-full mt-1.5 tracking-wider truncate max-w-[160px]"
             style={{
               backgroundColor: `${col}15`,
               color: col,
               border: `1px solid ${col}30`,
             }}
           >
-            {statusLabel}
+            {decisionText}
           </span>
-          <p className="text-[9px] font-medium text-muted-foreground/80 mt-1 tracking-wide truncate max-w-[160px]">
+          <p className="text-[9px] font-medium text-muted-foreground/85 mt-1 tracking-wide truncate max-w-[160px]">
             {sub}
           </p>
         </div>
@@ -669,26 +796,26 @@ function CockpitThermometer({
                 backgroundColor: `${col}15`,
               }}
             >
-              {statusLabel}
+              {pressure > 70 ? "LEILÃO CARO" : pressure > 40 ? "LEILÃO NORMAL" : "LEILÃO BARATO"}
             </span>
           </div>
 
           <div className="space-y-2.5 text-[10px] leading-relaxed text-zinc-300">
             <div>
               <span className="text-[8px] font-black uppercase tracking-widest text-zinc-400 block mb-0.5">
-                O QUE MEDE
+                O QUE SIGNIFICA NA PRÁTICA
               </span>
               <p className="text-[10px] text-zinc-300 leading-snug">{info.what}</p>
             </div>
 
             <div className="p-2 rounded-lg bg-white/5 border border-white/10 font-mono text-[9px] text-zinc-300 flex items-center justify-between">
-              <span className="text-[8px] font-black text-zinc-400 uppercase">FÓRMULA:</span>
+              <span className="text-[8px] font-black text-zinc-400 uppercase">FÓRMULA MATEMÁTICA:</span>
               <span className="text-primary font-bold text-[9px]">{info.formula}</span>
             </div>
 
             <div>
               <span className="text-[8px] font-black uppercase tracking-widest text-zinc-400 block mb-1">
-                BENCHMARK NC AUTOMOTIVO
+                PADRÃO DO MERCADO AUTOMOTIVO
               </span>
               <div className="grid grid-cols-3 gap-1.5 text-[8px] text-center font-mono">
                 <div className="p-1.5 rounded-md bg-emerald-500/15 text-emerald-300 border border-emerald-500/25">
@@ -700,17 +827,17 @@ function CockpitThermometer({
                   {info.benchmark.mid}
                 </div>
                 <div className="p-1.5 rounded-md bg-red-500/15 text-red-300 border border-red-500/25">
-                  <span className="block text-[7px] text-red-400 font-sans font-bold">ALERTA</span>
+                  <span className="block text-[7px] text-red-400 font-sans font-bold">DISPUTA ALTA</span>
                   {info.benchmark.bad}
                 </div>
               </div>
             </div>
 
             <div className="pt-2 border-t border-white/10">
-              <span className="text-[8px] font-black uppercase tracking-widest text-zinc-400 block mb-0.5">
-                DIAGNÓSTICO & AÇÃO TÁTICA
+              <span className="text-[8px] font-black uppercase tracking-widest text-emerald-400 block mb-0.5">
+                TOMADA DE DECISÃO RECOMENDADA
               </span>
-              <p className="text-[9px] text-zinc-200 leading-snug font-medium">
+              <p className="text-[10px] text-zinc-100 leading-snug font-medium">
                 {pressure > 70
                   ? info.actionBad
                   : pressure > 40
@@ -745,38 +872,38 @@ function ScoreOrb({
   const offset = arcLen * (1 - pct);
 
   const color = score >= 80 ? "#22c55e" : score >= 55 ? "#f59e0b" : "#ef4444";
-  const label = score >= 80 ? "EXCELENTE" : score >= 55 ? "ATENÇÃO" : "CRÍTICO";
+  const label = score >= 80 ? "OPERAÇÃO LUCRATIVA" : score >= 55 ? "ATENÇÃO NECESSÁRIA" : "RISCO DE DESPERDÍCIO";
 
   const comps = [
     {
       key: "cplEfficiency",
-      label: "Efic. CPL",
+      label: "Custo por Comprador",
       weight: "25%",
-      desc: "Custo por lead versus meta estipulada de R$ 35,00.",
+      desc: "Avalia se o valor pago por cada conversa de WhatsApp está barato ou caro.",
     },
     {
       key: "cpmTrend",
-      label: "Estabilidade CPM",
+      label: "Estabilidade de Preço",
       weight: "15%",
-      desc: "Proteção contra encarecimento de leilão no setor automotivo.",
+      desc: "Protege o orçamento contra dias em que o Meta Ads está cobrando caro por anúncio.",
     },
     {
       key: "fatigue",
-      label: "Fadiga Criativa",
+      label: "Oxigenação dos Anúncios",
       weight: "20%",
-      desc: "Nível de oxigenação da audiência e novidade dos criativos.",
+      desc: "Mede se o mesmo cliente já cansou de ver a mesma foto de carro repetidamente.",
     },
     {
       key: "conversion",
-      label: "Conversão LP",
+      label: "Conversão em Contato",
       weight: "20%",
-      desc: "Eficiência de retenção de tráfego na página e WhatsApp.",
+      desc: "Quantos visitantes que clicaram realmente mandaram mensagem no WhatsApp.",
     },
     {
       key: "funnelHealth",
-      label: "Engajamento (CTR)",
+      label: "Atração no Feed",
       weight: "20%",
-      desc: "Poder de atração e cliques da primeira etapa do funil.",
+      desc: "Força de atração visual das fotos e ofertas para fazer as pessoas clicarem.",
     },
   ];
 
@@ -878,10 +1005,10 @@ function ScoreOrb({
             y={cy + 24}
             textAnchor="middle"
             fill={color}
-            fontSize={11}
+            fontSize={10}
             fontWeight="900"
             fontFamily="monospace"
-            letterSpacing="2.5"
+            letterSpacing="2"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ delay: 0.7 }}
@@ -932,7 +1059,7 @@ function ScoreOrb({
                   className="text-[8px] font-black uppercase px-1 rounded font-mono"
                   style={{ color: col, backgroundColor: `${col}15` }}
                 >
-                  {v >= 70 ? "OK" : v >= 45 ? "ALERTA" : "BAIXO"}
+                  {v >= 70 ? "BOM" : v >= 45 ? "ALERTA" : "CRÍTICO"}
                 </span>
               </div>
 
@@ -1002,7 +1129,7 @@ function ScoreHistorico({ data }: { data: Array<{ date: string; score: number }>
                 fontFamily: "monospace",
                 color: "#fff",
               }}
-              formatter={(v: any) => [`${v} pts`, "Score"]}
+              formatter={(v: any) => [`${v} pts`, "Saúde da Conta"]}
             />
             <Area
               type="monotone"
@@ -1029,6 +1156,183 @@ function ScoreHistorico({ data }: { data: Array<{ date: string; score: number }>
   );
 }
 
+// ─── CENTRAL DE DECISÃO EXECUTIVA (PARA PESSOAS LEIGAS E DIRETORES) ──────────────
+function CentralDecisaoExecutiva({
+  score,
+  meta,
+  recommendations,
+}: {
+  score: number;
+  meta: any;
+  recommendations: any[];
+}) {
+  const m = meta ?? {};
+  const BRL = (v: number) =>
+    `R$ ${v?.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) ?? "0,00"}`;
+
+  // Diagnóstico Geral da Conta
+  const hasRealLeads = (m.realLeads ?? 0) > 0;
+  const isCPLGood = m.CPL > 0 && m.CPL <= 35;
+  const isHealthy = score >= 70 && hasRealLeads && isCPLGood;
+  const isCritical = score < 50 || (!hasRealLeads && m.cost > 30);
+
+  const executiveState = isHealthy
+    ? {
+        headline: "OPERAÇÃO LUCRATIVA E EFICIENTE",
+        directiveTitle: "Momento Ideal para Escalar: Compradores chegando com CPL barato no WhatsApp.",
+        color: "#22c55e",
+        badgeBg: "rgba(34, 197, 94, 0.12)",
+        badgeBorder: "border-emerald-500/30",
+        icon: TrendingUp,
+      }
+    : isCritical
+    ? {
+        headline: "ATENÇÃO: RISCO DE DESPERDÍCIO",
+        directiveTitle: !hasRealLeads
+          ? "Você está gastando verba em cliques de tráfego sem gerar conversas de compradores no WhatsApp."
+          : "Custo por comprador acima da meta da loja. Há vazamento de verba ativo.",
+        color: "#ef4444",
+        badgeBg: "rgba(239, 68, 68, 0.12)",
+        badgeBorder: "border-red-500/30",
+        icon: AlertOctagon,
+      }
+    : {
+        headline: "OPERAÇÃO EM MONITORAMENTO",
+        directiveTitle: "Resultados moderados. Otimize os criativos e públicos antes de aumentar a verba.",
+        color: "#f59e0b",
+        badgeBg: "rgba(245, 158, 11, 0.12)",
+        badgeBorder: "border-amber-500/30",
+        icon: AlertTriangle,
+      };
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: -10 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="rounded-2xl border border-border bg-card/90 p-5 shadow-lg backdrop-blur-xl relative overflow-hidden"
+    >
+      {/* ── LINHA SUPERIOR: STATUS EXECUTIVO & RESUMO COMERCIAL ── */}
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-4 border-b border-border">
+        <div className="flex items-start sm:items-center gap-3">
+          <div
+            className={`h-11 w-11 rounded-2xl flex items-center justify-center shrink-0 border ${executiveState.badgeBorder}`}
+            style={{ backgroundColor: executiveState.badgeBg }}
+          >
+            <executiveState.icon className="h-6 w-6" style={{ color: executiveState.color }} />
+          </div>
+          <div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">
+                DIRETRIZ EXECUTIVA DO COCKPIT
+              </span>
+              <span
+                className="text-[9px] font-black uppercase px-2 py-0.5 rounded-full border"
+                style={{
+                  borderColor: `${executiveState.color}40`,
+                  color: executiveState.color,
+                  backgroundColor: `${executiveState.color}15`,
+                }}
+              >
+                {executiveState.headline}
+              </span>
+            </div>
+            <h2 className="text-sm sm:text-base font-black text-foreground mt-0.5 leading-snug">
+              {executiveState.directiveTitle}
+            </h2>
+          </div>
+        </div>
+
+        {/* ── 4 PILARES COMERCIAIS EM LINGUAGEM LEIGA DE CONCESSIONÁRIA ── */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 shrink-0">
+          <div className="px-3 py-2 rounded-xl bg-muted/30 border border-border/60 text-center">
+            <span className="text-[8px] font-black uppercase tracking-wider text-muted-foreground block">
+              INVESTIMENTO TOTAL
+            </span>
+            <span className="text-sm font-black font-mono text-foreground">{BRL(m.cost)}</span>
+          </div>
+          <div className="px-3 py-2 rounded-xl bg-muted/30 border border-border/60 text-center">
+            <span className="text-[8px] font-black uppercase tracking-wider text-emerald-500 block">
+              COMPRADORES (WHATSAPP)
+            </span>
+            <span className="text-sm font-black font-mono text-emerald-500">
+              {m.realLeads ?? 0} {m.realLeads === 1 ? "conversa" : "conversas"}
+            </span>
+          </div>
+          <div className="px-3 py-2 rounded-xl bg-muted/30 border border-border/60 text-center">
+            <span className="text-[8px] font-black uppercase tracking-wider text-muted-foreground block">
+              CUSTO P/ COMPRADOR
+            </span>
+            <span
+              className="text-sm font-black font-mono"
+              style={{
+                color: (m.realLeads ?? 0) > 0 ? (m.CPL <= 35 ? "#22c55e" : "#f59e0b") : "#ef4444",
+              }}
+            >
+              {(m.realLeads ?? 0) > 0 ? BRL(m.CPL) : "Sem Contatos"}
+            </span>
+          </div>
+          <div className="px-3 py-2 rounded-xl bg-muted/30 border border-border/60 text-center">
+            <span className="text-[8px] font-black uppercase tracking-wider text-muted-foreground block">
+              VISITANTES ATRAÍDOS
+            </span>
+            <span className="text-sm font-black font-mono text-foreground">{m.clicks ?? 0} cliques</span>
+          </div>
+        </div>
+      </div>
+
+      {/* ── LINHA INFERIOR: AS 3 DECISÕES TÁTICAS DO DIA ── */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-3">
+        {/* Decisão 1: Escala */}
+        <div className="p-3 rounded-xl bg-emerald-500/5 border border-emerald-500/20 flex flex-col justify-between">
+          <div className="flex items-center gap-2 mb-1">
+            <Rocket className="h-4 w-4 text-emerald-500" />
+            <span className="text-[10px] font-black uppercase tracking-wider text-emerald-500">
+              ONDE INVESTIR MAIS (ESCALA)
+            </span>
+          </div>
+          <p className="text-[11px] text-muted-foreground leading-snug">
+            {m.topScaleCampaign
+              ? `Campanha "${m.topScaleCampaign.name.slice(0, 24)}..." está trazendo contatos a ${BRL(m.topScaleCampaign.cpl)}. Aumente a verba diária em 20%.`
+              : "Aguardando campanhas atingirem mais de 3 conversas saudáveis para liberar escala segura."}
+          </p>
+        </div>
+
+        {/* Decisão 2: Estancar Desperdício */}
+        <div className="p-3 rounded-xl bg-red-500/5 border border-red-500/20 flex flex-col justify-between">
+          <div className="flex items-center gap-2 mb-1">
+            <AlertTriangle className="h-4 w-4 text-red-500" />
+            <span className="text-[10px] font-black uppercase tracking-wider text-red-500">
+              ESTANCAR DESPERDÍCIO (PAUSAR)
+            </span>
+          </div>
+          <p className="text-[11px] text-muted-foreground leading-snug">
+            {m.topWasteCampaign
+              ? `Campanha "${m.topWasteCampaign.name.slice(0, 24)}..." já gastou ${BRL(m.topWasteCampaign.cost)} sem trazer nenhum comprador. Pause imediatamente.`
+              : "Nenhuma campanha em sangria grave no momento. A verba está bem distribuída."}
+          </p>
+        </div>
+
+        {/* Decisão 3: Criativos e Fotos */}
+        <div className="p-3 rounded-xl bg-amber-500/5 border border-amber-500/20 flex flex-col justify-between">
+          <div className="flex items-center gap-2 mb-1">
+            <Flame className="h-4 w-4 text-amber-500" />
+            <span className="text-[10px] font-black uppercase tracking-wider text-amber-500">
+              ATRAÇÃO & FOTOS DO PÁTIO
+            </span>
+          </div>
+          <p className="text-[11px] text-muted-foreground leading-snug">
+            {m.avgFreq > 2.6
+              ? `Frequência em ${m.avgFreq.toFixed(1)}× (o cliente já decorou as fotos). Troque as imagens dos carros para o CPL não disparar.`
+              : m.CTR < 1.2 && m.impr > 500
+              ? `Taxa de cliques em ${m.CTR.toFixed(1)}% (baixa atração). Teste fotos reais no pátio com preço de parcela visível na arte.`
+              : "Criativos com boa atração visual e sem saturação crítica no momento."}
+          </p>
+        </div>
+      </div>
+    </motion.div>
+  );
+}
+
 // ─── RECOMENDAÇÕES INTELIGENTES ──────────────────────────────────────────────────
 function RecomendacoesInteligentes({
   recs,
@@ -1047,10 +1351,10 @@ function RecomendacoesInteligentes({
       <div className="flex items-center justify-between px-6 py-4 border-b border-border flex-wrap gap-2">
         <div>
           <h3 className="text-sm font-black uppercase tracking-[0.2em] text-foreground">
-            Diagnóstico & Plano Tático
+            Diagnóstico & Plano de Ação para o Gestor
           </h3>
           <p className="text-[10px] text-muted-foreground mt-0.5 tracking-widest uppercase">
-            Ações prioritárias para alavancar a eficiência do investimento
+            Ações prioritárias para alavancar a eficiência das vendas
           </p>
         </div>
         <div className="flex gap-2">
@@ -1116,7 +1420,7 @@ function RecomendacoesInteligentes({
   );
 }
 
-// ─── RANKING TÁTICO (TOP 3 ESCALAR VS OFENSORAS) ─────────────────────────────────
+// ─── RANKING TÁTICO (COMPRADORES VS OFENSORAS) ───────────────────────────────────
 function RankingTatico({ data }: { data: any[] }) {
   if (!data?.length) return null;
 
@@ -1144,23 +1448,25 @@ function RankingTatico({ data }: { data: any[] }) {
       <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/5 p-5 relative overflow-hidden shadow-sm">
         <div className="absolute top-0 left-0 w-1.5 h-full bg-emerald-500" />
         <h3 className="text-xs font-black uppercase tracking-widest text-emerald-500 flex items-center gap-2 mb-3">
-          <TrendingUp className="h-4 w-4" /> Top 3 — Escalar (Baixo CPL)
+          <TrendingUp className="h-4 w-4" /> Top 3 — Mais Trazem Compradores (Baixo Custo)
         </h3>
         <div className="space-y-2.5">
           {topCamps.length === 0 && (
-            <p className="text-[10px] text-muted-foreground font-mono">Nenhuma campanha com conversões no período.</p>
+            <p className="text-[10px] text-muted-foreground font-mono">
+              Nenhuma campanha com mensagens/leads confirmados no período.
+            </p>
           )}
           {topCamps.map((c) => (
             <div key={c.id} className="flex items-center justify-between p-3 rounded-xl bg-card border border-border shadow-sm">
               <div className="flex-1 min-w-0 pr-4">
                 <p className="text-[11px] font-black uppercase text-foreground truncate">{c.name}</p>
                 <p className="text-[9px] text-muted-foreground font-mono mt-0.5">
-                  {c.leads} Conversões · Investimento: {BRL(c.spend)}
+                  {c.leads} Conversas/Leads · Investimento: {BRL(c.spend)}
                 </p>
               </div>
               <div className="text-right shrink-0">
                 <p className="text-[13px] font-black text-emerald-500 font-mono">{BRL(c.cpl)}</p>
-                <p className="text-[8px] uppercase tracking-wider text-muted-foreground">CPL</p>
+                <p className="text-[8px] uppercase tracking-wider text-muted-foreground">Custo/Conversa</p>
               </div>
             </div>
           ))}
@@ -1171,7 +1477,7 @@ function RankingTatico({ data }: { data: any[] }) {
       <div className="rounded-2xl border border-red-500/20 bg-red-500/5 p-5 relative overflow-hidden shadow-sm">
         <div className="absolute top-0 left-0 w-1.5 h-full bg-red-500" />
         <h3 className="text-xs font-black uppercase tracking-widest text-red-500 flex items-center gap-2 mb-3">
-          <AlertTriangle className="h-4 w-4" /> Top 3 — Ofensoras (Alto CPL / Sem Conversão)
+          <AlertTriangle className="h-4 w-4" /> Top 3 — Ofensoras (Gastam sem Trazer Comprador)
         </h3>
         <div className="space-y-2.5">
           {worstCamps.length === 0 && (
@@ -1182,14 +1488,16 @@ function RankingTatico({ data }: { data: any[] }) {
               <div className="flex-1 min-w-0 pr-4">
                 <p className="text-[11px] font-black uppercase text-foreground truncate">{c.name}</p>
                 <p className="text-[9px] text-muted-foreground font-mono mt-0.5">
-                  {c.leads} Conversões · Investimento: {BRL(c.spend)}
+                  {c.leads > 0 ? `${c.leads} Conversas` : "0 Conversas de Compra"} · Investimento: {BRL(c.spend)}
                 </p>
               </div>
               <div className="text-right shrink-0">
                 <p className="text-[13px] font-black text-red-500 font-mono">
                   {c.leads > 0 ? BRL(c.cpl) : "SEM LEADS"}
                 </p>
-                <p className="text-[8px] uppercase tracking-wider text-muted-foreground">CPL</p>
+                <p className="text-[8px] uppercase tracking-wider text-muted-foreground">
+                  {c.leads > 0 ? "Custo/Conversa" : "Pausar"}
+                </p>
               </div>
             </div>
           ))}
@@ -1530,12 +1838,11 @@ function CockpitFilterBar() {
   );
 }
 
-// ─── RIGOROUS MATHEMATICAL DATA ENGINE ───────────────────────────────────────────
+// ─── RIGOROUS MATHEMATICAL DATA ENGINE (CALCULADO MINUCIOSAMENTE) ────────────────
 function useCockpitData() {
   const { dateFrom, dateTo, accountId, campaignId, adSetId } = useGlobalDate();
 
   const totalDays = Math.max(differenceInDays(parseISO(dateTo), parseISO(dateFrom)) + 1, 1);
-  // Extend baseline query to ensure comparative history is ALWAYS available
   const queryLookbackDays = totalDays <= 3 ? 14 : totalDays * 2;
   const queryDateFrom = format(subDays(parseISO(dateFrom), queryLookbackDays), "yyyy-MM-dd");
 
@@ -1581,7 +1888,6 @@ function useCockpitData() {
           const d = m.date.split("T")[0];
           if (d < queryDateFrom || d > dateTo) continue;
 
-          // Compute frequency accurately: if frequency is null, calculate impressions / reach
           const freq =
             m.frequency && m.frequency > 0
               ? m.frequency
@@ -1641,87 +1947,131 @@ function useCockpitData() {
 
     // Split: Active Selected Window (Recent) vs Historical Baseline (Prior)
     const recent = raw.filter((r: any) => r.date >= dateFrom && r.date <= dateTo);
-    // Baseline Prior: the equivalent window preceding dateFrom
     const priorStartDate = format(subDays(parseISO(dateFrom), totalDays), "yyyy-MM-dd");
     let prior = raw.filter((r: any) => r.date >= priorStartDate && r.date < dateFrom);
     if (!prior.length) {
-      // Fallback: any dates before dateFrom
       prior = raw.filter((r: any) => r.date < dateFrom);
     }
 
+    // ─── AGREGADOR COM SEPARAÇÃO RIGOROSA: COMPRADORES VS CLIQUES ─────────────
     const agg = (rows: any[]) => {
-      let cost = 0,
-        conv = 0,
-        clicks = 0,
-        impr = 0,
-        freqWeightedSum = 0,
-        cpmWeightedSum = 0;
+      let cost = 0;
+      let rawConv = 0;
+      let realLeads = 0;
+      let leadCost = 0;
+      let trafficCost = 0;
+      let clicks = 0;
+      let impr = 0;
+      let freqWeightedSum = 0;
+      let cpmWeightedSum = 0;
 
       for (const r of rows) {
         cost += r.cost;
-        conv += r.conversions;
         clicks += r.clicks;
         impr += r.impressions;
+        rawConv += r.conversions;
         freqWeightedSum += r.frequency * (r.impressions || 1);
         cpmWeightedSum += r.cpm * (r.impressions || 1);
+
+        // Classificação inteligente de campanha
+        const cType = classifyCampaignType(
+          r.campaigns?.name ?? "",
+          r.result_type ?? "",
+          r.campaigns?.objective ?? ""
+        );
+
+        if (cType.isLead) {
+          // AQUI: Somente contatos/mensagens reais entram em realLeads!
+          realLeads += r.conversions;
+          leadCost += r.cost;
+        } else {
+          trafficCost += r.cost;
+        }
       }
 
       const avgFreq = impr > 0 ? freqWeightedSum / impr : rows.length ? 1.0 : 0;
       const avgCPM = impr > 0 ? cpmWeightedSum / impr : 0;
 
-      return { cost, conv, clicks, impr, avgFreq, avgCPM };
+      return {
+        cost,
+        rawConv,
+        realLeads,
+        leadCost,
+        trafficCost,
+        clicks,
+        impr,
+        avgFreq,
+        avgCPM,
+      };
     };
 
     const R = agg(recent);
     const P = agg(prior);
 
-    // Core Metrics
-    const CPL = R.conv > 0 ? R.cost / R.conv : 0;
+    // ─── MÉTRICAS RIGOROSAS BASEADAS EM COMPRADORES REAIS ───────────────────────
+    // CPL Real: se há conversas reais, divide o gasto nas campanhas de lead pelo número de conversas reais
+    // (ou custo total / conversas reais se leadCost for zero)
+    const effectiveLeadCost = R.leadCost > 0 ? R.leadCost : R.cost;
+    const CPL = R.realLeads > 0 ? effectiveLeadCost / R.realLeads : 0;
     const CPC = R.clicks > 0 ? R.cost / R.clicks : 0;
     const CTR = R.impr > 0 ? (R.clicks / R.impr) * 100 : 0;
-    const CVR = R.clicks > 0 ? (R.conv / R.clicks) * 100 : 0;
-    const friction = Math.max(0, 100 - CVR);
 
-    // CPM Leilão Ratio
+    // CVR Real: Porcentagem de cliques que se transformaram em conversas no WhatsApp
+    const CVR = R.clicks > 0 ? (R.realLeads / R.clicks) * 100 : 0;
+    const friction = R.clicks > 0 ? Math.max(0, 100 - CVR) : 0;
+
+    // Oscilação de Leilão / CPM
     const cpmTrendRatio = P.avgCPM > 0 ? R.avgCPM / P.avgCPM : 1.0;
     const TARGET_CPL = 35.0;
 
-    // Component Scores for Score de Saúde (0 to 100)
-    // 1. CPL Efficiency: 100 if CPL <= 25, 70 if CPL == 35, lower if expensive
+    // ─── COMPONENTES DO SCORE DE SAÚDE (CALIBRADO PARA VENDAS REAIS) ───────────
+    // 1. Eficiência de CPL: se CPL <= 25 (100%), se CPL == 35 (70%), se sem leads mas gastou (20%)
     const cplEfficiency =
-      CPL > 0 ? Math.min(100, Math.max(0, (TARGET_CPL / CPL) * 70)) : R.cost === 0 ? 80 : 35;
+      R.realLeads > 0
+        ? Math.min(100, Math.max(0, (TARGET_CPL / CPL) * 70))
+        : R.cost === 0
+        ? 80
+        : 15;
 
-    // 2. Leilão Pressure: 50% is normal (ratio = 1.0), > 70% is heated
+    // 2. Pressão do Leilão
     const pressure = Math.min(100, Math.max(0, (cpmTrendRatio - 0.5) * 100));
     const cpmTrend = Math.max(0, 100 - pressure);
 
-    // 3. Fadiga: 100% when freq <= 1.5, down to 0% at freq >= 4.0
+    // 3. Fadiga de Criativo: ideal <= 1.8x, alerta > 2.8x
     const fatigue = Math.min(100, Math.max(0, 100 - ((R.avgFreq - 1.0) / 3.0) * 100));
 
-    // 4. Conversão Funil: Benchmark 4.0%
+    // 4. Conversão Funil: Benchmark 4.0% de conversas/cliques
     const conversion = Math.min(100, (CVR / 4.0) * 100);
 
-    // 5. Funnel Health (CTR): Benchmark 2.0%
+    // 5. Atração de Criativo (CTR): Benchmark 2.0%
     const funnelHealth = Math.min(100, (CTR / 2.0) * 100);
 
-    // Global Health Score
+    // Score Global de Saúde da Conta
     const score = Math.round(
-      cplEfficiency * 0.25 +
+      cplEfficiency * 0.30 +
         cpmTrend * 0.15 +
-        fatigue * 0.2 +
-        conversion * 0.2 +
-        funnelHealth * 0.2
+        fatigue * 0.20 +
+        conversion * 0.20 +
+        funnelHealth * 0.15
     );
 
-    // Campaign aggregation for budgets and radar
+    // Mapeamento por campanha
     const campMap: Record<string, any> = {};
     for (const r of recent) {
       const cid = r.campaign_id;
       if (!campMap[cid]) {
+        const cType = classifyCampaignType(
+          r.campaigns?.name ?? "",
+          r.result_type ?? "",
+          r.campaigns?.objective ?? ""
+        );
         campMap[cid] = {
           name: r.campaigns?.name ?? cid,
           cost: 0,
           conv: 0,
+          realLeads: 0,
+          isLeadCamp: cType.isLead,
+          typeLabel: cType.typeLabel,
           clicks: 0,
           impr: 0,
           budget: Number(r.campaigns?.daily_budget ?? 0),
@@ -1730,6 +2080,9 @@ function useCockpitData() {
       }
       campMap[cid].cost += r.cost;
       campMap[cid].conv += r.conversions;
+      if (campMap[cid].isLeadCamp) {
+        campMap[cid].realLeads += r.conversions;
+      }
       campMap[cid].clicks += r.clicks;
       campMap[cid].impr += r.impressions;
       if (r.cpm > 0) campMap[cid].cpms.push(r.cpm);
@@ -1740,10 +2093,8 @@ function useCockpitData() {
     const totalBudget = camps.reduce((s: number, c: any) => s + c.budget, 0);
     const activeBudget = activeCamps.reduce((s: number, c: any) => s + c.budget, 0);
 
-    // Daily Cost Run-rate
     const dailyCost = R.cost / Math.max(totalDays, 1);
 
-    // Scale Pacing (Burn Rate)
     const scale =
       activeBudget > 0
         ? Math.min(100, (dailyCost / activeBudget) * 100)
@@ -1751,16 +2102,13 @@ function useCockpitData() {
         ? Math.min(100, (R.cost / P.cost) * 80)
         : 75;
 
-    // Budget Health
     const budgetHealth =
       totalBudget > 0
         ? Math.min(100, (activeBudget / totalBudget) * 100)
         : (activeCamps.length / Math.max(camps.length, 1)) * 100;
 
-    // Scale Momentum
     const momentum = Math.round(cpmTrend * 0.4 + conversion * 0.35 + fatigue * 0.25);
 
-    // Hourly Intensity: if viewing today, calculate delivery pacing vs elapsed hours
     const isToday = dateTo === format(new Date(), "yyyy-MM-dd");
     let hourlyIntensity = 50;
     if (isToday) {
@@ -1769,11 +2117,24 @@ function useCockpitData() {
       hourlyIntensity = Math.min(100, Math.max(0, (spendPacing / currentHourFraction) * 50));
     }
 
-    // Radar / Campaign Tactics
+    // Campanhas de destaque para decisão executiva
+    const campsWithLeads = camps
+      .filter((c) => c.realLeads > 0)
+      .map((c) => ({ ...c, cpl: c.cost / c.realLeads }))
+      .sort((a, b) => a.cpl - b.cpl);
+
+    const campsWithoutLeads = camps
+      .filter((c) => c.realLeads === 0 && c.cost > 10)
+      .sort((a, b) => b.cost - a.cost);
+
+    const topScaleCampaign = campsWithLeads[0] ?? null;
+    const topWasteCampaign = campsWithoutLeads[0] ?? null;
+
+    // Radar / Táticas
     const radar = camps
-      .filter((c: any) => c.cost > 0 || c.conv > 0)
+      .filter((c: any) => c.cost > 0 || c.realLeads > 0)
       .map((c: any) => {
-        const campCPL = c.conv > 0 ? c.cost / c.conv : c.cost;
+        const campCPL = c.realLeads > 0 ? c.cost / c.realLeads : c.cost;
         const avgCampCPM =
           c.cpms.length > 0
             ? c.cpms.reduce((a: number, b: number) => a + b, 0) / c.cpms.length
@@ -1784,7 +2145,9 @@ function useCockpitData() {
           id: c.name,
           name: c.name,
           cpl: +campCPL.toFixed(2),
-          leads: c.conv,
+          leads: c.realLeads,
+          rawConv: c.conv,
+          isLeadCamp: c.isLeadCamp,
           spend: +c.cost.toFixed(2),
           trend,
         };
@@ -1792,7 +2155,7 @@ function useCockpitData() {
       .sort((a: any, b: any) => b.spend - a.spend)
       .slice(0, 16);
 
-    // Daily Scores for Trend Chart
+    // Histórico Diário
     const showDays = Math.min(totalDays, 14);
     const byDate: Record<string, any[]> = {};
     for (const r of recent) {
@@ -1808,77 +2171,71 @@ function useCockpitData() {
       if (!dd.length) return { date: label, score: 0 };
       const d = agg(dd);
       const s1 =
-        d.cost > 0 && d.conv > 0
-          ? Math.min(100, (TARGET_CPL / (d.cost / d.conv)) * 70)
-          : 45;
+        d.cost > 0 && d.realLeads > 0
+          ? Math.min(100, (TARGET_CPL / (d.cost / d.realLeads)) * 70)
+          : d.cost === 0
+          ? 70
+          : 25;
       const s3 = Math.max(0, 100 - ((d.avgFreq - 1.0) / 3.0) * 100);
-      const s4 = d.clicks > 0 ? Math.min(100, ((d.conv / d.clicks) / 0.04) * 100) : 35;
+      const s4 = d.clicks > 0 ? Math.min(100, ((d.realLeads / d.clicks) / 0.04) * 100) : 25;
       const s5 = d.impr > 0 ? Math.min(100, ((d.clicks / d.impr) / 0.02) * 100) : 35;
       return {
         date: label,
-        score: Math.round(s1 * 0.3 + s3 * 0.25 + s4 * 0.25 + s5 * 0.2),
+        score: Math.round(s1 * 0.35 + s3 * 0.25 + s4 * 0.25 + s5 * 0.15),
       };
     });
 
-    // Smart Recommendations based on calculated benchmarks
+    // Recomendações Táticas para Tomada de Decisão
     type RecPrio = "CRÍTICO" | "ATENÇÃO" | "OPORTUNIDADE";
     const recs: Array<{ prio: RecPrio; color: string; title: string; desc: string; icon: any }> = [];
+
+    if (R.realLeads === 0 && R.cost > 30) {
+      recs.push({
+        prio: "CRÍTICO",
+        color: "#ef4444",
+        icon: AlertOctagon,
+        title: "Investimento Sem Geração de Conversas no WhatsApp",
+        desc: `Foram investidos R$ ${R.cost.toFixed(2)} em cliques/tráfego sem gerar nenhum comprador direto. Ative uma campanha focada em Mensagens de WhatsApp para que a equipe de vendas receba contatos.`,
+      });
+    }
+
+    if (topWasteCampaign) {
+      recs.push({
+        prio: "CRÍTICO",
+        color: "#ef4444",
+        icon: AlertTriangle,
+        title: `Pausar Campanha Ofensora: "${topWasteCampaign.name.slice(0, 30)}"`,
+        desc: `Esta campanha consumiu R$ ${topWasteCampaign.cost.toFixed(2)} sem trazer nenhum comprador. Pause-a para estancar o desperdício e realocar a verba nas campanhas campeãs.`,
+      });
+    }
 
     if (R.avgFreq > 2.8) {
       recs.push({
         prio: "CRÍTICO",
         color: "#ef4444",
         icon: Flame,
-        title: "Fadiga Criativa em Nível Crítico",
-        desc: `Frequência de ${R.avgFreq.toFixed(1)}×. O público já decorou os criativos. Pause os anúncios mais antigos e suba 3 novos modelos de veículos com novas fotos do pátio e copy renovada.`,
-      });
-    } else if (R.avgFreq > 2.0) {
-      recs.push({
-        prio: "ATENÇÃO",
-        color: "#f59e0b",
-        icon: AlertTriangle,
-        title: "Frequência Elevada — Risco de Saturação",
-        desc: `Frequência média em ${R.avgFreq.toFixed(1)}×. Se o CTR recuar nos próximos dias, ative variações criativas de backup.`,
+        title: "Saturação Severa do Público (Frequência Alta)",
+        desc: `Frequência de ${R.avgFreq.toFixed(1)}×. Os mesmos clientes estão vendo os anúncios repetidamente. Pause os criativos antigos e suba 3 novos modelos de veículos com novas fotos do pátio.`,
       });
     }
 
-    if (CVR < 2.0 && R.clicks > 15) {
+    if (CVR < 2.0 && R.clicks > 30) {
       recs.push({
-        prio: "CRÍTICO",
-        color: "#ef4444",
+        prio: "ATENÇÃO",
+        color: "#f59e0b",
         icon: Target,
-        title: "Taxa de Conversão Abaixo do Mínimo Automotivo",
-        desc: `CVR de ${CVR.toFixed(1)}% está muito abaixo do benchmark de 4.0%. Verifique o alinhamento da oferta e a primeira mensagem automática do WhatsApp.`,
+        title: "Muitos Cliques, Poucas Mensagens no WhatsApp",
+        desc: `Apenas ${CVR.toFixed(1)}% dos visitantes chamaram a loja. Revise a mensagem inicial do WhatsApp ou garanta que o modelo anunciado tenha o preço visível na arte.`,
       });
     }
 
-    if (CTR < 1.2 && R.impr > 500) {
-      recs.push({
-        prio: "ATENÇÃO",
-        color: "#f59e0b",
-        icon: Zap,
-        title: "Engajamento (CTR) Baixo no Topo do Funil",
-        desc: `CTR de ${CTR.toFixed(2)}% indica criativos pouco chamativos no feed. Teste fotos reais de carros com preço de parcela visível no criativo.`,
-      });
-    }
-
-    if (cpmTrendRatio > 1.25) {
-      recs.push({
-        prio: "ATENÇÃO",
-        color: "#f59e0b",
-        icon: TrendingUp,
-        title: "Leilão Aquecido — CPM em Alta Expressiva",
-        desc: `CPM subiu ${((cpmTrendRatio - 1) * 100).toFixed(0)}% em relação ao histórico. Expanda o raio de localização ou teste públicos abertos para baratear a entrega.`,
-      });
-    }
-
-    if (score >= 75 && !recs.some((r) => r.prio === "CRÍTICO")) {
+    if (topScaleCampaign && topScaleCampaign.cpl <= 35) {
       recs.push({
         prio: "OPORTUNIDADE",
         color: "#22c55e",
         icon: Rocket,
-        title: "Conta Pronta para Escala de Investimento",
-        desc: `Score ${score}/100 com indicadores saudáveis. Aumente o orçamento das 3 melhores campanhas em 20% a cada 48 horas.`,
+        title: `Aumentar Orçamento na Campeã: "${topScaleCampaign.name.slice(0, 30)}"`,
+        desc: `Esta campanha gerou ${topScaleCampaign.realLeads} conversas a um custo de R$ ${topScaleCampaign.cpl.toFixed(2)} cada. Aumente a verba diária em 20% para abastecer a equipe de vendas.`,
       });
     }
 
@@ -1908,10 +2265,15 @@ function useCockpitData() {
         dailyCost,
         CPC,
         CTR,
-        conv: R.conv,
+        realLeads: R.realLeads,
+        rawConv: R.rawConv,
         clicks: R.clicks,
         cost: R.cost,
+        impr: R.impr,
         friction,
+        topScaleCampaign,
+        topWasteCampaign,
+        campsWithLeadsCount: campsWithLeads.length,
       },
     };
   }, [raw, isLoading, dateFrom, dateTo, accountId, campaignId, totalDays]);
@@ -1933,278 +2295,354 @@ function CockpitPage() {
   const gv = g ?? {};
   const m = meta ?? {};
 
-  // Formaters
   const BRL = (v: number) =>
     `R$ ${v?.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) ?? "0,00"}`;
   const FMT = (v: number, unit = "") =>
     `${v?.toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 }) ?? "0"}${unit}`;
 
-  // ─── 11 COCKPIT GAUGES + TELEMETRY BRIEFINGS ──────────────────────────────────
+  // ─── OS 11 RELÓGIOS EM LINGUAGEM LEIGA & FOCO EM TOMADA DE DECISÃO ───────────
   const gaugeConfig = [
-    // 1. Burn Rate
+    // 1. Volume de Conversas no WhatsApp (O INDICADOR MAIS IMPORTANTE!)
     {
-      label: "Gasto Diário (Burn Rate)",
-      textValue: BRL(m.dailyCost),
-      sub: m.activeBudget > 0 ? `Orçamento: ${BRL(m.activeBudget)}/dia` : "Ritmo de consumo diário",
-      value: gv.scale ?? 75,
+      label: "Conversas no WhatsApp",
+      techLabel: "VOLUME DE COMPRADORES",
+      textValue: String(m.realLeads ?? 0),
+      sub: (m.realLeads ?? 0) > 0 ? `${m.realLeads} clientes iniciaram contato` : "Nenhum comprador hoje",
+      value: Math.min(100, (((m.realLeads ?? 0) / 40) * 100)),
       zones: [
-        { from: 0, to: 0.5, color: "#ef4444" },
-        { from: 0.5, to: 0.8, color: "#f59e0b" },
-        { from: 0.8, to: 1.0, color: "#22c55e" },
+        { from: 0, to: 0.3, color: "#ef4444" },
+        { from: 0.3, to: 0.7, color: "#f59e0b" },
+        { from: 0.7, to: 1.0, color: "#22c55e" },
       ],
+      decisionBadge:
+        (m.realLeads ?? 0) > 15
+          ? { label: "🟢 VENDEDORES ABASTECIDOS", color: "#22c55e" }
+          : (m.realLeads ?? 0) > 0
+          ? { label: "🟡 FLUXO REGULAR", color: "#f59e0b" }
+          : { label: "🔴 SEM COMPRADORES", color: "#ef4444" },
       info: {
-        category: "GESTÃO ORÇAMENTÁRIA",
-        icon: DollarSign,
-        what: "Mede o ritmo de consumo de verba diária em relação ao orçamento programado das campanhas ativas.",
-        formula: "(Gasto Diário ÷ Orçamento Ativo) × 100",
-        benchmark: { bad: "< 70% Travado", mid: "70% – 85% Lento", good: "85% – 105% Ideal" },
-        actionGood: "Consumo no ritmo ideal. O algoritmo está distribuindo a verba de forma linear e equilibrada.",
-        actionMid: "Entrega ligeiramente abaixo do planejado. Verifique se o público não está excessivamente restrito.",
-        actionBad: "Subutilização crítica da verba ou orçamento zerado. Amplie o tamanho do público ou revise limites de lance.",
+        category: "COMPRADORES REAIS",
+        icon: MessageCircle,
+        what: "Número exato de pessoas que clicaram nos anúncios e iniciaram conversa de compra no WhatsApp ou enviaram formulário.",
+        formula: "Soma de Conversas por Mensagem + Cadastros Nativos",
+        benchmark: { bad: "0 a 5 contatos", mid: "5 a 20 contatos", good: "> 20 contatos" },
+        actionGood: "Volume robusto de compradores chegando. Garanta que os vendedores atendam em menos de 5 minutos.",
+        actionMid: "Fluxo moderado. Continue mantendo as melhores campanhas de mensagens ativas.",
+        actionBad: "Nenhum comprador chamou a loja. Transfira a verba de campanhas de cliques para campanhas de mensagens diretas.",
       },
     },
 
-    // 2. CTR
+    // 2. Custo por Conversa / Lead
     {
-      label: "Engajamento (CTR)",
-      textValue: FMT(m.CTR, "%"),
-      sub: "Cliques no link ÷ Impressões",
-      value: Math.min(100, ((m.CTR ?? 0) / 3.0) * 100),
+      label: "Custo por Comprador",
+      techLabel: "CPL REAL (WHATSAPP)",
+      textValue: (m.realLeads ?? 0) > 0 ? BRL(m.CPL) : "Sem Contatos",
+      sub: (m.realLeads ?? 0) > 0 ? "Valor pago por cada contato" : "R$ gastos em tráfego",
+      value: (m.realLeads ?? 0) > 0 ? Math.min(100, Math.max(0, (35 / m.CPL) * 70)) : 20,
       zones: [
         { from: 0, to: 0.4, color: "#ef4444" },
         { from: 0.4, to: 0.7, color: "#f59e0b" },
         { from: 0.7, to: 1.0, color: "#22c55e" },
       ],
+      decisionBadge:
+        (m.realLeads ?? 0) > 0 && m.CPL <= 25
+          ? { label: "🟢 CUSTO EXCELENTE: ESCALAR", color: "#22c55e" }
+          : (m.realLeads ?? 0) > 0 && m.CPL <= 40
+          ? { label: "🟡 NA META DA LOJA", color: "#f59e0b" }
+          : { label: "🔴 MUITO CARO / CORRIGIR", color: "#ef4444" },
       info: {
-        category: "TOPO DE FUNIL",
-        icon: Zap,
-        what: "Porcentagem de impressões que geraram cliques no link. Avalia a atratividade e o impacto visual do criativo.",
-        formula: "(Cliques no Link ÷ Impressões) × 100",
-        benchmark: { bad: "< 1,2% Fraco", mid: "1,2% – 2,2% Médio", good: "> 2,5% Excelente" },
-        actionGood: "Criativo magnético com altíssima taxa de cliques. Produza variações com novos modelos de veículos.",
-        actionMid: "CTR dentro da média do setor automotivo. Teste novas imagens de capa e chamadas para ação.",
-        actionBad: "Criativo ignorado no feed. Pause e substitua por fotos reais do pátio com preço e condição em destaque.",
+        category: "EFICIÊNCIA FINANCEIRA",
+        icon: Target,
+        what: "Quanto a loja desembolsou em média para colocar um cliente de verdade conversando no WhatsApp dos vendedores.",
+        formula: "Investimento em Mensagens ÷ Conversas Geradas",
+        benchmark: { bad: "> R$ 45 Caro", mid: "R$ 25 a R$ 40 Na Meta", good: "< R$ 25 Barato" },
+        actionGood: "Cada comprador está custando pouco. Aumente o orçamento para vender mais carros com alta margem de lucro.",
+        actionMid: "Custo por contato saudável e dentro do padrão do setor automotivo.",
+        actionBad: "Custo elevado por contato. Pause as campanhas ofensoras no ranking abaixo.",
       },
     },
 
-    // 3. CPC
+    // 3. Taxa de Contatos (CVR Real)
     {
-      label: "Custo por Clique (CPC)",
+      label: "Taxa de Contatos",
+      techLabel: "CONVERSÃO (CVR)",
+      textValue: FMT(m.CVR, "%"),
+      sub: "De cada 100 cliques, quantos chamam",
+      value: Math.min(100, ((m.CVR ?? 0) / 6.0) * 100),
+      zones: [
+        { from: 0, to: 0.35, color: "#ef4444" },
+        { from: 0.35, to: 0.7, color: "#f59e0b" },
+        { from: 0.7, to: 1.0, color: "#22c55e" },
+      ],
+      decisionBadge:
+        (m.CVR ?? 0) >= 5.0
+          ? { label: "🟢 OFERTA MAGNÉTICA", color: "#22c55e" }
+          : (m.CVR ?? 0) >= 2.0
+          ? { label: "🟡 RETENÇÃO NORMAL", color: "#f59e0b" }
+          : { label: "🔴 POUCOS CHAMAM", color: "#ef4444" },
+      info: {
+        category: "CONVERSÃO COMERCIAL",
+        icon: TrendingUp,
+        what: "Porcentagem das pessoas que clicaram no anúncio do carro e realmente mandaram mensagem no WhatsApp.",
+        formula: "(Conversas no WhatsApp ÷ Cliques Totais) × 100",
+        benchmark: { bad: "< 2,0% Baixa", mid: "2,0% a 5,0% Normal", good: "> 5,0% Alta" },
+        actionGood: "Excelente retenção. As pessoas que clicam estão com forte interesse em fechar negócio.",
+        actionMid: "Conversão dentro da média. Otimize a saudação inicial do WhatsApp.",
+        actionBad: "Muitos cliques mas poucos chamam. O anúncio promete algo diferente ou a mensagem do WhatsApp assusta o cliente.",
+      },
+    },
+
+    // 4. Desistência pós-clique
+    {
+      label: "Desistência Pós-Clique",
+      techLabel: "TAXA DE ATRITO",
+      textValue: FMT(m.friction, "%"),
+      sub: "Clicaram mas não chamaram",
+      value: Math.min(100, Math.max(0, 100 - (m.friction ?? 90))),
+      zones: [
+        { from: 0, to: 0.3, color: "#ef4444" },
+        { from: 0.3, to: 0.65, color: "#f59e0b" },
+        { from: 0.65, to: 1.0, color: "#22c55e" },
+      ],
+      decisionBadge:
+        (m.friction ?? 90) < 85
+          ? { label: "🟢 BAIXA PERDA", color: "#22c55e" }
+          : (m.friction ?? 90) < 95
+          ? { label: "🟡 PERDA ESPERADA", color: "#f59e0b" }
+          : { label: "🔴 ALTA FUGA DE CLIENTE", color: "#ef4444" },
+      info: {
+        category: "FUNIL DE ATENDIMENTO",
+        icon: AlertTriangle,
+        what: "Porcentagem de visitantes que clicaram no anúncio mas desistiram antes de enviar a primeira mensagem no WhatsApp.",
+        formula: "100% − Taxa de Conversão em Contatos",
+        benchmark: { bad: "> 95% Alta Fuga", mid: "85% a 95% Normal", good: "< 85% Ótima Retenção" },
+        actionGood: "Quase todos os visitantes qualificados chegam e iniciam atendimento com sua equipe.",
+        actionMid: "Desistência esperada para o comportamento de tráfego móvel.",
+        actionBad: "Muitas pessoas abandonam. Facilite o link de WhatsApp para abrir direto no aplicativo.",
+      },
+    },
+
+    // 5. Custo por Visitante (CPC)
+    {
+      label: "Custo por Visitante",
+      techLabel: "CUSTO POR CLIQUE (CPC)",
       textValue: BRL(m.CPC),
-      sub: "Valor pago por visitante",
+      sub: "Valor pago por interessado",
       value: Math.min(100, Math.max(0, 100 - (((m.CPC ?? 0) - 0.5) / 2.5) * 100)),
       zones: [
         { from: 0, to: 0.4, color: "#ef4444" },
         { from: 0.4, to: 0.7, color: "#f59e0b" },
         { from: 0.7, to: 1.0, color: "#22c55e" },
       ],
+      decisionBadge:
+        (m.CPC ?? 0) < 0.8
+          ? { label: "🟢 CLIQUE MUITO BARATO", color: "#22c55e" }
+          : (m.CPC ?? 0) < 1.8
+          ? { label: "🟡 PREÇO JUSTO", color: "#f59e0b" }
+          : { label: "🔴 CLIQUE CARO", color: "#ef4444" },
       info: {
         category: "AQUISIÇÃO DE TRÁFEGO",
-        icon: Target,
-        what: "Custo médio desembolsado por cada visitante qualificado atraído para a página de destino ou WhatsApp.",
+        icon: MousePointerClick,
+        what: "Custo médio desembolsado por cada visitante que clicou no anúncio para ver fotos ou detalhes do carro.",
         formula: "Investimento Total ÷ Cliques no Link",
-        benchmark: { bad: "> R$ 2,00 Caro", mid: "R$ 0,90 – R$ 2,00 Normal", good: "< R$ 0,80 Barato" },
-        actionGood: "Custo por clique altamente eficiente. Tráfego qualificado entrando no funil com baixo investimento.",
-        actionMid: "CPC na faixa esperada para o segmento de lojas e concessionárias de veículos.",
-        actionBad: "Clique caro encarecendo todo o funil. Melhore a imagem de capa e refine o público de interesse.",
+        benchmark: { bad: "> R$ 2,00 Caro", mid: "R$ 0,80 a R$ 1,80 Normal", good: "< R$ 0,80 Barato" },
+        actionGood: "Tráfego muito barato entrando no funil com alta eficiência financeira.",
+        actionMid: "Custo por clique saudável para o mercado de compra e venda de automóveis.",
+        actionBad: "Clique caro encarecendo as conversas. Troque a foto de capa e use fotos com mais iluminação.",
       },
     },
 
-    // 4. Intensidade Horária
+    // 6. Atração Visual do Anúncio (CTR)
     {
-      label: "Intensidade Horária",
-      textValue: FMT(gv.hourlyIntensity, "%"),
-      sub: "Pacing de entrega vs Horário",
-      value: gv.hourlyIntensity ?? 50,
+      label: "Atração do Anúncio",
+      techLabel: "ENGAJAMENTO (CTR)",
+      textValue: FMT(m.CTR, "%"),
+      sub: "Interesse visual no feed",
+      value: Math.min(100, ((m.CTR ?? 0) / 3.0) * 100),
       zones: [
-        { from: 0, to: 0.35, color: "#f59e0b" },
-        { from: 0.35, to: 0.75, color: "#22c55e" },
-        { from: 0.75, to: 1.0, color: "#ef4444" },
+        { from: 0, to: 0.4, color: "#ef4444" },
+        { from: 0.4, to: 0.7, color: "#f59e0b" },
+        { from: 0.7, to: 1.0, color: "#22c55e" },
       ],
+      decisionBadge:
+        (m.CTR ?? 0) >= 2.0
+          ? { label: "🟢 ANÚNCIO MAGNÉTICO", color: "#22c55e" }
+          : (m.CTR ?? 0) >= 1.0
+          ? { label: "🟡 ATRAÇÃO NORMAL", color: "#f59e0b" }
+          : { label: "🔴 FOTO DESINTERESSANTE", color: "#ef4444" },
       info: {
-        category: "ENTREGA DO ALGORITMO",
-        icon: Activity,
-        what: "Velocidade de consumo do orçamento no momento em relação à hora atual do dia (pacing horário).",
-        formula: "(Gasto Acumulado ÷ Orçamento Diário) ÷ (Hora Atual ÷ 24)",
-        benchmark: { bad: "> 85% Acelerado", mid: "< 35% Lento", good: "35% – 75% Equilibrado" },
-        actionGood: "Ritmo de entrega linear e controlado. As oportunidades de venda estão sendo distribuídas ao longo de todo o expediente.",
-        actionMid: "Entrega mais concentrada ou lenta. Monitore os picos de visitação do site e horários de pico dos clientes.",
-        actionBad: "Consumo excessivamente rápido logo cedo. O algoritmo pode esgotar a verba antes do fim da tarde.",
+        category: "IMPACTO VISUAL",
+        icon: Zap,
+        what: "Mede o poder do anúncio de parar o dedo do cliente no feed do Instagram/Facebook e fazê-lo clicar.",
+        formula: "(Cliques no Link ÷ Impressões) × 100",
+        benchmark: { bad: "< 1,0% Fraco", mid: "1,0% a 2,0% Médio", good: "> 2,0% Excelente" },
+        actionGood: "O modelo de veículo ou ângulo da foto parou o feed. Crie novos anúncios com o mesmo estilo.",
+        actionMid: "Atração dentro da média. Teste colocar a entrada ou parcela em destaque na foto.",
+        actionBad: "Anúncio ignorado. Substitua por fotos reais do pátio tiradas de dia e sem excesso de texto.",
       },
     },
 
-    // 5. Fadiga Criativa
+    // 7. Saturação do Público (Fadiga Criativa)
     {
-      label: "Fadiga Criativa",
+      label: "Saturação do Anúncio",
+      techLabel: "FADIGA (FREQUÊNCIA)",
       textValue: FMT(m.avgFreq, "×"),
-      sub: "Exibições por usuário único",
+      sub: "Repetição por pessoa",
       value: gv.fatigue ?? 85,
       zones: [
         { from: 0, to: 0.35, color: "#ef4444" },
         { from: 0.35, to: 0.7, color: "#f59e0b" },
         { from: 0.7, to: 1.0, color: "#22c55e" },
       ],
+      decisionBadge:
+        (m.avgFreq ?? 1.0) <= 1.8
+          ? { label: "🟢 PÚBLICO FRESCO", color: "#22c55e" }
+          : (m.avgFreq ?? 1.0) <= 2.6
+          ? { label: "🟡 INÍCIO DE REPETIÇÃO", color: "#f59e0b" }
+          : { label: "🔴 SATURADO: TROCAR FOTOS", color: "#ef4444" },
       info: {
         category: "SATURAÇÃO DE PÚBLICO",
         icon: Flame,
-        what: "Frequência média de exibição por pessoa. Quanto mais repetitivo o anúncio, menor a atenção e maior o custo.",
-        formula: "Total de Impressões ÷ Alcance Único",
-        benchmark: { bad: "> 3,0× Saturado", mid: "1,8× – 2,8× Alerta", good: "1,0× – 1,8× Fresco" },
-        actionGood: "Público renovado e anúncios com alto impacto. Criativos em sua melhor fase de entrega.",
-        actionMid: "Início de repetição para a mesma audiência. Comece a produzir novos criativos para rodízio preventivo.",
-        actionBad: "Saturação severa da audiência. Pause os anúncios mais antigos e suba no mínimo 3 criativos novos.",
+        what: "Quantas vezes a mesma pessoa viu seus anúncios. Quanto mais repete, mais caro o anúncio fica.",
+        formula: "Total de Impressões ÷ Pessoas Únicas Alcançadas",
+        benchmark: { bad: "> 3,0× Saturado", mid: "1,8× a 2,8× Alerta", good: "1,0× a 1,8× Fresco" },
+        actionGood: "Seus anúncios estão alcançando clientes novos todos os dias. Mantenha rodando.",
+        actionMid: "Começando a saturar. Prepare novos carros e novas fotos para rodízio preventivo.",
+        actionBad: "O cliente já decorou seu anúncio e não clica mais. Pause e coloque outros carros do pátio no ar.",
       },
     },
 
-    // 6. Taxa de Atrito
+    // 8. Ritmo de Gasto Diário (Burn Rate)
     {
-      label: "Taxa de Atrito (LP)",
-      textValue: FMT(m.friction, "%"),
-      sub: "Desistências após o clique",
-      value: Math.min(100, Math.max(0, 100 - (m.friction ?? 90))),
+      label: "Ritmo de Gasto Diário",
+      techLabel: "CONSUMO DA VERBA",
+      textValue: BRL(m.dailyCost),
+      sub: m.activeBudget > 0 ? `Orçamento: ${BRL(m.activeBudget)}/dia` : "Gasto diário consolidado",
+      value: gv.scale ?? 75,
       zones: [
-        { from: 0, to: 0.25, color: "#ef4444" },
-        { from: 0.25, to: 0.6, color: "#f59e0b" },
-        { from: 0.6, to: 1.0, color: "#22c55e" },
+        { from: 0, to: 0.5, color: "#ef4444" },
+        { from: 0.5, to: 0.8, color: "#f59e0b" },
+        { from: 0.8, to: 1.0, color: "#22c55e" },
       ],
+      decisionBadge:
+        gv.scale >= 80 && gv.scale <= 110
+          ? { label: "🟢 CONSUMO NO RITMO", color: "#22c55e" }
+          : gv.scale < 70
+          ? { label: "🟡 ENTREGA LENTA", color: "#f59e0b" }
+          : { label: "🔴 QUEIMA ACELERADA", color: "#ef4444" },
       info: {
-        category: "MEIO DE FUNIL",
-        icon: AlertTriangle,
-        what: "Porcentagem de pessoas que clicaram no anúncio mas desistiram antes de enviar mensagem ou virar lead.",
-        formula: "((Cliques − Conversões) ÷ Cliques) × 100",
-        benchmark: { bad: "> 92% Alto Descarte", mid: "75% – 90% Moderado", good: "< 75% Retenção Alta" },
-        actionGood: "Excelente retenção. Quem clica no anúncio tem altíssima intenção e converte no WhatsApp ou LP.",
-        actionMid: "Atrito dentro do padrão do setor automotivo para campanhas de mensagens e formulários.",
-        actionBad: "Fuga massiva pós-clique. Verifique a velocidade da página de destino ou simplifique o início da conversa no WhatsApp.",
+        category: "GESTÃO ORÇAMENTÁRIA",
+        icon: DollarSign,
+        what: "Mede se o Meta Ads está gastando o orçamento diário programado no ritmo correto ou se a entrega travou.",
+        formula: "(Gasto Diário Atual ÷ Orçamento Programado) × 100",
+        benchmark: { bad: "< 70% Travado", mid: "70% a 85% Lento", good: "85% a 105% Ideal" },
+        actionGood: "Ritmo ideal. A plataforma está distribuindo a verba de forma constante.",
+        actionMid: "Gasto abaixo do planejado. Aumente o público de interesse ou a área de quilometragem.",
+        actionBad: "Consumo travado ou orçamento zerado. Verifique os limites de conta e fundos.",
       },
     },
 
-    // 7. Conversão Global
+    // 9. Horário de Entrega (Intensidade Horária)
     {
-      label: "Conversão Global",
-      textValue: FMT(m.CVR, "%"),
-      sub: "Conversões ÷ Cliques no link",
-      value: Math.min(100, ((m.CVR ?? 0) / 6.0) * 100),
+      label: "Distribuição no Dia",
+      techLabel: "PACING HORÁRIO",
+      textValue: FMT(gv.hourlyIntensity, "%"),
+      sub: "Entrega vs Horário comercial",
+      value: gv.hourlyIntensity ?? 50,
       zones: [
-        { from: 0, to: 0.4, color: "#ef4444" },
-        { from: 0.4, to: 0.7, color: "#f59e0b" },
-        { from: 0.7, to: 1.0, color: "#22c55e" },
+        { from: 0, to: 0.35, color: "#f59e0b" },
+        { from: 0.35, to: 0.75, color: "#22c55e" },
+        { from: 0.75, to: 1.0, color: "#ef4444" },
       ],
+      decisionBadge:
+        gv.hourlyIntensity >= 35 && gv.hourlyIntensity <= 75
+          ? { label: "🟢 ENTREGA LINEAR", color: "#22c55e" }
+          : gv.hourlyIntensity < 35
+          ? { label: "🟡 INÍCIO LENTO", color: "#f59e0b" }
+          : { label: "🔴 GASTOU MUITO CEDO", color: "#ef4444" },
       info: {
-        category: "QUALIDADE DE CONVERSÃO",
-        icon: TrendingUp,
-        what: "Taxa de conversão de visitantes em leads ou conversas comerciais no WhatsApp.",
-        formula: "(Total de Conversões ÷ Cliques no Link) × 100",
-        benchmark: { bad: "< 2,5% Baixa", mid: "2,5% – 5,5% Média", good: "> 6,0% Alta" },
-        actionGood: "Taxa de conversão excelente. Oferta quente e alinhamento impecável entre criativo e destino.",
-        actionMid: "Conversão aceitável. Otimize a chamada para ação (CTA) e adicione provas sociais (estoque, avaliações).",
-        actionBad: "Taxa baixa de conversão. Garanta que o carro anunciado no post seja o mesmo exibido no primeiro contato.",
+        category: "ENTREGA NO TEMPO",
+        icon: Activity,
+        what: "Se os anúncios estão sendo entregues de forma uniforme enquanto a loja está aberta ou se gastaram tudo cedo.",
+        formula: "(Gasto Acumulado ÷ Orçamento Diário) ÷ (Hora Atual ÷ 24)",
+        benchmark: { bad: "> 85% Acelerado", mid: "< 35% Lento", good: "35% a 75% Equilibrado" },
+        actionGood: "Leads chegando distribuídos ao longo de todo o horário comercial da loja.",
+        actionMid: "Consumo concentrado. Garanta que haja vendedores de plantão nos horários de pico.",
+        actionBad: "O algoritmo gastou a verba muito rápido pela manhã e deixará a tarde descoberta.",
       },
     },
 
-    // 8. Custo por Lead
+    // 10. Potencial para Investir Mais (Escala)
     {
-      label: "Custo por Lead (CPL)",
-      textValue: BRL(m.CPL),
-      sub: "Custo médio por conversão",
-      value: m.CPL > 0 ? Math.min(100, Math.max(0, (35 / m.CPL) * 70)) : 50,
-      zones: [
-        { from: 0, to: 0.4, color: "#ef4444" },
-        { from: 0.4, to: 0.7, color: "#f59e0b" },
-        { from: 0.7, to: 1.0, color: "#22c55e" },
-      ],
-      info: {
-        category: "FUNDO DE FUNIL",
-        icon: Target,
-        what: "Custo por Lead: investimento médio necessário para gerar cada oportunidade comercial na loja.",
-        formula: "Investimento Total ÷ Total de Leads Gerados",
-        benchmark: { bad: "> R$ 45,00 Caro", mid: "R$ 25,00 – R$ 45,00 Na Meta", good: "< R$ 25,00 Excelente" },
-        actionGood: "CPL altamente lucrativo! Cada contato está custando pouco e gerando margem excelente.",
-        actionMid: "CPL dentro da meta para o mercado automotivo. Continue otimizando lances e públicos.",
-        actionBad: "CPL elevado. Pause campanhas que estão puxando a média para cima e concentre verba nas campeãs.",
-      },
-    },
-
-    // 9. Volume de Leads
-    {
-      label: "Volume de Leads",
-      textValue: String(m.conv ?? 0),
-      sub: "Conversões totais no período",
-      value: Math.min(100, ((m.conv ?? 0) / 50) * 100),
-      zones: [
-        { from: 0, to: 0.3, color: "#ef4444" },
-        { from: 0.3, to: 0.65, color: "#f59e0b" },
-        { from: 0.65, to: 1.0, color: "#22c55e" },
-      ],
-      info: {
-        category: "PRODUÇÃO COMERCIAL",
-        icon: BarChart3,
-        what: "Volume bruto de contatos, leads e mensagens comerciais conquistadas no período selecionado.",
-        formula: "Soma de todas as conversões registradas",
-        benchmark: { bad: "Volume Baixo", mid: "Volume Estável", good: "Volume Robusto" },
-        actionGood: "Volume robusto de leads alimentando a equipe de vendas continuamente.",
-        actionMid: "Fluxo regular de atendimentos. Mantenha o ritmo de distribuição entre os vendedores.",
-        actionBad: "Volume insuficiente para metas de fechamento da loja. Aumente o orçamento das melhores campanhas.",
-      },
-    },
-
-    // 10. Eficiência de Escala
-    {
-      label: "Eficiência de Escala",
+      label: "Potencial para Escalar",
+      techLabel: "MARGEM DE ESCALA",
       textValue: FMT(gv.momentum, "%"),
-      sub: "Potencial de escala segura",
+      sub: "Pode colocar mais verba?",
       value: gv.momentum ?? 50,
       zones: [
         { from: 0, to: 0.45, color: "#ef4444" },
         { from: 0.45, to: 0.7, color: "#f59e0b" },
         { from: 0.7, to: 1.0, color: "#22c55e" },
       ],
+      decisionBadge:
+        gv.momentum >= 70
+          ? { label: "🟢 PODE ESCALAR (+20%)", color: "#22c55e" }
+          : gv.momentum >= 45
+          ? { label: "🟡 ESCALA GRADUAL", color: "#f59e0b" }
+          : { label: "🔴 NÃO AUMENTAR VERBA", color: "#ef4444" },
       info: {
-        category: "POTENCIAL DE ESCALA",
+        category: "DECISÃO DE CRESCIMENTO",
         icon: Rocket,
-        what: "Índice de estabilidade que indica se a conta pode receber mais verba sem degradar o CPL.",
-        formula: "(Estabilidade CPM × 0.4) + (Conversão × 0.35) + (Saúde Fadiga × 0.25)",
-        benchmark: { bad: "< 45% Instável", mid: "45% – 70% Moderado", good: "> 70% Pronto para Escala" },
-        actionGood: "Sinal verde total para escala! Aumente o orçamento das melhores campanhas em 20% a cada 48h.",
-        actionMid: "Escala gradual recomendada. Escale apenas as campanhas do Top 3 de menor CPL.",
-        actionBad: "Não aumente o orçamento agora. Estabilize primeiro o CPL e a fadiga criativa.",
+        what: "Informa ao gestor se a conta está pronta para receber mais verba sem encarecer o custo por comprador.",
+        formula: "(Estabilidade de Leilão × 0.4) + (Conversão × 0.35) + (Fadiga × 0.25)",
+        benchmark: { bad: "< 45% Instável", mid: "45% a 70% Moderado", good: "> 70% Pronto para Escala" },
+        actionGood: "Sinal verde total! Aumente 20% do orçamento nas melhores campanhas para vender mais carros.",
+        actionMid: "Aumente o orçamento apenas na campanha com menor CPL do ranking.",
+        actionBad: "Não aumente orçamento agora. Corrija primeiro os criativos e a taxa de conversas.",
       },
     },
 
-    // 11. Saúde do Orçamento
+    // 11. Aproveitamento do Orçamento
     {
-      label: "Saúde do Orçamento",
+      label: "Aproveitamento da Verba",
+      techLabel: "SAÚDE DO ORÇAMENTO",
       textValue: FMT(gv.budgetHealth, "%"),
-      sub: "Verba em campanhas ativas",
+      sub: "Dinheiro em campanhas ativas",
       value: gv.budgetHealth ?? 75,
       zones: [
         { from: 0, to: 0.4, color: "#ef4444" },
         { from: 0.4, to: 0.75, color: "#f59e0b" },
         { from: 0.75, to: 1.0, color: "#22c55e" },
       ],
+      decisionBadge:
+        gv.budgetHealth >= 80
+          ? { label: "🟢 100% APROVEITADO", color: "#22c55e" }
+          : gv.budgetHealth >= 50
+          ? { label: "🟡 PARCIALMENTE ATIVO", color: "#f59e0b" }
+          : { label: "🔴 VERBA PARADA", color: "#ef4444" },
       info: {
         category: "ALOCAÇÃO DE CAPITAL",
         icon: DollarSign,
-        what: "Proporção do orçamento da conta que está ativamente gerando tráfego em campanhas produtivas.",
+        what: "Mede se o dinheiro da conta está focado nas campanhas ativas que trazem clientes ou travado em campanhas pausadas.",
         formula: "(Orçamento em Campanhas Ativas ÷ Orçamento Total) × 100",
-        benchmark: { bad: "< 50% Disperso", mid: "50% – 80% Parcial", good: "> 80% Concentrado" },
-        actionGood: "Capital 100% concentrado nas campanhas ativas, maximizando o aprendizado do algoritmo.",
-        actionMid: "Parte da verba alocada em campanhas com pouca entrega ou pausadas.",
-        actionBad: "Grande volume de orçamento parado em campanhas inativas. Remaneje a verba para as ativas.",
+        benchmark: { bad: "< 50% Disperso", mid: "50% a 80% Parcial", good: "> 80% Concentrado" },
+        actionGood: "Capital concentrado e gerando resultados contínuos para o estoque.",
+        actionMid: "Parte da verba está em campanhas inativas ou com entrega reduzida.",
+        actionBad: "Muito dinheiro parado em campanhas pausadas. Remaneje a verba para as campanhas que trazem mensagens.",
       },
     },
   ];
 
   // Leilão Telemetry Info
   const thermInfo: GaugeTelemetryInfo = {
-    category: "DINÂMICA DE MERCADO",
+    category: "DINÂMICA DE LEILÃO",
     icon: Flame,
-    what: "Mede o aquecimento e disputa do leilão no Meta Ads, comparando o CPM de hoje com o histórico da conta.",
+    what: "Informa se o custo dos anúncios do Meta Ads está mais caro hoje por conta de disputa de concorrentes na sua região.",
     formula: "(CPM Período Atual ÷ CPM Período Anterior) × 100",
-    benchmark: { bad: "> 70% Disputa Alta", mid: "40% – 70% Normal", good: "< 40% Leilão Aberto" },
-    actionGood: "Leilão estável com CPM competitivo. Momento ideal para ampliar o alcance e capturar leads mais baratos.",
-    actionMid: "Pressão de leilão moderada. O algoritmo está competindo dentro dos parâmetros normais do setor automotivo.",
-    actionBad: "Leilão em forte alta (CPM disparou). Abra mais a localização ou use públicos mais amplos para fugir da disputa.",
+    benchmark: { bad: "> 70% Disputa Alta", mid: "40% a 70% Normal", good: "< 40% Leilão Aberto" },
+    actionGood: "Leilão calmo com anúncios baratos. Excelente momento para investir mais e gerar leads baratos.",
+    actionMid: "Pressão normal de mercado no segmento automotivo.",
+    actionBad: "Leilão em alta disputa (anúncio caro). Abra mais o raio de localização da loja para pegar compradores mais baratos.",
   };
 
   const criticalCount = gaugeConfig.filter((gc) => gc.value < 40).length;
@@ -2229,7 +2667,7 @@ function CockpitPage() {
           <PageHeader
             eyebrow="Sistema Vital · Telemetria Automotiva"
             title="Cockpit de Performance"
-            description="Painel tático em tempo real — saúde da conta, fadiga criativa, leilão e momento de escala."
+            description="Painel tático e executivo em tempo real — vendas no WhatsApp, custo por comprador e decisões do dia."
             compact
           />
           <motion.div
@@ -2276,13 +2714,22 @@ function CockpitPage() {
           </motion.div>
         )}
 
+        {/* ── CENTRAL DE DECISÃO EXECUTIVA (RESUMO COMERCIAL & AÇÕES DIRETAS) ── */}
+        {!isLoading && meta && (
+          <CentralDecisaoExecutiva
+            score={score ?? 0}
+            meta={meta}
+            recommendations={recommendations}
+          />
+        )}
+
         {/* ── SCORE ORB (SIDEBAR) + GAUGES GRID ───────────────────── */}
         <div className="grid grid-cols-1 xl:grid-cols-[300px_1fr] gap-6 items-start">
           {/* Left Column: Score Orb & Trend */}
           <div className="flex flex-col items-center gap-4 rounded-2xl border border-border bg-card/60 p-5 backdrop-blur-xl shadow-sm">
             <div className="flex items-center justify-between w-full">
               <p className="text-[10px] font-black uppercase tracking-[0.25em] text-muted-foreground">
-                Score de Saúde
+                Saúde Comercial da Conta
               </p>
               <Compass className="h-3.5 w-3.5 text-muted-foreground/60" />
             </div>
@@ -2329,16 +2776,15 @@ function CockpitPage() {
                 {/* 1. Termômetro de Leilão */}
                 <CockpitThermometer
                   pressure={gv.pressure ?? 50}
-                  label="Termômetro de Leilão"
-                  sub={`CPM oscilou ${((meta.cpmTrendRatio ?? 1) * 100 - 100).toFixed(0)}% vs base`}
+                  label="Disputa no Mercado"
+                  sub={`CPM oscilou ${((meta.cpmTrendRatio ?? 1) * 100 - 100).toFixed(0)}% vs histórico`}
                   delay={0}
                   info={thermInfo}
                 />
 
-                {/* 2 to 12. The 11 Telemetry Gauges */}
+                {/* 2 to 12. Os 11 Relógios com Linguagem Humana e Decisão Direta */}
                 {gaugeConfig.map((gc, i) => {
-                  // Determine alignment for tooltip to prevent screen clipping
-                  const colIdx = (i + 1) % 4; // grid position
+                  const colIdx = (i + 1) % 4;
                   const align: "left" | "center" | "right" =
                     colIdx === 0 ? "right" : colIdx === 1 ? "left" : "center";
 
@@ -2348,11 +2794,13 @@ function CockpitPage() {
                       value={gc.value}
                       max={100}
                       label={gc.label}
+                      techLabel={gc.techLabel}
                       sub={gc.sub}
                       unit="%"
                       zones={gc.zones}
                       delay={(i + 1) * 0.06}
                       textValue={gc.textValue}
+                      decisionBadge={gc.decisionBadge}
                       info={gc.info}
                       alignTooltip={align}
                     />
@@ -2363,7 +2811,7 @@ function CockpitPage() {
           </div>
         </div>
 
-        {/* ── RANKING TÁTICO ──────────────────────────────────────── */}
+        {/* ── RANKING TÁTICO: COMPRADORES VS OFENSORAS ────────────── */}
         {!isLoading && radar?.length > 0 && <RankingTatico data={radar} />}
 
         {/* ── RECOMENDAÇÕES INTELIGENTES ─────────────────────────── */}
@@ -2379,25 +2827,25 @@ function CockpitPage() {
           >
             {[
               {
-                label: "CPL Médio",
-                value: BRL(meta.CPL),
+                label: "Custo Médio / Comprador",
+                value: (meta.realLeads ?? 0) > 0 ? BRL(meta.CPL) : "Sem Contatos",
                 icon: <Target className="h-4 w-4" />,
-                good: meta.CPL > 0 && meta.CPL <= 35,
+                good: (meta.realLeads ?? 0) > 0 && meta.CPL <= 35,
               },
               {
-                label: "CVR Médio",
+                label: "Conversão em Contato",
                 value: `${meta.CVR?.toFixed(1) ?? "0"}%`,
                 icon: <TrendingUp className="h-4 w-4" />,
                 good: meta.CVR >= 3.0,
               },
               {
-                label: "Frequência",
+                label: "Saturação de Público",
                 value: `${meta.avgFreq?.toFixed(1) ?? "1.0"}×`,
                 icon: <Activity className="h-4 w-4" />,
                 good: meta.avgFreq <= 2.2,
               },
               {
-                label: "Tendência CPM",
+                label: "Oscilação do Leilão",
                 value: `${((meta.cpmTrendRatio - 1) * 100).toFixed(0)}%`,
                 icon: <Zap className="h-4 w-4" />,
                 good: meta.cpmTrendRatio <= 1.05,
