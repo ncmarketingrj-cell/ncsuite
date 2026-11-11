@@ -509,7 +509,10 @@ function ClientesPage() {
         const key = row.ad_account_id;
         if (!map[key]) map[key] = { spend: 0, leads: 0, purchases: 0, roas: 0, impressions: 0, results: 0 };
         map[key].spend       += row.spend ?? 0;
-        map[key].leads       += row.leads ?? 0;
+        const rowLeads = row.leads ?? 0;
+        const rowResults = row.results ?? 0;
+        const rowPurchases = row.purchases ?? 0;
+        map[key].leads       += rowLeads > 0 ? rowLeads : (rowPurchases === 0 ? rowResults : 0);
         map[key].purchases   += row.purchases ?? 0;
         map[key].impressions += row.impressions ?? 0;
         map[key].results     += row.results ?? 0;
