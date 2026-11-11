@@ -13,19 +13,16 @@ import { supabase } from "@/integrations/supabase-external/client";
 import { format, subDays } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { toast } from "sonner";
-import { z } from "zod";
 import { DateRangePicker } from "@/components/DateRangePicker";
 import { TemplateModal } from "@/components/TemplateModal";
 import { WhatsAppSendModal } from "@/components/WhatsAppSendModal";
 
-const searchSchema = z.object({
-  from: z.string().optional(),
-  activeReportId: z.string().optional(),
-});
-
 export const Route = createFileRoute("/_app/relatorios")({
   head: () => ({ meta: [{ title: "Gerador de Relatórios — NC Suite" }] }),
-  validateSearch: (search) => searchSchema.parse(search),
+  validateSearch: (s: Record<string, unknown>): { from?: string; activeReportId?: string } => ({
+    from: s.from as string | undefined,
+    activeReportId: s.activeReportId as string | undefined,
+  }),
   component: RelatoriosPage,
 });
 

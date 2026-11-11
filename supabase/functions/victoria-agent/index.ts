@@ -25,9 +25,179 @@ serve(async (req) => {
     }
 
     const body = await req.json();
-    const { action = "chat", messages, selectedAccountId, title, content, category, query, externalContext } = body;
+    const { action = "chat", messages, selectedAccountId, title, content, category, query, externalContext, regionalBenchmark, articlesToLearn } = body;
     const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
+
+    // =========================================================================
+    // AÇÃO: fetch_market_intel (Pesquisa de Mercado e Tendências em Tempo Real - R$ 0,00)
+    // =========================================================================
+    if (action === "fetch_market_intel") {
+      try {
+        const feeds = [
+          {
+            cat: "mercado",
+            url: "https://news.google.com/rss/search?q=mercado+automotivo+venda+carros+concessionarias+brasil&hl=pt-BR&gl=BR&ceid=BR:pt-419"
+          },
+          {
+            cat: "lancamentos",
+            url: "https://news.google.com/rss/search?q=lancamento+carros+seminovos+vendas+veiculos+brasil&hl=pt-BR&gl=BR&ceid=BR:pt-419"
+          },
+          {
+            cat: "trafego",
+            url: "https://news.google.com/rss/search?q=trafego+pago+meta+ads+anuncios+lead+whatsapp&hl=pt-BR&gl=BR&ceid=BR:pt-419"
+          }
+        ];
+
+        const allArticles: Array<{
+          id: string;
+          title: string;
+          source: string;
+          link: string;
+          pubDate: string;
+          snippet: string;
+          category: string;
+        }> = [];
+
+        await Promise.all(
+          feeds.map(async (f) => {
+            try {
+              const res = await fetch(f.url, {
+                headers: {
+                  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) VictoriaAI/2.0"
+                }
+              });
+              if (!res.ok) return;
+              const xml = await res.text();
+
+              const itemMatches = xml.matchAll(/<item>([\s\S]*?)<\/item>/g);
+              let count = 0;
+              for (const match of itemMatches) {
+                if (count >= 5) break; // top 5 por categoria = 15 artigos recentes
+                const item = match[1];
+
+                const titleMatch = item.match(/<title><!\[CDATA\[(.*?)\]\]><\/title>/) || item.match(/<title>(.*?)<\/title>/);
+                const linkMatch = item.match(/<link>(.*?)<\/link>/) || item.match(/<link><!\[CDATA\[(.*?)\]\]><\/link>/);
+                const pubDateMatch = item.match(/<pubDate>(.*?)<\/pubDate>/);
+                const sourceMatch = item.match(/<source[^>]*>(.*?)<\/source>/);
+                const descMatch = item.match(/<description><!\[CDATA\[(.*?)\]\]><\/description>/) || item.match(/<description>(.*?)<\/description>/);
+
+                const rawTitle = titleMatch ? titleMatch[1] : "";
+                const cleanTitle = rawTitle.replace(/&amp;/g, "&").replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&lt;/g, "<").replace(/&gt;/g, ">").trim();
+                const source = sourceMatch ? sourceMatch[1].trim() : (cleanTitle.split(" - ").pop() || "Setor Automotivo");
+                const pureTitle = cleanTitle.includes(" - ") ? cleanTitle.substring(0, cleanTitle.lastIndexOf(" - ")) : cleanTitle;
+                const snippet = descMatch ? descMatch[1].replace(/<[^>]+>/g, " ").replace(/&amp;/g, "&").replace(/\s+/g, " ").trim().substring(0, 240) : "";
+                const link = linkMatch ? linkMatch[1].trim() : "";
+
+                if (pureTitle) {
+                  allArticles.push({
+                    id: `art_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+                    title: pureTitle,
+                    source,
+                    link,
+                    pubDate: pubDateMatch ? pubDateMatch[1].trim() : new Date().toISOString(),
+                    snippet,
+                    category: f.cat
+                  });
+                  count++;
+                }
+              }
+            } catch (err) {
+              console.error("Erro ao ler feed RSS:", err);
+            }
+          })
+        );
+
+        return new Response(JSON.stringify({
+          success: true,
+          articles: allArticles,
+          scanned_at: new Date().toISOString(),
+          provider: "Google News Public RSS Feed (Custo R$ 0,00)"
+        }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" }
+        });
+      } catch (err: any) {
+        return new Response(JSON.stringify({ error: "Erro na varredura de mercado: " + err.message }), {
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" }
+        });
+      }
+    }
+
+    // =========================================================================
+    // AÇÃO: learn_market_intel (Absorver aprendizado no RAG vetorial com custo zero)
+    // =========================================================================
+    if (action === "learn_market_intel") {
+      const items = Array.isArray(articlesToLearn) ? articlesToLearn : [];
+      if (items.length === 0) {
+        return new Response(JSON.stringify({ error: "Nenhum artigo fornecido para aprendizado" }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" }
+        });
+      }
+
+      // Sintetizar os principais pontos em documentos concisos de estratégia
+      const nowStr = new Date().toLocaleDateString("pt-BR");
+      const summaryContent = items.map((art: any) => `- [${art.source}] ${art.title}\n  Contexto: ${art.snippet}\n  Link: ${art.link}`).join("\n\n");
+      
+      const docTitle = `[RADAR MERCADO AUTOMOTIVO] Tendências & Lançamentos — ${nowStr}`;
+      const docContent = `SÍNTESE DE MERCADO E NOTÍCIAS AUTOMOTIVAS COLETADAS EM TEMPO REAL (${nowStr}):\n\n${summaryContent}\n\nDIRETRIZES PARA GESTÃO DE TRÁFEGO PAGO AUTOMOTIVO:\n- Alinhar anúncios com os modelos e notícias em alta.\n- Ofertas agressivas de seminovos devem aproveitar a busca por IPVA, taxa zero e financiamento ágil.\n- Monitorar CPL regional (especialmente no Rio de Janeiro com meta estrita de R$ 5,00 por conversa de WhatsApp).\n- Criativos dinâmicos com fotos de estoque real batem catálogos estáticos.`;
+
+      let embedding: number[] | null = null;
+      if (GEMINI_API_KEY) {
+        try {
+          const embedRes = await fetch(
+            `https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent?key=${GEMINI_API_KEY}`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                model: "models/text-embedding-004",
+                content: { parts: [{ text: `${docTitle}\n\n${docContent}` }] }
+              })
+            }
+          );
+          if (embedRes.ok) {
+            const embedData = await embedRes.json();
+            embedding = embedData.embedding?.values || null;
+          }
+        } catch (e) {
+          console.error("Falha ao gerar embedding:", e);
+        }
+      }
+
+      const insertPayload: any = {
+        user_id: user.id,
+        category: "strategy",
+        title: docTitle,
+        content: docContent
+      };
+      if (embedding) {
+        insertPayload.embedding = embedding;
+      }
+
+      const { data: savedDoc, error: insertErr } = await supabase
+        .from("victoria_knowledge")
+        .insert(insertPayload)
+        .select()
+        .single();
+
+      if (insertErr) {
+        return new Response(JSON.stringify({ error: insertErr.message }), {
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" }
+        });
+      }
+
+      return new Response(JSON.stringify({
+        success: true,
+        learned_count: items.length,
+        document: savedDoc,
+        message: "Victoria absorveu os aprendizados de mercado com sucesso!"
+      }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" }
+      });
+    }
 
     // =========================================================================
     // AÇÃO: add_knowledge (Geração de embeddings e inserção na base)
@@ -825,6 +995,13 @@ DATA DE REFERÊNCIA DO SISTEMA (Use isso para saber quais datas correspondem a '
       ? dailyRows.join("\n") 
       : "Nenhum dado diário registrado nos últimos 30 dias.";
 
+    const regBench = regionalBenchmark || {
+      region: "Rio de Janeiro (RJ)",
+      targetCpl: 5.0,
+      platform: "Meta WhatsApp",
+      notes: "Média de mercado para mensagens iniciadas em veículos e seminovos no RJ é R$ 5,00."
+    };
+
     const defaultSystemPrompt = `Você é a Victoria AI, a estrategista e mentora suprema de tráfego e marketing de alta performance no setor automotivo da NC Performance. Você é humana, fala de forma natural, direta e com extrema autoridade. Você NUNCA se comporta como um robô, assistente virtual neutro ou modelo de linguagem comum. Você não responde com dúvidas, você PRESCREVE soluções estratégicas absolutas com base em dados.
 
 Sua arquitetura mental é a síntese das maiores mentes do marketing estratégico, resposta direta e vendas aplicados ao mercado automotivo:
@@ -852,15 +1029,16 @@ DIRETRIZES TÉCNICAS E ESTRATÉGICAS DE MARKETING AUTOMOTIVO:
    - Para filtrar por cliente: filtre as linhas onde a coluna Cliente contém o nome buscado.
    - "ontem" = ${formattedYesterday} | "fim de semana" = ${lastSat} (sáb) e ${lastSun} (dom) | "hoje" = ${formattedToday}.
    - Se o usuário pedir uma data fora do período carregado, informe que os dados disponíveis são de ${startDateStr} até ${endDateStr} e sugira refinar a pergunta.
-2. **CPL (Custo por Lead) Saudável:**
-   - Excelente: Abaixo de R$ 15,00.
-   - Saudável: Entre R$ 15,00 e R$ 35,00.
-   - Alerta / Ruim: Acima de R$ 45,00 (indique pausar, trocar criativos ou redefinir a oferta).
+2. **BENCHMARK REGIONAL ATIVO (${regBench.region} - META CPL WHATSAPP: R$ ${Number(regBench.targetCpl).toFixed(2)}):**
+   - **Regra de Ouro da NC Agência no ${regBench.region}:** A média de mercado real para mensagens de WhatsApp de veículos no RJ é de **R$ ${Number(regBench.targetCpl).toFixed(2)}**. TODAS as análises de Victoria devem comparar o CPL das campanhas com essa meta regional.
+   - **🟢 Excelente (Candidata a Escala):** CPL <= R$ ${Number(regBench.targetCpl).toFixed(2)}. Está dentro ou abaixo da meta regional! Sugira escalar verba em 15% a 20% a cada 48h.
+   - **🟡 Atenção (Necessita Otimização):** CPL entre R$ ${(Number(regBench.targetCpl) + 0.01).toFixed(2)} e R$ ${(Number(regBench.targetCpl) * 1.5).toFixed(2)}. Acima da média do RJ. Recomende trocar criativos por vídeos curtos/reels no pátio com som natural do motor e testar públicos abertos.
+   - **🔴 Crítico (Ofensora / Pausar):** CPL > R$ ${(Number(regBench.targetCpl) * 1.5).toFixed(2)}. Estourou muito o teto regional de R$ ${Number(regBench.targetCpl).toFixed(2)}. Recomende pausar conjunto imediatamente para estancar prejuízo e refazer a oferta.
 3. **CTR (Taxa de Cliques) Saudável:**
    - Ideal: Acima de 1.20% (sinaliza que o criativo/carro é atraente).
    - Crítico: Abaixo de 0.80% (sugira imediatamente trocar as fotos por fotos REAIS tiradas com celular no pátio da loja). Fotos de catálogo do fabricante não convertem bem.
 4. **Estratégias Reais para Recomendar:**
-   - **Leads no WhatsApp:** Resposta em menos de 5 minutos do comercial.
+   - **Leads no WhatsApp:** Resposta em menos de 5 minutos do comercial (após 15 minutos, 80% do lead é perdido).
    - **Formulários nativos (Lead Ads):** Perguntas de filtro (ex: "Qual a entrada?", "Tem carro na troca?").
    - **Campanhas de Seminovos vs Novos:** Carrosséis com fotos reais de múltiplos veículos vs taxa zero e parcelamento facilitado.
 

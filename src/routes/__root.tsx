@@ -30,10 +30,16 @@ export function useTheme() {
 function NotFoundComponent() {
   useEffect(() => {
     const path = window.location.pathname;
+    const search = window.location.search;
     if (path.startsWith("/_app/")) {
       const cleanPath = path.replace("/_app/", "/");
-      const search = window.location.search;
       window.location.replace(cleanPath + search);
+      return;
+    }
+    if (path.startsWith("/campanhas")) {
+      const cleanPath = path.replace("/campanhas", "/metricas");
+      window.location.replace(cleanPath + search);
+      return;
     }
   }, []);
 

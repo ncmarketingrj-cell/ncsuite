@@ -1199,17 +1199,19 @@ function Shell() {
                       const rawLink = recentNotifications[0].link || "/automacoes";
                       const safeLink = rawLink.startsWith("/campanhas") ? rawLink.replace(/^\/campanhas/, "/metricas") : rawLink;
                       return (
-                        <Link
-                          to={safeLink}
-                          onClick={async () => {
+                        <a
+                          href={safeLink}
+                          onClick={async (e) => {
+                            e.preventDefault();
                             setShowNotification(false);
                             await supabase.from("notifications").update({ is_read: true }).eq("id", recentNotifications[0].id);
                             refetchNotifications();
+                            window.location.href = safeLink;
                           }}
-                          className="text-[9px] font-bold uppercase text-primary hover:underline"
+                          className="text-[9px] font-bold uppercase text-primary hover:underline cursor-pointer"
                         >
                           Ver Detalhes
-                        </Link>
+                        </a>
                       );
                     })()}
                   </div>

@@ -7,7 +7,7 @@ import {
   Loader2, User, Sparkles, TrendingUp, BarChart3, MessageSquare, 
   ShieldAlert, Settings, ArrowLeft, ArrowUpRight, Check, Play,
   BookOpen, FolderClosed, Zap, Share2, Mic, MicOff, UploadCloud, FileText, Database,
-  Pencil
+  Pencil, Radio, Target, ExternalLink, Brain, RefreshCw
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase-external/client";
 import { useVictoriaChat, type Message, type Conversation } from "@/hooks/useVictoriaChat";
@@ -32,6 +32,7 @@ function VictoriaHubPage() {
   const [editingTitle, setEditingTitle] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [isKnowledgeOpen, setIsKnowledgeOpen] = useState(false);
+  const [isMarketRadarOpen, setIsMarketRadarOpen] = useState(false);
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
   const [editingMessageText, setEditingMessageText] = useState("");
 
@@ -379,6 +380,7 @@ function VictoriaHubPage() {
               <button
                 onClick={() => {
                   setIsKnowledgeOpen(false);
+                  setIsMarketRadarOpen(false);
                   chat.setActiveConversationId(null);
                 }}
                 className="flex items-center justify-center gap-2 w-full py-2.5 px-4 rounded-xl bg-primary/10 border border-primary/20 text-primary hover:bg-primary/15 transition-all font-bold text-xs uppercase tracking-wider active:scale-[0.98]"
@@ -389,7 +391,30 @@ function VictoriaHubPage() {
 
               <button
                 onClick={() => {
+                  setIsMarketRadarOpen(true);
+                  setIsKnowledgeOpen(false);
+                  chat.setActiveConversationId(null);
+                  if (chat.marketArticles.length === 0) {
+                    chat.fetchMarketIntel(false);
+                  }
+                }}
+                className={`flex items-center justify-between gap-2 w-full py-2 px-3 rounded-xl border transition-all font-bold text-xs uppercase tracking-wider active:scale-[0.98] ${
+                  isMarketRadarOpen 
+                    ? "bg-red-500/15 border-red-500/40 text-red-500 shadow-sm" 
+                    : "bg-input/20 border-border/50 text-muted-foreground hover:bg-white/[0.03] hover:text-foreground"
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  <Radio className="h-4 w-4 text-red-500 animate-pulse" />
+                  <span>Radar de Mercado & IA</span>
+                </div>
+                <span className="flex h-2 w-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.8)] animate-pulse" />
+              </button>
+
+              <button
+                onClick={() => {
                   setIsKnowledgeOpen(true);
+                  setIsMarketRadarOpen(false);
                   chat.setActiveConversationId(null);
                 }}
                 className={`flex items-center justify-center gap-2 w-full py-2 px-4 rounded-xl border transition-all font-bold text-xs uppercase tracking-wider active:scale-[0.98] ${
@@ -430,7 +455,7 @@ function VictoriaHubPage() {
                   <div key={groupName} className="flex flex-col gap-1">
                     <span className="px-3 text-[9px] font-black uppercase tracking-wider text-muted-foreground/40">{groupName}</span>
                     {list.map((c) => {
-                      const isActive = !isKnowledgeOpen && chat.activeConversationId === c.id;
+                      const isActive = !isKnowledgeOpen && !isMarketRadarOpen && chat.activeConversationId === c.id;
                       const isEditing = editingConversationId === c.id;
 
                       return (
@@ -439,6 +464,7 @@ function VictoriaHubPage() {
                           onClick={() => {
                             if (!isEditing) {
                               setIsKnowledgeOpen(false);
+                              setIsMarketRadarOpen(false);
                               chat.setActiveConversationId(c.id);
                             }
                           }}
@@ -529,11 +555,19 @@ function VictoriaHubPage() {
               </div>
               <div>
                 <h2 className="text-xs font-black text-foreground uppercase tracking-tight">
-                  {isKnowledgeOpen ? "Central de Conhecimento" : "Victoria AI"}
+                  {isMarketRadarOpen
+                    ? "Radar de Mercado & IA Autônoma"
+                    : isKnowledgeOpen
+                      ? "Central de Conhecimento"
+                      : "Victoria AI"}
                 </h2>
                 <p className="text-[9px] font-bold text-muted-foreground flex items-center gap-1 mt-0.5">
-                  <span className="h-1 w-1 rounded-full bg-green-500" />
-                  {isKnowledgeOpen ? "Base de Dados Vetorial RAG" : "Estrategista Digital e Mentora Sênior"}
+                  <span className="h-1 w-1 rounded-full bg-green-500 animate-pulse" />
+                  {isMarketRadarOpen
+                    ? "Pesquisa Contínua em Tempo Real — Custo R$ 0,00"
+                    : isKnowledgeOpen
+                      ? "Base de Dados Vetorial RAG"
+                      : "Estrategista Digital e Mentora Sênior"}
                 </p>
               </div>
             </div>
@@ -555,7 +589,215 @@ function VictoriaHubPage() {
           </div>
         </header>
 
-        {isKnowledgeOpen ? (
+        {isMarketRadarOpen ? (
+          /* ===================================================================
+             RADAR DE MERCADO & APRENDIZADO EM TEMPO REAL (CUSTO ZERO)
+             =================================================================== */
+          <div className="flex-1 overflow-y-auto px-4 sm:px-8 py-6 custom-scrollbar max-w-6xl mx-auto w-full space-y-6">
+            {/* Cabeçalho do Radar */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-border/40 pb-5">
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="flex h-2.5 w-2.5 rounded-full bg-emerald-500 animate-ping" />
+                  <span className="text-[10px] font-black uppercase tracking-widest text-emerald-500">Agente Autônomo Ativo em Segundo Plano</span>
+                </div>
+                <h1 className="text-xl font-black text-foreground uppercase tracking-tight mt-1">
+                  Radar de Mercado & Aprendizado em Tempo Real
+                </h1>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Pesquisa automotiva contínua, novidades e inteligência de tráfego pago baseados no mercado real do Rio de Janeiro e Brasil.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => chat.fetchMarketIntel(true)}
+                  disabled={chat.isScanningMarket}
+                  className="flex items-center gap-2 px-4 py-2 rounded-xl bg-primary text-primary-foreground font-black text-xs uppercase tracking-wider hover:brightness-110 active:scale-95 transition-all shadow-glow-sm disabled:opacity-50"
+                >
+                  {chat.isScanningMarket ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <RefreshCw className="h-4 w-4" />
+                  )}
+                  {chat.isScanningMarket ? "Varrendo Mercado..." : "Rastrear Notícias Agora"}
+                </button>
+
+                <button
+                  onClick={() => chat.learnMarketIntel(chat.marketArticles)}
+                  disabled={chat.isLearningMarket || chat.marketArticles.length === 0}
+                  className="flex items-center gap-2 px-4 py-2 rounded-xl bg-red-600/20 border border-red-500/40 text-red-500 hover:bg-red-500/30 font-black text-xs uppercase tracking-wider active:scale-95 transition-all disabled:opacity-40"
+                >
+                  {chat.isLearningMarket ? (
+                    <Loader2 className="h-4 w-4 animate-spin text-red-500" />
+                  ) : (
+                    <Brain className="h-4 w-4 text-red-500" />
+                  )}
+                  {chat.isLearningMarket ? "Treinando IA..." : "Absorver no RAG"}
+                </button>
+              </div>
+            </div>
+
+            {/* CARDS DE DESTAQUE: Benchmark Regional & Custo Zero */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {/* Card 1: Benchmark Regional RJ Ativo */}
+              <div className="md:col-span-2 rounded-2xl border border-primary/25 bg-card/60 backdrop-blur-md p-5 shadow-lg relative overflow-hidden">
+                <div className="absolute top-0 right-0 w-32 h-32 bg-primary/10 rounded-full blur-2xl pointer-events-none" />
+                <div className="flex items-start justify-between">
+                  <div>
+                    <span className="text-[9px] font-black uppercase tracking-widest text-primary flex items-center gap-1.5">
+                      <Target className="h-3.5 w-3.5" /> Benchmark Regional Calibrado
+                    </span>
+                    <h3 className="text-base font-black text-foreground mt-1">
+                      {chat.regionalBenchmark.region} — Meta de CPL WhatsApp: R$ {chat.regionalBenchmark.targetCpl.toFixed(2)}
+                    </h3>
+                    <p className="text-[11px] text-muted-foreground mt-1 max-w-xl">
+                      Victoria analisa 100% das campanhas, Cockpit e Auditoria comparando os custos reais contra este teto de <strong className="text-foreground">R$ {chat.regionalBenchmark.targetCpl.toFixed(2)}</strong>.
+                    </p>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <span className="text-2xl font-black text-primary">R$ {chat.regionalBenchmark.targetCpl.toFixed(2)}</span>
+                    <p className="text-[9px] font-bold text-muted-foreground uppercase">CPL Alvo WhatsApp</p>
+                  </div>
+                </div>
+
+                {/* Seletores Rápidos de Regiões */}
+                <div className="mt-4 pt-4 border-t border-border/40">
+                  <p className="text-[10px] font-black uppercase tracking-wider text-muted-foreground mb-2">Alterar Região de Referência:</p>
+                  <div className="flex flex-wrap gap-2">
+                    {[
+                      { region: "Rio de Janeiro (RJ)", targetCpl: 5.0, label: "🏖️ RJ (R$ 5,00 - Padrão)", note: "Média real validada no RJ para leads de WhatsApp" },
+                      { region: "São Paulo (SP)", targetCpl: 8.5, label: "🏙️ SP Capital/Int (R$ 8,50)", note: "Leilão mais concorrido no Estado de SP" },
+                      { region: "Minas Gerais (MG)", targetCpl: 6.0, label: "⛰️ Minas Gerais (R$ 6,00)", note: "Média estadual MG" },
+                      { region: "Região Sul", targetCpl: 7.0, label: "🌲 Sul (R$ 7,00)", note: "PR, SC e RS" },
+                      { region: "Brasil Geral", targetCpl: 6.5, label: "🇧🇷 Brasil Geral (R$ 6,50)", note: "Média nacional de concessionárias" },
+                    ].map(item => (
+                      <button
+                        key={item.region}
+                        onClick={() => chat.updateRegionalBenchmark({
+                          region: item.region,
+                          targetCpl: item.targetCpl,
+                          platform: "Meta WhatsApp",
+                          notes: item.note
+                        })}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all border ${
+                          chat.regionalBenchmark.region === item.region
+                            ? "bg-primary text-primary-foreground border-primary shadow-glow-sm"
+                            : "bg-input/20 border-border/50 text-muted-foreground hover:bg-white/[0.04] hover:text-foreground"
+                        }`}
+                      >
+                        {item.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Card 2: Arquitetura Custo R$ 0,00 */}
+              <div className="rounded-2xl border border-emerald-500/20 bg-card/60 backdrop-blur-md p-5 shadow-lg flex flex-col justify-between">
+                <div>
+                  <span className="text-[9px] font-black uppercase tracking-widest text-emerald-500 flex items-center gap-1.5">
+                    <Sparkles className="h-3.5 w-3.5" /> Arquitetura de Custo Zero
+                  </span>
+                  <h4 className="text-base font-black text-foreground mt-1">Custo: R$ 0,00</h4>
+                  <p className="text-[11px] text-muted-foreground mt-1 leading-relaxed">
+                    Pesquisa pública contínua via Google News RSS sem necessidade de APIs pagas de terceiros.
+                  </p>
+                </div>
+                <div className="mt-4 pt-3 border-t border-border/40 text-[10px] text-muted-foreground/80 space-y-1">
+                  <div className="flex justify-between">
+                    <span>Última Varredura:</span>
+                    <span className="font-bold text-foreground">{chat.lastMarketScan ? chat.lastMarketScan.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : "Agora"}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Fontes Mapeadas:</span>
+                    <span className="font-bold text-foreground">AutoEsporte, Quatro Rodas, Fenabrave</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* SEÇÃO DE NOTÍCIAS EM TEMPO REAL */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-black uppercase tracking-wider text-foreground flex items-center gap-2">
+                  <Radio className="h-4 w-4 text-primary" /> Notícias e Tendências Mapeadas do Mercado Automotivo
+                </h3>
+                <span className="text-[10px] font-bold text-muted-foreground uppercase">{chat.marketArticles.length} Artigos Carregados</span>
+              </div>
+
+              {chat.isScanningMarket ? (
+                <div className="py-16 text-center rounded-2xl border border-dashed border-border/60 bg-card/20">
+                  <Loader2 className="h-8 w-8 animate-spin text-primary mx-auto" />
+                  <p className="text-xs font-bold text-foreground mt-3 uppercase tracking-wider">Varrendo portais de notícias e tráfego pago em tempo real...</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {chat.marketArticles.map(art => (
+                    <div
+                      key={art.id}
+                      className="group p-4 rounded-xl border border-border/60 bg-card/40 hover:bg-card/70 hover:border-primary/40 transition-all flex flex-col justify-between"
+                    >
+                      <div>
+                        <div className="flex items-center justify-between text-[10px] text-muted-foreground mb-1.5">
+                          <span className="font-black uppercase tracking-wider text-primary">{art.source}</span>
+                          <span>{new Date(art.pubDate).toLocaleDateString("pt-BR")}</span>
+                        </div>
+                        <h4 className="text-xs font-bold text-foreground leading-snug group-hover:text-primary transition-colors">
+                          {art.title}
+                        </h4>
+                        {art.snippet && (
+                          <p className="text-[11px] text-muted-foreground mt-2 line-clamp-3 leading-relaxed">
+                            {art.snippet}
+                          </p>
+                        )}
+                      </div>
+                      {art.link && (
+                        <div className="mt-3 pt-2 border-t border-border/30 flex justify-end">
+                          <a
+                            href={art.link}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-[10px] font-bold uppercase text-primary hover:underline flex items-center gap-1"
+                          >
+                            Ler Fonte Original <ExternalLink className="h-3 w-3" />
+                          </a>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* DIRETRIZES VALIDADAS DE TRÁFEGO AUTOMOTIVO */}
+            <div className="rounded-2xl border border-border/60 bg-card/30 p-5 space-y-4">
+              <h3 className="text-sm font-black uppercase tracking-wider text-foreground flex items-center gap-2">
+                <TrendingUp className="h-4 w-4 text-emerald-500" /> Estratégias Validadas de Tráfego Automotivo Embutidas na Victoria
+              </h3>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <div className="p-3.5 rounded-xl border border-border/40 bg-background/50 space-y-1.5">
+                  <p className="text-xs font-black text-foreground">🏎️ Fotos no Pátio vs Catálogo</p>
+                  <p className="text-[11px] text-muted-foreground leading-relaxed">
+                    Fotos reais com iluminação natural tiradas com celular no showroom geram até 54% mais cliques e leads que imagens 3D perfeitas do fabricante.
+                  </p>
+                </div>
+                <div className="p-3.5 rounded-xl border border-border/40 bg-background/50 space-y-1.5">
+                  <p className="text-xs font-black text-foreground">⚡ Regra de Resposta em 5 Minutos</p>
+                  <p className="text-[11px] text-muted-foreground leading-relaxed">
+                    Se o lead do WhatsApp não for atendido em até 5 minutos, a probabilidade de fechamento cai em 80%. A agência cobra SLA do comercial.
+                  </p>
+                </div>
+                <div className="p-3.5 rounded-xl border border-border/40 bg-background/50 space-y-1.5">
+                  <p className="text-xs font-black text-foreground">🎯 Qualificador de Troca</p>
+                  <p className="text-[11px] text-muted-foreground leading-relaxed">
+                    Anúncios com pergunta qualificadora de entrada ("Tem carro na troca?") filtram curiosos e entregam compradores prontos para o consultor.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : isKnowledgeOpen ? (
           /* ===================================================================
              INTERFACES DA CENTRAL DE CONHECIMENTO (RAG)
              =================================================================== */
