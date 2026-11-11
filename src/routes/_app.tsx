@@ -1195,17 +1195,23 @@ function Shell() {
                   <p className="text-[11px] font-bold text-foreground mt-0.5 truncate">{recentNotifications[0].title}</p>
                   <p className="text-[10px] text-muted-foreground mt-1 leading-relaxed line-clamp-2">{recentNotifications[0].message}</p>
                   <div className="mt-2 flex justify-end">
-                    <Link
-                      to={recentNotifications[0].link || "/automacoes"}
-                      onClick={async () => {
-                        setShowNotification(false);
-                        await supabase.from("notifications").update({ is_read: true }).eq("id", recentNotifications[0].id);
-                        refetchNotifications();
-                      }}
-                      className="text-[9px] font-bold uppercase text-primary hover:underline"
-                    >
-                      Ver Detalhes
-                    </Link>
+                    {(() => {
+                      const rawLink = recentNotifications[0].link || "/automacoes";
+                      const safeLink = rawLink.startsWith("/campanhas") ? rawLink.replace(/^\/campanhas/, "/metricas") : rawLink;
+                      return (
+                        <Link
+                          to={safeLink}
+                          onClick={async () => {
+                            setShowNotification(false);
+                            await supabase.from("notifications").update({ is_read: true }).eq("id", recentNotifications[0].id);
+                            refetchNotifications();
+                          }}
+                          className="text-[9px] font-bold uppercase text-primary hover:underline"
+                        >
+                          Ver Detalhes
+                        </Link>
+                      );
+                    })()}
                   </div>
                 </div>
               </div>

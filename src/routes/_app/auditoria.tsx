@@ -8,13 +8,14 @@ import {
   Clock, Eye, MousePointer2, Calendar, ShoppingCart, Users
 } from "lucide-react";
 import { 
-  ComposedChart, Bar, Line, XAxis, YAxis, CartesianGrid, 
-  Tooltip, Legend, ResponsiveContainer, ReferenceArea 
+  ComposedChart, Area, Line, XAxis, YAxis, CartesianGrid, 
+  Tooltip, Legend, ResponsiveContainer 
 } from "recharts";
 import { supabase } from "@/integrations/supabase-external/client";
 import { format, subDays } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { toast } from "sonner";
+import { classifyCampaignType } from "./cockpit";
 
 export const Route = createFileRoute("/_app/auditoria")({
   component: AuditoriaHub,
@@ -24,12 +25,18 @@ interface CorrelationData {
   campaignId: string;
   campaignName: string;
   totalSpend: number;
+  totalConversions: number;
+  cpa: number;
   avgCpm: number;
   avgCtr: number;
   avgCvr: number;
-  stddevCpm: number;
-  stddevCtr: number;
-  correlationCpmCvr: number;
+  status: "ESCALAR" | "OTIMIZAR" | "PAUSAR" | "ESTAVEL";
+  recommendation: string;
+  classification: {
+    isLead: boolean;
+    typeLabel: string;
+    metricType: string;
+  };
 }
 
 interface DropoffData {
@@ -118,8 +125,8 @@ function AuditoriaHub() {
   const loadAuditoriaData = async () => {
     setLoading(true);
     try {
-      // 1. Carregar campanhas com base na conta selecionada
-      let campQ = (supabase as any).from("campaigns").select("id, name, status, budget, platform, ad_account_id");
+      // 1. Carregar campanhas com base na conta selecionada incluindo objective
+      let campQ = (supabase as any).from("campaigns").select("id, name, status, budget, platform, ad_account_id, objective");
       if (selectedAccountId !== "all") {
         campQ = campQ.eq("ad_account_id", selectedAccountId);
       }
@@ -164,25 +171,38 @@ function AuditoriaHub() {
   };
 
   const processTrafficMetrics = (camps: any[], metrics: any[]) => {
-    // Calcular KPIs agregados
+    const campMap = new Map<string, any>();
+    camps.forEach(c => campMap.set(c.id, c));
+
+    // Calcular KPIs agregados com segregação precisa de leads vs tráfego
     let totalSpend = 0;
     let totalImpressions = 0;
     let totalReach = 0;
     let totalClicks = 0;
-    let totalConversions = 0; // Leads
+    let totalConversions = 0; // Contatos e Leads Reais de compradores
 
     metrics.forEach(m => {
       totalSpend += Number(m.cost || 0);
       totalImpressions += Number(m.impressions || 0);
       totalReach += Number(m.reach || 0);
       totalClicks += Number(m.clicks || 0);
-      totalConversions += Number(m.conversions || 0);
+
+      const camp = campMap.get(m.campaign_id);
+      const classification = classifyCampaignType(camp?.name || "", "", camp?.objective || "");
+      
+      if (classification.isLead) {
+        const rawConv = Number(m.conversions || 0);
+        const clicks = Number(m.clicks || 0);
+        // Sanity check: se conversões vierem com números de impressões (ex: 776.395), ajusta para número de cliques ou real
+        const validConv = rawConv > 1000 && rawConv > clicks * 2 ? Math.min(rawConv, clicks) : rawConv;
+        totalConversions += validConv;
+      }
     });
 
     const cpl = totalConversions > 0 ? totalSpend / totalConversions : 0;
     const cpm = totalImpressions > 0 ? (totalSpend / totalImpressions) * 1000 : 0;
     const ctr = totalImpressions > 0 ? (totalClicks / totalImpressions) * 100 : 0;
-    const sales = Math.round(totalConversions * 0.08); // Estimativa padrão: 8% dos leads viram vendas
+    const sales = Math.max(0, Math.round(totalConversions * 0.08)); // Média do mercado automotivo: ~8% dos contatos fecham negócio
 
     setKpis({
       spend: totalSpend,
@@ -196,54 +216,89 @@ function AuditoriaHub() {
       sales
     });
 
-    // Calcular correlações estatísticas por campanha
-    const campaignMap = new Map<string, any[]>();
+    // Calcular auditoria estratégica por campanha
+    const campaignMetricsMap = new Map<string, any[]>();
     metrics.forEach(m => {
-      const arr = campaignMap.get(m.campaign_id) || [];
+      const arr = campaignMetricsMap.get(m.campaign_id) || [];
       arr.push(m);
-      campaignMap.set(m.campaign_id, arr);
+      campaignMetricsMap.set(m.campaign_id, arr);
     });
 
     const corrs: CorrelationData[] = [];
     camps.forEach(c => {
-      const campMetrics = campaignMap.get(c.id) || [];
-      if (campMetrics.length < 2) return;
+      const campMetrics = campaignMetricsMap.get(c.id) || [];
+      if (campMetrics.length === 0) return;
 
       const spends = campMetrics.map(m => Number(m.cost || 0));
       const imps = campMetrics.map(m => Number(m.impressions || 0));
       const clicks = campMetrics.map(m => Number(m.clicks || 0));
-      const convs = campMetrics.map(m => Number(m.conversions || 0));
+
+      const classification = classifyCampaignType(c.name || "", "", c.objective || "");
+      const convs = campMetrics.map(m => {
+        if (!classification.isLead) return 0;
+        const rawConv = Number(m.conversions || 0);
+        const clk = Number(m.clicks || 0);
+        return rawConv > 1000 && rawConv > clk * 2 ? Math.min(rawConv, clk) : rawConv;
+      });
 
       const tSpend = spends.reduce((a, b) => a + b, 0);
       const tImps = imps.reduce((a, b) => a + b, 0);
       const tClicks = clicks.reduce((a, b) => a + b, 0);
       const tConvs = convs.reduce((a, b) => a + b, 0);
 
+      if (tSpend === 0 && tClicks === 0) return;
+
       const avgCpm = tImps > 0 ? (tSpend / tImps) * 1000 : 0;
       const avgCtr = tImps > 0 ? (tClicks / tImps) * 100 : 0;
       const avgCvr = tClicks > 0 ? (tConvs / tClicks) * 100 : 0;
+      const cpa = tConvs > 0 ? tSpend / tConvs : 0;
 
-      const dailyCpms = campMetrics.map(m => m.impressions > 0 ? (Number(m.cost) / Number(m.impressions)) * 1000 : 0);
-      const dailyCvrs = campMetrics.map(m => m.clicks > 0 ? (Number(m.conversions) / Number(m.clicks)) * 100 : 0);
+      // Diagnóstico executivo e objetivo por campanha
+      let status: "ESCALAR" | "OTIMIZAR" | "PAUSAR" | "ESTAVEL" = "ESTAVEL";
+      let recommendation = "";
 
-      const stddevCpm = calculateStdDev(dailyCpms);
-      const stddevCtr = calculateStdDev(campMetrics.map(m => m.impressions > 0 ? (Number(m.clicks) / Number(m.impressions)) * 100 : 0));
-      const correlationCpmCvr = calculatePearsonCorrelation(dailyCpms, dailyCvrs);
+      if (classification.isLead) {
+        if (tConvs > 0 && cpa <= 35) {
+          status = "ESCALAR";
+          recommendation = `CPL excelente (R$ ${cpa.toFixed(2)}). Recomendado aumentar verba diária em 15% para acelerar contatos.`;
+        } else if (tConvs === 0 && tSpend > 40) {
+          status = "PAUSAR";
+          recommendation = `Consumiu R$ ${tSpend.toFixed(2)} sem nenhum contato gerado. Pausar para evitar desperdício de verba.`;
+        } else if (cpa > 75) {
+          status = "OTIMIZAR";
+          recommendation = `CPL alto (R$ ${cpa.toFixed(2)}). Substituir criativos estáticos por vídeos de showroom.`;
+        } else {
+          status = "ESTAVEL";
+          recommendation = `Performance regular (CPL R$ ${cpa.toFixed(2)}). Manter monitoramento contínuo de leilão.`;
+        }
+      } else {
+        if (avgCtr > 1.8) {
+          status = "ESCALAR";
+          recommendation = `Alto engajamento (CTR ${avgCtr.toFixed(2)}%). Excelente motor de atração para a loja.`;
+        } else {
+          status = "ESTAVEL";
+          recommendation = "Campanha de suporte para geração de tráfego e visibilidade do perfil.";
+        }
+      }
 
       corrs.push({
         campaignId: c.id,
         campaignName: c.name,
         totalSpend: tSpend,
+        totalConversions: tConvs,
+        cpa,
         avgCpm,
         avgCtr,
         avgCvr,
-        stddevCpm,
-        stddevCtr,
-        correlationCpmCvr
+        status,
+        recommendation,
+        classification
       });
     });
 
-    setCorrelationData(corrs.slice(0, 5)); // Exibe as principais 5 campanhas
+    // Ordenar campanhas por gasto total
+    corrs.sort((a, b) => b.totalSpend - a.totalSpend);
+    setCorrelationData(corrs.slice(0, 5));
 
     // Calcular Tendência diária (ComposedChart)
     const dateMap = new Map<string, { spend: number; clicks: number; conversions: number; impressions: number }>();
@@ -252,7 +307,14 @@ function AuditoriaHub() {
       const current = dateMap.get(dStr) || { spend: 0, clicks: 0, conversions: 0, impressions: 0 };
       current.spend += Number(m.cost || 0);
       current.clicks += Number(m.clicks || 0);
-      current.conversions += Number(m.conversions || 0);
+
+      const camp = campMap.get(m.campaign_id);
+      const classification = classifyCampaignType(camp?.name || "", "", camp?.objective || "");
+      if (classification.isLead) {
+        const rawConv = Number(m.conversions || 0);
+        const clicks = Number(m.clicks || 0);
+        current.conversions += rawConv > 1000 && rawConv > clicks * 2 ? Math.min(rawConv, clicks) : rawConv;
+      }
       current.impressions += Number(m.impressions || 0);
       dateMap.set(dStr, current);
     });
@@ -281,88 +343,78 @@ function AuditoriaHub() {
 
     setDropoffData(computedDropoff);
 
-    // Pressão de leilão (CPM * 2 limitado entre 10 e 100)
-    const pressure = Math.min(100, Math.max(10, Math.round(cpm * 2.2)));
+    // Pressão de leilão automotivo (CPM de R$ 8 a 35)
+    const pressure = Math.min(95, Math.max(12, Math.round((cpm / 35) * 100)));
     setAuctionPressure(pressure);
 
     runProactiveDiagnosis(corrs, metrics);
   };
 
-  // Pearson helper
-  const calculatePearsonCorrelation = (x: number[], y: number[]): number => {
-    const n = x.length;
-    if (n === 0 || n !== y.length) return 0;
-    
-    const meanX = x.reduce((a, b) => a + b, 0) / n;
-    const meanY = y.reduce((a, b) => a + b, 0) / n;
-    
-    let num = 0;
-    let denX = 0;
-    let denY = 0;
-    
-    for (let i = 0; i < n; i++) {
-      const diffX = x[i] - meanX;
-      const diffY = y[i] - meanY;
-      num += diffX * diffY;
-      denX += diffX * diffX;
-      denY += diffY * diffY;
-    }
-    
-    if (denX === 0 || denY === 0) return 0;
-    return num / Math.sqrt(denX * denY);
-  };
-
-  // Standard deviation helper
-  const calculateStdDev = (arr: number[]): number => {
-    const n = arr.length;
-    if (n <= 1) return 0;
-    const mean = arr.reduce((a, b) => a + b, 0) / n;
-    const variance = arr.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / (n - 1);
-    return Math.sqrt(variance);
-  };
-
   const runProactiveDiagnosis = (corrs: CorrelationData[], rawMetrics: any[]) => {
     const list: typeof diagnostics = [];
     
-    // 1. Alerta de Fadiga (CTR caindo rapidamente com leilão caro)
-    list.push({
-      id: "diag-1",
-      type: "fadiga",
-      title: "Fadiga de Criativo & Frequência",
-      description: "A taxa de cliques (CTR) caiu no período avaliado enquanto o CPM médio na conta aumentou. Desgaste visual nas imagens dos anúncios ativos.",
-      metric: "CTR Médio: " + (kpis.ctr ? kpis.ctr.toFixed(2) + "%" : "1.25%"),
-      recommendation: "Substitua imediatamente os criativos estáticos de maior investimento por novos vídeos reais em formato Reels (luz natural de showroom) para reduzir fadiga e custo."
-    });
+    // 1. Gargalos & Desperdício de Verba
+    const moneyPits = corrs.filter(c => c.totalSpend > 50 && c.totalConversions === 0);
+    if (moneyPits.length > 0) {
+      const pitNames = moneyPits.map(c => c.campaignName).slice(0, 2).join(", ");
+      list.push({
+        id: "diag-pit",
+        type: "fadiga",
+        title: "Gargalo Crítico de Conversão",
+        description: `Identificamos que a(s) campanha(s) "${pitNames}" consumiu verba sem gerar nenhum contato de comprador no WhatsApp ou formulário.`,
+        metric: `Ralo: ${moneyPits.length} campanha(s)`,
+        recommendation: "Pause imediatamente esta(s) campanha(s) no gerenciador para estancar o desperdício e transfira o saldo para campanhas de maior tração."
+      });
+    } else {
+      list.push({
+        id: "diag-1",
+        type: "fadiga",
+        title: "Saúde Visual & Criativos de Showroom",
+        description: "Taxa de cliques (CTR) estável no período. Para prevenir saturação do público automotivo regional, planeje a renovação quinzenal de vídeos.",
+        metric: "CTR Médio: " + (kpis.ctr ? kpis.ctr.toFixed(2) + "%" : "1.85%"),
+        recommendation: "Produza novos vídeos dinâmicos no pátio da loja (formato Reels com som real do veículo e condições especiais) para manter o leilão barato."
+      });
+    }
 
     // 2. Pressão do Leilão
-    const highestCpm = corrs.length > 0 ? Math.max(...corrs.map(c => c.avgCpm)) : 28.5;
+    const highestCpm = corrs.length > 0 ? Math.max(...corrs.map(c => c.avgCpm)) : 22.5;
     list.push({
       id: "diag-2",
       type: "leilao",
-      title: "Volatilidade Climática no Leilão",
-      description: "Pressão de bids concorrentes provocou oscilações no CPM médio nas últimas semanas, indicando saturação de audiência regional.",
-      metric: "CPM Máx: R$ " + highestCpm.toFixed(2),
-      recommendation: "Passe a utilizar lances de custo-limite (Cost Cap) nas campanhas de escala ou configure públicos abertos (Broad Audiences) para aliviar a disputa de bid."
+      title: "Competitividade & Custo do Leilão (CPM)",
+      description: `O CPM médio da conta está em R$ ${kpis.cpm.toFixed(2)} (pico de R$ ${highestCpm.toFixed(2)}). O valor reflete a disputa por compradores na sua região.`,
+      metric: "CPM Médio: R$ " + kpis.cpm.toFixed(2),
+      recommendation: "Para aliviar custos em períodos concorridos, utilize públicos amplos (Broad Audiences) deixando o algoritmo encontrar os compradores mais qualificados."
     });
 
-    // 3. Fricção no CPL
-    if (kpis.cpl > 25) {
+    // 3. Eficiência de CPL & Oportunidades de Escala
+    const champions = corrs.filter(c => c.totalConversions > 0 && c.cpa <= 35);
+    if (champions.length > 0) {
+      list.push({
+        id: "diag-3",
+        type: "sucesso",
+        title: "Oportunidade Clara de Escala (+15%)",
+        description: `A campanha "${champions[0].campaignName}" opera com CPL campeão de R$ ${champions[0].cpa.toFixed(2)}, trazendo ${champions[0].totalConversions} contatos com margem muito favorável.`,
+        metric: `CPL Campeão: R$ ${champions[0].cpa.toFixed(2)}`,
+        recommendation: "Aumente o orçamento diário desta campanha líder em 15% para acelerar a entrada de contatos no WhatsApp dos vendedores."
+      });
+    } else if (kpis.cpl > 50) {
       list.push({
         id: "diag-3",
         type: "friccao",
-        title: "Inundação e Fricção de Leads",
-        description: `O custo por lead (CPL) atingiu R$ ${kpis.cpl.toFixed(2)}, valor que excede em ${(kpis.cpl / 25 * 100 - 100).toFixed(0)}% a meta saudável de escala (R$ 25.00).`,
+        title: "CPL Acima do Teto Médio Automotivo",
+        description: `O custo por contato atual (R$ ${kpis.cpl.toFixed(2)}) está acima do patamar de conforto do setor (R$ 25 a R$ 45).`,
         metric: "CPL: R$ " + kpis.cpl.toFixed(2),
-        recommendation: "Revise a segmentação do formulário nativo do Facebook Ads, adicionando uma pergunta de validação (ex: 'Ano e modelo do veículo que deseja trocar') para barrar cliques acidentais."
+        recommendation: "Ajuste a oferta do anúncio (ex: bônus na troca, IPVA grátis ou parcelas reduzidas) para aumentar a conversão de interessados em contatos reais."
       });
     } else {
       list.push({
         id: "diag-3",
         type: "sucesso",
-        title: "Escala e CPL Saudável",
-        description: `Custo por lead estabilizado em patamar de alta eficiência comercial (R$ ${kpis.cpl > 0 ? kpis.cpl.toFixed(2) : "18.50"}). Excelente margem.`,
-        metric: "CPL Ideal",
-        recommendation: "Aproveite a janela de alta conversão para aumentar o orçamento diário da campanha líder em 15% a cada 48 horas (escala horizontal suave)."
+        title: "Operação Saudável & Equilíbrio de Mídia",
+        description: `Custo médio por contato estabilizado em R$ ${kpis.cpl.toFixed(2)}. Equilíbrio consistente entre investimento publicitário e atendimento da equipe.`,
+        metric: "CPL Saudável",
+        recommendation: "Mantenha a estratégia atual e garanta que os vendedores estejam respondendo as mensagens em até 5 minutos no WhatsApp."
       });
     }
 
@@ -370,16 +422,16 @@ function AuditoriaHub() {
   };
 
   const generateMockStats = (accId: string, campId: string) => {
-    // Mock de KPIs baseados em dados hipotéticos, mas coerentes com a NC Agência
-    const spend = 18450;
-    const impressions = 680000;
-    const reach = 420000;
-    const clicks = 9200;
-    const conversions = 320;
-    const cpl = spend / conversions;
-    const cpm = (spend / impressions) * 1000;
-    const ctr = (clicks / impressions) * 100;
-    const sales = Math.round(conversions * 0.08);
+    // Projeção realista para concessionária
+    const spend = 4850;
+    const impressions = 240000;
+    const reach = 160000;
+    const clicks = 5100;
+    const conversions = 112; // Leads/mensagens reais
+    const cpl = spend / conversions; // ~R$ 43.30
+    const cpm = (spend / impressions) * 1000; // ~R$ 20.20
+    const ctr = (clicks / impressions) * 100; // ~2.12%
+    const sales = Math.round(conversions * 0.08); // 9 vendas
 
     setKpis({
       spend,
@@ -393,44 +445,48 @@ function AuditoriaHub() {
       sales
     });
 
-    // Campanhas Mockadas
     const mockCorrs: CorrelationData[] = [
       {
         campaignId: "c-1",
-        campaignName: "Meta Leads - Showroom Corolla",
-        totalSpend: 10450,
-        avgCpm: 26.4,
-        avgCtr: 1.45,
-        avgCvr: 8.5,
-        stddevCpm: 4.8,
-        stddevCtr: 0.3,
-        correlationCpmCvr: -0.68
+        campaignName: "Meta Leads - Showroom Corolla & Sedans",
+        totalSpend: 2850,
+        totalConversions: 82,
+        cpa: 34.75,
+        avgCpm: 19.4,
+        avgCtr: 2.15,
+        avgCvr: 4.8,
+        status: "ESCALAR",
+        recommendation: "CPL excelente (R$ 34,75). Margem favorável para aumento de 15% na verba diária.",
+        classification: { isLead: true, typeLabel: "Conversas no WhatsApp", metricType: "MENSAGEM" }
       },
       {
         campaignId: "c-2",
-        campaignName: "Google Search - Venda de Seminovos",
-        totalSpend: 4900,
-        avgCpm: 41.1,
-        avgCtr: 2.89,
-        avgCvr: 11.2,
-        stddevCpm: 3.1,
-        stddevCtr: 0.5,
-        correlationCpmCvr: -0.12
+        campaignName: "Meta Estoque - Seminovos Multimarcas",
+        totalSpend: 1350,
+        totalConversions: 30,
+        cpa: 45.00,
+        avgCpm: 22.1,
+        avgCtr: 1.85,
+        avgCvr: 3.2,
+        status: "ESTAVEL",
+        recommendation: "Performance estável e fluxo regular de compradores no WhatsApp.",
+        classification: { isLead: true, typeLabel: "Conversas no WhatsApp", metricType: "MENSAGEM" }
       },
       {
         campaignId: "c-3",
-        campaignName: "Meta Carrossel - Pátio Multimarcas",
-        totalSpend: 3100,
-        avgCpm: 18.2,
-        avgCtr: 0.95,
-        avgCvr: 5.2,
-        stddevCpm: 5.2,
-        stddevCtr: 0.15,
-        correlationCpmCvr: -0.74
+        campaignName: "Tráfego NC - Visitas ao Feirão de Pátio",
+        totalSpend: 650,
+        totalConversions: 0,
+        cpa: 0,
+        avgCpm: 14.2,
+        avgCtr: 2.95,
+        avgCvr: 0,
+        status: "OTIMIZAR",
+        recommendation: "Alta atração de cliques, mas sem botão direto de WhatsApp. Adicionar chamada para ação.",
+        classification: { isLead: false, typeLabel: "Cliques no Link (Tráfego)", metricType: "CLIQUES" }
       }
     ];
 
-    // Se selecionada uma campanha específica no filtro
     if (campId !== "all") {
       const filtered = mockCorrs.filter(c => c.campaignId === campId);
       setCorrelationData(filtered.length > 0 ? filtered : mockCorrs.slice(0, 1));
@@ -447,9 +503,9 @@ function AuditoriaHub() {
     for (let i = 0; i < days; i++) {
       const d = new Date(baseDate);
       d.setDate(d.getDate() + i);
-      const dayCpm = 18 + i * 1.8 + Math.sin(i) * 1.5;
-      const dayCvr = Math.max(1.5, 11 - i * 0.6 - Math.cos(i) * 1);
-      const daySpend = 1100 + Math.sin(i) * 150;
+      const dayCpm = 18 + i * 0.4 + Math.sin(i) * 1.5;
+      const dayCvr = Math.max(1.5, 4.5 - i * 0.05 + Math.cos(i) * 0.5);
+      const daySpend = 320 + Math.sin(i) * 40;
 
       mockTrends.push({
         date: format(d, "dd/MM"),
@@ -459,9 +515,8 @@ function AuditoriaHub() {
       });
     }
     setTrendMetrics(mockTrends);
-    setAuctionPressure(72); // Pressão alta de leilão simulada
+    setAuctionPressure(52); // Pressão equilibrada realista
 
-    // Cascata de tráfego simulada
     setDropoffData([
       { stageName: "impressions", label: "Impressões", eventCount: impressions, conversionRate: 100, dropoffRate: 0, logarithmicDropoff: 0 },
       { stageName: "reach", label: "Alcance", eventCount: reach, conversionRate: (reach / impressions) * 100, dropoffRate: ((impressions - reach) / impressions) * 100, logarithmicDropoff: -Math.log(reach / impressions) },
@@ -672,7 +727,7 @@ function AuditoriaHub() {
             { label: "Impressões", val: kpis.impressions.toLocaleString("pt-BR"), icon: <Eye className="h-4 w-4 text-blue-500" /> },
             { label: "Cliques de Mídia", val: kpis.clicks.toLocaleString("pt-BR"), icon: <MousePointer2 className="h-4 w-4 text-indigo-500" /> },
             { label: "Leads Cadastrados", val: kpis.conversions.toLocaleString("pt-BR"), icon: <Users className="h-4 w-4 text-purple-500" /> },
-            { label: "CPL Médio", val: `R$ ${kpis.cpl.toFixed(2)}`, icon: <Activity className="h-4 w-4 text-red-500" />, alert: kpis.cpl > 25 },
+            { label: "CPL Médio", val: kpis.cpl > 0 ? `R$ ${kpis.cpl.toFixed(2)}` : "—", icon: <Activity className="h-4 w-4 text-red-500" />, alert: kpis.cpl > 50 },
             { label: "Vendas Est. (8%)", val: kpis.sales.toLocaleString("pt-BR"), icon: <ShoppingCart className="h-4 w-4 text-amber-500" /> },
           ].map((card, idx) => (
             <div key={idx} className={`bg-card border ${card.alert ? 'border-red-500/30 bg-red-500/[0.02]' : 'border-border'} rounded-2xl p-4.5 space-y-1.5`}>
@@ -688,34 +743,44 @@ function AuditoriaHub() {
         {/* ROW 1: LEILÃO METRICS GRID & PRESSURE */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           
-          {/* PRESSURE GAUGE */}
-          <div className="bg-card border border-border rounded-2xl p-6 relative overflow-hidden flex flex-col items-center justify-center min-h-[260px]">
-            <div className="absolute top-4 left-4 flex items-center gap-1.5">
-              <Zap className="h-4 w-4 text-amber-500 animate-pulse" />
-              <h3 className="text-xs font-black uppercase tracking-wider text-muted-foreground">Termômetro de Leilão Meta Ads</h3>
+          {/* PRESSURE GAUGE COM HUD SEPARADO (ZERO OVERLAP) */}
+          <div className="bg-card border border-border rounded-2xl p-6 relative overflow-hidden flex flex-col items-center justify-between min-h-[290px]">
+            <div className="w-full flex items-center justify-between mb-2">
+              <div className="flex items-center gap-1.5">
+                <Zap className="h-4 w-4 text-amber-500 animate-pulse" />
+                <h3 className="text-xs font-black uppercase tracking-wider text-muted-foreground">Termômetro de Leilão Meta Ads</h3>
+              </div>
+              <span className="text-[9px] font-bold text-muted-foreground uppercase bg-white/5 border border-white/10 px-2 py-0.5 rounded">
+                Volatilidade
+              </span>
             </div>
             
-            <div className="relative w-48 h-24 mt-4 overflow-hidden">
-              <svg className="w-full h-full" viewBox="0 0 100 50">
+            {/* Arco Superior do Gauge (Somente Agulha e Pista) */}
+            <div className="relative w-48 h-26 my-1 flex items-center justify-center">
+              <svg className="w-full h-full" viewBox="0 0 100 52">
+                {/* Pista de Fundo */}
                 <path 
-                  d="M 10 50 A 40 40 0 0 1 90 50" 
+                  d="M 12 48 A 38 38 0 0 1 88 48" 
                   fill="none" 
                   stroke="currentColor" 
-                  className="text-muted/30"
+                  className="text-white/10"
                   strokeWidth="8" 
                   strokeLinecap="round"
                 />
+                {/* Pista Colorida Ativa */}
                 <path 
-                  d="M 10 50 A 40 40 0 0 1 90 50" 
+                  d="M 12 48 A 38 38 0 0 1 88 48" 
                   fill="none" 
                   stroke="url(#gauge-gradient)" 
                   strokeWidth="8" 
-                  strokeDasharray={`${(auctionPressure / 100) * 126} 126`}
+                  strokeDasharray={`${(auctionPressure / 100) * 119} 119`}
                   strokeLinecap="round"
                 />
-                <g transform={`rotate(${-90 + (auctionPressure / 100) * 180} 50 50)`}>
-                  <line x1="50" y1="50" x2="50" y2="15" stroke="currentColor" className="text-primary" strokeWidth="2.5" strokeLinecap="round" />
-                  <circle cx="50" cy="50" r="3.5" className="fill-foreground" />
+                {/* Agulha Rotativa */}
+                <g transform={`rotate(${-90 + (auctionPressure / 100) * 180} 50 48)`} className="transition-transform duration-700 ease-out">
+                  <line x1="50" y1="48" x2="50" y2="15" stroke="currentColor" className="text-primary" strokeWidth="2.5" strokeLinecap="round" />
+                  <circle cx="50" cy="48" r="4.5" className="fill-background stroke-2 stroke-primary" />
+                  <circle cx="50" cy="48" r="2" className="fill-primary" />
                 </g>
                 <defs>
                   <linearGradient id="gauge-gradient" x1="0%" y1="0%" x2="100%" y2="0%">
@@ -725,160 +790,201 @@ function AuditoriaHub() {
                   </linearGradient>
                 </defs>
               </svg>
-              <div className="absolute bottom-0 inset-x-0 text-center">
-                <span className="text-3xl font-black font-mono tracking-tight text-foreground">{auctionPressure}%</span>
-              </div>
             </div>
 
-            <div className="text-center mt-3 space-y-1">
-              <span className={`text-[10px] font-black uppercase px-2.5 py-0.5 rounded-full ${
-                auctionPressure > 70 ? 'bg-red-500/10 text-red-500' : auctionPressure > 40 ? 'bg-amber-500/10 text-amber-500' : 'bg-emerald-500/10 text-emerald-500'
-              }`}>
-                {auctionPressure > 70 ? 'Competitividade Crítica' : auctionPressure > 40 ? 'Competitividade Média' : 'Leilão Estável'}
-              </span>
-              <p className="text-[10px] text-muted-foreground max-w-[200px] leading-snug mx-auto">
-                Registrando volatilidade média de CPM a R$ {kpis.cpm.toFixed(2)} no período.
+            {/* Display HUD Inferior Dedicado (Zero Overlap com o ponteiro) */}
+            <div className="w-full text-center p-3 rounded-xl bg-white/[0.02] border border-white/5 space-y-1">
+              <div className="flex items-center justify-center gap-2">
+                <span className="text-2xl font-black font-mono tracking-tight text-foreground">{auctionPressure}%</span>
+                <span className="text-[10px] font-bold text-muted-foreground uppercase">Pressão</span>
+              </div>
+              <div>
+                <span className={`inline-block text-[9px] font-black uppercase px-2.5 py-0.5 rounded-full ${
+                  auctionPressure > 70 ? 'bg-red-500/10 text-red-400 border border-red-500/20' : 
+                  auctionPressure > 40 ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20' : 
+                  'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                }`}>
+                  {auctionPressure > 70 ? 'Competitividade Alta' : auctionPressure > 40 ? 'Leilão Equilibrado' : 'Leilão Barato & Estável'}
+                </span>
+              </div>
+              <p className="text-[10px] text-muted-foreground max-w-[220px] mx-auto leading-snug">
+                CPM médio na conta: <strong className="text-foreground font-mono">R$ {kpis.cpm.toFixed(2)}</strong> por mil exibições.
               </p>
             </div>
           </div>
 
-          {/* DUAL-AXIS CORRELATION TRENDS */}
-          <div className="lg:col-span-2 bg-card border border-border rounded-2xl p-6">
-            <div className="flex items-center justify-between mb-4">
+          {/* DUAL-AXIS CORRELATION TRENDS (SEM VELAS ESCURAS) */}
+          <div className="lg:col-span-2 bg-card border border-border rounded-2xl p-6 flex flex-col justify-between">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4">
               <div className="flex items-center gap-2">
                 <TrendingUp className="h-4 w-4 text-primary" />
-                <h3 className="text-xs font-black uppercase tracking-wider text-muted-foreground">Ponto de Inflexão (CPM vs CVR)</h3>
+                <div>
+                  <h3 className="text-xs font-black uppercase tracking-wider text-muted-foreground">Ponto de Inflexão (CPM vs CVR)</h3>
+                  <p className="text-[10px] text-muted-foreground">Mostra se o leilão subiu e como a conversão de leads respondeu</p>
+                </div>
               </div>
               <div className="flex items-center gap-3 text-[10px] text-muted-foreground font-mono">
-                <span className="flex items-center gap-1"><span className="h-1.5 w-1.5 rounded-full bg-red-500" /> CPM</span>
-                <span className="flex items-center gap-1"><span className="h-1.5 w-1.5 rounded-full bg-cyan-500" /> CVR (Conversão)</span>
-                <span className="flex items-center gap-1"><span className="h-1.5 w-1.5 bg-muted rounded-sm" /> Investimento</span>
+                <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-red-500" /> CPM (R$)</span>
+                <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-cyan-400" /> Conversão (CVR %)</span>
+                <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-sm bg-indigo-500/40" /> Investimento</span>
               </div>
             </div>
 
-            <div className="h-[200px] w-full">
+            <div className="h-[210px] w-full">
               <ResponsiveContainer width="100%" height="100%">
-                <ComposedChart data={trendMetrics} margin={{ top: 10, right: -5, left: -25, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" className="stroke-muted/30" vertical={false} />
-                  <XAxis dataKey="date" className="fill-muted-foreground stroke-none" fontSize={9} tickLine={false} />
-                  <YAxis yAxisId="left" className="fill-muted-foreground stroke-none" fontSize={9} tickLine={false} />
-                  <YAxis yAxisId="right" orientation="right" className="fill-muted-foreground stroke-none" fontSize={9} tickLine={false} />
+                <ComposedChart data={trendMetrics} margin={{ top: 10, right: 0, left: -20, bottom: 0 }}>
+                  <defs>
+                    <linearGradient id="spendAreaGrad" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#6366f1" stopOpacity={0.15}/>
+                      <stop offset="95%" stopColor="#6366f1" stopOpacity={0}/>
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border) / 0.15)" vertical={false} />
+                  <XAxis dataKey="date" stroke="none" fill="hsl(var(--muted-foreground))" fontSize={9} tickLine={false} />
+                  <YAxis yAxisId="left" stroke="none" fill="hsl(var(--muted-foreground))" fontSize={9} tickLine={false} tickFormatter={(v) => `R$${v}`} />
+                  <YAxis yAxisId="right" orientation="right" stroke="none" fill="hsl(var(--muted-foreground))" fontSize={9} tickLine={false} />
                   <Tooltip 
-                    contentStyle={{ backgroundColor: "var(--card)", borderColor: "var(--border)", borderRadius: "12px" }}
-                    labelStyle={{ color: "var(--foreground)", fontWeight: "bold" }}
+                    contentStyle={{ backgroundColor: "hsl(var(--background))", borderColor: "hsl(var(--border))", borderRadius: "12px", boxShadow: "0 10px 25px rgba(0,0,0,0.4)" }}
+                    labelStyle={{ color: "hsl(var(--foreground))", fontWeight: "bold", fontSize: "11px" }}
+                    formatter={(val: any, name: string) => {
+                      if (name === "CPM") return [`R$ ${Number(val).toFixed(2)}`, "CPM (Custo/1.000 imp.)"];
+                      if (name === "CVR") return [`${Number(val).toFixed(2)}%`, "Taxa de Conversão (CVR)"];
+                      return [`R$ ${Number(val).toLocaleString('pt-BR')}`, "Gasto do Dia"];
+                    }}
                   />
-                  <Bar yAxisId="left" dataKey="Spend" className="fill-muted" radius={[4, 4, 0, 0]} opacity={0.6} />
-                  <Line yAxisId="right" type="monotone" dataKey="CPM" stroke="#ef4444" strokeWidth={2} dot={{ r: 2.5 }} />
-                  <Line yAxisId="right" type="monotone" dataKey="CVR" stroke="#06b6d4" strokeWidth={2} dot={{ r: 2.5 }} />
-                  
-                  {trendMetrics.length > 5 && (
-                    <ReferenceArea
-                      yAxisId="right"
-                      x1={trendMetrics[trendMetrics.length - 3].date}
-                      x2={trendMetrics[trendMetrics.length - 1].date}
-                      className="fill-red-500/10"
-                      fillOpacity={0.06}
-                    />
-                  )}
+                  {/* Área translúcida suave de investimento — substitui as antigas velas escuras */}
+                  <Area yAxisId="left" type="monotone" dataKey="Spend" stroke="#6366f1" strokeWidth={1.5} fillOpacity={1} fill="url(#spendAreaGrad)" />
+                  <Line yAxisId="right" type="monotone" dataKey="CPM" stroke="#ef4444" strokeWidth={2.5} dot={{ r: 2.5, fill: "#ef4444" }} />
+                  <Line yAxisId="right" type="monotone" dataKey="CVR" stroke="#06b6d4" strokeWidth={2.5} dot={{ r: 2.5, fill: "#06b6d4" }} />
                 </ComposedChart>
               </ResponsiveContainer>
+            </div>
+
+            <div className="mt-2 pt-2 border-t border-white/5 text-[10px] text-muted-foreground flex items-center justify-between">
+              <span>💡 Dica: Se a linha vermelha (CPM) sobe muito sem a linha azul (CVR) acompanhar, o criativo está desgastado.</span>
             </div>
           </div>
         </div>
 
-        {/* ROW 2: VICTORIA AI PROACTIVE DIAGNOSIS & CORRELATION TABLE */}
+        {/* ROW 2: VICTORIA AI PROACTIVE DIAGNOSIS & TABELA ESTRATÉGICA */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           
           {/* VICTORIA AI DIAGNOSTICS */}
-          <div className="lg:col-span-2 bg-card border border-primary/20 rounded-2xl p-6 relative overflow-hidden shadow-sm">
+          <div className="lg:col-span-2 bg-card border border-primary/20 rounded-2xl p-6 relative overflow-hidden shadow-sm flex flex-col justify-between">
             <div className="absolute inset-0 bg-gradient-to-r from-primary/[0.02] to-transparent pointer-events-none" />
             
-            <div className="flex items-center justify-between border-b border-border pb-3 mb-4 relative z-10">
-              <div className="flex items-center gap-2">
-                <Bot className="h-5 w-5 text-primary" />
-                <span className="text-xs font-black uppercase tracking-widest text-foreground font-display">Victoria AI - Diagnóstico de Tráfego</span>
+            <div>
+              <div className="flex items-center justify-between border-b border-border pb-3 mb-4 relative z-10">
+                <div className="flex items-center gap-2">
+                  <Bot className="h-5 w-5 text-primary" />
+                  <span className="text-xs font-black uppercase tracking-widest text-foreground font-display">Victoria AI - Diagnóstico de Tráfego</span>
+                </div>
+                <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[8px] font-black uppercase text-primary tracking-wider">
+                  Recomendações Práticas
+                </span>
               </div>
-              <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[8px] font-black uppercase text-primary tracking-wider">
-                Análise Proativa Ativa
-              </span>
+
+              <div className="space-y-3.5 relative z-10">
+                {diagnostics.map((diag) => (
+                  <div key={diag.id} className="group border border-border bg-card/65 rounded-xl p-4 transition-all duration-300 hover:border-primary/30 space-y-2">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2">
+                          {diag.type === "fadiga" ? (
+                            <AlertTriangle className="h-4 w-4 text-orange-400 shrink-0" />
+                          ) : diag.type === "leilao" ? (
+                            <TrendingDown className="h-4 w-4 text-red-400 shrink-0" />
+                          ) : (
+                            <CheckCircle className="h-4 w-4 text-emerald-400 shrink-0" />
+                          )}
+                          <h4 className="text-xs font-black text-foreground">{diag.title}</h4>
+                        </div>
+                        <p className="text-[11px] text-muted-foreground leading-relaxed">{diag.description}</p>
+                      </div>
+                      <span className="text-[10px] font-mono font-bold bg-muted px-2 py-0.5 rounded border border-border text-foreground shrink-0">
+                        {diag.metric}
+                      </span>
+                    </div>
+                    
+                    <div className="bg-primary/[0.03] border-l-2 border-primary p-2.5 rounded-r text-[10px] text-foreground flex items-start gap-1.5">
+                      <Info className="h-3.5 w-3.5 text-primary shrink-0 mt-0.5" />
+                      <span><strong>Ação Recomendada Victoria:</strong> {diag.recommendation}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
 
-            <div className="space-y-4 relative z-10">
-              {diagnostics.map((diag) => (
-                <div key={diag.id} className="group border border-border bg-card/65 rounded-xl p-4 transition-all duration-300 hover:border-primary/30">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-2">
-                        {diag.type === "fadiga" ? (
-                          <AlertTriangle className="h-4 w-4 text-orange-400" />
-                        ) : diag.type === "leilao" ? (
-                          <TrendingDown className="h-4 w-4 text-red-400" />
-                        ) : (
-                          <CheckCircle className="h-4 w-4 text-green-400" />
-                        )}
-                        <h4 className="text-xs font-black text-foreground">{diag.title}</h4>
-                      </div>
-                      <p className="text-[11px] text-muted-foreground leading-relaxed">{diag.description}</p>
-                    </div>
-                    <span className="text-[10px] font-mono font-bold bg-muted px-2 py-0.5 rounded border border-border text-foreground shrink-0">
-                      {diag.metric}
-                    </span>
-                  </div>
-                  
-                  <div className="mt-3 bg-primary/[0.02] border-l-2 border-amber-500 p-2.5 rounded-r text-[10px] text-amber-600 dark:text-amber-400 flex items-start gap-1.5">
-                    <Info className="h-3.5 w-3.5 shrink-0 mt-0.5" />
-                    <span><strong>Ação Victoria:</strong> {diag.recommendation}</span>
-                  </div>
-                </div>
-              ))}
+            <div className="mt-4 pt-3 border-t border-border flex items-center justify-between text-[10px] text-muted-foreground">
+              <span>Parecer gerado automaticamente com inteligência de tráfego automotivo da NC Suite.</span>
             </div>
           </div>
 
-          {/* CORRELATION MATRIX / STATS TABLE */}
+          {/* AUDITORIA ESTRATÉGICA POR CAMPANHA (SUBSTITUI MATRIZ CONFUSA DE CORRELAÇÃO) */}
           <div className="bg-card border border-border rounded-2xl p-6 flex flex-col justify-between">
             <div className="space-y-4">
-              <div className="flex items-center gap-2 border-b border-border pb-3">
-                <Activity className="h-4 w-4 text-muted-foreground" />
-                <h3 className="text-xs font-black uppercase tracking-wider text-muted-foreground">Matriz de Desvio &amp; Correlação</h3>
+              <div className="flex items-center justify-between border-b border-border pb-3">
+                <div className="flex items-center gap-2">
+                  <Activity className="h-4 w-4 text-primary" />
+                  <h3 className="text-xs font-black uppercase tracking-wider text-muted-foreground">Auditoria por Campanha</h3>
+                </div>
+                <span className="text-[9px] font-bold text-muted-foreground uppercase bg-white/5 px-2 py-0.5 rounded">
+                  Status
+                </span>
               </div>
 
-              <div className="space-y-3.5">
+              <div className="space-y-3 max-h-[380px] overflow-y-auto custom-scrollbar pr-1">
                 {correlationData.map((c) => {
-                  const hasNegativeCorr = c.correlationCpmCvr < -0.4;
                   return (
-                    <div key={c.campaignId} className="space-y-2 border-b border-border/40 pb-3 last:border-0 last:pb-0">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[11px] font-bold text-foreground truncate max-w-[170px]">{c.campaignName}</span>
-                        <span className={`text-[10px] font-mono font-bold px-1.5 py-0.25 rounded ${
-                          hasNegativeCorr ? 'bg-red-500/10 text-red-500' : 'bg-muted text-muted-foreground'
+                    <div key={c.campaignId} className="p-3 rounded-xl border border-border/60 bg-muted/20 space-y-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-xs font-bold text-foreground truncate max-w-[160px]" title={c.campaignName}>
+                          {c.campaignName}
+                        </span>
+                        <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded ${
+                          c.status === "ESCALAR" ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20" :
+                          c.status === "PAUSAR" ? "bg-red-500/10 text-red-400 border border-red-500/20" :
+                          c.status === "OTIMIZAR" ? "bg-amber-500/10 text-amber-400 border border-amber-500/20" :
+                          "bg-white/5 text-muted-foreground"
                         }`}>
-                          Corr: {c.correlationCpmCvr.toFixed(2)}
+                          {c.status === "ESCALAR" ? "🟢 Escalar" : c.status === "PAUSAR" ? "🔴 Pausar" : c.status === "OTIMIZAR" ? "🟡 Otimizar" : "⚪ Estável"}
                         </span>
                       </div>
                       
+                      {/* Grid de 3 Métricas Claras */}
                       <div className="grid grid-cols-3 gap-2 text-center text-[10px]">
-                        <div className="bg-muted/50 p-1.5 rounded border border-border/40">
-                          <span className="block text-[8px] text-muted-foreground/60 font-mono">CVR MÉDIO</span>
-                          <span className="font-bold text-foreground">{c.avgCvr.toFixed(1)}%</span>
+                        <div className="bg-background/60 p-1.5 rounded border border-border/40">
+                          <span className="block text-[8px] text-muted-foreground font-mono">INVESTIDO</span>
+                          <span className="font-black text-foreground">R$ {c.totalSpend.toFixed(0)}</span>
                         </div>
-                        <div className="bg-muted/50 p-1.5 rounded border border-border/40">
-                          <span className="block text-[8px] text-muted-foreground/60 font-mono">DESVIO CPM</span>
-                          <span className="font-bold text-foreground">±R${c.stddevCpm.toFixed(1)}</span>
+                        <div className="bg-background/60 p-1.5 rounded border border-border/40">
+                          <span className="block text-[8px] text-muted-foreground font-mono">CONTATOS</span>
+                          <span className="font-black text-foreground">{c.totalConversions}</span>
                         </div>
-                        <div className="bg-muted/50 p-1.5 rounded border border-border/40">
-                          <span className="block text-[8px] text-muted-foreground/60 font-mono">CTR MÉDIO</span>
-                          <span className="font-bold text-foreground">{c.avgCtr.toFixed(2)}%</span>
+                        <div className="bg-background/60 p-1.5 rounded border border-border/40">
+                          <span className="block text-[8px] text-muted-foreground font-mono">CPL REAL</span>
+                          <span className="font-black text-foreground">{c.cpa > 0 ? `R$ ${c.cpa.toFixed(0)}` : "—"}</span>
                         </div>
                       </div>
+
+                      <p className="text-[10px] text-muted-foreground leading-snug">
+                        {c.recommendation}
+                      </p>
                     </div>
                   );
                 })}
+
+                {correlationData.length === 0 && (
+                  <div className="text-center py-8 text-xs text-muted-foreground">
+                    Nenhuma campanha para auditar no período.
+                  </div>
+                )}
               </div>
             </div>
 
-            <div className="mt-4 pt-3 border-t border-border flex items-center gap-1 text-[9px] text-muted-foreground/80">
-              <Info className="h-3 w-3" />
-              <span>A correlação mede o impacto linear da oscilação de CPM nas conversões.</span>
+            <div className="mt-4 pt-3 border-t border-border flex items-center gap-1.5 text-[9px] text-muted-foreground">
+              <Info className="h-3.5 w-3.5 shrink-0 text-primary" />
+              <span>Priorize otimizações nas campanhas com alerta de pausa ou CPL elevado.</span>
             </div>
           </div>
         </div>

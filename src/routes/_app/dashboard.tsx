@@ -5,10 +5,12 @@ import { useState, useMemo, useRef, useEffect } from "react";
 import {
   FileText, BarChart3, ArrowUpRight, Activity, Layers,
   ChevronDown, Globe, Target, TrendingUp, TrendingDown, DollarSign, MousePointer2, Users, Trophy,
-  Loader2, GaugeCircle, PieChart as PieChartIcon
+  Loader2, GaugeCircle, PieChart as PieChartIcon, Sparkles, Eye, HelpCircle, CheckCircle2,
+  AlertCircle, ArrowRight, Zap, Award
 } from "lucide-react";
+import { classifyCampaignType } from "./cockpit";
 
-const COLORS = ["#00d4ff", "#9b87f5", "#f97316", "#22c55e", "#ef4444", "#eab308"];
+const COLORS = ["#ef4444", "#3b82f6", "#10b981", "#8b5cf6", "#f59e0b", "#06b6d4"];
 import { supabase } from "@/integrations/supabase-external/client";
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -30,6 +32,7 @@ function Dashboard() {
   const [selectedAccountId, setSelectedAccountId] = useState<string>("all");
   const [selectedClientId, setSelectedClientId] = useState<string>("all");
   const [showAccounts, setShowAccounts] = useState(false);
+  const [chartMode, setChartMode] = useState<"auto" | "chart" | "funnel">("auto");
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -175,8 +178,39 @@ function Dashboard() {
       const chartData = Array.from(chartMap.values()).sort((a, b) => a.date.localeCompare(b.date));
       const campaignsData = Array.from(campaignsMap.values()).sort((a, b) => b.cost - a.cost);
       
-      const barData = campaignsData.slice(0, 8).map(c => ({ name: c.name.toUpperCase(), Gasto: c.cost, Resultados: c.results }));
-      const pieData = campaignsData.filter(c => c.cost > 0).slice(0, 6).map(c => ({ name: c.name, value: c.cost }));
+      const totalSpendPeriod = currentPeriod.cost || 1;
+      const campaignsRanked = campaignsData.map(c => {
+        const classification = classifyCampaignType(c.name, "", c.objective);
+        const cost = c.cost || 0;
+        const convCount = classification.isLead ? c.trueConversions : c.results;
+        const cpa = convCount > 0 ? cost / convCount : 0;
+        const percentage = (cost / totalSpendPeriod) * 100;
+        return {
+          ...c,
+          classification,
+          cpa,
+          percentage,
+          conversions: convCount,
+        };
+      });
+
+      const barData = campaignsRanked.slice(0, 8).map(c => ({ name: c.name.toUpperCase(), Gasto: c.cost, Resultados: c.conversions }));
+      const pieData = campaignsRanked.filter(c => c.cost > 0).slice(0, 6).map(c => ({ 
+        name: c.name, 
+        value: c.cost,
+        percentage: c.percentage 
+      }));
+
+      // Estatísticas executivas do período
+      let bestDay = chartData.length > 0 ? chartData[0] : null;
+      let maxConv = -1;
+      chartData.forEach(d => {
+        if (d.conversions > maxConv) {
+          maxConv = d.conversions;
+          bestDay = d;
+        }
+      });
+      const avgDailyCost = chartData.length > 0 ? currentPeriod.cost / chartData.length : currentPeriod.cost;
 
       const calcTrend = (curr: number, prev: number) => {
         if (prev === 0) return curr > 0 ? "—" : "0%";
@@ -224,6 +258,9 @@ function Dashboard() {
         chartData,
         barData,
         pieData,
+        campaignsRanked,
+        bestDay,
+        avgDailyCost,
         healthScore,
         totals: { ...currentPeriod, conversions: currentPeriod.trueConversions },
         trends: {
@@ -504,6 +541,7 @@ function Dashboard() {
           icon={DollarSign}
           trend={performanceData?.trends?.cost}
           isPositive={performanceData?.trends?.costPositive}
+          helper="Verba bruta consumida em anúncios"
         />
         <StatCard
           label="Conversões"
@@ -511,6 +549,7 @@ function Dashboard() {
           icon={Trophy}
           trend={performanceData?.trends?.conversions}
           isPositive={performanceData?.trends?.conversionsPositive}
+          helper="Contatos diretos no WhatsApp e cadastros"
         />
         <StatCard
           label="CPA Médio"
@@ -519,6 +558,7 @@ function Dashboard() {
           icon={Target}
           trend={performanceData?.trends?.cpl}
           isPositive={performanceData?.trends?.cplPositive}
+          helper="Custo médio por contato qualificado"
         />
         <StatCard
           label="Cliques no Link"
@@ -526,166 +566,488 @@ function Dashboard() {
           icon={MousePointer2}
           trend={performanceData?.trends?.clicks}
           isPositive={performanceData?.trends?.clicksPositive}
+          helper="Visitas enviadas aos anúncios e site"
         />
       </div>
       
       <div className="pt-4 space-y-6">
 
-      {/* Gráfico principal: Evolução de Investimento x Resultados */}
-      <div className="grid gap-4 sm:gap-6 lg:gap-8">
-        <motion.div
-          initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}
-          className="glass-panel flex flex-col p-4 sm:p-6 lg:p-8 min-h-[280px] sm:min-h-[380px] min-w-0"
-        >
-          <div className="mb-8 flex items-center justify-between">
-            <div>
-              <h3 className="header-sport text-base sm:text-xl font-black tracking-tight uppercase">Evolução de Investimento x Resultados</h3>
-              <p className="text-xs text-muted-foreground font-medium mt-1">Como o gasto se compara às conversões geradas no período selecionado</p>
-            </div>
-            <div className="flex items-center gap-6">
-              <div className="flex items-center gap-2 text-[9px] font-black uppercase tracking-widest">
-                <div className="h-2 w-2 rounded-full bg-primary" /> Gasto (R$)
-              </div>
-              <div className="flex items-center gap-2 text-[9px] font-black uppercase tracking-widest">
-                <div className="h-2 w-2 rounded-full bg-violet-500" /> Resultados (Conv.)
-              </div>
-            </div>
-          </div>
-          
-          <div className="w-full" style={{ height: "clamp(180px, 40vw, 320px)" }}>
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={performanceData?.chartData || []}>
-                <defs>
-                  <linearGradient id="colorCost" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="hsl(var(--primary))" stopOpacity={0.2}/>
-                    <stop offset="95%" stopColor="hsl(var(--primary))" stopOpacity={0}/>
-                  </linearGradient>
-                  <linearGradient id="colorConv" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="hsl(262 83% 74%)" stopOpacity={0.2}/>
-                    <stop offset="95%" stopColor="hsl(262 83% 74%)" stopOpacity={0}/>
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border) / 0.2)" vertical={false} />
-                <XAxis 
-                  dataKey="date" 
-                  axisLine={false} 
-                  tickLine={false} 
-                  tick={{ fontSize: 9, fontWeight: 700, fill: 'hsl(var(--muted-foreground))', fontFamily: 'monospace' }}
-                  tickFormatter={(val) => format(new Date(val), 'dd MMM', { locale: ptBR }).toUpperCase()}
-                />
-                <YAxis
-                  yAxisId="cost"
-                  axisLine={false}
-                  tickLine={false}
-                  tick={{ fontSize: 9, fontWeight: 700, fill: 'hsl(var(--muted-foreground))', fontFamily: 'monospace' }}
-                  tickFormatter={(v) => `R$${v >= 1000 ? `${(v/1000).toFixed(0)}k` : v}`}
-                />
-                <YAxis
-                  yAxisId="conv"
-                  orientation="right"
-                  axisLine={false}
-                  tickLine={false}
-                  tick={{ fontSize: 9, fontWeight: 700, fill: 'hsl(262 83% 74%)', fontFamily: 'monospace' }}
-                />
-                <Tooltip 
-                  contentStyle={{ backgroundColor: 'hsl(var(--background))', borderColor: 'hsl(var(--border))', borderRadius: '12px', boxShadow: '0 20px 40px rgba(0,0,0,0.5)' }}
-                  itemStyle={{ fontSize: '12px', fontWeight: 800, fontFamily: 'monospace' }}
-                  labelStyle={{ fontSize: '10px', color: 'hsl(var(--muted-foreground))', textTransform: 'uppercase', marginBottom: '8px' }}
-                />
-                <Area yAxisId="cost" type="monotone" dataKey="cost" stroke="hsl(var(--primary))" strokeWidth={3} fillOpacity={1} fill="url(#colorCost)" />
-                <Area yAxisId="conv" type="monotone" dataKey="conversions" stroke="hsl(262 83% 74%)" strokeWidth={3} fillOpacity={1} fill="url(#colorConv)" />
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
-        </motion.div>
-      </div>
+      {/* ─── MÓDULO PRINCIPAL: EVOLUÇÃO & EFICIÊNCIA DE INVESTIMENTO ─── */}
+      {(() => {
+        const isSingleDay = dateFrom === dateTo || (performanceData?.chartData?.length ?? 0) <= 1;
+        const activeChartMode = chartMode === "auto" ? (isSingleDay ? "funnel" : "chart") : chartMode;
+        const totals = performanceData?.totals || { cost: 0, clicks: 0, impressions: 0, conversions: 0 };
+        const ctr = totals.impressions > 0 ? (totals.clicks / totals.impressions) * 100 : 0;
+        const cpc = totals.clicks > 0 ? totals.cost / totals.clicks : 0;
+        const cvr = totals.clicks > 0 ? (totals.conversions / totals.clicks) * 100 : 0;
+        const cpa = performanceData?.cpl || 0;
 
-      {/* ─── CHARTS SECUNDÁRIOS ─── */}
+        return (
+          <div className="grid gap-4 sm:gap-6 lg:gap-8">
+            <motion.div
+              initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}
+              className="glass-panel flex flex-col p-4 sm:p-6 lg:p-8 min-h-[300px] min-w-0"
+            >
+              {/* Header do Módulo com Switcher Didático */}
+              <div className="mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <Zap className="h-5 w-5 text-primary" />
+                    <h3 className="header-sport text-base sm:text-xl font-black tracking-tight uppercase">
+                      Evolução de Investimento x Resultados
+                    </h3>
+                  </div>
+                  <p className="text-xs text-muted-foreground font-medium mt-1">
+                    Como o orçamento investido se transforma em cliques, mensagens de compradores e leads
+                  </p>
+                </div>
+
+                {/* Alternador de Visualização */}
+                <div className="flex items-center gap-2 self-start sm:self-auto bg-white/5 border border-white/10 rounded-xl p-1 shrink-0">
+                  <button
+                    onClick={() => setChartMode("funnel")}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all ${
+                      activeChartMode === "funnel"
+                        ? "bg-primary text-primary-foreground shadow-sm"
+                        : "text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    <Zap className="h-3 w-3" />
+                    Funil de Conversão
+                  </button>
+                  <button
+                    onClick={() => setChartMode("chart")}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all ${
+                      activeChartMode === "chart"
+                        ? "bg-primary text-primary-foreground shadow-sm"
+                        : "text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    <Activity className="h-3 w-3" />
+                    Curva Diária
+                  </button>
+                </div>
+              </div>
+
+              {/* VISÃO 1: FUNIL DE EFICIÊNCIA EXECUTIVO */}
+              {activeChartMode === "funnel" ? (
+                <div className="space-y-6">
+                  {/* Grid das Etapas do Funil */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                    {/* Etapa 1: Impressões */}
+                    <div className="p-4 rounded-2xl bg-white/[0.02] border border-white/10 relative overflow-hidden flex flex-col justify-between">
+                      <div className="flex items-center justify-between mb-3">
+                        <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground flex items-center gap-1.5">
+                          <Eye className="h-3.5 w-3.5 text-blue-400" />
+                          1. Exposição (Impressões)
+                        </span>
+                        <span className="text-[9px] font-bold text-muted-foreground bg-white/5 px-2 py-0.5 rounded">Topo</span>
+                      </div>
+                      <div>
+                        <p className="text-2xl font-black font-mono text-foreground">
+                          {totals.impressions.toLocaleString("pt-BR")}
+                        </p>
+                        <p className="text-[10px] text-muted-foreground mt-1">Exibições reais nos feeds e stories</p>
+                      </div>
+                      <div className="mt-3 pt-3 border-t border-white/5 flex items-center justify-between text-[10px] font-bold text-blue-400">
+                        <span>Alcance Estimado:</span>
+                        <span className="font-mono">{(totals.reach || totals.impressions * 0.75).toLocaleString("pt-BR", { maximumFractionDigits: 0 })}</span>
+                      </div>
+                    </div>
+
+                    {/* Etapa 2: Cliques no Link */}
+                    <div className="p-4 rounded-2xl bg-white/[0.02] border border-white/10 relative overflow-hidden flex flex-col justify-between">
+                      <div className="flex items-center justify-between mb-3">
+                        <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground flex items-center gap-1.5">
+                          <MousePointer2 className="h-3.5 w-3.5 text-indigo-400" />
+                          2. Interesse (Cliques)
+                        </span>
+                        <span className="text-[9px] font-bold text-indigo-400 bg-indigo-500/10 border border-indigo-500/20 px-2 py-0.5 rounded">
+                          CTR: {ctr.toFixed(2)}%
+                        </span>
+                      </div>
+                      <div>
+                        <p className="text-2xl font-black font-mono text-foreground">
+                          {totals.clicks.toLocaleString("pt-BR")}
+                        </p>
+                        <p className="text-[10px] text-muted-foreground mt-1">Visitas direcionadas para o estoque</p>
+                      </div>
+                      <div className="mt-3 pt-3 border-t border-white/5 flex items-center justify-between text-[10px] font-bold text-indigo-400">
+                        <span>Custo Médio por Clique:</span>
+                        <span className="font-mono">R$ {cpc.toFixed(2)}</span>
+                      </div>
+                    </div>
+
+                    {/* Etapa 3: Conversões / Contatos */}
+                    <div className="p-4 rounded-2xl bg-primary/[0.04] border border-primary/25 relative overflow-hidden flex flex-col justify-between">
+                      <div className="flex items-center justify-between mb-3">
+                        <span className="text-[10px] font-black uppercase tracking-widest text-primary flex items-center gap-1.5">
+                          <Trophy className="h-3.5 w-3.5" />
+                          3. Conversões (Leads)
+                        </span>
+                        <span className="text-[9px] font-bold text-primary bg-primary/10 border border-primary/20 px-2 py-0.5 rounded">
+                          CVR: {cvr.toFixed(2)}%
+                        </span>
+                      </div>
+                      <div>
+                        <p className="text-2xl font-black font-mono text-primary">
+                          {totals.conversions.toLocaleString("pt-BR")}
+                        </p>
+                        <p className="text-[10px] text-muted-foreground mt-1">Contatos no WhatsApp e formulários</p>
+                      </div>
+                      <div className="mt-3 pt-3 border-t border-white/5 flex items-center justify-between text-[10px] font-bold text-primary">
+                        <span>Taxa de Conversão:</span>
+                        <span className="font-mono">{cvr.toFixed(2)}% dos cliques</span>
+                      </div>
+                    </div>
+
+                    {/* Etapa 4: CPA / Custo por Contato */}
+                    <div className="p-4 rounded-2xl bg-white/[0.02] border border-white/10 relative overflow-hidden flex flex-col justify-between">
+                      <div className="flex items-center justify-between mb-3">
+                        <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground flex items-center gap-1.5">
+                          <Target className="h-3.5 w-3.5 text-emerald-400" />
+                          4. Custo Médio por Lead
+                        </span>
+                        <span className={`text-[9px] font-bold px-2 py-0.5 rounded ${
+                          cpa > 0 && cpa <= 35 ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20" :
+                          cpa > 0 && cpa <= 75 ? "bg-amber-500/10 text-amber-400 border border-amber-500/20" :
+                          cpa > 0 ? "bg-red-500/10 text-red-400 border border-red-500/20" :
+                          "bg-white/5 text-muted-foreground"
+                        }`}>
+                          {cpa > 0 && cpa <= 35 ? "Excelente" : cpa > 0 && cpa <= 75 ? "Saudável" : cpa > 0 ? "Atenção" : "Em análise"}
+                        </span>
+                      </div>
+                      <div>
+                        <p className="text-2xl font-black font-mono text-foreground">
+                          {cpa > 0 ? `R$ ${cpa.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : "—"}
+                        </p>
+                        <p className="text-[10px] text-muted-foreground mt-1">Investimento por oportunidade criada</p>
+                      </div>
+                      <div className="mt-3 pt-3 border-t border-white/5 flex items-center justify-between text-[10px] font-bold text-muted-foreground">
+                        <span>Total Investido:</span>
+                        <span className="font-mono text-foreground">R$ {totals.cost.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Diagnóstico em Linguagem Natural */}
+                  <div className="p-4 rounded-2xl bg-card border border-border/70 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
+                    <div className="flex items-start gap-2.5">
+                      <Sparkles className="h-4 w-4 text-primary shrink-0 mt-0.5" />
+                      <div className="space-y-0.5">
+                        <span className="font-black uppercase tracking-wider text-primary text-[10px]">
+                          Diagnóstico Executivo da NC Suite
+                        </span>
+                        <p className="text-muted-foreground leading-relaxed text-[11px]">
+                          {isSingleDay ? (
+                            <>
+                              No dia <strong className="text-foreground">{format(dateRange.startDate, "dd 'de' MMMM", { locale: ptBR })}</strong>, 
+                              foram investidos <strong className="text-foreground">R$ {totals.cost.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>, 
+                              gerando <strong className="text-foreground">{totals.clicks.toLocaleString('pt-BR')} visitas</strong> (CTR de {ctr.toFixed(2)}%) 
+                              e <strong className="text-foreground">{totals.conversions} contatos diretos de compradores</strong>.
+                            </>
+                          ) : (
+                            <>
+                              No período avaliado, o investimento total de <strong className="text-foreground">R$ {totals.cost.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong> gerou 
+                              uma média de <strong className="text-foreground">R$ {(performanceData?.avgDailyCost || 0).toFixed(2)}/dia</strong>, resultando em 
+                              <strong className="text-foreground"> {totals.conversions} leads qualificados</strong> a um CPA médio de <strong className="text-foreground">R$ {cpa.toFixed(2)}</strong>.
+                            </>
+                          )}
+                        </p>
+                      </div>
+                    </div>
+
+                    {isSingleDay && (
+                      <span className="text-[10px] font-bold text-muted-foreground/75 bg-muted/40 px-3 py-1.5 rounded-xl border border-border/50 shrink-0">
+                        Dica: Escolha um período de 7+ dias no filtro para ver a curva diária contínua
+                      </span>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                /* VISÃO 2: GRÁFICO DE EVOLUÇÃO TEMPORAL */
+                <div className="space-y-4">
+                  {/* Resumo da Curva */}
+                  <div className="flex flex-wrap items-center justify-between gap-3 text-[11px] pb-2 border-b border-white/5">
+                    <div className="flex items-center gap-4">
+                      <div className="flex items-center gap-1.5 font-bold">
+                        <span className="h-2 w-2 rounded-full bg-primary" />
+                        <span className="text-muted-foreground">Investimento Diário:</span>
+                        <span className="font-mono text-foreground">
+                          Média R$ {(performanceData?.avgDailyCost || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}/dia
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1.5 font-bold">
+                        <span className="h-2 w-2 rounded-full bg-violet-400" />
+                        <span className="text-muted-foreground">Conversões:</span>
+                        <span className="font-mono text-foreground">
+                          {totals.conversions} contatos no período
+                        </span>
+                      </div>
+                    </div>
+                    {performanceData?.bestDay && (
+                      <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-1 rounded-lg">
+                        Melhor Dia: {format(new Date(performanceData.bestDay.date + "T12:00:00Z"), "dd/MM", { locale: ptBR })} ({performanceData.bestDay.conversions} conv.)
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="w-full" style={{ height: "clamp(200px, 35vw, 300px)" }}>
+                    <ResponsiveContainer width="100%" height="100%">
+                      <AreaChart data={performanceData?.chartData || []} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                        <defs>
+                          <linearGradient id="colorCost" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="hsl(var(--primary))" stopOpacity={0.25}/>
+                            <stop offset="95%" stopColor="hsl(var(--primary))" stopOpacity={0}/>
+                          </linearGradient>
+                          <linearGradient id="colorConv" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="#a78bfa" stopOpacity={0.25}/>
+                            <stop offset="95%" stopColor="#a78bfa" stopOpacity={0}/>
+                          </linearGradient>
+                        </defs>
+                        <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border) / 0.15)" vertical={false} />
+                        <XAxis 
+                          dataKey="date" 
+                          axisLine={false} 
+                          tickLine={false} 
+                          tick={{ fontSize: 9, fontWeight: 700, fill: 'hsl(var(--muted-foreground))', fontFamily: 'monospace' }}
+                          tickFormatter={(val) => {
+                            try {
+                              return format(new Date(val + "T12:00:00Z"), 'dd MMM', { locale: ptBR }).toUpperCase();
+                            } catch {
+                              return val;
+                            }
+                          }}
+                        />
+                        <YAxis
+                          yAxisId="cost"
+                          axisLine={false}
+                          tickLine={false}
+                          tick={{ fontSize: 9, fontWeight: 700, fill: 'hsl(var(--muted-foreground))', fontFamily: 'monospace' }}
+                          tickFormatter={(v) => `R$${v >= 1000 ? `${(v/1000).toFixed(0)}k` : v}`}
+                        />
+                        <YAxis
+                          yAxisId="conv"
+                          orientation="right"
+                          axisLine={false}
+                          tickLine={false}
+                          tick={{ fontSize: 9, fontWeight: 700, fill: '#a78bfa', fontFamily: 'monospace' }}
+                        />
+                        <Tooltip 
+                          contentStyle={{ backgroundColor: 'hsl(var(--background))', borderColor: 'hsl(var(--border))', borderRadius: '12px', boxShadow: '0 20px 40px rgba(0,0,0,0.5)' }}
+                          itemStyle={{ fontSize: '11px', fontWeight: 800, fontFamily: 'monospace' }}
+                          labelStyle={{ fontSize: '10px', color: 'hsl(var(--muted-foreground))', textTransform: 'uppercase', marginBottom: '8px' }}
+                          formatter={(value: any, name: string) => {
+                            if (name === "cost") return [`R$ ${Number(value).toFixed(2)}`, "Gasto do Dia"];
+                            return [`${value} contatos`, "Conversões"];
+                          }}
+                        />
+                        <Area yAxisId="cost" type="monotone" dataKey="cost" stroke="hsl(var(--primary))" strokeWidth={3} fillOpacity={1} fill="url(#colorCost)" />
+                        <Area yAxisId="conv" type="monotone" dataKey="conversions" stroke="#a78bfa" strokeWidth={3} fillOpacity={1} fill="url(#colorConv)" />
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+              )}
+            </motion.div>
+          </div>
+        );
+      })()}
+
+      {/* ─── CHARTS SECUNDÁRIOS: RANKING DE CAMPANHAS & DISTRIBUIÇÃO DE VERBA ─── */}
       <div className="grid gap-4 sm:gap-6 lg:gap-8 lg:grid-cols-2 mt-4 sm:mt-8">
-        {/* Top Campanhas (Barras) */}
+        
+        {/* RANKING DE PERFORMANCE POR CAMPANHA */}
         <motion.div
           initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }}
-          className="glass-panel p-4 sm:p-6 lg:p-8 min-w-0"
+          className="glass-panel p-4 sm:p-6 lg:p-8 min-w-0 flex flex-col justify-between"
         >
-          <div className="mb-4 flex items-center justify-between">
-            <div>
-              <h3 className="header-sport text-xs sm:text-sm font-black tracking-widest uppercase">Campanhas que Mais Gastam</h3>
-              <p className="text-[10px] text-muted-foreground uppercase mt-1 tracking-widest">Comparando o quanto gastaram vs quantas conversões trouxeram</p>
+          <div>
+            <div className="mb-5 flex items-center justify-between">
+              <div>
+                <h3 className="header-sport text-xs sm:text-sm font-black tracking-widest uppercase flex items-center gap-2">
+                  <Trophy className="h-4 w-4 text-primary" />
+                  Top Campanhas por Investimento &amp; Retorno
+                </h3>
+                <p className="text-[10px] text-muted-foreground uppercase mt-1 tracking-widest">
+                  Compara gasto, conversões geradas e eficiência de cada campanha
+                </p>
+              </div>
+              <span className="text-[9px] font-black uppercase tracking-wider text-muted-foreground bg-white/5 border border-white/10 px-2 py-1 rounded-lg">
+                Ranking
+              </span>
             </div>
-            <BarChart3 className="h-5 w-5 text-primary/50" />
+
+            {/* Lista de Campanhas Ranqueadas (Legível, sem texto cortado ou inclinado) */}
+            <div className="space-y-3">
+              {(performanceData?.campaignsRanked || []).slice(0, 5).map((camp: any, idx: number) => {
+                const medals = ["🥇", "🥈", "🥉"];
+                return (
+                  <div
+                    key={camp.id || idx}
+                    onClick={() => navigate({ to: "/metricas", search: { campaign: camp.id } })}
+                    className="group p-3 sm:p-3.5 rounded-xl border border-white/5 bg-white/[0.02] hover:bg-white/[0.05] hover:border-primary/30 transition-all cursor-pointer space-y-2.5"
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <span className="text-sm shrink-0">
+                          {medals[idx] || <span className="text-[10px] font-black text-muted-foreground px-1">#{idx + 1}</span>}
+                        </span>
+                        <div className="min-w-0">
+                          <p className="text-xs font-bold text-foreground truncate group-hover:text-primary transition-colors">
+                            {camp.name}
+                          </p>
+                          <div className="flex items-center gap-2 mt-0.5">
+                            <span className="text-[9px] font-bold text-muted-foreground uppercase tracking-wider">
+                              {camp.classification?.typeLabel || "Meta Ads"}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="text-right shrink-0">
+                        <span className="text-xs font-black font-mono text-primary">
+                          R$ {camp.cost.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </span>
+                        <p className="text-[9px] font-bold text-muted-foreground uppercase">
+                          {camp.percentage.toFixed(1)}% do gasto total
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Barra Horizontal de Proporção de Verba */}
+                    <div className="h-1.5 w-full bg-white/5 rounded-full overflow-hidden">
+                      <div 
+                        className="h-full bg-gradient-to-r from-primary to-rose-500 rounded-full transition-all duration-500"
+                        style={{ width: `${Math.min(100, Math.max(5, camp.percentage))}%` }}
+                      />
+                    </div>
+
+                    {/* Detalhes de Retorno e CPA */}
+                    <div className="flex items-center justify-between text-[10px] pt-0.5">
+                      <span className="text-muted-foreground">
+                        Retorno: <strong className="text-foreground font-mono">{camp.conversions}</strong> {camp.classification?.isLead ? "contatos/leads" : "ações"}
+                      </span>
+                      <span className="font-mono">
+                        {camp.conversions > 0 ? (
+                          <span className={`px-2 py-0.5 rounded text-[9px] font-black ${
+                            camp.cpa <= 35 ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20" :
+                            camp.cpa <= 75 ? "bg-amber-500/10 text-amber-400 border border-amber-500/20" :
+                            "bg-red-500/10 text-red-400 border border-red-500/20"
+                          }`}>
+                            CPA: R$ {camp.cpa.toFixed(2)}
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground/60 text-[9px] uppercase font-bold bg-white/5 px-2 py-0.5 rounded">
+                            Sem conversão
+                          </span>
+                        )}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+
+              {(performanceData?.campaignsRanked || []).length === 0 && (
+                <div className="text-center py-8 text-xs text-muted-foreground/60">
+                  Nenhuma campanha encontrada no período selecionado.
+                </div>
+              )}
+            </div>
           </div>
-          <div className="w-full" style={{ height: 280 }}>
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={performanceData?.barData || []} margin={{ top: 10, right: 4, left: -20, bottom: 70 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border) / 0.2)" vertical={false} />
-                <XAxis
-                  dataKey="name"
-                  axisLine={false}
-                  tickLine={false}
-                  interval={0}
-                  angle={-40}
-                  textAnchor="end"
-                  height={70}
-                  tick={{ fontSize: 8, fontWeight: 700, fill: 'hsl(var(--muted-foreground))' }}
-                  tickFormatter={(v: string) => v.length > 12 ? v.slice(0, 11) + "â€¦" : v}
-                />
-                <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 9, fontWeight: 700, fill: 'hsl(var(--muted-foreground))' }} />
-                <Tooltip
-                  contentStyle={{ backgroundColor: 'hsl(var(--background))', borderColor: 'hsl(var(--border))', borderRadius: '12px' }}
-                  itemStyle={{ fontSize: '11px', fontWeight: 800, fontFamily: 'monospace' }}
-                  labelStyle={{ fontSize: '9px', textTransform: 'uppercase', marginBottom: '4px', color: 'hsl(var(--muted-foreground))' }}
-                  cursor={{ fill: 'hsl(var(--white) / 0.02)' }}
-                />
-                <Bar dataKey="Gasto" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} barSize={12} />
-                <Bar dataKey="Resultados" fill="hsl(262 83% 74%)" radius={[4, 4, 0, 0]} barSize={12} />
-              </BarChart>
-            </ResponsiveContainer>
+
+          <div className="mt-4 pt-3 border-t border-white/5 flex items-center justify-between text-[10px] text-muted-foreground">
+            <span>Clique em qualquer campanha para abrir métricas detalhadas</span>
+            <ArrowRight className="h-3 w-3" />
           </div>
         </motion.div>
 
-        {/* Share de Gasto (Pizza) */}
+        {/* DISTRIBUIÇÃO DA VERBA PUBLICITÁRIA */}
         <motion.div
           initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}
-          className="glass-panel p-4 sm:p-6 lg:p-8 min-w-0"
+          className="glass-panel p-4 sm:p-6 lg:p-8 min-w-0 flex flex-col justify-between"
         >
-          <div className="mb-4 flex items-center justify-between">
-            <div>
-              <h3 className="header-sport text-xs sm:text-sm font-black tracking-widest uppercase">Para Onde Vai o Dinheiro?</h3>
-              <p className="text-[10px] text-muted-foreground uppercase mt-1 tracking-widest">Divisão do investimento total entre as campanhas</p>
+          <div>
+            <div className="mb-4 flex items-center justify-between">
+              <div>
+                <h3 className="header-sport text-xs sm:text-sm font-black tracking-widest uppercase flex items-center gap-2">
+                  <PieChartIcon className="h-4 w-4 text-primary" />
+                  Distribuição da Verba Publicitária
+                </h3>
+                <p className="text-[10px] text-muted-foreground uppercase mt-1 tracking-widest">
+                  Divisão percentual e financeira do orçamento entre as campanhas
+                </p>
+              </div>
             </div>
-            <PieChartIcon className="h-5 w-5 text-primary/50" />
+
+            {/* Layout Duplo: Donut na Esquerda + Legenda Detalhada na Direita */}
+            <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-center">
+              <div className="md:col-span-5 h-[220px] relative flex items-center justify-center">
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart margin={{ top: 0, right: 0, bottom: 0, left: 0 }}>
+                    <Pie
+                      data={performanceData?.pieData || []}
+                      cx="50%"
+                      cy="50%"
+                      innerRadius="60%"
+                      outerRadius="85%"
+                      paddingAngle={4}
+                      dataKey="value"
+                      stroke="none"
+                    >
+                      {(performanceData?.pieData || []).map((_, index) => (
+                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                      ))}
+                    </Pie>
+                    <Tooltip
+                      contentStyle={{ backgroundColor: 'hsl(var(--background))', borderColor: 'hsl(var(--border))', borderRadius: '12px' }}
+                      itemStyle={{ fontSize: '11px', fontWeight: 800, fontFamily: 'monospace' }}
+                      formatter={(value: any) => [`R$ ${Number(value).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, 'Investimento']}
+                    />
+                  </PieChart>
+                </ResponsiveContainer>
+                <div className="absolute inset-0 flex items-center justify-center pointer-events-none flex-col">
+                  <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Total</span>
+                  <span className="text-base sm:text-lg font-black font-mono mt-0.5 text-foreground">
+                    R$ {(performanceData?.totals?.cost || 0).toLocaleString('pt-BR', { maximumFractionDigits: 0 })}
+                  </span>
+                </div>
+              </div>
+
+              {/* Lista Detalhada com Nome, % e R$ */}
+              <div className="md:col-span-7 space-y-2 max-h-[240px] overflow-y-auto custom-scrollbar pr-1">
+                {(performanceData?.pieData || []).map((item: any, idx: number) => (
+                  <div key={idx} className="flex items-center justify-between gap-2 p-2 rounded-xl bg-white/[0.02] border border-white/5 hover:bg-white/[0.04] transition-colors">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <div className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: COLORS[idx % COLORS.length] }} />
+                      <span className="text-xs font-bold text-foreground truncate max-w-[140px] sm:max-w-[160px]">
+                        {item.name}
+                      </span>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <span className="text-xs font-black font-mono text-foreground">
+                        {item.percentage ? item.percentage.toFixed(1) : ((item.value / (performanceData?.totals?.cost || 1)) * 100).toFixed(1)}%
+                      </span>
+                      <span className="text-[10px] font-mono text-muted-foreground ml-2">
+                        R$ {item.value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+
+                {(performanceData?.pieData || []).length === 0 && (
+                  <div className="text-center py-6 text-xs text-muted-foreground/60">
+                    Sem movimentação financeira no período.
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
-          {/* Wrapper sem overflow:hidden e sem flex â€” ResponsiveContainer mede width corretamente */}
-          <div className="w-full relative" style={{ height: 260 }}>
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart margin={{ top: 0, right: 0, bottom: 0, left: 0 }}>
-                <Pie
-                  data={performanceData?.pieData || []}
-                  cx="50%"
-                  cy="50%"
-                  innerRadius="28%"
-                  outerRadius="42%"
-                  paddingAngle={4}
-                  dataKey="value"
-                  stroke="none"
-                >
-                  {(performanceData?.pieData || []).map((_, index) => (
-                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                  ))}
-                </Pie>
-                <Tooltip
-                  contentStyle={{ backgroundColor: 'hsl(var(--background))', borderColor: 'hsl(var(--border))', borderRadius: '12px' }}
-                  itemStyle={{ fontSize: '11px', fontWeight: 800, fontFamily: 'monospace' }}
-                  formatter={(value: any) => [`R$ ${Number(value).toFixed(2)}`, 'Gasto']}
-                />
-              </PieChart>
-            </ResponsiveContainer>
-            <div className="absolute inset-0 flex items-center justify-center pointer-events-none flex-col">
-              <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Total</span>
-              <span className="text-xl font-black font-mono mt-1 drop-shadow-sm text-foreground">
-                R$ {(performanceData?.totals?.cost || 0).toLocaleString('pt-BR', { maximumFractionDigits: 0 })}
-              </span>
-            </div>
+
+          <div className="mt-4 pt-3 border-t border-white/5 text-[10px] text-muted-foreground">
+            💡 {(performanceData?.pieData || []).length > 0 ? (
+              <>A campanha líder concentra <strong className="text-foreground">{((performanceData?.pieData?.[0]?.value / (performanceData?.totals?.cost || 1)) * 100).toFixed(0)}%</strong> do orçamento total.</>
+            ) : "Nenhum investimento registrado."}
           </div>
         </motion.div>
 
@@ -880,25 +1242,36 @@ function Dashboard() {
 }
 
 
-function StatCard({ label, value, prefix = "", icon: Icon, trend, isPositive }: any) {
+function StatCard({ label, value, prefix = "", icon: Icon, trend, isPositive, helper }: any) {
+  const isCurrency = prefix.includes("R$");
+  const formatted = typeof value === 'number'
+    ? value.toLocaleString('pt-BR', {
+        minimumFractionDigits: isCurrency ? 2 : (value % 1 !== 0 ? 2 : 0),
+        maximumFractionDigits: isCurrency ? 2 : (value % 1 !== 0 ? 2 : 0),
+      })
+    : value;
+
   return (
-    <div className="glass-panel card-sport p-6 relative overflow-hidden group transition hover:border-primary/30">
-      <div className="flex items-center justify-between mb-4 relative z-10">
-        <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 border border-primary/15 text-primary shadow-inner group-hover:bg-primary/15 transition-colors">
-          <Icon className="h-4.5 w-4.5" />
+    <div className="glass-panel card-sport p-5 sm:p-6 relative overflow-hidden group transition hover:border-primary/40 hover:shadow-[0_0_20px_rgba(var(--primary-rgb),0.06)]">
+      <div className="flex items-center justify-between mb-3 relative z-10">
+        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 border border-primary/20 text-primary shadow-inner group-hover:bg-primary/20 transition-colors">
+          <Icon className="h-5 w-5" />
         </div>
         {trend && (
-          <div className={`flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded-md bg-background/80 backdrop-blur-md border shadow-xl ${isPositive ? 'text-success border-success/22' : 'text-primary border-primary/22'}`}>
-            {isPositive ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
+          <div className={`flex items-center gap-1 text-[10px] font-black px-2.5 py-1 rounded-lg backdrop-blur-md border shadow-sm ${isPositive ? 'text-emerald-500 bg-emerald-500/10 border-emerald-500/20' : 'text-primary bg-primary/10 border-primary/20'}`}>
+            {isPositive ? <TrendingUp className="h-3.5 w-3.5" /> : <TrendingDown className="h-3.5 w-3.5" />}
             {trend}
           </div>
         )}
       </div>
       <div className="relative z-10">
-        <p className="text-xs uppercase tracking-wider text-muted-foreground font-black mb-1.5">{label}</p>
-        <h4 className="text-3xl font-black font-mono tracking-tighter text-foreground drop-shadow-md">
-          {prefix}{typeof value === 'number' ? value.toLocaleString('pt-BR', { minimumFractionDigits: value % 1 !== 0 ? 2 : 0 }) : value}
+        <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-black mb-1">{label}</p>
+        <h4 className="text-2xl sm:text-3xl font-black font-mono tracking-tight text-foreground drop-shadow-sm">
+          {prefix}{formatted}
         </h4>
+        {helper && (
+          <p className="text-[10px] text-muted-foreground/80 mt-1.5 leading-snug">{helper}</p>
+        )}
       </div>
     </div>
   );
