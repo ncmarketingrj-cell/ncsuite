@@ -1774,14 +1774,16 @@ function RelatoriosPage() {
             <div className="glass-panel p-8 sm:p-10 bg-background border-white/10 print:shadow-none print:border-none print:p-0 print:bg-white print:text-black flex flex-col justify-between min-h-[500px]">
               <div>
                 <div className="border-b border-white/10 print:border-black/10 pb-6 mb-6 flex justify-between items-start">
-                  <div>
-                    <h2 className="header-sport text-2xl font-black tracking-tighter uppercase text-white print:text-black flex items-center gap-2">
-                      <Award className="h-6 w-6 text-primary" />
-                      Relatório de Performance
-                    </h2>
-                    <p className="text-primary font-mono text-[10px] mt-1 print:text-red-700 uppercase tracking-widest font-black">
-                      NC Performance Suite • {source === "upload" ? "Print OCR" : "Meta Ads Integrado"}
-                    </p>
+                  <div className="flex items-center gap-3">
+                    <img src="/assets/nc-logo.png" alt="NC Performance" className="h-8 w-auto object-contain print:brightness-90" />
+                    <div>
+                      <h2 className="header-sport text-2xl font-black tracking-tighter uppercase text-white print:text-black">
+                        Relatório de Performance
+                      </h2>
+                      <p className="text-primary font-mono text-[10px] mt-0.5 print:text-red-700 uppercase tracking-widest font-black">
+                        NC Performance Suite • {source === "upload" ? "Print OCR" : "Meta Ads Integrado"}
+                      </p>
+                    </div>
                   </div>
                   <div className="text-right">
                     <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground print:text-black/50">Data de Geração</p>

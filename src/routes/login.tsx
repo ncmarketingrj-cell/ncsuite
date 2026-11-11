@@ -154,11 +154,11 @@ function LoginPage() {
         {/* ── Top: Logo ── */}
         <div className="relative z-10">
           <div className="flex items-center gap-3 mb-14">
-            <div className="relative h-11 w-11 rounded-2xl bg-primary flex items-center justify-center overflow-hidden shadow-glow flex-shrink-0">
-              <div className="absolute inset-x-0 top-0 h-[4px] bg-white/28 rounded-t-2xl" />
-              <span className="font-display font-black text-white text-base relative z-10 tracking-tight">NC</span>
-              <div className="absolute inset-x-0 bottom-0 h-[3px] bg-black/22 rounded-b-2xl" />
-            </div>
+            <img
+              src="/assets/nc-logo.png"
+              alt="NC Performance"
+              className="h-10 w-auto object-contain drop-shadow-[0_0_16px_rgba(220,38,38,0.4)] flex-shrink-0"
+            />
             <div className="flex flex-col leading-none gap-[5px]">
               <span className="font-display text-[13px] font-black tracking-tight leading-none">NC Performance</span>
               <div className="flex items-center gap-[5px]">
@@ -230,7 +230,7 @@ function LoginPage() {
                 <img
                   src="/assets/nc-logo.png"
                   alt="NC Performance"
-                  className="h-16 w-16 object-contain drop-shadow-[0_0_22px_rgba(220,38,38,0.38)]"
+                  className="h-12 w-auto object-contain drop-shadow-[0_0_24px_rgba(220,38,38,0.45)]"
                 />
               </div>
               <div className="text-center">

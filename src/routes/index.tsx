@@ -230,7 +230,7 @@ function LandingPage() {
             <img
               src="/assets/nc-logo.png"
               alt="NC"
-              className="h-9 w-9 object-contain"
+              className="h-8 w-auto object-contain drop-shadow-[0_0_12px_rgba(220,38,38,0.35)]"
             />
             <div className="leading-none">
               <div
@@ -772,7 +772,7 @@ function LandingPage() {
                   <img
                     src="/assets/nc-logo.png"
                     alt="NC"
-                    className="h-7 w-7 object-contain"
+                    className="h-6 w-auto object-contain"
                     style={{ opacity: 0.22 }}
                   />
                   <span className="text-[8.5px] font-mono uppercase tracking-[0.28em] text-[#0A0A08]/52">
@@ -895,7 +895,7 @@ function LandingPage() {
               <img
                 src="/assets/nc-logo.png"
                 alt="Logo oficial da NC Agência de Performance"
-                className="h-7 w-7 object-contain"
+                className="h-6 w-auto object-contain"
                 style={{ opacity: 0.28 }}
               />
               <span className="text-[11px] font-black uppercase tracking-[0.22em] text-white/40">

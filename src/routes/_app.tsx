@@ -300,14 +300,13 @@ function Shell() {
 
         <div className="relative z-10 flex flex-col items-center gap-7">
           {/* Logo com ping rings */}
-          <div className="relative">
-            <div className="absolute inset-0 rounded-2xl border-2 border-primary/45 animate-ping-ring" />
-            <div className="absolute inset-[-9px] rounded-2xl border border-primary/22 animate-ping-ring" style={{ animationDelay: '0.55s' }} />
-            <div className="relative h-16 w-16 rounded-2xl bg-primary flex flex-col items-center justify-center shadow-glow overflow-hidden">
-              <div className="absolute inset-x-0 top-0 h-[4px] bg-white/28 rounded-t-2xl" />
-              <span className="font-display font-black text-white text-2xl relative z-10 tracking-normal">NC</span>
-              <div className="absolute inset-x-0 bottom-0 h-[3px] bg-black/22 rounded-b-2xl" />
-            </div>
+          <div className="relative flex items-center justify-center">
+            <div className="absolute inset-[-14px] rounded-3xl border border-primary/25 animate-ping-ring" style={{ animationDelay: '0.55s' }} />
+            <img
+              src="/assets/nc-logo.png"
+              alt="NC Performance"
+              className="relative z-10 h-16 w-auto object-contain drop-shadow-[0_0_24px_rgba(220,38,38,0.5)]"
+            />
           </div>
           <div className="text-center space-y-1.5">
             <p className="font-display font-black text-sm tracking-normal text-foreground">NC Performance Suite</p>
@@ -346,11 +345,11 @@ function Shell() {
         <div className="w-full max-w-5xl space-y-8 text-center relative z-10 my-auto">
           {/* Logo & Header */}
           <div className="flex flex-col items-center gap-3">
-            <div className="relative h-12 w-12 rounded-2xl bg-primary flex items-center justify-center overflow-hidden shadow-glow">
-              <div className="absolute inset-x-0 top-0 h-[4px] bg-white/28 rounded-t-2xl pointer-events-none" />
-              <span className="font-display font-black text-white text-lg relative z-10 tracking-normal">NC</span>
-              <div className="absolute inset-x-0 bottom-0 h-[3px] bg-black/22 rounded-b-2xl pointer-events-none" />
-            </div>
+            <img
+              src="/assets/nc-logo.png"
+              alt="NC Performance"
+              className="h-14 w-auto object-contain drop-shadow-[0_0_20px_rgba(220,38,38,0.45)]"
+            />
             <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-foreground mt-2">
               Selecione o Módulo de Trabalho
             </h1>
@@ -536,13 +535,13 @@ function Shell() {
                   localStorage.setItem("nc_active_module", "hub");
                 }
               }}
-              className="flex items-center gap-2 group"
+              className="flex items-center gap-2.5 group"
             >
-              <div className="relative h-8 w-8 rounded-xl bg-primary flex items-center justify-center overflow-hidden shadow-glow-sm transition-all duration-300 group-hover:shadow-glow">
-                <div className="absolute inset-x-0 top-0 h-[3px] bg-white/28 rounded-t-xl pointer-events-none" />
-                <span className="font-display font-black text-white text-xs relative z-10 tracking-normal">NC</span>
-                <div className="absolute inset-x-0 bottom-0 h-[2px] bg-black/22 rounded-b-xl pointer-events-none" />
-              </div>
+              <img
+                src="/assets/nc-logo.png"
+                alt="NC Performance"
+                className="h-7 md:h-8 w-auto object-contain transition-all duration-300 group-hover:scale-105 drop-shadow-[0_0_12px_rgba(220,38,38,0.4)]"
+              />
               <div className="hidden md:flex flex-col leading-none gap-[4px]">
                 <span className="font-display text-[12px] font-black tracking-normal leading-none">NC Performance</span>
                 <div className="flex items-center gap-[4px]">
@@ -1013,9 +1012,11 @@ function Shell() {
               {/* Header do sheet */}
               <div className="flex items-center justify-between px-5 py-3 border-b border-border/50">
                 <div className="flex items-center gap-2">
-                  <div className="h-6 w-6 rounded-lg bg-primary flex items-center justify-center">
-                    <span className="font-display font-black text-white text-[9px]">NC</span>
-                  </div>
+                  <img
+                    src="/assets/nc-logo.png"
+                    alt="NC"
+                    className="h-6 w-auto object-contain"
+                  />
                   <span className="text-sm font-black tracking-tight">Navegação</span>
                 </div>
                 <button onClick={() => setMobileMenuOpen(false)} className="h-8 w-8 rounded-full bg-muted/50 flex items-center justify-center">
