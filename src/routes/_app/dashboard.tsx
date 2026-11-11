@@ -6,7 +6,7 @@ import {
   FileText, BarChart3, ArrowUpRight, Activity, Layers,
   ChevronDown, Globe, Target, TrendingUp, TrendingDown, DollarSign, MousePointer2, Users, Trophy,
   Loader2, GaugeCircle, PieChart as PieChartIcon, Sparkles, Eye, HelpCircle, CheckCircle2,
-  AlertCircle, ArrowRight, Zap, Award
+  AlertCircle, ArrowRight, Zap, Award, X
 } from "lucide-react";
 import { classifyCampaignType } from "./cockpit";
 
@@ -621,7 +621,7 @@ function Dashboard() {
       {(() => {
         const isSingleDay = dateFrom === dateTo || (performanceData?.chartData?.length ?? 0) <= 1;
         const activeChartMode = chartMode === "auto" ? (isSingleDay ? "funnel" : "chart") : chartMode;
-        const totals = performanceData?.totals || { cost: 0, clicks: 0, impressions: 0, conversions: 0 };
+        const totals = performanceData?.totals || { cost: 0, clicks: 0, impressions: 0, conversions: 0, reach: 0 };
         const ctr = totals.impressions > 0 ? (totals.clicks / totals.impressions) * 100 : 0;
         const cpc = totals.clicks > 0 ? totals.cost / totals.clicks : 0;
         const cvr = totals.clicks > 0 ? (totals.conversions / totals.clicks) * 100 : 0;

@@ -350,6 +350,103 @@ function RelatoriosPage() {
     setActiveReportId(null);
   };
 
+  const handleSaveReport = async (showToast = true) => {
+    if (!generatedText) {
+      toast.warning("Gere o relatório antes de salvar!");
+      return;
+    }
+
+    const totalInvestment = campaignList.filter(c => c.selected).reduce((s, c) => s + c.cost, 0);
+    const totalCampaigns = campaignList.filter(c => c.selected).length;
+
+    const payload = {
+      client_name: clientName,
+      period: periodText,
+      markdown: generatedText,
+      raw_data: { source, campaigns: campaignList, reportMode, reportLevel, salesRevenue, salesOrders },
+      total_investment: totalInvestment,
+      total_campaigns: totalCampaigns,
+    };
+
+    try {
+      if (activeReportId) {
+        await supabase.from("reports").update(payload).eq("id", activeReportId);
+        if (showToast) toast.success("Relatório atualizado!");
+      } else {
+        const { data } = await supabase.from("reports").insert(payload).select("id").single();
+        if (data?.id) setActiveReportId(data.id);
+        if (showToast) toast.success("Relatório salvo!");
+      }
+      queryClient.invalidateQueries({ queryKey: ["saved-reports"] });
+    } catch (err: any) {
+      toast.error("Erro ao salvar relatório: " + (err.message ?? "tente novamente"));
+    }
+  };
+
+  const handleLoadReport = (rep: SavedReport) => {
+    setSource(rep.source);
+    setClientName(rep.clientName);
+    setPeriodText(rep.periodText);
+    setReportMode(rep.reportMode);
+    setCampaignList(rep.campaigns);
+    setGeneratedText(rep.generatedText);
+    setActiveReportId(rep.id);
+    if ((rep as any).raw_data?.salesRevenue) {
+      setSalesRevenue((rep as any).raw_data.salesRevenue);
+    }
+    if ((rep as any).raw_data?.salesOrders) {
+      setSalesOrders((rep as any).raw_data.salesOrders);
+    }
+    if (rep.reportLevel) {
+      setReportLevel(rep.reportLevel);
+    }
+    toast.success(`Relatório de ${rep.clientName} carregado com sucesso!`);
+  };
+
+  const handleDeleteReport = async (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    await supabase.from("reports").delete().eq("id", id);
+    if (activeReportId === id) setActiveReportId(null);
+    queryClient.invalidateQueries({ queryKey: ["saved-reports"] });
+    toast.success("Relatório removido!");
+  };
+
+  // Inicializa o período atual com o nome do mês em português (Ex: "MAIO 2026")
+  useEffect(() => {
+    const months = ["JANEIRO", "FEVEREIRO", "MARÇO", "ABRIL", "MAIO", "JUNHO", "JULHO", "AGOSTO", "SETEMBRO", "OUTUBRO", "NOVEMBRO", "DEZEMBRO"];
+    const now = new Date();
+    setPeriodText(`${months[now.getMonth()]} ${now.getFullYear()}`);
+    
+    // WhatsApp padrão do localStorage
+    const savedWhatsapp = localStorage.getItem("nc_agency_whatsapp") || "";
+    setTargetWhatsapp(savedWhatsapp);
+  }, []);
+
+  // Auto-preencher Nome do Cliente ao selecionar conta
+  useEffect(() => {
+    if (source === "api" && !activeReportId) {
+      if (selectedAccountId === "all") {
+        setClientName("Consolidado");
+      } else {
+        const client = clientsData?.find(c => c.meta_ad_account_id === selectedAccountId);
+        const acc = accounts.find(a => a.id === selectedAccountId);
+        const resolvedName = client?.name || acc?.name || "";
+        
+        if (resolvedName) {
+          setClientName(resolvedName);
+          
+          // Auto-detectar modelo de relatório pelo nicho do cliente (Ex: Pizza/Delivery vs Veículos/Geral)
+          const lower = resolvedName.toLowerCase();
+          if (/pizza|cardapio|cardápio|delivery|restaurante|burger|comida|ecommerce|e-commerce|loja virtual/i.test(lower)) {
+            setReportMode("ecommerce_sales");
+          } else {
+            setReportMode("standard_auto");
+          }
+        }
+      }
+    }
+  }, [selectedAccountId, clientsData, accounts, source, activeReportId]);
+
   // Carregar dados de acordo com a origem (API ou Upload)
   const loadData = async () => {
     if (source === "upload") {

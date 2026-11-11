@@ -2222,7 +2222,7 @@ function MetricasCampanhasPage() {
                           {activeChartTab === "metricas" ? (
                             isAdmin && (
                               <button
-                                onClick={() => navigate({ to: "/metricas/grafico" })}
+                                onClick={() => navigate({ to: "/metricas/grafico" as any })}
                                 className="flex items-center gap-1.5 rounded-xl border border-primary/20 bg-primary/10 hover:bg-primary/20 px-3.5 py-1.5 text-[10px] font-black uppercase tracking-widest text-primary transition-all shadow-[0_0_12px_rgba(99,102,241,0.15)]"
                               >
                                 <Pencil className="h-3 w-3" />
@@ -2231,7 +2231,7 @@ function MetricasCampanhasPage() {
                             )
                           ) : (
                             <button
-                              onClick={() => navigate({ to: "/campanhas/grafico" })}
+                              onClick={() => navigate({ to: "/campanhas/grafico" as any })}
                               className="flex items-center gap-1.5 rounded-xl border border-violet-500/20 bg-violet-500/10 hover:bg-violet-500/20 px-3.5 py-1.5 text-[10px] font-black uppercase tracking-widest text-violet-400 transition-all"
                             >
                               <Pencil className="h-3 w-3" />
@@ -2262,7 +2262,7 @@ function MetricasCampanhasPage() {
                                 <ChartCard
                                   icon={<TrendingUp className="h-4 w-4 text-primary" />}
                                   title={config.title}
-                                  badge={config.metric.toUpperCase()}
+                                  badge={config.metric ? config.metric.toUpperCase() : "MÉTRICA"}
                                   context={config.description || "Gráfico de performance personalizado"}
                                   modoExplicativo={modoExplicativo}
                                 >
