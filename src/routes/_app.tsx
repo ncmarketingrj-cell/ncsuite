@@ -8,7 +8,7 @@ import {
   Sun, Moon, Menu, X, BarChart3, LineChart, Palette, Link2,
   ChevronDown, RefreshCw, Users, Store,
   Volume2, VolumeX, LogOut, CreditCard, Share2, ArrowRight, GitBranch, Brain, ChevronRight,
-  Lock, GaugeCircle, FlaskConical, TrendingUp
+  Lock, GaugeCircle, FlaskConical, TrendingUp, Trash2, CheckCheck
 } from "lucide-react";
 import { AuthProvider, useAuth } from "@/lib/auth";
 import { supabase } from "@/integrations/supabase-external/client";
@@ -23,6 +23,15 @@ import { useAutoSync, getSyncStatus, SYNC_STATUS_EVENT, type SyncStatus } from "
 import { useAlertEngine } from "@/hooks/useAlertEngine";
 import { DateProvider } from "@/contexts/DateContext";
 import { usePagePermission } from "@/hooks/usePagePermission";
+import {
+  MAX_NOTIFICATIONS_CAP,
+  getRecentNotifications,
+  enforceNotificationCapacity,
+  markAllNotificationsAsRead,
+  clearAllNotifications,
+  deleteNotification,
+} from "@/lib/notificationService";
+import { playAlertTone } from "@/lib/alertSounds";
 
 function AppErrorFallback({ error, reset }: { error: Error; reset: () => void }) {
   return (
@@ -242,41 +251,65 @@ function Shell() {
     return () => window.removeEventListener('open-ai-agent', handleOpenAI);
   }, []);
 
-  // Monitora notificações em tempo real do Agente (da tabela de notifications)
+  // Central de Notificações acumulativa (armazena até 100 notificações com auto-purge)
   const { data: recentNotifications = [], refetch: refetchNotifications } = useQuery({
     queryKey: ["header_notifications"],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("notifications")
-        .select("*")
-        .order("created_at", { ascending: false })
-        .limit(8);
-      if (error) return [];
-      return data as any[];
+      await enforceNotificationCapacity();
+      return await getRecentNotifications(MAX_NOTIFICATIONS_CAP);
     },
     refetchInterval: 15000,
   });
 
   const hasUnread = recentNotifications.some(n => !n.is_read);
+  const prevLatestNotifIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (recentNotifications.length > 0) {
       const lastNotif = recentNotifications[0];
       const logTime = new Date(lastNotif.created_at).getTime();
       const now = new Date().getTime();
+
+      // Dispara o toque configurado se uma nova notificação não lida acabou de chegar
+      if (prevLatestNotifIdRef.current && prevLatestNotifIdRef.current !== lastNotif.id && !lastNotif.is_read) {
+        if (soundEnabled) {
+          playAlertTone();
+        }
+      }
+      prevLatestNotifIdRef.current = lastNotif.id;
+
       if (now - logTime < 60000 && !lastNotif.is_read) {
         setShowNotification(true);
         const timer = setTimeout(() => setShowNotification(false), 8000);
         return () => clearTimeout(timer);
       }
     }
-  }, [recentNotifications]);
+  }, [recentNotifications, soundEnabled]);
 
   const handleMarkAllAsRead = async () => {
     const unreadIds = recentNotifications.filter(n => !n.is_read).map(n => n.id);
     if (unreadIds.length === 0) return;
-    await supabase.from("notifications").update({ is_read: true }).in("id", unreadIds);
+    await markAllNotificationsAsRead(unreadIds);
     refetchNotifications();
+    toast.success("Todas as notificações foram marcadas como lidas");
+  };
+
+  const handleClearAllNotifications = async () => {
+    const ok = await clearAllNotifications();
+    if (ok) {
+      refetchNotifications();
+      toast.success("Central de notificações limpa e zerada com sucesso");
+    }
+  };
+
+  const handleDeleteNotification = async (e: React.MouseEvent, id: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const ok = await deleteNotification(id);
+    if (ok) {
+      refetchNotifications();
+      toast.success("Notificação removida");
+    }
   };
 
 
@@ -798,9 +831,14 @@ function Shell() {
                       <div className="flex items-center justify-between border-b border-border pb-2.5 mb-2.5">
                         <div className="flex items-center gap-2">
                           <Activity className="h-4 w-4 text-primary" />
-                          <h4 className="text-xs font-black uppercase tracking-widest text-foreground">Alertas do Agente AI</h4>
+                          <div>
+                            <h4 className="text-xs font-black uppercase tracking-widest text-foreground">Central de Alertas</h4>
+                            <p className="text-[9px] font-mono text-muted-foreground">
+                              {recentNotifications.length}/{MAX_NOTIFICATIONS_CAP} acumulados
+                            </p>
+                          </div>
                         </div>
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-1.5">
                           <button
                             onClick={toggleSound}
                             title={soundEnabled ? "Desativar som dos alertas" : "Ativar som dos alertas"}
@@ -815,18 +853,48 @@ function Shell() {
                               : <><VolumeX className="h-2.5 w-2.5" /> Mudo</>
                             }
                           </button>
-                          {hasUnread ? (
+
+                          {hasUnread && (
                             <button
                               onClick={handleMarkAllAsRead}
-                              className="text-[9px] font-black text-primary hover:text-primary/80 transition-colors uppercase tracking-wider"
+                              title="Marcar todas como lidas"
+                              className="flex items-center gap-1 rounded-lg border border-primary/20 bg-primary/10 px-1.5 py-0.5 text-[9px] font-black text-primary hover:bg-primary/20 transition-colors uppercase tracking-wider"
                             >
-                              Lidas
+                              <CheckCheck className="h-2.5 w-2.5" /> Lidas
                             </button>
-                          ) : (
-                            <span className="rounded bg-primary/10 px-1.5 py-0.5 text-[9px] font-black text-primary uppercase">
-                              {recentNotifications.length} Alertas
-                            </span>
                           )}
+
+                          {recentNotifications.length > 0 && (
+                            <button
+                              onClick={handleClearAllNotifications}
+                              title="Limpar e zerar todas as notificações"
+                              className="flex items-center gap-1 rounded-lg border border-border bg-card hover:bg-destructive/10 hover:border-destructive/30 px-1.5 py-0.5 text-[9px] font-bold text-muted-foreground hover:text-destructive transition-colors uppercase tracking-wider"
+                            >
+                              <Trash2 className="h-2.5 w-2.5" /> Zerar
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Barra de Capacidade Acumulativa (Até 100 notificações) */}
+                      <div className="mb-2 px-1">
+                        <div className="flex items-center justify-between text-[9px] font-mono text-muted-foreground mb-1">
+                          <span>Capacidade da Central</span>
+                          <span className={recentNotifications.length >= 90 ? "text-destructive font-bold" : "text-foreground"}>
+                            {recentNotifications.length} de {MAX_NOTIFICATIONS_CAP} max
+                          </span>
+                        </div>
+                        <div className="h-1.5 w-full rounded-full bg-white/10 overflow-hidden">
+                          <div
+                            className={`h-full transition-all duration-300 rounded-full ${
+                              recentNotifications.length >= 90
+                                ? "bg-destructive"
+                                : recentNotifications.length >= 70
+                                ? "bg-amber-500"
+                                : "bg-primary"
+                            }`}
+                            style={{ width: `${Math.min(100, (recentNotifications.length / MAX_NOTIFICATIONS_CAP) * 100)}%` }}
+                          />
                         </div>
                       </div>
 
@@ -834,55 +902,55 @@ function Shell() {
                         <div className="py-8 text-center text-muted-foreground flex flex-col items-center justify-center">
                           <Activity className="h-8 w-8 text-muted-foreground/30 mb-2" />
                           <p className="text-xs font-bold">Nenhum evento recente</p>
-                          <p className="text-[10px] text-muted-foreground/60 mt-0.5">As ações automáticas de otimização aparecerão aqui.</p>
+                          <p className="text-[10px] text-muted-foreground/60 mt-0.5">As ações automáticas e alertas de tráfego aparecerão aqui.</p>
                         </div>
                       ) : (
                         <div className="space-y-1.5 max-h-[300px] overflow-y-auto pr-1 scrollbar-thin">
                           {recentNotifications.map((notif) => {
                             const timeAgo = formatDistanceToNow(new Date(notif.created_at), { addSuffix: true, locale: ptBR });
                             return (
-                              <Link
+                              <div
                                 key={notif.id}
-                                to={notif.link || "/automacoes"}
-                                onClick={async () => {
-                                  setShowNotifications(false);
-                                  await supabase.from("notifications").update({ is_read: true }).eq("id", notif.id);
-                                  refetchNotifications();
-                                }}
-                                className={`flex flex-col gap-1 rounded-xl p-2.5 border transition-all text-left relative ${
+                                className={`group flex items-start justify-between gap-2 rounded-xl p-2.5 border transition-all text-left relative ${
                                   !notif.is_read
-                                    ? "bg-primary/[0.03] hover:bg-primary/[0.06] border-primary/20"
-                                    : "bg-white/[0.01] hover:bg-white/[0.03] border-transparent"
+                                    ? "bg-primary/[0.04] hover:bg-primary/[0.08] border-primary/20"
+                                    : "bg-white/[0.01] hover:bg-white/[0.04] border-transparent"
                                 }`}
                               >
-                                {!notif.is_read && (
-                                  <span className="absolute top-3 right-3 h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />
-                                )}
-                                <div className="flex items-start justify-between gap-2">
-                                  <span className="text-[10px] font-black uppercase tracking-wider text-primary leading-tight">
-                                    {notif.title}
+                                <Link
+                                  to={notif.link || "/automacoes"}
+                                  search={{ tab: "notificacoes" } as any}
+                                  onClick={async () => {
+                                    setShowNotifications(false);
+                                    await markAllNotificationsAsRead([notif.id]);
+                                    refetchNotifications();
+                                  }}
+                                  className="flex-1 min-w-0"
+                                >
+                                  <div className="flex items-center gap-1.5">
+                                    {!notif.is_read && (
+                                      <span className="h-1.5 w-1.5 rounded-full bg-primary shrink-0 animate-pulse" />
+                                    )}
+                                    <span className="text-[10px] font-black uppercase tracking-wider text-primary leading-tight truncate">
+                                      {notif.title}
+                                    </span>
+                                  </div>
+                                  <p className="text-[11px] text-foreground leading-relaxed font-medium mt-1">
+                                    {notif.message}
+                                  </p>
+                                  <span className="text-[9px] text-muted-foreground font-mono block mt-1">
+                                    {timeAgo}
                                   </span>
-                                  <span className="text-[9px] text-muted-foreground font-mono shrink-0">{timeAgo}</span>
-                                </div>
-                                {(() => {
-                                  const sep = notif.message?.indexOf(" — ");
-                                  const hasSep = sep > 0 && sep < 60;
-                                  const account = hasSep ? notif.message.slice(0, sep) : null;
-                                  const detail  = hasSep ? notif.message.slice(sep + 3) : notif.message;
-                                  return (
-                                    <>
-                                      {account && (
-                                        <span className="inline-flex rounded bg-white/10 px-1.5 py-0.5 text-[9px] font-bold text-muted-foreground">
-                                          {account}
-                                        </span>
-                                      )}
-                                      <p className="text-[11px] text-foreground leading-relaxed font-medium pr-4">
-                                        {detail}
-                                      </p>
-                                    </>
-                                  );
-                                })()}
-                              </Link>
+                                </Link>
+
+                                <button
+                                  onClick={(e) => handleDeleteNotification(e, notif.id)}
+                                  title="Remover alerta"
+                                  className="opacity-0 group-hover:opacity-100 p-1 text-muted-foreground hover:text-destructive rounded hover:bg-destructive/10 transition-all shrink-0"
+                                >
+                                  <Trash2 className="h-3 w-3" />
+                                </button>
+                              </div>
                             );
                           })}
                         </div>
@@ -891,10 +959,11 @@ function Shell() {
                       <div className="border-t border-border mt-3 pt-2.5">
                         <Link
                           to="/automacoes"
+                          search={{ tab: "notificacoes" } as any}
                           onClick={() => setShowNotifications(false)}
                           className="w-full flex items-center justify-center gap-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-xs font-bold text-foreground py-2 transition"
                         >
-                          <Zap className="h-3.5 w-3.5 text-primary" /> Ver Central de Automações
+                          <Zap className="h-3.5 w-3.5 text-primary" /> Ver Central Completa & Automações
                         </Link>
                       </div>
                     </motion.div>

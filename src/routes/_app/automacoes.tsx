@@ -1,11 +1,12 @@
-import { createFileRoute, redirect } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Zap, Loader2, Play, Pause, Clock, History, AlertTriangle,
   ShieldAlert, Plus, X, Server, CheckCircle2, RefreshCw,
-  Bell, TrendingUp, DollarSign, AlertCircle, Timer, Pencil, Radio,
-  Settings2, Volume2, VolumeX, BellOff, BellRing, Moon, RotateCcw, Lock, Sparkles
+  Bell, TrendingUp, DollarSign, AlertCircle, Timer, Pencil, Radio, Activity,
+  Settings2, Volume2, VolumeX, BellOff, BellRing, Moon, RotateCcw, Lock, Sparkles,
+  Trash2, CheckCheck, Music, Check, ArrowRight, ExternalLink, ShieldCheck, Flame, Filter, Volume1
 } from "lucide-react";
 import { PageHeader } from "@/components/PageHeader";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -13,24 +14,45 @@ import { supabase } from "@/integrations/supabase-external/client";
 import { useAuth } from "@/lib/auth";
 import { toast } from "sonner";
 import { DiagnosisModal } from "@/components/victoria/DiagnosisModal";
+import { ThresholdModal } from "@/components/automacoes/ThresholdModal";
 import { getSyncStatus, useAutoSync } from "@/hooks/useAutoSync";
 import {
   triggerEvaluation, getEvalStatus, EVAL_STATUS_EVENT, type EvalStatus,
   getSoundEnabled, setSoundEnabled, SOUND_CHANGED_EVENT,
   getNotifPrefs, setNotifPrefs, NOTIF_PREFS_CHANGED_EVENT, type NotifPrefs,
 } from "@/hooks/useAlertEngine";
+import {
+  ALERT_SOUNDS, getAlertSoundPreference, setAlertSoundPreference,
+  getAlertVolumePreference, setAlertVolumePreference, playAlertTone,
+  ALERT_SOUND_TYPE_EVENT, type AlertSoundDef,
+} from "@/lib/alertSounds";
+import {
+  MAX_NOTIFICATIONS_CAP, getRecentNotifications, markAllNotificationsAsRead,
+  markNotificationAsRead, clearAllNotifications, deleteNotification,
+  enforceNotificationCapacity, type AppNotification,
+} from "@/lib/notificationService";
 import { formatDistanceToNow, formatDistance } from "date-fns";
 import { ptBR } from "date-fns/locale";
 
 export const Route = createFileRoute("/_app/automacoes")({
-  head: () => ({ meta: [{ title: "Automações e Alertas — NC Suite" }] }),
+  head: () => ({ meta: [{ title: "Central de Automações & Notificações — NC Suite" }] }),
+  validateSearch: (search: Record<string, unknown>) => ({
+    tab: (search.tab as string) || "automacoes",
+  }),
   component: AutomationsPage,
 });
 
 const ADMIN_EMAILS = ["nc.marketingrj@gmail.com", "hc.marketing.dgt@gmail.com"];
 
 function AutomationsPage() {
-  const [activeTab, setActiveTab] = useState<"thresholds" | "sync" | "logs" | "prefs" | "docs">("thresholds");
+  const search = Route.useSearch();
+  const [activeTab, setActiveTab] = useState<"automacoes" | "notificacoes" | "personalizacao" | "sync">(() => {
+    if (search.tab === "notificacoes" || search.tab === "personalizacao" || search.tab === "sync") {
+      return search.tab as any;
+    }
+    return "automacoes";
+  });
+
   const [modal, setModal] = useState(false);
   const [editingThreshold, setEditingThreshold] = useState<any | null>(null);
   const { user } = useAuth();
@@ -45,30 +67,43 @@ function AutomationsPage() {
     },
     enabled: !!user?.id,
   });
+
   const hasAccess = (user?.email ? ADMIN_EMAILS.includes(user.email) : false)
     || profileData?.role === "admin"
     || !!profileData?.permissions?.automacoes;
+
   const syncStatus = getSyncStatus();
   const { runSync } = useAutoSync();
 
-  // ── Eval status ─────────────────────────────────────────────────────────────
+  // ── Eval status do motor ────────────────────────────────────────────────────
   const [evalStatus, setEvalStatus] = useState<EvalStatus>(getEvalStatus);
 
-  // ── Preferências de notificação (localStorage) ───────────────────────────────
-  const [soundOn, setSoundOn]     = useState(getSoundEnabled);
-  const [prefs, setPrefsState]    = useState<NotifPrefs>(getNotifPrefs);
-  const [selectedDiagnoseCampId, setSelectedDiagnoseCampId] = useState<string | null>(null);
+  // ── Preferências sonoras & personalização ────────────────────────────────────
+  const [soundOn, setSoundOn]               = useState(getSoundEnabled);
+  const [prefs, setPrefsState]              = useState<NotifPrefs>(getNotifPrefs);
+  const [selectedSound, setSelectedSound]   = useState(getAlertSoundPreference);
+  const [alertVolume, setAlertVolume]       = useState(getAlertVolumePreference);
+  const [playingSoundId, setPlayingSoundId] = useState<string | null>(null);
+
+  // ── Diagnóstico Victoria AI ──────────────────────────────────────────────────
+  const [selectedDiagnoseCampId, setSelectedDiagnoseCampId]     = useState<string | null>(null);
   const [selectedDiagnoseCampName, setSelectedDiagnoseCampName] = useState<string>("");
-  const [isDiagnoseOpen, setIsDiagnoseOpen] = useState(false);
+  const [isDiagnoseOpen, setIsDiagnoseOpen]                     = useState(false);
+
+  // ── Filtro da Central de Notificações ────────────────────────────────────────
+  const [notifFilter, setNotifFilter] = useState<"all" | "unread" | "alert_cpl" | "alert_budget" | "alert_frequency">("all");
 
   useEffect(() => {
     const onSound = (e: Event) => setSoundOn((e as CustomEvent).detail);
     const onPrefs = (e: Event) => setPrefsState((e as CustomEvent).detail);
+    const onSoundType = (e: Event) => setSelectedSound((e as CustomEvent).detail);
     window.addEventListener(SOUND_CHANGED_EVENT, onSound as EventListener);
     window.addEventListener(NOTIF_PREFS_CHANGED_EVENT, onPrefs as EventListener);
+    window.addEventListener(ALERT_SOUND_TYPE_EVENT, onSoundType as EventListener);
     return () => {
       window.removeEventListener(SOUND_CHANGED_EVENT, onSound as EventListener);
       window.removeEventListener(NOTIF_PREFS_CHANGED_EVENT, onPrefs as EventListener);
+      window.removeEventListener(ALERT_SOUND_TYPE_EVENT, onSoundType as EventListener);
     };
   }, []);
 
@@ -81,7 +116,7 @@ function AutomationsPage() {
     return () => window.removeEventListener(EVAL_STATUS_EVENT, handler as EventListener);
   }, []);
 
-  // ── Contas ──────────────────────────────────────────────────────────────────
+  // ── Contas de Anúncios ──────────────────────────────────────────────────────
   const { data: accounts = [] } = useQuery({
     queryKey: ["ad_accounts"],
     queryFn: async () => {
@@ -90,7 +125,7 @@ function AutomationsPage() {
     },
   });
 
-  // ── Thresholds ──────────────────────────────────────────────────────────────
+  // ── Regras de Automação (Thresholds) ─────────────────────────────────────────
   const { data: thresholds = [], isLoading: loadingThresholds } = useQuery({
     queryKey: ["alert_thresholds"],
     queryFn: async () => {
@@ -100,7 +135,7 @@ function AutomationsPage() {
         .order("created_at", { ascending: false });
 
       if (error) {
-        console.error("Erro ao carregar regras de alerta:", error);
+        console.error("Erro ao carregar regras de automação:", error);
         return [];
       }
 
@@ -123,26 +158,26 @@ function AutomationsPage() {
     },
   });
 
-  // ── Violações ativas (notificações não lidas de alerta) ──────────────────────
-  const { data: activeViolations = [], refetch: refetchViolations } = useQuery({
-    queryKey: ["active_violations"],
+  // ── Central de Notificações (Até 100 notificações acumulativas) ───────────────
+  const {
+    data: allNotifications = [],
+    refetch: refetchNotifications,
+    isLoading: loadingNotifications,
+  } = useQuery({
+    queryKey: ["all_notifications_central"],
     queryFn: async () => {
-      const { data } = await (supabase as any)
-        .from("notifications")
-        .select("*")
-        .in("type", ["alert", "alert_cpl", "alert_budget", "alert_frequency", "social_media_alert"])
-        .eq("is_read", false)
-        .order("created_at", { ascending: false })
-        .limit(20);
-      return (data as any[]) || [];
+      await enforceNotificationCapacity();
+      return await getRecentNotifications(MAX_NOTIFICATIONS_CAP);
     },
     refetchInterval: 15000,
   });
 
-  // Atualizar violations quando o eval termina
+  // Atualizar notificações quando eval termina
   useEffect(() => {
-    if (!evalStatus.isEvaluating) refetchViolations();
-  }, [evalStatus.isEvaluating, refetchViolations]);
+    if (!evalStatus.isEvaluating) {
+      refetchNotifications();
+    }
+  }, [evalStatus.isEvaluating, refetchNotifications]);
 
   // ── Configurações globais do Motor ──────────────────────────────────────────
   const { data: configData, refetch: refetchConfig } = useQuery({
@@ -172,7 +207,7 @@ function AutomationsPage() {
           alert_dedup_hours: 2,
         };
       }
-    }
+    },
   });
 
   const updateConfigMutation = useMutation({
@@ -197,10 +232,10 @@ function AutomationsPage() {
     },
     onError: (err: any) => {
       toast.error(`Erro ao salvar: ${err.message}`);
-    }
+    },
   });
 
-  // ── Histórico sync ──────────────────────────────────────────────────────────
+  // ── Histórico de sync ───────────────────────────────────────────────────────
   const { data: syncHistory = [], isLoading: loadingSync } = useQuery({
     queryKey: ["sync_history"],
     queryFn: async () => {
@@ -231,26 +266,83 @@ function AutomationsPage() {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["alert_thresholds"] });
-      toast.success("Regra removida!");
+      toast.success("Regra de automação removida!");
     },
   });
 
-  const markViolationRead = async (id: string) => {
-    await (supabase as any).from("notifications").update({ is_read: true }).eq("id", id);
-    refetchViolations();
+  // ── Ações da Central de Notificações ────────────────────────────────────────
+  const handleMarkAllAsRead = async () => {
+    const unreadIds = allNotifications.filter(n => !n.is_read).map(n => n.id);
+    if (!unreadIds.length) return;
+    await markAllNotificationsAsRead(unreadIds);
+    refetchNotifications();
+    toast.success("Todas as notificações foram marcadas como lidas");
   };
 
-  const markAllViolationsRead = async () => {
-    const ids = activeViolations.map((v: any) => v.id);
-    if (!ids.length) return;
-    await (supabase as any).from("notifications").update({ is_read: true }).in("id", ids);
-    refetchViolations();
-    toast.success("Todos alertas marcados como lidos");
+  const handleClearAllNotifications = async () => {
+    const ok = await clearAllNotifications();
+    if (ok) {
+      refetchNotifications();
+      toast.success("Central de notificações limpa e zerada com sucesso");
+    }
+  };
+
+  const handleMarkSingleRead = async (id: string) => {
+    await markNotificationAsRead(id);
+    refetchNotifications();
+  };
+
+  const handleDeleteSingle = async (id: string) => {
+    const ok = await deleteNotification(id);
+    if (ok) {
+      refetchNotifications();
+      toast.success("Notificação removida");
+    }
   };
 
   const handleVerifyNow = () => {
     triggerEvaluation();
-    toast.info("Avaliando campanhas...", { duration: 2500 });
+    toast.info("Avaliando campanhas ativas em segundo plano...", { duration: 2500 });
+  };
+
+  // ── Testes de Áudio & Alertas ───────────────────────────────────────────────
+  const handlePlaySound = (soundId: string) => {
+    setPlayingSoundId(soundId);
+    playAlertTone(soundId, alertVolume);
+    setTimeout(() => {
+      setPlayingSoundId(prev => (prev === soundId ? null : prev));
+    }, 1200);
+  };
+
+  const handleSelectSound = (sound: AlertSoundDef) => {
+    setAlertSoundPreference(sound.id);
+    setSelectedSound(sound.id);
+    handlePlaySound(sound.id);
+    toast.success(`Toque "${sound.name}" ativado como padrão!`);
+  };
+
+  const handleVolumeChange = (vol: number) => {
+    setAlertVolume(vol);
+    setAlertVolumePreference(vol);
+  };
+
+  const handleTestVolume = () => {
+    playAlertTone(selectedSound, alertVolume);
+    toast.info(`Volume calibrado em ${(alertVolume * 100).toFixed(0)}%`);
+  };
+
+  const handleTestNotificationDemo = () => {
+    playAlertTone(selectedSound, alertVolume);
+    toast.info("🚨 Demonstração de Alerta da NC Suite", {
+      description: `Disparo com toque padrão "${ALERT_SOUNDS.find(s => s.id === selectedSound)?.name || selectedSound}" e volume ${(alertVolume * 100).toFixed(0)}%.`,
+      duration: 5000,
+    });
+    if ("Notification" in window && Notification.permission === "granted" && prefs.browserEnabled) {
+      new Notification("🚨 Alerta de Teste — NC Suite", {
+        body: "Demonstração do sistema de notificações em segundo plano.",
+        icon: "/favicon.ico",
+      });
+    }
   };
 
   if (profileLoading) return null;
@@ -271,887 +363,917 @@ function AutomationsPage() {
     );
   }
 
+  // Filtragem das notificações na Central
+  const filteredNotifications = allNotifications.filter((n) => {
+    if (notifFilter === "unread") return !n.is_read;
+    if (notifFilter === "alert_cpl") return n.type === "alert_cpl" || n.type === "alert";
+    if (notifFilter === "alert_budget") return n.type === "alert_budget";
+    if (notifFilter === "alert_frequency") return n.type === "alert_frequency";
+    return true;
+  });
+
+  const unreadCount = allNotifications.filter(n => !n.is_read).length;
+
   return (
-    <div className="mx-auto max-w-6xl space-y-5 pb-20">
+    <div className="mx-auto max-w-6xl space-y-6 pb-24">
+      {/* ── HEADER EXECUTIVO ─────────────────────────────────────────────────── */}
       <PageHeader
-        eyebrow="Monitoramento Inteligente"
-        title="Motor de Alertas"
-        description="Configure tetos de CPL e monitore o orçamento diário das suas campanhas."
+        eyebrow="SISTEMA DE AUTOMAÇÃO & MONITORAMENTO CONTÍNUO"
+        title="Central de Automações & Notificações"
+        description="Regras de automação de campanhas, limites de segurança de CPL/CPA e personalização avançada de alertas e toques sonoros da NC Suite."
         compact
         actions={
-          <button
-            onClick={() => setModal(true)}
-            className="shrink-0 inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-primary to-secondary px-4 py-2 text-xs font-bold text-background shadow-glow transition hover:scale-105 active:scale-95"
-          >
-            <ShieldAlert className="h-3.5 w-3.5 fill-current" />
-            <span className="hidden sm:inline">Novo Alerta de Conta</span>
-            <span className="sm:hidden">Novo Alerta</span>
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleVerifyNow}
+              disabled={evalStatus.isEvaluating}
+              className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-3.5 py-2 text-xs font-bold text-foreground hover:bg-muted/50 transition active:scale-95 disabled:opacity-50"
+            >
+              {evalStatus.isEvaluating ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
+              ) : (
+                <RefreshCw className="h-3.5 w-3.5 text-primary" />
+              )}
+              <span className="hidden sm:inline">Avaliar Agora</span>
+            </button>
+
+            <button
+              onClick={() => { setEditingThreshold(null); setModal(true); }}
+              className="shrink-0 inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-primary to-secondary px-4 py-2 text-xs font-bold text-background shadow-glow transition hover:scale-105 active:scale-95"
+            >
+              <ShieldAlert className="h-3.5 w-3.5 fill-current" />
+              <span className="hidden sm:inline">Nova Regra de Automação</span>
+              <span className="sm:hidden">Nova Regra</span>
+            </button>
+          </div>
         }
       />
 
-      {/* Tabs — scrollável no mobile */}
-      <div className="flex overflow-x-auto scrollbar-hide gap-1 rounded-xl bg-background/50 p-1 border border-white/5 backdrop-blur-md">
+      {/* ── NAVEGAÇÃO DE TABS ───────────────────────────────────────────────── */}
+      <div className="flex overflow-x-auto scrollbar-hide gap-1.5 rounded-2xl bg-card/60 p-1.5 border border-border/60 backdrop-blur-md">
         {[
-          { id: "thresholds", label: "Limites de Alerta",       short: "Limites",   icon: AlertTriangle },
-          { id: "prefs",      label: "Preferências",            short: "Prefs",     icon: Settings2 },
-          { id: "sync",       label: "Motor de Sincronização",  short: "Sync",      icon: Server },
-          { id: "logs",       label: "Histórico de Sync",       short: "Histórico", icon: History },
-          { id: "docs",       label: "Como Funciona (Docs)",    short: "Docs",      icon: Sparkles },
-        ].map((tab) => (
-          <button
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id as any)}
-            className={`shrink-0 flex items-center gap-1.5 rounded-lg px-3 sm:px-4 py-2 text-xs font-bold transition whitespace-nowrap ${
-              activeTab === tab.id ? "bg-white/10 text-primary" : "text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            <tab.icon className="h-3.5 w-3.5 shrink-0" />
-            <span className="sm:hidden">{tab.short.toUpperCase()}</span>
-            <span className="hidden sm:inline">{tab.label.toUpperCase()}</span>
-          </button>
-        ))}
+          {
+            id: "automacoes",
+            label: "Regras de Automação",
+            badge: `${thresholds.length}`,
+            icon: Zap,
+          },
+          {
+            id: "notificacoes",
+            label: "Central de Notificações",
+            badge: unreadCount > 0 ? `${unreadCount} não lidas` : `${allNotifications.length}/${MAX_NOTIFICATIONS_CAP}`,
+            badgeColor: unreadCount > 0 ? "bg-primary text-background" : "bg-white/10 text-muted-foreground",
+            icon: Bell,
+          },
+          {
+            id: "personalizacao",
+            label: "Personalização & 10 Toques",
+            badge: "Áudio & Push",
+            icon: Music,
+          },
+          {
+            id: "sync",
+            label: "Sincronização Meta Ads",
+            badge: syncStatus.isSyncing ? "Sincronizando..." : "Meta API",
+            icon: Server,
+          },
+        ].map((tab) => {
+          const isActive = activeTab === tab.id;
+          return (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id as any)}
+              className={`shrink-0 flex items-center gap-2 rounded-xl px-4 py-2.5 text-xs font-bold transition-all whitespace-nowrap ${
+                isActive
+                  ? "bg-primary text-background shadow-glow-sm"
+                  : "text-muted-foreground hover:text-foreground hover:bg-muted/40"
+              }`}
+            >
+              <tab.icon className="h-3.5 w-3.5 shrink-0" />
+              <span>{tab.label.toUpperCase()}</span>
+              {tab.badge && (
+                <span className={`ml-1 rounded-full px-2 py-0.5 text-[10px] font-mono font-bold ${
+                  isActive ? "bg-black/20 text-background" : tab.badgeColor || "bg-white/10 text-muted-foreground"
+                }`}>
+                  {tab.badge}
+                </span>
+              )}
+            </button>
+          );
+        })}
       </div>
 
-      {/* ══ TAB: THRESHOLDS ══════════════════════════════════════════════════════ */}
-      {activeTab === "thresholds" && (
-        <div className="space-y-5">
-
-          {/* ── Motor Status Card ────────────────────────────────────────────── */}
-          <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-5 flex flex-col sm:flex-row sm:items-center gap-4">
-            {/* Info */}
-            <div className="flex-1 space-y-1">
+      {/* ════════════════════════════════════════════════════════════════════════
+          TAB 1: REGRAS DE AUTOMAÇÃO DE CAMPANHAS
+      ════════════════════════════════════════════════════════════════════════ */}
+      {activeTab === "automacoes" && (
+        <div className="space-y-6">
+          {/* Card de Status do Motor */}
+          <div className="rounded-2xl border border-border bg-card p-5 flex flex-col md:flex-row md:items-center justify-between gap-5">
+            <div className="space-y-1.5">
               <div className="flex items-center gap-2">
                 {evalStatus.isEvaluating ? (
                   <Loader2 className="h-4 w-4 text-primary animate-spin" />
                 ) : evalStatus.error ? (
                   <AlertCircle className="h-4 w-4 text-destructive" />
                 ) : (
-                  <CheckCircle2 className="h-4 w-4 text-success" />
+                  <CheckCircle2 className="h-4 w-4 text-emerald-500" />
                 )}
-                <span className="text-xs font-bold text-foreground">
+                <span className="text-sm font-black text-foreground uppercase tracking-wide">
                   {evalStatus.isEvaluating
-                    ? "Avaliando campanhas..."
+                    ? "Avaliando Campanhas Agora..."
                     : evalStatus.error
-                    ? "Erro na última avaliação"
-                    : "Motor de alertas ativo"}
+                    ? "Alerta na última verificação"
+                    : "Motor Autônomo Ativo & Monitorando"}
                 </span>
                 {!evalStatus.isEvaluating && evalStatus.violationsFound > 0 && (
-                  <span className="rounded-full bg-destructive/20 text-destructive px-2 py-0.5 text-[9px] font-black">
-                    {evalStatus.violationsFound} nova{evalStatus.violationsFound !== 1 ? "s" : ""}
+                  <span className="rounded-full bg-destructive/15 text-destructive px-2 py-0.5 text-[10px] font-black">
+                    {evalStatus.violationsFound} anomalia(s) hoje
                   </span>
                 )}
               </div>
 
-              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[10px] text-muted-foreground font-mono">
-                <span className="flex items-center gap-1">
-                  <Clock className="h-3 w-3" />
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground font-mono">
+                <span className="flex items-center gap-1.5">
+                  <Clock className="h-3.5 w-3.5 text-primary" />
                   {evalStatus.lastEval
-                    ? `Última: ${formatDistanceToNow(new Date(evalStatus.lastEval), { addSuffix: true, locale: ptBR })}`
-                    : "Aguardando primeira avaliação…"}
+                    ? `Última verificação: ${formatDistanceToNow(new Date(evalStatus.lastEval), { addSuffix: true, locale: ptBR })}`
+                    : "Aguardando primeira checagem…"}
                 </span>
                 {evalStatus.nextEval && !evalStatus.isEvaluating && (
-                  <span className="flex items-center gap-1">
-                    <Timer className="h-3 w-3" />
-                    Próxima em{" "}
+                  <span className="flex items-center gap-1.5">
+                    <Timer className="h-3.5 w-3.5 text-muted-foreground" />
+                    Próxima rodada em{" "}
                     {formatDistance(new Date(), new Date(evalStatus.nextEval), { locale: ptBR })}
                   </span>
                 )}
-                {evalStatus.error && (
-                  <span className="text-destructive">{evalStatus.error}</span>
-                )}
               </div>
 
-              <p className="text-[10px] text-muted-foreground/60 leading-relaxed">
-                Avalia CPL e orçamento de todas as campanhas ativas a cada 5 min.
-                Quando uma regra é violada, cria notificação no sino e emite alerta sonoro.
+              <p className="text-[11px] text-muted-foreground leading-relaxed max-w-2xl pt-1">
+                O motor monitora CPL, orçamento diário e frequência de todas as campanhas em tempo real a cada 5 minutos.
+                Se uma regra for violada, o alerta é registrado na Central de Notificações com som instantâneo.
               </p>
             </div>
 
-            {/* Verify Now */}
-            <button
-              onClick={handleVerifyNow}
-              disabled={evalStatus.isEvaluating}
-              className="flex items-center gap-2 rounded-xl border border-primary/30 bg-primary/10 px-4 py-2.5 text-xs font-bold text-primary hover:bg-primary/20 transition-all active:scale-95 disabled:opacity-50 shrink-0"
-            >
-              {evalStatus.isEvaluating
-                ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                : <RefreshCw className="h-3.5 w-3.5" />}
-              Verificar Agora
-            </button>
+            <div className="flex items-center gap-3 shrink-0">
+              <button
+                onClick={handleVerifyNow}
+                disabled={evalStatus.isEvaluating}
+                className="flex items-center gap-2 rounded-xl border border-primary/30 bg-primary/10 px-4 py-2.5 text-xs font-bold text-primary hover:bg-primary/20 transition-all active:scale-95 disabled:opacity-50"
+              >
+                {evalStatus.isEvaluating ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <RefreshCw className="h-3.5 w-3.5" />
+                )}
+                Verificar Campanhas Agora
+              </button>
+            </div>
           </div>
 
-          {/* ── Active Violations ─────────────────────────────────────────────── */}
-          <AnimatePresence>
-            {activeViolations.length > 0 && (
-              <motion.div
-                initial={{ opacity: 0, y: -8 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -8 }}
-                className="rounded-2xl border border-destructive/30 bg-destructive/5 overflow-hidden"
+          {/* Cards de Métricas do Motor */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="rounded-2xl border border-border bg-card p-4">
+              <span className="text-[10px] font-mono uppercase text-muted-foreground">Regras Ativas</span>
+              <p className="text-2xl font-black text-foreground mt-1">
+                {thresholds.filter((t: any) => t.is_active).length}
+                <span className="text-xs font-normal text-muted-foreground ml-1.5">/ {thresholds.length} total</span>
+              </p>
+            </div>
+            <div className="rounded-2xl border border-border bg-card p-4">
+              <span className="text-[10px] font-mono uppercase text-muted-foreground">Alertas Armazenados</span>
+              <p className="text-2xl font-black text-primary mt-1">
+                {allNotifications.length}
+                <span className="text-xs font-normal text-muted-foreground ml-1.5">/ {MAX_NOTIFICATIONS_CAP} max</span>
+              </p>
+            </div>
+            <div className="rounded-2xl border border-border bg-card p-4">
+              <span className="text-[10px] font-mono uppercase text-muted-foreground">Contas Conectadas</span>
+              <p className="text-2xl font-black text-foreground mt-1">{accounts.length}</p>
+            </div>
+            <div className="rounded-2xl border border-border bg-card p-4">
+              <span className="text-[10px] font-mono uppercase text-muted-foreground">Toque Padrão Ativo</span>
+              <p className="text-sm font-black text-foreground truncate mt-1">
+                {ALERT_SOUNDS.find(s => s.id === selectedSound)?.name.split("(")[0] || "Ferrari Pulse"}
+              </p>
+            </div>
+          </div>
+
+          {/* Lista de Regras de Automação */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-black uppercase tracking-wider text-foreground">Regras de Proteção de Campanha</h3>
+                <p className="text-xs text-muted-foreground">Tetos de CPL, limites de orçamento e controle de frequência configurados.</p>
+              </div>
+              <button
+                onClick={() => { setEditingThreshold(null); setModal(true); }}
+                className="inline-flex items-center gap-1.5 text-xs font-bold text-primary hover:underline"
               >
-                <div className="flex items-center justify-between px-5 py-3.5 border-b border-destructive/20">
-                  <div className="flex items-center gap-2">
-                    <Bell className="h-4 w-4 text-destructive animate-pulse" />
-                    <span className="text-xs font-bold text-destructive uppercase tracking-widest">
-                      {activeViolations.length} Alerta{activeViolations.length !== 1 ? "s" : ""} Ativos
-                    </span>
-                  </div>
-                  <button
-                    onClick={markAllViolationsRead}
-                    className="text-[10px] font-bold text-muted-foreground hover:text-foreground transition-colors"
-                  >
-                    Marcar todos como lidos
-                  </button>
+                <Plus className="h-3.5 w-3.5" /> Adicionar Regra
+              </button>
+            </div>
+
+            {loadingThresholds ? (
+              <div className="flex justify-center py-16">
+                <Loader2 className="h-7 w-7 animate-spin text-primary/50" />
+              </div>
+            ) : !thresholds.length ? (
+              <div className="rounded-2xl border border-border bg-card py-16 text-center flex flex-col items-center">
+                <div className="h-14 w-14 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center mb-3">
+                  <ShieldAlert className="h-6 w-6 text-primary" />
                 </div>
-
-                <div className="divide-y divide-white/5">
-                  {activeViolations.map((v: any, i: number) => (
-                    <motion.div
-                      key={v.id}
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      transition={{ delay: i * 0.04 }}
-                      className="flex items-start gap-4 px-5 py-4 hover:bg-white/[0.02] transition-colors"
-                    >
-                      <div className={`mt-0.5 shrink-0 h-8 w-8 rounded-xl flex items-center justify-center ${
-                        v.type === "alert_cpl" || v.type === "alert"
-                          ? "bg-red-500/15 text-red-400"
-                          : v.type === "alert_frequency"
-                          ? "bg-orange-500/15 text-orange-400"
-                          : v.type === "social_media_alert"
-                          ? "bg-blue-500/15 text-blue-400"
-                          : "bg-yellow-500/15 text-yellow-400"
+                <h4 className="text-sm font-bold text-foreground">Nenhuma regra de automação criada</h4>
+                <p className="text-xs text-muted-foreground mt-1 max-w-sm">
+                  Crie sua primeira regra para proteger campanhas contra estouro de orçamento ou CPL acima do teto.
+                </p>
+                <button
+                  onClick={() => setModal(true)}
+                  className="mt-4 rounded-xl bg-primary px-4 py-2 text-xs font-bold text-background transition hover:opacity-90"
+                >
+                  Criar Primeira Regra
+                </button>
+              </div>
+            ) : (
+              <div className="grid gap-3">
+                {(thresholds as any[]).map((th: any, i: number) => (
+                  <motion.div
+                    key={th.id}
+                    initial={{ opacity: 0, y: 6 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: i * 0.04 }}
+                    className="rounded-2xl border border-border bg-card p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:border-primary/30 transition-all"
+                  >
+                    <div className="flex items-center gap-4">
+                      <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl transition ${
+                        th.is_active
+                          ? "bg-primary/10 text-primary border border-primary/20"
+                          : "bg-muted/40 text-muted-foreground border border-border"
                       }`}>
-                        {v.type === "alert_cpl" || v.type === "alert"
-                          ? <TrendingUp className="h-4 w-4" />
-                          : v.type === "alert_frequency"
-                          ? <Radio className="h-4 w-4" />
-                          : v.type === "social_media_alert"
-                          ? <BellRing className="h-4 w-4" />
-                          : <DollarSign className="h-4 w-4" />}
+                        <AlertTriangle className={`h-5 w-5 ${th.is_active ? "animate-pulse" : ""}`} />
                       </div>
 
-                      <div className="flex-1 min-w-0">
-                        <p className="text-xs font-bold text-foreground/90 leading-snug">{v.title}</p>
-                        <p className="text-[11px] text-muted-foreground mt-0.5 leading-relaxed">{v.message}</p>
-                        <p className="text-[10px] text-muted-foreground/50 font-mono mt-1">
-                          {formatDistanceToNow(new Date(v.created_at), { addSuffix: true, locale: ptBR })}
-                        </p>
-                        {v.metadata?.db_campaign_id && (
-                          <div className="mt-2">
-                            <button
-                              onClick={() => {
-                                setSelectedDiagnoseCampId(v.metadata.db_campaign_id);
-                                setSelectedDiagnoseCampName(v.metadata.campaign_name || "Campanha");
-                                setIsDiagnoseOpen(true);
-                              }}
-                              className="inline-flex items-center gap-1 text-[9px] font-bold text-primary bg-primary/10 border border-primary/20 px-2 py-0.5 rounded-full hover:bg-primary/20 transition cursor-pointer"
-                            >
-                              <Sparkles className="h-2.5 w-2.5" /> Ver Motivo (IA)
-                            </button>
-                          </div>
-                        )}
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <h4 className="font-bold text-sm text-foreground">
+                            {th.campaigns?.name
+                              ? `Campanha: ${th.campaigns.name}`
+                              : (th.ad_accounts?.name || (th.ad_account_id === null ? "Regra Global — Todas as Contas" : "Conta Específica"))
+                            }
+                          </h4>
+                          {th.campaign_id !== null && (
+                            <span className="rounded bg-primary/15 text-primary border border-primary/25 px-1.5 py-0.5 text-[9px] font-black uppercase">
+                              CAMPANHA
+                            </span>
+                          )}
+                          {th.campaign_id === null && th.ad_account_id !== null && (
+                            <span className="rounded bg-secondary/15 text-secondary border border-secondary/25 px-1.5 py-0.5 text-[9px] font-black uppercase">
+                              CONTA
+                            </span>
+                          )}
+                          {th.ad_account_id === null && (
+                            <span className="rounded bg-white/10 text-foreground border border-white/20 px-1.5 py-0.5 text-[9px] font-black uppercase">
+                              GLOBAL
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-2 text-xs">
+                          {th.max_cpl != null && (
+                            <span className="inline-flex items-center gap-1 rounded bg-muted/60 border border-border px-2 py-0.5 text-[10px] font-mono text-muted-foreground">
+                              TETO CPL: <strong className="text-primary font-bold">R$ {Number(th.max_cpl).toFixed(2)}</strong>
+                            </span>
+                          )}
+                          {th.max_budget_pct != null && (
+                            <span className="inline-flex items-center gap-1 rounded bg-muted/60 border border-border px-2 py-0.5 text-[10px] font-mono text-muted-foreground">
+                              ALERTA BUDGET: <strong className="text-amber-500 font-bold">{th.max_budget_pct}%</strong>
+                            </span>
+                          )}
+                          {th.max_frequency != null && (
+                            <span className="inline-flex items-center gap-1 rounded bg-muted/60 border border-border px-2 py-0.5 text-[10px] font-mono text-muted-foreground">
+                              FREQ MÁX: <strong className="text-foreground font-bold">{Number(th.max_frequency).toFixed(1)}×</strong>
+                            </span>
+                          )}
+                          {th.alert_account_balance_enabled && th.min_account_balance != null && (
+                            <span className="inline-flex items-center gap-1 rounded bg-muted/60 border border-border px-2 py-0.5 text-[10px] font-mono text-muted-foreground">
+                              SALDO MÍN: <strong className="text-emerald-500 font-bold">R$ {Number(th.min_account_balance).toFixed(2)}</strong>
+                            </span>
+                          )}
+                        </div>
                       </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 sm:ml-auto">
+                      <button
+                        onClick={() => toggleThreshold.mutate({ id: th.id, is_active: !th.is_active })}
+                        className={`h-8 px-3 flex items-center justify-center rounded-lg transition text-xs font-bold ${
+                          th.is_active
+                            ? "bg-muted text-muted-foreground hover:bg-muted/80"
+                            : "bg-primary/20 text-primary hover:bg-primary/30"
+                        }`}
+                      >
+                        {th.is_active ? (
+                          <><Pause className="h-3 w-3 mr-1" /> Pausar</>
+                        ) : (
+                          <><Play className="h-3 w-3 mr-1 fill-current" /> Ativar</>
+                        )}
+                      </button>
 
                       <button
-                        onClick={() => markViolationRead(v.id)}
-                        className="shrink-0 h-7 w-7 rounded-lg bg-white/5 hover:bg-white/10 flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
-                        title="Marcar como lido"
+                        onClick={() => { setEditingThreshold(th); setModal(true); }}
+                        className="h-8 w-8 flex items-center justify-center rounded-lg bg-muted text-muted-foreground hover:text-foreground hover:bg-muted/80 transition"
+                        title="Editar regra"
                       >
-                        <X className="h-3.5 w-3.5" />
+                        <Pencil className="h-3.5 w-3.5" />
                       </button>
-                    </motion.div>
-                  ))}
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
 
-          {/* ── How it works ──────────────────────────────────────────────────── */}
-          <div className="rounded-2xl border border-primary/20 bg-primary/5 p-5 text-sm">
-            <h5 className="font-bold text-primary flex items-center gap-2 mb-1.5">
-              <span>💡</span> Como funcionam os Alertas Críticos?
-            </h5>
-            <p className="text-xs text-muted-foreground leading-relaxed">
-              O NC Suite avalia todas as campanhas ativas a cada 5 minutos. Se o CPL atual ultrapassar
-              o teto configurado, ou se a campanha estiver prestes a esgotar o orçamento diário,
-              o sistema cria uma notificação no sino, emite um alerta sonoro contínuo e envia uma
-              notificação de browser (mesmo com o dashboard minimizado).
-            </p>
-          </div>
-
-          {/* ── Rules list ────────────────────────────────────────────────────── */}
-          {loadingThresholds ? (
-            <div className="flex justify-center py-20">
-              <Loader2 className="h-8 w-8 animate-spin text-primary/50" />
-            </div>
-          ) : !thresholds.length ? (
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              className="glass-panel py-20 text-center flex flex-col items-center"
-            >
-              <div className="h-16 w-16 rounded-full bg-white/5 flex items-center justify-center mb-4 ring-1 ring-white/10">
-                <ShieldAlert className="h-8 w-8 text-muted-foreground/30" />
-              </div>
-              <p className="text-sm text-muted-foreground">Nenhuma regra de alerta configurada.</p>
-              <button
-                onClick={() => setModal(true)}
-                className="mt-4 text-xs font-bold text-primary hover:underline"
-              >
-                Configurar primeira regra
-              </button>
-            </motion.div>
-          ) : (
-            <div className="grid gap-3">
-              {(thresholds as any[]).map((th: any, i: number) => (
-                <motion.div
-                  key={th.id}
-                  initial={{ opacity: 0, x: -10 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: i * 0.05 }}
-                  className="glass-panel card-sport flex flex-col sm:flex-row sm:items-center justify-between p-5 hover:border-primary/30 gap-4"
-                >
-                  <div className="flex items-center gap-5">
-                    <div className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-xl transition ${
-                      th.is_active 
-                        ? (th.social_page_id ? "bg-blue-500/10 text-blue-400 shadow-glow-sm" : "bg-primary/10 text-primary shadow-glow-sm")
-                        : "bg-white/5 text-muted-foreground"
-                    }`}>
-                      {th.social_page_id ? (
-                        <BellRing className={`h-6 w-6 ${th.is_active ? "animate-pulse" : ""}`} />
-                      ) : (
-                        <AlertTriangle className={`h-6 w-6 ${th.is_active ? "animate-pulse" : ""}`} />
-                      )}
+                      <button
+                        onClick={() => deleteThreshold.mutate(th.id)}
+                        className="h-8 w-8 flex items-center justify-center rounded-lg bg-destructive/10 text-destructive hover:bg-destructive/20 transition"
+                        title="Excluir regra"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
                     </div>
-                    <div>
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <h4 className="font-bold text-base text-foreground/90">
-                          {th.social_pages?.page_name 
-                            ? `Rede Social: ${th.social_pages.page_name}` 
-                            : (th.campaigns?.name 
-                                ? `Campanha: ${th.campaigns.name}` 
-                                : (th.ad_accounts?.name || (th.ad_account_id === null ? "Todas as Contas Meta" : "Conta Desconhecida"))
-                              )
-                          }
-                        </h4>
-                        {th.social_page_id !== null && (
-                          <span className="inline-flex rounded px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider bg-blue-500/20 text-blue-400 border border-blue-500/30">
-                            SOCIAL MEDIA
-                          </span>
-                        )}
-                        {th.campaign_id !== null && (
-                          <span className="inline-flex rounded px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider bg-primary/20 text-primary border border-primary/30">
-                            CAMPANHA
-                          </span>
-                        )}
-                        {th.campaign_id === null && th.ad_account_id !== null && (
-                          <span className="inline-flex rounded px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider bg-secondary/20 text-secondary border border-secondary/30">
-                            EXCEÇÃO CONTA
-                          </span>
-                        )}
-                      </div>
-                      <div className="flex flex-wrap items-center gap-2 sm:gap-3 mt-1.5">
-                        {th.max_cpl !== null && th.max_cpl !== undefined && (
-                          <span className="inline-flex items-center gap-1 rounded bg-white/5 px-2 py-1 text-[10px] font-mono text-muted-foreground">
-                            MAX CPL:{" "}
-                            <strong className="text-primary text-[11px]">
-                              R$ {Number(th.max_cpl).toFixed(2)}
-                            </strong>
-                          </span>
-                        )}
-                        {th.max_budget_pct !== null && th.max_budget_pct !== undefined && (
-                          <span className="inline-flex items-center gap-1 rounded bg-white/5 px-2 py-1 text-[10px] font-mono text-muted-foreground">
-                            ALERTA BUDGET:{" "}
-                            <strong className="text-orange-400 text-[11px]">{th.max_budget_pct}%</strong>
-                          </span>
-                        )}
-                        {th.max_frequency !== null && th.max_frequency !== undefined && (
-                          <span className="inline-flex items-center gap-1 rounded bg-white/5 px-2 py-1 text-[10px] font-mono text-muted-foreground">
-                            FREQ MAX:{" "}
-                            <strong className="text-orange-400 text-[11px]">{Number(th.max_frequency).toFixed(1)}×</strong>
-                          </span>
-                        )}
-                        {th.alert_account_balance_enabled && th.min_account_balance !== null && th.min_account_balance !== undefined && (
-                          <span className="inline-flex items-center gap-1 rounded bg-white/5 px-2 py-1 text-[10px] font-mono text-muted-foreground">
-                            MIN SALDO:{" "}
-                            <strong className="text-emerald-400 text-[11px]">R$ {Number(th.min_account_balance).toFixed(2)}</strong>
-                          </span>
-                        )}
-                        {th.min_ig_followers !== null && th.min_ig_followers !== undefined && (
-                          <span className="inline-flex items-center gap-1 rounded bg-white/5 px-2 py-1 text-[10px] font-mono text-muted-foreground">
-                            MIN SEGUIDORES IG:{" "}
-                            <strong className="text-blue-400 text-[11px]">{th.min_ig_followers}</strong>
-                          </span>
-                        )}
-                        {th.min_fb_followers !== null && th.min_fb_followers !== undefined && (
-                          <span className="inline-flex items-center gap-1 rounded bg-white/5 px-2 py-1 text-[10px] font-mono text-muted-foreground">
-                            MIN SEGUIDORES FB:{" "}
-                            <strong className="text-blue-400 text-[11px]">{th.min_fb_followers}</strong>
-                          </span>
-                        )}
-                        {th.max_days_without_posts !== null && th.max_days_without_posts !== undefined && (
-                          <span className="inline-flex items-center gap-1 rounded bg-white/5 px-2 py-1 text-[10px] font-mono text-muted-foreground">
-                            MAX DIAS INATIVO:{" "}
-                            <strong className="text-blue-400 text-[11px]">{th.max_days_without_posts} dias</strong>
-                          </span>
-                        )}
-                        {th.min_post_engagement_rate !== null && th.min_post_engagement_rate !== undefined && (
-                          <span className="inline-flex items-center gap-1 rounded bg-white/5 px-2 py-1 text-[10px] font-mono text-muted-foreground">
-                            MIN ENGAJAMENTO:{" "}
-                            <strong className="text-blue-400 text-[11px]">{th.min_post_engagement_rate}%</strong>
-                          </span>
-                        )}
-                        <span className={`inline-flex items-center gap-1 rounded px-2 py-1 text-[10px] font-bold ${
-                          th.is_active
-                            ? "bg-success/10 text-success"
-                            : "bg-white/5 text-muted-foreground"
-                        }`}>
-                          <span className={`h-1.5 w-1.5 rounded-full ${th.is_active ? "bg-success animate-pulse" : "bg-muted-foreground"}`} />
-                          {th.is_active ? "ATIVO" : "PAUSADO"}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-3 sm:gap-4 sm:ml-auto">
-                    <button
-                      onClick={() => toggleThreshold.mutate({ id: th.id, is_active: !th.is_active })}
-                      className={`h-9 px-3 flex items-center justify-center rounded-lg transition text-xs font-bold ${
-                        th.is_active
-                          ? "bg-white/5 text-muted-foreground hover:bg-white/10"
-                          : "bg-primary/20 text-primary hover:bg-primary/30"
-                      }`}
-                    >
-                      {th.is_active
-                        ? <><Pause className="h-3.5 w-3.5 mr-1" /> PAUSAR</>
-                        : <><Play className="h-3.5 w-3.5 mr-1 fill-current" /> ATIVAR</>}
-                    </button>
-                    <button
-                      onClick={() => { setEditingThreshold(th); setModal(true); }}
-                      className="h-9 w-9 flex items-center justify-center rounded-lg bg-blue-500/10 text-blue-400 transition hover:bg-blue-500/20"
-                      title="Editar regra"
-                    >
-                      <Pencil className="h-3.5 w-3.5" />
-                    </button>
-                    <button
-                      onClick={() => deleteThreshold.mutate(th.id)}
-                      className="h-9 w-9 flex items-center justify-center rounded-lg bg-destructive/10 text-destructive transition hover:bg-destructive/20"
-                      title="Excluir regra"
-                    >
-                      <X className="h-4 w-4" />
-                    </button>
-                  </div>
-                </motion.div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* ══ TAB: PREFERÊNCIAS ═══════════════════════════════════════════════════ */}
-      {activeTab === "prefs" && (
-        <div className="space-y-4 max-w-2xl">
-
-          {/* Som */}
-          <div className="glass-panel p-5 flex items-center justify-between gap-4">
-            <div className="flex items-start gap-3">
-              <div className={`h-10 w-10 rounded-xl flex items-center justify-center shrink-0 ${soundOn ? "bg-primary/15 text-primary" : "bg-muted/30 text-muted-foreground"}`}>
-                {soundOn ? <Volume2 className="h-5 w-5" /> : <VolumeX className="h-5 w-5" />}
-              </div>
-              <div>
-                <p className="text-sm font-bold text-foreground">Som dos alertas</p>
-                <p className="text-[11px] text-muted-foreground mt-0.5">Alertas críticos emitem beep contínuo até ser reconhecido.</p>
-              </div>
-            </div>
-            <button
-              onClick={toggleSound}
-              className={`relative h-6 w-11 rounded-full transition-colors shrink-0 ${soundOn ? "bg-primary" : "bg-white/10"}`}
-            >
-              <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${soundOn ? "left-5.5 translate-x-0.5" : "left-0.5"}`} />
-            </button>
-          </div>
-
-          {/* Notificações de browser */}
-          <div className="glass-panel p-5 flex items-center justify-between gap-4">
-            <div className="flex items-start gap-3">
-              <div className={`h-10 w-10 rounded-xl flex items-center justify-center shrink-0 ${prefs.browserEnabled ? "bg-primary/15 text-primary" : "bg-muted/30 text-muted-foreground"}`}>
-                {prefs.browserEnabled ? <BellRing className="h-5 w-5" /> : <BellOff className="h-5 w-5" />}
-              </div>
-              <div>
-                <p className="text-sm font-bold text-foreground">Notificações de browser</p>
-                <p className="text-[11px] text-muted-foreground mt-0.5">Popup na área de trabalho mesmo com o dashboard minimizado.</p>
-              </div>
-            </div>
-            <button
-              onClick={() => updatePrefs({ browserEnabled: !prefs.browserEnabled })}
-              className={`relative h-6 w-11 rounded-full transition-colors shrink-0 ${prefs.browserEnabled ? "bg-primary" : "bg-white/10"}`}
-            >
-              <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${prefs.browserEnabled ? "left-5.5 translate-x-0.5" : "left-0.5"}`} />
-            </button>
-          </div>
-
-          {/* Horário de silêncio */}
-          <div className="glass-panel p-5 space-y-4">
-            <div className="flex items-center justify-between gap-4">
-              <div className="flex items-start gap-3">
-                <div className={`h-10 w-10 rounded-xl flex items-center justify-center shrink-0 ${prefs.quietHoursEnabled ? "bg-orange-500/15 text-orange-400" : "bg-muted/30 text-muted-foreground"}`}>
-                  <Moon className="h-5 w-5" />
-                </div>
-                <div>
-                  <p className="text-sm font-bold text-foreground">Horário de silêncio</p>
-                  <p className="text-[11px] text-muted-foreground mt-0.5">Sem som e sem notificações de browser neste período. Alertas continuam gravados no sino.</p>
-                </div>
-              </div>
-              <button
-                onClick={() => updatePrefs({ quietHoursEnabled: !prefs.quietHoursEnabled })}
-                className={`relative h-6 w-11 rounded-full transition-colors shrink-0 ${prefs.quietHoursEnabled ? "bg-orange-400" : "bg-white/10"}`}
-              >
-                <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${prefs.quietHoursEnabled ? "left-5.5 translate-x-0.5" : "left-0.5"}`} />
-              </button>
-            </div>
-            {prefs.quietHoursEnabled && (
-              <div className="flex items-center gap-3 pl-13">
-                <div className="flex items-center gap-2">
-                  <label className="text-[10px] font-bold text-muted-foreground uppercase">Das</label>
-                  <input
-                    type="time" value={prefs.quietStart}
-                    onChange={e => updatePrefs({ quietStart: e.target.value })}
-                    className="rounded-lg border border-white/10 bg-background px-3 py-2 text-sm font-mono focus:border-orange-400 focus:outline-none"
-                  />
-                </div>
-                <span className="text-muted-foreground text-sm">até</span>
-                <input
-                  type="time" value={prefs.quietEnd}
-                  onChange={e => updatePrefs({ quietEnd: e.target.value })}
-                  className="rounded-lg border border-white/10 bg-background px-3 py-2 text-sm font-mono focus:border-orange-400 focus:outline-none"
-                />
+                  </motion.div>
+                ))}
               </div>
             )}
           </div>
 
-          {/* Intervalo de re-alerta */}
-          <div className="glass-panel p-5 flex items-center justify-between gap-4">
-            <div className="flex items-start gap-3">
-              <div className="h-10 w-10 rounded-xl flex items-center justify-center shrink-0 bg-secondary/15 text-secondary">
-                <RotateCcw className="h-5 w-5" />
-              </div>
-              <div>
-                <p className="text-sm font-bold text-foreground">Intervalo entre re-alertas</p>
-                <p className="text-[11px] text-muted-foreground mt-0.5">Mesma campanha não será re-alertada antes deste período.</p>
-              </div>
-            </div>
-            <select
-              value={prefs.dedupWindowH}
-              onChange={e => updatePrefs({ dedupWindowH: Number(e.target.value) })}
-              className="rounded-lg border border-white/10 bg-background px-3 py-2 text-sm font-bold focus:border-primary focus:outline-none cursor-pointer shrink-0"
-            >
-              <option value={0.5}>30 min</option>
-              <option value={1}>1 hora</option>
-              <option value={2}>2 horas</option>
-              <option value={4}>4 horas</option>
-              <option value={8}>8 horas</option>
-              <option value={24}>1 dia</option>
-            </select>
-          </div>
-
-          <p className="text-[10px] text-muted-foreground/50 px-1">
-            Preferências locais salvas neste navegador.
-          </p>
-
-          {/* Configurações Globais do Motor (Robô) - Apenas Administradores */}
+          {/* Configurações Globais do Motor (Robô) */}
           {["admin", "master_admin", "ceo"].includes(profileData?.role || "") && (
-            <div className="space-y-4 pt-6 border-t border-white/10">
-              <div className="flex items-center gap-2 px-1">
+            <div className="space-y-4 pt-6 border-t border-border">
+              <div className="flex items-center gap-2">
                 <Settings2 className="h-4 w-4 text-primary" />
                 <h4 className="text-xs font-bold text-foreground uppercase tracking-wider">
-                  Configurações Globais do Motor (Robô)
+                  Configurações Globais do Motor Autônomo
                 </h4>
               </div>
 
-              {/* Zero Delivery */}
-              <div className="glass-panel p-5 space-y-4">
-                <div className="flex items-center justify-between gap-4">
-                  <div className="flex items-start gap-3">
-                    <div className={`h-10 w-10 rounded-xl flex items-center justify-center shrink-0 ${configData?.zero_delivery_enabled !== false ? "bg-red-500/15 text-red-400" : "bg-muted/30 text-muted-foreground"}`}>
-                      <AlertTriangle className="h-5 w-5" />
-                    </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Zero Delivery */}
+                <div className="rounded-2xl border border-border bg-card p-5 space-y-3">
+                  <div className="flex items-center justify-between gap-4">
                     <div>
-                      <p className="text-sm font-bold text-foreground">Gatilho: Falta de Entrega (Zero Delivery)</p>
-                      <p className="text-[11px] text-muted-foreground mt-0.5">Alerta se a campanha está ativa mas gastou exatamente R$ 0,00.</p>
+                      <p className="text-sm font-bold text-foreground">Falta de Entrega (Zero Delivery)</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">Alerta se a campanha está ativa mas gastou exatamente R$ 0,00.</p>
                     </div>
-                  </div>
-                  <button
-                    onClick={() => updateConfigMutation.mutate({ zero_delivery_enabled: configData?.zero_delivery_enabled === false ? true : false })}
-                    className={`relative h-6 w-11 rounded-full transition-colors shrink-0 ${configData?.zero_delivery_enabled !== false ? "bg-red-500" : "bg-white/10"}`}
-                  >
-                    <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${configData?.zero_delivery_enabled !== false ? "left-5.5 translate-x-0.5" : "left-0.5"}`} />
-                  </button>
-                </div>
-                {configData?.zero_delivery_enabled !== false && (
-                  <div className="flex items-center gap-3 pl-13">
-                    <label className="text-[10px] font-bold text-muted-foreground uppercase">Verificar a partir das</label>
-                    <select
-                      value={configData?.zero_delivery_hour ?? 14}
-                      onChange={e => updateConfigMutation.mutate({ zero_delivery_hour: Number(e.target.value) })}
-                      className="rounded-lg border border-white/10 bg-background px-3 py-2 text-sm font-bold focus:border-primary focus:outline-none cursor-pointer shrink-0"
+                    <button
+                      onClick={() => updateConfigMutation.mutate({ zero_delivery_enabled: configData?.zero_delivery_enabled === false ? true : false })}
+                      className={`relative h-6 w-11 rounded-full transition-colors shrink-0 ${configData?.zero_delivery_enabled !== false ? "bg-red-500" : "bg-muted"}`}
                     >
-                      {[8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20].map(h => (
-                        <option key={h} value={h}>{h}:00 BRT</option>
-                      ))}
-                    </select>
+                      <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${configData?.zero_delivery_enabled !== false ? "left-5.5 translate-x-0.5" : "left-0.5"}`} />
+                    </button>
                   </div>
-                )}
-              </div>
+                </div>
 
-              {/* Queda de Performance */}
-              <div className="glass-panel p-5 space-y-4">
-                <div className="flex items-center justify-between gap-4">
-                  <div className="flex items-start gap-3">
-                    <div className={`h-10 w-10 rounded-xl flex items-center justify-center shrink-0 ${configData?.perf_drop_enabled !== false ? "bg-orange-500/15 text-orange-400" : "bg-muted/30 text-muted-foreground"}`}>
-                      <TrendingUp className="h-5 w-5" />
-                    </div>
+                {/* Queda de Performance */}
+                <div className="rounded-2xl border border-border bg-card p-5 space-y-3">
+                  <div className="flex items-center justify-between gap-4">
                     <div>
-                      <p className="text-sm font-bold text-foreground">Gatilho: Queda de Performance (Anomalia)</p>
-                      <p className="text-[11px] text-muted-foreground mt-0.5">Alerta se a campanha costuma dar resultado mas gastou verba com 0 conversões hoje.</p>
+                      <p className="text-sm font-bold text-foreground">Queda de Performance (Anomalia)</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">Alerta se a campanha consumiu verba relevante com zero conversões hoje.</p>
                     </div>
-                  </div>
-                  <button
-                    onClick={() => updateConfigMutation.mutate({ perf_drop_enabled: configData?.perf_drop_enabled === false ? true : false })}
-                    className={`relative h-6 w-11 rounded-full transition-colors shrink-0 ${configData?.perf_drop_enabled !== false ? "bg-orange-500" : "bg-white/10"}`}
-                  >
-                    <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${configData?.perf_drop_enabled !== false ? "left-5.5 translate-x-0.5" : "left-0.5"}`} />
-                  </button>
-                </div>
-                {configData?.perf_drop_enabled !== false && (
-                  <div className="flex items-center gap-3 pl-13">
-                    <label className="text-[10px] font-bold text-muted-foreground uppercase">Quando gasto atingir</label>
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="number"
-                        min="10"
-                        max="100"
-                        value={configData?.perf_drop_spend_pct ?? 50}
-                        onChange={e => updateConfigMutation.mutate({ perf_drop_spend_pct: Number(e.target.value) })}
-                        className="w-20 rounded-lg border border-white/10 bg-background px-3 py-2 text-sm focus:border-primary focus:outline-none"
-                      />
-                      <span className="text-sm text-muted-foreground">% do orçamento diário</span>
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* CPA de Clientes (7d) */}
-              <div className="glass-panel p-5 flex items-center justify-between gap-4">
-                <div className="flex items-start gap-3">
-                  <div className={`h-10 w-10 rounded-xl flex items-center justify-center shrink-0 ${configData?.client_cpa_enabled !== false ? "bg-emerald-500/15 text-emerald-400" : "bg-muted/30 text-muted-foreground"}`}>
-                    <ShieldAlert className="h-5 w-5" />
-                  </div>
-                  <div>
-                    <p className="text-sm font-bold text-foreground">Gatilho: Target CPA Geral de Clientes (7 Dias)</p>
-                    <p className="text-[11px] text-muted-foreground mt-0.5">Alerta se o CPA da conta inteira do cliente nos últimos 7 dias estourar a meta.</p>
+                    <button
+                      onClick={() => updateConfigMutation.mutate({ perf_drop_enabled: configData?.perf_drop_enabled === false ? true : false })}
+                      className={`relative h-6 w-11 rounded-full transition-colors shrink-0 ${configData?.perf_drop_enabled !== false ? "bg-amber-500" : "bg-muted"}`}
+                    >
+                      <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${configData?.perf_drop_enabled !== false ? "left-5.5 translate-x-0.5" : "left-0.5"}`} />
+                    </button>
                   </div>
                 </div>
-                <button
-                  onClick={() => updateConfigMutation.mutate({ client_cpa_enabled: configData?.client_cpa_enabled === false ? true : false })}
-                  className={`relative h-6 w-11 rounded-full transition-colors shrink-0 ${configData?.client_cpa_enabled !== false ? "bg-emerald-500" : "bg-white/10"}`}
-                >
-                  <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${configData?.client_cpa_enabled !== false ? "left-5.5 translate-x-0.5" : "left-0.5"}`} />
-                </button>
-              </div>
-
-              {/* Deduplicação do Motor de Alertas */}
-              <div className="glass-panel p-5 flex items-center justify-between gap-4">
-                <div className="flex items-start gap-3">
-                  <div className="h-10 w-10 rounded-xl flex items-center justify-center shrink-0 bg-secondary/15 text-secondary">
-                    <RotateCcw className="h-5 w-5" />
-                  </div>
-                  <div>
-                    <p className="text-sm font-bold text-foreground">Intervalo de Re-Alerta do Motor (Robô/WhatsApp)</p>
-                    <p className="text-[11px] text-muted-foreground mt-0.5">O robô não reenviará o mesmo alerta antes deste intervalo.</p>
-                  </div>
-                </div>
-                <select
-                  value={configData?.alert_dedup_hours ?? 2}
-                  onChange={e => updateConfigMutation.mutate({ alert_dedup_hours: Number(e.target.value) })}
-                  className="rounded-lg border border-white/10 bg-background px-3 py-2 text-sm font-bold focus:border-primary focus:outline-none cursor-pointer shrink-0"
-                >
-                  <option value={0.5}>30 min</option>
-                  <option value={1}>1 hora</option>
-                  <option value={2}>2 horas</option>
-                  <option value={4}>4 horas</option>
-                  <option value={8}>8 horas</option>
-                  <option value={24}>1 dia</option>
-                </select>
               </div>
             </div>
           )}
         </div>
       )}
 
-      {/* ══ TAB: SYNC ════════════════════════════════════════════════════════════ */}
-      {activeTab === "sync" && (
+      {/* ════════════════════════════════════════════════════════════════════════
+          TAB 2: CENTRAL DE NOTIFICAÇÕES (ATÉ 100 ALERTAS COM AUTO-PURGE)
+      ════════════════════════════════════════════════════════════════════════ */}
+      {activeTab === "notificacoes" && (
         <div className="space-y-6">
-          <div className="glass-panel p-6 flex flex-col md:flex-row gap-6 items-center justify-between border-primary/20">
-            <div className="space-y-2 text-center md:text-left">
-              <h3 className="header-sport text-lg font-bold flex items-center gap-2 justify-center md:justify-start">
-                <Server className="h-5 w-5 text-primary" /> Status do Motor de Auto-Sync
-              </h3>
-              <p className="text-sm text-muted-foreground max-w-xl">
-                O motor sincroniza automaticamente com a Meta API a cada 3 minutos em background,
-                processando todas as contas vinculadas.
-              </p>
-            </div>
-            <div className="flex flex-col items-center justify-center bg-white/5 rounded-xl p-5 min-w-[200px] border border-white/10">
-              {syncStatus.isSyncing ? (
-                <div className="h-16 w-16 rounded-full bg-primary/20 flex items-center justify-center mb-3">
-                  <Loader2 className="h-8 w-8 text-primary animate-spin" />
+          {/* Card de Capacidade da Central (Até 100 notificações) */}
+          <div className="rounded-2xl border border-border bg-card p-5 space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <Activity className="h-4 w-4 text-primary" />
+                  <h3 className="text-sm font-black uppercase tracking-wider text-foreground">
+                    Armazenamento Acumulativo de Alertas
+                  </h3>
                 </div>
-              ) : (
-                <div className="h-16 w-16 rounded-full bg-success/20 flex items-center justify-center mb-3 ring-2 ring-success/30">
-                  <Clock className="h-8 w-8 text-success" />
-                </div>
-              )}
-              <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-1">
-                {syncStatus.isSyncing ? "SINCRONIZANDO AGORA" : "PRÓXIMA SINCRONIZAÇÃO EM"}
-              </p>
-              {!syncStatus.isSyncing && syncStatus.nextSync && (
-                <p className="text-xl font-mono font-black text-foreground">
-                  {formatDistanceToNow(new Date(syncStatus.nextSync), { locale: ptBR })}
+                <p className="text-xs text-muted-foreground">
+                  A Central retém até <strong className="text-foreground">100 notificações simultâneas</strong>.
+                  Ao atingir a capacidade máxima, uma limpeza inteligente automática zera os registros antigos para assegurar o recebimento ininterrupto de novos eventos.
                 </p>
-              )}
+              </div>
+
+              <div className="flex items-center gap-2 shrink-0">
+                {unreadCount > 0 && (
+                  <button
+                    onClick={handleMarkAllAsRead}
+                    className="flex items-center gap-1.5 rounded-xl border border-primary/30 bg-primary/10 px-3.5 py-2 text-xs font-bold text-primary hover:bg-primary/20 transition active:scale-95"
+                  >
+                    <CheckCheck className="h-3.5 w-3.5" />
+                    Marcar Todas Lidas
+                  </button>
+                )}
+
+                {allNotifications.length > 0 && (
+                  <button
+                    onClick={handleClearAllNotifications}
+                    className="flex items-center gap-1.5 rounded-xl border border-border bg-card hover:bg-destructive/10 hover:border-destructive/30 px-3.5 py-2 text-xs font-bold text-muted-foreground hover:text-destructive transition active:scale-95"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                    Limpar / Zerar Notificações
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Barra de Progresso de Capacidade */}
+            <div className="space-y-1.5 pt-2 border-t border-border/60">
+              <div className="flex items-center justify-between text-xs font-mono">
+                <span className="text-muted-foreground">Capacidade em uso:</span>
+                <span className={allNotifications.length >= 90 ? "text-destructive font-black" : "text-foreground font-bold"}>
+                  {allNotifications.length} de {MAX_NOTIFICATIONS_CAP} notificações ({((allNotifications.length / MAX_NOTIFICATIONS_CAP) * 100).toFixed(0)}%)
+                </span>
+              </div>
+              <div className="h-2 w-full rounded-full bg-muted overflow-hidden">
+                <div
+                  className={`h-full transition-all duration-300 rounded-full ${
+                    allNotifications.length >= 90
+                      ? "bg-destructive"
+                      : allNotifications.length >= 70
+                      ? "bg-amber-500"
+                      : "bg-primary"
+                  }`}
+                  style={{ width: `${Math.min(100, (allNotifications.length / MAX_NOTIFICATIONS_CAP) * 100)}%` }}
+                />
+              </div>
             </div>
           </div>
 
-          <div className="flex justify-center">
-            <button
-              onClick={() => runSync("manual")}
-              disabled={syncStatus.isSyncing}
-              className="rounded-full bg-primary/20 text-primary border border-primary/30 px-8 py-3 text-sm font-bold shadow-glow hover:bg-primary/30 active:scale-95 transition disabled:opacity-50"
-            >
-              {syncStatus.isSyncing ? "Sincronização em Andamento..." : "Forçar Sincronização Agora"}
-            </button>
+          {/* Filtros Rápidos */}
+          <div className="flex flex-wrap items-center gap-2">
+            {[
+              { id: "all", label: "Todas", count: allNotifications.length },
+              { id: "unread", label: "Não Lidas", count: unreadCount },
+              { id: "alert_cpl", label: "CPL Alto", count: allNotifications.filter(n => n.type === "alert_cpl" || n.type === "alert").length },
+              { id: "alert_budget", label: "Orçamento", count: allNotifications.filter(n => n.type === "alert_budget").length },
+              { id: "alert_frequency", label: "Frequência", count: allNotifications.filter(n => n.type === "alert_frequency").length },
+            ].map((f) => (
+              <button
+                key={f.id}
+                onClick={() => setNotifFilter(f.id as any)}
+                className={`flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-bold transition ${
+                  notifFilter === f.id
+                    ? "bg-primary text-background"
+                    : "bg-card border border-border text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                <span>{f.label}</span>
+                <span className={`rounded-full px-1.5 py-0.2 text-[10px] font-mono ${
+                  notifFilter === f.id ? "bg-black/20 text-background" : "bg-muted text-muted-foreground"
+                }`}>
+                  {f.count}
+                </span>
+              </button>
+            ))}
+          </div>
+
+          {/* Feed de Notificações */}
+          {loadingNotifications ? (
+            <div className="flex justify-center py-20">
+              <Loader2 className="h-7 w-7 animate-spin text-primary/50" />
+            </div>
+          ) : filteredNotifications.length === 0 ? (
+            <div className="rounded-2xl border border-border bg-card py-20 text-center flex flex-col items-center">
+              <Bell className="h-8 w-8 text-muted-foreground/30 mb-2" />
+              <h4 className="text-sm font-bold text-foreground">Nenhuma notificação encontrada</h4>
+              <p className="text-xs text-muted-foreground mt-1 max-w-sm">
+                {notifFilter === "unread"
+                  ? "Parabéns! Todas as notificações foram visualizadas e tratadas."
+                  : "A Central está limpa e pronta para capturar novos eventos das suas contas."}
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-2.5">
+              {filteredNotifications.map((notif, index) => {
+                const timeAgo = formatDistanceToNow(new Date(notif.created_at), { addSuffix: true, locale: ptBR });
+                const isCPL = notif.type === "alert_cpl" || notif.type === "alert";
+                const isBudget = notif.type === "alert_budget";
+                const isFreq = notif.type === "alert_frequency";
+
+                return (
+                  <motion.div
+                    key={notif.id}
+                    initial={{ opacity: 0, y: 4 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: index * 0.02 }}
+                    className={`rounded-2xl border p-4 transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-4 ${
+                      !notif.is_read
+                        ? "bg-card border-primary/30 shadow-glow-sm"
+                        : "bg-card/60 border-border opacity-85 hover:opacity-100"
+                    }`}
+                  >
+                    <div className="flex items-start gap-3.5 flex-1 min-w-0">
+                      <div className={`mt-0.5 h-10 w-10 rounded-xl flex items-center justify-center shrink-0 ${
+                        isCPL
+                          ? "bg-red-500/15 text-red-400 border border-red-500/30"
+                          : isBudget
+                          ? "bg-amber-500/15 text-amber-400 border border-amber-500/30"
+                          : isFreq
+                          ? "bg-blue-500/15 text-blue-400 border border-blue-500/30"
+                          : "bg-primary/15 text-primary border border-primary/30"
+                      }`}>
+                        {isCPL ? (
+                          <TrendingUp className="h-5 w-5" />
+                        ) : isBudget ? (
+                          <DollarSign className="h-5 w-5" />
+                        ) : isFreq ? (
+                          <Radio className="h-5 w-5" />
+                        ) : (
+                          <BellRing className="h-5 w-5" />
+                        )}
+                      </div>
+
+                      <div className="space-y-1 flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-xs font-black uppercase text-foreground leading-snug">
+                            {notif.title}
+                          </span>
+                          {!notif.is_read && (
+                            <span className="rounded-full bg-primary/20 text-primary border border-primary/30 px-2 py-0.2 text-[9px] font-black uppercase">
+                              NOVO
+                            </span>
+                          )}
+                          <span className="text-[10px] text-muted-foreground font-mono">
+                            {timeAgo}
+                          </span>
+                        </div>
+
+                        <p className="text-xs text-muted-foreground leading-relaxed">
+                          {notif.message}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Ações da Notificação */}
+                    <div className="flex items-center gap-2 shrink-0 sm:ml-auto">
+                      {notif.link && (
+                        <a
+                          href={notif.link}
+                          onClick={() => handleMarkSingleRead(notif.id)}
+                          className="flex items-center gap-1 text-[11px] font-bold text-foreground bg-muted hover:bg-muted/80 px-2.5 py-1.5 rounded-lg transition"
+                        >
+                          Ver Campanha <ArrowRight className="h-3 w-3" />
+                        </a>
+                      )}
+
+                      {!notif.is_read && (
+                        <button
+                          onClick={() => handleMarkSingleRead(notif.id)}
+                          title="Marcar como lida"
+                          className="p-1.5 rounded-lg bg-muted text-muted-foreground hover:text-foreground transition"
+                        >
+                          <Check className="h-3.5 w-3.5" />
+                        </button>
+                      )}
+
+                      <button
+                        onClick={() => handleDeleteSingle(notif.id)}
+                        title="Excluir notificação"
+                        className="p-1.5 rounded-lg bg-muted text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  </motion.div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ════════════════════════════════════════════════════════════════════════
+          TAB 3: PERSONALIZAÇÃO DE ALERTAS & 10 TOQUES SONOROS
+      ════════════════════════════════════════════════════════════════════════ */}
+      {activeTab === "personalizacao" && (
+        <div className="space-y-8">
+          {/* Top Bar de Controles Globais de Som */}
+          <div className="rounded-2xl border border-border bg-card p-6 space-y-6">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-5">
+              <div className="flex items-start gap-4">
+                <div className={`h-12 w-12 rounded-2xl flex items-center justify-center shrink-0 border ${
+                  soundOn ? "bg-primary/10 text-primary border-primary/30" : "bg-muted text-muted-foreground border-border"
+                }`}>
+                  {soundOn ? <Volume2 className="h-6 w-6" /> : <VolumeX className="h-6 w-6" />}
+                </div>
+                <div>
+                  <h3 className="text-base font-black uppercase text-foreground">Alertas Sonoros Executivos</h3>
+                  <p className="text-xs text-muted-foreground mt-0.5 max-w-xl">
+                    Sintetizador Web Audio API de alta fidelidade: reproduz áudio imediato direto no navegador, sem delay de download ou dependência de servidores externos.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={handleTestNotificationDemo}
+                  className="flex items-center gap-1.5 rounded-xl border border-primary/30 bg-primary/10 px-3.5 py-2 text-xs font-bold text-primary hover:bg-primary/20 transition active:scale-95"
+                >
+                  <Sparkles className="h-3.5 w-3.5" /> Disparar Demonstração
+                </button>
+
+                <button
+                  onClick={toggleSound}
+                  className={`relative h-7 w-12 rounded-full transition-colors shrink-0 ${
+                    soundOn ? "bg-primary" : "bg-muted"
+                  }`}
+                >
+                  <span className={`absolute top-1 h-5 w-5 rounded-full bg-white shadow transition-all ${
+                    soundOn ? "left-6" : "left-1"
+                  }`} />
+                </button>
+              </div>
+            </div>
+
+            {/* Slider de Volume Master */}
+            <div className="pt-4 border-t border-border flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="flex items-center gap-3 flex-1 max-w-md">
+                <Volume1 className="h-4 w-4 text-muted-foreground shrink-0" />
+                <input
+                  type="range"
+                  min="0"
+                  max="1"
+                  step="0.05"
+                  value={alertVolume}
+                  onChange={(e) => handleVolumeChange(parseFloat(e.target.value))}
+                  className="w-full accent-primary cursor-pointer"
+                />
+                <span className="text-xs font-mono font-bold text-foreground w-12 text-right">
+                  {(alertVolume * 100).toFixed(0)}%
+                </span>
+              </div>
+
+              <button
+                onClick={handleTestVolume}
+                className="text-xs font-bold text-muted-foreground hover:text-foreground flex items-center gap-1 transition"
+              >
+                <Play className="h-3 w-3 fill-current" /> Testar Volume
+              </button>
+            </div>
+          </div>
+
+          {/* Catálogo dos 10 Toques de Alertas Exclusivos */}
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-black uppercase tracking-wider text-foreground">
+                  Catálogo dos 10 Toques de Alertas
+                </h3>
+                <p className="text-xs text-muted-foreground">
+                  Selecione o perfil acústico que melhor combina com o ritmo da sua agência.
+                </p>
+              </div>
+              <span className="rounded-full bg-primary/10 text-primary border border-primary/20 px-3 py-1 text-xs font-mono font-bold">
+                10 perfis sintetizados
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+              {ALERT_SOUNDS.map((sound) => {
+                const isSelected = selectedSound === sound.id;
+                const isPlaying = playingSoundId === sound.id;
+
+                return (
+                  <div
+                    key={sound.id}
+                    className={`rounded-2xl border p-4.5 transition-all flex items-start justify-between gap-4 relative overflow-hidden ${
+                      isSelected
+                        ? "bg-card border-primary/60 shadow-glow-sm"
+                        : "bg-card/70 border-border hover:border-primary/30"
+                    }`}
+                  >
+                    <div className="space-y-1.5 flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-black uppercase text-foreground truncate">
+                          {sound.name}
+                        </span>
+                        <span className={`rounded-full px-2 py-0.2 text-[9px] font-black uppercase ${
+                          sound.category === "Padrão"
+                            ? "bg-primary/20 text-primary"
+                            : sound.category === "Crítico"
+                            ? "bg-destructive/20 text-destructive"
+                            : sound.category === "Tático"
+                            ? "bg-amber-500/20 text-amber-400"
+                            : "bg-white/10 text-muted-foreground"
+                        }`}>
+                          {sound.category}
+                        </span>
+                        {isSelected && (
+                          <span className="flex items-center gap-1 rounded-full bg-primary text-background px-2 py-0.2 text-[9px] font-black uppercase">
+                            <Check className="h-2.5 w-2.5" /> ATIVO
+                          </span>
+                        )}
+                      </div>
+
+                      <p className="text-xs text-muted-foreground leading-relaxed">
+                        {sound.description}
+                      </p>
+                    </div>
+
+                    {/* Botões de Ação do Som */}
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button
+                        onClick={() => handlePlaySound(sound.id)}
+                        title="Ouvir e testar toque"
+                        className={`h-9 px-3 rounded-xl border flex items-center gap-1.5 text-xs font-bold transition active:scale-95 ${
+                          isPlaying
+                            ? "border-primary bg-primary text-background shadow-glow-sm"
+                            : "border-border bg-muted text-foreground hover:bg-muted/80"
+                        }`}
+                      >
+                        <Play className={`h-3 w-3 ${isPlaying ? "fill-current animate-spin" : "fill-current"}`} />
+                        {isPlaying ? "Tocando..." : "Ouvir"}
+                      </button>
+
+                      <button
+                        onClick={() => handleSelectSound(sound)}
+                        disabled={isSelected}
+                        title={isSelected ? "Já é o toque ativo" : "Definir como som padrão"}
+                        className={`h-9 px-3 rounded-xl text-xs font-bold transition active:scale-95 ${
+                          isSelected
+                            ? "bg-primary/10 text-primary border border-primary/20 cursor-default"
+                            : "bg-white/5 hover:bg-white/10 text-muted-foreground hover:text-foreground border border-border"
+                        }`}
+                      >
+                        {isSelected ? "Padrão" : "Definir"}
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Preferências Avançadas de Notificação (Push, Horário Silencioso, Deduplicação) */}
+          <div className="space-y-4 pt-4 border-t border-border">
+            <h3 className="text-sm font-black uppercase tracking-wider text-foreground">
+              Canais & Horários Silenciosos
+            </h3>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Notificações de Navegador (Desktop Push) */}
+              <div className="rounded-2xl border border-border bg-card p-5 flex items-center justify-between gap-4">
+                <div className="flex items-start gap-3">
+                  <div className={`h-10 w-10 rounded-xl flex items-center justify-center shrink-0 ${
+                    prefs.browserEnabled ? "bg-primary/15 text-primary" : "bg-muted text-muted-foreground"
+                  }`}>
+                    {prefs.browserEnabled ? <BellRing className="h-5 w-5" /> : <BellOff className="h-5 w-5" />}
+                  </div>
+                  <div>
+                    <p className="text-sm font-bold text-foreground">Push no Navegador</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      Receba alertas na área de trabalho mesmo se a aba estiver minimizada.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => updatePrefs({ browserEnabled: !prefs.browserEnabled })}
+                  className={`relative h-6 w-11 rounded-full transition-colors shrink-0 ${
+                    prefs.browserEnabled ? "bg-primary" : "bg-muted"
+                  }`}
+                >
+                  <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${
+                    prefs.browserEnabled ? "left-5.5 translate-x-0.5" : "left-0.5"
+                  }`} />
+                </button>
+              </div>
+
+              {/* Horário de Silêncio */}
+              <div className="rounded-2xl border border-border bg-card p-5 space-y-3">
+                <div className="flex items-center justify-between gap-4">
+                  <div className="flex items-start gap-3">
+                    <div className={`h-10 w-10 rounded-xl flex items-center justify-center shrink-0 ${
+                      prefs.quietHoursEnabled ? "bg-amber-500/15 text-amber-400" : "bg-muted text-muted-foreground"
+                    }`}>
+                      <Moon className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-bold text-foreground">Horário de Silêncio Noturno</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        Muta o som e notificações fora do expediente comercial.
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => updatePrefs({ quietHoursEnabled: !prefs.quietHoursEnabled })}
+                    className={`relative h-6 w-11 rounded-full transition-colors shrink-0 ${
+                      prefs.quietHoursEnabled ? "bg-amber-500" : "bg-muted"
+                    }`}
+                  >
+                    <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${
+                      prefs.quietHoursEnabled ? "left-5.5 translate-x-0.5" : "left-0.5"
+                    }`} />
+                  </button>
+                </div>
+
+                {prefs.quietHoursEnabled && (
+                  <div className="flex items-center gap-3 pt-2">
+                    <span className="text-xs font-mono text-muted-foreground">Das:</span>
+                    <input
+                      type="time"
+                      value={prefs.quietStart}
+                      onChange={e => updatePrefs({ quietStart: e.target.value })}
+                      className="rounded-lg border border-border bg-background px-2.5 py-1 text-xs font-mono"
+                    />
+                    <span className="text-xs font-mono text-muted-foreground">até:</span>
+                    <input
+                      type="time"
+                      value={prefs.quietEnd}
+                      onChange={e => updatePrefs({ quietEnd: e.target.value })}
+                      className="rounded-lg border border-border bg-background px-2.5 py-1 text-xs font-mono"
+                    />
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
         </div>
       )}
 
-      {/* ══ TAB: LOGS ════════════════════════════════════════════════════════════ */}
-      {activeTab === "logs" && (
-        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="glass-panel overflow-hidden">
-          <div className="p-4 border-b border-white/5 bg-white/20 flex items-center gap-2">
-            <History className="h-4 w-4 text-primary" />
-            <h3 className="text-xs font-bold uppercase tracking-widest">Histórico de Extrações (Últimos 20)</h3>
-          </div>
-          <div className="w-full">
-            <div className="hidden md:block overflow-x-auto">
-              <table className="w-full text-left text-sm">
-              <thead className="border-b border-white/5 bg-white/5">
-                <tr>
-                  <th className="p-4 font-bold text-[10px] uppercase tracking-widest text-muted-foreground">Data/Hora</th>
-                  <th className="p-4 font-bold text-[10px] uppercase tracking-widest text-muted-foreground">Status</th>
-                  <th className="p-4 font-bold text-[10px] uppercase tracking-widest text-muted-foreground text-center">Contas</th>
-                  <th className="p-4 font-bold text-[10px] uppercase tracking-widest text-muted-foreground text-center">Campanhas</th>
-                  <th className="p-4 font-bold text-[10px] uppercase tracking-widest text-muted-foreground">Gatilho</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-white/5">
-                {loadingSync ? (
-                  <tr><td colSpan={5} className="p-8 text-center"><Loader2 className="h-6 w-6 animate-spin text-primary/50 mx-auto" /></td></tr>
-                ) : !syncHistory.length ? (
-                  <tr><td colSpan={5} className="p-12 text-center text-muted-foreground italic text-xs">Nenhuma sincronização registrada.</td></tr>
-                ) : syncHistory.map((log: any, i: number) => (
-                  <motion.tr
-                    key={log.id}
-                    initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: i * 0.02 }}
-                    className="hover:bg-white/[0.03] transition"
-                  >
-                    <td className="p-4 font-mono text-xs text-muted-foreground">
-                      {new Date(log.created_at).toLocaleString("pt-BR")}
-                    </td>
-                    <td className="p-4">
-                      <span className={`inline-flex rounded-full px-3 py-1 text-[9px] font-black tracking-tighter ${
-                        log.status === "success" ? "bg-success/20 text-success" :
-                        log.status === "running" ? "bg-primary/20 text-primary animate-pulse" :
-                        log.status === "partial_success" ? "bg-orange-500/20 text-orange-400" :
-                        "bg-destructive/20 text-destructive"
-                      }`}>
-                        {log.status.toUpperCase()}
-                      </span>
-                      {log.error_message && (
-                        <p className="text-[9px] text-destructive mt-1 max-w-xs truncate" title={log.error_message}>
-                          {log.error_message}
-                        </p>
-                      )}
-                    </td>
-                    <td className="p-4 text-center font-mono font-bold">{log.accounts_synced || 0}</td>
-                    <td className="p-4 text-center font-mono font-bold">{log.campaigns_synced || 0}</td>
-                    <td className="p-4">
-                      <span className="text-[10px] font-bold text-muted-foreground uppercase bg-white/5 px-2 py-1 rounded">
-                        {log.triggered_by === "auto" ? "BACKGROUND" : "MANUAL"}
-                      </span>
-                    </td>
-                  </motion.tr>
-                ))}
-                </tbody>
-              </table>
-            </div>
-
-            {/* --- MOBILE CARDS FOR LOGS --- */}
-            <div className="flex flex-col gap-2 p-3 md:hidden">
-              {loadingSync ? (
-                <div className="p-8 flex justify-center"><Loader2 className="h-6 w-6 animate-spin text-primary/50" /></div>
-              ) : !syncHistory.length ? (
-                <div className="p-12 text-center text-muted-foreground italic text-xs">Nenhuma sincronização registrada.</div>
-              ) : syncHistory.map((log: any, i: number) => (
-                <motion.div
-                  key={`mobile-${log.id}`}
-                  initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: i * 0.02 }}
-                  className="bg-white/[0.02] border border-white/5 rounded-xl p-3 flex flex-col gap-2"
-                >
-                  <div className="flex items-start justify-between">
-                    <span className="font-mono text-[10px] text-muted-foreground">
-                      {new Date(log.created_at).toLocaleString("pt-BR")}
-                    </span>
-                    <span className={`inline-flex rounded-full px-2 py-0.5 text-[8px] font-black tracking-tighter shrink-0 ${
-                      log.status === "success" ? "bg-success/20 text-success" :
-                      log.status === "running" ? "bg-primary/20 text-primary animate-pulse" :
-                      log.status === "partial_success" ? "bg-orange-500/20 text-orange-400" :
-                      "bg-destructive/20 text-destructive"
-                    }`}>
-                      {log.status.toUpperCase()}
-                    </span>
-                  </div>
-                  
-                  {log.error_message && (
-                    <p className="text-[9px] text-destructive leading-tight bg-destructive/10 p-1.5 rounded" title={log.error_message}>
-                      {log.error_message}
-                    </p>
-                  )}
-
-                  <div className="flex items-center justify-between border-t border-white/5 pt-2 mt-1">
-                    <div className="flex items-center gap-4">
-                      <div className="flex flex-col">
-                        <span className="text-[8px] uppercase tracking-widest text-muted-foreground">Contas</span>
-                        <span className="font-mono font-bold text-[11px] text-foreground">{log.accounts_synced || 0}</span>
-                      </div>
-                      <div className="flex flex-col">
-                        <span className="text-[8px] uppercase tracking-widest text-muted-foreground">Campanhas</span>
-                        <span className="font-mono font-bold text-[11px] text-foreground">{log.campaigns_synced || 0}</span>
-                      </div>
-                    </div>
-                    <span className="text-[8px] font-bold text-muted-foreground uppercase bg-white/5 px-2 py-1 rounded">
-                      {log.triggered_by === "auto" ? "BACKGROUND" : "MANUAL"}
-                    </span>
-                  </div>
-                </motion.div>
-              ))}
-            </div>
-          </div>
-        </motion.div>
-      )}
-
-      {/* ══ TAB: DOCS ════════════════════════════════════════════════════════════ */}
-      {activeTab === "docs" && (
-        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6 max-w-4xl">
-          <div className="glass-panel p-6 sm:p-8 space-y-8">
-            <div>
-              <h2 className="text-xl font-black text-foreground mb-2 flex items-center gap-2">
-                <Sparkles className="h-5 w-5 text-primary" /> Entenda o Motor de Alertas (Smart Engine)
-              </h2>
-              <p className="text-sm text-muted-foreground leading-relaxed">
-                O Motor de Alertas do NC Suite é um robô autônomo que monitora todas as contas e campanhas conectadas de forma contínua. 
-                Ele atua em duas frentes: avaliando <strong className="text-foreground">Regras Manuais (Limites)</strong> definidas por você, 
-                e ativando <strong className="text-primary">Gatilhos Inteligentes (Smart Triggers)</strong> invisíveis que detectam anomalias sozinhos.
+      {/* ════════════════════════════════════════════════════════════════════════
+          TAB 4: SINCRONIZAÇÃO META ADS
+      ════════════════════════════════════════════════════════════════════════ */}
+      {activeTab === "sync" && (
+        <div className="space-y-6">
+          <div className="rounded-2xl border border-border bg-card p-6 flex flex-col md:flex-row gap-6 items-center justify-between">
+            <div className="space-y-2 text-center md:text-left">
+              <h3 className="text-base font-black uppercase text-foreground flex items-center gap-2 justify-center md:justify-start">
+                <Server className="h-5 w-5 text-primary" /> Motor de Sincronização Meta Ads
+              </h3>
+              <p className="text-xs text-muted-foreground max-w-xl">
+                O motor busca métricas a cada 1 hora ou sob demanda manual. Todas as campanhas, conjuntos de anúncios e conversões do WhatsApp são calibrados diretamente pelo Graph API.
               </p>
-            </div>
-
-            <div className="space-y-6">
-              <h3 className="text-sm font-bold uppercase tracking-widest text-muted-foreground border-b border-white/5 pb-2">
-                1. Gatilhos Inteligentes (Automáticos)
-              </h3>
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="rounded-xl border border-white/5 bg-white/[0.02] p-4 hover:bg-white/[0.04] transition">
-                  <div className="flex items-center gap-2 mb-2">
-                    <AlertCircle className="h-4 w-4 text-orange-400" />
-                    <h4 className="font-bold text-sm text-orange-400">Zero Entrega (Zero Delivery)</h4>
-                  </div>
-                  <p className="text-xs text-muted-foreground leading-relaxed">
-                    Se uma campanha estiver com o status "Ativa" no Meta Ads, tiver orçamento diário configurado, mas após as 14h tiver gasto <strong>exatamente R$ 0,00</strong>, o sistema dispara este alerta. Ideal para pegar falhas de pagamento ou rejeição fantasma.
-                  </p>
-                </div>
-                
-                <div className="rounded-xl border border-white/5 bg-white/[0.02] p-4 hover:bg-white/[0.04] transition">
-                  <div className="flex items-center gap-2 mb-2">
-                    <TrendingUp className="h-4 w-4 text-red-400" />
-                    <h4 className="font-bold text-sm text-red-400">Queda de Performance (Drop)</h4>
-                  </div>
-                  <p className="text-xs text-muted-foreground leading-relaxed">
-                    O robô lê a média de conversões dos últimos 7 dias. Se a campanha costumava dar retorno diário, mas hoje <strong>já gastou 50% ou mais da verba</strong> e gerou <strong>zero conversões</strong>, ele te avisa para investigar uma quebra súbita no leilão.
-                  </p>
-                </div>
-
-                <div className="rounded-xl border border-white/5 bg-white/[0.02] p-4 hover:bg-white/[0.04] transition sm:col-span-2">
-                  <div className="flex items-center gap-2 mb-2">
-                    <ShieldAlert className="h-4 w-4 text-primary" />
-                    <h4 className="font-bold text-sm text-primary">CPA Limite de Cliente (Antigo Meta Ads Monitor)</h4>
-                  </div>
-                  <p className="text-xs text-muted-foreground leading-relaxed">
-                    Integramos o antigo "Meta Ads Monitor" aqui. Se um cliente possui um <strong className="text-foreground">Target CPA</strong> preenchido nas configurações, o robô irá analisar a soma de toda a conta nos últimos 7 dias. Se estourar a meta global (ou se gastar verba sem nenhuma conversão na semana), você será avisado via WhatsApp e aqui no painel.
-                  </p>
-                </div>
+              <div className="flex flex-wrap gap-4 text-xs font-mono text-muted-foreground pt-1">
+                <span>Último sync: {syncStatus.lastSync ? formatDistanceToNow(new Date(syncStatus.lastSync), { addSuffix: true, locale: ptBR }) : "Nunca"}</span>
+                <span>Status: <strong className="text-foreground">{syncStatus.isSyncing ? "Sincronizando..." : "Aguardando"}</strong></span>
               </div>
             </div>
 
-            <div className="space-y-6">
-              <h3 className="text-sm font-bold uppercase tracking-widest text-muted-foreground border-b border-white/5 pb-2">
-                2. Regras Manuais (Limites Configuráveis)
-              </h3>
-              <div className="space-y-4 text-sm text-muted-foreground leading-relaxed">
-                <p>
-                  Na aba <strong>Limites de Alerta</strong>, você pode criar regras aplicadas a uma <strong className="text-foreground">Conta inteira</strong> ou a uma <strong className="text-primary">Campanha Específica</strong>. 
-                  Sempre que um limite for atingido no mesmo dia de avaliação, você receberá a notificação.
-                </p>
-                <ul className="grid gap-3 sm:grid-cols-2">
-                  <li className="flex items-start gap-2 bg-white/[0.01] p-3 rounded-lg border border-white/5">
-                    <DollarSign className="h-4 w-4 text-primary shrink-0 mt-0.5" />
-                    <div>
-                      <strong className="text-foreground text-xs block mb-0.5">CPL / CPA Máximo</strong>
-                      <span className="text-[11px]">Se o custo por resultado hoje passar desse valor, alerta imediato.</span>
-                    </div>
-                  </li>
-                  <li className="flex items-start gap-2 bg-white/[0.01] p-3 rounded-lg border border-white/5">
-                    <Timer className="h-4 w-4 text-primary shrink-0 mt-0.5" />
-                    <div>
-                      <strong className="text-foreground text-xs block mb-0.5">Orçamento Máximo (%)</strong>
-                      <span className="text-[11px]">Avisa quando o gasto diário atinge a porcentagem estipulada.</span>
-                    </div>
-                  </li>
-                  <li className="flex items-start gap-2 bg-white/[0.01] p-3 rounded-lg border border-white/5">
-                    <Radio className="h-4 w-4 text-primary shrink-0 mt-0.5" />
-                    <div>
-                      <strong className="text-foreground text-xs block mb-0.5">Frequência Máxima</strong>
-                      <span className="text-[11px]">Avisa quando o público começa a saturar de ver o mesmo anúncio repetidas vezes.</span>
-                    </div>
-                  </li>
-                </ul>
-              </div>
-            </div>
-
-            <div className="rounded-xl border border-primary/20 bg-primary/5 p-4 flex gap-3 items-start">
-              <BellRing className="h-5 w-5 text-primary shrink-0" />
-              <div className="text-xs text-muted-foreground leading-relaxed">
-                <strong className="text-primary block mb-1 text-sm">Onde eu recebo os alertas?</strong>
-                Os alertas são unificados! Quando uma anomalia ou limite é atingido, ela vai imediatamente para:
-                <ul className="list-disc pl-4 mt-2 space-y-1">
-                  <li>Painel de <strong>Alertas Ativos</strong> na interface (abaixo do sino superior direito).</li>
-                  <li><strong>Notificação via Navegador</strong> (desktop/celular) — ativável na aba Preferências.</li>
-                  <li><strong>WhatsApp</strong> da Agência, contendo o resumo diário D-1 às 08h e violações críticas instantâneas.</li>
-                </ul>
-              </div>
-            </div>
+            <button
+              onClick={() => runSync("manual")}
+              disabled={syncStatus.isSyncing}
+              className="flex items-center gap-2 rounded-xl bg-primary px-5 py-3 text-xs font-bold text-background transition hover:opacity-90 active:scale-95 disabled:opacity-50 shrink-0"
+            >
+              {syncStatus.isSyncing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+              Forçar Sincronização Total
+            </button>
           </div>
-        </motion.div>
+
+          {/* Histórico de Sync */}
+          <div className="rounded-2xl border border-border bg-card overflow-hidden">
+            <div className="p-4 border-b border-border bg-muted/30 flex items-center justify-between">
+              <span className="text-xs font-black uppercase text-foreground">Histórico de Execuções Recentes</span>
+              <span className="text-xs font-mono text-muted-foreground">{syncHistory.length} registros</span>
+            </div>
+
+            {loadingSync ? (
+              <div className="flex justify-center py-12">
+                <Loader2 className="h-6 w-6 animate-spin text-primary/50" />
+              </div>
+            ) : !syncHistory.length ? (
+              <div className="py-12 text-center text-xs text-muted-foreground">Nenhum log de sync registrado.</div>
+            ) : (
+              <div className="divide-y divide-border text-xs">
+                {syncHistory.map((s: any) => (
+                  <div key={s.id} className="p-4 flex items-center justify-between hover:bg-muted/20 transition">
+                    <div className="space-y-0.5">
+                      <p className="font-mono font-bold text-foreground">
+                        {new Date(s.started_at).toLocaleString("pt-BR")}
+                      </p>
+                      <p className="text-[11px] text-muted-foreground">
+                        {s.accounts_synced ?? 0} contas • {s.campaigns_synced ?? 0} campanhas atualizadas
+                      </p>
+                    </div>
+                    <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-mono font-bold ${
+                      s.status === "completed" || s.status === "success"
+                        ? "bg-emerald-500/15 text-emerald-400"
+                        : "bg-destructive/15 text-destructive"
+                    }`}>
+                      {s.status}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
       )}
 
       {/* Modal Novo / Editar Threshold */}
@@ -1175,608 +1297,5 @@ function AutomationsPage() {
         campaignName={selectedDiagnoseCampName}
       />
     </div>
-  );
-}
-
-function ThresholdModal({ onClose, accounts, userId, qc, editing }: any) {
-  const isEditing = !!editing;
-
-  const [accountId, setAccountId] = useState<string>(
-    isEditing ? (editing.ad_account_id ?? "all") : "all"
-  );
-  const [campaignId, setCampaignId] = useState<string>(
-    isEditing ? (editing.campaign_id ?? "all") : "all"
-  );
-  const [excludedIds, setExcludedIds] = useState<Set<string>>(
-    isEditing && editing.excluded_account_ids
-      ? new Set<string>(editing.excluded_account_ids)
-      : new Set<string>()
-  );
-  const [maxCpl, setMaxCpl] = useState(
-    isEditing && editing.max_cpl != null ? String(editing.max_cpl) : ""
-  );
-  const [maxBudgetPct, setMaxBudgetPct] = useState(
-    isEditing && editing.max_budget_pct != null ? String(editing.max_budget_pct) : "90"
-  );
-  const [maxFrequency, setMaxFrequency] = useState(
-    isEditing && editing.max_frequency != null ? String(editing.max_frequency) : "3.5"
-  );
-  const [minSpend, setMinSpend] = useState(
-    isEditing && editing.min_spend_threshold != null ? String(editing.min_spend_threshold) : "0"
-  );
-  const [minAccountBalance, setMinAccountBalance] = useState(
-    isEditing && editing.min_account_balance != null ? String(editing.min_account_balance) : "100"
-  );
-  const [alertCplEnabled,       setAlertCplEnabled]       = useState(isEditing ? editing.alert_cpl_enabled       !== false : true);
-  const [alertBudgetEnabled,    setAlertBudgetEnabled]    = useState(isEditing ? editing.alert_budget_enabled    !== false : true);
-  const [alertFrequencyEnabled, setAlertFrequencyEnabled] = useState(isEditing ? editing.alert_frequency_enabled !== false : true);
-  const [alertAccountBalanceEnabled, setAlertAccountBalanceEnabled] = useState(isEditing ? editing.alert_account_balance_enabled === true : false);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-
-  // Redes sociais
-  const [socialPageId, setSocialPageId] = useState<string>(
-    isEditing ? (editing.social_page_id ?? "none") : "none"
-  );
-  const [minIgFollowers, setMinIgFollowers] = useState<string>(
-    isEditing && editing.min_ig_followers != null ? String(editing.min_ig_followers) : ""
-  );
-  const [minFbFollowers, setMinFbFollowers] = useState<string>(
-    isEditing && editing.min_fb_followers != null ? String(editing.min_fb_followers) : ""
-  );
-  const [maxDaysWithoutPosts, setMaxDaysWithoutPosts] = useState<string>(
-    isEditing && editing.max_days_without_posts != null ? String(editing.max_days_without_posts) : ""
-  );
-  const [minPostEngagementRate, setMinPostEngagementRate] = useState<string>(
-    isEditing && editing.min_post_engagement_rate != null ? String(editing.min_post_engagement_rate) : ""
-  );
-  const [ruleType, setRuleType] = useState<"traffic" | "social">(
-    isEditing && editing.social_page_id ? "social" : "traffic"
-  );
-
-  // Carregar páginas de redes sociais
-  const { data: socialPages = [] } = useQuery({
-    queryKey: ["social_pages_for_modal"],
-    queryFn: async () => {
-      const { data } = await supabase.from("social_pages").select("id, page_name").order("page_name");
-      return data || [];
-    }
-  });
-
-  // Carregar campanhas da conta ativa
-  const { data: campaigns = [], isLoading: loadingCampaigns } = useQuery({
-    queryKey: ["campaigns_for_threshold_modal", accountId],
-    queryFn: async () => {
-      if (!accountId || accountId === "all") return [];
-      const { data, error } = await (supabase as any)
-        .from("campaigns")
-        .select("id, name")
-        .eq("ad_account_id", accountId)
-        .order("name");
-      if (error) throw error;
-      return data || [];
-    },
-    enabled: !!accountId && accountId !== "all",
-  });
-
-  // Resetar a campanha selecionada se mudar a conta
-  useEffect(() => {
-    if (!isEditing) {
-      setCampaignId("all");
-    }
-  }, [accountId]);
-
-  const toggleExclusion = (id: string) => {
-    setExcludedIds(prev => {
-      const next = new Set(prev);
-      next.has(id) ? next.delete(id) : next.add(id);
-      return next;
-    });
-  };
-
-  const handleSave = async () => {
-    if (ruleType === "traffic") {
-      const targetAccountId = accountId === "all" ? null : accountId;
-      if (!alertCplEnabled && !alertBudgetEnabled && !alertFrequencyEnabled && !alertAccountBalanceEnabled) {
-        return toast.error("Ative pelo menos um tipo de alerta (CPL, Orçamento, Frequência ou Saldo)");
-      }
-      if (alertCplEnabled && (!maxCpl || parseFloat(maxCpl) <= 0)) {
-        return toast.error("Informe o CPL Máximo para ativar o alerta de CPL");
-      }
-      if (alertBudgetEnabled && (!maxBudgetPct || parseInt(maxBudgetPct) <= 0)) {
-        return toast.error("Informe o % de Orçamento para ativar o alerta de budget");
-      }
-      if (alertFrequencyEnabled && (!maxFrequency || parseFloat(maxFrequency) <= 0)) {
-        return toast.error("Informe a Frequência Máxima para ativar o alerta de frequência");
-      }
-      if (alertAccountBalanceEnabled && (!minAccountBalance || parseFloat(minAccountBalance) < 0)) {
-        return toast.error("Informe o Saldo Mínimo para ativar o alerta de saldo da conta");
-      }
-    } else {
-      if (socialPageId === "none") {
-        return toast.error("Selecione uma Página de Redes Sociais para monitorar");
-      }
-      if (!minIgFollowers && !minFbFollowers && !maxDaysWithoutPosts && !minPostEngagementRate) {
-        return toast.error("Informe pelo menos um limite ou métrica para monitorar (Seguidores, Dias sem postar ou Engajamento)");
-      }
-    }
-
-    setIsSubmitting(true);
-    try {
-      let payload: any = {};
-      if (ruleType === "traffic") {
-        payload = {
-          ad_account_id:           accountId === "all" ? null : accountId,
-          campaign_id:             campaignId !== "all" ? campaignId : null,
-          max_cpl:                 alertCplEnabled && maxCpl ? parseFloat(maxCpl) : null,
-          max_budget_pct:          alertBudgetEnabled && maxBudgetPct ? parseInt(maxBudgetPct) : null,
-          max_frequency:           alertFrequencyEnabled && maxFrequency ? parseFloat(maxFrequency) : null,
-          min_spend_threshold:     minSpend ? parseFloat(minSpend) : 0,
-          min_account_balance:     alertAccountBalanceEnabled && minAccountBalance ? parseFloat(minAccountBalance) : 0,
-          alert_cpl_enabled:       alertCplEnabled,
-          alert_budget_enabled:    alertBudgetEnabled,
-          alert_frequency_enabled: alertFrequencyEnabled,
-          alert_account_balance_enabled: alertAccountBalanceEnabled,
-          excluded_account_ids:    accountId === "all" && excludedIds.size > 0 ? Array.from(excludedIds) : [],
-        };
-      } else {
-        payload = {
-          social_page_id:          socialPageId !== "none" ? socialPageId : null,
-          min_ig_followers:        minIgFollowers ? parseInt(minIgFollowers) : null,
-          min_fb_followers:        minFbFollowers ? parseInt(minFbFollowers) : null,
-          max_days_without_posts:  maxDaysWithoutPosts ? parseInt(maxDaysWithoutPosts) : null,
-          min_post_engagement_rate: minPostEngagementRate ? parseFloat(minPostEngagementRate) : null,
-        };
-      }
-
-      if (isEditing) {
-        // ── UPDATE ──────────────────────────────────────────────────────────
-        const { error } = await (supabase as any)
-          .from("alert_thresholds")
-          .update(payload)
-          .eq("id", editing.id);
-        if (error) throw error;
-        toast.success("Regra atualizada com sucesso!");
-      } else {
-        // ── INSERT ──────────────────────────────────────────────────────────
-        const { error } = await (supabase as any).from("alert_thresholds").insert({
-          user_id:   userId,
-          is_active: true,
-          ...payload,
-        });
-        if (error) throw error;
-        toast.success("Regra de alerta configurada! O sistema avaliará campanhas a cada 5 min.");
-      }
-      qc.invalidateQueries({ queryKey: ["alert_thresholds"] });
-      triggerEvaluation();
-      onClose();
-    } catch (e: any) {
-      toast.error(e.message);
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      className="fixed inset-0 z-50 flex justify-end bg-background/80 backdrop-blur-sm"
-      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
-    >
-      <motion.div
-        initial={{ x: "100%" }}
-        animate={{ x: 0 }}
-        exit={{ x: "100%" }}
-        transition={{ type: "spring", damping: 32, stiffness: 320 }}
-        className="glass-panel w-full max-w-md h-full flex flex-col shadow-2xl border-l border-primary/20 bg-card rounded-none"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Header (Fixo no topo) */}
-        <div className="shrink-0 flex items-center justify-between border-b border-white/5 p-6 bg-white/5">
-          <div className="flex items-center gap-3">
-            <div className={`h-10 w-10 rounded-xl flex items-center justify-center ${
-              isEditing ? "bg-blue-500/20 text-blue-400" : "bg-primary/20 text-primary"
-            }`}>
-              {isEditing ? <Pencil className="h-5 w-5" /> : <ShieldAlert className="h-5 w-5 fill-current" />}
-            </div>
-            <div>
-              <h3 className="font-display text-base font-bold leading-tight">
-                {isEditing ? "Editar Regra de Alerta" : "Novo Alerta de Conta"}
-              </h3>
-              <p className="text-[9px] text-muted-foreground uppercase tracking-widest font-bold font-mono">
-                {isEditing ? "Altere os parâmetros da regra" : "Monitoramento de CPL e Orçamento"}
-              </p>
-            </div>
-          </div>
-          <button onClick={onClose} className="rounded-full p-2 hover:bg-white/10 transition text-muted-foreground hover:text-foreground">
-            <X className="h-5 w-5" />
-          </button>
-        </div>
-
-        {/* Formulário Scrollable (Corpo com min-h-0 para forçar flexbox scroll) */}
-        <div className="flex-1 min-h-0 overflow-y-auto p-6 space-y-6 custom-scrollbar">
-          
-          {/* Segmented Control de Tipo de Regra */}
-          {!isEditing ? (
-            <div className="grid grid-cols-2 gap-1 bg-white/5 p-1 rounded-xl border border-white/5 shrink-0">
-              <button
-                type="button"
-                onClick={() => setRuleType("traffic")}
-                className={`py-2 text-xs font-bold rounded-lg transition-all ${
-                  ruleType === "traffic"
-                    ? "bg-primary text-black shadow-glow-sm"
-                    : "text-muted-foreground hover:text-foreground hover:bg-white/5"
-                }`}
-              >
-                Tráfego Pago
-              </button>
-              <button
-                type="button"
-                onClick={() => setRuleType("social")}
-                className={`py-2 text-xs font-bold rounded-lg transition-all ${
-                  ruleType === "social"
-                    ? "bg-blue-500 text-white shadow-glow-sm"
-                    : "text-muted-foreground hover:text-foreground hover:bg-white/5"
-                }`}
-              >
-                Redes Sociais
-              </button>
-            </div>
-          ) : (
-            <div className="flex items-center justify-between bg-white/5 px-4 py-2.5 rounded-xl border border-white/5">
-              <span className="text-[10px] font-bold text-muted-foreground uppercase">Tipo de Regra</span>
-              <span className={`text-[10px] font-black px-2 py-0.5 rounded-full uppercase ${
-                ruleType === "social" ? "bg-blue-500/20 text-blue-400 border border-blue-500/30" : "bg-primary/20 text-primary border border-primary/30"
-              }`}>
-                {ruleType === "social" ? "Redes Sociais" : "Tráfego Pago"}
-              </span>
-            </div>
-          )}
-
-          {ruleType === "traffic" && (
-            <>
-              <div className="space-y-1.5">
-                <label className="text-[10px] font-bold text-muted-foreground uppercase">
-                  Conta de Anúncios
-                </label>
-                <select
-                  value={accountId}
-                  onChange={(e) => setAccountId(e.target.value)}
-                  className="w-full rounded-lg border border-white/10 bg-background px-3 py-3 text-sm focus:border-primary focus:outline-none cursor-pointer"
-                >
-                  <option value="all">Todas as Contas Meta (Alerta Global)</option>
-                  {accounts.map((a: any) => (
-                    <option key={a.id} value={a.id}>{a.name}</option>
-                  ))}
-                </select>
-              </div>
-
-              {accountId !== "all" && (
-                <div className="space-y-1.5">
-                  <label className="text-[10px] font-bold text-muted-foreground uppercase">
-                    Campanha (Opcional)
-                  </label>
-                  {loadingCampaigns ? (
-                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                      <Loader2 className="h-3.5 w-3.5 animate-spin" /> Carregando campanhas...
-                    </div>
-                  ) : (
-                    <select
-                      value={campaignId}
-                      onChange={(e) => setCampaignId(e.target.value)}
-                      className="w-full rounded-lg border border-white/10 bg-background px-3 py-3 text-sm focus:border-primary focus:outline-none cursor-pointer"
-                    >
-                      <option value="all">Todas as Campanhas da Conta (Alerta Geral da Conta)</option>
-                      {campaigns.map((c: any) => (
-                        <option key={c.id} value={c.id}>{c.name}</option>
-                      ))}
-                    </select>
-                  )}
-                  <p className="text-[9px] text-muted-foreground">
-                    Selecione uma campanha específica para monitorar o CPL, Frequência e Orçamento dela.
-                  </p>
-                </div>
-              )}
-
-              {accountId !== "all" && campaignId === "all" && (
-                <div className="rounded-xl border border-secondary/30 bg-secondary/10 px-4 py-3 text-[11px] text-secondary leading-relaxed">
-                  <strong>Exceção de conta:</strong> esta regra substituirá o alerta global para a conta selecionada. A regra global não será avaliada para ela.
-                </div>
-              )}
-
-              {accountId === "all" && (
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <label className="text-[10px] font-bold text-muted-foreground uppercase">
-                      Excluir Contas (opcional)
-                    </label>
-                    {excludedIds.size > 0 && (
-                      <span className="text-[9px] font-black text-primary bg-primary/10 px-2 py-0.5 rounded-full">
-                        {excludedIds.size} excluída{excludedIds.size > 1 ? "s" : ""}
-                      </span>
-                    )}
-                  </div>
-                  <div className="max-h-40 overflow-y-auto rounded-lg border border-white/10 bg-background divide-y divide-white/5">
-                    {accounts.map((a: any) => (
-                      <button
-                        key={a.id}
-                        type="button"
-                        onClick={() => toggleExclusion(a.id)}
-                        className={`w-full flex items-center gap-3 px-3 py-2.5 text-left text-xs transition hover:bg-white/5 ${excludedIds.has(a.id) ? "text-destructive" : "text-foreground"}`}
-                      >
-                        <span className={`h-4 w-4 rounded border flex items-center justify-center shrink-0 transition ${excludedIds.has(a.id) ? "bg-destructive/20 border-destructive text-destructive" : "border-white/20"}`}>
-                          {excludedIds.has(a.id) && <X className="h-2.5 w-2.5" />}
-                        </span>
-                        {a.name}
-                      </button>
-                    ))}
-                  </div>
-                  {excludedIds.size > 0 && (
-                    <p className="text-[9px] text-muted-foreground">
-                      O alerta global não será disparado para as contas marcadas acima.
-                    </p>
-                  )}
-                </div>
-              )}
-
-              {/* ── ALERTA DE CPL ───────────────────────────────────────────────── */}
-              <div className={`rounded-xl border p-4 space-y-3 transition-all ${
-                alertCplEnabled ? "border-red-500/40 bg-red-500/5" : "border-white/10 bg-white/[0.02]"
-              }`}>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <TrendingUp className={`h-4 w-4 ${alertCplEnabled ? "text-red-400" : "text-muted-foreground"}`} />
-                    <span className={`text-sm font-bold ${alertCplEnabled ? "text-red-400" : "text-muted-foreground"}`}>Alerta de CPL</span>
-                    <span className="text-[9px] font-mono text-muted-foreground/60">Custo Por Lead</span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setAlertCplEnabled(v => !v)}
-                    className={`relative h-5 w-9 rounded-full transition-colors shrink-0 ${alertCplEnabled ? "bg-red-500" : "bg-white/15"}`}
-                  >
-                    <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-all ${alertCplEnabled ? "left-4" : "left-0.5"}`} />
-                  </button>
-                </div>
-                {alertCplEnabled && (
-                  <div className="space-y-1.5">
-                    <label className="text-[10px] font-bold text-muted-foreground uppercase">CPL Máximo (R$)</label>
-                    <input
-                      type="number" step="0.01" min="0.01" value={maxCpl}
-                      onChange={(e) => setMaxCpl(e.target.value)}
-                      placeholder="Ex: 15.50"
-                      className="w-full rounded-lg border border-red-500/30 bg-background px-3 py-2.5 text-sm focus:border-red-400 focus:outline-none"
-                    />
-                    <p className="text-[9px] text-muted-foreground">Alerta quando CPL do dia superar este valor</p>
-                  </div>
-                )}
-              </div>
-
-              {/* ── ALERTA DE ORÇAMENTO ─────────────────────────────────────────── */}
-              <div className={`rounded-xl border p-4 space-y-3 transition-all ${
-                alertBudgetEnabled ? "border-yellow-500/40 bg-yellow-500/5" : "border-white/10 bg-white/[0.02]"
-              }`}>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <DollarSign className={`h-4 w-4 ${alertBudgetEnabled ? "text-yellow-400" : "text-muted-foreground"}`} />
-                    <span className={`text-sm font-bold ${alertBudgetEnabled ? "text-yellow-400" : "text-muted-foreground"}`}>Alerta de Orçamento</span>
-                    <span className="text-[9px] font-mono text-muted-foreground/60">Budget Diário</span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setAlertBudgetEnabled(v => !v)}
-                    className={`relative h-5 w-9 rounded-full transition-colors shrink-0 ${alertBudgetEnabled ? "bg-yellow-500" : "bg-white/15"}`}
-                  >
-                    <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-all ${alertBudgetEnabled ? "left-4" : "left-0.5"}`} />
-                  </button>
-                </div>
-                {alertBudgetEnabled && (
-                  <div className="space-y-1.5">
-                    <label className="text-[10px] font-bold text-muted-foreground uppercase">Aviso quando atingir (%)</label>
-                    <input
-                      type="number" min="1" max="100" value={maxBudgetPct}
-                      onChange={(e) => setMaxBudgetPct(e.target.value)}
-                      placeholder="Ex: 90"
-                      className="w-full rounded-lg border border-yellow-500/30 bg-background px-3 py-2.5 text-sm focus:border-yellow-400 focus:outline-none"
-                    />
-                    <p className="text-[9px] text-muted-foreground">Alerta quando orçamento diário atingir este % do total</p>
-                  </div>
-                )}
-              </div>
-
-              {/* ── ALERTA DE FREQUÊNCIA ────────────────────────────────────────── */}
-              <div className={`rounded-xl border p-4 space-y-3 transition-all ${
-                alertFrequencyEnabled ? "border-orange-500/40 bg-orange-500/5" : "border-white/10 bg-white/[0.02]"
-              }`}>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Radio className={`h-4 w-4 ${alertFrequencyEnabled ? "text-orange-400" : "text-muted-foreground"}`} />
-                    <span className={`text-sm font-bold ${alertFrequencyEnabled ? "text-orange-400" : "text-muted-foreground"}`}>Alerta de Frequência</span>
-                    <span className="text-[9px] font-mono text-muted-foreground/60">Saturação de Audiência</span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setAlertFrequencyEnabled(v => !v)}
-                    className={`relative h-5 w-9 rounded-full transition-colors shrink-0 ${alertFrequencyEnabled ? "bg-orange-500" : "bg-white/15"}`}
-                  >
-                    <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-all ${alertFrequencyEnabled ? "left-4" : "left-0.5"}`} />
-                  </button>
-                </div>
-                {alertFrequencyEnabled && (
-                  <div className="space-y-1.5">
-                    <label className="text-[10px] font-bold text-muted-foreground uppercase">Frequência Máxima (×)</label>
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="number" step="0.1" min="1" max="10" value={maxFrequency}
-                        onChange={(e) => setMaxFrequency(e.target.value)}
-                        placeholder="3.5"
-                        className="w-full rounded-lg border border-orange-500/30 bg-background px-3 py-2.5 text-sm focus:border-orange-400 focus:outline-none"
-                      />
-                      <span className="text-sm font-bold text-muted-foreground shrink-0">×</span>
-                    </div>
-                    <p className="text-[9px] text-muted-foreground">Alerta quando a frequência média ultrapassar este valor. Padrão 3.5× para automotivo.</p>
-                  </div>
-                )}
-              </div>
-
-              {/* ── ALERTA DE SALDO DA CONTA ────────────────────────────────────── */}
-              <div className={`rounded-xl border p-4 space-y-3 transition-all ${
-                alertAccountBalanceEnabled ? "border-emerald-500/40 bg-emerald-500/5" : "border-white/10 bg-white/[0.02]"
-              }`}>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <DollarSign className={`h-4 w-4 ${alertAccountBalanceEnabled ? "text-emerald-400" : "text-muted-foreground"}`} />
-                    <span className={`text-sm font-bold ${alertAccountBalanceEnabled ? "text-emerald-400" : "text-muted-foreground"}`}>Alerta de Saldo da Conta</span>
-                    <span className="text-[9px] font-mono text-muted-foreground/60">Saldo Global</span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setAlertAccountBalanceEnabled(v => !v)}
-                    className={`relative h-5 w-9 rounded-full transition-colors shrink-0 ${alertAccountBalanceEnabled ? "bg-emerald-500" : "bg-white/15"}`}
-                  >
-                    <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-all ${alertAccountBalanceEnabled ? "left-4" : "left-0.5"}`} />
-                  </button>
-                </div>
-                {alertAccountBalanceEnabled && (
-                  <div className="space-y-1.5">
-                    <label className="text-[10px] font-bold text-muted-foreground uppercase">Saldo Mínimo de Aviso (R$)</label>
-                    <input
-                      type="number" step="0.01" min="0" value={minAccountBalance}
-                      onChange={(e) => setMinAccountBalance(e.target.value)}
-                      placeholder="Ex: 100.00"
-                      className="w-full rounded-lg border border-emerald-500/30 bg-background px-3 py-2.5 text-sm focus:border-emerald-400 focus:outline-none"
-                    />
-                    <p className="text-[9px] text-muted-foreground">Alerta de emergência caso o saldo restante na conta (contas pré-pagas) ou não-faturado fique abaixo deste valor. Evita pausas nas campanhas.</p>
-                  </div>
-                )}
-              </div>
-
-              {/* ── Gasto mínimo ───────────────────────────────────────────────── */}
-              <div className="space-y-1.5">
-                <label className="text-[10px] font-bold text-muted-foreground uppercase">
-                  Gasto mínimo para alertar (R$)
-                </label>
-                <input
-                  type="number" step="0.01" min="0" value={minSpend}
-                  onChange={(e) => setMinSpend(e.target.value)}
-                  placeholder="0 = sempre alertar"
-                  className="w-full rounded-lg border border-white/10 bg-background px-3 py-2.5 text-sm focus:border-primary focus:outline-none"
-                />
-                <p className="text-[9px] text-muted-foreground">Ignora campanhas com gasto abaixo deste valor — evita ruído de campanhas com budget muito baixo.</p>
-              </div>
-            </>
-          )}
-
-          {ruleType === "social" && (
-            <>
-              {/* Seleção de Página Social */}
-              <div className="space-y-1.5">
-                <label className="text-[10px] font-bold text-muted-foreground uppercase">
-                  Página de Redes Sociais
-                </label>
-                <select
-                  value={socialPageId}
-                  onChange={(e) => setSocialPageId(e.target.value)}
-                  className="w-full rounded-lg border border-white/10 bg-background px-3 py-3 text-sm focus:border-primary focus:outline-none cursor-pointer"
-                >
-                  <option value="none">Selecione uma Página...</option>
-                  {socialPages.map((sp: any) => (
-                    <option key={sp.id} value={sp.id}>{sp.page_name}</option>
-                  ))}
-                </select>
-                <p className="text-[9px] text-muted-foreground">
-                  Escolha a página do Instagram/Facebook vinculada que deseja monitorar.
-                </p>
-              </div>
-
-              {/* Métrica: Instagram Followers */}
-              <div className="rounded-xl border border-white/10 bg-white/[0.02] p-4 space-y-3">
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-bold text-foreground">Seguidores Mínimos (Instagram)</span>
-                </div>
-                <input
-                  type="number"
-                  placeholder="Ex: 5000 (deixe em branco se não quiser monitorar)"
-                  value={minIgFollowers}
-                  onChange={(e) => setMinIgFollowers(e.target.value)}
-                  className="w-full rounded-lg border border-white/10 bg-background px-3 py-2.5 text-sm focus:border-primary focus:outline-none"
-                />
-                <p className="text-[9px] text-muted-foreground">Alerta se os seguidores caírem abaixo deste valor.</p>
-              </div>
-
-              {/* Métrica: Facebook Followers */}
-              <div className="rounded-xl border border-white/10 bg-white/[0.02] p-4 space-y-3">
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-bold text-foreground">Seguidores Mínimos (Facebook)</span>
-                </div>
-                <input
-                  type="number"
-                  placeholder="Ex: 1000 (deixe em branco se não quiser monitorar)"
-                  value={minFbFollowers}
-                  onChange={(e) => setMinFbFollowers(e.target.value)}
-                  className="w-full rounded-lg border border-white/10 bg-background px-3 py-2.5 text-sm focus:border-primary focus:outline-none"
-                />
-                <p className="text-[9px] text-muted-foreground">Alerta se as curtidas/seguidores caírem abaixo deste valor.</p>
-              </div>
-
-              {/* Inatividade (Dias sem postar) */}
-              <div className="rounded-xl border border-white/10 bg-white/[0.02] p-4 space-y-3">
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-bold text-foreground">Dias Máximos sem Postar</span>
-                </div>
-                <input
-                  type="number"
-                  placeholder="Ex: 7 (deixe em branco se não quiser monitorar)"
-                  value={maxDaysWithoutPosts}
-                  onChange={(e) => setMaxDaysWithoutPosts(e.target.value)}
-                  className="w-full rounded-lg border border-white/10 bg-background px-3 py-2.5 text-sm focus:border-primary focus:outline-none"
-                />
-                <p className="text-[9px] text-muted-foreground">Alerta se o perfil ficar inativo (sem novos posts) por mais que este número de dias.</p>
-              </div>
-
-              {/* Taxa de Engajamento Mínima */}
-              <div className="rounded-xl border border-white/10 bg-white/[0.02] p-4 space-y-3">
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-bold text-foreground">Taxa de Engajamento Mínima (%)</span>
-                </div>
-                <input
-                  type="number"
-                  step="0.01"
-                  placeholder="Ex: 1.5 (deixe em branco se não quiser monitorar)"
-                  value={minPostEngagementRate}
-                  onChange={(e) => setMinPostEngagementRate(e.target.value)}
-                  className="w-full rounded-lg border border-white/10 bg-background px-3 py-2.5 text-sm focus:border-primary focus:outline-none"
-                />
-                <p className="text-[9px] text-muted-foreground">Alerta se a média de engajamento do post cair abaixo deste percentual.</p>
-              </div>
-            </>
-          )}
-        </div>
-
-        {/* Footer (Fixo embaixo) */}
-        <div className="shrink-0 flex gap-3 justify-end border-t border-white/10 p-6 bg-white/5 pb-safe">
-          <button
-            onClick={onClose}
-            className="rounded-full px-5 py-2.5 text-xs font-bold text-muted-foreground hover:bg-white/10 transition"
-          >
-            Cancelar
-          </button>
-          <button
-            onClick={handleSave}
-            disabled={isSubmitting}
-            className={`rounded-full px-6 py-2.5 text-xs font-black text-background hover:scale-105 active:scale-95 transition flex items-center gap-2 ${
-              isEditing ? "bg-blue-500 hover:bg-blue-400" : "bg-primary"
-            }`}
-          >
-            {isSubmitting
-              ? <Loader2 className="h-4 w-4 animate-spin" />
-              : isEditing
-              ? <Pencil className="h-4 w-4" />
-              : <ShieldAlert className="h-4 w-4" />}
-            {isEditing ? "SALVAR ALTERAÇÕES" : "SALVAR E ATIVAR"}
-          </button>
-        </div>
-      </motion.div>
-    </motion.div>
   );
 }

@@ -4,6 +4,8 @@
 import { useEffect, useRef, useCallback, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase-external/client";
+import { playAlertTone } from "@/lib/alertSounds";
+import { enforceNotificationCapacity } from "@/lib/notificationService";
 
 // ─── Module-level singletons (shared across React instances) ──────────────────
 const firedAlerts = new Set<string>();
@@ -202,6 +204,9 @@ async function runThresholdEvaluation() {
     const dedupSince = new Date(Date.now() - getDedupWindowMs()).toISOString();
     const { data: { user } } = await supabase.auth.getUser();
 
+    // Mantém a central de notificações acumulativa em até 100 notificações (auto-purge ao atingir 100)
+    await enforceNotificationCapacity();
+
     // Contas com regra específica — a regra global não se aplica a elas
     const accountsWithSpecificRules = new Set(
       (thresholds as any[])
@@ -379,50 +384,25 @@ async function runThresholdEvaluation() {
   }
 }
 
-// ─── Web Audio API ────────────────────────────────────────────────────────────
+// ─── Web Audio API (Toca o som personalizado selecionado nas configurações) ───
 function playAlertSound(alertId: string) {
   if (activeOscillators.has(alertId)) return;
   if (!getSoundEnabled()) return;
 
   try {
-    const Ctx = window.AudioContext || (window as any).webkitAudioContext;
-    if (!Ctx) return;
-    const ctx = new Ctx();
     let stopped = false;
+    // Toca imediatamente o tom configurado
+    playAlertTone();
 
-    const beep = (freq: number, t: number, dur: number) => {
-      const osc  = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.type = "sine";
-      osc.frequency.value = freq;
-      gain.gain.setValueAtTime(0, t);
-      gain.gain.linearRampToValueAtTime(0.4, t + 0.01);
-      gain.gain.linearRampToValueAtTime(0, t + dur);
-      osc.start(t);
-      osc.stop(t + dur + 0.05);
-    };
-
-    const seq = () => {
-      if (stopped) return;
-      const t = ctx.currentTime;
-      beep(880,  t + 0.00, 0.12);
-      beep(880,  t + 0.18, 0.12);
-      beep(1100, t + 0.36, 0.22);
-    };
-
-    seq();
     const loop = setInterval(() => {
       if (stopped) { clearInterval(loop); return; }
-      seq();
-    }, 5000);
+      playAlertTone();
+    }, 6000);
 
     activeOscillators.set(alertId, {
       stop: () => {
         stopped = true;
         clearInterval(loop);
-        try { ctx.close(); } catch (_) {}
         activeOscillators.delete(alertId);
       },
     });
