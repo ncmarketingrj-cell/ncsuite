@@ -46,13 +46,17 @@ OBJETIVO: extrair com PRECISÃO ABSOLUTA cada campanha visível no print, sem in
 
 REGRAS RÍGIDAS:
 1. Liste CADA linha de campanha visível com seu NOME REAL (remova badges do Meta Ads como 'Edições não publicadas', 'Alto desempenho', '1 recomendação', 'Recomendações'). Preserve maiúsculas, códigos e símbolos.
-2. Determine o TIPO DE RESULTADO (result_type) mapeando de forma INTELIGENTE cruzando o nome da campanha com a coluna de resultados/custo por resultado.
-   - "Conversas por mensagem iniciadas" / "Mensagens" / "WhatsApp"
-   - "Consignado" (campanhas de consignado de veículos)
-   - "Visualizações da página de destino" / "Visualizações de página" / visitas ao site/cardápio
-   - "Compras no site" / "Compras" / "Vendas" / "Conversões"
+2. Determine o TIPO DE RESULTADO (result_type) LENDO OBRIGATORIAMENTE o texto em cinza claro logo abaixo dos números na coluna Resultados ou Custo por resultado:
+   - "Visualizações da página de destino"
    - "Visitas ao perfil do Instagram"
+   - "Conversas por mensagem iniciadas" (WhatsApp/Direct)
+   - "Consignado" (campanhas de consignado de veículos)
+   - "Compras no site" (Compras / Pedidos)
+   - "Cadastros" / "Leads"
+   - "Engajamentos com a publicação"
+   - "Cliques no link"
    - "Alcance", "Impressões", "Visualizações de vídeo / Plays"
+   NUNCA deduza pelo nome se houver texto explicativo em cinza na coluna Resultados. O texto em cinza é a verdade absoluta da campanha.
 3. Extraia o nome da conta ou cliente no topo se visível (ex: pizzariabonne21) e o período no canto superior direito (ex: OUTUBRO 2026).
 4. Para cada campanha extraia TODOS os números visíveis: investimento (R$), resultados (qtd), custo por resultado (CPL/CPA), alcance, impressões, frequência, CTR.
 4. NÃO agrupe automaticamente. Retorne cada campanha separada.

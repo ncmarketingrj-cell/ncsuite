@@ -1,5 +1,5 @@
 import { createFileRoute, Link, useSearch } from "@tanstack/react-router";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { 
@@ -7,7 +7,7 @@ import {
   Calendar, CheckCircle2, Loader2, Globe, Brain,
   TrendingUp, Users, PieChart, Send, Copy, Settings,
   Eye, FileCheck, RefreshCw, Smartphone, Sparkles,
-  Award, MessageSquare, AlertCircle, Plus
+  Award, MessageSquare, AlertCircle, Plus, Search, X
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase-external/client";
 import { format, subDays } from "date-fns";
@@ -114,9 +114,21 @@ function RelatoriosPage() {
   };
   
   const [campaignList, setCampaignList] = useState<CampaignData[]>([]);
+  const [campaignSearch, setCampaignSearch] = useState("");
   const [visibleCount, setVisibleCount] = useState(40);
   const [isGenerating, setIsGenerating] = useState(false);
   const [isSyncingPeriod, setIsSyncingPeriod] = useState(false);
+
+  // Contexto de Loja de Veículos vs Outros Nichos
+  const isVehicleContext = useMemo(() => {
+    const acc = accounts.find(a => a.id === selectedAccountId);
+    const target = `${clientName || ""} ${acc?.name || ""}`.toLowerCase();
+    return /veic|veíc|car|auto|moto|repass|multimarc/i.test(target);
+  }, [clientName, selectedAccountId, accounts]);
+
+  const handleUpdateCampaignName = (id: string, newName: string) => {
+    setCampaignList(prev => prev.map(c => c.id === id ? { ...c, name: newName } : c));
+  };
 
   useEffect(() => {
     setVisibleCount(40);
@@ -301,10 +313,8 @@ function RelatoriosPage() {
         if (stored) {
           const parsed = JSON.parse(stored);
           const mapped: CampaignData[] = parsed.map((c: any, index: number) => {
-            // Usar result_type extraído pelo OCR para classificar o objetivo
-            const rawObj = c.result_type
-              ? mapResultTypeToObjective(c.result_type, c.name)
-              : detectObjective(c.name);
+            // Usar result_type extraído pelo OCR para classificar o objetivo com inteligência contextual
+            const rawObj = detectCampaignObjective(c.name, c.result_type, isVehicleContext);
             return {
               id: `ocr-${index}`,
               name: c.name || "Sem Nome",
@@ -444,7 +454,7 @@ function RelatoriosPage() {
               clicks,
               conversions,
               reach,
-              objective: detectObjective(adset.name),
+              objective: detectCampaignObjective(adset.name, "", isVehicleContext),
               platform: platformStr as "meta" | "google",
               selected: cost > 0
             };
@@ -483,7 +493,7 @@ function RelatoriosPage() {
               clicks,
               conversions,
               reach,
-              objective: detectObjective(ad.name),
+              objective: detectCampaignObjective(ad.name, "", isVehicleContext),
               platform: platformStr as "meta" | "google",
               selected: cost > 0
             };
@@ -492,7 +502,7 @@ function RelatoriosPage() {
         } else {
           // Default: campaign level
           const dbMetrics = await fetchPaginated("metrics", `
-            campaign_id, cost, conversions, impressions, clicks, reach,
+            campaign_id, cost, conversions, impressions, clicks, reach, result_type,
             campaigns!inner(id, name, ad_account_id)
           `, selectedAccountId, (q) => {
              return q.gte("date", startLimit).lte("date", endLimit);
@@ -504,7 +514,7 @@ function RelatoriosPage() {
           }
 
           // Agrupar métricas por campanha e identificar plataforma correta
-          const metricsMap = new Map<string, { id: string, name: string, platform: string, cost: number; impressions: number; clicks: number; conversions: number; reach: number }>();
+          const metricsMap = new Map<string, { id: string, name: string, platform: string, cost: number; impressions: number; clicks: number; conversions: number; reach: number; resultType?: string }>();
           
           dbMetrics.forEach((m: any) => {
             const campId = m.campaign_id;
@@ -516,7 +526,8 @@ function RelatoriosPage() {
                id: campId, 
                name: m.campaigns?.name || "Sem Nome", 
                platform: platformStr,
-               cost: 0, impressions: 0, clicks: 0, conversions: 0, reach: 0 
+               cost: 0, impressions: 0, clicks: 0, conversions: 0, reach: 0,
+               resultType: m.result_type || undefined
             };
             
             cur.cost += Number(m.cost || 0);
@@ -524,6 +535,7 @@ function RelatoriosPage() {
             cur.clicks += Number(m.clicks || 0);
             cur.conversions += Number(m.conversions || 0);
             cur.reach += Number(m.reach || 0);
+            if (m.result_type) cur.resultType = m.result_type;
             metricsMap.set(campId, cur);
           });
 
@@ -535,7 +547,7 @@ function RelatoriosPage() {
             clicks: c.clicks,
             conversions: c.conversions,
             reach: c.reach,
-            objective: detectObjective(c.name),
+            objective: detectCampaignObjective(c.name, c.resultType, isVehicleContext),
             platform: c.platform as "meta" | "google",
             selected: c.cost > 0
           })).filter(c => c.cost > 0 || c.impressions >= 1 || c.reach >= 1);
@@ -555,112 +567,147 @@ function RelatoriosPage() {
     loadData();
   }, [source, selectedAccountId, dateRange, reportLevel]);
 
-  // Mapeia o result_type extraído pelo OCR diretamente para o objetivo do relatório
-  const mapResultTypeToObjective = (resultType: string = "", campName: string = ""): string => {
-    const rt = resultType.toLowerCase();
-    const name = campName.toLowerCase();
+  // Função Heurística Inteligente para Detecção Precisa de Objetivos Reais
+  const detectCampaignObjective = (campName: string = "", resultType: string = "", isVehicleStore = false): string => {
+    const name = (campName || "").toLowerCase();
+    const rt = (resultType || "").toLowerCase();
 
     // 1. Consignado
-    if (rt.includes("consignado") || name.includes("consignado")) {
+    if (rt.includes("consignado") || name.includes("consignado") || name.includes("compramos seu carro") || name.includes("avaliacao")) {
       return "🚗 Consignado";
     }
-    // 2. Visualizações na Página / Site / Cardápio
+
+    // 2. Visitas ao Perfil do Instagram
     if (
-      rt.includes("visualizaç") || 
-      rt.includes("página") || 
-      rt.includes("pagina") || 
-      rt.includes("landing") ||
+      rt.includes("perfil") || 
+      rt.includes("instagram") || 
+      rt.includes("profile") ||
+      name.includes("visita ao perfil") || 
+      name.includes("visitas ao perfil") || 
+      name.includes("post do instagram") || 
+      name.includes("perfil") || 
+      name.includes("insta")
+    ) {
+      return "📱 Visitas ao Perfil";
+    }
+
+    // 3. Visualizações na Página de Destino / Site / Cardápio
+    if (
+      rt.includes("página de destino") || 
+      rt.includes("pagina de destino") || 
+      rt.includes("landing") || 
+      rt.includes("visualizações da página") ||
+      rt.includes("visualização da página") ||
       name.includes("site") || 
       name.includes("cardapio") || 
-      name.includes("cardápio")
+      name.includes("cardápio") || 
+      name.includes("landing") || 
+      name.includes("página") || 
+      name.includes("pagina") || 
+      name.includes("grupo de vendedores")
     ) {
       return "🌐 Visualizações na Página";
     }
-    // 3. Compras / Vendas
+
+    // 4. Compras no site / Vendas / Delivery / E-commerce
     if (
       rt.includes("compra") || 
       rt.includes("purchase") || 
       rt.includes("venda") || 
+      rt.includes("pedido") || 
       rt.includes("checkout") || 
-      rt.includes("pedido") ||
-      name.includes("cmp de vendas") ||
-      name.includes("vendas")
+      name.includes("compra") || 
+      name.includes("venda") || 
+      name.includes("pedido") || 
+      name.includes("checkout") || 
+      name.includes("cmp de vendas")
     ) {
       return "💳 Conversões / Compras";
     }
-    // 4. Mensagens nos veículos / WhatsApp / Leads
+
+    // 5. Mensagens / WhatsApp / Direct
     if (
       rt.includes("conversa") || 
       rt.includes("mensagem") || 
+      rt.includes("message") || 
       rt.includes("whatsapp") || 
-      rt.includes("message") ||
-      name.includes("veiculo") || 
-      name.includes("veículo") ||
-      name.includes("mensagens") ||
-      name.includes("qualidade") ||
-      name.includes("vaga") ||
-      name.includes("lead")
+      rt.includes("direct") || 
+      name.includes("mensagem") || 
+      name.includes("mensagens") || 
+      name.includes("whatsapp") || 
+      name.includes("wpp") || 
+      name.includes("msg") || 
+      name.includes("conversa") || 
+      name.includes("atendimento") || 
+      name.includes("qualidade") || 
+      name.includes("vaga")
     ) {
-      return "🚗 Mensagens nos veículos";
+      const isCarDealership = isVehicleStore || name.includes("veiculo") || name.includes("veículo") || name.includes("carro") || name.includes("auto") || name.includes("moto");
+      return isCarDealership ? "🚗 Mensagens nos veículos" : "💬 Mensagens";
     }
-    // 5. Alcance e Impressões
+
+    // 6. Cliques no Link / Tráfego
+    if (
+      rt.includes("clique") || 
+      rt.includes("click") || 
+      rt.includes("link") || 
+      rt.includes("outbound") || 
+      name.includes("clique") || 
+      name.includes("click") || 
+      name.includes("link") || 
+      name.includes("trafego") || 
+      name.includes("tráfego") || 
+      name.includes("canal")
+    ) {
+      return "👆 Cliques no Link";
+    }
+
+    // 7. Vídeo / ThruPlay
+    if (
+      rt.includes("thruplay") || 
+      rt.includes("vídeo") || 
+      rt.includes("video") || 
+      rt.includes("plays") || 
+      name.includes("thruplay") || 
+      name.includes("vídeo") || 
+      name.includes("video") || 
+      name.includes("reels")
+    ) {
+      return "▶️ Thru-Play";
+    }
+
+    // 8. Alcance e Impressões
     if (
       rt.includes("alcance") || 
       rt.includes("reach") || 
-      rt.includes("visualização de vídeo") || 
-      rt.includes("view") || 
       rt.includes("impressão") || 
-      rt.includes("impression") ||
-      rt.includes("perfil") ||
-      name.includes("alcance") ||
-      name.includes("reconhecimento") ||
-      name.includes("artes") ||
+      rt.includes("impressões") || 
+      rt.includes("impression") || 
+      rt.includes("reconhecimento") || 
+      name.includes("alcance") || 
+      name.includes("reconhecimento") || 
+      name.includes("awareness") || 
+      name.includes("artes") || 
       name.includes("criativo")
     ) {
       return "👁️ Alcance e Impressões";
     }
-    if (rt.includes("engajamento") || rt.includes("engagement")) {
+
+    // 9. Engajamento
+    if (rt.includes("engajamento") || rt.includes("engagement") || name.includes("engajamento")) {
       return "🔥 Engajamento";
     }
-    if (rt.includes("clique") || rt.includes("click") || rt.includes("link")) {
-      return "👆 Cliques no Link";
-    }
-    return "🎯 Conversões";
-  };
 
-  // Função Heurística Inteligente para Detecção de Objetivos
-  const detectObjective = (campName: string = ""): string => {
-    const name = campName.toLowerCase();
-    if (name.includes("consignado")) {
-      return "🚗 Consignado";
+    // 10. Cadastros / Leads
+    if (rt.includes("cadastro") || rt.includes("lead") || name.includes("cadastro") || name.includes("formulario")) {
+      return "📧 Cadastros / Leads";
     }
-    if (name.includes("site") || name.includes("cardapio") || name.includes("cardápio") || name.includes("pagina") || name.includes("página")) {
-      return "🌐 Visualizações na Página";
-    }
-    if (name.includes("compra") || name.includes("venda") || name.includes("pedido") || name.includes("checkout") || name.includes("cmp de vendas")) {
-      return "💳 Conversões / Compras";
-    }
-    if (
-      name.includes("mensagem") || 
-      name.includes("whatsapp") || 
-      name.includes("msg") || 
-      name.includes("conversa") || 
-      name.includes("atendimento") || 
-      name.includes("veiculo") || 
-      name.includes("veículo") || 
-      name.includes("qualidade") || 
-      name.includes("vaga") ||
-      name.includes("lead")
-    ) {
+
+    // Fallback contextual inteligente
+    if (isVehicleStore || name.includes("veiculo") || name.includes("carro")) {
       return "🚗 Mensagens nos veículos";
     }
-    if (name.includes("alcance") || name.includes("reconhecimento") || name.includes("reach") || name.includes("brand") || name.includes("artes")) {
-      return "👁️ Alcance e Impressões";
-    }
-    if (name.includes("clique") || name.includes("click") || name.includes("link") || name.includes("trafego") || name.includes("visita")) {
-      return "👆 Cliques no Link";
-    }
-    return "🎯 Conversões";
+    return "👆 Cliques no Link";
   };
 
   const handleToggleSelectAll = (val: boolean) => {
@@ -892,30 +939,58 @@ function RelatoriosPage() {
 
       const isReachOrImpression = (c: CampaignData) => 
         c.objective.includes("Alcance") || 
-        c.objective.includes("Visualizações") || 
-        c.objective.includes("Impressões") || 
         c.objective.includes("Thru-Play") || 
         c.objective.includes("Vídeo") ||
         /alcance|reconhecimento|impress[õo]es|plays|vídeo|video|artes/i.test(c.name);
 
-      const msgCampaigns = selected.filter(c => !isConsignado(c) && !isReachOrImpression(c));
+      const isProfile = (c: CampaignData) =>
+        c.objective.includes("Perfil") ||
+        /visita.*perfil|perfil.*instagram|post.*instagram|insta/i.test(c.name);
+
+      const isPage = (c: CampaignData) =>
+        c.objective.includes("Página") ||
+        c.objective.includes("Pagina") ||
+        /página.*destino|pagina.*destino|site|cardapio|landing|grupo.*vendedores/i.test(c.name);
+
+      const isLink = (c: CampaignData) =>
+        c.objective.includes("Cliques") ||
+        /clique.*link|link.*click|trafego.*nc|canal.*wpp/i.test(c.name);
+
+      const isCarMsg = (c: CampaignData) =>
+        c.objective.includes("veículo") ||
+        c.objective.includes("veiculo") ||
+        c.objective.includes("Mensagens nos veículos") ||
+        (!isConsignado(c) && !isReachOrImpression(c) && !isProfile(c) && !isPage(c) && !isLink(c) && isVehicleContext);
+
+      const isGeneralMsg = (c: CampaignData) =>
+        (c.objective.includes("Mensagens") || c.objective.includes("WhatsApp") || c.objective.includes("Direct")) && !isCarMsg(c);
+
+      const carMsgCampaigns = selected.filter(c => isCarMsg(c));
       const reachCampaigns = selected.filter(c => isReachOrImpression(c) && !isConsignado(c));
       const consignadoCampaigns = selected.filter(c => isConsignado(c));
+      const profileCampaigns = selected.filter(c => isProfile(c) && !isReachOrImpression(c) && !isConsignado(c));
+      const pageCampaigns = selected.filter(c => isPage(c) && !isReachOrImpression(c) && !isConsignado(c));
+      const linkCampaigns = selected.filter(c => isLink(c) && !isReachOrImpression(c) && !isConsignado(c));
+      const generalMsgCampaigns = selected.filter(c => isGeneralMsg(c));
 
-      // Totais Mensagens nos veículos
-      const costMsg = msgCampaigns.reduce((s, c) => s + c.cost, 0);
-      const leadsMsg = msgCampaigns.reduce((s, c) => s + (c.conversions > 0 ? c.conversions : (c.clicks > 0 ? c.clicks : 0)), 0);
-      const cplMsg = leadsMsg > 0 ? costMsg / leadsMsg : 0;
-
-      // Totais Alcance e Impressões
-      const costReach = reachCampaigns.reduce((s, c) => s + c.cost, 0);
-      const impsReach = reachCampaigns.reduce((s, c) => s + (c.impressions > 0 ? c.impressions : c.reach), 0);
-      const cpmReach = impsReach > 0 ? (costReach / impsReach) * 1000 : 0;
-
-      // Totais Consignado
-      const costCons = consignadoCampaigns.reduce((s, c) => s + c.cost, 0);
-      const leadsCons = consignadoCampaigns.reduce((s, c) => s + (c.conversions > 0 ? c.conversions : 0), 0);
-      const cplCons = leadsCons > 0 ? costCons / leadsCons : 0;
+      // Se alguma campanha não entrou nas regras acima, aloca no bloco contextual principal
+      const handledIds = new Set([
+        ...carMsgCampaigns.map(c => c.id),
+        ...reachCampaigns.map(c => c.id),
+        ...consignadoCampaigns.map(c => c.id),
+        ...profileCampaigns.map(c => c.id),
+        ...pageCampaigns.map(c => c.id),
+        ...linkCampaigns.map(c => c.id),
+        ...generalMsgCampaigns.map(c => c.id),
+      ]);
+      const otherCampaigns = selected.filter(c => !handledIds.has(c.id));
+      if (otherCampaigns.length > 0) {
+        if (isVehicleContext) {
+          carMsgCampaigns.push(...otherCampaigns);
+        } else {
+          generalMsgCampaigns.push(...otherCampaigns);
+        }
+      }
 
       const months = ["JANEIRO", "FEVEREIRO", "MARÇO", "ABRIL", "MAIO", "JUNHO", "JULHO", "AGOSTO", "SETEMBRO", "OUTUBRO", "NOVEMBRO", "DEZEMBRO"];
       const activePeriod = periodText.toUpperCase() || `${months[dateRange.startDate.getMonth()]} ${dateRange.startDate.getFullYear()}`;
@@ -929,21 +1004,81 @@ function RelatoriosPage() {
       }
       txt += ` *Período:* ${activePeriod}\n\n`;
 
-      txt += `*Campanha de mensagens nos veiculos:*\n`;
-      txt += ` Investimento: R$ ${costMsg.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n`;
-      txt += ` Total de leads: ${leadsMsg.toLocaleString("pt-BR")}\n`;
-      txt += ` Custo por lead: R$ ${cplMsg.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n\n`;
+      // 1. Mensagens nos Veículos
+      if (carMsgCampaigns.length > 0) {
+        const costMsg = carMsgCampaigns.reduce((s, c) => s + c.cost, 0);
+        const leadsMsg = carMsgCampaigns.reduce((s, c) => s + (c.conversions > 0 ? c.conversions : (c.clicks > 0 ? c.clicks : 0)), 0);
+        const cplMsg = leadsMsg > 0 ? costMsg / leadsMsg : 0;
+        txt += `*Campanha de mensagens nos veiculos:*\n`;
+        txt += ` Investimento: R$ ${costMsg.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n`;
+        txt += ` Total de leads: ${leadsMsg.toLocaleString("pt-BR")}\n`;
+        txt += ` Custo por lead: R$ ${cplMsg.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n\n`;
+      }
 
-      txt += `*Campanha de Alcance e Impressões:*\n`;
-      txt += `Investimento: R$ ${costReach.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n`;
-      txt += `Impressões / Plays: ${impsReach.toLocaleString("pt-BR")}\n`;
-      txt += `CPM: R$ ${cpmReach.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n\n`;
+      // 2. Mensagens / WhatsApp Geral (quando não for loja de veículos)
+      if (generalMsgCampaigns.length > 0) {
+        const costMsg = generalMsgCampaigns.reduce((s, c) => s + c.cost, 0);
+        const leadsMsg = generalMsgCampaigns.reduce((s, c) => s + (c.conversions > 0 ? c.conversions : (c.clicks > 0 ? c.clicks : 0)), 0);
+        const cplMsg = leadsMsg > 0 ? costMsg / leadsMsg : 0;
+        txt += `*Campanha de Mensagens / WhatsApp:*\n`;
+        txt += ` Investimento: R$ ${costMsg.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n`;
+        txt += ` Total de conversas: ${leadsMsg.toLocaleString("pt-BR")}\n`;
+        txt += ` Custo por conversa: R$ ${cplMsg.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n\n`;
+      }
 
-      if (consignadoCampaigns.length > 0 || costCons > 0 || leadsCons > 0) {
+      // 3. Alcance e Impressões
+      if (reachCampaigns.length > 0) {
+        const costReach = reachCampaigns.reduce((s, c) => s + c.cost, 0);
+        const impsReach = reachCampaigns.reduce((s, c) => s + (c.impressions > 0 ? c.impressions : c.reach), 0);
+        const cpmReach = impsReach > 0 ? (costReach / impsReach) * 1000 : 0;
+        txt += `*Campanha de Alcance e Impressões:*\n`;
+        txt += `Investimento: R$ ${costReach.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n`;
+        txt += `Impressões / Plays: ${impsReach.toLocaleString("pt-BR")}\n`;
+        txt += `CPM: R$ ${cpmReach.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n\n`;
+      }
+
+      // 4. Consignado
+      if (consignadoCampaigns.length > 0) {
+        const costCons = consignadoCampaigns.reduce((s, c) => s + c.cost, 0);
+        const leadsCons = consignadoCampaigns.reduce((s, c) => s + (c.conversions > 0 ? c.conversions : 0), 0);
+        const cplCons = leadsCons > 0 ? costCons / leadsCons : 0;
         txt += `*Campanha de consignado* \n`;
         txt += `Total de leads: ${leadsCons.toLocaleString("pt-BR")}\n`;
-        txt += `Custo por leads: ${cplCons.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n`;
-        txt += `Investimento: ${costCons.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n`;
+        txt += `Custo por leads: R$ ${cplCons.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n`;
+        txt += `Investimento: ${costCons.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n\n`;
+      }
+
+      // 5. Visitas ao Perfil do Instagram
+      if (profileCampaigns.length > 0) {
+        const costProf = profileCampaigns.reduce((s, c) => s + c.cost, 0);
+        const visitsProf = profileCampaigns.reduce((s, c) => s + (c.conversions > 0 ? c.conversions : (c.clicks > 0 ? c.clicks : 0)), 0);
+        const cpvProf = visitsProf > 0 ? costProf / visitsProf : 0;
+        txt += `*Campanha de Visitas ao Perfil:*\n`;
+        txt += `Investimento: R$ ${costProf.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n`;
+        txt += `Visitas ao perfil: ${visitsProf.toLocaleString("pt-BR")}\n`;
+        txt += `Custo por visita: R$ ${cpvProf.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n\n`;
+      }
+
+      // 6. Visualizações na Página / Site
+      if (pageCampaigns.length > 0) {
+        const costViews = pageCampaigns.reduce((s, c) => s + c.cost, 0);
+        const visitsViews = pageCampaigns.reduce((s, c) => s + (c.conversions > 0 ? c.conversions : (c.clicks > 0 ? c.clicks : 0)), 0);
+        const cpView = visitsViews > 0 ? costViews / visitsViews : 0;
+        txt += `*Visualizações na Página:*\n`;
+        txt += `Investimento: R$ ${costViews.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n`;
+        txt += `Resultados: ${visitsViews.toLocaleString("pt-BR")} visitas\n`;
+        txt += `Custo por visualizações: R$ ${cpView.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n\n`;
+      }
+
+      // 7. Cliques no Link / Tráfego
+      if (linkCampaigns.length > 0) {
+        const costLink = linkCampaigns.reduce((s, c) => s + c.cost, 0);
+        const clicksLink = linkCampaigns.reduce((s, c) => s + c.clicks, 0);
+        const cpcLink = clicksLink > 0 ? costLink / clicksLink : 0;
+        txt += `*Campanha de Cliques no Link:*\n`;
+        txt += `Investimento: R$ ${costLink.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n`;
+        txt += `Cliques no link: ${clicksLink.toLocaleString("pt-BR")}\n`;
+        txt += `CPC: R$ ${cpcLink.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n\n`;
       }
 
       setGeneratedText(txt.trim());
@@ -1098,6 +1233,16 @@ function RelatoriosPage() {
     window.open(url, "_blank");
     toast.info("Abrindo o WhatsApp...");
   };
+
+  const filteredCampaignList = useMemo(() => {
+    if (!campaignSearch.trim()) return campaignList;
+    const q = campaignSearch.toLowerCase();
+    return campaignList.filter(c => 
+      c.name.toLowerCase().includes(q) || 
+      c.objective.toLowerCase().includes(q) ||
+      (c.campaignName && c.campaignName.toLowerCase().includes(q))
+    );
+  }, [campaignList, campaignSearch]);
 
   return (
     <div className="mx-auto max-w-6xl space-y-8 pb-20">
@@ -1356,36 +1501,71 @@ function RelatoriosPage() {
         </div>
 
         {/* Painel Direito: Lista de Campanhas e Mapeamento de Objetivos */}
-        <div className="glass-panel card-sport p-6 space-y-4 lg:col-span-2 border-white/10 bg-white/5 flex flex-col min-h-[400px]">
-          <div className="flex items-center justify-between border-b border-border/50 pb-3">
+        <div className="glass-panel card-sport p-6 space-y-4 lg:col-span-2 border-white/10 bg-white/5 flex flex-col min-h-[460px]">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-border/50 pb-3">
             <div className="flex items-center gap-3">
               <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary/20 text-primary text-[10px] font-black">2</span>
               <div>
-                <h3 className="header-sport text-sm font-black uppercase tracking-widest text-primary">
+                <h3 className="header-sport text-sm font-black uppercase tracking-widest text-primary flex items-center gap-2">
                   {reportLevel === "campaign" ? "Selecione e Classifique as Campanhas" : reportLevel === "adset" ? "Selecione e Classifique os Conjuntos" : "Selecione e Classifique os Anúncios"}
+                  {campaignList.length > 0 && (
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-white/10 text-muted-foreground font-mono">
+                      {campaignList.filter(c => c.selected).length}/{campaignList.length}
+                    </span>
+                  )}
                 </h3>
                 <p className="text-[10px] text-muted-foreground">
-                  {reportLevel === "campaign" ? "Marque as campanhas que entrarão no relatório e defina o objetivo de cada uma." : reportLevel === "adset" ? "Marque os conjuntos de anúncios que entrarão no relatório e defina o objetivo." : "Marque os anúncios que entrarão no relatório e defina o objetivo de cada um."}
+                  Marque as campanhas, edite o nome diretamente para o relatório e confira os objetivos detectados automaticamente.
                 </p>
               </div>
             </div>
+
             {campaignList.length > 0 && (
-              <div className="flex gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <button 
                   onClick={() => handleToggleSelectAll(true)}
-                  className="rounded bg-white/5 border border-white/10 px-2.5 py-1 text-[9px] font-black uppercase text-white hover:bg-white/10 transition"
+                  className="rounded-lg bg-white/5 border border-white/10 px-2.5 py-1 text-[9px] font-black uppercase text-white hover:bg-white/10 transition"
                 >
                   Marcar Todas
                 </button>
                 <button 
+                  onClick={() => setCampaignList(prev => prev.map(c => ({ ...c, selected: c.cost > 0 })))}
+                  className="rounded-lg bg-white/5 border border-white/10 px-2.5 py-1 text-[9px] font-black uppercase text-white hover:bg-white/10 transition"
+                  title="Selecionar apenas campanhas com gasto acima de zero"
+                >
+                  Com Gasto
+                </button>
+                <button 
                   onClick={() => handleToggleSelectAll(false)}
-                  className="rounded bg-white/5 border border-white/10 px-2.5 py-1 text-[9px] font-black uppercase text-muted-foreground hover:bg-white/10 transition"
+                  className="rounded-lg bg-white/5 border border-white/10 px-2.5 py-1 text-[9px] font-black uppercase text-muted-foreground hover:bg-white/10 transition"
                 >
                   Limpar
                 </button>
               </div>
             )}
           </div>
+
+          {/* Barra de Pesquisa e Filtro de Campanhas */}
+          {campaignList.length > 0 && (
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+              <input
+                type="text"
+                value={campaignSearch}
+                onChange={(e) => setCampaignSearch(e.target.value)}
+                placeholder="Pesquisar por nome de campanha, objetivo ou conjunto..."
+                className="w-full rounded-xl border border-white/10 bg-background/50 pl-9 pr-8 py-2 text-xs text-white placeholder:text-muted-foreground focus:outline-none focus:border-primary/50 transition-colors"
+              />
+              {campaignSearch && (
+                <button 
+                  onClick={() => setCampaignSearch("")} 
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-white"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </div>
+          )}
 
           {campaignList.length === 0 ? (
             <div className="flex-1 flex flex-col items-center justify-center text-center p-8">
@@ -1408,60 +1588,71 @@ function RelatoriosPage() {
               )}
             </div>
           ) : (
-            <div className="flex-1 overflow-y-auto max-h-[350px] pr-1 space-y-2 scrollbar-thin">
-              {campaignList.slice(0, visibleCount).map((c) => (
+            <div className="flex-1 overflow-y-auto max-h-[580px] min-h-[380px] pr-1 space-y-2 scrollbar-thin">
+              {filteredCampaignList.slice(0, visibleCount).map((c) => (
                 <div 
                   key={c.id} 
                   className={`flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 rounded-xl border transition ${c.selected ? 'bg-primary/[0.02] border-primary/20 hover:border-primary/45' : 'bg-background/40 border-white/5 hover:border-white/10'}`}
                 >
-                  <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-3 flex-1 min-w-0">
                     <button 
                       onClick={() => handleToggleSelect(c.id)}
-                      className={`h-5 w-5 rounded border-2 flex items-center justify-center transition ${c.selected ? 'bg-primary border-primary text-background' : 'border-white/10 hover:border-primary/50'}`}
+                      className={`h-5 w-5 rounded border-2 flex items-center justify-center transition shrink-0 ${c.selected ? 'bg-primary border-primary text-background' : 'border-white/10 hover:border-primary/50'}`}
+                      title={c.selected ? "Desmarcar do relatório" : "Marcar para entrar no relatório"}
                     >
                       {c.selected && <CheckCircle2 className="h-3.5 w-3.5 stroke-[3]" />}
                     </button>
-                    <div>
+                    <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
-                        <p className="text-xs font-bold text-white max-w-[280px] sm:max-w-[340px] truncate">{c.name}</p>
-                        <span className={`inline-flex rounded px-1.5 py-0.5 text-[8px] font-black uppercase tracking-wider ${c.platform === 'meta' ? 'bg-primary/20 text-primary border border-primary/30' : 'bg-secondary/20 text-secondary border border-secondary/30'}`}>
+                        <input
+                          type="text"
+                          value={c.name}
+                          onChange={(e) => handleUpdateCampaignName(c.id, e.target.value)}
+                          className="text-xs font-bold text-white bg-transparent hover:bg-white/5 focus:bg-background/90 border border-transparent hover:border-white/10 focus:border-primary/50 rounded-lg px-2 py-1 transition-all flex-1 min-w-0 focus:outline-none"
+                          title="Clique para editar o nome da campanha no relatório"
+                          placeholder="Nome da campanha..."
+                        />
+                        <span className={`shrink-0 inline-flex rounded px-1.5 py-0.5 text-[8px] font-black uppercase tracking-wider ${c.platform === 'meta' ? 'bg-primary/20 text-primary border border-primary/30' : 'bg-secondary/20 text-secondary border border-secondary/30'}`}>
                           {c.platform === 'meta' ? 'Meta' : 'Google'}
                         </span>
                       </div>
                       {c.campaignName && (
-                        <p className="text-[9px] text-muted-foreground/80 font-medium mt-0.5">
+                        <p className="text-[9px] text-muted-foreground/80 font-medium mt-0.5 px-2">
                           {c.adSetName ? `Conjunto: ${c.adSetName} • ` : ""}Campanha: {c.campaignName}
                         </p>
                       )}
-                      <p className="text-[10px] text-muted-foreground font-mono mt-0.5">
-                        Custo: R$ {c.cost.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} • Cliques: {c.clicks} • Conversões: {c.conversions}
+                      <p className="text-[10px] text-muted-foreground font-mono mt-0.5 px-2">
+                        Custo: R$ {c.cost.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} • Cliques: {c.clicks.toLocaleString('pt-BR')} • Conversões: {c.conversions.toLocaleString('pt-BR')}
+                        {c.reach > 0 ? ` • Alcance: ${c.reach.toLocaleString('pt-BR')}` : ""}
                       </p>
                     </div>
                   </div>
 
-                  <div className="flex flex-col gap-1 w-full sm:w-auto">
+                  <div className="flex flex-col gap-1 w-full sm:w-auto shrink-0">
                     <label className="text-[9px] text-muted-foreground uppercase font-black px-1 hidden sm:block">Objetivo / Métrica</label>
                     <select
                       value={c.objective}
                       onChange={(e) => handleUpdateObjective(c.id, e.target.value)}
-                      className="rounded-lg border border-white/10 bg-background/50 px-3 py-2 text-[10px] font-bold text-white focus:outline-none focus:border-primary/50 transition-colors w-full sm:w-44"
+                      className="rounded-lg border border-white/10 bg-background/50 px-3 py-2 text-[10px] font-bold text-white focus:outline-none focus:border-primary/50 transition-colors w-full sm:w-48"
                     >
                       <optgroup label="🚗 Veículos / Leads">
                         <option value="🚗 Mensagens nos veículos">🚗 Mensagens nos veículos</option>
                         <option value="🚗 Consignado">🚗 Campanha de Consignado</option>
                         <option value="💬 Mensagens">💬 Mensagens / WhatsApp</option>
-                        <option value="💬 Msgs Direct">💬 Msgs Direct (Instagram)</option>
+                        <option value="📧 Cadastros / Leads">📧 Cadastros / Leads</option>
+                      </optgroup>
+                      <optgroup label="📱 Perfil / Tráfego">
+                        <option value="📱 Visitas ao Perfil">📱 Visitas ao Perfil (Instagram)</option>
+                        <option value="👆 Cliques no Link">👆 Cliques no Link</option>
+                        <option value="🌐 Visualizações na Página">🌐 Visualizações na Página</option>
                       </optgroup>
                       <optgroup label="🛒 Vendas / Cardápio">
-                        <option value="🌐 Visualizações na Página">🌐 Visualizações na Página</option>
                         <option value="💳 Conversões / Compras">💳 Conversões / Compras</option>
-                        <option value="👆 Cliques no Link">👆 Cliques no Link</option>
                       </optgroup>
                       <optgroup label="👁️ Alcance / Topo">
                         <option value="👁️ Alcance e Impressões">👁️ Alcance e Impressões</option>
                         <option value="▶️ Thru-Play">▶️ Thru-Play (Vídeo)</option>
                         <option value="🔥 Engajamento">🔥 Engajamento</option>
-                        <option value="📧 Cadastros / Leads">📧 Cadastros / Leads</option>
                         <option value="🎯 Outros">🎯 Outros</option>
                       </optgroup>
                     </select>
@@ -1470,13 +1661,13 @@ function RelatoriosPage() {
               ))}
               
               {/* Botão Mostrar Mais */}
-              {visibleCount < campaignList.length && (
+              {visibleCount < filteredCampaignList.length && (
                 <div className="pt-4 pb-2 flex justify-center w-full">
                   <button 
                     onClick={() => setVisibleCount(v => v + 40)}
                     className="rounded-full border border-white/10 bg-white/5 px-6 py-2 text-xs font-bold text-foreground hover:bg-white/10 hover:border-white/20 transition-all flex items-center gap-2"
                   >
-                    Mostrar Mais ({campaignList.length - visibleCount} ocultos)
+                    Mostrar Mais ({filteredCampaignList.length - visibleCount} ocultos)
                   </button>
                 </div>
               )}

@@ -51,21 +51,27 @@ Exemplo: Se o texto for "NC | RAISSA - MENSAGENS Edições não publicadas", ext
 Se for "6697 - Consignado", extraia "6697 - Consignado".
 Preserve maiúsculas, códigos numéricos, colchetes e símbolos reais da campanha.
 
-2. COLUNA DE RESULTADOS E RESULT_TYPE:
-A coluna "Resultados" define a métrica principal:
-- Se a coluna indicar "Conversas por mensagem iniciadas" (ou nome da campanha tiver "MENSAGENS", "WHATSAPP", "QUALIDADE", "MSG") → result_type = "Conversas por mensagem iniciadas", conversions = número de conversas, cpl = custo por resultado.
-- Se indicar "Visualizações da página de destino" ou visitas a site/cardápio (ex: campanhas com "SITE", "CARDAPIO", "PÁGINA") → result_type = "Visualizações da página de destino", conversions = visualizações da página, cpl = custo por visualização.
-- Se indicar "Compras no site" ou compras/pedidos/vendas (ex: "NC | CMP de Vendas", "Compras") → result_type = "Compras no site", conversions = número de compras, cpl = custo por compra (CPA).
-- Se indicar "Visitas ao perfil do Instagram" ou reconhecimento → result_type = "Visitas ao perfil do Instagram".
-- Se indicar "Alcance", "Impressões" ou reproduções de vídeo/plays → result_type = "Alcance".
-- Caso a coluna Resultados mostre "—", busque o valor numérico na coluna lateral específica. NUNCA deixe conversions = null ou 0 se existir qualquer coluna com resultado numérico.
+2. COLUNA DE RESULTADOS E RESULT_TYPE (PRIORIDADE ABSOLUTA):
+No Gerenciador de Anúncios do Meta Ads, logo abaixo de cada número na coluna "Resultados" e na coluna "Custo por resultado", existe SEMPRE um subtexto em cinza claro com a métrica real:
+- "Visualizações da página de destino" (ou "Visualização da página de destino") → result_type = "Visualizações da página de destino"
+- "Visitas ao perfil do Instagram" (ou "Visita ao perfil do Instagram") → result_type = "Visitas ao perfil do Instagram"
+- "Conversas por mensagem iniciadas" (ou "Conversa por mensagem iniciada") → result_type = "Conversas por mensagem iniciadas"
+- "Compras no site" (ou "Compras") → result_type = "Compras no site"
+- "Cadastros" ou "Leads" → result_type = "Cadastros"
+- "Engajamentos com a publicação" → result_type = "Engajamento"
+- "Cliques no link" → result_type = "Cliques no link"
+- "Alcance" ou "Impressões" → result_type = "Alcance"
+- "Visualizações do vídeo" ou "ThruPlay" → result_type = "ThruPlay"
+
+REGRA DE PRECISÃO: NUNCA deduza pelo nome se houver texto em cinza abaixo do número. LEIA ESTRITAMENTE o texto em cinza da coluna Resultados/Custo por resultado!
+Caso a coluna Resultados mostre "—", busque o valor numérico na coluna lateral específica (Cliques no link, Alcance ou Impressões).
 
 3. DETECÇÃO DO CLIENTE / CONTA E PERÍODO:
-- Verifique se no topo há o seletor de conta de anúncios (ex: "pizzariabonne21", "AlfaCar", "NC Veículos") → preencha "account_name".
-- Verifique o seletor de período no canto superior direito (ex: "Mês passado: 1 de abr de 2026 a 30 de abr de 2026" → "ABRIL 2026", ou "OUTUBRO 2026") → preencha "period".
+- Verifique se no topo há o seletor de conta de anúncios (ex: "pizzariabonne21", "AlfaCar", "NC Veículos", "Bm - Nc Agência Ofc") → preencha "account_name".
+- Verifique o seletor de período no canto superior direito (ex: "Mês passado: 1 de abr de 2026 a 30 de abr de 2026" → "ABRIL 2026", ou "1 de nov de 2026 a 10 de nov de 2026" → "NOVEMBRO 2026") → preencha "period".
 - Classifique "detected_mode":
-  - "ecommerce_sales" se as campanhas envolverem Compras no site, Visualizações da página de destino, Site, Cardápio, Vendas.
-  - "standard_auto" se as campanhas forem de Mensagens, Veículos, Consignado, Leads, WhatsApp.
+  - "ecommerce_sales" SOMENTE se a conta/campanhas envolverem Compras no site, Cardápio, Pizzaria, Restaurante, Delivery, Pedidos, Vendas de Produtos.
+  - "standard_auto" se forem campanhas de Veículos, Agência, Mensagens, Leads, Visitas ao Perfil, Tráfego ou Institucional.
 
 4. FORMATAÇÃO NUMÉRICA BRASILEIRA:
 - Ponto (.) = separador de milhar: "1.559" → 1559, "36.675" → 36675.
@@ -252,13 +258,14 @@ export const extractPrintFn = createServerFn({ method: "POST" })
       platform: detectedPlatform
     }));
 
-    // Detectar automaticamente o modo de conta caso a IA não tenha inferido
+    // Detectar automaticamente o modo de conta: apenas ativa e-commerce se houver vendas/compras/delivery reais
     let detectedMode: "ecommerce_sales" | "standard_auto" = parsed.account_info?.detected_mode || "standard_auto";
-    const hasSalesOrSite = mappedCampaigns.some(c => 
-      /visualizaç(?:ão|ões)\s+da\s+página|compra|venda|cardapio|cardápio|site/i.test(c.result_type || "") ||
-      /site|cardapio|cardápio|cmp\s+de\s+vendas|vendas|compras/i.test(c.name || "")
+    const hasSalesOrFood = mappedCampaigns.some(c => 
+      /compras?\s+no\s+site|purchase|cardapio|cardápio|pizza|delivery|pedidos?\s+finalizados?/i.test(c.result_type || "") ||
+      /cardapio|cardápio|pizza|delivery|restaurante|e-?commerce/i.test(c.name || "") ||
+      /cardapio|cardápio|pizza|delivery|restaurante/i.test(parsed.account_info?.account_name || "")
     );
-    if (hasSalesOrSite) {
+    if (hasSalesOrFood) {
       detectedMode = "ecommerce_sales";
     }
 
