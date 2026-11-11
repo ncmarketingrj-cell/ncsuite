@@ -16,6 +16,7 @@ import { toast } from "sonner";
 import { z } from "zod";
 import { DateRangePicker } from "@/components/DateRangePicker";
 import { TemplateModal } from "@/components/TemplateModal";
+import { WhatsAppSendModal } from "@/components/WhatsAppSendModal";
 
 const searchSchema = z.object({
   from: z.string().optional(),
@@ -140,6 +141,7 @@ function RelatoriosPage() {
   const [activeReportId, setActiveReportId] = useState<string | null>(null);
 
   const [isSavedReportsModalOpen, setIsSavedReportsModalOpen] = useState(false);
+  const [isWhatsAppModalOpen, setIsWhatsAppModalOpen] = useState(false);
   const [savedTab, setSavedTab] = useState<"api" | "upload">("upload");
   const [reportSearchTerm, setReportSearchTerm] = useState("");
   const [reportSearchPeriod, setReportSearchPeriod] = useState("");
@@ -291,13 +293,18 @@ function RelatoriosPage() {
         setClientName("Consolidado");
       } else {
         const client = clientsData?.find(c => c.meta_ad_account_id === selectedAccountId);
-        if (client && client.name) {
-          setClientName(client.name);
-        } else {
-          // Fallback: usar o nome da própria conta conectada
-          const acc = accounts.find(a => a.id === selectedAccountId);
-          if (acc && acc.name) {
-            setClientName(acc.name);
+        const acc = accounts.find(a => a.id === selectedAccountId);
+        const resolvedName = client?.name || acc?.name || "";
+        
+        if (resolvedName) {
+          setClientName(resolvedName);
+          
+          // Auto-detectar modelo de relatório pelo nicho do cliente (Ex: Pizza/Delivery vs Veículos/Geral)
+          const lower = resolvedName.toLowerCase();
+          if (/pizza|cardapio|cardápio|delivery|restaurante|burger|comida|ecommerce|e-commerce|loja virtual/i.test(lower)) {
+            setReportMode("ecommerce_sales");
+          } else {
+            setReportMode("standard_auto");
           }
         }
       }
@@ -1705,10 +1712,17 @@ function RelatoriosPage() {
                       {copied ? "Copiado!" : "Copiar"}
                     </button>
                     <button 
-                      onClick={handleSendWhatsapp}
-                      className="flex items-center gap-1.5 rounded-lg bg-success text-white px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest hover:shadow-glow transition"
+                      onClick={() => {
+                        if (!generatedText) {
+                          toast.warning("Gere o relatório antes de enviar!");
+                          return;
+                        }
+                        setIsWhatsAppModalOpen(true);
+                      }}
+                      className="flex items-center gap-1.5 rounded-lg bg-[#25D366] text-black font-black px-3.5 py-1.5 text-[10px] uppercase tracking-widest hover:shadow-glow transition hover:scale-105 active:scale-95"
+                      title="Abrir opções de envio para WhatsApp (Número, Grupo ou Seletor)"
                     >
-                      <Send className="h-3.5 w-3.5" /> Enviar
+                      <Send className="h-3.5 w-3.5 fill-current" /> Enviar WhatsApp
                     </button>
                   </div>
                 </div>
@@ -1990,6 +2004,13 @@ function RelatoriosPage() {
         onClose={() => setIsTemplateModalOpen(false)} 
         onSuccess={() => refetchTemplates()} 
         templates={templatesData || []}
+      />
+
+      <WhatsAppSendModal
+        isOpen={isWhatsAppModalOpen}
+        onClose={() => setIsWhatsAppModalOpen(false)}
+        reportText={generatedText}
+        storeName={clientName && clientName !== "Consolidado" ? clientName : (accounts.find(a => a.id === selectedAccountId)?.name || clientName || "")}
       />
 
       <style>{`
