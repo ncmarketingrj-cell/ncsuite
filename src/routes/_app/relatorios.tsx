@@ -263,6 +263,22 @@ function RelatoriosPage() {
     endDate: new Date(),
   });
   const [targetWhatsapp, setTargetWhatsapp] = useState("");
+  const [activeReportId, setActiveReportId] = useState<string | null>(search.activeReportId || null);
+  const [campaignList, setCampaignList] = useState<CampaignData[]>([]);
+  const [campaignSearch, setCampaignSearch] = useState("");
+  const [visibleCount, setVisibleCount] = useState(40);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [isSyncingPeriod, setIsSyncingPeriod] = useState(false);
+  const [generatedText, setGeneratedText] = useState("");
+  const [previewOpen, setPreviewOpen] = useState(true);
+  const [copied, setCopied] = useState(false);
+  const [isSavedReportsModalOpen, setIsSavedReportsModalOpen] = useState(false);
+  const [isWhatsAppModalOpen, setIsWhatsAppModalOpen] = useState(false);
+  const [savedTab, setSavedTab] = useState<"api" | "upload">("upload");
+  const [reportSearchTerm, setReportSearchTerm] = useState("");
+  const [reportSearchPeriod, setReportSearchPeriod] = useState("");
+  const [isTemplateModalOpen, setIsTemplateModalOpen] = useState(false);
+  const [activePdfLayout, setActivePdfLayout] = useState("classic");
 
   // Fetch das contas Meta Ads (para a origem API)
   const { data: accountsData } = useQuery<any[]>({
@@ -285,74 +301,6 @@ function RelatoriosPage() {
     enabled: source === "api",
   });
 
-  const handleDateChange = (start: Date, end: Date) => {
-    setDateRange({ startDate: start, endDate: end });
-    const months = ["JANEIRO", "FEVEREIRO", "MARÇO", "ABRIL", "MAIO", "JUNHO", "JULHO", "AGOSTO", "SETEMBRO", "OUTUBRO", "NOVEMBRO", "DEZEMBRO"];
-    const selectedMonth = months[start.getMonth()];
-    const selectedYear = start.getFullYear();
-    setPeriodText(`${selectedMonth} ${selectedYear}`);
-    setActiveReportId(null);
-  };
-
-  const handleSyncPeriod = async () => {
-    if (source !== "api") return;
-    setIsSyncingPeriod(true);
-    try {
-      const getLocalDateStr = (d: Date) => {
-        const y = d.getFullYear();
-        const m = String(d.getMonth() + 1).padStart(2, "0");
-        const day = String(d.getDate()).padStart(2, "0");
-        return `${y}-${m}-${day}`;
-      };
-      const timeRange = {
-        since: getLocalDateStr(dateRange.startDate),
-        until: getLocalDateStr(dateRange.endDate),
-      };
-      await Promise.all([
-        supabase.functions.invoke("sync-meta-ads", { body: { triggered_by: "manual_report", time_range: timeRange } }),
-        supabase.functions.invoke("sync-google-ads", { body: { triggered_by: "manual_report", time_range: timeRange } }),
-      ]);
-      toast.success("Sincronização do período concluída! Recarregando dados...");
-      await loadData();
-    } catch (err: any) {
-      toast.error("Falha ao sincronizar período: " + (err.message ?? "erro desconhecido"));
-    } finally {
-      setIsSyncingPeriod(false);
-    }
-  };
-  
-  const [campaignList, setCampaignList] = useState<CampaignData[]>([]);
-  const [campaignSearch, setCampaignSearch] = useState("");
-  const [visibleCount, setVisibleCount] = useState(40);
-  const [isGenerating, setIsGenerating] = useState(false);
-  const [isSyncingPeriod, setIsSyncingPeriod] = useState(false);
-
-  // Contexto de Loja de Veículos vs Outros Nichos
-  const isVehicleContext = useMemo(() => {
-    const acc = accounts.find(a => a.id === selectedAccountId);
-    const target = `${clientName || ""} ${acc?.name || ""}`.toLowerCase();
-    return /veic|veíc|car|auto|moto|repass|multimarc/i.test(target);
-  }, [clientName, selectedAccountId, accounts]);
-
-  const handleUpdateCampaignName = (id: string, newName: string) => {
-    setCampaignList(prev => prev.map(c => c.id === id ? { ...c, name: newName } : c));
-  };
-
-  useEffect(() => {
-    setVisibleCount(40);
-  }, [source, selectedAccountId, dateRange, reportLevel]);
-  const [generatedText, setGeneratedText] = useState("");
-  const [previewOpen, setPreviewOpen] = useState(true);
-  const [copied, setCopied] = useState(false);
-
-  const [activeReportId, setActiveReportId] = useState<string | null>(null);
-
-  const [isSavedReportsModalOpen, setIsSavedReportsModalOpen] = useState(false);
-  const [isWhatsAppModalOpen, setIsWhatsAppModalOpen] = useState(false);
-  const [savedTab, setSavedTab] = useState<"api" | "upload">("upload");
-  const [reportSearchTerm, setReportSearchTerm] = useState("");
-  const [reportSearchPeriod, setReportSearchPeriod] = useState("");
-
   const { data: savedReports = [] } = useQuery<SavedReport[]>({
     queryKey: ["saved-reports"],
     queryFn: async () => {
@@ -374,10 +322,6 @@ function RelatoriosPage() {
     },
   });
 
-  // Controle de Templates
-  const [isTemplateModalOpen, setIsTemplateModalOpen] = useState(false);
-  const [activePdfLayout, setActivePdfLayout] = useState("classic");
-
   const { data: templatesData, refetch: refetchTemplates } = useQuery<any[]>({
     queryKey: ["report-templates"],
     queryFn: async () => {
@@ -386,116 +330,25 @@ function RelatoriosPage() {
     },
   });
 
-  // Monitora se veio um ID de relatório por parâmetro de busca para carregá-lo imediatamente
-  useEffect(() => {
-    if (search.activeReportId && savedReports.length > 0) {
-      const rep = savedReports.find(r => r.id === search.activeReportId);
-      if (rep) {
-        // Aguarda um pequeno delay para garantir que outras inicializações de dados do relatório tenham rodado
-        const timer = setTimeout(() => {
-          handleLoadReport(rep);
-        }, 100);
-        return () => clearTimeout(timer);
-      }
-    }
-  }, [search.activeReportId, savedReports]);
+  // Contexto de Loja de Veículos vs Outros Nichos
+  const isVehicleContext = useMemo(() => {
+    const acc = accounts.find(a => a.id === selectedAccountId);
+    const target = `${clientName || ""} ${acc?.name || ""}`.toLowerCase();
+    return /veic|veíc|car|auto|moto|repass|multimarc/i.test(target);
+  }, [clientName, selectedAccountId, accounts]);
 
-  const handleSaveReport = async (showToast = true) => {
-    if (!generatedText) {
-      toast.warning("Gere o relatório antes de salvar!");
-      return;
-    }
-
-    const totalInvestment = campaignList.filter(c => c.selected).reduce((s, c) => s + c.cost, 0);
-    const totalCampaigns = campaignList.filter(c => c.selected).length;
-
-    const payload = {
-      client_name: clientName,
-      period: periodText,
-      markdown: generatedText,
-      raw_data: { source, campaigns: campaignList, reportMode, reportLevel, salesRevenue, salesOrders },
-      total_investment: totalInvestment,
-      total_campaigns: totalCampaigns,
-    };
-
-    try {
-      if (activeReportId) {
-        await supabase.from("reports").update(payload).eq("id", activeReportId);
-        if (showToast) toast.success("Relatório atualizado!");
-      } else {
-        const { data } = await supabase.from("reports").insert(payload).select("id").single();
-        if (data?.id) setActiveReportId(data.id);
-        if (showToast) toast.success("Relatório salvo!");
-      }
-      queryClient.invalidateQueries({ queryKey: ["saved-reports"] });
-    } catch (err: any) {
-      toast.error("Erro ao salvar relatório: " + (err.message ?? "tente novamente"));
-    }
+  const handleUpdateCampaignName = (id: string, newName: string) => {
+    setCampaignList(prev => prev.map(c => c.id === id ? { ...c, name: newName } : c));
   };
 
-  const handleLoadReport = (rep: SavedReport) => {
-    setSource(rep.source);
-    setClientName(rep.clientName);
-    setPeriodText(rep.periodText);
-    setReportMode(rep.reportMode);
-    setCampaignList(rep.campaigns);
-    setGeneratedText(rep.generatedText);
-    setActiveReportId(rep.id);
-    if ((rep as any).raw_data?.salesRevenue) {
-      setSalesRevenue((rep as any).raw_data.salesRevenue);
-    }
-    if ((rep as any).raw_data?.salesOrders) {
-      setSalesOrders((rep as any).raw_data.salesOrders);
-    }
-    if (rep.reportLevel) {
-      setReportLevel(rep.reportLevel);
-    }
-    toast.success(`Relatório de ${rep.clientName} carregado com sucesso!`);
-  };
-
-  const handleDeleteReport = async (id: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    await supabase.from("reports").delete().eq("id", id);
-    if (activeReportId === id) setActiveReportId(null);
-    queryClient.invalidateQueries({ queryKey: ["saved-reports"] });
-    toast.success("Relatório removido!");
-  };
-
-  // Inicializa o período atual com o nome do mês em português (Ex: "MAIO 2026")
-  useEffect(() => {
+  const handleDateChange = (start: Date, end: Date) => {
+    setDateRange({ startDate: start, endDate: end });
     const months = ["JANEIRO", "FEVEREIRO", "MARÇO", "ABRIL", "MAIO", "JUNHO", "JULHO", "AGOSTO", "SETEMBRO", "OUTUBRO", "NOVEMBRO", "DEZEMBRO"];
-    const now = new Date();
-    setPeriodText(`${months[now.getMonth()]} ${now.getFullYear()}`);
-    
-    // WhatsApp padrão do localStorage
-    const savedWhatsapp = localStorage.getItem("nc_agency_whatsapp") || "";
-    setTargetWhatsapp(savedWhatsapp);
-  }, []);
-
-  // Auto-preencher Nome do Cliente ao selecionar conta
-  useEffect(() => {
-    if (source === "api" && !activeReportId) {
-      if (selectedAccountId === "all") {
-        setClientName("Consolidado");
-      } else {
-        const client = clientsData?.find(c => c.meta_ad_account_id === selectedAccountId);
-        const acc = accounts.find(a => a.id === selectedAccountId);
-        const resolvedName = client?.name || acc?.name || "";
-        
-        if (resolvedName) {
-          setClientName(resolvedName);
-          
-          // Auto-detectar modelo de relatório pelo nicho do cliente (Ex: Pizza/Delivery vs Veículos/Geral)
-          const lower = resolvedName.toLowerCase();
-          if (/pizza|cardapio|cardápio|delivery|restaurante|burger|comida|ecommerce|e-commerce|loja virtual/i.test(lower)) {
-            setReportMode("ecommerce_sales");
-          } else {
-            setReportMode("standard_auto");
-          }
-        }
-      }
-    }
-  }, [selectedAccountId, clientsData, accounts, source, activeReportId]);
+    const selectedMonth = months[start.getMonth()];
+    const selectedYear = start.getFullYear();
+    setPeriodText(`${selectedMonth} ${selectedYear}`);
+    setActiveReportId(null);
+  };
 
   // Carregar dados de acordo com a origem (API ou Upload)
   const loadData = async () => {
@@ -755,6 +608,33 @@ function RelatoriosPage() {
         console.error("Erro ao puxar dados da API local:", err);
         toast.error("Falha ao puxar métricas das contas conectadas.");
       }
+    }
+  };
+
+  const handleSyncPeriod = async () => {
+    if (source !== "api") return;
+    setIsSyncingPeriod(true);
+    try {
+      const getLocalDateStr = (d: Date) => {
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, "0");
+        const day = String(d.getDate()).padStart(2, "0");
+        return `${y}-${m}-${day}`;
+      };
+      const timeRange = {
+        since: getLocalDateStr(dateRange.startDate),
+        until: getLocalDateStr(dateRange.endDate),
+      };
+      await Promise.all([
+        supabase.functions.invoke("sync-meta-ads", { body: { triggered_by: "manual_report", time_range: timeRange } }),
+        supabase.functions.invoke("sync-google-ads", { body: { triggered_by: "manual_report", time_range: timeRange } }),
+      ]);
+      toast.success("Sincronização do período concluída! Recarregando dados...");
+      await loadData();
+    } catch (err: any) {
+      toast.error("Falha ao sincronizar período: " + (err.message ?? "erro desconhecido"));
+    } finally {
+      setIsSyncingPeriod(false);
     }
   };
 

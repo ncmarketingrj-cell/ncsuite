@@ -392,13 +392,13 @@ function ReunioesPage() {
     if (ytId) {
       type = "youtube";
       embedSrc = `https://www.youtube.com/embed/${ytId}?rel=0&modestbranding=1&autoplay=0`;
-      const item: MediaItem = {
+      const ytItem: MediaItem = {
         id: crypto.randomUUID(), type, name: urlName.trim() || "YouTube",
         src: raw, embedSrc,
         thumbnail: `https://img.youtube.com/vi/${ytId}/hqdefault.jpg`,
       };
-      setMediaItems(prev => [item, ...prev]);
-      setActiveMedia(item);
+      setMediaItems(prev => [ytItem, ...prev]);
+      setActiveMedia(ytItem);
       setUrlInput(""); setUrlName(""); setAddingType(null);
       toast.success("YouTube adicionado");
       return;

@@ -166,8 +166,8 @@ function PublicQuizPage() {
     onSuccess: () => {
       setSubmitted(true);
       // Trigger Meta Pixel conversion event
-      const theme = quiz?.theme || {};
-      if ((window as any).fbq && theme.pixel_id) {
+      const pixelId = quiz?.theme?.pixel_id;
+      if ((window as any).fbq && pixelId) {
         (window as any).fbq('track', 'Lead', {
           content_name: quiz.title,
           status: 'novo'

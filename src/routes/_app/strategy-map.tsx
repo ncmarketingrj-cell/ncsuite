@@ -357,6 +357,7 @@ function StrategyMapPage() {
   const [newLinkUrl, setNewLinkUrl] = useState("");
 
   // Refs
+  const canvasRef = useRef<HTMLDivElement>(null);
   const nodesRef = useRef<Node[]>([]);
   const edgesRef = useRef<Edge[]>([]);
   const selectedRef = useRef<Node | null>(null);
@@ -391,15 +392,6 @@ function StrategyMapPage() {
     setNodes([...s.nodes]); setEdges([...s.edges]); toast("↪ Refeito");
   }, []);
 
-  // ── DB ──
-  useEffect(() => { loadMaps(); }, []);
-
-  const loadMaps = async () => {
-    const { data } = await (supabase as any).from("mind_maps").select("*").order("updated_at", { ascending: false });
-    setMaps(data || []);
-    if (data?.length > 0) loadMap(data[0].id, data[0]);
-  };
-
   const loadMap = async (mapId: string, meta?: any) => {
     setActiveMapId(mapId);
     if (meta) { setMapTitle(meta.title); setLayout(meta.layout); }
@@ -433,8 +425,18 @@ function StrategyMapPage() {
     setTimeout(() => rf.fitView({ padding: 0.2, duration: 600 }), 100);
   };
 
+  const loadMaps = async () => {
+    const { data } = await (supabase as any).from("mind_maps").select("*").order("updated_at", { ascending: false });
+    setMaps(data || []);
+    if (data?.length > 0) loadMap(data[0].id, data[0]);
+  };
+
+  // ── DB ──
+  useEffect(() => { loadMaps(); }, []);
+
   const createMap = async () => {
-    const { data: { user } } = await supabase.auth.getUser();
+    const authRes = await supabase.auth.getUser();
+    const user = authRes.data?.user;
     if (!user) return;
     const { data } = await (supabase as any).from("mind_maps").insert({
       user_id: user.id, title: "Novo Mapa Mental", layout: "radial",
@@ -586,8 +588,6 @@ function StrategyMapPage() {
       setEditorTab("style");
     }, 50);
   }, [pushHistory]);
-
-  const canvasRef = useRef<HTMLDivElement>(null);
 
   const editNode = useCallback((nodeId: string) => {
     const n = nodesRef.current.find(n => n.id === nodeId);

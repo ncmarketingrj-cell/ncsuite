@@ -100,74 +100,86 @@ function AuditoriaHub() {
 
   const dashboardRef = useRef<HTMLDivElement>(null);
 
-  // Carrega as contas inicialmente
-  useEffect(() => {
-    fetchAccounts();
-  }, []);
-
-  // Recarrega as campanhas e as métricas quando os filtros mudam
-  useEffect(() => {
-    loadAuditoriaData();
-  }, [selectedAccountId, selectedCampaignId, startDate, endDate]);
-
-  const fetchAccounts = async () => {
-    try {
-      const { data: accountsList } = await supabase
-        .from("ad_accounts")
-        .select("id, name")
-        .order("name");
-      setAccounts(accountsList || []);
-    } catch (e) {
-      console.error("Erro ao buscar contas:", e);
+  const runProactiveDiagnosis = (corrs: CorrelationData[], rawMetrics: any[]) => {
+    const list: typeof diagnostics = [];
+    
+    // 1. Gargalos & Desperdício de Verba
+    const moneyPits = corrs.filter(c => c.totalSpend > 50 && c.totalConversions === 0);
+    if (moneyPits.length > 0) {
+      const pitNames = moneyPits.map(c => c.campaignName).slice(0, 2).join(", ");
+      list.push({
+        id: "diag-pit",
+        type: "fadiga",
+        title: "Gargalo Crítico de Conversão",
+        description: `Identificamos que a(s) campanha(s) "${pitNames}" consumiu verba sem gerar nenhum contato de comprador no WhatsApp ou formulário.`,
+        metric: `Ralo: ${moneyPits.length} campanha(s)`,
+        recommendation: "Pause imediatamente esta(s) campanha(s) no gerenciador para estancar o desperdício e transfira o saldo para campanhas de maior tração."
+      });
+    } else {
+      list.push({
+        id: "diag-1",
+        type: "fadiga",
+        title: "Saúde Visual & Criativos de Showroom",
+        description: "Taxa de cliques (CTR) estável no período. Para prevenir saturação do público automotivo regional, planeje a renovação quinzenal de vídeos.",
+        metric: "CTR Médio: " + (kpis.ctr ? kpis.ctr.toFixed(2) + "%" : "1.85%"),
+        recommendation: "Produza novos vídeos dinâmicos no pátio da loja (formato Reels com som real do veículo e condições especiais) para manter o leilão barato."
+      });
     }
-  };
 
-  const loadAuditoriaData = async () => {
-    setLoading(true);
+    // 2. Pressão do Leilão
+    const highestCpm = corrs.length > 0 ? Math.max(...corrs.map(c => c.avgCpm)) : 22.5;
+    list.push({
+      id: "diag-2",
+      type: "leilao",
+      title: "Competitividade & Custo do Leilão (CPM)",
+      description: `O CPM médio da conta está em R$ ${kpis.cpm.toFixed(2)} (pico de R$ ${highestCpm.toFixed(2)}). O valor reflete a disputa por compradores na sua região.`,
+      metric: "CPM Médio: R$ " + kpis.cpm.toFixed(2),
+      recommendation: "Para aliviar custos em períodos concorridos, utilize públicos amplos (Broad Audiences) deixando o algoritmo encontrar os compradores mais qualificados."
+    });
+
+    // 3. Eficiência de CPL & Oportunidades de Escala com Benchmark Regional
+    let targetCpl = 5.0;
+    let regionName = "Rio de Janeiro (RJ)";
     try {
-      // 1. Carregar campanhas com base na conta selecionada incluindo objective
-      let campQ = (supabase as any).from("campaigns").select("id, name, status, budget, platform, ad_account_id, objective");
-      if (selectedAccountId !== "all") {
-        campQ = campQ.eq("ad_account_id", selectedAccountId);
+      const savedBench = localStorage.getItem("nc_regional_benchmark");
+      if (savedBench) {
+        const parsed = JSON.parse(savedBench);
+        if (parsed.targetCpl && Number(parsed.targetCpl) > 0) targetCpl = Number(parsed.targetCpl);
+        if (parsed.region) regionName = parsed.region;
       }
-      const { data: campaignsList } = await campQ;
-      setCampaigns(campaignsList || []);
+    } catch {}
 
-      // 2. Carregar métricas diárias no período
-      let metricsQ = (supabase as any).from("metrics").select("campaign_id, date, cost, conversions, clicks, impressions, reach");
-      
-      if (selectedCampaignId !== "all") {
-        metricsQ = metricsQ.eq("campaign_id", selectedCampaignId);
-      } else if (selectedAccountId !== "all") {
-        const campIds = (campaignsList || []).map((c: any) => c.id);
-        if (campIds.length > 0) {
-          metricsQ = metricsQ.in("campaign_id", campIds);
-        } else {
-          // Conta sem campanhas - simula
-          setIsSimulated(true);
-          generateMockStats(selectedAccountId, selectedCampaignId);
-          setLoading(false);
-          return;
-        }
-      }
-
-      metricsQ = metricsQ.gte("date", startDate).lte("date", endDate).order("date", { ascending: true });
-      const { data: dbMetrics } = await metricsQ;
-
-      if (dbMetrics && dbMetrics.length > 0 && campaignsList && campaignsList.length > 0) {
-        setIsSimulated(false);
-        processTrafficMetrics(campaignsList, dbMetrics);
-      } else {
-        setIsSimulated(true);
-        generateMockStats(selectedAccountId, selectedCampaignId);
-      }
-    } catch (err) {
-      console.error("Erro ao carregar dados da auditoria:", err);
-      setIsSimulated(true);
-      generateMockStats(selectedAccountId, selectedCampaignId);
-    } finally {
-      setLoading(false);
+    const champions = corrs.filter(c => c.totalConversions > 0 && c.cpa <= targetCpl);
+    if (champions.length > 0) {
+      list.push({
+        id: "diag-3",
+        type: "sucesso",
+        title: "Oportunidade Clara de Escala (+15%)",
+        description: `A campanha "${champions[0].campaignName}" opera com CPL campeão de R$ ${champions[0].cpa.toFixed(2)}, dentro da meta de R$ ${targetCpl.toFixed(2)} (${regionName}), trazendo ${champions[0].totalConversions} contatos com margem muito favorável.`,
+        metric: `CPL Campeão: R$ ${champions[0].cpa.toFixed(2)}`,
+        recommendation: "Aumente o orçamento diário desta campanha líder em 15% para acelerar a entrada de contatos no WhatsApp dos vendedores."
+      });
+    } else if (kpis.cpl > targetCpl * 1.5) {
+      list.push({
+        id: "diag-3",
+        type: "friccao",
+        title: `CPL Acima do Teto Regional (${regionName})`,
+        description: `O custo por contato atual (R$ ${kpis.cpl.toFixed(2)}) ultrapassou o teto aceitável de R$ ${(targetCpl * 1.5).toFixed(2)} (meta base: R$ ${targetCpl.toFixed(2)}).`,
+        metric: "CPL: R$ " + kpis.cpl.toFixed(2),
+        recommendation: "Ajuste a oferta do anúncio (ex: fotos reais do pátio com celular, bônus na troca ou IPVA grátis) para derrubar o custo por conversa no WhatsApp."
+      });
+    } else {
+      list.push({
+        id: "diag-3",
+        type: "sucesso",
+        title: "Operação Saudável & Equilíbrio de Mídia",
+        description: `Custo médio por contato estabilizado em R$ ${kpis.cpl.toFixed(2)} (meta: R$ ${targetCpl.toFixed(2)} - ${regionName}). Equilíbrio consistente entre investimento publicitário e atendimento da equipe.`,
+        metric: "CPL Saudável",
+        recommendation: "Mantenha a estratégia atual e garanta que os vendedores estejam respondendo as mensagens em até 5 minutos no WhatsApp."
+      });
     }
+
+    setDiagnostics(list);
   };
 
   const processTrafficMetrics = (camps: any[], metrics: any[]) => {
@@ -365,88 +377,6 @@ function AuditoriaHub() {
     runProactiveDiagnosis(corrs, metrics);
   };
 
-  const runProactiveDiagnosis = (corrs: CorrelationData[], rawMetrics: any[]) => {
-    const list: typeof diagnostics = [];
-    
-    // 1. Gargalos & Desperdício de Verba
-    const moneyPits = corrs.filter(c => c.totalSpend > 50 && c.totalConversions === 0);
-    if (moneyPits.length > 0) {
-      const pitNames = moneyPits.map(c => c.campaignName).slice(0, 2).join(", ");
-      list.push({
-        id: "diag-pit",
-        type: "fadiga",
-        title: "Gargalo Crítico de Conversão",
-        description: `Identificamos que a(s) campanha(s) "${pitNames}" consumiu verba sem gerar nenhum contato de comprador no WhatsApp ou formulário.`,
-        metric: `Ralo: ${moneyPits.length} campanha(s)`,
-        recommendation: "Pause imediatamente esta(s) campanha(s) no gerenciador para estancar o desperdício e transfira o saldo para campanhas de maior tração."
-      });
-    } else {
-      list.push({
-        id: "diag-1",
-        type: "fadiga",
-        title: "Saúde Visual & Criativos de Showroom",
-        description: "Taxa de cliques (CTR) estável no período. Para prevenir saturação do público automotivo regional, planeje a renovação quinzenal de vídeos.",
-        metric: "CTR Médio: " + (kpis.ctr ? kpis.ctr.toFixed(2) + "%" : "1.85%"),
-        recommendation: "Produza novos vídeos dinâmicos no pátio da loja (formato Reels com som real do veículo e condições especiais) para manter o leilão barato."
-      });
-    }
-
-    // 2. Pressão do Leilão
-    const highestCpm = corrs.length > 0 ? Math.max(...corrs.map(c => c.avgCpm)) : 22.5;
-    list.push({
-      id: "diag-2",
-      type: "leilao",
-      title: "Competitividade & Custo do Leilão (CPM)",
-      description: `O CPM médio da conta está em R$ ${kpis.cpm.toFixed(2)} (pico de R$ ${highestCpm.toFixed(2)}). O valor reflete a disputa por compradores na sua região.`,
-      metric: "CPM Médio: R$ " + kpis.cpm.toFixed(2),
-      recommendation: "Para aliviar custos em períodos concorridos, utilize públicos amplos (Broad Audiences) deixando o algoritmo encontrar os compradores mais qualificados."
-    });
-
-    // 3. Eficiência de CPL & Oportunidades de Escala com Benchmark Regional
-    let targetCpl = 5.0;
-    let regionName = "Rio de Janeiro (RJ)";
-    try {
-      const savedBench = localStorage.getItem("nc_regional_benchmark");
-      if (savedBench) {
-        const parsed = JSON.parse(savedBench);
-        if (parsed.targetCpl && Number(parsed.targetCpl) > 0) targetCpl = Number(parsed.targetCpl);
-        if (parsed.region) regionName = parsed.region;
-      }
-    } catch {}
-
-    const champions = corrs.filter(c => c.totalConversions > 0 && c.cpa <= targetCpl);
-    if (champions.length > 0) {
-      list.push({
-        id: "diag-3",
-        type: "sucesso",
-        title: "Oportunidade Clara de Escala (+15%)",
-        description: `A campanha "${champions[0].campaignName}" opera com CPL campeão de R$ ${champions[0].cpa.toFixed(2)}, dentro da meta de R$ ${targetCpl.toFixed(2)} (${regionName}), trazendo ${champions[0].totalConversions} contatos com margem muito favorável.`,
-        metric: `CPL Campeão: R$ ${champions[0].cpa.toFixed(2)}`,
-        recommendation: "Aumente o orçamento diário desta campanha líder em 15% para acelerar a entrada de contatos no WhatsApp dos vendedores."
-      });
-    } else if (kpis.cpl > targetCpl * 1.5) {
-      list.push({
-        id: "diag-3",
-        type: "friccao",
-        title: `CPL Acima do Teto Regional (${regionName})`,
-        description: `O custo por contato atual (R$ ${kpis.cpl.toFixed(2)}) ultrapassou o teto aceitável de R$ ${(targetCpl * 1.5).toFixed(2)} (meta base: R$ ${targetCpl.toFixed(2)}).`,
-        metric: "CPL: R$ " + kpis.cpl.toFixed(2),
-        recommendation: "Ajuste a oferta do anúncio (ex: fotos reais do pátio com celular, bônus na troca ou IPVA grátis) para derrubar o custo por conversa no WhatsApp."
-      });
-    } else {
-      list.push({
-        id: "diag-3",
-        type: "sucesso",
-        title: "Operação Saudável & Equilíbrio de Mídia",
-        description: `Custo médio por contato estabilizado em R$ ${kpis.cpl.toFixed(2)} (meta: R$ ${targetCpl.toFixed(2)} - ${regionName}). Equilíbrio consistente entre investimento publicitário e atendimento da equipe.`,
-        metric: "CPL Saudável",
-        recommendation: "Mantenha a estratégia atual e garanta que os vendedores estejam respondendo as mensagens em até 5 minutos no WhatsApp."
-      });
-    }
-
-    setDiagnostics(list);
-  };
-
   const generateMockStats = (accId: string, campId: string) => {
     // Projeção realista para concessionária
     const spend = 4850;
@@ -553,6 +483,76 @@ function AuditoriaHub() {
 
     runProactiveDiagnosis(mockCorrs, []);
   };
+
+  const fetchAccounts = async () => {
+    try {
+      const { data: accountsList } = await supabase
+        .from("ad_accounts")
+        .select("id, name")
+        .order("name");
+      setAccounts(accountsList || []);
+    } catch (e) {
+      console.error("Erro ao buscar contas:", e);
+    }
+  };
+
+  const loadAuditoriaData = async () => {
+    setLoading(true);
+    try {
+      // 1. Carregar campanhas com base na conta selecionada incluindo objective
+      let campQ = (supabase as any).from("campaigns").select("id, name, status, budget, platform, ad_account_id, objective");
+      if (selectedAccountId !== "all") {
+        campQ = campQ.eq("ad_account_id", selectedAccountId);
+      }
+      const { data: campaignsList } = await campQ;
+      setCampaigns(campaignsList || []);
+
+      // 2. Carregar métricas diárias no período
+      let metricsQ = (supabase as any).from("metrics").select("campaign_id, date, cost, conversions, clicks, impressions, reach");
+      
+      if (selectedCampaignId !== "all") {
+        metricsQ = metricsQ.eq("campaign_id", selectedCampaignId);
+      } else if (selectedAccountId !== "all") {
+        const campIds = (campaignsList || []).map((c: any) => c.id);
+        if (campIds.length > 0) {
+          metricsQ = metricsQ.in("campaign_id", campIds);
+        } else {
+          // Conta sem campanhas - simula
+          setIsSimulated(true);
+          generateMockStats(selectedAccountId, selectedCampaignId);
+          setLoading(false);
+          return;
+        }
+      }
+
+      metricsQ = metricsQ.gte("date", startDate).lte("date", endDate).order("date", { ascending: true });
+      const { data: dbMetrics } = await metricsQ;
+
+      if (dbMetrics && dbMetrics.length > 0 && campaignsList && campaignsList.length > 0) {
+        setIsSimulated(false);
+        processTrafficMetrics(campaignsList, dbMetrics);
+      } else {
+        setIsSimulated(true);
+        generateMockStats(selectedAccountId, selectedCampaignId);
+      }
+    } catch (err) {
+      console.error("Erro ao carregar dados da auditoria:", err);
+      setIsSimulated(true);
+      generateMockStats(selectedAccountId, selectedCampaignId);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Carrega as contas inicialmente
+  useEffect(() => {
+    fetchAccounts();
+  }, []);
+
+  // Recarrega as campanhas e as métricas quando os filtros mudam
+  useEffect(() => {
+    loadAuditoriaData();
+  }, [selectedAccountId, selectedCampaignId, startDate, endDate]);
 
   const exportSnapshotPdf = async () => {
     if (typeof window === "undefined" || exporting) return;

@@ -299,8 +299,7 @@ function PublicLinkPage() {
   }, []);
 
   useEffect(() => {
-    const theme = page?.theme || {};
-    const pixelId = theme.pixel_id;
+    const pixelId = page?.theme?.pixel_id;
     if (!pixelId) return;
     if (!(window as any).fbq) {
       (function(f: any, b: any, e: any, v: any, n?: any, t?: any, s?: any) {
@@ -350,8 +349,8 @@ function PublicLinkPage() {
     onSuccess: () => {
       setSubmitted(true);
       toast.success("Contato enviado com sucesso!");
-      const theme = page?.theme || {};
-      if ((window as any).fbq && theme.pixel_id) {
+      const pixelId = page?.theme?.pixel_id;
+      if ((window as any).fbq && pixelId) {
         (window as any).fbq('track', 'Lead', { content_name: page.title, status: 'novo' });
       }
     },
