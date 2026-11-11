@@ -331,17 +331,33 @@ function AutomationsPage() {
     toast.info(`Volume calibrado em ${(alertVolume * 100).toFixed(0)}%`);
   };
 
-  const handleTestNotificationDemo = () => {
+  const handleTestNotificationDemo = async () => {
     playAlertTone(selectedSound, alertVolume);
     toast.info("🚨 Demonstração de Alerta da NC Suite", {
       description: `Disparo com toque padrão "${ALERT_SOUNDS.find(s => s.id === selectedSound)?.name || selectedSound}" e volume ${(alertVolume * 100).toFixed(0)}%.`,
       duration: 5000,
     });
-    if ("Notification" in window && Notification.permission === "granted" && prefs.browserEnabled) {
-      new Notification("🚨 Alerta de Teste — NC Suite", {
-        body: "Demonstração do sistema de notificações em segundo plano.",
-        icon: "/favicon.ico",
-      });
+    if (typeof window !== "undefined" && "Notification" in window && Notification.permission === "granted" && prefs.browserEnabled) {
+      if ("serviceWorker" in navigator) {
+        try {
+          const reg = await navigator.serviceWorker.getRegistration();
+          if (reg && reg.showNotification) {
+            await reg.showNotification("🚨 Alerta de Teste — NC Suite", {
+              body: "Demonstração do sistema de notificações em segundo plano.",
+              icon: "/favicon.ico",
+            });
+            return;
+          }
+        } catch (_) {}
+      }
+      try {
+        new Notification("🚨 Alerta de Teste — NC Suite", {
+          body: "Demonstração do sistema de notificações em segundo plano.",
+          icon: "/favicon.ico",
+        });
+      } catch (e) {
+        console.warn("[Automacoes] Notificação bloqueada pelo navegador móvel:", e);
+      }
     }
   };
 

@@ -417,32 +417,62 @@ function stopAlertSound(alertId: string) {
 
 // ─── Browser Notifications API ────────────────────────────────────────────────
 async function requestNotificationPermission(): Promise<boolean> {
-  if (!("Notification" in window)) return false;
+  if (typeof window === "undefined" || !("Notification" in window)) return false;
   if (Notification.permission === "granted") return true;
   if (Notification.permission === "denied") return false;
-  return (await Notification.requestPermission()) === "granted";
+  try {
+    return (await Notification.requestPermission()) === "granted";
+  } catch (_) {
+    return false;
+  }
 }
 
-function showBrowserNotification(
+async function showBrowserNotification(
   alertId: string, title: string, body: string, link: string, onAck: () => void
 ) {
-  if (!("Notification" in window) || Notification.permission !== "granted") return;
+  if (typeof window === "undefined" || !("Notification" in window) || Notification.permission !== "granted") return;
 
-  const notif = new Notification(title, {
-    body,
-    icon: "/favicon.ico",
-    tag: alertId,
-    requireInteraction: true,
-    silent: false,
-  });
+  // 1. Tenta usar ServiceWorkerRegistration se disponível (essencial para Android / Brave / Chrome Mobile)
+  if ("serviceWorker" in navigator) {
+    try {
+      const reg = await navigator.serviceWorker.getRegistration();
+      if (reg && reg.showNotification) {
+        await reg.showNotification(title, {
+          body,
+          icon: "/favicon.ico",
+          tag: alertId,
+          silent: false,
+          data: { link },
+        } as any);
+        return;
+      }
+    } catch (e) {
+      // Ignora falha de service worker e tenta fallback
+    }
+  }
 
-  notif.onclick = () => {
-    window.focus();
-    stopAlertSound(alertId);
-    onAck();
-    if (link?.startsWith("/")) window.location.href = link;
-    notif.close();
-  };
+  // 2. Fallback para desktop com new Notification(), protegido por try/catch
+  try {
+    const notif = new Notification(title, {
+      body,
+      icon: "/favicon.ico",
+      tag: alertId,
+      requireInteraction: true,
+      silent: false,
+    });
+
+    notif.onclick = () => {
+      window.focus();
+      stopAlertSound(alertId);
+      onAck();
+      if (link?.startsWith("/")) window.location.href = link;
+      try { notif.close(); } catch (_) {}
+    };
+  } catch (err) {
+    // No Android/Brave mobile, 'new Notification()' lança "Illegal constructor".
+    // Tratamos com segurança para que NUNCA quebre a interface da aplicação!
+    console.warn("[AlertEngine] Notificação nativa não suportada diretamente pelo navegador móvel:", err);
+  }
 }
 
 // ─── Hook Principal ───────────────────────────────────────────────────────────
