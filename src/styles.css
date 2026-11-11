@@ -84,42 +84,40 @@
 }
 
 /* ═══════════════════════════════════════════
-   LIGHT MODE — Professional & Clean
-   Referência: Linear, Vercel, Apple.
-   Fundo quasi-branco (#F4F6F9).
-   Profundidade via sombras reais, não cor de fundo.
-   Neon NC preservado — só em interação.
+   LIGHT MODE — Automotive Light Slate & Ferrari Red
+   Visual esportivo: Cinza claro nardo/titânio com acentos em vermelho Ferrari.
+   Não é branco — superfícies em cinza claro, clean, moderno e sem reflexo branco puro.
    ═══════════════════════════════════════════ */
 html.light {
-  --background: 220 18% 96%;       /* #F2F4F8 — quasi-branco frio, barely-there */
-  --foreground: 220 28% 10%;       /* #131620 — quase-preto azulado, leitura perfeita */
-  --card: 0 0% 100%;               /* branco puro */
-  --card-foreground: 220 28% 10%;
-  --popover: 0 0% 100%;
-  --popover-foreground: 220 28% 10%;
-  --primary: 0 82% 42%;            /* vermelho NC — satura bem em fundo claro */
-  --primary-foreground: 0 0% 100%;
-  --secondary: 220 14% 93%;
-  --secondary-foreground: 220 20% 18%;
-  --accent: 0 70% 36%;
+  --background: 220 12% 87%;       /* #DCE0E6 — cinza claro base (nardo / titânio esportivo, nunca branco) */
+  --foreground: 220 30% 10%;       /* #11151F — quase-preto grafite, contraste absoluto e nitidez */
+  --card: 220 10% 92%;             /* #E8EBF0 — cinza claro para cards e superfícies (nunca branco puro) */
+  --card-foreground: 220 30% 10%;
+  --popover: 220 10% 92%;          /* #E8EBF0 */
+  --popover-foreground: 220 30% 10%;
+  --primary: 0 86% 45%;            /* #DE1818 — Vermelho Ferrari vivo e saturado */
+  --primary-foreground: 0 0% 100%; /* #FFFFFF — texto branco de alto contraste sobre o vermelho */
+  --secondary: 220 12% 82%;        /* #CDD2DA — cinza intermediário tátil para botões e pills */
+  --secondary-foreground: 220 28% 12%;
+  --accent: 0 76% 40%;
   --accent-foreground: 0 0% 100%;
-  --success: 142 58% 32%;
+  --success: 142 65% 30%;
   --success-foreground: 0 0% 100%;
-  --muted: 220 14% 93%;            /* cinza suave para áreas internas de card */
-  --muted-foreground: 220 12% 42%; /* secundário legível — não some, não domina */
-  --destructive: 0 82% 44%;
+  --muted: 220 12% 82%;            /* #CDD2DA — cinza suave de apoio */
+  --muted-foreground: 220 16% 35%; /* #4B5464 — texto secundário grafite de alta legibilidade */
+  --destructive: 0 84% 45%;
   --destructive-foreground: 0 0% 100%;
-  --border: 220 14% 88%;           /* borda discreta mas presente — separação limpa */
-  --input: 0 0% 100%;
-  --ring: 0 82% 42%;
-  --sidebar: 0 0% 100%;
-  --sidebar-foreground: 220 28% 10%;
-  --sidebar-primary: 0 82% 42%;
+  --border: 220 12% 76%;           /* #BAC1CC — bordas nítidas e elegantes */
+  --input: 220 10% 91%;            /* #E5E8ED — inputs em cinza claro */
+  --ring: 0 86% 45%;
+  --sidebar: 220 11% 89%;          /* #DEE1E7 — sidebar em cinza claro refinado */
+  --sidebar-foreground: 220 30% 10%;
+  --sidebar-primary: 0 86% 45%;
   --sidebar-primary-foreground: 0 0% 100%;
-  --sidebar-accent: 220 14% 95%;
-  --sidebar-accent-foreground: 220 28% 10%;
-  --sidebar-border: 220 14% 90%;
-  --sidebar-ring: 0 82% 42%;
+  --sidebar-accent: 220 12% 84%;
+  --sidebar-accent-foreground: 220 30% 10%;
+  --sidebar-border: 220 12% 76%;
+  --sidebar-ring: 0 86% 45%;
 }
 
 /* ═══════════════════════════════════════════
@@ -209,21 +207,19 @@ html.light {
     background: hsl(var(--card));
     backdrop-filter: none;
     border: 1px solid hsl(var(--border));
-    /* Sombra tripartida — profundidade realista como Apple/Linear */
     box-shadow:
-      0 0 0 1px hsl(220 20% 60% / 0.06),
-      0 1px 3px hsl(220 25% 15% / 0.07),
-      0 4px 16px hsl(220 25% 15% / 0.06),
-      0 12px 40px hsl(220 25% 15% / 0.04);
+      0 1px 2px hsl(220 20% 30% / 0.05),
+      0 4px 14px hsl(220 20% 30% / 0.06),
+      0 12px 28px hsl(220 20% 30% / 0.04);
   }
 
   html.light .glass-panel:hover {
-    border-color: hsl(var(--primary) / 0.4);
+    border-color: hsl(var(--primary) / 0.45);
     box-shadow:
-      0 0 0 1px hsl(var(--primary) / 0.10),
-      0 2px 6px hsl(220 25% 15% / 0.09),
-      0 8px 28px hsl(220 25% 15% / 0.08),
-      0 0 24px hsl(var(--primary) / 0.12);
+      0 0 0 1px hsl(var(--primary) / 0.2),
+      0 2px 6px hsl(220 20% 30% / 0.08),
+      0 8px 24px hsl(220 20% 30% / 0.07),
+      0 0 20px hsl(var(--primary) / 0.12);
     transform: translateY(-1px);
   }
 
@@ -576,12 +572,12 @@ html.light {
   html.light .bg-white\/10,
   html.light .bg-white\/20,
   html.light .bg-white\/30 {
-    background-color: hsl(220 14% 96%) !important;
+    background-color: hsl(var(--secondary)) !important;
     backdrop-filter: none;
   }
   html.light .bg-slate-900\/50,
   html.light .bg-background\/50 {
-    background-color: hsl(220 14% 92% / 0.85) !important;
+    background-color: hsl(var(--background) / 0.85) !important;
     backdrop-filter: none;
   }
 
@@ -597,7 +593,7 @@ html.light {
   html.light select::placeholder,
   html.light textarea::placeholder {
     color: hsl(var(--muted-foreground)) !important;
-    opacity: 0.7;
+    opacity: 0.75;
   }
 
   /* ── DARK: forçar cores legíveis em textos escuros ── */
@@ -617,7 +613,7 @@ html.light {
   }
 
   html.light table tr th {
-    background-color: hsl(220 14% 90%) !important;
+    background-color: hsl(var(--secondary)) !important;
     color: hsl(var(--muted-foreground)) !important;
     border-bottom: 1px solid hsl(var(--border)) !important;
   }
@@ -632,7 +628,7 @@ html.light {
   html.light .bg-white\/5.p-8,
   html.light .p-6.bg-white\/5,
   html.light .p-8.bg-white\/5 {
-    background-color: hsl(var(--muted)) !important;
+    background-color: hsl(var(--card)) !important;
   }
 
   /* Divs escuras em sobreposição — converte para overlay neutro no light */
@@ -641,15 +637,17 @@ html.light {
   html.light .bg-black\/60,
   html.light .bg-black\/70,
   html.light .bg-black\/80 {
-    background-color: hsl(220 20% 88% / 0.9) !important;
+    background-color: hsl(220 12% 78% / 0.9) !important;
   }
 
   /* bg-card e rounded com bg-card recebem sombra profissional */
   html.light .bg-card {
+    background-color: hsl(var(--card)) !important;
+    border-color: hsl(var(--border));
     box-shadow:
-      0 0 0 1px hsl(220 14% 88%),
-      0 1px 4px hsl(220 25% 15% / 0.08),
-      0 4px 16px hsl(220 25% 15% / 0.06);
+      0 1px 2px hsl(220 20% 30% / 0.05),
+      0 3px 8px hsl(220 20% 30% / 0.06),
+      0 8px 20px hsl(220 20% 30% / 0.04);
   }
 
   /* ── Landing page: zonas hardcoded escuras preservam texto em qualquer tema ──
