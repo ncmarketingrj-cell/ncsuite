@@ -49,11 +49,13 @@ export const Route = createFileRoute("/_app/metricas")({
       .from("profiles").select("role, permissions").eq("id", session.user.id).maybeSingle();
     if (profile?.role === "admin") return;
   },
-  validateSearch: (s: Record<string, unknown>): { account?: string; campaign?: string; date?: string; view?: string } => ({
-    account: s.account as string | undefined,
-    campaign: s.campaign as string | undefined,
+  validateSearch: (s: Record<string, unknown>): { account?: string; campaign?: string; date?: string; view?: string; accountId?: string; campId?: string } => ({
+    account: (s.account as string) || (s.accountId as string) || undefined,
+    campaign: (s.campaign as string) || (s.campId as string) || undefined,
     date: s.date as string | undefined,
     view: s.view as string | undefined,
+    accountId: (s.accountId as string) || (s.account as string) || undefined,
+    campId: (s.campId as string) || (s.campaign as string) || undefined,
   }),
   component: MetricasCampanhasPage,
 });
@@ -476,9 +478,11 @@ function MetricasCampanhasPage() {
   // â"€â"€ Estado global compartilhado â"€â"€
   const [view,          setView]          = useState<ViewMode>("gestao");
   const [level,         setLevel]         = useState<Level>("campanhas");
-  const [accountFilter, setAccountFilter] = useState(searchParams.account || "all");
+  const targetAccount = searchParams.account || searchParams.accountId || "all";
+  const targetCampaign = searchParams.campaign || searchParams.campId || null;
+  const [accountFilter, setAccountFilter] = useState(targetAccount);
   const [statusFilter,  setStatusFilter]  = useState<"all"|"active"|"paused">("all");
-  const [selectedCampaignId, setSelectedCampaignId] = useState<string | null>(null);
+  const [selectedCampaignId, setSelectedCampaignId] = useState<string | null>(targetCampaign);
   const [search,        setSearch]        = useState("");
   const { dateFrom, dateTo, setDateFrom, setDateTo } = useGlobalDate();
 
@@ -532,7 +536,13 @@ function MetricasCampanhasPage() {
   // â"€â"€ Efeitos â"€â"€
 
   useEffect(() => {
-    if (searchParams.account) setAccountFilter(searchParams.account);
+    const acc = searchParams.account || searchParams.accountId;
+    if (acc) setAccountFilter(acc);
+    const camp = searchParams.campaign || searchParams.campId;
+    if (camp) {
+      setSelectedCampaignId(camp);
+      setTimeout(() => { const el = document.getElementById(`row-${camp}`); el?.scrollIntoView({ behavior: "smooth", block: "center" }); }, 600);
+    }
     if (searchParams.date) {
       const parsed = new Date(searchParams.date + "T12:00:00");
       if (!isNaN(parsed.getTime())) setDateRange({ startDate: parsed, endDate: parsed });
@@ -540,8 +550,7 @@ function MetricasCampanhasPage() {
     if (searchParams.view && (["gestao", "analise", "demograficos"] as string[]).includes(searchParams.view)) {
       setView(searchParams.view as ViewMode);
     }
-    if (searchParams.campaign) setTimeout(() => { const el = document.getElementById(`row-${searchParams.campaign}`); el?.scrollIntoView({ behavior: "smooth", block: "center" }); }, 600);
-  }, [searchParams.account, searchParams.campaign, searchParams.date, searchParams.view]);
+  }, [searchParams.account, searchParams.accountId, searchParams.campaign, searchParams.campId, searchParams.date, searchParams.view]);
 
   useEffect(() => {
     if (intervalRef.current) clearInterval(intervalRef.current);

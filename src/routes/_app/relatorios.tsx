@@ -56,6 +56,195 @@ interface SavedReport {
   reportLevel?: "campaign" | "adset" | "ad";
 }
 
+// ─── Heurística Top-Level para Classificação Precisa de Objetivos Reais ────────
+export function detectCampaignObjective(
+  campName: string = "",
+  resultType: string = "",
+  isVehicleStore: boolean = false,
+  metaObjective: string = ""
+): string {
+  const name = (campName || "").toLowerCase();
+  const rt = (resultType || "").toLowerCase();
+  const metaObj = (metaObjective || "").toUpperCase();
+
+  // 1. Consignado / Compramos seu carro / Avaliação (prioridade máxima em contexto automotivo)
+  if (
+    rt.includes("consignado") ||
+    name.includes("consignado") ||
+    name.includes("compramos seu carro") ||
+    name.includes("avaliacao") ||
+    name.includes("avaliação") ||
+    name.includes("compra de veiculo") ||
+    name.includes("compra de carro")
+  ) {
+    return "🚗 Consignado";
+  }
+
+  // 2. Visitas ao Perfil do Instagram / Posts impulsionados
+  if (
+    rt.includes("perfil") ||
+    rt.includes("profile") ||
+    name.includes("visita ao perfil") ||
+    name.includes("visitas ao perfil") ||
+    name.includes("post do instagram") ||
+    name.includes("post do ig") ||
+    name.includes("perfil") ||
+    name.includes("visitas perfil") ||
+    name.includes("visita perfil") ||
+    name.includes("| insta") ||
+    name.includes("- insta") ||
+    name.includes(" insta") ||
+    name.endsWith("insta")
+  ) {
+    return "📱 Visitas ao Perfil";
+  }
+
+  // 3. Visualizações na Página de Destino / Cardápio / Landing Page
+  if (
+    rt.includes("página de destino") ||
+    rt.includes("pagina de destino") ||
+    rt.includes("landing_page") ||
+    rt.includes("visualizações da página") ||
+    rt.includes("visualização da página") ||
+    name.includes("cardapio") ||
+    name.includes("cardápio") ||
+    name.includes("landing") ||
+    name.includes("pagina de destino") ||
+    name.includes("página de destino") ||
+    name.includes("lp ") ||
+    name.includes("pagina") ||
+    name.includes("página")
+  ) {
+    return "🌐 Visualizações na Página";
+  }
+
+  // 4. Compras no site / Vendas / Delivery / E-commerce
+  if (
+    rt.includes("compra") ||
+    rt.includes("purchase") ||
+    rt.includes("pedido") ||
+    rt.includes("checkout") ||
+    metaObj === "OUTCOME_SALES" ||
+    metaObj === "CONVERSIONS" ||
+    name.includes("compra") ||
+    name.includes("pedido") ||
+    name.includes("checkout") ||
+    name.includes("cmp de vendas") ||
+    name.includes("delivery")
+  ) {
+    return "💳 Conversões / Compras";
+  }
+
+  // 5. Cadastros / Leads (Formulários instantâneos ou cadastros nativos)
+  if (
+    rt.includes("cadastro") ||
+    rt.includes("lead") ||
+    name.includes("formulario") ||
+    name.includes("formulário") ||
+    name.includes("cadastro") ||
+    (metaObj === "OUTCOME_LEADS" && !name.includes("msg") && !name.includes("wpp") && !name.includes("whatsapp") && !name.includes("conversa"))
+  ) {
+    return "📧 Cadastros / Leads";
+  }
+
+  // 6. Mensagens / WhatsApp / Direct
+  if (
+    rt.includes("conversa") ||
+    rt.includes("mensagem") ||
+    rt.includes("message") ||
+    rt.includes("whatsapp") ||
+    rt.includes("direct") ||
+    metaObj === "MESSAGES" ||
+    name.includes("mensagem") ||
+    name.includes("mensagens") ||
+    name.includes("whatsapp") ||
+    name.includes("wpp") ||
+    name.includes("msg") ||
+    name.includes("conversa") ||
+    name.includes("direct") ||
+    name.includes("grupo de vendedores") ||
+    name.includes("vendedores") ||
+    name.includes("atendimento") ||
+    name.includes("vaga")
+  ) {
+    const isCarDealership = isVehicleStore || name.includes("veiculo") || name.includes("veículo") || name.includes("carro") || name.includes("auto") || name.includes("moto") || name.includes("estoque");
+    return isCarDealership ? "🚗 Mensagens nos veículos" : "💬 Mensagens";
+  }
+
+  // 7. Vídeo / ThruPlay
+  if (
+    rt.includes("thruplay") ||
+    rt.includes("vídeo") ||
+    rt.includes("video") ||
+    rt.includes("plays") ||
+    metaObj === "VIDEO_VIEWS" ||
+    name.includes("thruplay") ||
+    name.includes("vídeo") ||
+    name.includes("video") ||
+    name.includes("reels")
+  ) {
+    return "▶️ Thru-Play";
+  }
+
+  // 8. Alcance e Impressões / Reconhecimento
+  if (
+    rt.includes("alcance") ||
+    rt.includes("reach") ||
+    rt.includes("impressão") ||
+    rt.includes("impressões") ||
+    rt.includes("impression") ||
+    rt.includes("reconhecimento") ||
+    metaObj === "OUTCOME_AWARENESS" ||
+    name.includes("alcance") ||
+    name.includes("reconhecimento") ||
+    name.includes("awareness") ||
+    name.includes("artes") ||
+    name.includes("branding")
+  ) {
+    return "👁️ Alcance e Impressões";
+  }
+
+  // 9. Cliques no Link / Tráfego
+  if (
+    rt.includes("clique") ||
+    rt.includes("click") ||
+    rt.includes("link") ||
+    metaObj === "OUTCOME_TRAFFIC" ||
+    metaObj === "LINK_CLICKS" ||
+    name.includes("clique") ||
+    name.includes("click") ||
+    name.includes("link") ||
+    name.includes("trafego") ||
+    name.includes("tráfego") ||
+    name.includes("canal")
+  ) {
+    return "👆 Cliques no Link";
+  }
+
+  // 10. Engajamento
+  if (
+    rt.includes("engajamento") ||
+    rt.includes("engagement") ||
+    metaObj === "OUTCOME_ENGAGEMENT" ||
+    metaObj === "POST_ENGAGEMENT" ||
+    name.includes("engajamento")
+  ) {
+    return "🔥 Engajamento";
+  }
+
+  // Fallbacks de Objetivos Nativos da Meta
+  if (metaObj === "OUTCOME_TRAFFIC" || metaObj === "LINK_CLICKS") return "👆 Cliques no Link";
+  if (metaObj === "OUTCOME_ENGAGEMENT") return "🔥 Engajamento";
+  if (metaObj === "OUTCOME_AWARENESS") return "👁️ Alcance e Impressões";
+  if (metaObj === "OUTCOME_LEADS") return isVehicleStore ? "🚗 Mensagens nos veículos" : "📧 Cadastros / Leads";
+
+  // Fallback contextual inteligente
+  if (isVehicleStore || name.includes("veiculo") || name.includes("carro") || name.includes("moto")) {
+    return "🚗 Mensagens nos veículos";
+  }
+  return "👆 Cliques no Link";
+}
+
 function RelatoriosPage() {
   const search = useSearch({ from: "/_app/relatorios" });
   const queryClient = useQueryClient();
@@ -433,7 +622,7 @@ function RelatoriosPage() {
         if (reportLevel === "adset") {
           const dbData = await fetchPaginated("ad_sets", `
             id, name, campaign_id,
-            campaigns!inner(id, name, ad_account_id),
+            campaigns!inner(id, name, ad_account_id, objective),
             asset_metrics(cost, conversions, impressions, clicks, reach, date)
           `, selectedAccountId);
 
@@ -461,7 +650,7 @@ function RelatoriosPage() {
               clicks,
               conversions,
               reach,
-              objective: detectCampaignObjective(adset.name, "", isVehicleContext),
+              objective: detectCampaignObjective(adset.name, "", isVehicleContext, adset.campaigns?.objective),
               platform: platformStr as "meta" | "google",
               selected: cost > 0
             };
@@ -470,7 +659,7 @@ function RelatoriosPage() {
         } else if (reportLevel === "ad") {
           const dbData = await fetchPaginated("ads", `
             id, name, campaign_id, ad_set_id,
-            campaigns!inner(id, name, ad_account_id),
+            campaigns!inner(id, name, ad_account_id, objective),
             ad_sets(id, name),
             asset_metrics(cost, conversions, impressions, clicks, reach, date)
           `, selectedAccountId);
@@ -500,7 +689,7 @@ function RelatoriosPage() {
               clicks,
               conversions,
               reach,
-              objective: detectCampaignObjective(ad.name, "", isVehicleContext),
+              objective: detectCampaignObjective(ad.name, "", isVehicleContext, ad.campaigns?.objective),
               platform: platformStr as "meta" | "google",
               selected: cost > 0
             };
@@ -510,7 +699,7 @@ function RelatoriosPage() {
           // Default: campaign level
           const dbMetrics = await fetchPaginated("metrics", `
             campaign_id, cost, conversions, impressions, clicks, reach, result_type,
-            campaigns!inner(id, name, ad_account_id)
+            campaigns!inner(id, name, ad_account_id, objective)
           `, selectedAccountId, (q) => {
              return q.gte("date", startLimit).lte("date", endLimit);
           });
@@ -521,7 +710,7 @@ function RelatoriosPage() {
           }
 
           // Agrupar métricas por campanha e identificar plataforma correta
-          const metricsMap = new Map<string, { id: string, name: string, platform: string, cost: number; impressions: number; clicks: number; conversions: number; reach: number; resultType?: string }>();
+          const metricsMap = new Map<string, { id: string, name: string, platform: string, cost: number; impressions: number; clicks: number; conversions: number; reach: number; resultType?: string; metaObjective?: string }>();
           
           dbMetrics.forEach((m: any) => {
             const campId = m.campaign_id;
@@ -534,7 +723,8 @@ function RelatoriosPage() {
                name: m.campaigns?.name || "Sem Nome", 
                platform: platformStr,
                cost: 0, impressions: 0, clicks: 0, conversions: 0, reach: 0,
-               resultType: m.result_type || undefined
+               resultType: m.result_type || undefined,
+               metaObjective: m.campaigns?.objective || undefined,
             };
             
             cur.cost += Number(m.cost || 0);
@@ -543,6 +733,7 @@ function RelatoriosPage() {
             cur.conversions += Number(m.conversions || 0);
             cur.reach += Number(m.reach || 0);
             if (m.result_type) cur.resultType = m.result_type;
+            if (m.campaigns?.objective) cur.metaObjective = m.campaigns?.objective;
             metricsMap.set(campId, cur);
           });
 
@@ -554,7 +745,7 @@ function RelatoriosPage() {
             clicks: c.clicks,
             conversions: c.conversions,
             reach: c.reach,
-            objective: detectCampaignObjective(c.name, c.resultType, isVehicleContext),
+            objective: detectCampaignObjective(c.name, c.resultType, isVehicleContext, c.metaObjective),
             platform: c.platform as "meta" | "google",
             selected: c.cost > 0
           })).filter(c => c.cost > 0 || c.impressions >= 1 || c.reach >= 1);
@@ -573,149 +764,6 @@ function RelatoriosPage() {
   useEffect(() => {
     loadData();
   }, [source, selectedAccountId, dateRange, reportLevel]);
-
-  // Função Heurística Inteligente para Detecção Precisa de Objetivos Reais
-  const detectCampaignObjective = (campName: string = "", resultType: string = "", isVehicleStore = false): string => {
-    const name = (campName || "").toLowerCase();
-    const rt = (resultType || "").toLowerCase();
-
-    // 1. Consignado
-    if (rt.includes("consignado") || name.includes("consignado") || name.includes("compramos seu carro") || name.includes("avaliacao")) {
-      return "🚗 Consignado";
-    }
-
-    // 2. Visitas ao Perfil do Instagram
-    if (
-      rt.includes("perfil") || 
-      rt.includes("instagram") || 
-      rt.includes("profile") ||
-      name.includes("visita ao perfil") || 
-      name.includes("visitas ao perfil") || 
-      name.includes("post do instagram") || 
-      name.includes("perfil") || 
-      name.includes("insta")
-    ) {
-      return "📱 Visitas ao Perfil";
-    }
-
-    // 3. Visualizações na Página de Destino / Site / Cardápio
-    if (
-      rt.includes("página de destino") || 
-      rt.includes("pagina de destino") || 
-      rt.includes("landing") || 
-      rt.includes("visualizações da página") ||
-      rt.includes("visualização da página") ||
-      name.includes("site") || 
-      name.includes("cardapio") || 
-      name.includes("cardápio") || 
-      name.includes("landing") || 
-      name.includes("página") || 
-      name.includes("pagina") || 
-      name.includes("grupo de vendedores")
-    ) {
-      return "🌐 Visualizações na Página";
-    }
-
-    // 4. Compras no site / Vendas / Delivery / E-commerce
-    if (
-      rt.includes("compra") || 
-      rt.includes("purchase") || 
-      rt.includes("venda") || 
-      rt.includes("pedido") || 
-      rt.includes("checkout") || 
-      name.includes("compra") || 
-      name.includes("venda") || 
-      name.includes("pedido") || 
-      name.includes("checkout") || 
-      name.includes("cmp de vendas")
-    ) {
-      return "💳 Conversões / Compras";
-    }
-
-    // 5. Mensagens / WhatsApp / Direct
-    if (
-      rt.includes("conversa") || 
-      rt.includes("mensagem") || 
-      rt.includes("message") || 
-      rt.includes("whatsapp") || 
-      rt.includes("direct") || 
-      name.includes("mensagem") || 
-      name.includes("mensagens") || 
-      name.includes("whatsapp") || 
-      name.includes("wpp") || 
-      name.includes("msg") || 
-      name.includes("conversa") || 
-      name.includes("atendimento") || 
-      name.includes("qualidade") || 
-      name.includes("vaga")
-    ) {
-      const isCarDealership = isVehicleStore || name.includes("veiculo") || name.includes("veículo") || name.includes("carro") || name.includes("auto") || name.includes("moto");
-      return isCarDealership ? "🚗 Mensagens nos veículos" : "💬 Mensagens";
-    }
-
-    // 6. Cliques no Link / Tráfego
-    if (
-      rt.includes("clique") || 
-      rt.includes("click") || 
-      rt.includes("link") || 
-      rt.includes("outbound") || 
-      name.includes("clique") || 
-      name.includes("click") || 
-      name.includes("link") || 
-      name.includes("trafego") || 
-      name.includes("tráfego") || 
-      name.includes("canal")
-    ) {
-      return "👆 Cliques no Link";
-    }
-
-    // 7. Vídeo / ThruPlay
-    if (
-      rt.includes("thruplay") || 
-      rt.includes("vídeo") || 
-      rt.includes("video") || 
-      rt.includes("plays") || 
-      name.includes("thruplay") || 
-      name.includes("vídeo") || 
-      name.includes("video") || 
-      name.includes("reels")
-    ) {
-      return "▶️ Thru-Play";
-    }
-
-    // 8. Alcance e Impressões
-    if (
-      rt.includes("alcance") || 
-      rt.includes("reach") || 
-      rt.includes("impressão") || 
-      rt.includes("impressões") || 
-      rt.includes("impression") || 
-      rt.includes("reconhecimento") || 
-      name.includes("alcance") || 
-      name.includes("reconhecimento") || 
-      name.includes("awareness") || 
-      name.includes("artes") || 
-      name.includes("criativo")
-    ) {
-      return "👁️ Alcance e Impressões";
-    }
-
-    // 9. Engajamento
-    if (rt.includes("engajamento") || rt.includes("engagement") || name.includes("engajamento")) {
-      return "🔥 Engajamento";
-    }
-
-    // 10. Cadastros / Leads
-    if (rt.includes("cadastro") || rt.includes("lead") || name.includes("cadastro") || name.includes("formulario")) {
-      return "📧 Cadastros / Leads";
-    }
-
-    // Fallback contextual inteligente
-    if (isVehicleStore || name.includes("veiculo") || name.includes("carro")) {
-      return "🚗 Mensagens nos veículos";
-    }
-    return "👆 Cliques no Link";
-  };
 
   const handleToggleSelectAll = (val: boolean) => {
     setCampaignList(prev => prev.map(c => ({ ...c, selected: val })));

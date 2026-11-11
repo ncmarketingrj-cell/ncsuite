@@ -39,6 +39,7 @@ import { Route as AppConfigRouteImport } from './routes/_app/config'
 import { Route as AppCockpitRouteImport } from './routes/_app/cockpit'
 import { Route as AppCobrancasRouteImport } from './routes/_app/cobrancas'
 import { Route as AppClientesRouteImport } from './routes/_app/clientes'
+import { Route as AppCampanhasRouteImport } from './routes/_app/campanhas'
 import { Route as AppAutomacoesRouteImport } from './routes/_app/automacoes'
 import { Route as AppAuditoriaRouteImport } from './routes/_app/auditoria'
 import { Route as AppAgenteRouteImport } from './routes/_app/agente'
@@ -195,6 +196,11 @@ const AppClientesRoute = AppClientesRouteImport.update({
   path: '/clientes',
   getParentRoute: () => AppRoute,
 } as any)
+const AppCampanhasRoute = AppCampanhasRouteImport.update({
+  id: '/campanhas',
+  path: '/campanhas',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppAutomacoesRoute = AppAutomacoesRouteImport.update({
   id: '/automacoes',
   path: '/automacoes',
@@ -221,9 +227,9 @@ const AppClientesClientIdRoute = AppClientesClientIdRouteImport.update({
   getParentRoute: () => AppClientesRoute,
 } as any)
 const AppCampanhasGraficoRoute = AppCampanhasGraficoRouteImport.update({
-  id: '/campanhas/grafico',
-  path: '/campanhas/grafico',
-  getParentRoute: () => AppRoute,
+  id: '/grafico',
+  path: '/grafico',
+  getParentRoute: () => AppCampanhasRoute,
 } as any)
 
 export interface FileRoutesByFullPath {
@@ -235,6 +241,7 @@ export interface FileRoutesByFullPath {
   '/agente': typeof AppAgenteRoute
   '/auditoria': typeof AppAuditoriaRoute
   '/automacoes': typeof AppAutomacoesRoute
+  '/campanhas': typeof AppCampanhasRouteWithChildren
   '/clientes': typeof AppClientesRouteWithChildren
   '/cobrancas': typeof AppCobrancasRoute
   '/cockpit': typeof AppCockpitRoute
@@ -272,6 +279,7 @@ export interface FileRoutesByTo {
   '/agente': typeof AppAgenteRoute
   '/auditoria': typeof AppAuditoriaRoute
   '/automacoes': typeof AppAutomacoesRoute
+  '/campanhas': typeof AppCampanhasRouteWithChildren
   '/clientes': typeof AppClientesRouteWithChildren
   '/cobrancas': typeof AppCobrancasRoute
   '/cockpit': typeof AppCockpitRoute
@@ -311,6 +319,7 @@ export interface FileRoutesById {
   '/_app/agente': typeof AppAgenteRoute
   '/_app/auditoria': typeof AppAuditoriaRoute
   '/_app/automacoes': typeof AppAutomacoesRoute
+  '/_app/campanhas': typeof AppCampanhasRouteWithChildren
   '/_app/clientes': typeof AppClientesRouteWithChildren
   '/_app/cobrancas': typeof AppCobrancasRoute
   '/_app/cockpit': typeof AppCockpitRoute
@@ -350,6 +359,7 @@ export interface FileRouteTypes {
     | '/agente'
     | '/auditoria'
     | '/automacoes'
+    | '/campanhas'
     | '/clientes'
     | '/cobrancas'
     | '/cockpit'
@@ -387,6 +397,7 @@ export interface FileRouteTypes {
     | '/agente'
     | '/auditoria'
     | '/automacoes'
+    | '/campanhas'
     | '/clientes'
     | '/cobrancas'
     | '/cockpit'
@@ -425,6 +436,7 @@ export interface FileRouteTypes {
     | '/_app/agente'
     | '/_app/auditoria'
     | '/_app/automacoes'
+    | '/_app/campanhas'
     | '/_app/clientes'
     | '/_app/cobrancas'
     | '/_app/cockpit'
@@ -677,6 +689,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppClientesRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/campanhas': {
+      id: '/_app/campanhas'
+      path: '/campanhas'
+      fullPath: '/campanhas'
+      preLoaderRoute: typeof AppCampanhasRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/automacoes': {
       id: '/_app/automacoes'
       path: '/automacoes'
@@ -714,13 +733,25 @@ declare module '@tanstack/react-router' {
     }
     '/_app/campanhas/grafico': {
       id: '/_app/campanhas/grafico'
-      path: '/campanhas/grafico'
+      path: '/grafico'
       fullPath: '/campanhas/grafico'
       preLoaderRoute: typeof AppCampanhasGraficoRouteImport
-      parentRoute: typeof AppRoute
+      parentRoute: typeof AppCampanhasRoute
     }
   }
 }
+
+interface AppCampanhasRouteChildren {
+  AppCampanhasGraficoRoute: typeof AppCampanhasGraficoRoute
+}
+
+const AppCampanhasRouteChildren: AppCampanhasRouteChildren = {
+  AppCampanhasGraficoRoute: AppCampanhasGraficoRoute,
+}
+
+const AppCampanhasRouteWithChildren = AppCampanhasRoute._addFileChildren(
+  AppCampanhasRouteChildren,
+)
 
 interface AppClientesRouteChildren {
   AppClientesClientIdRoute: typeof AppClientesClientIdRoute
@@ -750,6 +781,7 @@ interface AppRouteChildren {
   AppAgenteRoute: typeof AppAgenteRoute
   AppAuditoriaRoute: typeof AppAuditoriaRoute
   AppAutomacoesRoute: typeof AppAutomacoesRoute
+  AppCampanhasRoute: typeof AppCampanhasRouteWithChildren
   AppClientesRoute: typeof AppClientesRouteWithChildren
   AppCobrancasRoute: typeof AppCobrancasRoute
   AppCockpitRoute: typeof AppCockpitRoute
@@ -772,13 +804,13 @@ interface AppRouteChildren {
   AppUploadRoute: typeof AppUploadRoute
   AppUtmsRoute: typeof AppUtmsRoute
   AppVictoriaRoute: typeof AppVictoriaRoute
-  AppCampanhasGraficoRoute: typeof AppCampanhasGraficoRoute
 }
 
 const AppRouteChildren: AppRouteChildren = {
   AppAgenteRoute: AppAgenteRoute,
   AppAuditoriaRoute: AppAuditoriaRoute,
   AppAutomacoesRoute: AppAutomacoesRoute,
+  AppCampanhasRoute: AppCampanhasRouteWithChildren,
   AppClientesRoute: AppClientesRouteWithChildren,
   AppCobrancasRoute: AppCobrancasRoute,
   AppCockpitRoute: AppCockpitRoute,
@@ -801,7 +833,6 @@ const AppRouteChildren: AppRouteChildren = {
   AppUploadRoute: AppUploadRoute,
   AppUtmsRoute: AppUtmsRoute,
   AppVictoriaRoute: AppVictoriaRoute,
-  AppCampanhasGraficoRoute: AppCampanhasGraficoRoute,
 }
 
 const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)

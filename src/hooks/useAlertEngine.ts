@@ -277,7 +277,7 @@ async function runThresholdEvaluation() {
                   is_critical: true,
                   is_read:     false,
                   type:        "alert_cpl",
-                  link:        `/campanhas?accountId=${campaign.ad_account_id}&date=${today}&campId=${campaign.id}`,
+                  link:        `/metricas?account=${campaign.ad_account_id}&campaign=${campaign.id}&date=${today}`,
                 });
                 markDedupFired(cplKey);
                 totalNew++;
@@ -312,7 +312,7 @@ async function runThresholdEvaluation() {
                   is_critical: isCritical,
                   is_read:     false,
                   type:        "alert_budget",
-                  link:        `/campanhas?accountId=${campaign.ad_account_id}&date=${today}&campId=${campaign.id}`,
+                  link:        `/metricas?account=${campaign.ad_account_id}&campaign=${campaign.id}&date=${today}`,
                 });
                 markDedupFired(budgetKey);
                 totalNew++;
@@ -347,7 +347,7 @@ async function runThresholdEvaluation() {
                   is_critical: false,
                   is_read:     false,
                   type:        "alert_frequency",
-                  link:        `/campanhas?accountId=${campaign.ad_account_id}&date=${today}&campId=${campaign.id}`,
+                  link:        `/metricas?account=${campaign.ad_account_id}&campaign=${campaign.id}&date=${today}`,
                 });
                 markDedupFired(freqKey);
                 totalNew++;
