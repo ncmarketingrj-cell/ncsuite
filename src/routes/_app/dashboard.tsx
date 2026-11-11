@@ -169,7 +169,9 @@ function Dashboard() {
         const isPrevious = m.date >= prevStartStr && m.date < startStr;
         
         const objective = m.campaigns?.objective;
-        const isVanity = objective ? ["OUTCOME_AWARENESS", "VIDEO_VIEWS", "OUTCOME_ENGAGEMENT", "LINK_CLICKS", "OUTCOME_TRAFFIC"].includes(objective) : false;
+        const campName = (m.campaigns?.name || "").toUpperCase();
+        const isMessagingCamp = campName.includes("MSG") || campName.includes("MENSAGEM") || campName.includes("WPP") || campName.includes("WHATSAPP") || campName.includes("DIRECT") || campName.includes("CONVERSA");
+        const isVanity = isMessagingCamp ? false : (objective ? ["OUTCOME_AWARENESS", "VIDEO_VIEWS", "OUTCOME_ENGAGEMENT", "LINK_CLICKS", "OUTCOME_TRAFFIC"].includes(objective) : false);
         
         if (isCurrent) {
           const date = m.date;
@@ -248,10 +250,16 @@ function Dashboard() {
       const cplPrev = previousPeriod.trueConversions > 0 ? previousPeriod.cost / previousPeriod.trueConversions : 0;
       const cplTrendVal = cplPrev === 0 ? 0 : ((cplCurr - cplPrev) / cplPrev) * 100;
 
-      const isVanity = (obj: string) => ["OUTCOME_AWARENESS", "VIDEO_VIEWS", "OUTCOME_ENGAGEMENT", "LINK_CLICKS", "OUTCOME_TRAFFIC"].includes(obj);
+      const isVanity = (obj: string, name?: string) => {
+        const n = (name || "").toUpperCase();
+        if (n.includes("MSG") || n.includes("MENSAGEM") || n.includes("WPP") || n.includes("WHATSAPP") || n.includes("DIRECT") || n.includes("CONVERSA")) {
+          return false;
+        }
+        return ["OUTCOME_AWARENESS", "VIDEO_VIEWS", "OUTCOME_ENGAGEMENT", "LINK_CLICKS", "OUTCOME_TRAFFIC"].includes(obj);
+      };
 
       const riskReturn = campaignsData.map(c => {
-        const isVanityObjective = isVanity(c.objective);
+        const isVanityObjective = isVanity(c.objective, c.name);
         const cpa = c.trueConversions > 0 ? c.cost / c.trueConversions : c.cost;
         let type = "Estável";
         

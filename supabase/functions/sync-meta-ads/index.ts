@@ -220,7 +220,7 @@ async function fetchDemographicBreakdowns(adAccountId: string, token: string, ti
 // REGRA DO META ADS MANAGER:
 //   O Gerenciador mostra o "evento de otimização primário" da campanha.
 //
-function extractConversions(actions: any[] = [], objective?: string, reach: number = 0): number {
+function extractConversions(actions: any[] = [], objective?: string, reach: number = 0, campaignName?: string): number {
   // Se for campanha de Alcance/Reconhecimento, o Gerenciador Meta exibe o próprio Alcance como "Resultado"
   if (objective === "OUTCOME_AWARENESS" || objective === "AWARENESS") {
     return reach;
@@ -233,12 +233,37 @@ function extractConversions(actions: any[] = [], objective?: string, reach: numb
     return a?.value ? (parseInt(a.value) || 0) : 0;
   };
 
+  const nameUpper = (campaignName || "").toUpperCase();
+  const isMessagingName = nameUpper.includes("MSG") || 
+                          nameUpper.includes("MENSAGEM") || 
+                          nameUpper.includes("WPP") || 
+                          nameUpper.includes("WHATSAPP") || 
+                          nameUpper.includes("DIRECT") || 
+                          nameUpper.includes("CONVERSA");
+
   // Log diagnóstico — visível em Supabase Dashboard → Logs → Edge Functions
   const available = actions.map((a: any) => `${a.action_type}:${a.value}`).join(" | ");
-  console.log(`[CONV] obj=${objective ?? "none"} | ${available}`);
+  console.log(`[CONV] name="${campaignName ?? "none"}" obj=${objective ?? "none"} | ${available}`);
 
-  // Tratar Leads de forma agregada para somar múltiplos canais (Onsite + Offsite)
-  if (objective === "OUTCOME_LEADS" || objective === "LEAD_GENERATION") {
+  // 1. Mensagens / WhatsApp (Meta Ads Manager: "Conversas por mensagem iniciadas")
+  // REGRA DE OURO AUTOMOTIVA: Se a campanha tiver conversas iniciadas ou o nome indicar mensagem (ex: RUTHH - MSG),
+  // essa é SEMPRE a métrica oficial de Resultado exibida no Gerenciador Meta — NUNCA cliques no link!
+  const messagingStarted = getVal("onsite_conversion.messaging_conversation_started_7d") ||
+                           getVal("messaging_conversation_started_7d") ||
+                           getVal("onsite_conversion.messaging_first_reply");
+
+  if (messagingStarted > 0 && (isMessagingName || objective === "MESSAGES" || objective === "OUTCOME_ENGAGEMENT" || objective === "OUTCOME_TRAFFIC" || objective === "LINK_CLICKS" || !objective)) {
+    return messagingStarted;
+  }
+
+  // Se o nome tiver MSG/WPP/WHATSAPP mas por algum motivo messagingStarted for 0, tenta total_messaging_connection
+  if (isMessagingName) {
+    const totalMsg = getVal("onsite_conversion.total_messaging_connection");
+    if (totalMsg > 0) return totalMsg;
+  }
+
+  // 2. Tratar Leads de forma agregada para somar múltiplos canais (Onsite + Offsite)
+  if (objective === "OUTCOME_LEADS" || objective === "LEAD_GENERATION" || nameUpper.includes("LEAD") || nameUpper.includes("CADASTRO")) {
     const onsite = Math.max(getVal("onsite_conversion.lead"), getVal("leadgen_grouped"));
     const offsiteStandard = getVal("offsite_conversion.fb_pixel_lead") || 
                             getVal("complete_registration") || 
@@ -252,11 +277,12 @@ function extractConversions(actions: any[] = [], objective?: string, reach: numb
     }
 
     const offsite = Math.max(offsiteStandard, offsiteCustom);
-    return Math.max(getVal("lead"), onsite + offsite);
+    const leadTotal = Math.max(getVal("lead"), onsite + offsite);
+    if (leadTotal > 0) return leadTotal;
   }
 
-  // Tratar Vendas/Compras de forma agregada (Onsite Shop + Offsite Pixel)
-  if (objective === "CONVERSIONS" || objective === "OUTCOME_SALES") {
+  // 3. Tratar Vendas/Compras de forma agregada (Onsite Shop + Offsite Pixel)
+  if (objective === "CONVERSIONS" || objective === "OUTCOME_SALES" || nameUpper.includes("VENDA") || nameUpper.includes("COMPRA")) {
     const onsite = getVal("onsite_conversion.purchase");
     const offsiteStandard = getVal("offsite_conversion.fb_pixel_purchase");
     let offsiteCustom = getVal("offsite_conversion.fb_pixel_custom.PURCHASE");
@@ -268,18 +294,18 @@ function extractConversions(actions: any[] = [], objective?: string, reach: numb
     }
     
     const offsite = Math.max(offsiteStandard, offsiteCustom);
-    return Math.max(getVal("purchase"), onsite + offsite);
+    const purchaseTotal = Math.max(getVal("purchase"), onsite + offsite);
+    if (purchaseTotal > 0) return purchaseTotal;
   }
 
-  // Mapeamento objetivo → action_types primários (ordem de prioridade dentro de cada lista)
-  //
-  // REGRA CORRIGIDA (2026-05): Para campanhas de MENSAGEM (MESSAGES / OUTCOME_ENGAGEMENT messaging),
-  // o Meta Ads Manager exibe "messaging_first_reply" ou "messaging_conversation_started_7d"
-  // como resultado oficial — NÃO "total_messaging_connection" (que é superset e inclui
-  // conversas recorrentes, causando números inflados vs. o Gerenciador Meta).
+  // 4. Se houver conversas iniciadas registradas em actions, mesmo sem objective explícito, NUNCA ignore!
+  if (messagingStarted > 0) {
+    return messagingStarted;
+  }
+
+  // Mapeamento objetivo → action_types primários (ordem de prioridade)
   const byObjective: Record<string, string[]> = {
-    // Campanhas de Mensagens: Meta Ads Manager usa "first_reply" como resultado principal
-    // "total_messaging_connection" fica como último fallback pois conta retornos
+    // Campanhas de Mensagens
     "MESSAGES": [
       "onsite_conversion.messaging_conversation_started_7d",
       "messaging_conversation_started_7d",
@@ -289,41 +315,36 @@ function extractConversions(actions: any[] = [], objective?: string, reach: numb
     // Instalações de App
     "APP_INSTALLS":          ["app_install", "mobile_app_install"],
     "OUTCOME_APP_PROMOTION": ["app_install", "mobile_app_install"],
-    // Visualizações de Vídeo — Meta Ads Manager mostra ThruPlays como resultado principal
+    // Visualizações de Vídeo
     "VIDEO_VIEWS":       ["thruplay", "video_view"],
     "OUTCOME_AWARENESS": ["thruplay", "video_view"],
-    // Tráfego — Meta Ads Manager mostra Landing Page Views por padrão
+    // Tráfego — Landing Page Views primeiro; link_click apenas se não houver conversões reais
     "LINK_CLICKS":    ["landing_page_view", "link_click"],
     "OUTCOME_TRAFFIC": ["landing_page_view", "link_click", "outbound_clicks"],
-    // Engajamento puro de post (curtidas, comentários, compartilhamentos)
-    // SOMENTE para campanhas cujo objetivo DE FATO é engajamento de publicação
+    // Engajamento de post
     "POST_ENGAGEMENT": ["post_engagement", "page_engagement"],
-    // OUTCOME_ENGAGEMENT cobre WhatsApp, DM, Instagram Direct — resultado = mensagens iniciadas
-    // ATENÇÃO: post_engagement e page_engagement REMOVIDOS daqui.
-    // Esses action_types são sempre > 0 em qualquer campanha ativa (curtidas, etc.)
-    // e fariam o app exibir resultados inflados quando não há mensagens reais no dia.
-    // O Meta Ads Manager para campanhas de mensagem exibe APENAS as métricas de messaging abaixo.
+    // OUTCOME_ENGAGEMENT (mensagens como prioridade)
     "OUTCOME_ENGAGEMENT": [
-      "onsite_conversion.messaging_conversation_started_7d", // ← Meta Manager defaults to "Conversas por mensagem iniciada"
+      "onsite_conversion.messaging_conversation_started_7d",
       "messaging_conversation_started_7d",
       "onsite_conversion.messaging_first_reply",            
-      "onsite_conversion.total_messaging_connection",       // ← superset (inclui retornos)
+      "onsite_conversion.total_messaging_connection",
     ],
   };
 
   const priority: string[] = objective ? (byObjective[objective] ?? []) : [];
 
-  // 1ª passagem: tipos do objetivo da campanha (match exato com Gerenciador Meta)
+  // 1ª passagem: tipos do objetivo da campanha
   for (const type of priority) {
     const v = getVal(type);
     if (v > 0) return v;
   }
 
-  // 2ª passagem: fallback geral — apenas conversões reais, sem engajamento superficial
-  // ATENÇÃO: post_engagement e page_engagement AUSENTES intencionalmente.
-  // Engajamento de post (curtidas, reações) é sempre > 0 e causaria resultados
-  // inflados em campanhas de mensagem, leads ou tráfego quando não há conversão real.
+  // 2ª passagem: fallback geral — apenas conversões reais
   const fallback = [
+    "onsite_conversion.messaging_conversation_started_7d",
+    "messaging_conversation_started_7d",
+    "onsite_conversion.messaging_first_reply",
     "lead",
     "offsite_conversion.fb_pixel_lead",
     "offsite_conversion.fb_pixel_custom.LEAD",
@@ -332,21 +353,14 @@ function extractConversions(actions: any[] = [], objective?: string, reach: numb
     "purchase",
     "offsite_conversion.fb_pixel_purchase",
     "onsite_conversion.purchase",
-    "offsite_conversion.fb_pixel_custom.PURCHASE",
     "complete_registration",
-    "offsite_conversion.fb_pixel_complete_registration",
-    "submit_application",
-    "onsite_conversion.messaging_first_reply",
-    "onsite_conversion.messaging_conversation_started_7d",
-    "messaging_conversation_started_7d",
     "app_install",
-    "mobile_app_install",
     "thruplay",
     "landing_page_view",
   ];
 
   for (const type of fallback) {
-    if (priority.includes(type)) continue; // já tentou na 1ª passagem
+    if (priority.includes(type)) continue;
     const v = getVal(type);
     if (v > 0) return v;
   }
@@ -649,16 +663,46 @@ serve(async (req) => {
       const obsoleteIds = (dbAccounts || []).map((a: any) => a.id).filter((id: string) => !activeIds.has(id))
 
       if (obsoleteIds.length > 0) {
-        console.log(`[SYNC ${syncId}] 🧹 Purgando ${obsoleteIds.length} conta(s) órfã(s) que não pertencem ao token ativo...`)
+        console.log(`[SYNC ${syncId}] 🧹 Purgando ${obsoleteIds.length} conta(s) órfã(s) que não pertencem ao token ativo: ${obsoleteIds.join(", ")}...`)
         try {
+          // 1. Limpar tabelas analíticas vinculadas às contas obsoletas
+          await supabase.from("meta_device_metrics").delete().in("ad_account_id", obsoleteIds)
+          await supabase.from("meta_placement_metrics").delete().in("ad_account_id", obsoleteIds)
+          await supabase.from("device_metrics").delete().in("ad_account_id", obsoleteIds)
+          await supabase.from("placement_metrics").delete().in("ad_account_id", obsoleteIds)
+          await supabase.from("hourly_metrics").delete().in("ad_account_id", obsoleteIds)
+          await supabase.from("region_metrics").delete().in("ad_account_id", obsoleteIds)
+          await supabase.from("demographic_metrics").delete().in("ad_account_id", obsoleteIds)
+          await supabase.from("campaign_period_stats").delete().in("ad_account_id", obsoleteIds)
+          await supabase.from("meta_period_stats").delete().in("ad_account_id", obsoleteIds)
+          await supabase.from("billing_snapshots").delete().in("ad_account_id", obsoleteIds)
+          await supabase.from("alert_thresholds").delete().in("ad_account_id", obsoleteIds)
+          await supabase.from("automation_rules").delete().in("ad_account_id", obsoleteIds)
+          await supabase.from("client_accounts").delete().in("ad_account_id", obsoleteIds)
+
+          // 2. Localizar e limpar campanhas, conjuntos, anúncios e métricas
           const { data: obsoleteCamps } = await supabase.from("campaigns").select("id").in("ad_account_id", obsoleteIds)
           const obsoleteCampIds = (obsoleteCamps || []).map((c: any) => c.id)
+
           if (obsoleteCampIds.length > 0) {
+            const { data: obsoleteSets } = await supabase.from("ad_sets").select("id").in("campaign_id", obsoleteCampIds)
+            const obsoleteSetIds = (obsoleteSets || []).map((s: any) => s.id)
+            if (obsoleteSetIds.length > 0) {
+              await supabase.from("asset_metrics").delete().in("ad_set_id", obsoleteSetIds)
+              await supabase.from("ads").delete().in("ad_set_id", obsoleteSetIds)
+              await supabase.from("ad_sets").delete().in("id", obsoleteSetIds)
+            }
             await supabase.from("metrics").delete().in("campaign_id", obsoleteCampIds)
             await supabase.from("campaigns").delete().in("id", obsoleteCampIds)
           }
-          await supabase.from("ad_accounts").delete().in("id", obsoleteIds)
-          console.log(`[SYNC ${syncId}] ✅ Contas obsoletas removidas com sucesso: ${obsoleteIds.join(", ")}`)
+
+          // 3. Deletar as contas de anúncios órfãs
+          const { error: delErr } = await supabase.from("ad_accounts").delete().in("id", obsoleteIds)
+          if (delErr) {
+            console.error(`[SYNC ${syncId}] Falha ao deletar ad_accounts:`, delErr.message)
+          } else {
+            console.log(`[SYNC ${syncId}] ✅ Contas obsoletas removidas com sucesso: ${obsoleteIds.join(", ")}`)
+          }
         } catch (purgeErr: any) {
           console.error(`[SYNC ${syncId}] Erro ao purgar contas antigas:`, purgeErr.message)
         }
@@ -715,16 +759,25 @@ serve(async (req) => {
 
         // Buscar campanhas com orçamentos (sempre)
         const campaignsWithBudgets = await fetchCampaignsWithBudgets(acc.id, accToken)
-        const budgetMap = new Map(campaignsWithBudgets.map((c: any) => [c.id, {
-          name: c.name || "Campanha Meta",
-          status: c.status ? c.status.toLowerCase() : "active",
-          daily_budget: c.daily_budget ? parseFloat(c.daily_budget) / 100 : 0,
-          lifetime_budget: c.lifetime_budget ? parseFloat(c.lifetime_budget) / 100 : 0,
-          budget_currency: acc.currency || 'BRL',
-          objective: c.objective || null,
-        }]))
+        const budgetMap = new Map(campaignsWithBudgets.map((c: any) => {
+          const n = (c.name || "").toUpperCase();
+          const isMsg = n.includes("MSG") || n.includes("MENSAGEM") || n.includes("WPP") || n.includes("WHATSAPP") || n.includes("DIRECT") || n.includes("CONVERSA");
+          const effObjective = isMsg ? "MESSAGES" : (c.objective || null);
+          return [c.id, {
+            name: c.name || "Campanha Meta",
+            status: c.status ? c.status.toLowerCase() : "active",
+            daily_budget: c.daily_budget ? parseFloat(c.daily_budget) / 100 : 0,
+            lifetime_budget: c.lifetime_budget ? parseFloat(c.lifetime_budget) / 100 : 0,
+            budget_currency: acc.currency || 'BRL',
+            objective: effObjective,
+          }];
+        }))
         // Mapa de objective por external_id para usar em adsets e ads
-        const campaignObjectiveMap = new Map(campaignsWithBudgets.map((c: any) => [c.id, c.objective as string | undefined]))
+        const campaignObjectiveMap = new Map(campaignsWithBudgets.map((c: any) => {
+          const n = (c.name || "").toUpperCase();
+          const isMsg = n.includes("MSG") || n.includes("MENSAGEM") || n.includes("WPP") || n.includes("WHATSAPP") || n.includes("DIRECT") || n.includes("CONVERSA");
+          return [c.id, (isMsg ? "MESSAGES" : (c.objective as string | undefined))];
+        }))
 
         // Buscar TUDO em paralelo — insights (range selecionado) + status completo (toda a conta)
         const [insights, breakDownsData, adsetInsights, adInsights, adsetsWithStatus, adsWithStatus, placementData, deviceData] = await Promise.all([
@@ -945,7 +998,7 @@ serve(async (req) => {
           cost: parseFloat(row.spend) || 0,
           reach: parseInt(row.reach) || 0,
           frequency: parseFloat(row.frequency || "0") || 0,
-          conversions: extractConversions(row.actions, campaignObjectiveMap.get(row.campaign_id), parseInt(row.reach) || 0),
+          conversions: extractConversions(row.actions, campaignObjectiveMap.get(row.campaign_id), parseInt(row.reach) || 0, row.campaign_name),
           result_type: campaignObjectiveMap.get(row.campaign_id)
         }
       }).filter(Boolean)
@@ -1010,7 +1063,7 @@ serve(async (req) => {
             impressions,
             frequency:    reach > 0 ? impressions / reach : (parseFloat(row.frequency || "0") || 0),
             spend:        parseFloat(row.spend || "0") || 0,
-            conversions:  extractConversions(row.actions, campaignObjectiveMap.get(row.campaign_id), parseInt(row.reach) || 0),
+            conversions:  extractConversions(row.actions, campaignObjectiveMap.get(row.campaign_id), parseInt(row.reach) || 0, budgetMap.get(row.campaign_id)?.name),
             clicks:       extractClicks(row.actions, row.inline_link_clicks),
             synced_at:    new Date().toISOString(),
           })
@@ -1031,7 +1084,7 @@ serve(async (req) => {
             impressions,
             frequency:    reach > 0 ? impressions / reach : (parseFloat(row.frequency || "0") || 0),
             spend:        parseFloat(row.spend || "0") || 0,
-            conversions:  extractConversions(row.actions, campaignObjectiveMap.get(row.campaign_id), parseInt(row.reach) || 0),
+            conversions:  extractConversions(row.actions, campaignObjectiveMap.get(row.campaign_id), parseInt(row.reach) || 0, budgetMap.get(row.campaign_id)?.name),
             clicks:       extractClicks(row.actions, row.inline_link_clicks),
             synced_at:    new Date().toISOString(),
           })
@@ -1052,7 +1105,7 @@ serve(async (req) => {
             impressions,
             frequency:    reach > 0 ? impressions / reach : (parseFloat(row.frequency || "0") || 0),
             spend:        parseFloat(row.spend || "0") || 0,
-            conversions:  extractConversions(row.actions, campaignObjectiveMap.get(row.campaign_id), parseInt(row.reach) || 0),
+            conversions:  extractConversions(row.actions, campaignObjectiveMap.get(row.campaign_id), parseInt(row.reach) || 0, budgetMap.get(row.campaign_id)?.name),
             clicks:       extractClicks(row.actions, row.inline_link_clicks),
             quality_ranking: row.quality_ranking || null,
             engagement_rate_ranking: row.engagement_rate_ranking || null,
@@ -1089,7 +1142,7 @@ serve(async (req) => {
           impressions: parseInt(row.impressions) || 0,
           clicks: extractClicks(row.actions, row.inline_link_clicks),
           spend: parseFloat(row.spend) || 0,
-          conversions: extractConversions(row.actions, campaignObjectiveMap.get(row.campaign_id), parseInt(row.reach) || 0),
+          conversions: extractConversions(row.actions, campaignObjectiveMap.get(row.campaign_id), parseInt(row.reach) || 0, row.campaign_name),
           reach: parseInt(row.reach) || 0
         }
       }).filter(Boolean)
@@ -1114,7 +1167,7 @@ serve(async (req) => {
           impressions: parseInt(row.impressions) || 0,
           clicks: extractClicks(row.actions, row.inline_link_clicks),
           spend: parseFloat(row.spend) || 0,
-          conversions: extractConversions(row.actions, campaignObjectiveMap.get(row.campaign_id), parseInt(row.reach) || 0),
+          conversions: extractConversions(row.actions, campaignObjectiveMap.get(row.campaign_id), parseInt(row.reach) || 0, row.campaign_name),
           reach: parseInt(row.reach) || 0
         }
       }).filter(Boolean)
@@ -1139,7 +1192,7 @@ serve(async (req) => {
           impressions: parseInt(row.impressions) || 0,
           clicks: extractClicks(row.actions, row.inline_link_clicks),
           spend: parseFloat(row.spend) || 0,
-          conversions: extractConversions(row.actions, campaignObjectiveMap.get(row.campaign_id), parseInt(row.reach) || 0),
+          conversions: extractConversions(row.actions, campaignObjectiveMap.get(row.campaign_id), parseInt(row.reach) || 0, row.campaign_name),
           reach: parseInt(row.reach) || 0
         }
       }).filter(Boolean)
@@ -1164,7 +1217,7 @@ serve(async (req) => {
           impressions: parseInt(row.impressions) || 0,
           clicks: extractClicks(row.actions, row.inline_link_clicks),
           spend: parseFloat(row.spend) || 0,
-          conversions: extractConversions(row.actions, campaignObjectiveMap.get(row.campaign_id), parseInt(row.reach) || 0),
+          conversions: extractConversions(row.actions, campaignObjectiveMap.get(row.campaign_id), parseInt(row.reach) || 0, row.campaign_name),
           reach: parseInt(row.reach) || 0
         }
       }).filter(Boolean)
@@ -1189,7 +1242,7 @@ serve(async (req) => {
           impressions: parseInt(row.impressions) || 0,
           clicks: extractClicks(row.actions, row.inline_link_clicks),
           spend: parseFloat(row.spend) || 0,
-          conversions: extractConversions(row.actions, campaignObjectiveMap.get(row.campaign_id), parseInt(row.reach) || 0),
+          conversions: extractConversions(row.actions, campaignObjectiveMap.get(row.campaign_id), parseInt(row.reach) || 0, row.campaign_name),
           reach: parseInt(row.reach) || 0
         }
       }).filter(Boolean)
@@ -1213,7 +1266,7 @@ serve(async (req) => {
             impressions: parseInt(row.impressions) || 0,
             clicks: extractClicks(row.actions, row.inline_link_clicks),
             cost: parseFloat(row.spend) || 0,
-            conversions: extractConversions(row.actions, campaignObjectiveMap.get(row.campaign_id), parseInt(row.reach) || 0),
+            conversions: extractConversions(row.actions, campaignObjectiveMap.get(row.campaign_id), parseInt(row.reach) || 0, row.campaign_name),
             reach: parseInt(row.reach) || 0,
             frequency: parseFloat(row.frequency || "0") || 0,
             video_p25: extractVideoMetric(row, "video_p25_watched_actions"),
@@ -1234,7 +1287,7 @@ serve(async (req) => {
             impressions: parseInt(row.impressions) || 0,
             clicks: extractClicks(row.actions, row.inline_link_clicks),
             cost: parseFloat(row.spend) || 0,
-            conversions: extractConversions(row.actions, campaignObjectiveMap.get(row.campaign_id), parseInt(row.reach) || 0),
+            conversions: extractConversions(row.actions, campaignObjectiveMap.get(row.campaign_id), parseInt(row.reach) || 0, row.campaign_name),
             reach: parseInt(row.reach) || 0,
             frequency: parseFloat(row.frequency || "0") || 0,
             video_p25: extractVideoMetric(row, "video_p25_watched_actions"),

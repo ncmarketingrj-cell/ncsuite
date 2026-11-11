@@ -302,10 +302,13 @@ function parseBold(text: string) {
 
 // â"€â"€â"€ SUB-COMPONENTES â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 
-function ObjectiveBadge({ objective }: { objective?: string }) {
-  if (!objective) return null;
-  const def = OBJECTIVE_MAP[objective];
-  if (!def) return <span className="text-[8px] font-mono text-muted-foreground/60 uppercase">{objective.replace("OUTCOME_","")}</span>;
+function ObjectiveBadge({ objective, name }: { objective?: string; name?: string }) {
+  const n = (name || "").toUpperCase();
+  const isMsg = n.includes("MSG") || n.includes("MENSAGEM") || n.includes("WPP") || n.includes("WHATSAPP") || n.includes("DIRECT") || n.includes("CONVERSA");
+  const effectiveObjective = isMsg ? "MESSAGES" : (objective || "");
+  if (!effectiveObjective) return null;
+  const def = OBJECTIVE_MAP[effectiveObjective];
+  if (!def) return <span className="text-[8px] font-mono text-muted-foreground/60 uppercase">{effectiveObjective.replace("OUTCOME_","")}</span>;
   const Icon = def.icon;
   return <span className={`inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[8px] font-black uppercase tracking-wider ${def.color}`}><Icon className="h-2.5 w-2.5" />{def.label}</span>;
 }
@@ -1546,7 +1549,7 @@ function MetricasCampanhasPage() {
                                   </div>
                                 </td>
                                 {/* objetivo */}
-                                {level === "campanhas" && <td className="px-3 py-2.5 text-center"><ObjectiveBadge objective={c.objective}/></td>}
+                                {level === "campanhas" && <td className="px-3 py-2.5 text-center"><ObjectiveBadge objective={c.objective} name={c.name}/></td>}
                                 {/* orçamento */}
                                 <td className="px-4 py-2.5 text-right font-mono text-[11px] text-muted-foreground hidden md:table-cell whitespace-nowrap">
                                   {c.daily_budget ? `R$ ${Number(c.daily_budget).toFixed(0)}/d` : c.lifetime_budget ? `R$ ${Number(c.lifetime_budget).toFixed(0)} total` : c.budget ? `R$ ${Number(c.budget).toFixed(0)}/d` : "—"}
@@ -1681,7 +1684,7 @@ function MetricasCampanhasPage() {
                                       )}
                                     </button>
                                     {isLearning && <LearningBadge/>}
-                                    {level === "campanhas" && <ObjectiveBadge objective={c.objective}/>}
+                                    {level === "campanhas" && <ObjectiveBadge objective={c.objective} name={c.name}/>}
                                   </div>
                                   {c.ad_account && <span className="text-[9px] text-muted-foreground/50 font-mono mt-1.5">{(c.ad_account as any).name}</span>}
                                 </div>
@@ -1777,7 +1780,7 @@ function MetricasCampanhasPage() {
                         {auditData.map((a: any, i: number) => (
                           <tr key={i} className="border-b border-white/[0.03] hover:bg-white/[0.02]">
                             <td className="px-4 py-3 font-semibold max-w-[240px] truncate">{a.campaign_name || a.name}</td>
-                            <td className="px-4 py-3 text-center"><ObjectiveBadge objective={a.objective}/></td>
+                            <td className="px-4 py-3 text-center"><ObjectiveBadge objective={a.objective} name={a.name}/></td>
                             <td className="px-4 py-3 text-right font-mono text-primary">{a.app_conversions ?? "—"}</td>
                             <td className="px-4 py-3 text-right font-mono text-violet-400">{a.total_actions ?? "—"}</td>
                           </tr>
@@ -2567,7 +2570,7 @@ function MetricasCampanhasPage() {
                   <div className="space-y-1">
                     <div className="flex items-center gap-2">
                       <span className="text-[9px] bg-primary/20 text-primary px-2 py-0.5 rounded-full font-mono uppercase tracking-wider">{selectedFocusItem.type}</span>
-                      <ObjectiveBadge objective={selectedFocusItem.objective} />
+                      <ObjectiveBadge objective={selectedFocusItem.objective} name={selectedFocusItem.name} />
                     </div>
                     <h3 className="text-sm font-black text-foreground uppercase tracking-wide leading-snug">{selectedFocusItem.name}</h3>
                   </div>

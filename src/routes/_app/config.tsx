@@ -9,6 +9,7 @@ import { PageHeader } from "@/components/PageHeader";
 import { useClients } from "@/hooks/useClients";
 import { supabase } from "@/integrations/supabase-external/client";
 import { useAuth } from "@/lib/auth";
+import { purgeAdAccount } from "@/lib/adAccountService";
 
 export const Route = createFileRoute("/_app/config")({
   head: () => ({ meta: [{ title: "Configurações — NC Suite" }] }),
@@ -289,6 +290,44 @@ function TabIntegracoes() {
       return data || [];
     }
   });
+
+  // Gestão de Contas de Anúncios Conectadas
+  const [deletingAccountId, setDeletingAccountId] = useState<string | null>(null);
+
+  const { data: connectedAdAccounts = [], refetch: refetchAdAccounts, isLoading: loadingAdAccounts } = useQuery({
+    queryKey: ["admin_connected_ad_accounts"],
+    queryFn: async () => {
+      const { data, error } = await (supabase as any)
+        .from("ad_accounts")
+        .select("id, name, currency, status, last_sync, campaigns(id)")
+        .order("name", { ascending: true });
+      if (error) throw error;
+      return (data || []) as any[];
+    }
+  });
+
+  const handleDeleteAdAccount = async (account: any) => {
+    if (!window.confirm(`Tem certeza que deseja desvincular e EXCLUIR a conta "${account.name}" (${account.id}) do sistema?\n\nTodas as campanhas e métricas salvas desta conta serão apagadas permanentemente.`)) {
+      return;
+    }
+    setDeletingAccountId(account.id);
+    try {
+      const res = await purgeAdAccount(account.id);
+      if (!res.success) {
+        throw new Error(res.error);
+      }
+      toast.success(`Conta "${account.name}" removida com sucesso!`);
+      await refetchAdAccounts();
+      await qc.invalidateQueries({ queryKey: ["ad_accounts"] });
+      await qc.invalidateQueries({ queryKey: ["ad-accounts"] });
+      await qc.invalidateQueries({ queryKey: ["campaigns"] });
+      await qc.invalidateQueries({ queryKey: ["metrics"] });
+    } catch (err: any) {
+      toast.error(`Falha ao excluir conta: ${err?.message || "Erro desconhecido"}`);
+    } finally {
+      setDeletingAccountId(null);
+    }
+  };
 
   const [isProcessingAuth, setIsProcessingAuth] = useState(false);
 
@@ -606,6 +645,91 @@ function TabIntegracoes() {
             </div>
           </div>
           <SyncButton mode="max" />
+        </div>
+
+        {/* ══════════ SEÇÃO: GERENCIAMENTO DE CONTAS CONECTADAS ══════════ */}
+        <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-5 space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="h-10 w-10 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center text-primary">
+                <Target className="h-5 w-5" />
+              </div>
+              <div>
+                <h4 className="text-sm font-black uppercase tracking-wider text-foreground">
+                  Contas de Anúncios no Sistema ({connectedAdAccounts.length})
+                </h4>
+                <p className="text-xs text-muted-foreground">
+                  Gerencie ou desvincule contas que perderam acesso ou foram removidas do seu Gerenciador de Anúncios.
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() => refetchAdAccounts()}
+              disabled={loadingAdAccounts}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-white/10 bg-white/5 hover:bg-white/10 text-xs font-bold text-muted-foreground hover:text-foreground transition-all"
+            >
+              <RefreshCw className={`h-3.5 w-3.5 ${loadingAdAccounts ? "animate-spin" : ""}`} />
+              Atualizar Lista
+            </button>
+          </div>
+
+          {loadingAdAccounts ? (
+            <div className="py-8 flex items-center justify-center gap-2 text-xs text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin text-primary" /> Carregando contas do sistema...
+            </div>
+          ) : connectedAdAccounts.length === 0 ? (
+            <div className="py-6 text-center text-xs text-muted-foreground">
+              Nenhuma conta de anúncios cadastrada no sistema.
+            </div>
+          ) : (
+            <div className="grid gap-2">
+              {connectedAdAccounts.map((acc: any) => {
+                const isDeleting = deletingAccountId === acc.id;
+                const campCount = Array.isArray(acc.campaigns) ? acc.campaigns.length : 0;
+                return (
+                  <div
+                    key={acc.id}
+                    className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 rounded-xl border border-white/5 bg-black/20 hover:border-white/10 transition-all"
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="h-8 w-8 rounded-lg bg-white/5 flex items-center justify-center shrink-0">
+                        <Megaphone className="h-4 w-4 text-primary" />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <p className="text-xs font-bold text-foreground truncate">{acc.name}</p>
+                          <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-white/5 text-muted-foreground border border-white/10">
+                            {acc.id}
+                          </span>
+                          <span className={`text-[8px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded ${acc.status === 1 || acc.status === "1" ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20" : "bg-amber-500/10 text-amber-400 border border-amber-500/20"}`}>
+                            {acc.status === 1 || acc.status === "1" ? "Ativa" : "Desativada"}
+                          </span>
+                        </div>
+                        <p className="text-[10px] text-muted-foreground mt-0.5">
+                          Moeda: <strong className="text-foreground/80">{acc.currency || "BRL"}</strong> • {campCount} campanha{campCount !== 1 ? "s" : ""} carregada{campCount !== 1 ? "s" : ""}
+                          {acc.last_sync && ` • Último sync: ${new Date(acc.last_sync).toLocaleString("pt-BR")}`}
+                        </p>
+                      </div>
+                    </div>
+
+                    <button
+                      onClick={() => handleDeleteAdAccount(acc)}
+                      disabled={isDeleting}
+                      className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg border border-red-500/30 bg-red-500/10 hover:bg-red-500/20 text-red-400 text-xs font-bold transition-all shrink-0 active:scale-95 disabled:opacity-50"
+                      title="Excluir conta e dados associados"
+                    >
+                      {isDeleting ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <Trash2 className="h-3.5 w-3.5" />
+                      )}
+                      <span>{isDeleting ? "Excluindo..." : "Excluir Conta"}</span>
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
 
         {/* Google Ads (Tráfego) */}
