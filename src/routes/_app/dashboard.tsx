@@ -13,7 +13,7 @@ import { classifyCampaignType } from "./cockpit";
 const COLORS = ["#ef4444", "#3b82f6", "#10b981", "#8b5cf6", "#f59e0b", "#06b6d4"];
 import { supabase } from "@/integrations/supabase-external/client";
 import {
-  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+  Tooltip, ResponsiveContainer,
   BarChart, Bar, PieChart, Pie, Cell
 } from 'recharts';
 import { format, subDays } from 'date-fns';
@@ -32,7 +32,6 @@ function Dashboard() {
   const [selectedAccountId, setSelectedAccountId] = useState<string>("all");
   const [selectedClientId, setSelectedClientId] = useState<string>("all");
   const [showAccounts, setShowAccounts] = useState(false);
-  const [chartMode, setChartMode] = useState<"auto" | "chart" | "funnel">("auto");
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -587,6 +586,11 @@ function Dashboard() {
           trend={performanceData?.trends?.cost}
           isPositive={performanceData?.trends?.costPositive}
           helper="Verba bruta consumida em anúncios"
+          subMetric={
+            <span>
+              Alcance: <strong className="text-foreground">{(performanceData?.totals?.reach || Math.round((performanceData?.totals?.impressions || 0) * 0.75)).toLocaleString('pt-BR')}</strong>
+            </span>
+          }
         />
         <StatCard
           label="Conversões"
@@ -595,6 +599,11 @@ function Dashboard() {
           trend={performanceData?.trends?.conversions}
           isPositive={performanceData?.trends?.conversionsPositive}
           helper="Contatos diretos no WhatsApp e cadastros"
+          subMetric={
+            <span>
+              CVR: <strong className="text-primary">{performanceData?.totals?.clicks ? ((performanceData.totals.conversions / performanceData.totals.clicks) * 100).toFixed(2) : "0.00"}%</strong> dos cliques
+            </span>
+          }
         />
         <StatCard
           label="CPA Médio"
@@ -604,6 +613,11 @@ function Dashboard() {
           trend={performanceData?.trends?.cpl}
           isPositive={performanceData?.trends?.cplPositive}
           helper="Custo médio por contato qualificado"
+          subMetric={
+            <span>
+              Meta: <strong className="text-emerald-400">R$ 5,00 a R$ 35,00</strong>
+            </span>
+          }
         />
         <StatCard
           label="Cliques no Link"
@@ -612,290 +626,76 @@ function Dashboard() {
           trend={performanceData?.trends?.clicks}
           isPositive={performanceData?.trends?.clicksPositive}
           helper="Visitas enviadas aos anúncios e site"
+          subMetric={
+            <span>
+              CTR: <strong className="text-indigo-400">{performanceData?.totals?.impressions ? ((performanceData.totals.clicks / performanceData.totals.impressions) * 100).toFixed(2) : "0.00"}%</strong>
+            </span>
+          }
         />
       </div>
       
       <div className="pt-4 space-y-6">
 
-      {/* ─── MÓDULO PRINCIPAL: EVOLUÇÃO & EFICIÊNCIA DE INVESTIMENTO ─── */}
+      {/* ─── RESUMO EXECUTIVO DA CONTA / CONSOLIDADO ─── */}
       {(() => {
-        const isSingleDay = dateFrom === dateTo || (performanceData?.chartData?.length ?? 0) <= 1;
-        const activeChartMode = chartMode === "auto" ? (isSingleDay ? "funnel" : "chart") : chartMode;
         const totals = performanceData?.totals || { cost: 0, clicks: 0, impressions: 0, conversions: 0, reach: 0 };
         const ctr = totals.impressions > 0 ? (totals.clicks / totals.impressions) * 100 : 0;
         const cpc = totals.clicks > 0 ? totals.cost / totals.clicks : 0;
-        const cvr = totals.clicks > 0 ? (totals.conversions / totals.clicks) * 100 : 0;
         const cpa = performanceData?.cpl || 0;
+        const cpm = totals.impressions > 0 ? (totals.cost / totals.impressions) * 1000 : 0;
+        const reachVal = totals.reach || Math.round(totals.impressions * 0.75);
 
         return (
-          <div className="grid gap-4 sm:gap-6 lg:gap-8">
-            <motion.div
-              initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}
-              className="glass-panel flex flex-col p-4 sm:p-6 lg:p-8 min-h-[300px] min-w-0"
-            >
-              {/* Header do Módulo com Switcher Didático */}
-              <div className="mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <Zap className="h-5 w-5 text-primary" />
-                    <h3 className="header-sport text-base sm:text-xl font-black tracking-tight uppercase">
-                      Evolução de Investimento x Resultados
-                    </h3>
-                  </div>
-                  <p className="text-xs text-muted-foreground font-medium mt-1">
-                    Como o orçamento investido se transforma em cliques, mensagens de compradores e leads
-                  </p>
-                </div>
-
-                {/* Alternador de Visualização */}
-                <div className="flex items-center gap-2 self-start sm:self-auto bg-white/5 border border-white/10 rounded-xl p-1 shrink-0">
-                  <button
-                    onClick={() => setChartMode("funnel")}
-                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all ${
-                      activeChartMode === "funnel"
-                        ? "bg-primary text-primary-foreground shadow-sm"
-                        : "text-muted-foreground hover:text-foreground"
-                    }`}
-                  >
-                    <Zap className="h-3 w-3" />
-                    Funil de Conversão
-                  </button>
-                  <button
-                    onClick={() => setChartMode("chart")}
-                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all ${
-                      activeChartMode === "chart"
-                        ? "bg-primary text-primary-foreground shadow-sm"
-                        : "text-muted-foreground hover:text-foreground"
-                    }`}
-                  >
-                    <Activity className="h-3 w-3" />
-                    Curva Diária
-                  </button>
-                </div>
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="p-4 sm:p-5 rounded-2xl bg-card border border-border shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4"
+          >
+            <div className="flex items-start gap-3.5 min-w-0">
+              <div className="h-10 w-10 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center shrink-0 mt-0.5">
+                <Sparkles className="h-5 w-5 text-primary" />
               </div>
-
-              {/* VISÃO 1: FUNIL DE EFICIÊNCIA EXECUTIVO */}
-              {activeChartMode === "funnel" ? (
-                <div className="space-y-6">
-                  {/* Grid das Etapas do Funil */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                    {/* Etapa 1: Impressões */}
-                    <div className="p-4 rounded-2xl bg-white/[0.02] border border-white/10 relative overflow-hidden flex flex-col justify-between">
-                      <div className="flex items-center justify-between mb-3">
-                        <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground flex items-center gap-1.5">
-                          <Eye className="h-3.5 w-3.5 text-blue-400" />
-                          1. Exposição (Impressões)
-                        </span>
-                        <span className="text-[9px] font-bold text-muted-foreground bg-white/5 px-2 py-0.5 rounded">Topo</span>
-                      </div>
-                      <div>
-                        <p className="text-2xl font-black font-mono text-foreground">
-                          {totals.impressions.toLocaleString("pt-BR")}
-                        </p>
-                        <p className="text-[10px] text-muted-foreground mt-1">Exibições reais nos feeds e stories</p>
-                      </div>
-                      <div className="mt-3 pt-3 border-t border-white/5 flex items-center justify-between text-[10px] font-bold text-blue-400">
-                        <span>Alcance Estimado:</span>
-                        <span className="font-mono">{(totals.reach || totals.impressions * 0.75).toLocaleString("pt-BR", { maximumFractionDigits: 0 })}</span>
-                      </div>
-                    </div>
-
-                    {/* Etapa 2: Cliques no Link */}
-                    <div className="p-4 rounded-2xl bg-white/[0.02] border border-white/10 relative overflow-hidden flex flex-col justify-between">
-                      <div className="flex items-center justify-between mb-3">
-                        <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground flex items-center gap-1.5">
-                          <MousePointer2 className="h-3.5 w-3.5 text-indigo-400" />
-                          2. Interesse (Cliques)
-                        </span>
-                        <span className="text-[9px] font-bold text-indigo-400 bg-indigo-500/10 border border-indigo-500/20 px-2 py-0.5 rounded">
-                          CTR: {ctr.toFixed(2)}%
-                        </span>
-                      </div>
-                      <div>
-                        <p className="text-2xl font-black font-mono text-foreground">
-                          {totals.clicks.toLocaleString("pt-BR")}
-                        </p>
-                        <p className="text-[10px] text-muted-foreground mt-1">Visitas direcionadas para o estoque</p>
-                      </div>
-                      <div className="mt-3 pt-3 border-t border-white/5 flex items-center justify-between text-[10px] font-bold text-indigo-400">
-                        <span>Custo Médio por Clique:</span>
-                        <span className="font-mono">R$ {cpc.toFixed(2)}</span>
-                      </div>
-                    </div>
-
-                    {/* Etapa 3: Conversões / Contatos */}
-                    <div className="p-4 rounded-2xl bg-primary/[0.04] border border-primary/25 relative overflow-hidden flex flex-col justify-between">
-                      <div className="flex items-center justify-between mb-3">
-                        <span className="text-[10px] font-black uppercase tracking-widest text-primary flex items-center gap-1.5">
-                          <Trophy className="h-3.5 w-3.5" />
-                          3. Conversões (Leads)
-                        </span>
-                        <span className="text-[9px] font-bold text-primary bg-primary/10 border border-primary/20 px-2 py-0.5 rounded">
-                          CVR: {cvr.toFixed(2)}%
-                        </span>
-                      </div>
-                      <div>
-                        <p className="text-2xl font-black font-mono text-primary">
-                          {totals.conversions.toLocaleString("pt-BR")}
-                        </p>
-                        <p className="text-[10px] text-muted-foreground mt-1">Contatos no WhatsApp e formulários</p>
-                      </div>
-                      <div className="mt-3 pt-3 border-t border-white/5 flex items-center justify-between text-[10px] font-bold text-primary">
-                        <span>Taxa de Conversão:</span>
-                        <span className="font-mono">{cvr.toFixed(2)}% dos cliques</span>
-                      </div>
-                    </div>
-
-                    {/* Etapa 4: CPA / Custo por Contato */}
-                    <div className="p-4 rounded-2xl bg-white/[0.02] border border-white/10 relative overflow-hidden flex flex-col justify-between">
-                      <div className="flex items-center justify-between mb-3">
-                        <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground flex items-center gap-1.5">
-                          <Target className="h-3.5 w-3.5 text-emerald-400" />
-                          4. Custo Médio por Lead
-                        </span>
-                        <span className={`text-[9px] font-bold px-2 py-0.5 rounded ${
-                          cpa > 0 && cpa <= 35 ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20" :
-                          cpa > 0 && cpa <= 75 ? "bg-amber-500/10 text-amber-400 border border-amber-500/20" :
-                          cpa > 0 ? "bg-red-500/10 text-red-400 border border-red-500/20" :
-                          "bg-white/5 text-muted-foreground"
-                        }`}>
-                          {cpa > 0 && cpa <= 35 ? "Excelente" : cpa > 0 && cpa <= 75 ? "Saudável" : cpa > 0 ? "Atenção" : "Em análise"}
-                        </span>
-                      </div>
-                      <div>
-                        <p className="text-2xl font-black font-mono text-foreground">
-                          {cpa > 0 ? `R$ ${cpa.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : "—"}
-                        </p>
-                        <p className="text-[10px] text-muted-foreground mt-1">Investimento por oportunidade criada</p>
-                      </div>
-                      <div className="mt-3 pt-3 border-t border-white/5 flex items-center justify-between text-[10px] font-bold text-muted-foreground">
-                        <span>Total Investido:</span>
-                        <span className="font-mono text-foreground">R$ {totals.cost.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Diagnóstico em Linguagem Natural */}
-                  <div className="p-4 rounded-2xl bg-card border border-border/70 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
-                    <div className="flex items-start gap-2.5">
-                      <Sparkles className="h-4 w-4 text-primary shrink-0 mt-0.5" />
-                      <div className="space-y-0.5">
-                        <span className="font-black uppercase tracking-wider text-primary text-[10px]">
-                          Diagnóstico Executivo da NC Suite
-                        </span>
-                        <p className="text-muted-foreground leading-relaxed text-[11px]">
-                          {isSingleDay ? (
-                            <>
-                              No dia <strong className="text-foreground">{format(dateRange.startDate, "dd 'de' MMMM", { locale: ptBR })}</strong>, 
-                              foram investidos <strong className="text-foreground">R$ {totals.cost.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>, 
-                              gerando <strong className="text-foreground">{totals.clicks.toLocaleString('pt-BR')} visitas</strong> (CTR de {ctr.toFixed(2)}%) 
-                              e <strong className="text-foreground">{totals.conversions} contatos diretos de compradores</strong>.
-                            </>
-                          ) : (
-                            <>
-                              No período avaliado, o investimento total de <strong className="text-foreground">R$ {totals.cost.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong> gerou 
-                              uma média de <strong className="text-foreground">R$ {(performanceData?.avgDailyCost || 0).toFixed(2)}/dia</strong>, resultando em 
-                              <strong className="text-foreground"> {totals.conversions} leads qualificados</strong> a um CPA médio de <strong className="text-foreground">R$ {cpa.toFixed(2)}</strong>.
-                            </>
-                          )}
-                        </p>
-                      </div>
-                    </div>
-
-                    {isSingleDay && (
-                      <span className="text-[10px] font-bold text-muted-foreground/75 bg-muted/40 px-3 py-1.5 rounded-xl border border-border/50 shrink-0">
-                        Dica: Escolha um período de 7+ dias no filtro para ver a curva diária contínua
-                      </span>
-                    )}
-                  </div>
+              <div className="space-y-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-[11px] font-black uppercase tracking-wider text-primary font-display truncate">
+                    {selectedAccount?.name || (selectedClientId !== "all" ? clients.find((c: any) => c.id === selectedClientId)?.name : null) || "Visão Geral Consolidada"}
+                  </span>
+                  <span className="text-muted-foreground text-[10px]">•</span>
+                  <span className="text-[10px] font-mono font-bold text-muted-foreground">
+                    {format(dateRange.startDate, "dd/MM/yyyy")} até {format(dateRange.endDate, "dd/MM/yyyy")}
+                  </span>
                 </div>
-              ) : (
-                /* VISÃO 2: GRÁFICO DE EVOLUÇÃO TEMPORAL */
-                <div className="space-y-4">
-                  {/* Resumo da Curva */}
-                  <div className="flex flex-wrap items-center justify-between gap-3 text-[11px] pb-2 border-b border-white/5">
-                    <div className="flex items-center gap-4">
-                      <div className="flex items-center gap-1.5 font-bold">
-                        <span className="h-2 w-2 rounded-full bg-primary" />
-                        <span className="text-muted-foreground">Investimento Diário:</span>
-                        <span className="font-mono text-foreground">
-                          Média R$ {(performanceData?.avgDailyCost || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}/dia
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-1.5 font-bold">
-                        <span className="h-2 w-2 rounded-full bg-violet-400" />
-                        <span className="text-muted-foreground">Conversões:</span>
-                        <span className="font-mono text-foreground">
-                          {totals.conversions} contatos no período
-                        </span>
-                      </div>
-                    </div>
-                    {performanceData?.bestDay && (
-                      <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-1 rounded-lg">
-                        Melhor Dia: {format(new Date(performanceData.bestDay.date + "T12:00:00Z"), "dd/MM", { locale: ptBR })} ({performanceData.bestDay.conversions} conv.)
-                      </span>
-                    )}
-                  </div>
+                <p className="text-xs text-foreground/90 leading-relaxed">
+                  {totals.cost > 0 ? (
+                    <>
+                      Investimento de <strong className="text-foreground font-mono">R$ {totals.cost.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong> gerou{" "}
+                      <strong className="text-foreground font-mono">{totals.clicks.toLocaleString('pt-BR')} cliques</strong> (CTR de {ctr.toFixed(2)}%) e{" "}
+                      <strong className="text-primary font-mono">{totals.conversions} contatos diretos de compradores</strong>
+                      {cpa > 0 ? <> com CPA médio de <strong className="text-foreground font-mono">R$ {cpa.toFixed(2)}</strong>.</> : "."}
+                    </>
+                  ) : (
+                    "Nenhuma movimentação de anúncios registrada para esta conta no período selecionado."
+                  )}
+                </p>
+              </div>
+            </div>
 
-                  <div className="w-full" style={{ height: "clamp(200px, 35vw, 300px)" }}>
-                    <ResponsiveContainer width="100%" height="100%">
-                      <AreaChart data={performanceData?.chartData || []} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                        <defs>
-                          <linearGradient id="colorCost" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="5%" stopColor="hsl(var(--primary))" stopOpacity={0.25}/>
-                            <stop offset="95%" stopColor="hsl(var(--primary))" stopOpacity={0}/>
-                          </linearGradient>
-                          <linearGradient id="colorConv" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="5%" stopColor="#a78bfa" stopOpacity={0.25}/>
-                            <stop offset="95%" stopColor="#a78bfa" stopOpacity={0}/>
-                          </linearGradient>
-                        </defs>
-                        <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border) / 0.15)" vertical={false} />
-                        <XAxis 
-                          dataKey="date" 
-                          axisLine={false} 
-                          tickLine={false} 
-                          tick={{ fontSize: 9, fontWeight: 700, fill: 'hsl(var(--muted-foreground))', fontFamily: 'monospace' }}
-                          tickFormatter={(val) => {
-                            try {
-                              return format(new Date(val + "T12:00:00Z"), 'dd MMM', { locale: ptBR }).toUpperCase();
-                            } catch {
-                              return val;
-                            }
-                          }}
-                        />
-                        <YAxis
-                          yAxisId="cost"
-                          axisLine={false}
-                          tickLine={false}
-                          tick={{ fontSize: 9, fontWeight: 700, fill: 'hsl(var(--muted-foreground))', fontFamily: 'monospace' }}
-                          tickFormatter={(v) => `R$${v >= 1000 ? `${(v/1000).toFixed(0)}k` : v}`}
-                        />
-                        <YAxis
-                          yAxisId="conv"
-                          orientation="right"
-                          axisLine={false}
-                          tickLine={false}
-                          tick={{ fontSize: 9, fontWeight: 700, fill: '#a78bfa', fontFamily: 'monospace' }}
-                        />
-                        <Tooltip 
-                          contentStyle={{ backgroundColor: 'hsl(var(--background))', borderColor: 'hsl(var(--border))', borderRadius: '12px', boxShadow: '0 20px 40px rgba(0,0,0,0.5)' }}
-                          itemStyle={{ fontSize: '11px', fontWeight: 800, fontFamily: 'monospace' }}
-                          labelStyle={{ fontSize: '10px', color: 'hsl(var(--muted-foreground))', textTransform: 'uppercase', marginBottom: '8px' }}
-                          formatter={(value: any, name: string) => {
-                            if (name === "cost") return [`R$ ${Number(value).toFixed(2)}`, "Gasto do Dia"];
-                            return [`${value} contatos`, "Conversões"];
-                          }}
-                        />
-                        <Area yAxisId="cost" type="monotone" dataKey="cost" stroke="hsl(var(--primary))" strokeWidth={3} fillOpacity={1} fill="url(#colorCost)" />
-                        <Area yAxisId="conv" type="monotone" dataKey="conversions" stroke="#a78bfa" strokeWidth={3} fillOpacity={1} fill="url(#colorConv)" />
-                      </AreaChart>
-                    </ResponsiveContainer>
-                  </div>
-                </div>
-              )}
-            </motion.div>
-          </div>
+            {/* Badges de Eficiência Operacional */}
+            <div className="flex items-center gap-2 shrink-0 flex-wrap self-start md:self-auto text-[11px] font-mono">
+              <div className="bg-white/[0.03] border border-white/10 px-3 py-1.5 rounded-xl">
+                <span className="text-muted-foreground text-[9px] uppercase tracking-wider block font-sans font-bold">CPM Médio</span>
+                <span className="font-bold text-foreground">R$ {cpm.toFixed(2)}</span>
+              </div>
+              <div className="bg-white/[0.03] border border-white/10 px-3 py-1.5 rounded-xl">
+                <span className="text-muted-foreground text-[9px] uppercase tracking-wider block font-sans font-bold">CPC Médio</span>
+                <span className="font-bold text-foreground">R$ {cpc.toFixed(2)}</span>
+              </div>
+              <div className="bg-white/[0.03] border border-white/10 px-3 py-1.5 rounded-xl">
+                <span className="text-muted-foreground text-[9px] uppercase tracking-wider block font-sans font-bold">Alcance Est.</span>
+                <span className="font-bold text-foreground">{reachVal.toLocaleString('pt-BR')}</span>
+              </div>
+            </div>
+          </motion.div>
         );
       })()}
 
@@ -1297,7 +1097,7 @@ function Dashboard() {
 }
 
 
-function StatCard({ label, value, prefix = "", icon: Icon, trend, isPositive, helper }: any) {
+function StatCard({ label, value, prefix = "", icon: Icon, trend, isPositive, helper, subMetric }: any) {
   const isCurrency = prefix.includes("R$");
   const formatted = typeof value === 'number'
     ? value.toLocaleString('pt-BR', {
@@ -1307,27 +1107,34 @@ function StatCard({ label, value, prefix = "", icon: Icon, trend, isPositive, he
     : value;
 
   return (
-    <div className="glass-panel card-sport p-5 sm:p-6 relative overflow-hidden group transition hover:border-primary/40 hover:shadow-[0_0_20px_rgba(var(--primary-rgb),0.06)]">
-      <div className="flex items-center justify-between mb-3 relative z-10">
-        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 border border-primary/20 text-primary shadow-inner group-hover:bg-primary/20 transition-colors">
-          <Icon className="h-5 w-5" />
-        </div>
-        {trend && (
-          <div className={`flex items-center gap-1 text-[10px] font-black px-2.5 py-1 rounded-lg backdrop-blur-md border shadow-sm ${isPositive ? 'text-emerald-500 bg-emerald-500/10 border-emerald-500/20' : 'text-primary bg-primary/10 border-primary/20'}`}>
-            {isPositive ? <TrendingUp className="h-3.5 w-3.5" /> : <TrendingDown className="h-3.5 w-3.5" />}
-            {trend}
+    <div className="glass-panel card-sport p-5 sm:p-6 relative overflow-hidden group transition hover:border-primary/40 hover:shadow-[0_0_20px_rgba(var(--primary-rgb),0.06)] flex flex-col justify-between">
+      <div>
+        <div className="flex items-center justify-between mb-3 relative z-10">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 border border-primary/20 text-primary shadow-inner group-hover:bg-primary/20 transition-colors">
+            <Icon className="h-5 w-5" />
           </div>
-        )}
+          {trend && (
+            <div className={`flex items-center gap-1 text-[10px] font-black px-2.5 py-1 rounded-lg backdrop-blur-md border shadow-sm ${isPositive ? 'text-emerald-500 bg-emerald-500/10 border-emerald-500/20' : 'text-primary bg-primary/10 border-primary/20'}`}>
+              {isPositive ? <TrendingUp className="h-3.5 w-3.5" /> : <TrendingDown className="h-3.5 w-3.5" />}
+              {trend}
+            </div>
+          )}
+        </div>
+        <div className="relative z-10">
+          <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-black mb-1">{label}</p>
+          <h4 className="text-2xl sm:text-3xl font-black font-mono tracking-tight text-foreground drop-shadow-sm">
+            {prefix}{formatted}
+          </h4>
+          {helper && (
+            <p className="text-[10px] text-muted-foreground/80 mt-1.5 leading-snug">{helper}</p>
+          )}
+        </div>
       </div>
-      <div className="relative z-10">
-        <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-black mb-1">{label}</p>
-        <h4 className="text-2xl sm:text-3xl font-black font-mono tracking-tight text-foreground drop-shadow-sm">
-          {prefix}{formatted}
-        </h4>
-        {helper && (
-          <p className="text-[10px] text-muted-foreground/80 mt-1.5 leading-snug">{helper}</p>
-        )}
-      </div>
+      {subMetric && (
+        <div className="mt-3.5 pt-2.5 border-t border-white/5 flex items-center justify-between text-[10px] font-mono font-bold text-muted-foreground">
+          {subMetric}
+        </div>
+      )}
     </div>
   );
 }
