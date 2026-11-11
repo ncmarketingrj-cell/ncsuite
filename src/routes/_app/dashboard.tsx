@@ -108,23 +108,50 @@ function Dashboard() {
       const endStr = dateTo;
       const prevStartStr = getLocalDateStr(subDays(start, diffDays));
 
-      let metricsQuery = (supabase as any).from("metrics").select(`
-        campaign_id, cost, conversions, impressions, clicks, reach, date,
-        campaigns!inner(ad_account_id, client_id, name, objective)
-      `).gte('date', prevStartStr).lte('date', endStr);
-
+      // 1. Obter campanhas da conta ou do cliente com filtro nativo
+      let campQ = (supabase as any).from("campaigns").select("id, name, objective, ad_account_id, client_id");
       if (selectedAccountId !== "all") {
-        metricsQuery = metricsQuery.eq("campaigns.ad_account_id", selectedAccountId);
+        campQ = campQ.eq("ad_account_id", selectedAccountId);
       }
       if (selectedClientId !== "all") {
-        metricsQuery = metricsQuery.eq("campaigns.client_id", selectedClientId);
+        campQ = campQ.eq("client_id", selectedClientId);
+      }
+      const { data: campsList } = await campQ;
+      const campaignsMap = new Map();
+      const campIds = (campsList || []).map((c: any) => {
+        campaignsMap.set(c.id, { id: c.id, name: c.name || "Desconhecida", objective: c.objective, cost: 0, results: 0, trueConversions: 0 });
+        return c.id;
+      });
+
+      // Se filtrou por conta ou cliente e não encontrou nenhuma campanha
+      if ((selectedAccountId !== "all" || selectedClientId !== "all") && campIds.length === 0) {
+        return {
+          chartData: [],
+          barData: [],
+          pieData: [],
+          campaignsRanked: [],
+          bestDay: null,
+          avgDailyCost: 0,
+          healthScore: 100,
+          totals: { cost: 0, conversions: 0, results: 0, clicks: 0, impressions: 0, reach: 0 },
+          trends: { cost: "0%", costPositive: true, conversions: "0%", conversionsPositive: true, clicks: "0%", clicksPositive: true, cpl: "0%", cplPositive: true },
+          cpl: 0
+        };
+      }
+
+      let metricsQuery = (supabase as any).from("metrics").select(`
+        campaign_id, cost, conversions, impressions, clicks, reach, date,
+        campaigns(ad_account_id, client_id, name, objective)
+      `).gte('date', prevStartStr).lte('date', endStr);
+
+      if (campIds.length > 0 && (selectedAccountId !== "all" || selectedClientId !== "all")) {
+        metricsQuery = metricsQuery.in("campaign_id", campIds);
       }
 
       const { data: metricsData } = await metricsQuery;
       const metrics = metricsData || [];
 
       const chartMap = new Map();
-      const campaignsMap = new Map();
       let currentPeriod = { cost: 0, results: 0, trueConversions: 0, clicks: 0, impressions: 0, reach: 0 };
       let previousPeriod = { cost: 0, results: 0, trueConversions: 0, clicks: 0, impressions: 0, reach: 0 };
 
@@ -353,8 +380,13 @@ function Dashboard() {
   });
 
   const filteredAccounts = useMemo(() => {
-    return accountsTableData.filter((acc: any) => acc.activeCampaignsCount > 0 || acc.metrics.spend > 0);
-  }, [accountsTableData]);
+    return accountsTableData.filter((acc: any) => {
+      if (selectedAccountId !== "all" && acc.id !== selectedAccountId) return false;
+      if (selectedClientId !== "all" && acc.client?.id !== selectedClientId) return false;
+      if (selectedAccountId !== "all" || selectedClientId !== "all") return true;
+      return acc.activeCampaignsCount > 0 || acc.metrics.spend > 0;
+    });
+  }, [accountsTableData, selectedAccountId, selectedClientId]);
 
   const sortedAccounts = useMemo(() => {
     return [...filteredAccounts].sort((a, b) => {
@@ -506,6 +538,19 @@ function Dashboard() {
               endDate={dateRange.endDate}
               onChange={handleDateChange}
             />
+
+            {(selectedAccountId !== "all" || selectedClientId !== "all") && (
+              <button
+                onClick={() => { setSelectedAccountId("all"); setSelectedClientId("all"); }}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-primary/15 border border-primary/30 text-[10px] font-black uppercase tracking-wider text-primary hover:bg-primary/25 transition-all shadow-sm"
+                title="Limpar filtro e ver todas as contas"
+              >
+                <span className="truncate max-w-[140px] sm:max-w-[200px]">
+                  Filtro: {selectedAccount?.name || clients.find((c: any) => c.id === selectedClientId)?.name || "Filtrado"}
+                </span>
+                <X className="h-3 w-3 shrink-0" />
+              </button>
+            )}
           </div>
 
           {/* Divisor vertical em telas grandes */}
@@ -1090,13 +1135,13 @@ function Dashboard() {
           </div>
         ) : (
           <>
-          {/* â”€â”€ Mobile: cards por conta â”€â”€ */}
+          {/* ── Mobile: cards por conta ── */}
           <div className="sm:hidden space-y-3">
             {sortedAccounts.map(row => (
-              <button
+              <div
                 key={row.id}
-                onClick={() => navigate({ to: "/metricas", search: { account: row.id } })}
-                className="w-full text-left p-4 rounded-2xl bg-white/[0.03] border border-white/[0.07] hover:bg-white/[0.06] transition-all active:scale-[0.98]"
+                onClick={() => { setSelectedAccountId(row.id); setSelectedClientId("all"); window.scrollTo({ top: 0, behavior: "smooth" }); }}
+                className="w-full text-left p-4 rounded-2xl bg-white/[0.03] border border-white/[0.07] hover:bg-white/[0.06] hover:border-primary/40 transition-all cursor-pointer active:scale-[0.98]"
               >
                 {/* Cabeçalho do card */}
                 <div className="flex items-center justify-between mb-3">
@@ -1118,7 +1163,13 @@ function Dashboard() {
                       <span className={`h-1.5 w-1.5 rounded-full ${row.activeCampaignsCount > 0 ? "bg-success animate-pulse" : "bg-muted-foreground/50"}`} />
                       {row.activeCampaignsCount > 0 ? `${row.activeCampaignsCount} ativas` : "Inativo"}
                     </span>
-                    <ArrowUpRight className="h-4 w-4 text-muted-foreground" />
+                    <button
+                      onClick={(e) => { e.stopPropagation(); navigate({ to: "/metricas", search: { account: row.id } }); }}
+                      className="p-1 rounded-lg bg-white/5 hover:bg-primary/20 hover:text-primary transition-colors"
+                      title="Ver métricas completas"
+                    >
+                      <ArrowUpRight className="h-4 w-4" />
+                    </button>
                   </div>
                 </div>
                 {/* Grid de métricas 3x2 */}
@@ -1158,11 +1209,11 @@ function Dashboard() {
                     </p>
                   </div>
                 </div>
-              </button>
+              </div>
             ))}
           </div>
 
-          {/* â”€â”€ Tablet+: tabela clássica â”€â”€ */}
+          {/* ── Tablet+: tabela clássica ── */}
           <div className="hidden sm:block overflow-x-auto text-left">
             <table className="w-full text-left border-collapse">
               <thead>
@@ -1182,8 +1233,8 @@ function Dashboard() {
                 {sortedAccounts.map(row => (
                   <tr
                     key={row.id}
-                    onClick={() => navigate({ to: "/metricas", search: { account: row.id } })}
-                    className="group hover:bg-white/[0.02] transition-colors cursor-pointer"
+                    onClick={() => { setSelectedAccountId(row.id); setSelectedClientId("all"); window.scrollTo({ top: 0, behavior: "smooth" }); }}
+                    className={`group hover:bg-white/[0.03] transition-colors cursor-pointer ${selectedAccountId === row.id ? "bg-primary/10" : ""}`}
                   >
                     <td className="py-4 pl-2">
                       <div className="flex items-center gap-3">
@@ -1223,7 +1274,11 @@ function Dashboard() {
                       {row.metrics.spend.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                     </td>
                     <td className="py-4 pr-2 text-right">
-                      <button className="inline-flex items-center justify-center h-6 w-6 rounded-lg bg-primary/10 border border-primary/20 text-primary group-hover:bg-primary group-hover:text-primary-foreground group-hover:border-transparent transition-all">
+                      <button 
+                        onClick={(e) => { e.stopPropagation(); navigate({ to: "/metricas", search: { account: row.id } }); }}
+                        title="Ver métricas da conta"
+                        className="inline-flex items-center justify-center h-6 w-6 rounded-lg bg-primary/10 border border-primary/20 text-primary group-hover:bg-primary group-hover:text-primary-foreground group-hover:border-transparent transition-all"
+                      >
                         <ArrowUpRight className="h-3.5 w-3.5" />
                       </button>
                     </td>

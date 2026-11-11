@@ -84,40 +84,40 @@
 }
 
 /* ═══════════════════════════════════════════
-   LIGHT MODE — Automotive Light Slate & Ferrari Red
-   Visual esportivo: Cinza claro nardo/titânio com acentos em vermelho Ferrari.
-   Não é branco — superfícies em cinza claro, clean, moderno e sem reflexo branco puro.
+   LIGHT MODE — Automotive Nardo Grey & Ferrari Red
+   Visual esportivo: Cinza nardo/titânio refinado com acentos em vermelho Ferrari.
+   Claramente cinza — nunca branco puro — elegante, com contraste impecável.
    ═══════════════════════════════════════════ */
 html.light {
-  --background: 220 12% 87%;       /* #DCE0E6 — cinza claro base (nardo / titânio esportivo, nunca branco) */
-  --foreground: 220 30% 10%;       /* #11151F — quase-preto grafite, contraste absoluto e nitidez */
-  --card: 220 10% 92%;             /* #E8EBF0 — cinza claro para cards e superfícies (nunca branco puro) */
-  --card-foreground: 220 30% 10%;
-  --popover: 220 10% 92%;          /* #E8EBF0 */
-  --popover-foreground: 220 30% 10%;
-  --primary: 0 86% 45%;            /* #DE1818 — Vermelho Ferrari vivo e saturado */
-  --primary-foreground: 0 0% 100%; /* #FFFFFF — texto branco de alto contraste sobre o vermelho */
-  --secondary: 220 12% 82%;        /* #CDD2DA — cinza intermediário tátil para botões e pills */
-  --secondary-foreground: 220 28% 12%;
-  --accent: 0 76% 40%;
+  --background: 220 12% 80%;       /* #C6CAD1 — cinza nardo clássico e perceptível, nunca branco */
+  --foreground: 220 32% 10%;       /* #11151E — grafite profundo de alta nitidez */
+  --card: 220 10% 86%;             /* #D7DAE0 — cinza intermediário para cards e superfícies táteis */
+  --card-foreground: 220 32% 10%;
+  --popover: 220 10% 86%;          /* #D7DAE0 */
+  --popover-foreground: 220 32% 10%;
+  --primary: 0 88% 46%;            /* #E11D1D — Vermelho Ferrari vivo e esportivo */
+  --primary-foreground: 0 0% 100%; /* #FFFFFF — texto branco sobre o vermelho */
+  --secondary: 220 12% 76%;        /* #BBC1CB — cinza tátil para pills e botões secundários */
+  --secondary-foreground: 220 30% 10%;
+  --accent: 0 78% 42%;
   --accent-foreground: 0 0% 100%;
-  --success: 142 65% 30%;
+  --success: 142 68% 28%;
   --success-foreground: 0 0% 100%;
-  --muted: 220 12% 82%;            /* #CDD2DA — cinza suave de apoio */
-  --muted-foreground: 220 16% 35%; /* #4B5464 — texto secundário grafite de alta legibilidade */
+  --muted: 220 12% 76%;            /* #BBC1CB — cinza neutro de apoio */
+  --muted-foreground: 220 18% 28%; /* #3A4353 — texto secundário grafite de alta legibilidade */
   --destructive: 0 84% 45%;
   --destructive-foreground: 0 0% 100%;
-  --border: 220 12% 76%;           /* #BAC1CC — bordas nítidas e elegantes */
-  --input: 220 10% 91%;            /* #E5E8ED — inputs em cinza claro */
-  --ring: 0 86% 45%;
-  --sidebar: 220 11% 89%;          /* #DEE1E7 — sidebar em cinza claro refinado */
-  --sidebar-foreground: 220 30% 10%;
-  --sidebar-primary: 0 86% 45%;
+  --border: 220 12% 68%;           /* #A6AFBC — bordas nítidas, contrastantes e elegantes */
+  --input: 220 10% 84%;            /* #D1D5DC — inputs cinza confortáveis */
+  --ring: 0 88% 46%;
+  --sidebar: 220 12% 82%;          /* #CBCFD7 — sidebar em cinza nardo refinado */
+  --sidebar-foreground: 220 32% 10%;
+  --sidebar-primary: 0 88% 46%;
   --sidebar-primary-foreground: 0 0% 100%;
-  --sidebar-accent: 220 12% 84%;
-  --sidebar-accent-foreground: 220 30% 10%;
-  --sidebar-border: 220 12% 76%;
-  --sidebar-ring: 0 86% 45%;
+  --sidebar-accent: 220 12% 77%;
+  --sidebar-accent-foreground: 220 32% 10%;
+  --sidebar-border: 220 12% 68%;
+  --sidebar-ring: 0 88% 46%;
 }
 
 /* ═══════════════════════════════════════════

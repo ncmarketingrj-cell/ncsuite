@@ -1674,110 +1674,191 @@ function RelatoriosPage() {
             </div>
 
             {/* Documento Estilizado (PDF/Impressão) */}
-            <div className="glass-panel p-10 bg-background border-white/10 print:shadow-none print:border-none print:p-0 print:bg-white print:text-black flex flex-col justify-between min-h-[500px]">
+            <div className="glass-panel p-8 sm:p-10 bg-background border-white/10 print:shadow-none print:border-none print:p-0 print:bg-white print:text-black flex flex-col justify-between min-h-[500px]">
               <div>
                 <div className="border-b border-white/10 print:border-black/10 pb-6 mb-6 flex justify-between items-start">
                   <div>
-                    <h2 className="header-sport text-2xl font-black tracking-tighter uppercase print:text-black flex items-center gap-2">
+                    <h2 className="header-sport text-2xl font-black tracking-tighter uppercase text-white print:text-black flex items-center gap-2">
                       <Award className="h-6 w-6 text-primary" />
                       Relatório de Performance
                     </h2>
-                    <p className="text-primary font-mono text-[10px] mt-1 print:text-black/60 uppercase tracking-widest font-black">
+                    <p className="text-primary font-mono text-[10px] mt-1 print:text-red-700 uppercase tracking-widest font-black">
                       NC Performance Suite • {source === "upload" ? "Print OCR" : "Meta Ads Integrado"}
                     </p>
                   </div>
                   <div className="text-right">
                     <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground print:text-black/50">Data de Geração</p>
-                    <p className="text-xs font-mono font-bold print:text-black">{format(new Date(), "dd/MM/yyyy HH:mm", { locale: ptBR })}</p>
+                    <p className="text-xs font-mono font-bold text-white print:text-black">{format(new Date(), "dd/MM/yyyy HH:mm", { locale: ptBR })}</p>
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-6 mb-8 border-b border-white/5 pb-6">
+                <div className="grid grid-cols-2 gap-6 mb-6 border-b border-white/5 print:border-black/10 pb-6">
                   <div>
                     <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground print:text-black/50">Cliente Anunciante</p>
-                    <p className="text-lg font-black mt-0.5 print:text-black">{clientName}</p>
+                    <p className="text-lg font-black mt-0.5 text-white print:text-black">
+                      {clientName || accounts.find(a => a.id === selectedAccountId)?.name || "Cliente Anunciante"}
+                    </p>
                   </div>
                   <div>
                     <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground print:text-black/50">Janela de Referência</p>
-                    <p className="text-lg font-black mt-0.5 print:text-black">{periodText}</p>
+                    <p className="text-lg font-black mt-0.5 text-white print:text-black">{periodText}</p>
                   </div>
                 </div>
 
                 {/* Métricas Consolidadas Visualmente Ricas */}
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8">
-                  <div className="p-4 rounded-xl bg-white/5 border border-white/10 print:bg-gray-100 print:border-gray-200">
-                    <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground print:text-black/50">Investido</p>
-                    <p className="text-base font-mono font-black mt-1.5 print:text-black text-gradient">
-                      R$ {campaignList.filter(c => c.selected).reduce((sum, c) => sum + c.cost, 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                    </p>
-                  </div>
-                  <div className="p-4 rounded-xl bg-white/5 border border-white/10 print:bg-gray-100 print:border-gray-200">
-                    <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground print:text-black/50">Resultados</p>
-                    <p className="text-base font-mono font-black mt-1.5 text-secondary print:text-black">
-                      {campaignList.filter(c => c.selected).reduce((sum, c) => sum + (c.conversions || c.clicks), 0).toLocaleString('pt-BR')}
-                    </p>
-                  </div>
-                  <div className="p-4 rounded-xl bg-white/5 border border-white/10 print:bg-gray-100 print:border-gray-200">
-                    <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground print:text-black/50">Alcance</p>
-                    <p className="text-base font-mono font-black mt-1.5 print:text-black">
-                      {campaignList.filter(c => c.selected).reduce((sum, c) => sum + c.reach, 0).toLocaleString('pt-BR')}
-                    </p>
-                  </div>
-                  <div className="p-4 rounded-xl bg-white/5 border border-white/10 print:bg-gray-100 print:border-gray-200">
-                    <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground print:text-black/50">Impressões</p>
-                    <p className="text-base font-mono font-black mt-1.5 print:text-black">
-                      {campaignList.filter(c => c.selected).reduce((sum, c) => sum + c.impressions, 0).toLocaleString('pt-BR')}
-                    </p>
-                  </div>
-                </div>
+                {(() => {
+                  const selectedCamps = campaignList.filter(c => c.selected);
+                  const totalCost = selectedCamps.reduce((sum, c) => sum + c.cost, 0);
+                  const totalReach = selectedCamps.reduce((sum, c) => sum + c.reach, 0);
+                  const totalImpressions = selectedCamps.reduce((sum, c) => sum + c.impressions, 0);
+                  const totalClicks = selectedCamps.reduce((sum, c) => sum + c.clicks, 0);
 
-                {activePdfLayout !== "minimalist" && (
-                  <div className="space-y-2 mt-6">
-                    {activePdfLayout === "analytical" ? (
-                      <>
-                        <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground print:text-black/50 mb-3 border-b border-white/5 pb-1">Agrupamento por Objetivo</p>
-                        {Array.from(campaignList.filter(c => c.selected).reduce((acc, c) => {
-                          const cur = acc.get(c.objective) || { cost: 0, results: 0 };
-                          cur.cost += c.cost;
-                          cur.results += c.objective.includes("Cliques") ? c.clicks : c.conversions;
-                          acc.set(c.objective, cur);
-                          return acc;
-                        }, new Map<string, { cost: number; results: number }>())).map(([obj, data], idx) => (
-                          <div key={idx} className="flex justify-between text-xs py-1.5 border-b border-white/5">
-                            <span className="font-bold text-white truncate max-w-[260px]">{obj}</span>
-                            <span className="font-mono text-muted-foreground">R$ {data.cost.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} — {data.results.toLocaleString('pt-BR')} res</span>
-                          </div>
-                        ))}
-                      </>
-                    ) : (
-                      <>
-                        <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground print:text-black/50 mb-3 border-b border-white/5 pb-1">
-                          {reportLevel === "campaign" ? "Campanhas Compiladas" : reportLevel === "adset" ? "Conjuntos Compilados" : "Anúncios Compilados"}
-                        </p>
-                        {campaignList.filter(c => c.selected).map((c, idx) => (
-                          <div key={idx} className="flex flex-col py-1.5 border-b border-white/5">
-                            <div className="flex justify-between text-xs">
-                              <span className="font-bold text-white truncate max-w-[260px]">{c.name}</span>
-                              <span className="font-mono text-muted-foreground">R$ {c.cost.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                            </div>
-                            {c.campaignName && (
-                              <span className="text-[8px] text-muted-foreground/80 font-mono mt-0.5">
-                                {c.adSetName ? `Conjunto: ${c.adSetName} | ` : ""}Campanha: {c.campaignName}
+                  // Segmentação inteligente de objetivos (Mensagens vs Audiência/Tráfego)
+                  const messageCamps = selectedCamps.filter(c => {
+                    const name = (c.name || "").toLowerCase();
+                    const obj = (c.objective || "").toLowerCase();
+                    return obj.includes("mensagem") || obj.includes("conversa") || name.includes("msg") || name.includes("mensagem") || name.includes("wpp") || name.includes("whatsapp");
+                  });
+                  const audienceCamps = selectedCamps.filter(c => !messageCamps.includes(c));
+
+                  const totalMessages = messageCamps.reduce((sum, c) => sum + (c.conversions || 0), 0);
+                  const costMessages = messageCamps.reduce((sum, c) => sum + c.cost, 0);
+                  const costAudience = audienceCamps.reduce((sum, c) => sum + c.cost, 0);
+                  const cplMessages = totalMessages > 0 ? costMessages / totalMessages : 0;
+                  const hasMultipleObjectives = messageCamps.length > 0 && audienceCamps.length > 0;
+
+                  return (
+                    <>
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
+                        <div className="p-4 rounded-xl bg-white/5 border border-white/10 print:bg-gray-100 print:border-gray-300">
+                          <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground print:text-black/60">Investido</p>
+                          <p className="text-lg sm:text-xl font-mono font-black mt-1 text-primary print:text-red-700">
+                            R$ {totalCost.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </p>
+                          <p className="text-[8px] font-bold uppercase tracking-wider text-muted-foreground/80 print:text-black/50 mt-1">
+                            {selectedCamps.length} camp. selecionadas
+                          </p>
+                        </div>
+                        <div className="p-4 rounded-xl bg-white/5 border border-white/10 print:bg-gray-100 print:border-gray-300">
+                          <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground print:text-black/60">
+                            {messageCamps.length > 0 ? "Conversas / Leads" : "Resultados"}
+                          </p>
+                          <p className="text-lg sm:text-xl font-mono font-black mt-1 text-white print:text-black">
+                            {messageCamps.length > 0
+                              ? totalMessages.toLocaleString('pt-BR')
+                              : (totalClicks > 0 ? totalClicks.toLocaleString('pt-BR') : totalImpressions.toLocaleString('pt-BR'))}
+                          </p>
+                          <p className="text-[8px] font-bold uppercase tracking-wider text-muted-foreground/80 print:text-black/50 mt-1">
+                            {messageCamps.length > 0 
+                              ? (cplMessages > 0 ? `CPA: R$ ${cplMessages.toFixed(2)}` : "WhatsApp Direto")
+                              : (totalClicks > 0 ? "Cliques no Link" : "Alcance / Marca")}
+                          </p>
+                        </div>
+                        <div className="p-4 rounded-xl bg-white/5 border border-white/10 print:bg-gray-100 print:border-gray-300">
+                          <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground print:text-black/60">Alcance Único</p>
+                          <p className="text-lg sm:text-xl font-mono font-black mt-1 text-white print:text-black">
+                            {totalReach.toLocaleString('pt-BR')}
+                          </p>
+                          <p className="text-[8px] font-bold uppercase tracking-wider text-muted-foreground/80 print:text-black/50 mt-1">
+                            Pessoas impactadas
+                          </p>
+                        </div>
+                        <div className="p-4 rounded-xl bg-white/5 border border-white/10 print:bg-gray-100 print:border-gray-300">
+                          <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground print:text-black/60">Impressões</p>
+                          <p className="text-lg sm:text-xl font-mono font-black mt-1 text-white print:text-black">
+                            {totalImpressions.toLocaleString('pt-BR')}
+                          </p>
+                          <p className="text-[8px] font-bold uppercase tracking-wider text-muted-foreground/80 print:text-black/50 mt-1">
+                            Freq: {totalReach > 0 ? (totalImpressions / totalReach).toFixed(1) : "1.0"}x
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Diferenciação Didática quando há Objetivos Mistos (Mensagem + Audiência) */}
+                      {hasMultipleObjectives && (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-6 p-4 rounded-2xl bg-white/[0.03] border border-white/10 print:bg-gray-50 print:border-gray-200">
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-2">
+                              <span className="w-2 h-2 rounded-full bg-emerald-400" />
+                              <span className="text-[10px] font-black uppercase tracking-wider text-emerald-400 print:text-emerald-700">
+                                Frente 1: Conversas &amp; Leads no WhatsApp
                               </span>
-                            )}
+                            </div>
+                            <p className="text-xs text-muted-foreground print:text-gray-700 leading-relaxed">
+                              Investido: <strong className="text-foreground print:text-black font-mono">R$ {costMessages.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong> • 
+                              Gerou <strong className="text-foreground print:text-black font-mono">{totalMessages} contatos diretos</strong> de compradores a <strong className="text-foreground print:text-black font-mono">R$ {cplMessages.toFixed(2)}/contato</strong>.
+                            </p>
                           </div>
-                        ))}
-                      </>
-                    )}
-                  </div>
-                )}
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-2">
+                              <span className="w-2 h-2 rounded-full bg-blue-400" />
+                              <span className="text-[10px] font-black uppercase tracking-wider text-blue-400 print:text-blue-700">
+                                Frente 2: Audiência &amp; Fortalecimento de Marca
+                              </span>
+                            </div>
+                            <p className="text-xs text-muted-foreground print:text-gray-700 leading-relaxed">
+                              Investido: <strong className="text-foreground print:text-black font-mono">R$ {costAudience.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong> • 
+                              Alcançou <strong className="text-foreground print:text-black font-mono">{audienceCamps.reduce((s, c) => s + c.reach, 0).toLocaleString('pt-BR')} pessoas</strong> com <strong className="text-foreground print:text-black font-mono">{audienceCamps.reduce((s, c) => s + c.clicks, 0).toLocaleString('pt-BR')} cliques</strong> direcionados ao perfil/estoque.
+                            </p>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Detalhamento Executivo de Campanhas */}
+                      <div className="space-y-2 mt-6">
+                        <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground print:text-black/60 mb-3 border-b border-white/10 pb-1.5 flex items-center justify-between">
+                          <span>Detalhamento das Campanhas Compiladas ({selectedCamps.length})</span>
+                          <span className="font-mono text-[9px]">Gasto • Retorno</span>
+                        </p>
+                        {selectedCamps.map((c, idx) => {
+                          const isMsg = c.objective?.includes("Mensagens") || c.name?.toLowerCase().includes("msg");
+                          const resultCount = isMsg ? c.conversions : (c.clicks || c.conversions);
+                          const resultUnit = isMsg ? "mensagens" : "ações";
+                          const cpa = resultCount > 0 ? (c.cost / resultCount) : 0;
+
+                          return (
+                            <div key={idx} className="flex items-center justify-between py-2 border-b border-white/5 print:border-gray-200 text-xs">
+                              <div className="min-w-0 pr-4">
+                                <p className="font-bold text-white print:text-black truncate text-xs sm:text-sm">{c.name}</p>
+                                <div className="flex items-center gap-2 mt-0.5">
+                                  <span className={`text-[8px] font-black uppercase px-2 py-0.5 rounded ${
+                                    isMsg ? "bg-emerald-500/10 text-emerald-400 print:bg-emerald-100 print:text-emerald-800" : "bg-blue-500/10 text-blue-400 print:bg-blue-100 print:text-blue-800"
+                                  }`}>
+                                    {c.objective || "Meta Ads"}
+                                  </span>
+                                  <span className="text-[9px] font-mono text-muted-foreground print:text-gray-600">
+                                    {c.reach.toLocaleString('pt-BR')} alcance • {c.impressions.toLocaleString('pt-BR')} impr.
+                                  </span>
+                                </div>
+                              </div>
+                              <div className="text-right shrink-0">
+                                <p className="font-mono font-black text-white print:text-black text-xs sm:text-sm">
+                                  R$ {c.cost.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                </p>
+                                <p className="text-[10px] font-mono text-muted-foreground print:text-gray-700">
+                                  {resultCount > 0 ? (
+                                    <span className="text-emerald-400 print:text-emerald-700 font-bold">
+                                      {resultCount.toLocaleString('pt-BR')} {resultUnit} {cpa > 0 ? `(R$ ${cpa.toFixed(2)})` : ""}
+                                    </span>
+                                  ) : (
+                                    <span className="text-muted-foreground/60">—</span>
+                                  )}
+                                </p>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </>
+                  );
+                })()}
               </div>
 
-              <div className="mt-8 pt-6 border-t border-white/5 print:border-black/5 text-center flex items-center justify-between">
-                <span className="text-[9px] font-mono text-muted-foreground print:text-black/40">Automação de Relatórios NC Performance Suite</span>
+              <div className="mt-8 pt-6 border-t border-white/5 print:border-black/10 text-center flex items-center justify-between">
+                <span className="text-[9px] font-mono text-muted-foreground print:text-black/50">Automação de Relatórios NC Performance Suite</span>
                 <button 
                   onClick={() => window.print()}
-                  className="flex items-center gap-1.5 rounded-lg bg-white/5 border border-white/10 px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest hover:bg-white/10 transition print:hidden"
+                  className="flex items-center gap-1.5 rounded-lg bg-white/5 border border-white/10 px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest text-white hover:bg-white/10 transition print:hidden"
                 >
                   <Printer className="h-3.5 w-3.5" /> IMPRIMIR PDF
                 </button>
