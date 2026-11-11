@@ -150,3 +150,4 @@ CREATE POLICY "background_jobs_auth_policy" ON public.background_jobs
       AND profiles.role IN ('admin', 'employee')
     )
   );
+

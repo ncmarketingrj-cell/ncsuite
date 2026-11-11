@@ -253,20 +253,35 @@ function AuditoriaHub() {
       const avgCvr = tClicks > 0 ? (tConvs / tClicks) * 100 : 0;
       const cpa = tConvs > 0 ? tSpend / tConvs : 0;
 
+      // Benchmark regional ativo (Padrão RJ: R$ 5,00 para WhatsApp Leads)
+      let targetCpl = 5.0;
+      let regionName = "Rio de Janeiro (RJ)";
+      try {
+        const savedBench = localStorage.getItem("nc_regional_benchmark");
+        if (savedBench) {
+          const parsed = JSON.parse(savedBench);
+          if (parsed.targetCpl && Number(parsed.targetCpl) > 0) targetCpl = Number(parsed.targetCpl);
+          if (parsed.region) regionName = parsed.region;
+        }
+      } catch {}
+
       // Diagnóstico executivo e objetivo por campanha
       let status: "ESCALAR" | "OTIMIZAR" | "PAUSAR" | "ESTAVEL" = "ESTAVEL";
       let recommendation = "";
 
       if (classification.isLead) {
-        if (tConvs > 0 && cpa <= 35) {
+        if (tConvs > 0 && cpa <= targetCpl) {
           status = "ESCALAR";
-          recommendation = `CPL excelente (R$ ${cpa.toFixed(2)}). Recomendado aumentar verba diária em 15% para acelerar contatos.`;
+          recommendation = `CPL excelente (R$ ${cpa.toFixed(2)}), dentro da meta de R$ ${targetCpl.toFixed(2)} (${regionName}). Aumentar verba em 15% a 20%.`;
         } else if (tConvs === 0 && tSpend > 40) {
           status = "PAUSAR";
           recommendation = `Consumiu R$ ${tSpend.toFixed(2)} sem nenhum contato gerado. Pausar para evitar desperdício de verba.`;
-        } else if (cpa > 75) {
+        } else if (cpa > targetCpl * 1.5) {
+          status = "PAUSAR";
+          recommendation = `CPL de R$ ${cpa.toFixed(2)} estourou o teto aceitável de R$ ${targetCpl.toFixed(2)} (${regionName}). Pausar ou refazer oferta.`;
+        } else if (cpa > targetCpl) {
           status = "OTIMIZAR";
-          recommendation = `CPL alto (R$ ${cpa.toFixed(2)}). Substituir criativos estáticos por vídeos de showroom.`;
+          recommendation = `CPL em R$ ${cpa.toFixed(2)} está acima da meta de R$ ${targetCpl.toFixed(2)}. Substituir criativos por fotos reais no pátio.`;
         } else {
           status = "ESTAVEL";
           recommendation = `Performance regular (CPL R$ ${cpa.toFixed(2)}). Manter monitoramento contínuo de leilão.`;
@@ -387,32 +402,43 @@ function AuditoriaHub() {
       recommendation: "Para aliviar custos em períodos concorridos, utilize públicos amplos (Broad Audiences) deixando o algoritmo encontrar os compradores mais qualificados."
     });
 
-    // 3. Eficiência de CPL & Oportunidades de Escala
-    const champions = corrs.filter(c => c.totalConversions > 0 && c.cpa <= 35);
+    // 3. Eficiência de CPL & Oportunidades de Escala com Benchmark Regional
+    let targetCpl = 5.0;
+    let regionName = "Rio de Janeiro (RJ)";
+    try {
+      const savedBench = localStorage.getItem("nc_regional_benchmark");
+      if (savedBench) {
+        const parsed = JSON.parse(savedBench);
+        if (parsed.targetCpl && Number(parsed.targetCpl) > 0) targetCpl = Number(parsed.targetCpl);
+        if (parsed.region) regionName = parsed.region;
+      }
+    } catch {}
+
+    const champions = corrs.filter(c => c.totalConversions > 0 && c.cpa <= targetCpl);
     if (champions.length > 0) {
       list.push({
         id: "diag-3",
         type: "sucesso",
         title: "Oportunidade Clara de Escala (+15%)",
-        description: `A campanha "${champions[0].campaignName}" opera com CPL campeão de R$ ${champions[0].cpa.toFixed(2)}, trazendo ${champions[0].totalConversions} contatos com margem muito favorável.`,
+        description: `A campanha "${champions[0].campaignName}" opera com CPL campeão de R$ ${champions[0].cpa.toFixed(2)}, dentro da meta de R$ ${targetCpl.toFixed(2)} (${regionName}), trazendo ${champions[0].totalConversions} contatos com margem muito favorável.`,
         metric: `CPL Campeão: R$ ${champions[0].cpa.toFixed(2)}`,
         recommendation: "Aumente o orçamento diário desta campanha líder em 15% para acelerar a entrada de contatos no WhatsApp dos vendedores."
       });
-    } else if (kpis.cpl > 50) {
+    } else if (kpis.cpl > targetCpl * 1.5) {
       list.push({
         id: "diag-3",
         type: "friccao",
-        title: "CPL Acima do Teto Médio Automotivo",
-        description: `O custo por contato atual (R$ ${kpis.cpl.toFixed(2)}) está acima do patamar de conforto do setor (R$ 25 a R$ 45).`,
+        title: `CPL Acima do Teto Regional (${regionName})`,
+        description: `O custo por contato atual (R$ ${kpis.cpl.toFixed(2)}) ultrapassou o teto aceitável de R$ ${(targetCpl * 1.5).toFixed(2)} (meta base: R$ ${targetCpl.toFixed(2)}).`,
         metric: "CPL: R$ " + kpis.cpl.toFixed(2),
-        recommendation: "Ajuste a oferta do anúncio (ex: bônus na troca, IPVA grátis ou parcelas reduzidas) para aumentar a conversão de interessados em contatos reais."
+        recommendation: "Ajuste a oferta do anúncio (ex: fotos reais do pátio com celular, bônus na troca ou IPVA grátis) para derrubar o custo por conversa no WhatsApp."
       });
     } else {
       list.push({
         id: "diag-3",
         type: "sucesso",
         title: "Operação Saudável & Equilíbrio de Mídia",
-        description: `Custo médio por contato estabilizado em R$ ${kpis.cpl.toFixed(2)}. Equilíbrio consistente entre investimento publicitário e atendimento da equipe.`,
+        description: `Custo médio por contato estabilizado em R$ ${kpis.cpl.toFixed(2)} (meta: R$ ${targetCpl.toFixed(2)} - ${regionName}). Equilíbrio consistente entre investimento publicitário e atendimento da equipe.`,
         metric: "CPL Saudável",
         recommendation: "Mantenha a estratégia atual e garanta que os vendedores estejam respondendo as mensagens em até 5 minutos no WhatsApp."
       });

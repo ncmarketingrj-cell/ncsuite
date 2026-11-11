@@ -1172,9 +1172,10 @@ function CentralDecisaoExecutiva({
 
   // Diagnóstico Geral da Conta
   const hasRealLeads = (m.realLeads ?? 0) > 0;
-  const isCPLGood = m.CPL > 0 && m.CPL <= 35;
+  const targetCpl = Number(m.targetCpl || 5.0);
+  const isCPLGood = m.CPL > 0 && m.CPL <= targetCpl;
   const isHealthy = score >= 70 && hasRealLeads && isCPLGood;
-  const isCritical = score < 50 || (!hasRealLeads && m.cost > 30);
+  const isCritical = score < 50 || (!hasRealLeads && m.cost > 30) || (hasRealLeads && m.CPL > targetCpl * 1.5);
 
   const executiveState = isHealthy
     ? {
@@ -1265,7 +1266,7 @@ function CentralDecisaoExecutiva({
             <span
               className="text-sm font-black font-mono"
               style={{
-                color: (m.realLeads ?? 0) > 0 ? (m.CPL <= 35 ? "#22c55e" : "#f59e0b") : "#ef4444",
+                color: (m.realLeads ?? 0) > 0 ? (m.CPL <= targetCpl ? "#22c55e" : "#f59e0b") : "#ef4444",
               }}
             >
               {(m.realLeads ?? 0) > 0 ? BRL(m.CPL) : "Sem Contatos"}
@@ -2022,7 +2023,17 @@ function useCockpitData() {
 
     // Oscilação de Leilão / CPM
     const cpmTrendRatio = P.avgCPM > 0 ? R.avgCPM / P.avgCPM : 1.0;
-    const TARGET_CPL = 35.0;
+    
+    // Benchmark Regional Ativo (Padrão RJ: R$ 5,00)
+    let regionalTarget = 5.0;
+    try {
+      const savedBench = localStorage.getItem("nc_regional_benchmark");
+      if (savedBench) {
+        const parsed = JSON.parse(savedBench);
+        if (parsed.targetCpl && Number(parsed.targetCpl) > 0) regionalTarget = Number(parsed.targetCpl);
+      }
+    } catch {}
+    const TARGET_CPL = regionalTarget;
 
     // ─── COMPONENTES DO SCORE DE SAÚDE (CALIBRADO PARA VENDAS REAIS) ───────────
     // 1. Eficiência de CPL: se CPL <= 25 (100%), se CPL == 35 (70%), se sem leads mas gastou (20%)
@@ -2258,6 +2269,7 @@ function useCockpitData() {
       isLoading: false,
       meta: {
         CPL,
+        targetCpl: TARGET_CPL,
         CVR,
         avgFreq: R.avgFreq,
         cpmTrendRatio,

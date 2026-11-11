@@ -17,15 +17,6 @@ import { DateRangePicker } from "@/components/DateRangePicker";
 import { TemplateModal } from "@/components/TemplateModal";
 import { WhatsAppSendModal } from "@/components/WhatsAppSendModal";
 
-export const Route = createFileRoute("/_app/relatorios")({
-  head: () => ({ meta: [{ title: "Gerador de Relatórios — NC Suite" }] }),
-  validateSearch: (s: Record<string, unknown>): { from?: string; activeReportId?: string } => ({
-    from: s.from as string | undefined,
-    activeReportId: s.activeReportId as string | undefined,
-  }),
-  component: RelatoriosPage,
-});
-
 interface CampaignData {
   id: string;
   name: string;
@@ -242,6 +233,15 @@ export function detectCampaignObjective(
   return "👆 Cliques no Link";
 }
 
+export const Route = createFileRoute("/_app/relatorios")({
+  head: () => ({ meta: [{ title: "Gerador de Relatórios — NC Suite" }] }),
+  validateSearch: (s: Record<string, unknown>): { from?: string; activeReportId?: string } => ({
+    from: s.from as string | undefined,
+    activeReportId: s.activeReportId as string | undefined,
+  }),
+  component: RelatoriosPage,
+});
+
 function RelatoriosPage() {
   const search = useSearch({ from: "/_app/relatorios" });
   const queryClient = useQueryClient();
@@ -263,6 +263,27 @@ function RelatoriosPage() {
     endDate: new Date(),
   });
   const [targetWhatsapp, setTargetWhatsapp] = useState("");
+
+  // Fetch das contas Meta Ads (para a origem API)
+  const { data: accountsData } = useQuery<any[]>({
+    queryKey: ["ad-accounts-reports"],
+    queryFn: async () => {
+      const { data } = await supabase.from("ad_accounts").select("*").order("name");
+      return (data as any[]) ?? [];
+    },
+    enabled: source === "api",
+  });
+  const accounts = accountsData ?? [];
+
+  // Fetch dos clientes para auto-preenchimento
+  const { data: clientsData } = useQuery<any[]>({
+    queryKey: ["clients-reports"],
+    queryFn: async () => {
+      const { data } = await supabase.from("clients").select("*");
+      return (data as any[]) ?? [];
+    },
+    enabled: source === "api",
+  });
 
   const handleDateChange = (start: Date, end: Date) => {
     setDateRange({ startDate: start, endDate: end });
@@ -450,27 +471,6 @@ function RelatoriosPage() {
     const savedWhatsapp = localStorage.getItem("nc_agency_whatsapp") || "";
     setTargetWhatsapp(savedWhatsapp);
   }, []);
-
-  // Fetch das contas Meta Ads (para a origem API)
-  const { data: accountsData } = useQuery<any[]>({
-    queryKey: ["ad-accounts-reports"],
-    queryFn: async () => {
-      const { data } = await supabase.from("ad_accounts").select("*").order("name");
-      return (data as any[]) ?? [];
-    },
-    enabled: source === "api",
-  });
-  const accounts = accountsData ?? [];
-
-  // Fetch dos clientes para auto-preenchimento
-  const { data: clientsData } = useQuery<any[]>({
-    queryKey: ["clients-reports"],
-    queryFn: async () => {
-      const { data } = await supabase.from("clients").select("*");
-      return (data as any[]) ?? [];
-    },
-    enabled: source === "api",
-  });
 
   // Auto-preencher Nome do Cliente ao selecionar conta
   useEffect(() => {
