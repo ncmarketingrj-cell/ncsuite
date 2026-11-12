@@ -70,11 +70,12 @@ CREATE POLICY "asset_metrics_auth_policy" ON public.asset_metrics
 -- 4. CLIENT_NOTES
 DROP POLICY IF EXISTS "client_notes_all" ON public.client_notes;
 DROP POLICY IF EXISTS "client_notes_auth_policy" ON public.client_notes;
+DROP POLICY IF EXISTS "Allow all actions for authenticated users on client_notes" ON public.client_notes;
 CREATE POLICY "client_notes_auth_policy" ON public.client_notes
   FOR ALL
   TO authenticated
   USING (
-    user_id = auth.uid()
+    created_by = auth.uid()
     OR EXISTS (
       SELECT 1 FROM public.profiles 
       WHERE profiles.id = auth.uid() 
@@ -82,7 +83,7 @@ CREATE POLICY "client_notes_auth_policy" ON public.client_notes
     )
   )
   WITH CHECK (
-    user_id = auth.uid()
+    created_by = auth.uid()
     OR EXISTS (
       SELECT 1 FROM public.profiles 
       WHERE profiles.id = auth.uid() 
