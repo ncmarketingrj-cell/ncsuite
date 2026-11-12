@@ -35,6 +35,7 @@ import {
   type MindMapRecord,
 } from "@/components/mindmap/mindMapService";
 import { type MindMapTemplate } from "@/components/mindmap/mindMapTemplates";
+import { useTheme } from "../__root";
 
 export const Route = createFileRoute("/_app/strategy-map")({
   component: () => (
@@ -56,11 +57,48 @@ const MINDMEISTER_BRANCH_COLORS = [
   "#e11d48", // Carmim
 ];
 
-const THEMES = [
-  { id: "mindmeister_dark", name: "MindMeister Dark", bg: "#0c0d14", dots: "rgba(255,255,255,0.08)" },
-  { id: "cyber_neon",       name: "Cyber Neon",        bg: "#08090f", dots: "rgba(59,130,246,0.15)" },
-  { id: "ocean_slate",      name: "Ocean Slate",       bg: "#0a1120", dots: "rgba(14,165,233,0.12)" },
-  { id: "sunset_warm",      name: "Sunset Warm",       bg: "#140c0f", dots: "rgba(244,63,94,0.12)" },
+export interface MindMapThemeDef {
+  id: string;
+  name: string;
+  bgDark: string;
+  dotsDark: string;
+  bgLight: string;
+  dotsLight: string;
+}
+
+const THEMES: MindMapThemeDef[] = [
+  {
+    id: "mindmeister",
+    name: "MindMeister Padrão",
+    bgDark: "#0c0d14",
+    dotsDark: "rgba(255,255,255,0.08)",
+    bgLight: "#f4f5f8",
+    dotsLight: "rgba(15,23,42,0.12)",
+  },
+  {
+    id: "clean",
+    name: "Branco Puro / Clean",
+    bgDark: "#08090f",
+    dotsDark: "rgba(59,130,246,0.15)",
+    bgLight: "#ffffff",
+    dotsLight: "rgba(100,116,139,0.16)",
+  },
+  {
+    id: "nardo",
+    name: "Nardo Grey (Automotivo)",
+    bgDark: "#0a1120",
+    dotsDark: "rgba(14,165,233,0.12)",
+    bgLight: "#e2e6ee",
+    dotsLight: "rgba(15,23,42,0.12)",
+  },
+  {
+    id: "warm",
+    name: "Papel Suave / Sunset",
+    bgDark: "#140c0f",
+    dotsDark: "rgba(244,63,94,0.12)",
+    bgLight: "#faf7f2",
+    dotsLight: "rgba(120,53,15,0.12)",
+  },
 ];
 
 const NODE_TYPES = { mind: MindMeisterNode };
@@ -131,13 +169,15 @@ function applyListLayout(nodes: Node[]): Node[] {
 // ─── Componente Principal ─────────────────────────────────────────────────────
 function StrategyMapPage() {
   const rf = useReactFlow();
+  const { theme } = useTheme();
+  const isLight = theme === "light";
 
   // Estados dos mapas e gerenciador
   const [maps, setMaps] = useState<MindMapRecord[]>([]);
   const [activeMapId, setActiveMapId] = useState<string | null>(null);
   const [mapTitle, setMapTitle] = useState("Novo Mapa Mental");
   const [layout, setLayout] = useState<"radial" | "tree" | "list" | "free">("radial");
-  const [themeId, setThemeId] = useState("mindmeister_dark");
+  const [themeId, setThemeId] = useState("mindmeister");
   const [isManagerOpen, setIsManagerOpen] = useState(false);
 
   // Nós e Arestas
@@ -654,7 +694,7 @@ function StrategyMapPage() {
   const exportPNG = async () => {
     const el = document.querySelector(".react-flow__viewport") as HTMLElement;
     if (!el) return;
-    const cv = await html2canvas(el, { backgroundColor: "#0a0a0f", scale: 2 });
+    const cv = await html2canvas(el, { backgroundColor: activeTheme.bg, scale: 2 });
     const a = document.createElement("a");
     a.href = cv.toDataURL("image/png");
     a.download = `${mapTitleRef.current}.png`;
@@ -665,7 +705,7 @@ function StrategyMapPage() {
   const exportPDF = async () => {
     const el = document.querySelector(".react-flow__viewport") as HTMLElement;
     if (!el) return;
-    const cv = await html2canvas(el, { backgroundColor: "#0a0a0f", scale: 2 });
+    const cv = await html2canvas(el, { backgroundColor: activeTheme.bg, scale: 2 });
     const pdf = new jsPDF({ orientation: "landscape", unit: "px", format: [cv.width / 2, cv.height / 2] });
     pdf.addImage(cv.toDataURL("image/png"), "PNG", 0, 0, cv.width / 2, cv.height / 2);
     pdf.save(`${mapTitleRef.current}.pdf`);
@@ -776,7 +816,17 @@ function StrategyMapPage() {
     [pushHistory]
   );
 
-  const activeTheme = THEMES.find((t) => t.id === themeId) || THEMES[0];
+  const activeTheme = useMemo(() => {
+    const rawId = themeId || "mindmeister";
+    const normalized = rawId.replace("_dark", "").replace("_light", "");
+    const match = THEMES.find((t) => t.id === rawId || t.id === normalized) || THEMES[0];
+    return {
+      id: match.id,
+      name: match.name,
+      bg: isLight ? match.bgLight : match.bgDark,
+      dots: isLight ? match.dotsLight : match.dotsDark,
+    };
+  }, [themeId, isLight]);
 
   return (
     <MindMapActionsContext.Provider
@@ -790,7 +840,7 @@ function StrategyMapPage() {
     >
       <div className="relative flex flex-1 w-full h-screen flex-col bg-background overflow-hidden select-none">
         {/* ══════════ TOPBAR ELEGANTE ESTILO MINDMEISTER ══════════ */}
-        <div className="absolute top-0 left-0 right-0 z-30 flex items-center justify-between gap-3 px-4 py-2.5 bg-background/90 backdrop-blur-2xl border-b border-white/10 shadow-lg">
+        <div className="absolute top-0 left-0 right-0 z-30 flex items-center justify-between gap-3 px-4 py-2.5 bg-background/90 backdrop-blur-2xl border-b border-border shadow-sm">
           {/* Lado Esquerdo: Identificação, Menu de Mapas e Título Editável */}
           <div className="flex items-center gap-3 min-w-0">
             <button
@@ -805,7 +855,7 @@ function StrategyMapPage() {
               <Folder className="h-3 w-3 opacity-60" />
             </button>
 
-            <div className="h-4 w-px bg-white/10" />
+            <div className="h-4 w-px bg-border" />
 
             {/* Título Inline Editável */}
             {isEditingTitleInline ? (
@@ -843,17 +893,17 @@ function StrategyMapPage() {
             {/* Status do Salvamento */}
             <div className="hidden md:flex items-center gap-1 text-[10px] font-mono font-medium">
               {saveStatus === "saved" && (
-                <span className="inline-flex items-center gap-1 text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
+                <span className="inline-flex items-center gap-1 text-emerald-500 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
                   <Cloud className="h-3 w-3" /> Salvo
                 </span>
               )}
               {saveStatus === "saving" && (
-                <span className="inline-flex items-center gap-1 text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-full border border-amber-500/20">
+                <span className="inline-flex items-center gap-1 text-amber-500 bg-amber-500/10 px-2 py-0.5 rounded-full border border-amber-500/20">
                   <Loader2 className="h-3 w-3 animate-spin" /> Salvando...
                 </span>
               )}
               {saveStatus === "unsaved" && (
-                <span className="inline-flex items-center gap-1 text-muted-foreground bg-white/5 px-2 py-0.5 rounded-full border border-white/10">
+                <span className="inline-flex items-center gap-1 text-muted-foreground bg-muted px-2 py-0.5 rounded-full border border-border">
                   <span className="h-1.5 w-1.5 rounded-full bg-amber-400 animate-pulse" /> Pendente
                 </span>
               )}
@@ -861,7 +911,7 @@ function StrategyMapPage() {
           </div>
 
           {/* Centro: Layouts Orgânicos */}
-          <div className="flex items-center gap-1 bg-white/[0.03] border border-white/10 rounded-xl p-1">
+          <div className="flex items-center gap-1 bg-muted/60 border border-border rounded-xl p-1">
             {[
               { val: "radial", icon: Layers, label: "Radial" },
               { val: "tree", icon: GitBranch, label: "Árvore" },
@@ -874,7 +924,7 @@ function StrategyMapPage() {
                 className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-[10px] font-bold transition ${
                   layout === val
                     ? "bg-primary text-primary-foreground shadow-glow-sm"
-                    : "text-muted-foreground hover:text-foreground hover:bg-white/5"
+                    : "text-muted-foreground hover:text-foreground hover:bg-muted"
                 }`}
               >
                 <Icon className="h-3 w-3" />
@@ -899,7 +949,7 @@ function StrategyMapPage() {
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
                     placeholder="Filtrar tópicos..."
-                    className="w-full rounded-xl bg-white/5 border border-white/10 px-3 py-1.5 text-xs text-foreground placeholder:text-muted-foreground/60 outline-none focus:border-primary"
+                    className="w-full rounded-xl bg-muted/80 border border-border px-3 py-1.5 text-xs text-foreground placeholder:text-muted-foreground/60 outline-none focus:border-primary"
                   />
                 </motion.div>
               )}
@@ -909,7 +959,7 @@ function StrategyMapPage() {
               className={`p-2 rounded-xl border text-xs transition ${
                 showSearch
                   ? "bg-primary/20 border-primary text-primary"
-                  : "bg-white/5 border-white/10 text-muted-foreground hover:text-foreground"
+                  : "bg-muted/60 border-border text-muted-foreground hover:text-foreground"
               }`}
               title="Pesquisar Nós (Ctrl+F)"
             >
@@ -919,7 +969,7 @@ function StrategyMapPage() {
             {/* Botão Nó Solto */}
             <button
               onClick={addStandaloneNode}
-              className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-white/5 border border-white/10 text-xs font-bold text-foreground hover:bg-white/10 transition"
+              className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-muted/60 border border-border text-xs font-bold text-foreground hover:bg-muted transition"
               title="Adicionar Novo Tópico Solto"
             >
               <Plus className="h-3.5 w-3.5 text-primary" />
@@ -943,7 +993,7 @@ function StrategyMapPage() {
                   setPresentMode(true);
                   goToSlide(0);
                 }}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500/15 border border-amber-500/30 text-xs font-bold text-amber-400 hover:bg-amber-500/25 transition"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500/15 border border-amber-500/30 text-xs font-bold text-amber-500 hover:bg-amber-500/25 transition"
                 title="Apresentar Mapa como Slideshow"
               >
                 <Play className="h-3.5 w-3.5" />
@@ -954,7 +1004,7 @@ function StrategyMapPage() {
             {/* Salvar */}
             <button
               onClick={handleManualSave}
-              className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-xs font-bold text-emerald-400 hover:bg-emerald-500/25 transition shadow-sm"
+              className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-xs font-bold text-emerald-500 hover:bg-emerald-500/25 transition shadow-sm"
               title="Salvar Manualmente (Ctrl+S)"
             >
               {saveStatus === "saving" ? (
@@ -965,18 +1015,64 @@ function StrategyMapPage() {
               <span className="hidden sm:block">Salvar</span>
             </button>
 
+            {/* Tema Visual do Canvas */}
+            <div className="relative">
+              <button
+                onClick={() => document.getElementById("theme-dd")?.classList.toggle("hidden")}
+                className="p-2 rounded-xl border border-border bg-muted/60 text-muted-foreground hover:text-foreground transition"
+                title="Tema Visual do Canvas"
+              >
+                <Palette className="h-3.5 w-3.5" />
+              </button>
+              <div
+                id="theme-dd"
+                className="hidden absolute right-0 top-10 bg-card border border-border rounded-xl overflow-hidden z-50 w-48 shadow-2xl p-1.5 space-y-1"
+              >
+                <div className="px-2 py-1 text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
+                  Cores do Canvas
+                </div>
+                {THEMES.map((thm) => {
+                  const isCur = activeTheme.id === thm.id;
+                  return (
+                    <button
+                      key={thm.id}
+                      onClick={() => {
+                        setThemeId(thm.id);
+                        document.getElementById("theme-dd")?.classList.add("hidden");
+                        toast.success(`Tema "${thm.name}" aplicado!`);
+                      }}
+                      className={`w-full px-2.5 py-1.5 text-xs text-left rounded-lg transition flex items-center justify-between ${
+                        isCur
+                          ? "bg-primary/15 text-primary font-bold"
+                          : "text-foreground hover:bg-muted"
+                      }`}
+                    >
+                      <div className="flex items-center gap-2">
+                        <span
+                          className="w-3.5 h-3.5 rounded-full border border-border shrink-0 shadow-sm"
+                          style={{ background: isLight ? thm.bgLight : thm.bgDark }}
+                        />
+                        <span className="truncate">{thm.name}</span>
+                      </div>
+                      {isCur && <Check className="h-3 w-3 text-primary shrink-0" />}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
             {/* Exportar Menu */}
             <div className="relative">
               <button
                 onClick={() => document.getElementById("export-dd")?.classList.toggle("hidden")}
-                className="p-2 rounded-xl border border-white/10 bg-white/5 text-muted-foreground hover:text-foreground transition"
+                className="p-2 rounded-xl border border-border bg-muted/60 text-muted-foreground hover:text-foreground transition"
                 title="Exportar Mapa Mental"
               >
                 <Download className="h-3.5 w-3.5" />
               </button>
               <div
                 id="export-dd"
-                className="hidden absolute right-0 top-10 bg-card border border-white/10 rounded-xl overflow-hidden z-50 w-32 shadow-2xl"
+                className="hidden absolute right-0 top-10 bg-card border border-border rounded-xl overflow-hidden z-50 w-36 shadow-2xl"
               >
                 <button
                   onClick={exportPNG}
@@ -987,7 +1083,7 @@ function StrategyMapPage() {
                 </button>
                 <button
                   onClick={exportPDF}
-                  className="w-full px-3 py-2 text-xs text-left text-foreground hover:bg-primary/20 transition flex items-center justify-between border-t border-white/5"
+                  className="w-full px-3 py-2 text-xs text-left text-foreground hover:bg-primary/20 transition flex items-center justify-between border-t border-border"
                 >
                   <span>Documento PDF</span>
                 </button>
@@ -997,7 +1093,7 @@ function StrategyMapPage() {
             {/* Ajuda / Atalhos */}
             <button
               onClick={() => setShowHelp(true)}
-              className="p-2 rounded-xl border border-white/10 bg-white/5 text-muted-foreground hover:text-foreground transition"
+              className="p-2 rounded-xl border border-border bg-muted/60 text-muted-foreground hover:text-foreground transition"
               title="Atalhos do Teclado"
             >
               <HelpCircle className="h-3.5 w-3.5" />
@@ -1025,8 +1121,8 @@ function StrategyMapPage() {
             proOptions={{ hideAttribution: true }}
             defaultEdgeOptions={{
               type: "smoothstep",
-              markerEnd: { type: MarkerType.ArrowClosed, color: "#3b82f6" },
-              style: { stroke: "#3b82f6", strokeWidth: 2.5 },
+              markerEnd: { type: MarkerType.ArrowClosed, color: isLight ? "#2563eb" : "#3b82f6" },
+              style: { stroke: isLight ? "#2563eb" : "#3b82f6", strokeWidth: 2.5 },
             }}
           >
             <Background
@@ -1037,14 +1133,15 @@ function StrategyMapPage() {
             />
             <MiniMap
               nodeColor={(n) => (n.data?.color as string) || "#e11d48"}
-              className="!bg-card/90 !border !border-white/10 !rounded-2xl shadow-xl"
+              className="!bg-card/90 !border !border-border !rounded-2xl shadow-xl"
+              maskColor={isLight ? "rgba(240, 243, 248, 0.6)" : "rgba(10, 11, 16, 0.6)"}
             />
-            <Controls className="!bg-card/90 !border !border-white/10 !rounded-2xl shadow-xl" />
+            <Controls className="!bg-card/90 !border !border-border !rounded-2xl shadow-xl" />
 
             <Panel position="bottom-left">
-              <div className="flex items-center gap-2 bg-card/90 backdrop-blur border border-white/10 rounded-xl px-3 py-1.5 text-[11px] text-muted-foreground shadow-lg">
+              <div className="flex items-center gap-2 bg-card/90 backdrop-blur border border-border rounded-xl px-3 py-1.5 text-[11px] text-muted-foreground shadow-lg">
                 <span className="font-mono font-bold text-foreground">{nodes.length} tópicos</span>
-                <div className="w-px h-3 bg-white/10" />
+                <div className="w-px h-3 bg-border" />
                 <button
                   onClick={() => rf.fitView({ padding: 0.25, duration: 600 })}
                   className="hover:text-foreground transition flex items-center gap-1"
@@ -1064,11 +1161,11 @@ function StrategyMapPage() {
               initial={{ opacity: 0, x: -20 }}
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: -20 }}
-              className="absolute left-4 top-16 z-40 w-80 bg-card/95 border border-white/15 rounded-2xl shadow-2xl overflow-hidden backdrop-blur-xl"
+              className="absolute left-4 top-16 z-40 w-80 bg-card/95 border border-border rounded-2xl shadow-2xl overflow-hidden backdrop-blur-xl"
               style={{ maxHeight: "calc(100vh - 84px)" }}
             >
               {/* Abas */}
-              <div className="flex items-center border-b border-white/10 bg-white/[0.02]">
+              <div className="flex items-center border-b border-border bg-muted/30">
                 {[
                   { key: "style", label: "🎨 Estilo" },
                   { key: "content", label: "📝 Nota" },
@@ -1108,7 +1205,7 @@ function StrategyMapPage() {
                         value={(selectedNode.data?.emoji as string) || ""}
                         onChange={(e) => updateSelectedNode({ emoji: e.target.value })}
                         placeholder="Ex: 🎯, 🚀, 💡, 📈"
-                        className="w-full rounded-xl bg-white/5 border border-white/10 px-3 py-2 text-sm text-foreground outline-none focus:border-primary"
+                        className="w-full rounded-xl bg-muted/60 border border-border px-3 py-2 text-sm text-foreground outline-none focus:border-primary"
                       />
                     </div>
 
@@ -1124,7 +1221,7 @@ function StrategyMapPage() {
                             onClick={() => updateSelectedNode({ color: c, branchColor: c })}
                             className={`h-7 w-7 rounded-xl border-2 transition-all hover:scale-110 ${
                               selectedNode.data?.color === c
-                                ? "border-white scale-110 shadow-lg"
+                                ? "border-primary scale-110 shadow-lg"
                                 : "border-transparent"
                             }`}
                             style={{ background: c }}
@@ -1154,8 +1251,8 @@ function StrategyMapPage() {
                             }
                             className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[10px] font-bold border transition ${
                               selectedNode.data?.status === st.key
-                                ? "bg-white/15 border-white text-white"
-                                : "border-white/5 text-muted-foreground hover:bg-white/5"
+                                ? "bg-primary/20 border-primary text-primary"
+                                : "border-border/50 text-muted-foreground hover:bg-muted"
                             }`}
                           >
                             <span className="h-2 w-2 rounded-full" style={{ background: st.color }} />
@@ -1170,8 +1267,8 @@ function StrategyMapPage() {
                       onClick={toggleSlide}
                       className={`w-full flex items-center justify-center gap-2 rounded-xl border py-2 text-xs font-bold transition ${
                         selectedNode.data?.slideOrder != null
-                          ? "bg-amber-500/20 border-amber-500/40 text-amber-400"
-                          : "bg-white/5 border-white/10 text-muted-foreground hover:text-foreground"
+                          ? "bg-amber-500/20 border-amber-500/40 text-amber-500"
+                          : "bg-muted/60 border-border text-muted-foreground hover:text-foreground"
                       }`}
                     >
                       <Presentation className="h-3.5 w-3.5" />
@@ -1204,7 +1301,7 @@ function StrategyMapPage() {
                       onChange={(e) => updateSelectedNode({ note: e.target.value })}
                       placeholder="Descreva detalhes, orientações operacionais ou diretrizes desta etapa..."
                       rows={8}
-                      className="w-full rounded-xl bg-white/5 border border-white/10 p-3 text-xs text-foreground placeholder:text-muted-foreground/40 outline-none focus:border-primary resize-none font-sans leading-relaxed"
+                      className="w-full rounded-xl bg-muted/60 border border-border p-3 text-xs text-foreground placeholder:text-muted-foreground/40 outline-none focus:border-primary resize-none font-sans leading-relaxed"
                     />
                   </div>
                 )}
@@ -1220,7 +1317,7 @@ function StrategyMapPage() {
                       {((selectedNode.data?.checklist || []) as any[]).map((item, idx) => (
                         <div
                           key={idx}
-                          className="flex items-center justify-between gap-2 p-2 rounded-lg bg-white/[0.03] border border-white/5"
+                          className="flex items-center justify-between gap-2 p-2 rounded-lg bg-muted/40 border border-border/40"
                         >
                           <span
                             className={`text-xs text-foreground ${
@@ -1249,7 +1346,7 @@ function StrategyMapPage() {
                         value={newChecklistText}
                         onChange={(e) => setNewChecklistText(e.target.value)}
                         placeholder="Nova sub-tarefa..."
-                        className="flex-1 rounded-xl bg-white/5 border border-white/10 px-3 py-1.5 text-xs text-foreground outline-none focus:border-primary"
+                        className="flex-1 rounded-xl bg-muted/60 border border-border px-3 py-1.5 text-xs text-foreground outline-none focus:border-primary"
                         onKeyDown={(e) => {
                           if (e.key === "Enter" && newChecklistText.trim()) {
                             const list = [
@@ -1290,7 +1387,7 @@ function StrategyMapPage() {
                       {((selectedNode.data?.links || []) as any[]).map((lk, idx) => (
                         <div
                           key={idx}
-                          className="flex items-center justify-between p-2 rounded-lg bg-white/5 border border-white/10 text-xs"
+                          className="flex items-center justify-between p-2 rounded-lg bg-muted/60 border border-border text-xs"
                         >
                           <div className="min-w-0 flex-1">
                             <p className="font-bold text-foreground truncate">{lk.label}</p>
@@ -1311,18 +1408,18 @@ function StrategyMapPage() {
                       ))}
                     </div>
 
-                    <div className="space-y-2 border border-dashed border-white/15 p-3 rounded-xl">
+                    <div className="space-y-2 border border-dashed border-border p-3 rounded-xl">
                       <input
                         value={newLinkLabel}
                         onChange={(e) => setNewLinkLabel(e.target.value)}
                         placeholder="Título do link (ex: Campanha no Meta)"
-                        className="w-full rounded-lg bg-white/5 border border-white/10 px-2.5 py-1.5 text-xs text-foreground outline-none"
+                        className="w-full rounded-lg bg-muted/60 border border-border px-2.5 py-1.5 text-xs text-foreground outline-none"
                       />
                       <input
                         value={newLinkUrl}
                         onChange={(e) => setNewLinkUrl(e.target.value)}
                         placeholder="https://..."
-                        className="w-full rounded-lg bg-white/5 border border-white/10 px-2.5 py-1.5 text-xs text-foreground outline-none font-mono"
+                        className="w-full rounded-lg bg-muted/60 border border-border px-2.5 py-1.5 text-xs text-foreground outline-none font-mono"
                       />
                       <button
                         onClick={() => {
@@ -1372,10 +1469,10 @@ function StrategyMapPage() {
                 initial={{ scale: 0.9, y: 10 }}
                 animate={{ scale: 1, y: 0 }}
                 exit={{ scale: 0.9, y: 10 }}
-                className="glass-panel w-full max-w-md p-6 space-y-4 shadow-2xl border border-white/15"
+                className="bg-card w-full max-w-md p-6 space-y-4 shadow-2xl border border-border rounded-2xl"
                 onClick={(e) => e.stopPropagation()}
               >
-                <div className="flex items-center justify-between border-b border-white/10 pb-3">
+                <div className="flex items-center justify-between border-b border-border pb-3">
                   <div className="flex items-center gap-2 text-primary font-bold">
                     <Brain className="h-5 w-5" />
                     <span className="text-sm uppercase tracking-wider">Atalhos MindMeister</span>
@@ -1397,9 +1494,9 @@ function StrategyMapPage() {
                     { key: "Ctrl + F", desc: "Buscar e filtrar tópicos no mapa" },
                     { key: "Esc", desc: "Desmarcar nó e fechar painéis" },
                   ].map((it, idx) => (
-                    <div key={idx} className="flex items-center justify-between p-2 rounded-lg bg-white/[0.02] border border-white/5">
+                    <div key={idx} className="flex items-center justify-between p-2 rounded-lg bg-muted/40 border border-border/40">
                       <span className="text-muted-foreground">{it.desc}</span>
-                      <kbd className="px-2 py-0.5 rounded bg-white/10 border border-white/15 font-mono text-[10px] font-bold text-foreground">
+                      <kbd className="px-2 py-0.5 rounded bg-muted border border-border font-mono text-[10px] font-bold text-foreground">
                         {it.key}
                       </kbd>
                     </div>
@@ -1417,9 +1514,9 @@ function StrategyMapPage() {
               initial={{ x: 340 }}
               animate={{ x: 0 }}
               exit={{ x: 340 }}
-              className="absolute right-0 top-12 bottom-0 z-40 w-80 bg-card/95 border-l border-white/15 backdrop-blur-xl flex flex-col shadow-2xl"
+              className="absolute right-0 top-12 bottom-0 z-40 w-80 bg-card/95 border-l border-border backdrop-blur-xl flex flex-col shadow-2xl"
             >
-              <div className="flex items-center justify-between px-4 py-3 border-b border-white/10">
+              <div className="flex items-center justify-between px-4 py-3 border-b border-border">
                 <div className="flex items-center gap-2 text-primary font-bold">
                   <Sparkles className="h-4 w-4" />
                   <span className="text-sm">Victoria IA · Gerador</span>
@@ -1439,7 +1536,7 @@ function StrategyMapPage() {
                   onChange={(e) => setAiPrompt(e.target.value)}
                   placeholder="Ex: Campanha de lançamento de consórcio e financiamento automotivo para o público do Rio de Janeiro..."
                   rows={6}
-                  className="w-full rounded-xl bg-white/5 border border-white/10 p-3 text-xs text-foreground placeholder:text-muted-foreground/50 outline-none focus:border-primary resize-none leading-relaxed"
+                  className="w-full rounded-xl bg-muted/60 border border-border p-3 text-xs text-foreground placeholder:text-muted-foreground/50 outline-none focus:border-primary resize-none leading-relaxed"
                 />
 
                 <button
@@ -1471,7 +1568,7 @@ function StrategyMapPage() {
               exit={{ y: 60, opacity: 0 }}
               className="absolute inset-x-0 bottom-4 z-50 flex justify-center px-4"
             >
-              <div className="flex items-center gap-4 bg-card/95 backdrop-blur-2xl border border-white/15 px-6 py-3 rounded-2xl shadow-2xl">
+              <div className="flex items-center gap-4 bg-card/95 backdrop-blur-2xl border border-border px-6 py-3 rounded-2xl shadow-2xl">
                 <button
                   onClick={() => setPresentMode(false)}
                   className="rounded-xl bg-destructive/15 border border-destructive/30 px-3 py-1.5 text-xs font-bold text-destructive hover:bg-destructive/25 transition"
@@ -1482,7 +1579,7 @@ function StrategyMapPage() {
                 <button
                   onClick={() => goToSlide(Math.max(0, slideIndex - 1))}
                   disabled={slideIndex === 0}
-                  className="p-2 rounded-xl bg-white/5 border border-white/10 text-muted-foreground hover:text-foreground disabled:opacity-30 transition"
+                  className="p-2 rounded-xl bg-muted/60 border border-border text-muted-foreground hover:text-foreground disabled:opacity-30 transition"
                 >
                   <ChevronLeft className="h-4 w-4" />
                 </button>
@@ -1504,7 +1601,7 @@ function StrategyMapPage() {
                 <button
                   onClick={() => goToSlide(Math.min(slideNodes.length - 1, slideIndex + 1))}
                   disabled={slideIndex >= slideNodes.length - 1}
-                  className="p-2 rounded-xl bg-white/5 border border-white/10 text-muted-foreground hover:text-foreground disabled:opacity-30 transition"
+                  className="p-2 rounded-xl bg-muted/60 border border-border text-muted-foreground hover:text-foreground disabled:opacity-30 transition"
                 >
                   <ChevronRight className="h-4 w-4" />
                 </button>

@@ -10,6 +10,7 @@ import {
   Clock, AlertCircle, Circle, CheckSquare, Square,
 } from "lucide-react";
 import { MindMapActionsContext } from "./MindMapContext";
+import { useTheme } from "../../routes/__root";
 
 // Direção e handles
 type Dir = "top" | "bottom" | "left" | "right";
@@ -28,6 +29,8 @@ const QUICK_DIRS: { dir: Dir; style: React.CSSProperties; label: string }[] = [
 ];
 
 export function MindMeisterNode({ id, data, selected }: { id: string; data: any; selected: boolean }) {
+  const { theme } = useTheme();
+  const isLight = theme === "light";
   const [hovered, setHovered] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [showNote, setShowNote] = useState(false);
@@ -103,7 +106,7 @@ export function MindMeisterNode({ id, data, selected }: { id: string; data: any;
             animate={{ opacity: 1, y: -42, scale: 1 }}
             exit={{ opacity: 0, y: 4, scale: 0.95 }}
             transition={{ duration: 0.15 }}
-            className="nodrag nopan absolute left-1/2 -translate-x-1/2 z-50 flex items-center gap-1 bg-card/95 backdrop-blur-xl border border-white/15 px-2 py-1 rounded-xl shadow-2xl"
+            className="nodrag nopan absolute left-1/2 -translate-x-1/2 z-50 flex items-center gap-1 bg-card/95 backdrop-blur-xl border border-border px-2 py-1 rounded-xl shadow-2xl"
           >
             <button
               onClick={(e) => {
@@ -124,14 +127,14 @@ export function MindMeisterNode({ id, data, selected }: { id: string; data: any;
                 addSiblingNode(id);
               }}
               title="Adicionar Irmão (Enter)"
-              className="flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-bold bg-white/10 hover:bg-white/15 text-foreground transition"
+              className="flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-bold bg-muted hover:bg-muted/80 text-foreground transition"
             >
               <Plus className="h-3 w-3" />
               <span>Irmão</span>
               <kbd className="text-[8px] bg-black/30 px-1 rounded font-mono">Enter</kbd>
             </button>
 
-            <div className="w-px h-3.5 bg-white/10" />
+            <div className="w-px h-3.5 bg-border" />
 
             <button
               onClick={(e) => {
@@ -139,7 +142,7 @@ export function MindMeisterNode({ id, data, selected }: { id: string; data: any;
                 editNode(id);
               }}
               title="Formatar Estilo e Cores"
-              className="p-1 rounded-lg text-muted-foreground hover:text-foreground hover:bg-white/10 transition"
+              className="p-1 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition"
             >
               <Pencil className="h-3 w-3" />
             </button>
@@ -161,12 +164,22 @@ export function MindMeisterNode({ id, data, selected }: { id: string; data: any;
       {/* ── CARD PRINCIPAL DO NÓ (Cápsula MindMeister com Gradiente e Glow) ── */}
       <div
         style={{
-          background: data.bgColor || (isRoot ? "linear-gradient(135deg, rgba(225,29,72,0.18) 0%, rgba(18,18,24,0.92) 100%)" : "rgba(18, 18, 26, 0.94)"),
+          background: data.bgColor || (
+            isRoot
+              ? (isLight
+                  ? "linear-gradient(135deg, rgba(225,29,72,0.12) 0%, rgba(255,255,255,0.98) 100%)"
+                  : "linear-gradient(135deg, rgba(225,29,72,0.18) 0%, rgba(18,18,24,0.92) 100%)")
+              : (isLight
+                  ? "rgba(255, 255, 255, 0.96)"
+                  : "rgba(18, 18, 26, 0.94)")
+          ),
           borderColor: isRoot ? "#e11d48" : nodeColor,
           boxShadow: selected
-            ? `0 0 0 2px ${nodeColor}, 0 0 24px ${nodeColor}40`
+            ? `0 0 0 2px ${nodeColor}, 0 0 20px ${nodeColor}${isLight ? "35" : "40"}, 0 8px 24px ${isLight ? "rgba(0,0,0,0.08)" : "rgba(0,0,0,0.4)"}`
             : hovered
-            ? `0 0 0 1px ${nodeColor}80, 0 8px 20px rgba(0,0,0,0.4)`
+            ? `0 0 0 1px ${nodeColor}80, 0 6px 18px ${isLight ? "rgba(0,0,0,0.08)" : "rgba(0,0,0,0.4)"}`
+            : isLight
+            ? "0 3px 12px rgba(0,0,0,0.06), 0 1px 3px rgba(0,0,0,0.04)"
             : "0 4px 14px rgba(0,0,0,0.3)",
           minWidth: isRoot ? 190 : 150,
           maxWidth: 320,
@@ -247,7 +260,7 @@ export function MindMeisterNode({ id, data, selected }: { id: string; data: any;
 
             {/* Checklist interno (estilo MindMeister task list) */}
             {Array.isArray(data.checklist) && data.checklist.length > 0 && (
-              <div className="mt-2 space-y-1 border-t border-white/10 pt-1.5">
+              <div className="mt-2 space-y-1 border-t border-border/50 pt-1.5">
                 {data.checklist.map((item: any, idx: number) => (
                   <div
                     key={idx}
@@ -258,7 +271,7 @@ export function MindMeisterNode({ id, data, selected }: { id: string; data: any;
                     className="flex items-center gap-1.5 text-[11px] text-muted-foreground hover:text-foreground cursor-pointer transition"
                   >
                     {item.done ? (
-                      <CheckSquare className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
+                      <CheckSquare className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
                     ) : (
                       <Square className="h-3.5 w-3.5 text-muted-foreground/60 shrink-0" />
                     )}
@@ -289,7 +302,7 @@ export function MindMeisterNode({ id, data, selected }: { id: string; data: any;
                       initial={{ height: 0, opacity: 0 }}
                       animate={{ height: "auto", opacity: 1 }}
                       exit={{ height: 0, opacity: 0 }}
-                      className="mt-1 text-[11px] text-muted-foreground bg-black/40 border border-white/5 rounded-lg p-2 leading-relaxed whitespace-pre-wrap font-sans"
+                      className="mt-1 text-[11px] text-muted-foreground bg-muted/80 border border-border/50 rounded-lg p-2 leading-relaxed whitespace-pre-wrap font-sans"
                     >
                       {data.note}
                     </motion.p>
@@ -352,7 +365,7 @@ export function MindMeisterNode({ id, data, selected }: { id: string; data: any;
               width: 8,
               height: 8,
               background: nodeColor,
-              border: "2px solid hsl(var(--background))",
+              border: isLight ? "2px solid #ffffff" : "2px solid #0c0d14",
               opacity: hovered ? 1 : 0,
               transition: "opacity 0.15s",
               zIndex: 10,
