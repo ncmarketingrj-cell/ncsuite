@@ -344,7 +344,7 @@ function AutomationsPage() {
   };
 
   const handleIntervalChange = (sec: number) => {
-    const clamped = Math.max(2, Math.min(120, Math.round(sec)));
+    const clamped = Math.max(5, Math.min(60, Math.round(sec)));
     setAlertInterval(clamped);
     setAlertIntervalPreference(clamped);
   };
@@ -1122,21 +1122,21 @@ function AutomationsPage() {
                   </div>
                   <div>
                     <h4 className="text-xs font-black uppercase tracking-wider text-foreground flex items-center gap-2 flex-wrap">
-                      Temporizador entre Toques
+                      Temporizador entre Toques (Intermitência)
                       <span className={`rounded-full px-2 py-0.5 text-[9px] font-mono font-black uppercase ${
-                        alertInterval <= 4
+                        alertInterval <= 8
                           ? "bg-red-500/15 text-red-400 border border-red-500/30"
-                          : alertInterval <= 12
+                          : alertInterval <= 15
                           ? "bg-primary/15 text-primary border border-primary/30"
                           : alertInterval <= 30
                           ? "bg-blue-500/15 text-blue-400 border border-blue-500/30"
                           : "bg-emerald-500/15 text-emerald-400 border border-emerald-500/30"
                       }`}>
-                        {alertInterval <= 4 ? "⚡ Urgente / Rápido" : alertInterval <= 12 ? "🎯 Equilibrado (Padrão)" : alertInterval <= 30 ? "☕ Espaçado" : "🌿 Discreto / Lento"}
+                        {alertInterval <= 8 ? "⚡ Rápido" : alertInterval <= 15 ? "🎯 Equilibrado (Padrão)" : alertInterval <= 30 ? "☕ Espaçado" : "🌿 Discreto (1 min)"}
                       </span>
                     </h4>
                     <p className="text-[11px] text-muted-foreground mt-0.5 max-w-xl">
-                      Ajuste o espaçamento de tempo entre um bipe/toque e o seguinte para alertas contínuos. Aumente para espaçar ou diminua para receber avisos mais rápidos.
+                      Ajuste a intermitência de <strong>5 segundos a 1 minuto</strong> entre um toque e outro. Aumente para espaçar o tempo ou diminua para uma cadência mais rápida e urgente.
                     </p>
                   </div>
                 </div>
@@ -1154,7 +1154,7 @@ function AutomationsPage() {
                     <button
                       onClick={handleSimulateIntervalSequence}
                       className="flex items-center gap-1.5 rounded-xl border border-primary/30 bg-primary/10 px-3.5 py-2 text-xs font-bold text-primary hover:bg-primary/20 transition active:scale-95 shadow-sm"
-                      title="Toca o 1º som, aguarda o temporizador configurado e toca o 2º som para você validar o espaçamento exato"
+                      title="Toca o 1º som, aguarda a intermitência configurada e toca o 2º som para você validar o espaçamento exato"
                     >
                       <Play className="h-3.5 w-3.5 fill-current" /> Simular Sequência (2 Toques)
                     </button>
@@ -1196,7 +1196,7 @@ function AutomationsPage() {
                   <Clock className="h-4 w-4 text-muted-foreground shrink-0" />
                   <input
                     type="range"
-                    min="2"
+                    min="5"
                     max="60"
                     step="1"
                     value={alertInterval}
@@ -1206,10 +1206,10 @@ function AutomationsPage() {
                   <div className="flex items-center gap-1.5 shrink-0">
                     <input
                       type="number"
-                      min="2"
-                      max="120"
+                      min="5"
+                      max="60"
                       value={alertInterval}
-                      onChange={(e) => handleIntervalChange(parseInt(e.target.value, 10) || 2)}
+                      onChange={(e) => handleIntervalChange(parseInt(e.target.value, 10) || 5)}
                       className="w-16 rounded-lg border border-border bg-background px-2 py-1 text-xs font-mono font-black text-foreground text-center focus:border-primary outline-none"
                     />
                     <span className="text-xs font-mono font-bold text-muted-foreground">seg</span>
@@ -1219,10 +1219,10 @@ function AutomationsPage() {
                 {/* Presets Rápidos */}
                 <div className="lg:col-span-5 flex items-center gap-1.5 flex-wrap lg:justify-end">
                   {[
-                    { label: "3s", sec: 3, hint: "Rápido" },
-                    { label: "6s", sec: 6, hint: "Padrão NC" },
-                    { label: "10s", sec: 10, hint: "Moderado" },
-                    { label: "15s", sec: 15, hint: "Espaçado" },
+                    { label: "5s", sec: 5, hint: "Rápido" },
+                    { label: "10s", sec: 10, hint: "Padrão NC" },
+                    { label: "15s", sec: 15, hint: "Moderado" },
+                    { label: "20s", sec: 20, hint: "Espaçado" },
                     { label: "30s", sec: 30, hint: "Tranquilo" },
                     { label: "60s", sec: 60, hint: "1 minuto" },
                   ].map((preset) => (
@@ -1239,6 +1239,24 @@ function AutomationsPage() {
                       {preset.label}
                     </button>
                   ))}
+                </div>
+              </div>
+
+              {/* Regra de 3 Minutos de Auto-Silenciamento */}
+              <div className="rounded-xl border border-primary/20 bg-primary/5 p-3.5 flex items-start gap-3">
+                <div className="h-7 w-7 rounded-lg bg-primary/10 text-primary flex items-center justify-center shrink-0 mt-0.5 border border-primary/20">
+                  <ShieldCheck className="h-4 w-4" />
+                </div>
+                <div className="space-y-0.5 text-xs">
+                  <div className="font-black uppercase tracking-wider text-foreground flex items-center gap-2">
+                    Regra de 3 Minutos de Auto-Silenciamento
+                    <span className="rounded-full bg-primary/20 text-primary border border-primary/30 px-2 py-0.2 text-[9px] font-mono font-bold">
+                      Automático
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-muted-foreground leading-relaxed">
+                    Caso um alerta toque e não seja visualizado por <strong>3 minutos contínuos</strong>, os toques sonoros cessam automaticamente para não perturbar o ambiente. O som retornará normalmente na <strong>próxima ativação de alerta</strong> ou ao receber novos eventos das campanhas.
+                  </p>
                 </div>
               </div>
             </div>

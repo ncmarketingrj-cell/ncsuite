@@ -9,6 +9,9 @@ import {
   getAlertIntervalPreference,
   setAlertIntervalPreference,
   ALERT_SOUND_INTERVAL_EVENT,
+  MIN_ALERT_INTERVAL,
+  MAX_ALERT_INTERVAL,
+  ALERT_AUTO_STOP_MS,
 } from "@/lib/alertSounds";
 import { enforceNotificationCapacity } from "@/lib/notificationService";
 
@@ -397,18 +400,45 @@ function playAlertSound(alertId: string) {
   try {
     let stopped = false;
     let timerId: ReturnType<typeof setTimeout> | null = null;
+    let autoStopTimer: ReturnType<typeof setTimeout> | null = null;
+    const startTime = Date.now();
+    const MAX_ALERT_SOUND_DURATION_MS = ALERT_AUTO_STOP_MS; // Regra de 3 minutos de toque contínuo sem visualização
 
     // Toca imediatamente o tom configurado
     playAlertTone();
 
-    // Temporizador configurável entre toques (permite espaçar ou diminuir o tempo)
+    // Regra de 3 minutos sem visualização: interrompe os toques automaticamente até a próxima ativação de alerta
+    autoStopTimer = setTimeout(() => {
+      if (!stopped) {
+        console.log(`[ALERT-ENGINE] 🛑 Regra de 3 minutos: alerta "${alertId}" não visualizado em 3 min. Toque sonoro pausado até o próximo alerta.`);
+        stopped = true;
+        if (timerId) clearTimeout(timerId);
+        activeOscillators.delete(alertId);
+      }
+    }, MAX_ALERT_SOUND_DURATION_MS);
+
+    // Temporizador configurável de 5 segundos a 1 minuto de intermitência
     const scheduleNext = () => {
       if (stopped) return;
+      if (Date.now() - startTime >= MAX_ALERT_SOUND_DURATION_MS) {
+        stopped = true;
+        if (autoStopTimer) clearTimeout(autoStopTimer);
+        activeOscillators.delete(alertId);
+        return;
+      }
+
       const intervalSec = getAlertIntervalPreference();
-      const intervalMs = Math.max(2000, intervalSec * 1000);
+      // Garante rigorosamente a intermitência entre 5 segundos e 60 segundos (1 minuto)
+      const intervalMs = Math.max(MIN_ALERT_INTERVAL * 1000, Math.min(MAX_ALERT_INTERVAL * 1000, intervalSec * 1000));
 
       timerId = setTimeout(() => {
         if (stopped) return;
+        if (Date.now() - startTime >= MAX_ALERT_SOUND_DURATION_MS) {
+          stopped = true;
+          if (autoStopTimer) clearTimeout(autoStopTimer);
+          activeOscillators.delete(alertId);
+          return;
+        }
         playAlertTone();
         scheduleNext();
       }, intervalMs);
@@ -420,6 +450,7 @@ function playAlertSound(alertId: string) {
       stop: () => {
         stopped = true;
         if (timerId) clearTimeout(timerId);
+        if (autoStopTimer) clearTimeout(autoStopTimer);
         activeOscillators.delete(alertId);
       },
     });
