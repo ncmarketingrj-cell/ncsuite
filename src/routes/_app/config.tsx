@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Settings, User, Building2, Plug, BookOpen, Cpu, Plus, Trash2, Globe, Check, X, Loader2, Wifi, WifiOff, ChevronDown, Zap, Brain, LayoutDashboard, FileText, Target, Upload, Send, Users, Database, Lock, MessageSquareWarning, Bug, Lightbulb, Frown, HelpCircle, StickyNote, Filter, Eye, Clock, Megaphone, Share2, RefreshCw, Instagram, Sparkles } from "lucide-react";
+import { Settings, User, Building2, Plug, BookOpen, Cpu, Plus, Trash2, Globe, Check, X, Loader2, Wifi, WifiOff, ChevronDown, Zap, Brain, LayoutDashboard, FileText, Target, Upload, Send, Users, Database, Lock, MessageSquareWarning, Bug, Lightbulb, Frown, HelpCircle, StickyNote, Filter, Eye, Clock, Megaphone, Share2, RefreshCw, Instagram, Sparkles, Crown, Shield, ShieldCheck, Key, EyeOff, Copy, UserCheck, UserX, Award, Briefcase, Phone, Palette, ArrowUpDown, ChevronRight, AlertTriangle } from "lucide-react";
 import { SyncButton } from "@/components/SyncButton";
 import { toast } from "sonner";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -10,6 +10,20 @@ import { useClients } from "@/hooks/useClients";
 import { supabase } from "@/integrations/supabase-external/client";
 import { useAuth } from "@/lib/auth";
 import { purgeAdAccount } from "@/lib/adAccountService";
+import {
+  getUserLevel,
+  getHierarchyInfo,
+  checkHierarchyAuthority,
+  getAllowedAssignableRoles,
+  generateStrongPassword,
+  isMasterAdmin,
+} from "@/lib/userHierarchy";
+import {
+  createSystemUser,
+  updateSystemUser,
+  deleteSystemUser,
+  toggleUserStatus,
+} from "@/lib/userService";
 
 export const Route = createFileRoute("/_app/config")({
   head: () => ({ meta: [{ title: "Configurações — NC Suite" }] }),
@@ -100,7 +114,7 @@ function ConfigPage() {
         {tab === "conta"       && <TabConta />}
         {tab === "agente"      && isAdmin && <TabAgente />}
         {tab === "sac"         && <TabSac isAdmin={isAdmin} userId={user?.id ?? ""} />}
-        {tab === "usuarios"    && canManageUsers && <TabUsuarios isAdmin={isAdmin} />}
+        {tab === "usuarios"    && canManageUsers && <TabUsuarios isAdmin={isAdmin} currentUserProfile={profile} />}
         {tab === "clientes"    && isAdmin && <TabClientes />}
         {tab === "integracoes" && isStaff && <TabIntegracoes />}
         {tab === "automacoes"  && isAdmin && <TabAutomacoes />}
@@ -1332,59 +1346,48 @@ const CARGO_DEFAULT_PERMISSIONS: Record<string, Record<string, "none" | "view" |
   }
 };
 
-function TabUsuarios({ isAdmin }: { isAdmin: boolean }) {
+function TabUsuarios({ isAdmin, currentUserProfile }: { isAdmin: boolean; currentUserProfile?: any }) {
   const { user } = useAuth();
   const qc = useQueryClient();
   const [search, setSearch] = useState("");
+  const [filterTab, setFilterTab] = useState<"todos" | "subordinados" | "diretoria" | "gerencia" | "gestores" | "operacao" | "inativos">("todos");
+
+  // Caller hierarchy info
+  const effectiveCaller = useMemo(() => {
+    return {
+      id: user?.id,
+      email: user?.email,
+      ...(currentUserProfile || {}),
+    };
+  }, [user, currentUserProfile]);
+
+  const callerInfo = useMemo(() => getHierarchyInfo(effectiveCaller), [effectiveCaller]);
+  const callerLevel = useMemo(() => getUserLevel(effectiveCaller), [effectiveCaller]);
+  const isCallerMaster = useMemo(() => isMasterAdmin(effectiveCaller), [effectiveCaller]);
+  const allowedAssignable = useMemo(() => getAllowedAssignableRoles(effectiveCaller), [effectiveCaller]);
+
+  // Edição
   const [editingUser, setEditingUser] = useState<any | null>(null);
-  const [editRole, setEditRole] = useState("outro");
-  const [editPosition, setEditPosition] = useState("Gestor de Tráfego");
-  const [editName, setEditName] = useState("");
+  const [editEmail, setEditEmail] = useState("");
   const [editPassword, setEditPassword] = useState("");
+  const [editShowPassword, setEditShowPassword] = useState(false);
+  const [editName, setEditName] = useState("");
+  const [editPosition, setEditPosition] = useState("Gestor de Tráfego");
+  const [editRole, setEditRole] = useState("outro");
+  const [editStatus, setEditStatus] = useState<"ativo" | "inativo">("ativo");
   const [editPermissions, setEditPermissions] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
 
+  // Cadastro
   const [showAddModal, setShowAddModal] = useState(false);
   const [newEmail, setNewEmail] = useState("");
   const [newPassword, setNewPassword] = useState("");
+  const [newShowPassword, setNewShowPassword] = useState(false);
   const [newName, setNewName] = useState("");
   const [newPosition, setNewPosition] = useState("Gestor de Tráfego");
-  const [newRole, setNewRole] = useState("outro");
+  const [newRole, setNewRole] = useState("gestor_trafego");
   const [newPermissions, setNewPermissions] = useState<Record<string, string>>({});
   const [creating, setCreating] = useState(false);
-
-  const handleSetPermissionLevel = async (userId: string, targetEmail: string, key: string, level: string, currentPerms: any) => {
-    if (targetEmail === "nc.marketingrj@gmail.com") {
-      toast.error("O Administrador Master possui acesso total vitalício e suas permissões não podem ser alteradas.");
-      return;
-    }
-    
-    const updated = { ...(currentPerms ?? {}), [key]: level };
-    try {
-      const { error } = await (supabase as any).rpc("admin_set_user_permissions", {
-        target_user_id: userId,
-        new_permissions: updated,
-      });
-      if (error) throw error;
-      qc.invalidateQueries({ queryKey: ["admin_users_list"] });
-    } catch (err: any) {
-      toast.error(err.message || "Erro ao alterar permissão");
-    }
-  };
-
-  const POSITIONS_LIST = [
-    "Gestor de Tráfego",
-    "Gestor de Projetos",
-    "Social Media",
-    "Desenvolvedor",
-    "Designer",
-    "Diretor",
-    "CEO",
-    "Administrador",
-    "SDR",
-    "Gerente",
-    "Outros",
-  ];
 
   // Carrega todos os perfis cadastrados no banco
   const { data: users = [], isLoading } = useQuery({
@@ -1395,389 +1398,871 @@ function TabUsuarios({ isAdmin }: { isAdmin: boolean }) {
         .select("*")
         .order("created_at", { ascending: false });
       if (error) throw error;
-      return data ?? [];
-    }
+      return (data ?? []) as any[];
+    },
   });
 
-  const handleDelete = async (userId: string, targetEmail?: string, targetRole?: string) => {
-    if (targetEmail === "nc.marketingrj@gmail.com") {
-      toast.error("O Administrador Master (nc.marketingrj@gmail.com) é protegido e não pode ser excluído do sistema.");
-      return;
-    }
-    if (targetRole === "admin" && !isAdmin) {
-      toast.error("Apenas administradores podem excluir outros administradores.");
-      return;
-    }
-    if (targetRole === "admin" && user?.email !== "nc.marketingrj@gmail.com") {
-      toast.error("Apenas o Administrador Master pode excluir outras contas administrativas.");
-      return;
-    }
-    if (!confirm("Tem certeza que deseja excluir permanentemente este usuário da Suite? Esta ação não pode ser desfeita.")) return;
-    try {
-      const { error } = await (supabase as any).rpc("admin_delete_user", { target_user_id: userId });
-      if (error) throw error;
-      toast.success("Usuário excluído com sucesso!");
-      qc.invalidateQueries({ queryKey: ["admin_users_list"] });
-    } catch (err: any) {
-      toast.error(err.message || "Erro ao excluir usuário");
-    }
+  // Copiar para clipboard com feedback
+  const copyToClipboard = (text: string, msg = "Copiado para a área de transferência!") => {
+    if (!text) return;
+    navigator.clipboard.writeText(text);
+    toast.success(msg);
   };
 
-  const handleUpdate = async () => {
-    if (!editingUser) return;
-    
-    // Protege o Master Admin contra edições de terceiros
-    if (editingUser.email === "nc.marketingrj@gmail.com" && user?.email !== "nc.marketingrj@gmail.com") {
-      toast.error("Acesso negado. Apenas o próprio Administrador Master pode editar seus dados.");
-      return;
-    }
-    
-    // Apenas o Master Admin pode criar/atualizar outras contas como Admin
-    if (editRole === "admin" && user?.email !== "nc.marketingrj@gmail.com" && editingUser.role !== "admin") {
-      toast.error("Apenas o Administrador Master pode nomear novos administradores.");
-      return;
-    }
+  // Abrir modal de edição com dados populados
+  const handleOpenEdit = (targetUser: any) => {
+    setEditingUser(targetUser);
+    setEditEmail(targetUser.email || "");
+    setEditPassword("");
+    setEditShowPassword(false);
+    setEditName(targetUser.full_name || "");
+    setEditPosition(targetUser.position || "Gestor de Tráfego");
+    setEditRole(targetUser.role || "outro");
+    setEditStatus(targetUser.status === "inativo" ? "inativo" : "ativo");
+    setEditPermissions(targetUser.permissions || CARGO_DEFAULT_PERMISSIONS[targetUser.position] || {});
+  };
 
-    if (editingUser.role === "admin" && !isAdmin) {
-      toast.error("Apenas administradores podem editar outros administradores.");
+  // Abrir modal de cadastro
+  const handleOpenAdd = () => {
+    const defaultRole = allowedAssignable.roles[0]?.value || "outro";
+    const defaultPosition = allowedAssignable.positions[0] || "Gestor de Tráfego";
+    setNewEmail("");
+    setNewPassword(generateStrongPassword());
+    setNewShowPassword(true);
+    setNewName("");
+    setNewRole(defaultRole);
+    setNewPosition(defaultPosition);
+    setNewPermissions(CARGO_DEFAULT_PERMISSIONS[defaultPosition] || {});
+    setShowAddModal(true);
+  };
+
+  // Salvar edição completa de usuário (login, senha, cargo, permissões, status)
+  const handleSaveEdit = async () => {
+    if (!editingUser) return;
+    if (!editEmail.trim()) {
+      toast.error("O e-mail/login não pode ficar em branco.");
       return;
     }
-    
-    if (editingUser.role === "admin" && user?.email !== "nc.marketingrj@gmail.com" && editingUser.email !== user?.email) {
-      toast.error("Apenas o Administrador Master pode editar outras contas administrativas.");
+    if (editPassword && editPassword.trim().length < 6) {
+      toast.error("A nova senha deve ter no mínimo 6 caracteres.");
       return;
     }
 
     setSaving(true);
     try {
-      const { error } = await (supabase as any).rpc("admin_update_user", {
-        target_user_id: editingUser.id,
-        new_role: editRole,
-        new_position: editPosition,
-        new_name: editName,
-        new_password: editPassword.trim() || null
+      const res = await updateSystemUser({
+        targetUserId: editingUser.id,
+        newEmail: editEmail.trim(),
+        newPassword: editPassword.trim() || undefined,
+        newName: editName.trim(),
+        newPosition: editPosition,
+        newRole: editRole,
+        newPermissions: editPermissions,
+        status: editStatus,
       });
-      if (error) throw error;
 
-      // Update permissions
-      if (editingUser.email !== "nc.marketingrj@gmail.com") {
-        const { error: permErr } = await (supabase as any).rpc("admin_set_user_permissions", {
-          target_user_id: editingUser.id,
-          new_permissions: editPermissions,
-        });
-        if (permErr) throw permErr;
+      if (!res.success) {
+        throw new Error(res.error || "Erro ao atualizar usuário");
       }
 
-      toast.success("Dados do usuário atualizados!");
+      toast.success(res.message || "Usuário e credenciais atualizados com sucesso!");
       setEditingUser(null);
       qc.invalidateQueries({ queryKey: ["admin_users_list"] });
+      qc.invalidateQueries({ queryKey: ["current_user_profile"] });
     } catch (err: any) {
-      toast.error(err.message || "Erro ao atualizar usuário");
+      toast.error(err?.message || "Falha ao salvar alterações");
     } finally {
       setSaving(false);
     }
   };
 
+  // Cadastrar novo usuário
   const handleCreateUser = async () => {
     if (!newEmail.trim() || !newPassword.trim() || !newName.trim()) {
-      toast.error("Por favor, preencha todos os campos obrigatórios.");
+      toast.error("Por favor, preencha nome, e-mail e senha de acesso.");
       return;
     }
-    if (newPassword.length < 6) {
-      toast.error("A senha deve ter no mínimo 6 caracteres.");
+    if (newPassword.trim().length < 6) {
+      toast.error("A senha deve conter no mínimo 6 caracteres.");
       return;
     }
-    if (newRole === "admin" && user?.email !== "nc.marketingrj@gmail.com") {
-      toast.error("Apenas o Administrador Master pode criar contas administrativas.");
-      return;
-    }
-    
+
     setCreating(true);
     try {
-      const { data: sessionData } = await supabase.auth.getSession();
-      const token = sessionData.session?.access_token;
-      if (!token) throw new Error("Sessão expirada. Faça login novamente.");
-
-      const { data, error } = await supabase.functions.invoke("admin-create-user", {
-        body: {
-          new_email: newEmail.trim(),
-          new_password: newPassword.trim(),
-          new_name: newName.trim(),
-          new_position: newPosition,
-          new_role: newRole,
-        },
+      const res = await createSystemUser({
+        email: newEmail.trim(),
+        password: newPassword.trim(),
+        fullName: newName.trim(),
+        position: newPosition,
+        role: newRole,
+        permissions: newPermissions,
+        status: "ativo",
       });
-      if (error) throw error;
-      if (data?.error) throw new Error(data.error);
 
-      // Now set the permissions if there are any configured
-      if (data?.user_id && newRole !== "admin") {
-        const { error: permErr } = await (supabase as any).rpc("admin_set_user_permissions", {
-          target_user_id: data.user_id,
-          new_permissions: newPermissions,
-        });
-        if (permErr) {
-          console.error("Erro ao definir permissões iniciais:", permErr);
-          toast.warning("Usuário criado, mas houve um erro ao definir as permissões padrão.");
-        }
+      if (!res.success) {
+        throw new Error(res.error || "Erro ao cadastrar usuário");
       }
 
-      toast.success("Novo usuário cadastrado com sucesso!");
+      toast.success(res.message || "Novo usuário cadastrado e pronto para login!");
       setShowAddModal(false);
-      setNewEmail("");
-      setNewPassword("");
-      setNewName("");
-      setNewPosition("Gestor de Tráfego");
-      setNewRole("outro");
-      setNewPermissions({});
       qc.invalidateQueries({ queryKey: ["admin_users_list"] });
     } catch (err: any) {
-      toast.error(err.message || "Erro ao cadastrar usuário");
+      toast.error(err?.message || "Falha ao criar usuário");
     } finally {
       setCreating(false);
     }
   };
 
-  const filteredUsers = users.filter((u: any) => 
-    (u.full_name || "").toLowerCase().includes(search.toLowerCase()) || 
-    (u.position || "").toLowerCase().includes(search.toLowerCase())
-  );
+  // Toggle rápido de Ativo / Suspenso
+  const handleToggleStatus = async (targetUser: any) => {
+    const authCheck = checkHierarchyAuthority(effectiveCaller, targetUser);
+    if (!authCheck.isSuperior) {
+      toast.error(authCheck.reason || "Hierarquia insuficiente para alterar o status deste usuário.");
+      return;
+    }
+
+    const nextStatus = targetUser.status === "inativo" ? "ativo" : "inativo";
+    const label = nextStatus === "ativo" ? "ativado" : "suspenso";
+
+    try {
+      const res = await toggleUserStatus(targetUser.id, targetUser.status);
+      if (!res.success) throw new Error(res.error);
+      toast.success(`Usuário ${targetUser.full_name || ""} ${label} com sucesso.`);
+      qc.invalidateQueries({ queryKey: ["admin_users_list"] });
+    } catch (err: any) {
+      toast.error(err?.message || "Erro ao alterar status");
+    }
+  };
+
+  // Excluir usuário permanentemente
+  const handleDelete = async (targetUser: any) => {
+    const authCheck = checkHierarchyAuthority(effectiveCaller, targetUser);
+    if (!authCheck.canDelete) {
+      toast.error(authCheck.reason || "Você não tem autoridade para excluir este usuário.");
+      return;
+    }
+
+    if (
+      !confirm(
+        `Tem certeza que deseja excluir permanentemente "${targetUser.full_name || targetUser.email}" da Suite?\n\nEsta ação excluirá o login de acesso e todo o histórico deste usuário.`
+      )
+    ) {
+      return;
+    }
+
+    try {
+      const res = await deleteSystemUser(targetUser.id);
+      if (!res.success) throw new Error(res.error);
+      toast.success(res.message || "Usuário excluído permanentemente com sucesso!");
+      qc.invalidateQueries({ queryKey: ["admin_users_list"] });
+    } catch (err: any) {
+      toast.error(err?.message || "Erro ao excluir usuário");
+    }
+  };
+
+  // Alteração direta de permissão na lista (apenas se for superior)
+  const handleSetPermissionLevel = async (targetUser: any, key: string, level: string) => {
+    const authCheck = checkHierarchyAuthority(effectiveCaller, targetUser);
+    if (!authCheck.canEditPermissions) {
+      toast.error(authCheck.reason || "Você não tem autoridade para alterar as permissões deste usuário.");
+      return;
+    }
+
+    const updated = { ...(targetUser.permissions ?? {}), [key]: level };
+    try {
+      const { error } = await (supabase as any).rpc("admin_set_user_permissions", {
+        target_user_id: targetUser.id,
+        new_permissions: updated,
+      });
+      if (error) {
+        // Fallback direto
+        await (supabase as any).from("profiles").update({ permissions: updated }).eq("id", targetUser.id);
+      }
+      qc.invalidateQueries({ queryKey: ["admin_users_list"] });
+      toast.success("Permissão atualizada!");
+    } catch (err: any) {
+      toast.error(err?.message || "Erro ao alterar permissão");
+    }
+  };
+
+  // Estatísticas de hierarquia
+  const manageableCount = useMemo(() => {
+    return users.filter((u: any) => checkHierarchyAuthority(effectiveCaller, u).isSuperior).length;
+  }, [users, effectiveCaller]);
+
+  const leadershipCount = useMemo(() => {
+    return users.filter((u: any) => getUserLevel(u) >= 70).length;
+  }, [users]);
+
+  const specialistCount = useMemo(() => {
+    return users.filter((u: any) => {
+      const lvl = getUserLevel(u);
+      return lvl >= 50 && lvl < 70;
+    }).length;
+  }, [users]);
+
+  const operationalCount = useMemo(() => {
+    return users.filter((u: any) => getUserLevel(u) < 50).length;
+  }, [users]);
+
+  // Filtragem de usuários
+  const filteredUsers = useMemo(() => {
+    return users.filter((u: any) => {
+      const searchMatch =
+        (u.full_name || "").toLowerCase().includes(search.toLowerCase()) ||
+        (u.email || "").toLowerCase().includes(search.toLowerCase()) ||
+        (u.position || "").toLowerCase().includes(search.toLowerCase());
+
+      if (!searchMatch) return false;
+
+      const lvl = getUserLevel(u);
+      const isSub = checkHierarchyAuthority(effectiveCaller, u).isSuperior;
+
+      if (filterTab === "subordinados") return isSub;
+      if (filterTab === "diretoria") return lvl >= 70;
+      if (filterTab === "gestores") return lvl >= 50 && lvl < 70;
+      if (filterTab === "operacao") return lvl < 50;
+      if (filterTab === "inativos") return u.status === "inativo";
+      return true;
+    });
+  }, [users, search, filterTab, effectiveCaller]);
+
+  const renderRankIcon = (iconName: string, className = "h-4 w-4") => {
+    switch (iconName) {
+      case "crown":
+        return <Crown className={className} />;
+      case "shield":
+        return <ShieldCheck className={className} />;
+      case "star":
+        return <Sparkles className={className} />;
+      case "award":
+        return <Award className={className} />;
+      case "target":
+        return <Target className={className} />;
+      case "briefcase":
+        return <Briefcase className={className} />;
+      case "palette":
+        return <Palette className={className} />;
+      case "phone":
+        return <Phone className={className} />;
+      default:
+        return <User className={className} />;
+    }
+  };
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-white/5 pb-4">
-        <div>
-          <h3 className="header-sport font-display text-lg font-semibold text-gradient">Gestão Completa de Usuários</h3>
-          <p className="text-xs text-muted-foreground mt-1">Gerencie permissões, cargos, atualize informações e exclua contas de equipe.</p>
+      {/* ══════════ BANNER DE AUTORIDADE HIERÁRQUICA DO USUÁRIO CONECTADO ══════════ */}
+      <div className="relative overflow-hidden rounded-2xl border border-white/10 bg-gradient-to-r from-background via-white/[0.02] to-background p-5 shadow-2xl">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="flex items-start gap-4">
+            <div className={`h-12 w-12 rounded-2xl border flex items-center justify-center shadow-lg shrink-0 ${callerInfo.badgeBg} ${callerInfo.badgeBorder} ${callerInfo.badgeText}`}>
+              {renderRankIcon(callerInfo.iconName, "h-6 w-6")}
+            </div>
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider border ${callerInfo.badgeBg} ${callerInfo.badgeBorder} ${callerInfo.badgeText}`}>
+                  {renderRankIcon(callerInfo.iconName, "h-3 w-3")} NÍVEL {callerInfo.level} • {callerInfo.shortLabel}
+                </span>
+                <span className="text-xs text-muted-foreground font-mono">
+                  {effectiveCaller.email || "Sessão Ativa"}
+                </span>
+              </div>
+              <h3 className="header-sport font-display text-base font-bold text-foreground mt-1">
+                Central de Autoridade & Gestão de Usuários
+              </h3>
+              <p className="text-xs text-muted-foreground mt-0.5 max-w-2xl">
+                {isCallerMaster
+                  ? "👑 Você opera como Administrador Master. Autoridade absoluta e vitalícia para editar logins, redefinir senhas, gerenciar cargos e permissões de toda a Suite."
+                  : `Como ${callerInfo.title} (Nível ${callerInfo.level}), você tem autoridade hierárquica para editar logins, senhas, cargos e permissões de todos os colaboradores de níveis inferiores.`}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              onClick={handleOpenAdd}
+              className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-xs font-bold uppercase tracking-wider text-primary-foreground shadow-glow hover:shadow-glow-lg transition active:scale-95"
+            >
+              <Plus className="h-4 w-4" /> NOVO USUÁRIO
+            </button>
+          </div>
         </div>
-        <div className="flex items-center gap-3 w-full sm:w-auto">
-          <input 
-            value={search} 
-            onChange={(e) => setSearch(e.target.value)} 
-            placeholder="Buscar por nome ou cargo..." 
-            className="w-full sm:w-64 rounded-lg border border-white/10 bg-background/50 px-3 py-2 text-xs focus:border-primary focus:outline-none" 
-          />
-          <button 
-            onClick={() => setShowAddModal(true)} 
-            className="shrink-0 inline-flex items-center gap-2 rounded-full bg-primary px-4 py-2.5 text-xs font-bold text-primary-foreground hover:shadow-glow transition"
-          >
-            <Plus className="h-3.5 w-3.5" /> NOVO USUÁRIO
-          </button>
+
+        {/* Métrica Cards Rápidos */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 pt-4 mt-4 border-t border-white/5">
+          <div className="rounded-xl border border-white/5 bg-black/20 p-2.5 flex items-center justify-between">
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Total de Usuários</p>
+              <p className="text-lg font-black text-foreground">{users.length}</p>
+            </div>
+            <Users className="h-4 w-4 text-muted-foreground/40" />
+          </div>
+
+          <div className="rounded-xl border border-primary/20 bg-primary/5 p-2.5 flex items-center justify-between">
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-wider text-primary">Seus Subordinados</p>
+              <p className="text-lg font-black text-primary">{manageableCount}</p>
+            </div>
+            <UserCheck className="h-4 w-4 text-primary" />
+          </div>
+
+          <div className="rounded-xl border border-purple-500/20 bg-purple-500/5 p-2.5 flex items-center justify-between">
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-wider text-purple-300">Diretoria & Gerência</p>
+              <p className="text-lg font-black text-purple-300">{leadershipCount}</p>
+            </div>
+            <Award className="h-4 w-4 text-purple-400" />
+          </div>
+
+          <div className="rounded-xl border border-blue-500/20 bg-blue-500/5 p-2.5 flex items-center justify-between">
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-wider text-blue-300">Gestores & Devs</p>
+              <p className="text-lg font-black text-blue-300">{specialistCount}</p>
+            </div>
+            <Briefcase className="h-4 w-4 text-blue-400" />
+          </div>
         </div>
       </div>
 
-      {isLoading ? (
-        <div className="flex justify-center py-12"><Loader2 className="h-5 w-5 animate-spin text-primary" /></div>
-      ) : filteredUsers.length === 0 ? (
-        <p className="py-8 text-center text-sm text-muted-foreground">Nenhum usuário encontrado.</p>
-      ) : (
-        <div className="grid gap-4 sm:grid-cols-2">
-          {filteredUsers.map((u: any) => {
-            const isMasterAdmin = u.email === "nc.marketingrj@gmail.com";
-            return (
-              <div key={u.id} className={`rounded-xl border bg-background/40 p-4 transition duration-300 space-y-3 ${isMasterAdmin ? "border-primary/35 shadow-glow/5" : "border-white/5 hover:border-primary/20"}`}>
+      {/* ══════════ BARRA DE PESQUISA & ABAS DE FILTRO HIERÁRQUICO ══════════ */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-white/5 pb-3">
+        <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-hide">
+          {[
+            { id: "todos", label: "Todos", count: users.length },
+            { id: "subordinados", label: "Meus Subordinados", count: manageableCount },
+            { id: "diretoria", label: "Diretoria & Gerência", count: leadershipCount },
+            { id: "gestores", label: "Gestores", count: specialistCount },
+            { id: "operacao", label: "Operação", count: operationalCount },
+            { id: "inativos", label: "Suspensos", count: users.filter((u: any) => u.status === "inativo").length },
+          ].map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => setFilterTab(tab.id as any)}
+              className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition-all whitespace-nowrap ${
+                filterTab === tab.id
+                  ? "bg-primary text-primary-foreground shadow-glow-sm"
+                  : "bg-white/5 text-muted-foreground hover:bg-white/10 hover:text-foreground"
+              }`}
+            >
+              <span>{tab.label}</span>
+              <span className={`text-[9px] font-mono px-1 rounded ${filterTab === tab.id ? "bg-black/30 text-white" : "bg-white/10 text-muted-foreground"}`}>
+                {tab.count}
+              </span>
+            </button>
+          ))}
+        </div>
 
-                {/* Linha superior: avatar + info + ações */}
-                <div className="flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div className={`h-10 w-10 rounded-full overflow-hidden flex items-center justify-center shrink-0 border ${isMasterAdmin ? "bg-primary/20 border-primary" : "bg-primary/10 border-primary/20"}`}>
-                      {u.avatar_url
-                        ? <img src={u.avatar_url} alt="Avatar" className="h-full w-full object-cover" />
-                        : <User className={`h-5 w-5 ${isMasterAdmin ? "text-primary animate-pulse" : "text-primary"}`} />}
-                    </div>
-                    <div className="min-w-0">
-                      <p className="text-sm font-semibold truncate flex items-center gap-1.5 flex-wrap">
-                        {u.full_name || "Membro Sem Nome"}
-                        {isMasterAdmin ? (
-                          <span className="rounded-full bg-gradient-to-r from-yellow-500 to-primary px-2.5 py-0.5 text-[8px] font-black tracking-widest text-background">
-                            MASTER ADMIN
-                          </span>
+        <div className="relative w-full sm:w-64 shrink-0">
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Buscar por nome, email ou cargo..."
+            className="w-full rounded-xl border border-white/10 bg-background/50 pl-3 pr-8 py-2 text-xs focus:border-primary focus:outline-none"
+          />
+          {search && (
+            <button onClick={() => setSearch("")} className="absolute right-2.5 top-2.5 text-muted-foreground hover:text-foreground">
+              <X className="h-3.5 w-3.5" />
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* ══════════ LISTA DE USUÁRIOS / GRID DE CARDS ══════════ */}
+      {isLoading ? (
+        <div className="flex justify-center py-16">
+          <Loader2 className="h-6 w-6 animate-spin text-primary" />
+        </div>
+      ) : filteredUsers.length === 0 ? (
+        <div className="rounded-2xl border border-dashed border-white/10 p-12 text-center space-y-2">
+          <Users className="h-8 w-8 text-muted-foreground/40 mx-auto" />
+          <p className="text-sm font-bold text-foreground">Nenhum usuário encontrado</p>
+          <p className="text-xs text-muted-foreground">Tente alterar os termos da busca ou mudar a aba de filtro.</p>
+        </div>
+      ) : (
+        <div className="grid gap-4 md:grid-cols-2">
+          {filteredUsers.map((u: any) => {
+            const targetInfo = getHierarchyInfo(u);
+            const authCheck = checkHierarchyAuthority(effectiveCaller, u);
+            const isSelf = user?.id === u.id;
+            const isInactive = u.status === "inativo";
+
+            // Permissões resumo
+            const perms = u.permissions || {};
+            const activePermCount = Object.values(perms).filter((v) => v === "edit" || v === "view").length;
+
+            return (
+              <div
+                key={u.id}
+                className={`relative rounded-2xl border p-5 transition-all duration-300 space-y-4 ${
+                  targetInfo.level === 100
+                    ? "border-amber-500/35 bg-gradient-to-b from-amber-500/[0.04] to-background shadow-lg shadow-amber-500/5"
+                    : authCheck.isSuperior
+                    ? "border-white/10 bg-background/60 hover:border-primary/40 shadow-sm hover:shadow-glow/5"
+                    : "border-white/5 bg-background/30 opacity-90"
+                }`}
+              >
+                {/* Cabeçalho do Card: Avatar + Informações Básicas + Badge Hierárquica */}
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-start gap-3 min-w-0">
+                    <div className="relative shrink-0">
+                      <div
+                        className={`h-12 w-12 rounded-2xl border flex items-center justify-center overflow-hidden shadow-md ${targetInfo.badgeBg} ${targetInfo.badgeBorder}`}
+                      >
+                        {u.avatar_url ? (
+                          <img src={u.avatar_url} alt={u.full_name || "Avatar"} className="h-full w-full object-cover" />
                         ) : (
-                          <span className={`rounded-full px-2 py-0.5 text-[8px] font-black tracking-widest ${u.role === "admin" ? "bg-red-500/20 text-red-400" : "bg-white/5 text-muted-foreground"}`}>
-                            {ROLE_LABEL[u.role] ?? "MEMBRO"}
+                          renderRankIcon(targetInfo.iconName, `h-6 w-6 ${targetInfo.badgeText}`)
+                        )}
+                      </div>
+                      <span
+                        className={`absolute -bottom-1 -right-1 h-3.5 w-3.5 rounded-full border-2 border-background ${
+                          isInactive ? "bg-red-500" : "bg-emerald-500"
+                        }`}
+                        title={isInactive ? "Usuário Suspenso" : "Usuário Ativo"}
+                      />
+                    </div>
+
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <h4 className="text-sm font-bold text-foreground truncate">
+                          {u.full_name || "Membro Sem Nome"}
+                        </h4>
+                        {isSelf && (
+                          <span className="rounded bg-white/10 px-1.5 py-0.5 text-[8px] font-black uppercase tracking-wider text-muted-foreground">
+                            Você
                           </span>
                         )}
+                        <span
+                          className={`rounded px-1.5 py-0.5 text-[8px] font-black uppercase tracking-wider border ${
+                            isInactive
+                              ? "bg-red-500/10 text-red-400 border-red-500/20"
+                              : "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
+                          }`}
+                        >
+                          {isInactive ? "SUSPENSO" : "ATIVO"}
+                        </span>
+                      </div>
+
+                      <p className="text-xs text-muted-foreground/80 mt-0.5 truncate font-medium">
+                        {u.position || "Sem cargo definido"}
                       </p>
-                      <p className="text-[10px] text-muted-foreground/60 mt-0.5">{u.position || "Sem cargo"}</p>
+
+                      {/* Login / Email com botão de copiar */}
+                      <div className="flex items-center gap-1.5 mt-1 text-[11px] text-muted-foreground group">
+                        <span className="font-mono truncate">{u.email || "Sem e-mail cadastrado"}</span>
+                        {u.email && (
+                          <button
+                            onClick={() => copyToClipboard(u.email, "E-mail de login copiado!")}
+                            className="text-muted-foreground hover:text-primary transition p-0.5"
+                            title="Copiar login do usuário"
+                          >
+                            <Copy className="h-3 w-3" />
+                          </button>
+                        )}
+                      </div>
                     </div>
                   </div>
-                  <div className="flex items-center gap-1.5 shrink-0">
-                    {isMasterAdmin ? (
-                      user?.email === "nc.marketingrj@gmail.com" ? (
-                        <button
-                          onClick={() => {
-                            setEditingUser(u);
-                            setEditRole("admin");
-                            setEditPosition(u.position || POSITIONS_LIST[0]);
-                            setEditName(u.full_name || "");
-                            setEditPassword("");
-                            setEditPermissions(u.permissions || {});
-                          }}
-                          className="rounded-full border border-primary/30 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-primary hover:bg-primary/10 transition"
-                        >
-                          Editar Meus Dados
-                        </button>
-                      ) : (
-                        <span className="flex items-center gap-1 rounded-full border border-primary/20 bg-primary/5 px-2.5 py-1.5 text-[9px] font-bold uppercase tracking-wider text-primary">
-                          <Lock className="h-2.5 w-2.5" /> Protegido
-                        </span>
-                      )
-                    ) : u.role === "admin" && user?.email !== "nc.marketingrj@gmail.com" ? (
-                      <span className="flex items-center gap-1 rounded-full border border-white/5 bg-white/[0.03] px-2.5 py-1.5 text-[9px] font-bold uppercase tracking-wider text-muted-foreground/40">
-                        <Lock className="h-2.5 w-2.5" /> Admin
-                      </span>
-                    ) : (
-                      <>
-                        <button
-                          onClick={() => {
-                            setEditingUser(u);
-                            setEditRole(u.role || "outro");
-                            setEditPosition(u.position || POSITIONS_LIST[0]);
-                            setEditName(u.full_name || "");
-                            setEditPassword("");
-                            setEditPermissions(u.permissions || {});
-                          }}
-                          className="rounded-full border border-white/10 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider hover:bg-white/5 transition"
-                        >
-                          Editar
-                        </button>
-                        <button
-                          onClick={() => handleDelete(u.id, u.email, u.role)}
-                          className="rounded-full border border-red-500/20 bg-red-500/5 px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-wider text-red-400 hover:bg-red-500/10 transition"
-                        >
-                          Excluir
-                        </button>
-                      </>
-                    )}
+
+                  {/* Badge da Patente Hierárquica */}
+                  <div className="shrink-0 text-right">
+                    <span
+                      className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[9px] font-black uppercase tracking-wider border ${targetInfo.badgeBg} ${targetInfo.badgeBorder} ${targetInfo.badgeText}`}
+                    >
+                      {renderRankIcon(targetInfo.iconName, "h-3 w-3")}
+                      {targetInfo.shortLabel}
+                    </span>
+                    <p className="text-[9px] font-mono text-muted-foreground/60 mt-1">
+                      Nível {targetInfo.level}
+                    </p>
                   </div>
                 </div>
 
-                {/* Linha de permissões */}
-                <div className="border-t border-white/5 pt-3">
-                  {isMasterAdmin ? (
-                    <div className="flex items-center gap-1.5 text-[10px] text-primary/80 font-black uppercase tracking-wider">
-                      <Sparkles className="h-3.5 w-3.5 text-primary" /> Administrador Master — Acesso Total Vitalício Protegido
+                {/* Linha de Relação Hierárquica com o Usuário Logado */}
+                <div className="rounded-xl border border-white/5 bg-black/20 p-2.5 flex items-center justify-between text-[11px]">
+                  <div className="flex items-center gap-2 min-w-0">
+                    {targetInfo.level === 100 ? (
+                      <span className="flex items-center gap-1.5 font-bold text-amber-300">
+                        <Crown className="h-3.5 w-3.5 text-amber-400 shrink-0" />
+                        Administrador Master — Proteção Absoluta Vitalícia
+                      </span>
+                    ) : isSelf ? (
+                      <span className="flex items-center gap-1.5 font-bold text-primary">
+                        <UserCheck className="h-3.5 w-3.5 text-primary shrink-0" />
+                        Seu próprio usuário autenticado
+                      </span>
+                    ) : authCheck.isSuperior ? (
+                      <span className="flex items-center gap-1.5 font-bold text-emerald-400 truncate">
+                        <Check className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
+                        Seu Subordinado (Você pode editar login, senha e acessos)
+                      </span>
+                    ) : (
+                      <span className="flex items-center gap-1.5 text-muted-foreground/60 font-medium truncate">
+                        <Lock className="h-3.5 w-3.5 text-muted-foreground/40 shrink-0" />
+                        Protegido pela Hierarquia (Nível {targetInfo.level} &ge; {callerLevel})
+                      </span>
+                    )}
+                  </div>
+
+                  <span className="text-[10px] text-muted-foreground shrink-0 font-mono">
+                    {targetInfo.level === 100
+                      ? "Acesso Total"
+                      : `${activePermCount} de ${PERMISSION_PAGES.length} módulos`}
+                  </span>
+                </div>
+
+                {/* Seletor / Matriz de Permissões Rápidas (visível se tiver permissões customizáveis) */}
+                {targetInfo.level < 90 && (
+                  <div className="space-y-1.5 pt-1 border-t border-white/5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/50">
+                        Permissões por Módulo
+                      </span>
+                      {authCheck.canEditPermissions && (
+                        <span className="text-[9px] text-primary/80 font-bold">
+                          Clique para alterar rapidamente
+                        </span>
+                      )}
                     </div>
-                  ) : u.role === "admin" ? (
-                    <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground/40 font-bold uppercase tracking-wider">
-                      <Lock className="h-3 w-3" /> Acesso total — permissões bloqueadas
-                    </div>
-                  ) : (
-                    <div className="space-y-2">
-                      <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/40">Configuração de Acessos:</span>
-                      <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">
-                        {PERMISSION_PAGES.map(({ key, label }) => {
-                          const level = u.permissions?.[key] || "none";
-                          return (
-                            <div key={key} className="flex flex-col gap-1 bg-white/[0.02] border border-white/5 rounded-lg p-1.5 justify-between">
-                              <span className="text-[9px] font-bold text-muted-foreground truncate">{label}</span>
+
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+                      {PERMISSION_PAGES.map(({ key, label }) => {
+                        const level = u.permissions?.[key] || "none";
+                        const canChange = authCheck.canEditPermissions;
+
+                        return (
+                          <div
+                            key={key}
+                            className="flex flex-col gap-0.5 bg-white/[0.02] border border-white/5 rounded-lg p-1.5"
+                          >
+                            <span className="text-[9px] font-bold text-muted-foreground truncate">{label}</span>
+                            {canChange ? (
                               <select
                                 value={level}
-                                onChange={(e) => handleSetPermissionLevel(u.id, u.email, key, e.target.value, u.permissions)}
+                                onChange={(e) => handleSetPermissionLevel(u, key, e.target.value)}
                                 className={`bg-transparent text-[10px] font-black uppercase focus:outline-none cursor-pointer border-none p-0 ${
-                                  level === "edit" ? "text-primary" : level === "view" ? "text-blue-400" : "text-muted-foreground/40"
+                                  level === "edit"
+                                    ? "text-primary"
+                                    : level === "view"
+                                    ? "text-blue-400"
+                                    : "text-muted-foreground/40"
                                 }`}
                               >
                                 <option value="none" className="bg-background text-muted-foreground">Sem Acesso</option>
                                 <option value="view" className="bg-background text-blue-400">Leitura</option>
                                 <option value="edit" className="bg-background text-primary">Escrita</option>
                               </select>
-                            </div>
-                          );
-                        })}
-                      </div>
+                            ) : (
+                              <span
+                                className={`text-[10px] font-black uppercase ${
+                                  level === "edit"
+                                    ? "text-primary"
+                                    : level === "view"
+                                    ? "text-blue-400"
+                                    : "text-muted-foreground/40"
+                                }`}
+                              >
+                                {level === "edit" ? "Escrita" : level === "view" ? "Leitura" : "Nenhum"}
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })}
                     </div>
-                  )}
-                </div>
+                  </div>
+                )}
 
+                {/* ══════════ BOTÕES DE AÇÃO HIERÁRQUICOS ══════════ */}
+                <div className="flex items-center justify-between gap-2 pt-2 border-t border-white/5">
+                  <div className="flex items-center gap-1.5">
+                    {/* Botão de Ativar / Suspender */}
+                    {authCheck.isSuperior && (
+                      <button
+                        onClick={() => handleToggleStatus(u)}
+                        className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider transition ${
+                          isInactive
+                            ? "bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 border border-emerald-500/20"
+                            : "bg-amber-500/10 text-amber-400 hover:bg-amber-500/20 border border-amber-500/20"
+                        }`}
+                        title={isInactive ? "Reativar acesso do colaborador" : "Suspender temporariamente o acesso"}
+                      >
+                        {isInactive ? <UserCheck className="h-3 w-3" /> : <UserX className="h-3 w-3" />}
+                        <span>{isInactive ? "Reativar" : "Suspender"}</span>
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="flex items-center gap-1.5">
+                    {/* Botão de Edição (Login / Senha / Cargo) */}
+                    {authCheck.isSuperior || (isSelf && isCallerMaster) ? (
+                      <button
+                        onClick={() => handleOpenEdit(u)}
+                        className="inline-flex items-center gap-1.5 rounded-lg bg-white/5 border border-white/10 px-3 py-1.5 text-xs font-bold uppercase tracking-wider text-foreground hover:bg-primary hover:border-primary hover:text-primary-foreground transition shadow-sm"
+                      >
+                        <Key className="h-3.5 w-3.5" />
+                        <span>Editar Login / Senha</span>
+                      </button>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 text-[10px] font-bold text-muted-foreground/40 uppercase tracking-wider px-2 py-1">
+                        <Lock className="h-3 w-3" /> Acesso Protegido
+                      </span>
+                    )}
+
+                    {/* Botão de Excluir */}
+                    {authCheck.canDelete && (
+                      <button
+                        onClick={() => handleDelete(u)}
+                        className="p-1.5 rounded-lg border border-red-500/20 bg-red-500/5 text-red-400 hover:bg-red-500/15 transition"
+                        title="Excluir usuário permanentemente"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                  </div>
+                </div>
               </div>
             );
           })}
         </div>
       )}
 
-      {/* Modal de Cadastro */}
+      {/* ══════════════════════════════════════════════════════════════════════════════ */}
+      {/* MODAL DE EDIÇÃO COMPLETA: LOGIN (EMAIL), SENHA, CARGO, ROLE E PERMISSÕES     */}
+      {/* ══════════════════════════════════════════════════════════════════════════════ */}
       <AnimatePresence>
-        {showAddModal && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm p-4">
-            <motion.div initial={{ scale: 0.95 }} animate={{ scale: 1 }} exit={{ scale: 0.95 }} className="glass-panel w-full max-w-md p-6 space-y-4 shadow-2xl overflow-y-auto max-h-[90vh] custom-scrollbar">
-              <h4 className="font-display text-base font-bold text-gradient text-center uppercase tracking-wide">Cadastrar Novo Usuário</h4>
-              
-              <div className="space-y-1.5">
-                <label className="label-mono text-[10px] text-muted-foreground uppercase">Nome Completo</label>
-                <input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="Ex: João Silva" className="w-full rounded-lg border border-white/10 bg-background/50 px-3 py-2 text-sm focus:border-primary focus:outline-none" />
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="label-mono text-[10px] text-muted-foreground uppercase">E-mail</label>
-                <input value={newEmail} onChange={(e) => setNewEmail(e.target.value)} type="email" placeholder="exemplo@gmail.com" className="w-full rounded-lg border border-white/10 bg-background/50 px-3 py-2 text-sm focus:border-primary focus:outline-none" />
-              </div>
-
-              <div className="space-y-1.5">
-                <div className="flex justify-between items-center">
-                  <label className="label-mono text-[10px] text-muted-foreground uppercase">Senha de Acesso</label>
-                  <button 
-                    onClick={() => {
-                      const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*";
-                      let pass = "";
-                      for (let i = 0; i < 10; i++) pass += chars.charAt(Math.floor(Math.random() * chars.length));
-                      setNewPassword(pass);
-                    }}
-                    type="button"
-                    className="text-[9px] font-black uppercase text-primary hover:underline"
-                  >
-                    Gerar Aleatória
-                  </button>
+        {editingUser && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-md p-4"
+          >
+            <motion.div
+              initial={{ scale: 0.95, y: 10 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.95, y: 10 }}
+              className="glass-panel w-full max-w-xl p-6 space-y-5 shadow-2xl overflow-y-auto max-h-[92vh] custom-scrollbar border border-white/15"
+            >
+              {/* Header do Modal */}
+              <div className="flex items-start justify-between gap-3 border-b border-white/10 pb-4">
+                <div className="flex items-center gap-3">
+                  <div className="h-10 w-10 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center text-primary">
+                    <Key className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <h4 className="font-display text-base font-bold text-foreground">
+                      Gerenciar Credenciais & Acessos
+                    </h4>
+                    <p className="text-xs text-muted-foreground">
+                      Editando usuário: <strong className="text-foreground">{editingUser.full_name || editingUser.email}</strong>
+                    </p>
+                  </div>
                 </div>
-                <input value={newPassword} onChange={(e) => setNewPassword(e.target.value)} placeholder="Mínimo 6 caracteres" className="w-full rounded-lg border border-white/10 bg-background/50 px-3 py-2 text-sm focus:border-primary focus:outline-none font-mono" />
+                <button
+                  onClick={() => setEditingUser(null)}
+                  className="rounded-lg p-1.5 text-muted-foreground hover:bg-white/10 hover:text-foreground transition"
+                >
+                  <X className="h-4 w-4" />
+                </button>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1.5">
-                  <label className="label-mono text-[10px] text-muted-foreground uppercase">Acesso</label>
-                  <select value={newRole} onChange={(e) => setNewRole(e.target.value)} className="w-full rounded-lg border border-white/10 bg-background px-3 py-2 text-xs text-foreground focus:outline-none">
-                    <option value="gestor_trafego">Gestor de Tráfego</option>
-                    <option value="social_media">Social Media / Gestora de Projeto</option>
-                    <option value="gerente">Gerente</option>
-                    <option value="ceo">CEO</option>
-                    <option value="videomaker">Videomaker / Filmmaker</option>
-                    <option value="outro">Outros</option>
-                    <option value="admin">Administrador (Admin)</option>
+              {/* Informação de Autoridade */}
+              <div className="rounded-xl border border-primary/20 bg-primary/5 p-3 flex items-center gap-2.5 text-xs text-foreground">
+                <ShieldCheck className="h-4 w-4 text-primary shrink-0" />
+                <p>
+                  Como <strong>{callerInfo.title} (Nível {callerLevel})</strong>, você possui autoridade para atualizar o <strong>login de acesso (e-mail)</strong>, <strong>redefinir a senha</strong> e os privilégios deste colaborador.
+                </p>
+              </div>
+
+              {/* ── SEÇÃO 1: CREDENCIAIS DE LOGIN & ACESSO ── */}
+              <div className="space-y-3 rounded-xl border border-white/10 bg-white/[0.02] p-4">
+                <div className="flex items-center gap-2">
+                  <Key className="h-4 w-4 text-primary" />
+                  <h5 className="text-xs font-bold uppercase tracking-wider text-foreground">
+                    Credenciais de Acesso (Login & Senha)
+                  </h5>
+                </div>
+
+                {/* E-mail / Login */}
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between">
+                    <label className="label-mono text-[10px] text-muted-foreground uppercase font-bold">
+                      Login de Acesso (E-mail)
+                    </label>
+                    <span className="text-[10px] text-primary font-bold">Totalmente Editável</span>
+                  </div>
+                  <input
+                    type="email"
+                    value={editEmail}
+                    onChange={(e) => setEditEmail(e.target.value)}
+                    placeholder="email.colaborador@empresa.com"
+                    className="w-full rounded-lg border border-white/10 bg-background/60 px-3 py-2 text-sm focus:border-primary focus:outline-none font-mono text-foreground"
+                  />
+                  <p className="text-[10px] text-muted-foreground">
+                    Ao alterar este campo, o colaborador passará a utilizar este novo e-mail para entrar no sistema.
+                  </p>
+                </div>
+
+                {/* Senha de Acesso */}
+                <div className="space-y-1 pt-2 border-t border-white/5">
+                  <div className="flex items-center justify-between">
+                    <label className="label-mono text-[10px] text-muted-foreground uppercase font-bold">
+                      Nova Senha de Acesso
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const pass = generateStrongPassword();
+                          setEditPassword(pass);
+                          setEditShowPassword(true);
+                          copyToClipboard(pass, "Senha gerada e copiada!");
+                        }}
+                        className="text-[10px] font-black uppercase text-primary hover:underline flex items-center gap-1"
+                      >
+                        <Sparkles className="h-3 w-3" /> Gerar Segura
+                      </button>
+                      {editPassword && (
+                        <button
+                          type="button"
+                          onClick={() => copyToClipboard(editPassword, "Senha copiada para enviar!")}
+                          className="text-[10px] font-black uppercase text-emerald-400 hover:underline flex items-center gap-1"
+                        >
+                          <Copy className="h-3 w-3" /> Copiar Senha
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="relative">
+                    <input
+                      type={editShowPassword ? "text" : "password"}
+                      value={editPassword}
+                      onChange={(e) => setEditPassword(e.target.value)}
+                      placeholder="Deixe em branco para manter a senha atual"
+                      className="w-full rounded-lg border border-white/10 bg-background/60 px-3 py-2 pr-10 text-sm focus:border-primary focus:outline-none font-mono text-foreground"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setEditShowPassword((v) => !v)}
+                      className="absolute right-3 top-2.5 text-muted-foreground hover:text-foreground"
+                    >
+                      {editShowPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                  </div>
+                  <p className="text-[10px] text-muted-foreground">
+                    Preencha este campo apenas se desejar redefinir ou cadastrar uma nova senha para este usuário.
+                  </p>
+                </div>
+              </div>
+
+              {/* ── SEÇÃO 2: DADOS PESSOAIS & CARGO ── */}
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="space-y-1">
+                  <label className="label-mono text-[10px] text-muted-foreground uppercase font-bold">
+                    Nome Completo
+                  </label>
+                  <input
+                    value={editName}
+                    onChange={(e) => setEditName(e.target.value)}
+                    placeholder="Nome do colaborador"
+                    className="w-full rounded-lg border border-white/10 bg-background/60 px-3 py-2 text-sm focus:border-primary focus:outline-none text-foreground"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="label-mono text-[10px] text-muted-foreground uppercase font-bold">
+                    Status da Conta
+                  </label>
+                  <select
+                    value={editStatus}
+                    onChange={(e) => setEditStatus(e.target.value as any)}
+                    className="w-full rounded-lg border border-white/10 bg-background px-3 py-2 text-xs font-bold text-foreground focus:outline-none"
+                  >
+                    <option value="ativo">🟢 Ativo (Acesso Liberado)</option>
+                    <option value="inativo">🔴 Suspenso (Acesso Bloqueado)</option>
                   </select>
                 </div>
 
-                <div className="space-y-1.5">
-                  <label className="label-mono text-[10px] text-muted-foreground uppercase">Cargo / Função</label>
-                  <select 
-                    value={newPosition} 
+                <div className="space-y-1">
+                  <label className="label-mono text-[10px] text-muted-foreground uppercase font-bold">
+                    Cargo / Função
+                  </label>
+                  <select
+                    value={editPosition}
                     onChange={(e) => {
                       const pos = e.target.value;
-                      setNewPosition(pos);
+                      setEditPosition(pos);
                       const defaults = CARGO_DEFAULT_PERMISSIONS[pos] || {};
-                      setNewPermissions(defaults);
-                    }} 
+                      setEditPermissions(defaults);
+                    }}
                     className="w-full rounded-lg border border-white/10 bg-background px-3 py-2 text-xs text-foreground focus:outline-none"
                   >
-                    {POSITIONS_LIST.map(pos => <option key={pos} value={pos}>{pos}</option>)}
+                    {allowedAssignable.positions.map((pos: string) => (
+                      <option key={pos} value={pos}>
+                        {pos}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="label-mono text-[10px] text-muted-foreground uppercase font-bold">
+                    Nível de Acesso (Role)
+                  </label>
+                  <select
+                    value={editRole}
+                    onChange={(e) => setEditRole(e.target.value)}
+                    className="w-full rounded-lg border border-white/10 bg-background px-3 py-2 text-xs font-bold text-foreground focus:outline-none"
+                  >
+                    {allowedAssignable.roles.map((r: any) => (
+                      <option key={r.value} value={r.value}>
+                        {r.label}
+                      </option>
+                    ))}
                   </select>
                 </div>
               </div>
 
-              {/* Grid de Permissões Sugeridas/Customizáveis */}
-              <div className="space-y-2 border-t border-white/5 pt-3">
+              {/* ── SEÇÃO 3: MATRIZ DE PERMISSÕES ── */}
+              <div className="space-y-2 border-t border-white/10 pt-3">
                 <div className="flex items-center justify-between">
-                  <label className="label-mono text-[10px] text-muted-foreground uppercase">Permissões de Acesso</label>
-                  <span className="text-[9px] font-black uppercase text-primary/80">Sugestão de Cargo Aplicada</span>
+                  <label className="label-mono text-[10px] text-muted-foreground uppercase font-bold">
+                    Permissões Granulares por Módulo ({PERMISSION_PAGES.length})
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const defaults = CARGO_DEFAULT_PERMISSIONS[editPosition] || {};
+                      setEditPermissions(defaults);
+                      toast.info(`Preset recomendado para "${editPosition}" aplicado.`);
+                    }}
+                    className="text-[9px] font-black uppercase text-primary hover:underline"
+                  >
+                    Aplicar Sugestão do Cargo
+                  </button>
                 </div>
-                <div className="grid grid-cols-2 gap-2 max-h-[160px] overflow-y-auto pr-1 custom-scrollbar">
+
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 max-h-[160px] overflow-y-auto pr-1 custom-scrollbar">
                   {PERMISSION_PAGES.map(({ key, label }) => (
-                    <div key={key} className="flex items-center justify-between gap-2 rounded-lg border border-white/5 bg-background/30 p-2">
-                      <span className="text-[10px] font-bold text-foreground truncate max-w-[120px]">{label}</span>
+                    <div
+                      key={key}
+                      className="flex items-center justify-between gap-2 rounded-lg border border-white/5 bg-background/40 p-2"
+                    >
+                      <span className="text-[10px] font-bold text-foreground truncate max-w-[110px]">
+                        {label}
+                      </span>
                       <select
-                        value={newPermissions[key] || "none"}
-                        onChange={(e) => setNewPermissions(prev => ({ ...prev, [key]: e.target.value }))}
+                        value={editPermissions[key] || "none"}
+                        onChange={(e) =>
+                          setEditPermissions((prev) => ({ ...prev, [key]: e.target.value }))
+                        }
                         className={`rounded border border-white/10 bg-background px-1.5 py-1 text-[10px] font-black uppercase focus:outline-none ${
-                          newPermissions[key] === "edit" ? "text-primary" : newPermissions[key] === "view" ? "text-blue-400" : "text-muted-foreground/50"
+                          editPermissions[key] === "edit"
+                            ? "text-primary"
+                            : editPermissions[key] === "view"
+                            ? "text-blue-400"
+                            : "text-muted-foreground/50"
                         }`}
                       >
                         <option value="none" className="text-muted-foreground">Nenhum</option>
@@ -1789,10 +2274,23 @@ function TabUsuarios({ isAdmin }: { isAdmin: boolean }) {
                 </div>
               </div>
 
-              <div className="flex gap-2 justify-end pt-2 border-t border-white/5">
-                <button onClick={() => setShowAddModal(false)} className="rounded-full border border-white/10 px-4 py-2 text-xs font-bold uppercase">Cancelar</button>
-                <button onClick={handleCreateUser} disabled={creating} className="rounded-full bg-primary px-5 py-2 text-xs font-bold uppercase text-primary-foreground hover:shadow-glow transition disabled:opacity-50">
-                  {creating ? "Cadastrando..." : "Cadastrar Usuário"}
+              {/* Rodapé de Ações */}
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-white/10">
+                <button
+                  type="button"
+                  onClick={() => setEditingUser(null)}
+                  className="rounded-full border border-white/10 px-4 py-2 text-xs font-bold uppercase text-muted-foreground hover:bg-white/5 transition"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveEdit}
+                  disabled={saving}
+                  className="inline-flex items-center gap-2 rounded-full bg-primary px-6 py-2 text-xs font-bold uppercase tracking-wider text-primary-foreground hover:shadow-glow transition disabled:opacity-50"
+                >
+                  {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+                  <span>{saving ? "Salvando..." : "Salvar Credenciais e Acessos"}</span>
                 </button>
               </div>
             </motion.div>
@@ -1800,90 +2298,191 @@ function TabUsuarios({ isAdmin }: { isAdmin: boolean }) {
         )}
       </AnimatePresence>
 
-      {/* Modal de Edição */}
+      {/* ══════════════════════════════════════════════════════════════════════════════ */}
+      {/* MODAL DE CADASTRO: NOVO USUÁRIO                                              */}
+      {/* ══════════════════════════════════════════════════════════════════════════════ */}
       <AnimatePresence>
-        {editingUser && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm p-4">
-            <motion.div initial={{ scale: 0.95 }} animate={{ scale: 1 }} exit={{ scale: 0.95 }} className="glass-panel w-full max-w-md p-6 space-y-4 shadow-2xl overflow-y-auto max-h-[90vh] custom-scrollbar">
-              <h4 className="font-display text-base font-bold text-gradient text-center uppercase tracking-wide">Alterar Dados do Usuário</h4>
-
-              {editingUser?.email && (
-                <div className="space-y-1.5">
-                  <label className="label-mono text-[10px] text-muted-foreground uppercase">E-mail</label>
-                  <input value={editingUser.email} readOnly className="w-full rounded-lg border border-white/5 bg-background/20 px-3 py-2 text-sm text-muted-foreground cursor-not-allowed" />
+        {showAddModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-md p-4"
+          >
+            <motion.div
+              initial={{ scale: 0.95, y: 10 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.95, y: 10 }}
+              className="glass-panel w-full max-w-xl p-6 space-y-5 shadow-2xl overflow-y-auto max-h-[92vh] custom-scrollbar border border-white/15"
+            >
+              <div className="flex items-start justify-between gap-3 border-b border-white/10 pb-4">
+                <div className="flex items-center gap-3">
+                  <div className="h-10 w-10 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center text-primary">
+                    <Plus className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <h4 className="font-display text-base font-bold text-foreground">
+                      Cadastrar Novo Usuário na Suite
+                    </h4>
+                    <p className="text-xs text-muted-foreground">
+                      Crie o login com e-mail e senha confirmados para acesso imediato.
+                    </p>
+                  </div>
                 </div>
-              )}
-
-              <div className="space-y-1.5">
-                <label className="label-mono text-[10px] text-muted-foreground uppercase">Nome Completo</label>
-                <input value={editName} onChange={(e) => setEditName(e.target.value)} className="w-full rounded-lg border border-white/10 bg-background/50 px-3 py-2 text-sm focus:border-primary focus:outline-none" />
+                <button
+                  onClick={() => setShowAddModal(false)}
+                  className="rounded-lg p-1.5 text-muted-foreground hover:bg-white/10 hover:text-foreground transition"
+                >
+                  <X className="h-4 w-4" />
+                </button>
               </div>
 
-              <div className="space-y-1.5">
-                <div className="flex justify-between items-center">
-                  <label className="label-mono text-[10px] text-muted-foreground uppercase">Nova Senha (Opcional)</label>
-                  <button 
-                    onClick={() => {
-                      const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*";
-                      let pass = "";
-                      for (let i = 0; i < 10; i++) pass += chars.charAt(Math.floor(Math.random() * chars.length));
-                      setEditPassword(pass);
-                    }}
-                    type="button"
-                    className="text-[9px] font-black uppercase text-primary hover:underline"
-                  >
-                    Gerar Aleatória
-                  </button>
-                </div>
-                <input value={editPassword} onChange={(e) => setEditPassword(e.target.value)} placeholder="Deixar em branco para não alterar" className="w-full rounded-lg border border-white/10 bg-background/50 px-3 py-2 text-sm focus:border-primary focus:outline-none font-mono" />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1.5">
-                  <label className="label-mono text-[10px] text-muted-foreground uppercase">Acesso</label>
-                  <select value={editRole} onChange={(e) => setEditRole(e.target.value)} className="w-full rounded-lg border border-white/10 bg-background px-3 py-2 text-xs text-foreground focus:outline-none">
-                    <option value="gestor_trafego">Gestor de Tráfego</option>
-                    <option value="social_media">Social Media / Gestora de Projeto</option>
-                    <option value="gerente">Gerente</option>
-                    <option value="ceo">CEO</option>
-                    <option value="videomaker">Videomaker / Filmmaker</option>
-                    <option value="outro">Outros</option>
-                    {isAdmin && <option value="admin">Administrador (Admin)</option>}
-                  </select>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="space-y-1 sm:col-span-2">
+                  <label className="label-mono text-[10px] text-muted-foreground uppercase font-bold">
+                    Nome Completo
+                  </label>
+                  <input
+                    value={newName}
+                    onChange={(e) => setNewName(e.target.value)}
+                    placeholder="Ex: Ana Clara Santos"
+                    className="w-full rounded-lg border border-white/10 bg-background/60 px-3 py-2 text-sm focus:border-primary focus:outline-none text-foreground"
+                  />
                 </div>
 
-                <div className="space-y-1.5">
-                  <label className="label-mono text-[10px] text-muted-foreground uppercase">Cargo / Função</label>
-                  <select 
-                    value={editPosition} 
+                <div className="space-y-1 sm:col-span-2">
+                  <label className="label-mono text-[10px] text-muted-foreground uppercase font-bold">
+                    E-mail / Login de Acesso
+                  </label>
+                  <input
+                    type="email"
+                    value={newEmail}
+                    onChange={(e) => setNewEmail(e.target.value)}
+                    placeholder="ana.santos@empresa.com"
+                    className="w-full rounded-lg border border-white/10 bg-background/60 px-3 py-2 text-sm focus:border-primary focus:outline-none font-mono text-foreground"
+                  />
+                </div>
+
+                {/* Senha */}
+                <div className="space-y-1 sm:col-span-2">
+                  <div className="flex items-center justify-between">
+                    <label className="label-mono text-[10px] text-muted-foreground uppercase font-bold">
+                      Senha Inicial
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const pass = generateStrongPassword();
+                          setNewPassword(pass);
+                          setNewShowPassword(true);
+                          copyToClipboard(pass, "Senha gerada e copiada!");
+                        }}
+                        className="text-[10px] font-black uppercase text-primary hover:underline flex items-center gap-1"
+                      >
+                        <Sparkles className="h-3 w-3" /> Gerar Aleatória
+                      </button>
+                      {newPassword && (
+                        <button
+                          type="button"
+                          onClick={() => copyToClipboard(newPassword, "Senha copiada para enviar!")}
+                          className="text-[10px] font-black uppercase text-emerald-400 hover:underline flex items-center gap-1"
+                        >
+                          <Copy className="h-3 w-3" /> Copiar Senha
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="relative">
+                    <input
+                      type={newShowPassword ? "text" : "password"}
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
+                      placeholder="Mínimo 6 caracteres"
+                      className="w-full rounded-lg border border-white/10 bg-background/60 px-3 py-2 pr-10 text-sm focus:border-primary focus:outline-none font-mono text-foreground"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setNewShowPassword((v) => !v)}
+                      className="absolute right-3 top-2.5 text-muted-foreground hover:text-foreground"
+                    >
+                      {newShowPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="label-mono text-[10px] text-muted-foreground uppercase font-bold">
+                    Cargo / Função
+                  </label>
+                  <select
+                    value={newPosition}
                     onChange={(e) => {
                       const pos = e.target.value;
-                      setEditPosition(pos);
+                      setNewPosition(pos);
                       const defaults = CARGO_DEFAULT_PERMISSIONS[pos] || {};
-                      setEditPermissions(defaults);
-                    }} 
+                      setNewPermissions(defaults);
+                    }}
                     className="w-full rounded-lg border border-white/10 bg-background px-3 py-2 text-xs text-foreground focus:outline-none"
                   >
-                    {POSITIONS_LIST.map(pos => <option key={pos} value={pos}>{pos}</option>)}
+                    {allowedAssignable.positions.map((pos: string) => (
+                      <option key={pos} value={pos}>
+                        {pos}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="label-mono text-[10px] text-muted-foreground uppercase font-bold">
+                    Nível de Acesso (Role)
+                  </label>
+                  <select
+                    value={newRole}
+                    onChange={(e) => setNewRole(e.target.value)}
+                    className="w-full rounded-lg border border-white/10 bg-background px-3 py-2 text-xs font-bold text-foreground focus:outline-none"
+                  >
+                    {allowedAssignable.roles.map((r: any) => (
+                      <option key={r.value} value={r.value}>
+                        {r.label}
+                      </option>
+                    ))}
                   </select>
                 </div>
               </div>
 
-              {/* Grid de Permissões Sugeridas/Customizáveis */}
-              <div className="space-y-2 border-t border-white/5 pt-3">
+              {/* Matriz de Permissões Sugeridas */}
+              <div className="space-y-2 border-t border-white/10 pt-3">
                 <div className="flex items-center justify-between">
-                  <label className="label-mono text-[10px] text-muted-foreground uppercase">Permissões de Acesso</label>
-                  <span className="text-[9px] font-black uppercase text-primary/80 font-semibold">Tabela de Níveis</span>
+                  <label className="label-mono text-[10px] text-muted-foreground uppercase font-bold">
+                    Permissões por Módulo
+                  </label>
+                  <span className="text-[9px] font-black uppercase text-primary/80">
+                    Preset de "{newPosition}" Ativo
+                  </span>
                 </div>
-                <div className="grid grid-cols-2 gap-2 max-h-[160px] overflow-y-auto pr-1 custom-scrollbar">
+
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 max-h-[160px] overflow-y-auto pr-1 custom-scrollbar">
                   {PERMISSION_PAGES.map(({ key, label }) => (
-                    <div key={key} className="flex items-center justify-between gap-2 rounded-lg border border-white/5 bg-background/30 p-2">
-                      <span className="text-[10px] font-bold text-foreground truncate max-w-[120px]">{label}</span>
+                    <div
+                      key={key}
+                      className="flex items-center justify-between gap-2 rounded-lg border border-white/5 bg-background/40 p-2"
+                    >
+                      <span className="text-[10px] font-bold text-foreground truncate max-w-[110px]">
+                        {label}
+                      </span>
                       <select
-                        value={editPermissions[key] || "none"}
-                        onChange={(e) => setEditPermissions(prev => ({ ...prev, [key]: e.target.value }))}
+                        value={newPermissions[key] || "none"}
+                        onChange={(e) =>
+                          setNewPermissions((prev) => ({ ...prev, [key]: e.target.value }))
+                        }
                         className={`rounded border border-white/10 bg-background px-1.5 py-1 text-[10px] font-black uppercase focus:outline-none ${
-                          editPermissions[key] === "edit" ? "text-primary" : editPermissions[key] === "view" ? "text-blue-400" : "text-muted-foreground/50"
+                          newPermissions[key] === "edit"
+                            ? "text-primary"
+                            : newPermissions[key] === "view"
+                            ? "text-blue-400"
+                            : "text-muted-foreground/50"
                         }`}
                       >
                         <option value="none" className="text-muted-foreground">Nenhum</option>
@@ -1895,10 +2494,22 @@ function TabUsuarios({ isAdmin }: { isAdmin: boolean }) {
                 </div>
               </div>
 
-              <div className="flex gap-2 justify-end pt-2 border-t border-white/5">
-                <button onClick={() => setEditingUser(null)} className="rounded-full border border-white/10 px-4 py-2 text-xs font-bold uppercase">Cancelar</button>
-                <button onClick={handleUpdate} disabled={saving} className="rounded-full bg-primary px-5 py-2 text-xs font-bold uppercase text-primary-foreground hover:shadow-glow transition disabled:opacity-50">
-                  {saving ? "Salvando..." : "Salvar Alterações"}
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-white/10">
+                <button
+                  type="button"
+                  onClick={() => setShowAddModal(false)}
+                  className="rounded-full border border-white/10 px-4 py-2 text-xs font-bold uppercase text-muted-foreground hover:bg-white/5 transition"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={handleCreateUser}
+                  disabled={creating}
+                  className="inline-flex items-center gap-2 rounded-full bg-primary px-6 py-2 text-xs font-bold uppercase tracking-wider text-primary-foreground hover:shadow-glow transition disabled:opacity-50"
+                >
+                  {creating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+                  <span>{creating ? "Cadastrando..." : "Cadastrar Usuário"}</span>
                 </button>
               </div>
             </motion.div>
