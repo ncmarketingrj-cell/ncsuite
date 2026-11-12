@@ -111,10 +111,12 @@ export function detectConversionCategory(
   if (
     n.includes("MSG") ||
     n.includes("MENSAGEM") ||
+    n.includes("MENSAGENS") ||
     n.includes("WPP") ||
     n.includes("WHATSAPP") ||
     n.includes("DIRECT") ||
     n.includes("CONVERSA") ||
+    n.includes("CONVERSAS") ||
     n.includes("ZAP") ||
     obj === "MESSAGES" ||
     opt === "CONVERSATIONS" ||

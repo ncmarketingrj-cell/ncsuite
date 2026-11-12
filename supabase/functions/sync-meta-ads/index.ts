@@ -319,10 +319,12 @@ function detectConversionCategory(
   if (
     n.includes("MSG") ||
     n.includes("MENSAGEM") ||
+    n.includes("MENSAGENS") ||
     n.includes("WPP") ||
     n.includes("WHATSAPP") ||
     n.includes("DIRECT") ||
     n.includes("CONVERSA") ||
+    n.includes("CONVERSAS") ||
     n.includes("ZAP") ||
     obj === "MESSAGES" ||
     (actions && actions.some((a: any) => String(a.action_type || "").toLowerCase().includes("messaging_conversation_started")))
@@ -965,7 +967,7 @@ serve(async (req) => {
         const campaignsWithBudgets = await fetchCampaignsWithBudgets(acc.id, accToken)
         const budgetMap = new Map(campaignsWithBudgets.map((c: any) => {
           const n = (c.name || "").toUpperCase();
-          const isMsg = n.includes("MSG") || n.includes("MENSAGEM") || n.includes("WPP") || n.includes("WHATSAPP") || n.includes("DIRECT") || n.includes("CONVERSA");
+          const isMsg = n.includes("MSG") || n.includes("MENSAGEM") || n.includes("MENSAGENS") || n.includes("WPP") || n.includes("WHATSAPP") || n.includes("DIRECT") || n.includes("CONVERSA") || n.includes("CONVERSAS") || n.includes("ZAP");
           const effObjective = isMsg ? "MESSAGES" : (c.objective || null);
           return [c.id, {
             name: c.name || "Campanha Meta",
@@ -979,7 +981,7 @@ serve(async (req) => {
         // Mapa de objective por external_id para usar em adsets e ads
         const campaignObjectiveMap = new Map(campaignsWithBudgets.map((c: any) => {
           const n = (c.name || "").toUpperCase();
-          const isMsg = n.includes("MSG") || n.includes("MENSAGEM") || n.includes("WPP") || n.includes("WHATSAPP") || n.includes("DIRECT") || n.includes("CONVERSA");
+          const isMsg = n.includes("MSG") || n.includes("MENSAGEM") || n.includes("MENSAGENS") || n.includes("WPP") || n.includes("WHATSAPP") || n.includes("DIRECT") || n.includes("CONVERSA") || n.includes("CONVERSAS") || n.includes("ZAP");
           return [c.id, (isMsg ? "MESSAGES" : (c.objective as string | undefined))];
         }))
 

@@ -6,7 +6,7 @@ import {
   FileText, BarChart3, ArrowUpRight, Activity, Layers,
   ChevronDown, Globe, Target, TrendingUp, TrendingDown, DollarSign, MousePointer2, Users, Trophy, Coins,
   Loader2, GaugeCircle, PieChart as PieChartIcon, Sparkles, Eye, HelpCircle, CheckCircle2,
-  AlertCircle, ArrowRight, Zap, Award, X
+  AlertCircle, ArrowRight, Zap, Award, X, MessageCircle
 } from "lucide-react";
 import { classifyCampaignType } from "./cockpit";
 
@@ -379,12 +379,29 @@ function Dashboard() {
 
       const { data: activeCamps } = await (supabase as any)
         .from("campaigns")
-        .select("ad_account_id")
+        .select("ad_account_id, name, objective")
         .eq("status", "active");
 
       const activeCounts: Record<string, number> = {};
+      const messagingAccountsSet = new Set<string>();
+
       for (const c of (activeCamps || [])) {
         activeCounts[c.ad_account_id] = (activeCounts[c.ad_account_id] || 0) + 1;
+        const n = (c.name || "").toUpperCase();
+        const obj = (c.objective || "").toUpperCase();
+        const isMsg = n.includes("MSG") ||
+                      n.includes("MENSAGEM") ||
+                      n.includes("MENSAGENS") ||
+                      n.includes("WPP") ||
+                      n.includes("WHATSAPP") ||
+                      n.includes("DIRECT") ||
+                      n.includes("CONVERSA") ||
+                      n.includes("CONVERSAS") ||
+                      n.includes("ZAP") ||
+                      obj === "MESSAGES";
+        if (isMsg) {
+          messagingAccountsSet.add(c.ad_account_id);
+        }
       }
 
       const metricsMap: Record<string, {
@@ -446,10 +463,13 @@ function Dashboard() {
 
             const isMessaging = campName.includes("MSG") ||
                                 campName.includes("MENSAGEM") ||
+                                campName.includes("MENSAGENS") ||
                                 campName.includes("WPP") ||
                                 campName.includes("WHATSAPP") ||
                                 campName.includes("DIRECT") ||
                                 campName.includes("CONVERSA") ||
+                                campName.includes("CONVERSAS") ||
+                                campName.includes("ZAP") ||
                                 ["MESSAGES"].includes(obj) ||
                                 ["MESSAGES"].includes(resType);
 
@@ -536,6 +556,7 @@ function Dashboard() {
         const metrics = metricsMap[acc.id] || { spend: 0, reach: 0, results: 0, impressions: 0, purchases: 0, leads: 0 };
         const activeCampaignsCount = activeCounts[acc.id] || 0;
         const linkedClient = clientMap[acc.id] || null;
+        const isMessagingAccount = messagingAccountsSet.has(acc.id) || Number(metrics.leads || 0) > 0;
 
         return {
           id: acc.id,
@@ -543,7 +564,8 @@ function Dashboard() {
           platform: acc.platform,
           activeCampaignsCount,
           client: linkedClient,
-          metrics
+          metrics,
+          isMessagingAccount,
         };
       });
     }
@@ -551,6 +573,9 @@ function Dashboard() {
 
   const filteredAccounts = useMemo(() => {
     return accountsTableData.filter((acc: any) => {
+      // Regra obrigatória: Apenas contas que rodam campanhas de mensagens
+      if (!acc.isMessagingAccount) return false;
+
       if (selectedAccountId !== "all" && acc.id !== selectedAccountId) return false;
       if (selectedClientId !== "all" && acc.client?.id !== selectedClientId) return false;
       if (selectedAccountId !== "all" || selectedClientId !== "all") return true;
@@ -1192,10 +1217,10 @@ function Dashboard() {
           <div>
             <h3 className="header-sport text-base font-black tracking-widest uppercase flex items-center gap-2">
               <Layers className="h-5 w-5 text-primary" />
-              Desempenho Geral de Contas
+              Desempenho Geral de Contas (Mensagens)
             </h3>
             <p className="text-[10px] text-muted-foreground uppercase mt-1 tracking-widest">
-              Dados consolidados do período
+              Contas com campanhas ativas de mensagens • Dados consolidados do período
             </p>
           </div>
           <div className="hidden sm:flex items-center gap-3">
@@ -1214,8 +1239,8 @@ function Dashboard() {
           </div>
         ) : sortedAccounts.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-12 text-center text-muted-foreground/50">
-            <Activity className="h-8 w-8 mb-2 opacity-20" />
-            <p className="text-xs">Nenhuma conta com campanha ativa ou métricas no período.</p>
+            <MessageCircle className="h-8 w-8 mb-2 opacity-20 text-primary" />
+            <p className="text-xs">Nenhuma conta com operação ativa de mensagens no período selecionado.</p>
           </div>
         ) : (
           <>
