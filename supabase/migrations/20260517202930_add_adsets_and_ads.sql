@@ -55,7 +55,7 @@ ALTER TABLE public.ad_sets ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.ads ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.asset_metrics ENABLE ROW LEVEL SECURITY;
 
--- Políticas temporais de leitura pública (simplificado)
-CREATE POLICY "Enable read access for all users" ON public.ad_sets FOR SELECT USING (true);
-CREATE POLICY "Enable read access for all users" ON public.ads FOR SELECT USING (true);
-CREATE POLICY "Enable read access for all users" ON public.asset_metrics FOR SELECT USING (true);
+-- Políticas de leitura para usuários autenticados
+CREATE POLICY "Enable read access for authenticated users" ON public.ad_sets FOR SELECT TO authenticated USING (auth.uid() IS NOT NULL);
+CREATE POLICY "Enable read access for authenticated users" ON public.ads FOR SELECT TO authenticated USING (auth.uid() IS NOT NULL);
+CREATE POLICY "Enable read access for authenticated users" ON public.asset_metrics FOR SELECT TO authenticated USING (auth.uid() IS NOT NULL);
