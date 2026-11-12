@@ -44,6 +44,7 @@ import {
   calibrateMetaConversionsFromGraph,
   getCalibratedAdConversion20261111,
   getMetaResultDetail,
+  detectConversionCategory,
 } from "@/lib/metaConversionCalibrator";
 
 // â"€â"€â"€ ROTA â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
@@ -169,7 +170,8 @@ function processMetrics(item: any, rawData: any[], startStr: string, endStr: str
   const cpm  = impressions > 0 ? (cost / impressions) * 1000 : 0;
   const cpc  = clicks > 0 ? cost / clicks : 0;
   const roas = cost > 0 ? (conversions * 150) / cost : 0;
-  const result_type = m.find((x: any) => x.result_type)?.result_type || item.result_type;
+  const detectedCategory = detectConversionCategory(item.name, item.objective);
+  const result_type = m.find((x: any) => x.result_type)?.result_type || item.result_type || detectedCategory;
   return { ...item, result_type, t: { cost, conversions, clicks, impressions, reach, freq, cpl, ctr, cpm, cpc, roas }, _metrics: m };
 }
 
@@ -292,38 +294,38 @@ function generateLocalDiagnostic(item: any, avgCpl: number): string {
   const costStr = `R$ ${cost.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`;
   const avgCplStr = avgCpl > 0 ? `R$ ${avgCpl.toFixed(2)}` : "N/A";
   
-  let diag = `### ðŸ¤– Diagnóstico da Victoria IA\n\n`;
+  let diag = `### 🤖 Diagnóstico da Victoria IA\n\n`;
   
   if (conversions === 0 && cost > 30) {
-    diag += `âš ï¸ **Desempenho Crítico:** Esta campanha gastou **${costStr}** e não gerou nenhuma conversão/lead. Há um vazamento de verba ativo que precisa de intervenção imediata.\n\n`;
+    diag += `⚠️ **Desempenho Crítico:** Esta campanha gastou **${costStr}** e não gerou nenhuma conversão/lead. Há um vazamento de verba ativo que precisa de intervenção imediata.\n\n`;
   } else if (cpl > 0 && avgCpl > 0 && cpl > avgCpl * 1.5) {
-    diag += `âš ï¸ **Desempenho Preocupante:** O custo por lead de **${cplStr}** está significativamente acima da média da conta (**${avgCplStr}**). A campanha gera resultados, mas a eficiência financeira está comprometida.\n\n`;
+    diag += `⚠️ **Desempenho Preocupante:** O custo por lead de **${cplStr}** está significativamente acima da média da conta (**${avgCplStr}**). A campanha gera resultados, mas a eficiência financeira está comprometida.\n\n`;
   } else if (conversions > 2 && cpl > 0 && avgCpl > 0 && cpl < avgCpl * 0.8) {
-    diag += `ðŸ"¥ **Excelente Performance!** A campanha está operando com altíssima eficiência. O CPL de **${cplStr}** está abaixo da média geral da conta, e o volume de conversões indica que o público está respondendo muito bem.\n\n`;
+    diag += `🔥 **Excelente Performance!** A campanha está operando com altíssima eficiência. O CPL de **${cplStr}** está abaixo da média geral da conta, e o volume de conversões indica que o público está respondendo muito bem.\n\n`;
   } else {
-    diag += `ðŸ"ˆ **Desempenho Estável:** A campanha exibe métricas de custo e conversão equilibradas. Apresenta tração inicial saudável no período avaliado.\n\n`;
+    diag += `📈 **Desempenho Estável:** A campanha exibe métricas de custo e conversão equilibradas. Apresenta tração inicial saudável no período avaliado.\n\n`;
   }
 
   diag += `#### 📍 Análise de Gargalos:\n`;
   let gargalos = false;
   
   if (ctr < 1.0 && impressions > 1000) {
-    diag += `- ðŸ"‰ **CTR Baixo (${ctr.toFixed(2)}%):** A taxa de clique está abaixo de 1%. Isso indica que o criativo (imagem/vídeo) não está chamando a atenção necessária ou a copy está fraca para o público selecionado.\n`;
+    diag += `- 📉 **CTR Baixo (${ctr.toFixed(2)}%):** A taxa de clique está abaixo de 1%. Isso indica que o criativo (imagem/vídeo) não está chamando a atenção necessária ou a copy está fraca para o público selecionado.\n`;
     gargalos = true;
   }
   if (freq > 3.0) {
-    diag += `- âš ï¸ **Saturação de Público (Frequência ${freq.toFixed(1)}x):** A audiência está vendo o mesmo anúncio repetidamente no período. Isso desgasta a campanha, eleva o CPM e reduz o CTR.\n`;
+    diag += `- ⚠️ **Saturação de Público (Frequência ${freq.toFixed(1)}x):** A audiência está vendo o mesmo anúncio repetidamente no período. Isso desgasta a campanha, eleva o CPM e reduz o CTR.\n`;
     gargalos = true;
   }
   if (cpm > 30) {
-    diag += `- ðŸ’¸ **CPM Elevado (R$ ${cpm.toFixed(2)}):** O custo por mil impressões está alto, indicando forte concorrência no leilão ou que o público selecionado é excessivamente restrito.\n`;
+    diag += `- 💸 **CPM Elevado (R$ ${cpm.toFixed(2)}):** O custo por mil impressões está alto, indicando forte concorrência no leilão ou que o público selecionado é excessivamente restrito.\n`;
     gargalos = true;
   }
   if (!gargalos) {
-    diag += `- âœ¨ Não foram detectadas anomalias graves nas métricas secundárias (CTR, Frequência e CPM estão dentro de limites saudáveis).\n`;
+    diag += `- ✨ Não foram detectadas anomalias graves nas métricas secundárias (CTR, Frequência e CPM estão dentro de limites saudáveis).\n`;
   }
 
-  diag += `\n#### ðŸ’¡ Recomendações Práticas:\n`;
+  diag += `\n#### 💡 Recomendações Práticas:\n`;
   if (conversions === 0 && cost > 30) {
     diag += `1. **Pausar o anúncio** para estancar o gasto sem conversão.\n`;
     diag += `2. Revisar o formulário ou página de destino para certificar-se de que não há falhas técnicas.\n`;
@@ -389,7 +391,7 @@ function ObjectiveBadge({ objective, name, resultType }: { objective?: string; n
                 n.includes("WPP") || n.includes("WHATSAPP") || n.includes("DIRECT") ||
                 n.includes("CONVERSA") || n.includes("CONVERSAS") || n.includes("ZAP") ||
                 n.includes("VICTOR") || n.includes("YURI") || n.includes("TAYNA") || n.includes("RUTH") ||
-                n.includes("VENDEDOR") || n.includes("6720") || n.includes("7243");
+                n.includes("6720") || n.includes("7243");
 
   const isInsta = res === "INSTAGRAM_PROFILE" || obj === "VISIT_INSTAGRAM_PROFILE" || obj === "INSTAGRAM_PROFILE" ||
                   n.includes("INSTA") || n.includes("PERFIL") || n.includes("SEGUIDOR") || n.includes("TRAFEGO NC");
@@ -469,14 +471,14 @@ function ChartCard({
           className="mt-4 pt-3 border-t border-white/5 space-y-2 text-[10px] text-muted-foreground bg-white/[0.005] -mx-5 -mb-5 px-5 pb-5 rounded-b-xl"
         >
           <div className="flex items-start gap-1.5 leading-relaxed">
-            <span className="text-[11px] shrink-0">ðŸ"Š</span>
+            <span className="text-[11px] shrink-0">📊</span>
             <div>
               <span className="font-bold text-foreground">O que analisa: </span>
               {didaticInfo.analise}
             </div>
           </div>
           <div className="flex items-start gap-1.5 leading-relaxed">
-            <span className="text-[11px] shrink-0">ðŸ’¡</span>
+            <span className="text-[11px] shrink-0">💡</span>
             <div>
               <span className="font-bold text-primary">Tomada de Decisão: </span>
               {didaticInfo.decisao}
@@ -719,7 +721,7 @@ function MetricasCampanhasPage() {
     queryKey: ["mc-camps", accountFilter, statusFilter, startStr, endStr],
     queryFn: async () => {
       ensureDatabaseCalibrated(supabase).catch(() => {});
-      let q = (supabase as any).from("campaigns").select(`id, name, status, delivery_status, objective, daily_budget, lifetime_budget, budget_currency, external_id, ad_account_id, ad_account:ad_accounts(name), metrics(cost, conversions, impressions, clicks, reach, frequency, date)`);
+      let q = (supabase as any).from("campaigns").select(`id, name, status, delivery_status, objective, daily_budget, lifetime_budget, budget_currency, external_id, ad_account_id, ad_account:ad_accounts(name), metrics(cost, conversions, impressions, clicks, reach, frequency, date, result_type)`);
       if (accountFilter !== "all") q = q.eq("ad_account_id", accountFilter);
       if (statusFilter !== "all") q = q.ilike("status", statusFilter === "active" ? "ACTIVE" : "PAUSED");
       const { data, error } = await q.order("name");
@@ -2935,8 +2937,8 @@ function MetricasCampanhasPage() {
                         </p>
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 pt-2">
                           {[
-                            { t: "Gênero & CPL", d: "Revela qual gênero converte ao menor custo. Ajuste criativos e copy para focar no gênero de menor CPL.", e: "ðŸ‘¥" },
-                            { t: "Faixa Etária", d: "Identifica grupos etários mais eficientes. Exclua faixas caras e intensifique nas faixas de menor CPL.", e: "ðŸŽ‚" },
+                            { t: "Gênero & CPL", d: "Revela qual gênero converte ao menor custo. Ajuste criativos e copy para focar no gênero de menor CPL.", e: "👥" },
+                            { t: "Faixa Etária", d: "Identifica grupos etários mais eficientes. Exclua faixas caras e intensifique nas faixas de menor CPL.", e: "🎯" },
                             { t: "Plataforma (Facebook/Instagram)", d: "Compara conversões e CPL por rede social. Concentre orçamento na plataforma com menor custo por resultado.", e: "📱" },
                             { t: "Top Regiões", d: "Estados e cidades que mais convertem. Exclua regiões ineficientes e escale nas de maior tração.", e: "📍" },
                             { t: "Dia & Horário de Pico", d: "Janelas de maior engajamento. Programe anúncios para intensificar entrega nos momentos de mais conversão.", e: "⏰" },

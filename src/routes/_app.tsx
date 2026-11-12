@@ -589,10 +589,10 @@ function Shell() {
           TOP NAVIGATION BAR — Premium Horizontal
           ═══════════════════════════════════════ */}
       <header className="sticky top-0 z-50 border-gradient-bottom bg-background/92 backdrop-blur-2xl" style={{ height: '64px' }}>
-        <div className="mx-auto flex h-full max-w-[1600px] items-center justify-between gap-2 px-3 md:px-5">
+        <div className="mx-auto flex h-full max-w-[1600px] items-center justify-between gap-1.5 sm:gap-2 px-2.5 sm:px-4 md:px-5">
           
           {/* LEFT: Logo & Module Switcher */}
-          <div className="flex items-center gap-3 shrink-0">
+          <div className="flex items-center gap-1.5 sm:gap-3 shrink-0 min-w-0">
             <Link
               to={(profile?.role === "agency_sdr" || profile?.role === "client_store" ? "/crm" : "/dashboard") as any}
               onClick={() => {
@@ -601,12 +601,12 @@ function Shell() {
                   localStorage.setItem("nc_active_module", "hub");
                 }
               }}
-              className="flex items-center gap-2.5 group"
+              className="flex items-center gap-2 group shrink-0"
             >
               <img
                 src="/assets/nc-logo.png"
                 alt="NC Performance"
-                className="h-7 md:h-8 w-auto object-contain transition-all duration-300 group-hover:scale-105 drop-shadow-[0_0_12px_rgba(220,38,38,0.4)]"
+                className="h-6 sm:h-7 md:h-8 w-auto object-contain transition-all duration-300 group-hover:scale-105 drop-shadow-[0_0_12px_rgba(220,38,38,0.4)]"
               />
               <div className="hidden md:flex flex-col leading-none gap-[4px]">
                 <span className="font-display text-[12px] font-black tracking-normal leading-none">NC Performance</span>
@@ -619,12 +619,12 @@ function Shell() {
             </Link>
 
             {(activeModule as string) !== "hub" && profile?.role !== "agency_sdr" && profile?.role !== "client_store" && (
-              <div className="relative ml-2">
+              <div className="relative ml-0.5 sm:ml-2 shrink-0">
                 <button
                   onClick={() => setShowModuleMenu(!showModuleMenu)}
-                  className="flex items-center gap-1.5 rounded-full border border-border bg-card px-3 py-1.5 text-[10px] font-black uppercase tracking-wider text-foreground hover:bg-muted/50 transition-all duration-200"
+                  className="flex items-center gap-1 sm:gap-1.5 rounded-full border border-border bg-card px-2 sm:px-3 py-1 sm:py-1.5 text-[9px] sm:text-[10px] font-black uppercase tracking-wider text-foreground hover:bg-muted/50 transition-all duration-200"
                 >
-                  <span className={`h-1.5 w-1.5 rounded-full ${
+                  <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${
                     activeModule === "trafego" ? "bg-red-500" :
                     activeModule === "regras" ? "bg-rose-500" :
                     activeModule === "social" ? "bg-pink-500" :
@@ -633,7 +633,7 @@ function Shell() {
                     activeModule === "crm" ? "bg-emerald-500" :
                     "bg-amber-500"
                   }`} />
-                  <span>
+                  <span className="truncate max-w-[75px] sm:max-w-none">
                     {activeModule === "trafego" ? "Tráfego" :
                      activeModule === "regras" ? "Estratégia & Regras" :
                      activeModule === "social" ? "Social" :
@@ -642,7 +642,7 @@ function Shell() {
                      activeModule === "crm" ? "CRM Vendas" :
                      "Victoria AI"}
                   </span>
-                  <ChevronDown className="h-3 w-3 opacity-60" />
+                  <ChevronDown className="h-2.5 w-2.5 sm:h-3 sm:w-3 opacity-60 shrink-0" />
                 </button>
  
                 <AnimatePresence>
