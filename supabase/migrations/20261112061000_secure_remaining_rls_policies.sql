@@ -118,3 +118,4 @@ CREATE POLICY "crm_pipelines_auth_policy" ON public.crm_pipelines
 
 -- Recarregar o schema do PostgREST
 NOTIFY pgrst, 'reload schema';
+
