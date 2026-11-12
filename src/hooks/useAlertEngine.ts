@@ -14,6 +14,7 @@ import {
   ALERT_AUTO_STOP_MS,
 } from "@/lib/alertSounds";
 import { enforceNotificationCapacity } from "@/lib/notificationService";
+import { calibrateCampaignMetricsArray } from "@/lib/metaConversionCalibrator";
 
 // ─── Module-level singletons (shared across React instances) ──────────────────
 const firedAlerts = new Set<string>();
@@ -245,8 +246,9 @@ async function runThresholdEvaluation() {
         if (!threshold.ad_account_id && (threshold.excluded_account_ids || []).includes(campaign.ad_account_id)) {
           continue;
         }
-        // 3. Métricas de HOJE apenas
-        const todayMetrics = (campaign.metrics || []).filter(
+        // 3. Métricas de HOJE apenas (com calibração determinística para paridade com a tabela)
+        const calibratedMetrics = calibrateCampaignMetricsArray(campaign.name, campaign.metrics || []);
+        const todayMetrics = calibratedMetrics.filter(
           (m: any) => m.date?.split("T")[0] === today
         );
 
