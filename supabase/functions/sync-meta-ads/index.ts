@@ -323,9 +323,11 @@ function detectConversionCategory(
   if (
     indicator.includes("messaging_conversation_started") ||
     indicator.includes("messaging") ||
+    indicator.includes("contact") ||
     opt === "REPLIES" ||
     opt === "CONVERSATIONS" ||
     obj === "MESSAGES" ||
+    obj === "OUTCOME_ENGAGEMENT" || // Campanhas modernas de WhatsApp utilizam OUTCOME_ENGAGEMENT no Meta ODIN
     n.includes("MSG") ||
     n.includes("MENSAGEM") ||
     n.includes("MENSAGENS") ||
@@ -335,9 +337,22 @@ function detectConversionCategory(
     n.includes("CONVERSA") ||
     n.includes("CONVERSAS") ||
     n.includes("ZAP") ||
-    (actions && actions.some((a: any) => String(a.action_type || "").toLowerCase().includes("messaging_conversation_started")))
+    n.includes("VICTOR") ||
+    n.includes("YURI") ||
+    n.includes("TAYNA") ||
+    n.includes("RUTH") ||
+    n.includes("VENDEDOR") ||
+    n.includes("VENDEDORES") ||
+    n.includes("6720") ||
+    n.includes("7243") ||
+    (actions && actions.some((a: any) => {
+      const act = String(a.action_type || "").toLowerCase();
+      return act.includes("messaging") || act.includes("whatsapp") || act.includes("contact");
+    }))
   ) {
-    return "MESSAGES";
+    if (!n.includes("INSTA") && !n.includes("PERFIL") && !n.includes("POST")) {
+      return "MESSAGES";
+    }
   }
 
   // 2. Visitas ao Perfil do Instagram
@@ -353,6 +368,8 @@ function detectConversionCategory(
     n.includes("INSTA") ||
     n.includes("PERFIL") ||
     n.includes("SEGUIDOR") ||
+    n.includes("TRAFEGO NC") ||
+    n.includes("TRÁFEGO NC") ||
     (actions && actions.some((a: any) => {
       const act = String(a.action_type || "").toLowerCase();
       return act.includes("profile_visit") || act.includes("instagram_profile") || act.includes("profile_visit_view");
@@ -376,6 +393,7 @@ function detectConversionCategory(
     n.includes("CARDÁPIO") ||
     n.includes("DELIVERY") ||
     n.includes("PEDIDO") ||
+    n.includes("BONNE") ||
     (actions && actions.some((a: any) => String(a.action_type || "").toLowerCase().includes("purchase")))
   ) {
     return "PURCHASES";
@@ -459,13 +477,22 @@ function detectConversionCategory(
     return "ENGAGEMENT";
   }
 
-  // 9. Cliques no link
+  // 9. Cliques no link ou Tráfego sem objetivo específico:
   if (
     indicator.includes("link_click") ||
     opt === "LINK_CLICKS" ||
-    obj === "LINK_CLICKS"
+    obj === "LINK_CLICKS" ||
+    obj === "OUTCOME_TRAFFIC"
   ) {
-    return "LINK_CLICKS";
+    if (n.includes("INSTA") || n.includes("PERFIL") || n.includes("NC")) {
+      return "INSTAGRAM_PROFILE";
+    }
+    return "LANDING_PAGE_VIEWS";
+  }
+
+  // Fallback para campanhas de engajamento do Meta ODIN
+  if (obj === "OUTCOME_ENGAGEMENT") {
+    return "MESSAGES";
   }
 
   return "MESSAGES";

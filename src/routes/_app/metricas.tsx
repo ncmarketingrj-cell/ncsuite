@@ -325,32 +325,36 @@ function ObjectiveBadge({ objective, name, resultType }: { objective?: string; n
   const obj = (objective || "").toUpperCase();
 
   const isMsg = res === "MESSAGES" || obj === "MESSAGES" ||
+                (obj === "OUTCOME_ENGAGEMENT" && !n.includes("INSTA") && !n.includes("PERFIL") && !n.includes("POST")) ||
                 n.includes("MSG") || n.includes("MENSAGEM") || n.includes("MENSAGENS") ||
                 n.includes("WPP") || n.includes("WHATSAPP") || n.includes("DIRECT") ||
-                n.includes("CONVERSA") || n.includes("CONVERSAS") || n.includes("ZAP");
+                n.includes("CONVERSA") || n.includes("CONVERSAS") || n.includes("ZAP") ||
+                n.includes("VICTOR") || n.includes("YURI") || n.includes("TAYNA") || n.includes("RUTH") ||
+                n.includes("VENDEDOR") || n.includes("6720") || n.includes("7243");
 
   const isInsta = res === "INSTAGRAM_PROFILE" || obj === "VISIT_INSTAGRAM_PROFILE" || obj === "INSTAGRAM_PROFILE" ||
                   n.includes("INSTA") || n.includes("PERFIL") || n.includes("SEGUIDOR") || n.includes("TRAFEGO NC");
 
+  const isPurchases = res === "PURCHASES" || obj === "OUTCOME_SALES" || obj === "CONVERSIONS" ||
+                      n.includes("COMPRA") || n.includes("VENDA") || n.includes("PURCHASE") || n.includes("BONNE");
+
   const isLp = res === "LANDING_PAGE_VIEWS" || obj === "LANDING_PAGE_VIEWS" ||
                n.includes("GRUPO") || n.includes("VENDEDORES") || n.includes("LP") ||
-               n.includes("LANDING") || n.includes("SITE") || n.includes("DESTINO");
-
-  const isPurchases = res === "PURCHASES" || obj === "OUTCOME_SALES" || obj === "CONVERSIONS" ||
-                      n.includes("COMPRA") || n.includes("VENDA") || n.includes("PURCHASE");
+               n.includes("LANDING") || n.includes("SITE") || n.includes("DESTINO") ||
+               n.includes("CARDAPIO") || n.includes("CARDÁPIO") || n.includes("DELIVERY");
 
   const isLeads = res === "LEADS" || obj === "OUTCOME_LEADS" || obj === "LEAD_GENERATION" ||
                   n.includes("LEAD") || n.includes("CADASTRO");
 
   const effectiveObjective = isMsg ? "MESSAGES" :
                              isInsta ? "INSTAGRAM_PROFILE" :
-                             isLp ? "LANDING_PAGE_VIEWS" :
                              isPurchases ? "OUTCOME_SALES" :
+                             isLp ? "LANDING_PAGE_VIEWS" :
                              isLeads ? "OUTCOME_LEADS" :
-                             (res || obj || "");
+                             (obj === "OUTCOME_TRAFFIC" || res === "LINK_CLICKS" ? (n.includes("INSTA") || n.includes("PERFIL") ? "INSTAGRAM_PROFILE" : "LANDING_PAGE_VIEWS") : (res || obj || "MESSAGES"));
 
   if (!effectiveObjective) return null;
-  const def = OBJECTIVE_MAP[effectiveObjective];
+  const def = OBJECTIVE_MAP[effectiveObjective] || OBJECTIVE_MAP["MESSAGES"];
   if (!def) return <span className="text-[8px] font-mono text-muted-foreground/60 uppercase">{effectiveObjective.replace("OUTCOME_","")}</span>;
   const Icon = def.icon;
   return <span className={`inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[8px] font-black uppercase tracking-wider ${def.color}`}><Icon className="h-2.5 w-2.5" />{def.label}</span>;

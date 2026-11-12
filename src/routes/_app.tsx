@@ -85,10 +85,8 @@ const TRAFEGO_NAV_ITEMS: NavItem[] = [
   { to: "/cockpit", icon: GaugeCircle, label: "Cockpit" },
   { to: "/simulador", icon: FlaskConical, label: "Simulador" },
   { to: "/metricas", icon: LineChart, label: "Métricas" },
-  { to: "/regras", icon: ShieldAlert, label: "Regras & Notas" },
   { to: "/relatorios", icon: FileText, label: "Relatórios" },
   { to: "/criativos", icon: Palette, label: "Criativos" },
-  { to: "/automacoes", icon: Zap, label: "Automações" },
   { to: "/auditoria", icon: Activity, label: "Auditoria Hub" },
 ];
 
@@ -806,7 +804,7 @@ function Shell() {
             <button
               onClick={() => runSync("manual")}
               disabled={syncStatus.isSyncing}
-              className="relative flex h-8 w-8 items-center justify-center rounded-xl border border-border bg-card text-muted-foreground transition-all hover:border-primary/30 hover:text-primary active:scale-95 disabled:opacity-60"
+              className="hidden sm:flex relative h-8 w-8 items-center justify-center rounded-xl border border-border bg-card text-muted-foreground transition-all hover:border-primary/30 hover:text-primary active:scale-95 disabled:opacity-60"
               title={syncStatus.isSyncing ? 'Sincronizando...' : syncStatus.lastSync
                 ? `Último sync: ${new Date(syncStatus.lastSync).toLocaleTimeString('pt-BR')}`
                 : 'Sincronizar agora'}
@@ -823,7 +821,7 @@ function Shell() {
             {/* Theme Toggle */}
             <button
               onClick={toggleTheme}
-              className="relative flex h-8 w-8 items-center justify-center rounded-xl border border-border bg-card text-muted-foreground transition-all hover:text-foreground hover:border-primary/30 hover:shadow-glow-sm active:scale-95"
+              className="hidden sm:flex relative h-8 w-8 items-center justify-center rounded-xl border border-border bg-card text-muted-foreground transition-all hover:text-foreground hover:border-primary/30 hover:shadow-glow-sm active:scale-95"
               title={theme === "dark" ? "Modo Claro" : "Modo Escuro"}
             >
               <AnimatePresence mode="wait">
@@ -1067,6 +1065,17 @@ function Shell() {
                         <User className="h-3.5 w-3.5 text-muted-foreground" /> Meu Perfil
                       </button>
                       <Link
+                        to={"/automacoes" as any}
+                        onClick={() => setShowUserMenu(false)}
+                        className={`w-full flex items-center gap-2.5 rounded-xl px-3 py-2 text-[12px] font-medium transition-all ${
+                          path.startsWith("/automacoes")
+                            ? "bg-amber-500/10 text-amber-400 font-bold"
+                            : "text-foreground hover:bg-muted/50"
+                        }`}
+                      >
+                        <Zap className="h-3.5 w-3.5 text-amber-400" /> Automações
+                      </Link>
+                      <Link
                         to="/config"
                         onClick={() => setShowUserMenu(false)}
                         className={`w-full flex items-center gap-2.5 rounded-xl px-3 py-2 text-[12px] font-medium transition-all ${
@@ -1077,12 +1086,34 @@ function Shell() {
                       >
                         <Settings className="h-3.5 w-3.5 text-muted-foreground" /> Configurações
                       </Link>
-                      <button
-                        onClick={() => { setShowUserMenu(false); handleSignOut(); }}
-                        className="w-full flex items-center gap-2.5 rounded-xl px-3 py-2 text-[12px] font-medium text-red-400 hover:bg-red-500/10 transition-all"
-                      >
-                        <LogOut className="h-3.5 w-3.5" /> Sair da Conta
-                      </button>
+
+                      {/* Mobile extra tools inside User Popup */}
+                      <div className="sm:hidden border-t border-border/50 my-1 pt-1 space-y-0.5">
+                        <button
+                          onClick={() => { toggleTheme(); setShowUserMenu(false); }}
+                          className="w-full flex items-center gap-2.5 rounded-xl px-3 py-2 text-[12px] font-medium text-foreground hover:bg-muted/50 transition-all"
+                        >
+                          {theme === "dark" ? <Sun className="h-3.5 w-3.5 text-amber-400" /> : <Moon className="h-3.5 w-3.5 text-blue-400" />}
+                          {theme === "dark" ? "Modo Claro" : "Modo Escuro"}
+                        </button>
+                        <button
+                          onClick={() => { runSync("manual"); setShowUserMenu(false); }}
+                          disabled={syncStatus.isSyncing}
+                          className="w-full flex items-center gap-2.5 rounded-xl px-3 py-2 text-[12px] font-medium text-foreground hover:bg-muted/50 transition-all"
+                        >
+                          <RefreshCw className={`h-3.5 w-3.5 text-primary ${syncStatus.isSyncing ? "animate-spin" : ""}`} />
+                          {syncStatus.isSyncing ? "Sincronizando..." : "Sincronizar Meta"}
+                        </button>
+                      </div>
+
+                      <div className="border-t border-border/50 my-1 pt-1">
+                        <button
+                          onClick={() => { setShowUserMenu(false); handleSignOut(); }}
+                          className="w-full flex items-center gap-2.5 rounded-xl px-3 py-2 text-[12px] font-medium text-red-400 hover:bg-red-500/10 transition-all"
+                        >
+                          <LogOut className="h-3.5 w-3.5" /> Sair da Conta
+                        </button>
+                      </div>
                     </motion.div>
                   </>
                 )}
@@ -1154,8 +1185,8 @@ function Shell() {
                   <X className="h-4 w-4" />
                 </button>
               </div>
-              {/* Lista Vertical de Nav (Melhor Legibilidade) */}
-              <nav className="p-4 flex flex-col gap-1.5">
+              {/* Lista Vertical de Nav (Melhor Legibilidade e Scroll Fluído) */}
+              <nav className="p-4 flex flex-col gap-1.5 max-h-[60vh] overflow-y-auto scrollbar-thin">
                 {filteredNavItems.map((item) => {
                   const isActive = path === item.to || (item.to !== "/dashboard" && path.startsWith(item.to));
                   return (
@@ -1175,6 +1206,39 @@ function Shell() {
                     </Link>
                   );
                 })}
+
+                {/* Acesso rápido a Automações e Configurações */}
+                <div className="my-2 border-t border-border/50" />
+                <Link
+                  to={"/automacoes" as any}
+                  onClick={() => setMobileMenuOpen(false)}
+                  className={`flex items-center gap-3.5 rounded-2xl px-4 py-3.5 text-[13px] font-bold transition-all ${
+                    path.startsWith("/automacoes")
+                      ? "bg-amber-500/10 text-amber-400 border border-amber-500/20"
+                      : "bg-transparent text-foreground hover:bg-white/[0.03] border border-transparent"
+                  }`}
+                >
+                  <div className={`h-8 w-8 rounded-full flex items-center justify-center shrink-0 ${path.startsWith("/automacoes") ? 'bg-amber-500/20' : 'bg-muted/30'}`}>
+                    <Zap className="h-4 w-4 text-amber-400" />
+                  </div>
+                  Automações
+                  <ChevronRight className="h-4 w-4 ml-auto opacity-30" />
+                </Link>
+                <Link
+                  to="/config"
+                  onClick={() => setMobileMenuOpen(false)}
+                  className={`flex items-center gap-3.5 rounded-2xl px-4 py-3.5 text-[13px] font-bold transition-all ${
+                    path.startsWith("/config")
+                      ? "bg-primary/10 text-primary border border-primary/20"
+                      : "bg-transparent text-foreground hover:bg-white/[0.03] border border-transparent"
+                  }`}
+                >
+                  <div className={`h-8 w-8 rounded-full flex items-center justify-center shrink-0 ${path.startsWith("/config") ? 'bg-primary/20' : 'bg-muted/30'}`}>
+                    <Settings className="h-4 w-4 text-muted-foreground" />
+                  </div>
+                  Configurações
+                  <ChevronRight className="h-4 w-4 ml-auto opacity-30" />
+                </Link>
               </nav>
               {/* Perfil + Sair */}
               <div className="px-4 pb-6 pt-1 border-t border-border/50 flex items-center justify-between">
@@ -1231,32 +1295,35 @@ function Shell() {
               );
             });
           })()}
-          {/* Alertas com badge */}
-          <button
-            onClick={() => { setShowNotifications(!showNotifications); acknowledgeAll(); }}
-            className={`relative flex flex-col items-center gap-1 px-3 py-3 text-[10px] font-bold transition-colors ${showNotifications ? "text-primary" : "text-muted-foreground"}`}
-          >
-            <Bell className="h-5 w-5" />
-            Alertas
-            {hasUnread && <span className="absolute top-2.5 right-2.5 h-2 w-2 rounded-full bg-primary animate-pulse" />}
-          </button>
+          {/* Automações */}
+          {(() => {
+            const isActive = path.startsWith("/automacoes");
+            return (
+              <Link to={"/automacoes" as any} className={`relative flex flex-col items-center gap-1 px-3 py-3 text-[10px] font-bold transition-colors ${isActive ? "text-amber-400" : "text-muted-foreground"}`}>
+                <Zap className={`h-5 w-5 ${isActive ? "text-amber-400" : ""}`} />
+                Automações
+                {isActive && <span className="absolute bottom-0 h-[2px] w-6 rounded-full bg-amber-400" />}
+              </Link>
+            );
+          })()}
           {/* Config */}
           {(() => {
             const isActive = path.startsWith("/config");
             return (
-              <Link to="/config" className={`flex flex-col items-center gap-1 px-3 py-3 text-[10px] font-bold transition-colors ${isActive ? "text-primary" : "text-muted-foreground"}`}>
-                <Settings className="h-5 w-5" />
+              <Link to="/config" className={`relative flex flex-col items-center gap-1 px-3 py-3 text-[10px] font-bold transition-colors ${isActive ? "text-primary" : "text-muted-foreground"}`}>
+                <Settings className={`h-5 w-5 ${isActive ? "text-primary" : ""}`} />
                 Config
+                {isActive && <span className="absolute bottom-0 h-[2px] w-6 rounded-full bg-primary" />}
               </Link>
             );
           })()}
-          {/* Mais — abre bottom sheet */}
+          {/* Mais — abre menu completo */}
           <button
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-            className="flex flex-col items-center gap-1 px-3 py-3 text-[10px] font-bold text-muted-foreground"
+            className="flex flex-col items-center gap-1 px-3 py-3 text-[10px] font-bold text-muted-foreground hover:text-foreground transition-colors"
           >
             <Menu className="h-5 w-5" />
-            Mais
+            Menu
           </button>
         </div>
       </nav>

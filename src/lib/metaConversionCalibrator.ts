@@ -120,6 +120,7 @@ export function detectConversionCategory(
   if (
     indicator.includes("messaging_conversation_started") ||
     indicator.includes("messaging") ||
+    indicator.includes("contact") ||
     n.includes("MSG") ||
     n.includes("MENSAGEM") ||
     n.includes("MENSAGENS") ||
@@ -129,12 +130,27 @@ export function detectConversionCategory(
     n.includes("CONVERSA") ||
     n.includes("CONVERSAS") ||
     n.includes("ZAP") ||
+    n.includes("VICTOR") ||
+    n.includes("YURI") ||
+    n.includes("TAYNA") ||
+    n.includes("RUTH") ||
+    n.includes("VENDEDOR") ||
+    n.includes("VENDEDORES") ||
+    n.includes("6720") ||
+    n.includes("7243") ||
     obj === "MESSAGES" ||
+    obj === "OUTCOME_ENGAGEMENT" || // Campanhas modernas de WhatsApp utilizam OUTCOME_ENGAGEMENT no Meta ODIN
     opt === "REPLIES" ||
     opt === "CONVERSATIONS" ||
-    (actions && actions.some((a: any) => String(a.action_type || "").toLowerCase().includes("messaging_conversation_started")))
+    (actions && actions.some((a: any) => {
+      const act = String(a.action_type || "").toLowerCase();
+      return act.includes("messaging") || act.includes("whatsapp") || act.includes("contact");
+    }))
   ) {
-    return "MESSAGES";
+    // Se o nome contiver explicitamente INSTA / PERFIL, prefere INSTAGRAM_PROFILE
+    if (!n.includes("INSTA") && !n.includes("PERFIL") && !n.includes("POST")) {
+      return "MESSAGES";
+    }
   }
 
   // 2. Visitas ao Perfil do Instagram (Tráfego pro Instagram)
@@ -147,6 +163,8 @@ export function detectConversionCategory(
     n.includes("SEGUIDORES") ||
     n.includes("TRAFEGO NC") ||
     n.includes("TRÁFEGO NC") ||
+    indicator.includes("profile_visit") ||
+    indicator.includes("instagram_profile") ||
     obj === "VISIT_INSTAGRAM_PROFILE" ||
     obj === "INSTAGRAM_PROFILE" ||
     opt === "PROFILE_VISIT" ||
@@ -160,7 +178,7 @@ export function detectConversionCategory(
     return "INSTAGRAM_PROFILE";
   }
 
-  // 3. Compras / Vendas / E-commerce
+  // 3. Compras / Vendas / E-commerce (ex: Bonne21 pixel / cardápio)
   if (
     n.includes("COMPRA") ||
     n.includes("VENDA") ||
@@ -173,12 +191,16 @@ export function detectConversionCategory(
     n.includes("PEDIDO") ||
     n.includes("CHECKOUT") ||
     n.includes("ROAS") ||
-    n.includes("BOB") ||
-    n.includes("DABA") ||
-    n.includes("DPA") ||
+    n.includes("CARDAPIO") ||
+    n.includes("CARDÁPIO") ||
+    n.includes("DELIVERY") ||
+    n.includes("BONNE") ||
     obj === "OUTCOME_SALES" ||
     obj === "CONVERSIONS" ||
     obj === "CATALOG_SALES" ||
+    indicator.includes("purchase") ||
+    opt === "PURCHASE" ||
+    opt === "PURCHASES" ||
     (actions && actions.some((a: any) => String(a.action_type || "").toLowerCase().includes("purchase")))
   ) {
     return "PURCHASES";
@@ -270,11 +292,8 @@ export function detectConversionCategory(
 
   // 9. Se for OUTCOME_TRAFFIC ou LINK_CLICKS geral:
   if (obj === "OUTCOME_TRAFFIC" || obj === "LINK_CLICKS" || opt === "LINK_CLICKS") {
-    if (actions && actions.some((a: any) => {
-      const act = String(a.action_type || "").toLowerCase();
-      return act.includes("landing_page_view") || act.includes("omni_landing_page_view");
-    })) {
-      return "LANDING_PAGE_VIEWS";
+    if (n.includes("INSTA") || n.includes("PERFIL") || n.includes("NC")) {
+      return "INSTAGRAM_PROFILE";
     }
     if (actions && actions.some((a: any) => {
       const act = String(a.action_type || "").toLowerCase();
@@ -282,11 +301,22 @@ export function detectConversionCategory(
     })) {
       return "INSTAGRAM_PROFILE";
     }
+    if (actions && actions.some((a: any) => {
+      const act = String(a.action_type || "").toLowerCase();
+      return act.includes("landing_page_view") || act.includes("omni_landing_page_view");
+    })) {
+      return "LANDING_PAGE_VIEWS";
+    }
     // Nenhuma conta roda foco em cliques no link brutos; o tráfego padrão vai para destino / landing page
     return "LANDING_PAGE_VIEWS";
   }
 
-  return "LANDING_PAGE_VIEWS";
+  // Fallback para campanhas de engajamento do Meta ODIN
+  if (obj === "OUTCOME_ENGAGEMENT") {
+    return "MESSAGES";
+  }
+
+  return "MESSAGES";
 }
 
 export interface MetaResultDetail {
@@ -391,10 +421,10 @@ export function getMetaResultDetail(
     case "LINK_CLICKS":
     default:
       return {
-        category: "LINK_CLICKS",
-        resultLabel: isSingular ? "Clique no link" : "Cliques no link",
-        costLabel: "Por clique no link",
-        shortBadge: "CLIQUES",
+        category: "LANDING_PAGE_VIEWS",
+        resultLabel: isSingular ? "Visualização da página de destino" : "Visualizações da página de destino",
+        costLabel: "Por visualização de destino",
+        shortBadge: "DESTINO",
       };
   }
 }
