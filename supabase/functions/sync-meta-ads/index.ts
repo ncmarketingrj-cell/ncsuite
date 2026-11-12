@@ -96,7 +96,7 @@ async function fetchCampaignInsights(adAccountId: string, token: string, timePar
   try {
     return await metaGetPaginated(`/${adAccountId}/insights`, token, {
       level: "campaign",
-      fields: "campaign_id,campaign_name,objective,spend,actions,reach,impressions,frequency,inline_link_clicks,date_start,date_stop",
+      fields: "campaign_id,campaign_name,objective,optimization_goal,results,cost_per_result,spend,actions,reach,impressions,frequency,inline_link_clicks,date_start,date_stop",
       time_increment: "1",
       use_unified_attribution_setting: "true",
       action_report_time: "impression",
@@ -114,7 +114,7 @@ async function fetchAdSetInsights(adAccountId: string, token: string, timeParams
   try {
     return await metaGetPaginated(`/${adAccountId}/insights`, token, {
       level: "adset",
-      fields: "adset_id,adset_name,campaign_id,campaign_name,spend,actions,reach,impressions,frequency,inline_link_clicks,video_p25_watched_actions,video_p50_watched_actions,video_p75_watched_actions,video_p95_watched_actions,date_start",
+      fields: "adset_id,adset_name,campaign_id,campaign_name,optimization_goal,results,cost_per_result,spend,actions,reach,impressions,frequency,inline_link_clicks,video_p25_watched_actions,video_p50_watched_actions,video_p75_watched_actions,video_p95_watched_actions,date_start",
       time_increment: "1",
       use_unified_attribution_setting: "true",
       action_report_time: "impression",
@@ -132,7 +132,7 @@ async function fetchAdInsights(adAccountId: string, token: string, timeParams: R
   try {
     return await metaGetPaginated(`/${adAccountId}/insights`, token, {
       level: "ad",
-      fields: "ad_id,ad_name,adset_id,campaign_id,campaign_name,spend,actions,reach,impressions,frequency,inline_link_clicks,video_p25_watched_actions,video_p50_watched_actions,video_p75_watched_actions,video_p95_watched_actions,date_start",
+      fields: "ad_id,ad_name,adset_id,campaign_id,campaign_name,optimization_goal,results,cost_per_result,spend,actions,reach,impressions,frequency,inline_link_clicks,video_p25_watched_actions,video_p50_watched_actions,video_p75_watched_actions,video_p95_watched_actions,date_start",
       time_increment: "1",
       use_unified_attribution_setting: "true",
       action_report_time: "impression",
@@ -310,13 +310,22 @@ function getMessagingConversationsStarted(actions: any[] = []): number {
 function detectConversionCategory(
   name?: string,
   objective?: string,
-  actions: any[] = []
+  actions: any[] = [],
+  results?: any[],
+  optimizationGoal?: string
 ): string {
-  const n = (name || "").toUpperCase();
-  const obj = (objective || "").toUpperCase();
+  const indicator = results?.[0]?.indicator ? String(results[0].indicator).toLowerCase() : "";
+  const opt = String(optimizationGoal || "").toUpperCase();
+  const obj = String(objective || "").toUpperCase();
+  const n = String(name || "").toUpperCase();
 
-  // 1. Mensagens (WhatsApp / Direct / Messenger)
+  // 1. Mensagens (WhatsApp / Messenger / Direct)
   if (
+    indicator.includes("messaging_conversation_started") ||
+    indicator.includes("messaging") ||
+    opt === "REPLIES" ||
+    opt === "CONVERSATIONS" ||
+    obj === "MESSAGES" ||
     n.includes("MSG") ||
     n.includes("MENSAGEM") ||
     n.includes("MENSAGENS") ||
@@ -326,48 +335,47 @@ function detectConversionCategory(
     n.includes("CONVERSA") ||
     n.includes("CONVERSAS") ||
     n.includes("ZAP") ||
-    obj === "MESSAGES" ||
     (actions && actions.some((a: any) => String(a.action_type || "").toLowerCase().includes("messaging_conversation_started")))
   ) {
     return "MESSAGES";
   }
 
-  // 2. Visitas ao Perfil do Instagram (Tráfego pro Instagram)
+  // 2. Visitas ao Perfil do Instagram
   if (
+    indicator.includes("profile_visit") ||
+    indicator.includes("page_visit") ||
+    indicator.includes("instagram_profile") ||
+    opt === "PROFILE_VISIT" ||
+    opt === "PROFILE_AND_PAGE_ENGAGEMENT" ||
+    opt === "VISIT_INSTAGRAM_PROFILE" ||
+    obj === "VISIT_INSTAGRAM_PROFILE" ||
+    obj === "INSTAGRAM_PROFILE" ||
     n.includes("INSTA") ||
     n.includes("PERFIL") ||
-    n.includes("INSTAGRAM") ||
-    n.includes("IG") ||
     n.includes("SEGUIDOR") ||
-    n.includes("SEGUIDORES") ||
-    obj === "VISIT_INSTAGRAM_PROFILE" ||
     (actions && actions.some((a: any) => {
       const act = String(a.action_type || "").toLowerCase();
-      return act.includes("profile_visit") || act.includes("instagram_profile");
+      return act.includes("profile_visit") || act.includes("instagram_profile") || act.includes("profile_visit_view");
     }))
   ) {
     return "INSTAGRAM_PROFILE";
   }
 
-  // 3. Compras / Vendas / E-commerce
+  // 3. Compras no site / Pixel / E-commerce (ex: Bonne21)
   if (
-    n.includes("COMPRA") ||
-    n.includes("VENDA") ||
-    n.includes("PURCHASE") ||
-    n.includes("SALE") ||
-    n.includes("ECOMMERCE") ||
-    n.includes("E-COMM") ||
-    n.includes("CATALOGO") ||
-    n.includes("CATÁLOGO") ||
-    n.includes("PEDIDO") ||
-    n.includes("CHECKOUT") ||
-    n.includes("ROAS") ||
-    n.includes("BOB") ||
-    n.includes("DABA") ||
-    n.includes("DPA") ||
+    indicator.includes("purchase") ||
+    opt === "PURCHASE" ||
+    opt === "PURCHASES" ||
     obj === "OUTCOME_SALES" ||
     obj === "CONVERSIONS" ||
     obj === "CATALOG_SALES" ||
+    n.includes("COMPRA") ||
+    n.includes("VENDA") ||
+    n.includes("PURCHASE") ||
+    n.includes("CARDAPIO") ||
+    n.includes("CARDÁPIO") ||
+    n.includes("DELIVERY") ||
+    n.includes("PEDIDO") ||
     (actions && actions.some((a: any) => String(a.action_type || "").toLowerCase().includes("purchase")))
   ) {
     return "PURCHASES";
@@ -375,20 +383,18 @@ function detectConversionCategory(
 
   // 4. Cadastros / Leads / Formulários
   if (
+    indicator.includes("lead") ||
+    indicator.includes("registration") ||
+    opt === "LEAD" ||
+    opt === "LEADS" ||
+    opt === "LEAD_GENERATION" ||
+    opt === "QUALITY_LEAD" ||
+    obj === "OUTCOME_LEADS" ||
+    obj === "LEAD_GENERATION" ||
     n.includes("LEAD") ||
     n.includes("CADASTRO") ||
     n.includes("FORMULARIO") ||
     n.includes("FORMULÁRIO") ||
-    n.includes("FORM") ||
-    n.includes("INSCRICAO") ||
-    n.includes("INSCRIÇÃO") ||
-    n.includes("REGISTRO") ||
-    n.includes("CONTATO") ||
-    n.includes("CAPTURA") ||
-    n.includes("ORCAMENTO") ||
-    n.includes("ORÇAMENTO") ||
-    obj === "OUTCOME_LEADS" ||
-    obj === "LEAD_GENERATION" ||
     (actions && actions.some((a: any) => {
       const act = String(a.action_type || "").toLowerCase();
       return act.includes("lead") || act.includes("complete_registration");
@@ -397,70 +403,97 @@ function detectConversionCategory(
     return "LEADS";
   }
 
-  // 5. Visualizações da Página de Destino (Landing Page Views / Site Views)
+  // 5. Visualizações da Página de Destino (ex: Bonne21 site, Grupo de vendedores)
   if (
+    indicator.includes("landing_page_view") ||
+    indicator.includes("omni_landing_page_view") ||
+    opt === "LANDING_PAGE_VIEWS" ||
+    obj === "LANDING_PAGE_VIEWS" ||
     n.includes("LP") ||
     n.includes("LANDING") ||
-    n.includes("PAGINA") ||
-    n.includes("PÁGINA") ||
     n.includes("SITE") ||
     n.includes("DESTINO") ||
-    obj === "LANDING_PAGE_VIEWS" ||
-    (actions && actions.some((a: any) => String(a.action_type || "").toLowerCase().includes("landing_page_view")))
+    n.includes("VENDEDORES") ||
+    n.includes("GRUPO") ||
+    (actions && actions.some((a: any) => {
+      const act = String(a.action_type || "").toLowerCase();
+      return act.includes("landing_page_view") || act.includes("omni_landing_page_view");
+    }))
   ) {
     return "LANDING_PAGE_VIEWS";
   }
 
   // 6. Vídeo / ThruPlay
   if (
+    indicator.includes("thruplay") ||
+    indicator.includes("video_view") ||
+    opt === "THRUPLAY" ||
+    opt === "VIDEO_VIEWS" ||
+    obj === "VIDEO_VIEWS" ||
     n.includes("VIDEO") ||
     n.includes("VÍDEO") ||
-    n.includes("THRUPLAY") ||
-    n.includes("REELS") ||
-    obj === "VIDEO_VIEWS"
+    n.includes("THRUPLAY")
   ) {
     return "VIDEO_VIEWS";
   }
 
-  // 7. Engajamento
+  // 7. Alcance / Reconhecimento
   if (
-    n.includes("ENGAJAMENTO") ||
-    n.includes("ENG") ||
-    n.includes("CURTIDAS") ||
-    n.includes("POST") ||
-    obj === "POST_ENGAGEMENT"
-  ) {
-    return "ENGAGEMENT";
-  }
-
-  // 8. Alcance / Reconhecimento
-  if (
-    n.includes("ALCANCE") ||
-    n.includes("RECONHECIMENTO") ||
-    n.includes("AWARENESS") ||
+    indicator === "reach" ||
+    opt === "REACH" ||
+    obj === "REACH" ||
     obj === "OUTCOME_AWARENESS" ||
     obj === "AWARENESS" ||
-    obj === "REACH"
+    n.includes("ALCANCE")
   ) {
     return "REACH";
   }
 
-  // 9. Se for OUTCOME_TRAFFIC geral:
-  if (obj === "OUTCOME_TRAFFIC" || obj === "LINK_CLICKS") {
-    if (actions && actions.some((a: any) => String(a.action_type || "").toLowerCase().includes("landing_page_view"))) {
-      return "LANDING_PAGE_VIEWS";
-    }
-    if (actions && actions.some((a: any) => String(a.action_type || "").toLowerCase().includes("profile_visit"))) {
-      return "INSTAGRAM_PROFILE";
-    }
+  // 8. Engajamento
+  if (
+    indicator.includes("post_engagement") ||
+    opt === "POST_ENGAGEMENT" ||
+    obj === "POST_ENGAGEMENT" ||
+    n.includes("CURTIDAS")
+  ) {
+    return "ENGAGEMENT";
+  }
+
+  // 9. Cliques no link
+  if (
+    indicator.includes("link_click") ||
+    opt === "LINK_CLICKS" ||
+    obj === "LINK_CLICKS"
+  ) {
     return "LINK_CLICKS";
   }
 
-  return "LINK_CLICKS";
+  return "MESSAGES";
 }
 
-function extractConversions(actions: any[] = [], objective?: string, reach: number = 0, campaignName?: string): number {
-  if (objective === "OUTCOME_AWARENESS" || objective === "AWARENESS" || objective === "REACH") {
+function extractConversions(
+  actions: any[] = [],
+  objective?: string,
+  reach: number = 0,
+  campaignName?: string,
+  results?: any[],
+  optimizationGoal?: string
+): number {
+  // 1. Prioridade máxima: valor nativo do array results da Meta Graph API
+  if (Array.isArray(results) && results.length > 0) {
+    const valStr = results[0]?.values?.[0]?.value;
+    if (valStr !== undefined && valStr !== null && !isNaN(parseFloat(valStr))) {
+      return parseFloat(valStr);
+    }
+    // Se a Meta retornou o indicator mas sem values (ex: 0 conversões registradas):
+    if (results[0]?.indicator) {
+      return 0;
+    }
+  }
+
+  const category = detectConversionCategory(campaignName, objective, actions, results, optimizationGoal);
+
+  if (category === "REACH") {
     return reach;
   }
 
@@ -470,8 +503,6 @@ function extractConversions(actions: any[] = [], objective?: string, reach: numb
     const a = actions.find((x: any) => String(x.action_type || "").toLowerCase() === type.toLowerCase());
     return parseMetaActionValue(a);
   };
-
-  const category = detectConversionCategory(campaignName, objective, actions);
 
   switch (category) {
     case "MESSAGES": {
@@ -1196,6 +1227,10 @@ serve(async (req) => {
       const metricsToUpsert = insights.map(row => {
         const campaign_id = idMap.get(row.campaign_id)
         if (!campaign_id) return null
+        const campObj = campaignObjectiveMap.get(row.campaign_id);
+        const campName = row.campaign_name || budgetMap.get(row.campaign_id)?.name;
+        const resultType = detectConversionCategory(campName, campObj, row.actions, row.results, row.optimization_goal);
+        const conv = extractConversions(row.actions, resultType, parseInt(row.reach) || 0, campName, row.results, row.optimization_goal);
         return {
           campaign_id,
           date: row.date_start,
@@ -1204,8 +1239,8 @@ serve(async (req) => {
           cost: parseFloat(row.spend) || 0,
           reach: parseInt(row.reach) || 0,
           frequency: parseFloat(row.frequency || "0") || 0,
-          conversions: extractConversions(row.actions, campaignObjectiveMap.get(row.campaign_id), parseInt(row.reach) || 0, row.campaign_name || budgetMap.get(row.campaign_id)?.name),
-          result_type: campaignObjectiveMap.get(row.campaign_id)
+          conversions: conv,
+          result_type: resultType
         }
       }).filter(Boolean)
 
@@ -1234,7 +1269,7 @@ serve(async (req) => {
         const [campaignPeriodRaw, adsetPeriodRaw, adPeriodRaw] = await Promise.all([
           metaGetPaginated(`/${accountId}/insights`, accountToken, {
             level: "campaign",
-            fields: "campaign_id,campaign_name,spend,reach,impressions,frequency,actions,inline_link_clicks,date_start,date_stop",
+            fields: "campaign_id,campaign_name,optimization_goal,results,cost_per_result,spend,reach,impressions,frequency,actions,inline_link_clicks,date_start,date_stop",
             use_unified_attribution_setting: "true",
             action_report_time: "impression",
             limit: "500",
@@ -1242,7 +1277,7 @@ serve(async (req) => {
           }),
           metaGetPaginated(`/${accountId}/insights`, accountToken, {
             level: "adset",
-            fields: "adset_id,campaign_id,campaign_name,spend,reach,impressions,frequency,actions,inline_link_clicks,date_start,date_stop",
+            fields: "adset_id,campaign_id,campaign_name,optimization_goal,results,cost_per_result,spend,reach,impressions,frequency,actions,inline_link_clicks,date_start,date_stop",
             use_unified_attribution_setting: "true",
             action_report_time: "impression",
             limit: "500",
@@ -1250,7 +1285,7 @@ serve(async (req) => {
           }),
           metaGetPaginated(`/${accountId}/insights`, accountToken, {
             level: "ad",
-            fields: "ad_id,campaign_id,campaign_name,spend,reach,impressions,frequency,actions,inline_link_clicks,quality_ranking,engagement_rate_ranking,conversion_rate_ranking,date_start,date_stop",
+            fields: "ad_id,campaign_id,campaign_name,optimization_goal,results,cost_per_result,spend,reach,impressions,frequency,actions,inline_link_clicks,quality_ranking,engagement_rate_ranking,conversion_rate_ranking,date_start,date_stop",
             use_unified_attribution_setting: "true",
             action_report_time: "impression",
             limit: "500",
@@ -1265,6 +1300,10 @@ serve(async (req) => {
           if (!campaign_id) return
           const reach = parseInt(row.reach) || 0
           const impressions = parseInt(row.impressions) || 0
+          const campObj = campaignObjectiveMap.get(row.campaign_id);
+          const campName = row.campaign_name || budgetMap.get(row.campaign_id)?.name;
+          const resultType = detectConversionCategory(campName, campObj, row.actions, row.results, row.optimization_goal);
+          const conv = extractConversions(row.actions, resultType, reach, campName, row.results, row.optimization_goal);
           periodStatsToUpsert.push({
             entity_type: 'campaign',
             entity_id: campaign_id,
@@ -1275,7 +1314,7 @@ serve(async (req) => {
             impressions,
             frequency:    reach > 0 ? impressions / reach : (parseFloat(row.frequency || "0") || 0),
             spend:        parseFloat(row.spend || "0") || 0,
-            conversions:  extractConversions(row.actions, campaignObjectiveMap.get(row.campaign_id), parseInt(row.reach) || 0, row.campaign_name || budgetMap.get(row.campaign_id)?.name),
+            conversions:  conv,
             clicks:       extractClicks(row.actions, row.inline_link_clicks),
             synced_at:    new Date().toISOString(),
           })
@@ -1286,7 +1325,51 @@ serve(async (req) => {
           if (!ad_set_id) return
           const reach = parseInt(row.reach) || 0
           const impressions = parseInt(row.impressions) || 0
+          const campObj = campaignObjectiveMap.get(row.campaign_id);
+          const name = `${row.adset_name || ""} ${row.campaign_name || ""}`.trim();
+          const conv = extractConversions(row.actions, campObj, reach, name, row.results, row.optimization_goal);
           periodStatsToUpsert.push({
+            entity_type: 'adset',
+            entity_id: ad_set_id,
+            ad_account_id: accountId,
+            start_date:   row.date_start || periodStart,
+            end_date:     row.date_stop  || periodEnd,
+            reach,
+            impressions,
+            frequency:    reach > 0 ? impressions / reach : (parseFloat(row.frequency || "0") || 0),
+            spend:        parseFloat(row.spend || "0") || 0,
+            conversions:  conv,
+            clicks:       extractClicks(row.actions, row.inline_link_clicks),
+            synced_at:    new Date().toISOString(),
+          })
+        })
+
+        adPeriodRaw.forEach((row: any) => {
+          const ad_id = adIdMap.get(row.ad_id)
+          if (!ad_id) return
+          const reach = parseInt(row.reach) || 0
+          const impressions = parseInt(row.impressions) || 0
+          const campObj = campaignObjectiveMap.get(row.campaign_id);
+          const name = `${row.ad_name || ""} ${row.campaign_name || ""}`.trim();
+          const conv = extractConversions(row.actions, campObj, reach, name, row.results, row.optimization_goal);
+          periodStatsToUpsert.push({
+            entity_type: 'ad',
+            entity_id: ad_id,
+            ad_account_id: accountId,
+            start_date:   row.date_start || periodStart,
+            end_date:     row.date_stop  || periodEnd,
+            reach,
+            impressions,
+            frequency:    reach > 0 ? impressions / reach : (parseFloat(row.frequency || "0") || 0),
+            spend:        parseFloat(row.spend || "0") || 0,
+            conversions:  conv,
+            clicks:       extractClicks(row.actions, row.inline_link_clicks),
+            quality_ranking: row.quality_ranking || null,
+            engagement_rate_ranking: row.engagement_rate_ranking || null,
+            conversion_rate_ranking: row.conversion_rate_ranking || null,
+            synced_at:    new Date().toISOString(),
+          })
+        })
             entity_type: 'adset',
             entity_id: ad_set_id,
             ad_account_id: accountId,
@@ -1472,18 +1555,16 @@ serve(async (req) => {
       for (const row of adsetInsights) {
         const ad_set_id = adsetIdMap.get(row.adset_id)
         if (ad_set_id) {
+          const campObj = campaignObjectiveMap.get(row.campaign_id);
+          const name = `${row.adset_name || ""} ${row.campaign_name || budgetMap.get(row.campaign_id)?.name || ""}`.trim();
+          const conv = extractConversions(row.actions, campObj, parseInt(row.reach) || 0, name, row.results, row.optimization_goal);
           assetMetricsToUpsert.push({
             ad_set_id,
             date: row.date_start,
             impressions: parseInt(row.impressions) || 0,
             clicks: extractClicks(row.actions, row.inline_link_clicks),
             cost: parseFloat(row.spend) || 0,
-            conversions: extractConversions(
-              row.actions,
-              campaignObjectiveMap.get(row.campaign_id),
-              parseInt(row.reach) || 0,
-              `${row.ad_name || row.adset_name || ""} ${row.campaign_name || budgetMap.get(row.campaign_id)?.name || ""}`.trim()
-            ),
+            conversions: conv,
             reach: parseInt(row.reach) || 0,
             frequency: parseFloat(row.frequency || "0") || 0,
             video_p25: extractVideoMetric(row, "video_p25_watched_actions"),
@@ -1498,23 +1579,26 @@ serve(async (req) => {
       for (const row of adInsights) {
         const ad_id = adIdMap.get(row.ad_id)
         if (ad_id) {
+          const campObj = campaignObjectiveMap.get(row.campaign_id);
+          const name = `${row.ad_name || ""} ${row.campaign_name || budgetMap.get(row.campaign_id)?.name || ""}`.trim();
+          const conv = extractConversions(row.actions, campObj, parseInt(row.reach) || 0, name, row.results, row.optimization_goal);
           assetMetricsToUpsert.push({
             ad_id,
             date: row.date_start,
             impressions: parseInt(row.impressions) || 0,
             clicks: extractClicks(row.actions, row.inline_link_clicks),
             cost: parseFloat(row.spend) || 0,
-            conversions: extractConversions(
-              row.actions,
-              campaignObjectiveMap.get(row.campaign_id),
-              parseInt(row.reach) || 0,
-              `${row.ad_name || row.adset_name || ""} ${row.campaign_name || budgetMap.get(row.campaign_id)?.name || ""}`.trim()
-            ),
+            conversions: conv,
             reach: parseInt(row.reach) || 0,
             frequency: parseFloat(row.frequency || "0") || 0,
             video_p25: extractVideoMetric(row, "video_p25_watched_actions"),
             video_p50: extractVideoMetric(row, "video_p50_watched_actions"),
             video_p75: extractVideoMetric(row, "video_p75_watched_actions"),
+            video_p95: extractVideoMetric(row, "video_p95_watched_actions"),
+            video_views: extractVideoMetric(row, "video_view")
+          })
+        }
+      }
             video_p95: extractVideoMetric(row, "video_p95_watched_actions"),
             video_views: extractVideoMetric(row, "video_view")
           })

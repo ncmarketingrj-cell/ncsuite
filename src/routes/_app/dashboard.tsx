@@ -433,26 +433,11 @@ function Dashboard() {
               metricsMap[key] = { spend: 0, reach: 0, results: 0, impressions: 0, purchases: 0, leads: 0 };
             }
             const cost = Number(m.cost || 0);
-            let conversions = Number(m.conversions || 0);
+            const conversions = Number(m.conversions || 0);
             const reach = Number(m.reach || 0);
             const impressions = Number(m.impressions || 0);
 
             const campName = (m.campaigns?.name || "").toUpperCase();
-            if (m.date === "2026-11-12") {
-              if (campName.includes("RUTHH") && campName.includes("MSG")) {
-                conversions = 1;
-              } else if (campName.includes("TAYNA") && campName.includes("MSG")) {
-                conversions = 1;
-              } else if (campName.includes("TRAFEGO NC INSTA") || campName.includes("NC INSTA")) {
-                conversions = 0;
-              }
-            } else if (m.date === "2026-11-11") {
-              if (campName.includes("RUTHH") && campName.includes("MSG")) {
-                conversions = 30;
-              } else if (campName.includes("TAYNA") && campName.includes("MSG")) {
-                conversions = 22;
-              }
-            }
 
             metricsMap[key].spend += cost;
             metricsMap[key].reach += reach;
@@ -461,7 +446,9 @@ function Dashboard() {
             const obj = (m.campaigns?.objective || "").toUpperCase();
             const resType = (m.result_type || "").toUpperCase();
 
-            const isMessaging = campName.includes("MSG") ||
+            const isMessaging = resType === "MESSAGES" ||
+                                obj === "MESSAGES" ||
+                                campName.includes("MSG") ||
                                 campName.includes("MENSAGEM") ||
                                 campName.includes("MENSAGENS") ||
                                 campName.includes("WPP") ||
@@ -469,9 +456,7 @@ function Dashboard() {
                                 campName.includes("DIRECT") ||
                                 campName.includes("CONVERSA") ||
                                 campName.includes("CONVERSAS") ||
-                                campName.includes("ZAP") ||
-                                ["MESSAGES"].includes(obj) ||
-                                ["MESSAGES"].includes(resType);
+                                campName.includes("ZAP");
 
             const isLeadGen = ["OUTCOME_LEADS", "LEAD_GENERATION"].includes(obj) ||
                               ["OUTCOME_LEADS", "LEAD_GENERATION"].includes(resType) ||
@@ -482,19 +467,16 @@ function Dashboard() {
                                campName.includes("COMPRA") || campName.includes("VENDA") || campName.includes("PURCHASE");
 
             const isTraffic = ["OUTCOME_TRAFFIC", "LINK_CLICKS"].includes(obj) ||
+                              ["INSTAGRAM_PROFILE", "LANDING_PAGE_VIEWS"].includes(resType) ||
                               campName.includes("TRAFEGO") || campName.includes("TRÁFEGO") || campName.includes("INSTA");
 
-            if (isMessaging || isLeadGen) {
+            if (isMessaging) {
+              metricsMap[key].leads += conversions;
+              messagingAccountsSet.add(key);
+            } else if (isLeadGen) {
               metricsMap[key].leads += conversions;
             } else if (isPurchase) {
               metricsMap[key].purchases += conversions;
-            } else if (isTraffic) {
-              // Tráfego não é lead nem compra
-            } else {
-              const isVanity = ["OUTCOME_AWARENESS", "VIDEO_VIEWS", "POST_ENGAGEMENT"].includes(obj);
-              if (!isVanity && conversions > 0) {
-                metricsMap[key].leads += conversions;
-              }
             }
           }
         }
@@ -556,7 +538,7 @@ function Dashboard() {
         const metrics = metricsMap[acc.id] || { spend: 0, reach: 0, results: 0, impressions: 0, purchases: 0, leads: 0 };
         const activeCampaignsCount = activeCounts[acc.id] || 0;
         const linkedClient = clientMap[acc.id] || null;
-        const isMessagingAccount = messagingAccountsSet.has(acc.id) || Number(metrics.leads || 0) > 0;
+        const isMessagingAccount = messagingAccountsSet.has(acc.id);
 
         return {
           id: acc.id,

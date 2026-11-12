@@ -101,14 +101,25 @@ export function detectConversionCategory(
   name?: string,
   objective?: string,
   actions: any[] = [],
-  optimizationGoal?: string
+  optimizationGoalOrResults?: string | any[],
+  resultsOrOptimizationGoal?: any[] | string
 ): MetaConversionCategory {
+  const optGoal = typeof optimizationGoalOrResults === "string" 
+    ? optimizationGoalOrResults 
+    : (typeof resultsOrOptimizationGoal === "string" ? resultsOrOptimizationGoal : undefined);
+  const resultsArr = Array.isArray(optimizationGoalOrResults)
+    ? optimizationGoalOrResults
+    : (Array.isArray(resultsOrOptimizationGoal) ? resultsOrOptimizationGoal : undefined);
+
+  const indicator = resultsArr?.[0]?.indicator ? String(resultsArr[0].indicator).toLowerCase() : "";
   const n = (name || "").toUpperCase();
   const obj = (objective || "").toUpperCase();
-  const opt = (optimizationGoal || "").toUpperCase();
+  const opt = (optGoal || "").toUpperCase();
 
   // 1. Mensagens (WhatsApp / Direct / Messenger)
   if (
+    indicator.includes("messaging_conversation_started") ||
+    indicator.includes("messaging") ||
     n.includes("MSG") ||
     n.includes("MENSAGEM") ||
     n.includes("MENSAGENS") ||
@@ -119,6 +130,7 @@ export function detectConversionCategory(
     n.includes("CONVERSAS") ||
     n.includes("ZAP") ||
     obj === "MESSAGES" ||
+    opt === "REPLIES" ||
     opt === "CONVERSATIONS" ||
     (actions && actions.some((a: any) => String(a.action_type || "").toLowerCase().includes("messaging_conversation_started")))
   ) {
@@ -133,12 +145,16 @@ export function detectConversionCategory(
     n.includes("IG") ||
     n.includes("SEGUIDOR") ||
     n.includes("SEGUIDORES") ||
+    n.includes("TRAFEGO NC") ||
+    n.includes("TRÁFEGO NC") ||
     obj === "VISIT_INSTAGRAM_PROFILE" ||
+    obj === "INSTAGRAM_PROFILE" ||
     opt === "PROFILE_VISIT" ||
     opt === "VISIT_INSTAGRAM_PROFILE" ||
+    opt === "PROFILE_AND_PAGE_ENGAGEMENT" ||
     (actions && actions.some((a: any) => {
       const act = String(a.action_type || "").toLowerCase();
-      return act.includes("profile_visit") || act.includes("instagram_profile");
+      return act.includes("profile_visit") || act.includes("instagram_profile") || act.includes("profile_visit_view");
     }))
   ) {
     return "INSTAGRAM_PROFILE";
@@ -201,9 +217,14 @@ export function detectConversionCategory(
     n.includes("PÁGINA") ||
     n.includes("SITE") ||
     n.includes("DESTINO") ||
+    n.includes("GRUPO") ||
+    n.includes("VENDEDORES") ||
     obj === "LANDING_PAGE_VIEWS" ||
     opt === "LANDING_PAGE_VIEWS" ||
-    (actions && actions.some((a: any) => String(a.action_type || "").toLowerCase().includes("landing_page_view")))
+    (actions && actions.some((a: any) => {
+      const act = String(a.action_type || "").toLowerCase();
+      return act.includes("landing_page_view") || act.includes("omni_landing_page_view");
+    }))
   ) {
     return "LANDING_PAGE_VIEWS";
   }
@@ -247,18 +268,25 @@ export function detectConversionCategory(
     return "REACH";
   }
 
-  // 9. Se for OUTCOME_TRAFFIC geral:
+  // 9. Se for OUTCOME_TRAFFIC ou LINK_CLICKS geral:
   if (obj === "OUTCOME_TRAFFIC" || obj === "LINK_CLICKS" || opt === "LINK_CLICKS") {
-    if (actions && actions.some((a: any) => String(a.action_type || "").toLowerCase().includes("landing_page_view"))) {
+    if (actions && actions.some((a: any) => {
+      const act = String(a.action_type || "").toLowerCase();
+      return act.includes("landing_page_view") || act.includes("omni_landing_page_view");
+    })) {
       return "LANDING_PAGE_VIEWS";
     }
-    if (actions && actions.some((a: any) => String(a.action_type || "").toLowerCase().includes("profile_visit"))) {
+    if (actions && actions.some((a: any) => {
+      const act = String(a.action_type || "").toLowerCase();
+      return act.includes("profile_visit") || act.includes("instagram_profile") || act.includes("profile_visit_view");
+    })) {
       return "INSTAGRAM_PROFILE";
     }
-    return "LINK_CLICKS";
+    // Nenhuma conta roda foco em cliques no link brutos; o tráfego padrão vai para destino / landing page
+    return "LANDING_PAGE_VIEWS";
   }
 
-  return "LINK_CLICKS";
+  return "LANDING_PAGE_VIEWS";
 }
 
 export interface MetaResultDetail {
@@ -509,108 +537,21 @@ export function extractMetaConversions(
 
 export function calibrateCampaignMetricsArray(campaignName: string, metrics: any[] = []): any[] {
   if (!Array.isArray(metrics)) return [];
-  const nameUpper = (campaignName || "").toUpperCase();
-  const isRuth = nameUpper.includes("RUTHH") && nameUpper.includes("MSG");
-  const isTayna = nameUpper.includes("TAYNA") && nameUpper.includes("MSG");
-  const isNcInsta = nameUpper.includes("TRAFEGO NC INSTA") || nameUpper.includes("NC INSTA");
-
-  if (!isRuth && !isTayna && !isNcInsta) return metrics;
-
-  return metrics.map((m: any) => {
-    const d = (m.date || "").split("T")[0];
-    if (d === "2026-11-12") {
-      if (isRuth) {
-        return {
-          ...m,
-          conversions: 1,
-          result_type: "MESSAGES",
-        };
-      }
-      if (isTayna) {
-        return {
-          ...m,
-          conversions: 1,
-          result_type: "MESSAGES",
-        };
-      }
-      if (isNcInsta) {
-        return {
-          ...m,
-          conversions: 0,
-          result_type: "OUTCOME_TRAFFIC",
-        };
-      }
-    }
-    if (d === "2026-11-11") {
-      if (isRuth) {
-        return {
-          ...m,
-          conversions: 30,
-          cost: Number(m.cost || 0) >= 168 ? Number(m.cost) : 168.93,
-          impressions: Number(m.impressions || 0) >= 9340 ? Number(m.impressions) : 9357,
-          reach: Number(m.reach || 0) >= 8080 ? Number(m.reach) : 8082,
-          result_type: "MESSAGES",
-        };
-      }
-      if (isTayna) {
-        return {
-          ...m,
-          conversions: 22,
-          cost: Number(m.cost || 0) >= 162 ? Number(m.cost) : 162.90,
-          impressions: Number(m.impressions || 0) >= 5740 ? Number(m.impressions) : 5750,
-          reach: Number(m.reach || 0) >= 4900 ? Number(m.reach) : 4905,
-          result_type: "MESSAGES",
-        };
-      }
-    }
-    return m;
-  });
+  return metrics;
 }
 
 export function calibrateAdSetMetricsArray(adSetName: string, assetMetrics: any[] = []): any[] {
   if (!Array.isArray(assetMetrics)) return [];
-  const nameUpper = (adSetName || "").toUpperCase();
-  const isNcInsta = nameUpper.includes("TRAFEGO NC INSTA") || nameUpper.includes("NC INSTA");
-
-  return assetMetrics.map((m: any) => {
-    const d = (m.date || "").split("T")[0];
-    if (d === "2026-11-12" && isNcInsta) {
-      return {
-        ...m,
-        conversions: 0,
-      };
-    }
-    return m;
-  });
+  return assetMetrics;
 }
 
 export function getCalibratedAdConversion20261111(adName: string, cost: number, clicks: number): number | null {
-  const n = (adName || "").toUpperCase();
-  if (n.includes("ONIBUS") || n.includes("ÔNIBUS")) return 20;
-  if (n.includes("3 TIAS")) return 4;
-  if (n.includes("INSTITUCIONAL")) return 1;
-  if (n.includes("TITAN")) return 1;
-  if (n.includes("PCX")) return 0;
-  if (n.includes("LIMPA ESTOQUE")) return 0;
-  if (n.includes("FAN")) {
-    if (cost > 5 || clicks >= 2) return 4;
-    return 0;
-  }
   return null;
 }
 
 export function calibrateAdMetricsArray(adName: string, assetMetrics: any[] = []): any[] {
   if (!Array.isArray(assetMetrics)) return [];
-  return assetMetrics.map((m: any) => {
-    const d = (m.date || "").split("T")[0];
-    if (d === "2026-11-11") {
-      const calibrated = getCalibratedAdConversion20261111(adName, Number(m.cost || 0), Number(m.clicks || 0));
-      if (calibrated !== null) {
-        return { ...m, conversions: calibrated };
-      }
-    }
-    return m;
-  });
+  return assetMetrics;
 }
 
 export function calibratePeriodStatsInMemory(
@@ -621,90 +562,8 @@ export function calibratePeriodStatsInMemory(
   startStr?: string,
   endStr?: string
 ): any[] {
-  if (!Array.isArray(periodStats) || periodStats.length === 0) return periodStats;
-
-  const campMap = new Map((campaigns || []).map((c: any) => [c.id, c]));
-  const adMap = new Map((ads || []).map((a: any) => [a.id, a]));
-  const adSetMap = new Map((adSets || []).map((s: any) => [s.id, s]));
-  const isNov11Single = startStr === "2026-11-11" && endStr === "2026-11-11";
-  const isNov12Single = startStr === "2026-11-12" && endStr === "2026-11-12";
-
-  return periodStats.map((ps: any) => {
-    if (ps.entity_type === "campaign") {
-      const camp = campMap.get(ps.entity_id);
-      const nameUpper = (camp?.name || "").toUpperCase();
-      if (isNov11Single || (ps.start_date === "2026-11-11" && ps.end_date === "2026-11-11")) {
-        if (nameUpper.includes("RUTHH") && nameUpper.includes("MSG")) {
-          return {
-            ...ps,
-            conversions: 30,
-            spend: Number(ps.spend || 0) >= 168 ? Number(ps.spend) : 168.93,
-            impressions: Number(ps.impressions || 0) >= 9340 ? Number(ps.impressions) : 9357,
-            reach: Number(ps.reach || 0) >= 8080 ? Number(ps.reach) : 8082,
-          };
-        }
-        if (nameUpper.includes("TAYNA") && nameUpper.includes("MSG")) {
-          return {
-            ...ps,
-            conversions: 22,
-            spend: Number(ps.spend || 0) >= 162 ? Number(ps.spend) : 162.90,
-            impressions: Number(ps.impressions || 0) >= 5740 ? Number(ps.impressions) : 5750,
-            reach: Number(ps.reach || 0) >= 4900 ? Number(ps.reach) : 4905,
-          };
-        }
-      }
-
-      if (isNov12Single || (ps.start_date === "2026-11-12" && ps.end_date === "2026-11-12")) {
-        if (nameUpper.includes("RUTHH") && nameUpper.includes("MSG")) {
-          return {
-            ...ps,
-            conversions: 1,
-          };
-        }
-        if (nameUpper.includes("TAYNA") && nameUpper.includes("MSG")) {
-          return {
-            ...ps,
-            conversions: 1,
-          };
-        }
-        if (nameUpper.includes("TRAFEGO NC INSTA") || nameUpper.includes("NC INSTA")) {
-          return {
-            ...ps,
-            conversions: 0,
-          };
-        }
-      }
-    }
-
-    if (ps.entity_type === "adset") {
-      const set = adSetMap.get(ps.entity_id);
-      const nameUpper = (set?.name || "").toUpperCase();
-      if (isNov12Single || (ps.start_date === "2026-11-12" && ps.end_date === "2026-11-12")) {
-        if (nameUpper.includes("TRAFEGO NC INSTA") || nameUpper.includes("NC INSTA")) {
-          return {
-            ...ps,
-            conversions: 0,
-          };
-        }
-      }
-    }
-
-    if (ps.entity_type === "ad") {
-      const ad = adMap.get(ps.entity_id);
-      if (ad && (isNov11Single || (ps.start_date === "2026-11-11" && ps.end_date === "2026-11-11"))) {
-        const calibrated = getCalibratedAdConversion20261111(
-          ad.name,
-          Number(ps.spend || 0),
-          Number(ps.clicks || 0)
-        );
-        if (calibrated !== null) {
-          return { ...ps, conversions: calibrated };
-        }
-      }
-    }
-
-    return ps;
-  });
+  if (!Array.isArray(periodStats)) return [];
+  return periodStats;
 }
 
 // ─── Persistência Direta no Supabase via Cliente Autenticado ──────────────────
@@ -717,160 +576,21 @@ export async function ensureDatabaseCalibrated(supabase: any, force = false): Pr
   lastDbCalibrationRun = now;
 
   try {
-    // 1. Buscar campanhas de mensagens (ex: RUTHH - MSG, TAYNA - MSG)
+    // Apenas sincroniza/ajusta objetivos de campanhas claramente identificadas como mensagens
     const { data: camps } = await supabase
       .from("campaigns")
-      .select("id, name, objective, external_id, ad_account_id");
+      .select("id, name, objective");
 
     if (!camps || camps.length === 0) return;
 
     for (const c of camps) {
-      const nameUpper = (c.name || "").toUpperCase();
       const isMsg = isMessagingCampaignName(c.name, c.objective);
-
-      // Garantir que o objetivo no banco seja MESSAGES para campanhas de WhatsApp
       if (isMsg && c.objective !== "MESSAGES") {
         await supabase.from("campaigns").update({ objective: "MESSAGES" }).eq("id", c.id);
       }
-
-      if (nameUpper.includes("RUTHH") && nameUpper.includes("MSG")) {
-        await supabase
-          .from("metrics")
-          .update({ conversions: 30, cost: 168.93, impressions: 9357, reach: 8082, result_type: "MESSAGES" })
-          .eq("campaign_id", c.id)
-          .eq("date", "2026-11-11");
-
-        await supabase
-          .from("meta_period_stats")
-          .update({ conversions: 30, spend: 168.93, impressions: 9357, reach: 8082 })
-          .eq("entity_type", "campaign")
-          .eq("entity_id", c.id)
-          .eq("start_date", "2026-11-11")
-          .eq("end_date", "2026-11-11");
-
-        // Calibrar 12/11/2026: rigorosamente 1 resultado (conversas iniciadas)
-        await supabase
-          .from("metrics")
-          .update({ conversions: 1, result_type: "MESSAGES" })
-          .eq("campaign_id", c.id)
-          .eq("date", "2026-11-12");
-
-        await supabase
-          .from("meta_period_stats")
-          .update({ conversions: 1 })
-          .eq("entity_type", "campaign")
-          .eq("entity_id", c.id)
-          .eq("start_date", "2026-11-12")
-          .eq("end_date", "2026-11-12");
-
-        // Calibrar anúncios desta campanha em 11/11/2026
-        const { data: ruthAds } = await supabase
-          .from("ads")
-          .select("id, name")
-          .eq("campaign_id", c.id);
-
-        if (ruthAds && ruthAds.length > 0) {
-          for (const ad of ruthAds) {
-            const { data: amRows } = await supabase
-              .from("asset_metrics")
-              .select("ad_id, cost, clicks, conversions")
-              .eq("ad_id", ad.id)
-              .eq("date", "2026-11-11");
-
-            if (amRows && amRows.length > 0) {
-              const am = amRows[0];
-              const targetConv = getCalibratedAdConversion20261111(ad.name, Number(am.cost || 0), Number(am.clicks || 0));
-              if (targetConv !== null && Number(am.conversions) !== targetConv) {
-                await supabase
-                  .from("asset_metrics")
-                  .update({ conversions: targetConv })
-                  .eq("ad_id", ad.id)
-                  .eq("date", "2026-11-11");
-              }
-              if (targetConv !== null) {
-                await supabase
-                  .from("meta_period_stats")
-                  .update({ conversions: targetConv })
-                  .eq("entity_type", "ad")
-                  .eq("entity_id", ad.id)
-                  .eq("start_date", "2026-11-11")
-                  .eq("end_date", "2026-11-11");
-              }
-            }
-          }
-        }
-      }
-
-      if (nameUpper.includes("TAYNA") && nameUpper.includes("MSG")) {
-        await supabase
-          .from("metrics")
-          .update({ conversions: 22, cost: 162.90, impressions: 5750, reach: 4905, result_type: "MESSAGES" })
-          .eq("campaign_id", c.id)
-          .eq("date", "2026-11-11");
-
-        await supabase
-          .from("meta_period_stats")
-          .update({ conversions: 22, spend: 162.90, impressions: 5750, reach: 4905 })
-          .eq("entity_type", "campaign")
-          .eq("entity_id", c.id)
-          .eq("start_date", "2026-11-11")
-          .eq("end_date", "2026-11-11");
-
-        // Calibrar 12/11/2026: rigorosamente 1 resultado (conversas iniciadas)
-        await supabase
-          .from("metrics")
-          .update({ conversions: 1, result_type: "MESSAGES" })
-          .eq("campaign_id", c.id)
-          .eq("date", "2026-11-12");
-
-        await supabase
-          .from("meta_period_stats")
-          .update({ conversions: 1 })
-          .eq("entity_type", "campaign")
-          .eq("entity_id", c.id)
-          .eq("start_date", "2026-11-12")
-          .eq("end_date", "2026-11-12");
-      }
-
-      if (nameUpper.includes("TRAFEGO NC INSTA") || nameUpper.includes("NC INSTA")) {
-        await supabase
-          .from("metrics")
-          .update({ conversions: 0, result_type: "OUTCOME_TRAFFIC" })
-          .eq("campaign_id", c.id)
-          .eq("date", "2026-11-12");
-
-        await supabase
-          .from("meta_period_stats")
-          .update({ conversions: 0 })
-          .eq("entity_type", "campaign")
-          .eq("entity_id", c.id)
-          .eq("start_date", "2026-11-12")
-          .eq("end_date", "2026-11-12");
-
-        const { data: sets } = await supabase
-          .from("ad_sets")
-          .select("id")
-          .eq("campaign_id", c.id);
-
-        for (const s of (sets || [])) {
-          await supabase
-            .from("asset_metrics")
-            .update({ conversions: 0 })
-            .eq("ad_set_id", s.id)
-            .eq("date", "2026-11-12");
-
-          await supabase
-            .from("meta_period_stats")
-            .update({ conversions: 0 })
-            .eq("entity_type", "adset")
-            .eq("entity_id", s.id)
-            .eq("start_date", "2026-11-12")
-            .eq("end_date", "2026-11-12");
-        }
-      }
     }
   } catch (err) {
-    console.warn("[Calibrator] Falha parcial ao calibrar banco:", err);
+    console.warn("[Calibrator] Verificação silenciosa de campanhas:", err);
   }
 }
 
@@ -1016,7 +736,7 @@ export async function calibrateMetaConversionsFromGraph(
         const [campDaily, campPeriod, adDaily, adPeriod, adsetPeriod] = await Promise.all([
           fetchMetaGraphPaginated(`/${accId}/insights`, token, {
             level: "campaign",
-            fields: "campaign_id,campaign_name,spend,reach,impressions,frequency,actions,inline_link_clicks,date_start",
+            fields: "campaign_id,campaign_name,optimization_goal,results,cost_per_result,spend,reach,impressions,frequency,actions,inline_link_clicks,date_start",
             time_increment: "1",
             time_range: timeRangeParam,
             use_unified_attribution_setting: "true",
@@ -1025,7 +745,7 @@ export async function calibrateMetaConversionsFromGraph(
           }).catch(() => []),
           fetchMetaGraphPaginated(`/${accId}/insights`, token, {
             level: "campaign",
-            fields: "campaign_id,campaign_name,spend,reach,impressions,frequency,actions,inline_link_clicks,date_start,date_stop",
+            fields: "campaign_id,campaign_name,optimization_goal,results,cost_per_result,spend,reach,impressions,frequency,actions,inline_link_clicks,date_start,date_stop",
             time_range: timeRangeParam,
             use_unified_attribution_setting: "true",
             action_report_time: "impression",
@@ -1033,7 +753,7 @@ export async function calibrateMetaConversionsFromGraph(
           }).catch(() => []),
           fetchMetaGraphPaginated(`/${accId}/insights`, token, {
             level: "ad",
-            fields: "ad_id,ad_name,campaign_id,campaign_name,spend,reach,impressions,frequency,actions,inline_link_clicks,date_start",
+            fields: "ad_id,ad_name,campaign_id,campaign_name,optimization_goal,results,cost_per_result,spend,reach,impressions,frequency,actions,inline_link_clicks,date_start",
             time_increment: "1",
             time_range: timeRangeParam,
             use_unified_attribution_setting: "true",
@@ -1042,7 +762,7 @@ export async function calibrateMetaConversionsFromGraph(
           }).catch(() => []),
           fetchMetaGraphPaginated(`/${accId}/insights`, token, {
             level: "ad",
-            fields: "ad_id,ad_name,campaign_id,campaign_name,spend,reach,impressions,frequency,actions,inline_link_clicks,date_start,date_stop",
+            fields: "ad_id,ad_name,campaign_id,campaign_name,optimization_goal,results,cost_per_result,spend,reach,impressions,frequency,actions,inline_link_clicks,date_start,date_stop",
             time_range: timeRangeParam,
             use_unified_attribution_setting: "true",
             action_report_time: "impression",
@@ -1050,7 +770,7 @@ export async function calibrateMetaConversionsFromGraph(
           }).catch(() => []),
           fetchMetaGraphPaginated(`/${accId}/insights`, token, {
             level: "adset",
-            fields: "adset_id,adset_name,campaign_id,campaign_name,spend,reach,impressions,frequency,actions,inline_link_clicks,date_start,date_stop",
+            fields: "adset_id,adset_name,campaign_id,campaign_name,optimization_goal,results,cost_per_result,spend,reach,impressions,frequency,actions,inline_link_clicks,date_start,date_stop",
             time_range: timeRangeParam,
             use_unified_attribution_setting: "true",
             action_report_time: "impression",
@@ -1063,9 +783,11 @@ export async function calibrateMetaConversionsFromGraph(
           const dbCamp = campByExt.get(String(row.campaign_id));
           if (!dbCamp) continue;
           const campName = row.campaign_name || dbCamp.name || "";
-          const isMsg = isMessagingCampaignName(campName, dbCamp.objective);
-          const effObj = isMsg ? "MESSAGES" : dbCamp.objective;
-          const trueConv = extractMetaConversions(row.actions || [], effObj, parseInt(row.reach) || 0, campName);
+          const effObj = detectConversionCategory(campName, dbCamp.objective, row.actions, row.results, row.optimization_goal);
+          const valStr = row.results?.[0]?.values?.[0]?.value;
+          const trueConv = (valStr !== undefined && valStr !== null && !isNaN(parseFloat(valStr)))
+            ? parseFloat(valStr)
+            : (row.results?.[0]?.indicator ? 0 : extractMetaConversions(row.actions || [], effObj, parseInt(row.reach) || 0, campName));
 
           await supabase
             .from("metrics")
@@ -1085,9 +807,11 @@ export async function calibrateMetaConversionsFromGraph(
           const dbCamp = campByExt.get(String(row.campaign_id));
           if (!dbCamp) continue;
           const campName = row.campaign_name || dbCamp.name || "";
-          const isMsg = isMessagingCampaignName(campName, dbCamp.objective);
-          const effObj = isMsg ? "MESSAGES" : dbCamp.objective;
-          const trueConv = extractMetaConversions(row.actions || [], effObj, parseInt(row.reach) || 0, campName);
+          const effObj = detectConversionCategory(campName, dbCamp.objective, row.actions, row.results, row.optimization_goal);
+          const valStr = row.results?.[0]?.values?.[0]?.value;
+          const trueConv = (valStr !== undefined && valStr !== null && !isNaN(parseFloat(valStr)))
+            ? parseFloat(valStr)
+            : (row.results?.[0]?.indicator ? 0 : extractMetaConversions(row.actions || [], effObj, parseInt(row.reach) || 0, campName));
 
           await supabase
             .from("meta_period_stats")
@@ -1109,9 +833,11 @@ export async function calibrateMetaConversionsFromGraph(
           if (!dbSet) continue;
           const dbCamp = campByExt.get(String(row.campaign_id));
           const campName = row.campaign_name || dbCamp?.name || "";
-          const isMsg = isMessagingCampaignName(campName, dbCamp?.objective);
-          const effObj = isMsg ? "MESSAGES" : dbCamp?.objective;
-          const trueConv = extractMetaConversions(row.actions || [], effObj, parseInt(row.reach) || 0, campName);
+          const effObj = detectConversionCategory(campName, dbCamp?.objective, row.actions, row.results, row.optimization_goal);
+          const valStr = row.results?.[0]?.values?.[0]?.value;
+          const trueConv = (valStr !== undefined && valStr !== null && !isNaN(parseFloat(valStr)))
+            ? parseFloat(valStr)
+            : (row.results?.[0]?.indicator ? 0 : extractMetaConversions(row.actions || [], effObj, parseInt(row.reach) || 0, campName));
 
           await supabase
             .from("meta_period_stats")
@@ -1133,9 +859,11 @@ export async function calibrateMetaConversionsFromGraph(
           if (!dbAd) continue;
           const dbCamp = campByExt.get(String(row.campaign_id));
           const campName = row.campaign_name || dbCamp?.name || "";
-          const isMsg = isMessagingCampaignName(campName, dbCamp?.objective);
-          const effObj = isMsg ? "MESSAGES" : dbCamp?.objective;
-          const trueConv = extractMetaConversions(row.actions || [], effObj, parseInt(row.reach) || 0, campName);
+          const effObj = detectConversionCategory(campName, dbCamp?.objective, row.actions, row.results, row.optimization_goal);
+          const valStr = row.results?.[0]?.values?.[0]?.value;
+          const trueConv = (valStr !== undefined && valStr !== null && !isNaN(parseFloat(valStr)))
+            ? parseFloat(valStr)
+            : (row.results?.[0]?.indicator ? 0 : extractMetaConversions(row.actions || [], effObj, parseInt(row.reach) || 0, campName));
 
           await supabase
             .from("asset_metrics")
@@ -1155,9 +883,11 @@ export async function calibrateMetaConversionsFromGraph(
           if (!dbAd) continue;
           const dbCamp = campByExt.get(String(row.campaign_id));
           const campName = row.campaign_name || dbCamp?.name || "";
-          const isMsg = isMessagingCampaignName(campName, dbCamp?.objective);
-          const effObj = isMsg ? "MESSAGES" : dbCamp?.objective;
-          const trueConv = extractMetaConversions(row.actions || [], effObj, parseInt(row.reach) || 0, campName);
+          const effObj = detectConversionCategory(campName, dbCamp?.objective, row.actions, row.results, row.optimization_goal);
+          const valStr = row.results?.[0]?.values?.[0]?.value;
+          const trueConv = (valStr !== undefined && valStr !== null && !isNaN(parseFloat(valStr)))
+            ? parseFloat(valStr)
+            : (row.results?.[0]?.indicator ? 0 : extractMetaConversions(row.actions || [], effObj, parseInt(row.reach) || 0, campName));
 
           await supabase
             .from("meta_period_stats")

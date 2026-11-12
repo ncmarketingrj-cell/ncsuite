@@ -9,7 +9,7 @@ import {
   Search, Play, Pause, Loader2, RefreshCw, Layers, ChevronDown,
   LayoutGrid, Image as ImageIcon, CheckSquare, Square, Sparkles,
   BarChart3, TrendingUp, DollarSign, Users, MousePointer2, Target, Zap,
-  Activity, Eye, Lock, BookOpen, MessageCircle, Car, Video,
+  Activity, Eye, Lock, BookOpen, MessageCircle, Car, Video, Globe,
   AlertTriangle, XCircle, CheckCircle2, Info, Settings2,
   ChevronRight, Megaphone, FlaskConical, Pencil,
   BarChart2, PieChart as PieIcon, SlidersHorizontal,
@@ -95,6 +95,9 @@ const OBJECTIVE_MAP: Record<string, { label: string; color: string; icon: any }>
   OUTCOME_AWARENESS:  { label: "Awareness",  color: "text-emerald-400 bg-emerald-500/10 border-emerald-500/20", icon: Users },
   OUTCOME_SALES:      { label: "Vendas",     color: "text-primary bg-primary/10 border-primary/20",          icon: Target },
   CONVERSIONS:        { label: "Conversões", color: "text-primary bg-primary/10 border-primary/20",          icon: Target },
+  VISIT_INSTAGRAM_PROFILE: { label: "Instagram", color: "text-pink-400 bg-pink-500/10 border-pink-500/20", icon: Zap },
+  INSTAGRAM_PROFILE:       { label: "Instagram", color: "text-pink-400 bg-pink-500/10 border-pink-500/20", icon: Zap },
+  LANDING_PAGE_VIEWS:      { label: "Pág. Destino", color: "text-emerald-400 bg-emerald-500/10 border-emerald-500/20", icon: Globe },
 };
 
 const PLACEMENT_MAP: Record<string, string> = {
@@ -164,7 +167,8 @@ function processMetrics(item: any, rawData: any[], startStr: string, endStr: str
   const cpm  = impressions > 0 ? (cost / impressions) * 1000 : 0;
   const cpc  = clicks > 0 ? cost / clicks : 0;
   const roas = cost > 0 ? (conversions * 150) / cost : 0;
-  return { ...item, t: { cost, conversions, clicks, impressions, reach, freq, cpl, ctr, cpm, cpc, roas }, _metrics: m };
+  const result_type = m.find((x: any) => x.result_type)?.result_type || item.result_type;
+  return { ...item, result_type, t: { cost, conversions, clicks, impressions, reach, freq, cpl, ctr, cpm, cpc, roas }, _metrics: m };
 }
 
 function gerarInsights(camps: any[], totCost: number, totConv: number, avgCpl: number, avgCtr: number, avgCpm: number): Insight[] {
@@ -315,10 +319,36 @@ function parseBold(text: string) {
 
 // â"€â"€â"€ SUB-COMPONENTES â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 
-function ObjectiveBadge({ objective, name }: { objective?: string; name?: string }) {
+function ObjectiveBadge({ objective, name, resultType }: { objective?: string; name?: string; resultType?: string }) {
   const n = (name || "").toUpperCase();
-  const isMsg = n.includes("MSG") || n.includes("MENSAGEM") || n.includes("WPP") || n.includes("WHATSAPP") || n.includes("DIRECT") || n.includes("CONVERSA");
-  const effectiveObjective = isMsg ? "MESSAGES" : (objective || "");
+  const res = (resultType || "").toUpperCase();
+  const obj = (objective || "").toUpperCase();
+
+  const isMsg = res === "MESSAGES" || obj === "MESSAGES" ||
+                n.includes("MSG") || n.includes("MENSAGEM") || n.includes("MENSAGENS") ||
+                n.includes("WPP") || n.includes("WHATSAPP") || n.includes("DIRECT") ||
+                n.includes("CONVERSA") || n.includes("CONVERSAS") || n.includes("ZAP");
+
+  const isInsta = res === "INSTAGRAM_PROFILE" || obj === "VISIT_INSTAGRAM_PROFILE" || obj === "INSTAGRAM_PROFILE" ||
+                  n.includes("INSTA") || n.includes("PERFIL") || n.includes("SEGUIDOR") || n.includes("TRAFEGO NC");
+
+  const isLp = res === "LANDING_PAGE_VIEWS" || obj === "LANDING_PAGE_VIEWS" ||
+               n.includes("GRUPO") || n.includes("VENDEDORES") || n.includes("LP") ||
+               n.includes("LANDING") || n.includes("SITE") || n.includes("DESTINO");
+
+  const isPurchases = res === "PURCHASES" || obj === "OUTCOME_SALES" || obj === "CONVERSIONS" ||
+                      n.includes("COMPRA") || n.includes("VENDA") || n.includes("PURCHASE");
+
+  const isLeads = res === "LEADS" || obj === "OUTCOME_LEADS" || obj === "LEAD_GENERATION" ||
+                  n.includes("LEAD") || n.includes("CADASTRO");
+
+  const effectiveObjective = isMsg ? "MESSAGES" :
+                             isInsta ? "INSTAGRAM_PROFILE" :
+                             isLp ? "LANDING_PAGE_VIEWS" :
+                             isPurchases ? "OUTCOME_SALES" :
+                             isLeads ? "OUTCOME_LEADS" :
+                             (res || obj || "");
+
   if (!effectiveObjective) return null;
   const def = OBJECTIVE_MAP[effectiveObjective];
   if (!def) return <span className="text-[8px] font-mono text-muted-foreground/60 uppercase">{effectiveObjective.replace("OUTCOME_","")}</span>;
@@ -982,35 +1012,11 @@ function MetricasCampanhasPage() {
       base = campaigns.map((c: any) => {
         const ps = statsMap.get(c.id) as any;
         if (!ps) return c;
-        let cost = Number(ps.spend || 0);
-        let conversions = Number(ps.conversions || 0);
+        const cost = Number(ps.spend || 0);
+        const conversions = Number(ps.conversions || 0);
         const clicks = Number(ps.clicks || 0);
-        let impressions = Number(ps.impressions || 0);
-        let reach = Number(ps.reach || 0);
-
-        if (startStr === "2026-11-11" && endStr === "2026-11-11") {
-          const n = (c.name || "").toUpperCase();
-          if (n.includes("RUTHH") && n.includes("MSG")) {
-            conversions = 30;
-            cost = Math.max(cost, 168.93);
-            impressions = Math.max(impressions, 9357);
-            reach = Math.max(reach, 8082);
-          } else if (n.includes("TAYNA") && n.includes("MSG")) {
-            conversions = 22;
-            cost = Math.max(cost, 162.90);
-            impressions = Math.max(impressions, 5750);
-            reach = Math.max(reach, 4905);
-          }
-        } else if (startStr === "2026-11-12" && endStr === "2026-11-12") {
-          const n = (c.name || "").toUpperCase();
-          if (n.includes("RUTHH") && n.includes("MSG")) {
-            conversions = 1;
-          } else if (n.includes("TAYNA") && n.includes("MSG")) {
-            conversions = 1;
-          } else if (n.includes("TRAFEGO NC INSTA") || n.includes("NC INSTA")) {
-            conversions = 0;
-          }
-        }
+        const impressions = Number(ps.impressions || 0);
+        const reach = Number(ps.reach || 0);
 
         const freq = reach > 0 ? impressions / reach : 0;
         const cpl = conversions > 0 ? cost / conversions : 0;
@@ -1029,7 +1035,7 @@ function MetricasCampanhasPage() {
       });
     }
     return base.filter((c: any) => (c.t?.reach || 0) >= 1 || (c.t?.impressions || 0) >= 1 || (c.t?.cost || 0) > 0);
-  }, [campaigns, calibratedPeriodStats, startStr, endStr]);
+  }, [campaigns, calibratedPeriodStats]);
 
   const enrichedAdSets = useMemo(() => {
     let base = adSets;
@@ -1040,17 +1046,10 @@ function MetricasCampanhasPage() {
         const ps = statsMap.get(c.id) as any;
         if (!ps) return c;
         const cost = Number(ps.spend || 0);
-        let conversions = Number(ps.conversions || 0);
+        const conversions = Number(ps.conversions || 0);
         const clicks = Number(ps.clicks || 0);
         const impressions = Number(ps.impressions || 0);
         const reach = Number(ps.reach || 0);
-
-        if (startStr === "2026-11-12" && endStr === "2026-11-12") {
-          const n = (c.name || "").toUpperCase();
-          if (n.includes("TRAFEGO NC INSTA") || n.includes("NC INSTA")) {
-            conversions = 0;
-          }
-        }
 
         const freq = reach > 0 ? impressions / reach : 0;
         const cpl = conversions > 0 ? cost / conversions : 0;
@@ -1062,7 +1061,7 @@ function MetricasCampanhasPage() {
       });
     }
     return base.filter((c: any) => (c.t?.reach || 0) >= 1 || (c.t?.impressions || 0) >= 1 || (c.t?.cost || 0) > 0);
-  }, [adSets, calibratedPeriodStats, startStr, endStr]);
+  }, [adSets, calibratedPeriodStats]);
 
   const enrichedAds = useMemo(() => {
     let base = ads;
@@ -1073,15 +1072,10 @@ function MetricasCampanhasPage() {
         const ps = statsMap.get(c.id) as any;
         if (!ps) return c;
         const cost = Number(ps.spend || 0);
-        let conversions = Number(ps.conversions || 0);
+        const conversions = Number(ps.conversions || 0);
         const clicks = Number(ps.clicks || 0);
         const impressions = Number(ps.impressions || 0);
         const reach = Number(ps.reach || 0);
-
-        if (startStr === "2026-11-11" && endStr === "2026-11-11") {
-          const calAd = getCalibratedAdConversion20261111(c.name, cost, clicks);
-          if (calAd !== null) conversions = calAd;
-        }
 
         const freq = reach > 0 ? impressions / reach : 0;
         const cpl = conversions > 0 ? cost / conversions : 0;
@@ -1093,7 +1087,7 @@ function MetricasCampanhasPage() {
       });
     }
     return base.filter((c: any) => (c.t?.reach || 0) >= 1 || (c.t?.impressions || 0) >= 1 || (c.t?.cost || 0) > 0);
-  }, [ads, calibratedPeriodStats, startStr, endStr]);
+  }, [ads, calibratedPeriodStats]);
 
   const listData = useMemo(() => {
     if (level === "campanhas") return enrichedCampaigns;
@@ -1656,7 +1650,7 @@ function MetricasCampanhasPage() {
                                   </div>
                                 </td>
                                 {/* objetivo */}
-                                {level === "campanhas" && <td className="px-3 py-2.5 text-center"><ObjectiveBadge objective={c.objective} name={c.name}/></td>}
+                                {level === "campanhas" && <td className="px-3 py-2.5 text-center"><ObjectiveBadge objective={c.objective} name={c.name} resultType={c.result_type || (c.campaigns as any)?.objective}/></td>}
                                 {/* orçamento */}
                                 <td className="px-4 py-2.5 text-right font-mono text-[11px] text-muted-foreground hidden md:table-cell whitespace-nowrap">
                                   {c.daily_budget ? `R$ ${Number(c.daily_budget).toFixed(0)}/d` : c.lifetime_budget ? `R$ ${Number(c.lifetime_budget).toFixed(0)} total` : c.budget ? `R$ ${Number(c.budget).toFixed(0)}/d` : "—"}
