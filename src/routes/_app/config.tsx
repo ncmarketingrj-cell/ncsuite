@@ -35,14 +35,14 @@ export const Route = createFileRoute("/_app/config")({
 });
 
 const TABS = [
-  { id: "conta",       label: "Meu Perfil",          icon: User,                   adminOnly: false },
-  { id: "agente",      label: "Agente Victoria",     icon: Brain,                  adminOnly: true  },
-  { id: "sac",        label: "SAC / Feedback",        icon: MessageSquareWarning,   adminOnly: false },
-  { id: "usuarios",   label: "Gestão de Usuários",   icon: Users,                  adminOnly: true  },
-  { id: "clientes",   label: "Gestão de Clientes",   icon: Building2,              adminOnly: true  },
-  { id: "integracoes",label: "Integrações Master",    icon: Plug,                   adminOnly: true  },
-  { id: "automacoes", label: "Regras de Automação",  icon: Zap,                    adminOnly: true  },
-  { id: "sistema",    label: "Status do Sistema",    icon: Cpu,                    adminOnly: true  },
+  { id: "conta", label: "Meu Perfil", icon: User, adminOnly: false },
+  { id: "agente", label: "Agente Victoria", icon: Brain, adminOnly: true },
+  { id: "sac", label: "SAC / Feedback", icon: MessageSquareWarning, adminOnly: false },
+  { id: "usuarios", label: "Gestão de Usuários", icon: Users, adminOnly: true },
+  { id: "clientes", label: "Gestão de Clientes", icon: Building2, adminOnly: true },
+  { id: "integracoes", label: "Integrações Master", icon: Plug, adminOnly: true },
+  { id: "automacoes", label: "Regras de Automação", icon: Zap, adminOnly: true },
+  { id: "sistema", label: "Status do Sistema", icon: Cpu, adminOnly: true },
 ] as const;
 type Tab = typeof TABS[number]["id"];
 
@@ -73,7 +73,7 @@ function ConfigPage() {
     queryFn: async () => {
       if (!user?.id) return null;
       let { data } = await (supabase as any).from("profiles").select("role, permissions, position").eq("id", user.id).maybeSingle();
-      
+
       // Auto-fix master admin permissions if they were somehow demoted
       if (user?.email === "nc.marketingrj@gmail.com" && data?.role !== "admin") {
         await (supabase as any).from("profiles").update({
@@ -87,7 +87,7 @@ function ConfigPage() {
             "criar_usuarios": "edit"
           }
         }).eq("id", user.id);
-        
+
         // Refetch after fix
         const retry = await (supabase as any).from("profiles").select("role, permissions, position").eq("id", user.id).maybeSingle();
         data = retry.data;
@@ -99,7 +99,7 @@ function ConfigPage() {
 
   const ADMIN_EMAILS = ["nc.marketingrj@gmail.com", "hc.marketing.dgt@gmail.com"];
   const isAdmin = profile?.role === "admin" || (user?.email ? ADMIN_EMAILS.includes(user.email) : false);
-  const isStaff = isAdmin || profile?.role === "staff" || 
+  const isStaff = isAdmin || profile?.role === "staff" ||
     /gestor|director|diretor|staff|sócio|socio|dono/i.test(profile?.position || "");
   const perms = (profile as any)?.permissions ?? {};
   const canManageUsers = isAdmin || !!perms.criar_usuarios;
@@ -133,14 +133,14 @@ function ConfigPage() {
         animate={{ opacity: 1, y: 0 }}
         className="glass-panel p-8"
       >
-        {tab === "conta"       && <TabConta />}
-        {tab === "agente"      && isAdmin && <TabAgente />}
-        {tab === "sac"         && <TabSac isAdmin={isAdmin} userId={user?.id ?? ""} />}
-        {tab === "usuarios"    && canManageUsers && <TabUsuarios isAdmin={isAdmin} currentUserProfile={profile} />}
-        {tab === "clientes"    && isAdmin && <TabClientes />}
+        {tab === "conta" && <TabConta />}
+        {tab === "agente" && isAdmin && <TabAgente />}
+        {tab === "sac" && <TabSac isAdmin={isAdmin} userId={user?.id ?? ""} />}
+        {tab === "usuarios" && canManageUsers && <TabUsuarios isAdmin={isAdmin} currentUserProfile={profile} />}
+        {tab === "clientes" && isAdmin && <TabClientes />}
         {tab === "integracoes" && isStaff && <TabIntegracoes />}
-        {tab === "automacoes"  && isAdmin && <TabAutomacoes />}
-        {tab === "sistema"     && isAdmin && <TabSistema />}
+        {tab === "automacoes" && isAdmin && <TabAutomacoes />}
+        {tab === "sistema" && isAdmin && <TabSistema />}
       </motion.div>
     </div>
   );
@@ -270,7 +270,7 @@ function TabIntegracoes() {
   const [whatsappProvider, setWhatsappProvider] = useState("baileys_custom");
   const [whatsappApiKey, setWhatsappApiKey] = useState("");
   const [whatsappInstanceName, setWhatsappInstanceName] = useState("");
-  
+
   // Social Media states
   const [loadingPages, setLoadingPages] = useState(false);
   const [syncingSocialMetrics, setSyncingSocialMetrics] = useState(false);
@@ -283,7 +283,7 @@ function TabIntegracoes() {
       return (data || []) as any[];
     }
   });
-  
+
   // States to edit followers
   const [editingPageId, setEditingPageId] = useState<string | null>(null);
   const [editFB, setEditFB] = useState<number>(0);
@@ -372,11 +372,11 @@ function TabIntegracoes() {
     const processGoogleAuth = async () => {
       const params = new URLSearchParams(window.location.search);
       const code = params.get("code");
-      
+
       if (code && !isProcessingAuth) {
         setIsProcessingAuth(true);
         toast.info("Processando autorização do Google Ads...", { id: "google-auth" });
-        
+
         try {
           const { data: { session } } = await supabase.auth.getSession();
           if (!session) throw new Error("Usuário não autenticado");
@@ -387,10 +387,10 @@ function TabIntegracoes() {
           });
 
           if (error) throw error;
-          
+
           toast.success("Google Ads conectado com sucesso!", { id: "google-auth" });
           refetchGoogle();
-          
+
           // Limpa a URL
           window.history.replaceState({}, document.title, window.location.pathname);
         } catch (err: any) {
@@ -401,7 +401,7 @@ function TabIntegracoes() {
         }
       }
     };
-    
+
     processGoogleAuth();
   }, []);
 
@@ -797,7 +797,7 @@ function TabIntegracoes() {
                   </span>
                   <button
                     onClick={async () => {
-                      if(!confirm("Remover esta conexão?")) return;
+                      if (!confirm("Remover esta conexão?")) return;
                       await (supabase as any).from("google_ads_configs").delete().eq("id", gc.id);
                       refetchGoogle();
                       toast.success("Conexão removida.");
@@ -812,12 +812,12 @@ function TabIntegracoes() {
 
             <button
               onClick={() => {
-                 // Redireciona para o Google OAuth
-                 const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
-                 const redirectUri = `${window.location.origin}/_app/config`;
-                 const scope = "https://www.googleapis.com/auth/adwords https://www.googleapis.com/auth/userinfo.email";
-                 const url = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&scope=${encodeURIComponent(scope)}&access_type=offline&prompt=consent`;
-                 window.location.href = url;
+                // Redireciona para o Google OAuth
+                const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
+                const redirectUri = `${window.location.origin}/_app/config`;
+                const scope = "https://www.googleapis.com/auth/adwords https://www.googleapis.com/auth/userinfo.email";
+                const url = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&scope=${encodeURIComponent(scope)}&access_type=offline&prompt=consent`;
+                window.location.href = url;
               }}
               disabled={isProcessingAuth}
               className="w-full flex items-center justify-center gap-3 rounded-xl border border-dashed border-[#4285F4]/30 bg-[#4285F4]/5 p-4 hover:bg-[#4285F4]/10 hover:border-[#4285F4]/50 transition cursor-pointer"
@@ -890,7 +890,7 @@ function TabIntegracoes() {
                         </span>
                       )}
                     </div>
-                    
+
                     {/* Editor de seguidores inline */}
                     <div className="mt-2 pt-2 border-t border-white/5">
                       {editingPageId === sp.id ? (
@@ -952,7 +952,7 @@ function TabIntegracoes() {
                   <span className="rounded-full px-2 py-0.5 text-[9px] font-black bg-success/20 text-success uppercase tracking-widest">
                     CONECTADO
                   </span>
-                  <button 
+                  <button
                     onClick={async () => {
                       if (!confirm("Remover esta página da sincronização?")) return;
                       await (supabase as any).from("social_pages").delete().eq("id", sp.id);
@@ -1060,7 +1060,7 @@ function TabConta() {
         updated_at: new Date().toISOString(),
       });
       if (error) throw error;
-      
+
       // Também atualiza o full_name nos metadados da autenticação do Supabase
       await supabase.auth.updateUser({
         data: { full_name: fullName, position, avatar_url: avatarUrl }
@@ -1126,7 +1126,7 @@ function TabConta() {
             </p>
           </div>
         </div>
-        
+
         <div className="space-y-3">
           {whatsappNumbers.map((num, idx) => (
             <div key={idx} className="flex items-center gap-2">
@@ -1165,33 +1165,33 @@ function TabConta() {
 }
 
 const PERMISSION_PAGES = [
-  { key: "dashboard",      label: "Command Center"  },
-  { key: "metricas",       label: "Métricas"        },
-  { key: "clientes",       label: "Clientes"        },
-  { key: "relatorios",     label: "Relatórios"      },
-  { key: "criativos",      label: "Criativos"       },
-  { key: "social",         label: "Social Media"    },
-  { key: "automacoes",     label: "Automações"      },
-  { key: "reunioes",       label: "Reuniões"        },
-  { key: "cobrancas",      label: "Cobranças"       },
-  { key: "strategy_map",   label: "Mapa Estratégico"},
-  { key: "agente",         label: "Agente IA"       },
-  { key: "auditoria",      label: "Auditoria Hub"   },
+  { key: "dashboard", label: "Command Center" },
+  { key: "metricas", label: "Métricas" },
+  { key: "clientes", label: "Clientes" },
+  { key: "relatorios", label: "Relatórios" },
+  { key: "criativos", label: "Criativos" },
+  { key: "social", label: "Social Media" },
+  { key: "automacoes", label: "Automações" },
+  { key: "reunioes", label: "Reuniões" },
+  { key: "cobrancas", label: "Cobranças" },
+  { key: "strategy_map", label: "Mapa Estratégico" },
+  { key: "agente", label: "Agente IA" },
+  { key: "auditoria", label: "Auditoria Hub" },
   { key: "criar_usuarios", label: "Gestão Usuários" },
 ] as const;
 
 const ROLE_LABEL: Record<string, string> = {
-  admin:           "ADMINISTRADOR",
-  diretor:         "DIRETOR",
-  ceo:             "CEO",
-  gerente:         "GERENTE",
-  gestor_trafego:  "GESTOR TRÁFEGO",
+  admin: "ADMINISTRADOR",
+  diretor: "DIRETOR",
+  ceo: "CEO",
+  gerente: "GERENTE",
+  gestor_trafego: "GESTOR TRÁFEGO",
   gestor_projetos: "GESTOR PROJETOS",
-  social_media:    "SOCIAL MEDIA",
-  desenvolvedor:   "DESENVOLVEDOR",
-  designer:        "DESIGNER",
-  sdr:             "SDR",
-  outro:           "MEMBRO",
+  social_media: "SOCIAL MEDIA",
+  desenvolvedor: "DESENVOLVEDOR",
+  designer: "DESIGNER",
+  sdr: "SDR",
+  outro: "MEMBRO",
 };
 
 const CARGO_DEFAULT_PERMISSIONS: Record<string, Record<string, "none" | "view" | "edit">> = {
@@ -1761,11 +1761,10 @@ function TabUsuarios({ isAdmin, currentUserProfile }: { isAdmin: boolean; curren
             <button
               key={tab.id}
               onClick={() => setFilterTab(tab.id as any)}
-              className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition-all whitespace-nowrap ${
-                filterTab === tab.id
+              className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition-all whitespace-nowrap ${filterTab === tab.id
                   ? "bg-primary text-primary-foreground shadow-glow-sm"
                   : "bg-white/5 text-muted-foreground hover:bg-white/10 hover:text-foreground"
-              }`}
+                }`}
             >
               <span>{tab.label}</span>
               <span className={`text-[9px] font-mono px-1 rounded ${filterTab === tab.id ? "bg-black/30 text-white" : "bg-white/10 text-muted-foreground"}`}>
@@ -1816,13 +1815,12 @@ function TabUsuarios({ isAdmin, currentUserProfile }: { isAdmin: boolean; curren
             return (
               <div
                 key={u.id}
-                className={`relative rounded-2xl border p-5 transition-all duration-300 space-y-4 ${
-                  targetInfo.level === 100
+                className={`relative rounded-2xl border p-5 transition-all duration-300 space-y-4 ${targetInfo.level === 100
                     ? "border-amber-500/35 bg-gradient-to-b from-amber-500/[0.04] to-background shadow-lg shadow-amber-500/5"
                     : authCheck.isSuperior
-                    ? "border-white/10 bg-background/60 hover:border-primary/40 shadow-sm hover:shadow-glow/5"
-                    : "border-white/5 bg-background/30 opacity-90"
-                }`}
+                      ? "border-white/10 bg-background/60 hover:border-primary/40 shadow-sm hover:shadow-glow/5"
+                      : "border-white/5 bg-background/30 opacity-90"
+                  }`}
               >
                 {/* Cabeçalho do Card: Avatar + Informações Básicas + Badge Hierárquica */}
                 <div className="flex items-start justify-between gap-3">
@@ -1838,9 +1836,8 @@ function TabUsuarios({ isAdmin, currentUserProfile }: { isAdmin: boolean; curren
                         )}
                       </div>
                       <span
-                        className={`absolute -bottom-1 -right-1 h-3.5 w-3.5 rounded-full border-2 border-background ${
-                          isInactive ? "bg-red-500" : "bg-emerald-500"
-                        }`}
+                        className={`absolute -bottom-1 -right-1 h-3.5 w-3.5 rounded-full border-2 border-background ${isInactive ? "bg-red-500" : "bg-emerald-500"
+                          }`}
                         title={isInactive ? "Usuário Suspenso" : "Usuário Ativo"}
                       />
                     </div>
@@ -1856,11 +1853,10 @@ function TabUsuarios({ isAdmin, currentUserProfile }: { isAdmin: boolean; curren
                           </span>
                         )}
                         <span
-                          className={`rounded px-1.5 py-0.5 text-[8px] font-black uppercase tracking-wider border ${
-                            isInactive
+                          className={`rounded px-1.5 py-0.5 text-[8px] font-black uppercase tracking-wider border ${isInactive
                               ? "bg-red-500/10 text-red-400 border-red-500/20"
                               : "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
-                          }`}
+                            }`}
                         >
                           {isInactive ? "SUSPENSO" : "ATIVO"}
                         </span>
@@ -1962,13 +1958,12 @@ function TabUsuarios({ isAdmin, currentUserProfile }: { isAdmin: boolean; curren
                               <select
                                 value={level}
                                 onChange={(e) => handleSetPermissionLevel(u, key, e.target.value)}
-                                className={`bg-transparent text-[10px] font-black uppercase focus:outline-none cursor-pointer border-none p-0 ${
-                                  level === "edit"
+                                className={`bg-transparent text-[10px] font-black uppercase focus:outline-none cursor-pointer border-none p-0 ${level === "edit"
                                     ? "text-primary"
                                     : level === "view"
-                                    ? "text-blue-400"
-                                    : "text-muted-foreground/40"
-                                }`}
+                                      ? "text-blue-400"
+                                      : "text-muted-foreground/40"
+                                  }`}
                               >
                                 <option value="none" className="bg-background text-muted-foreground">Sem Acesso</option>
                                 <option value="view" className="bg-background text-blue-400">Leitura</option>
@@ -1976,13 +1971,12 @@ function TabUsuarios({ isAdmin, currentUserProfile }: { isAdmin: boolean; curren
                               </select>
                             ) : (
                               <span
-                                className={`text-[10px] font-black uppercase ${
-                                  level === "edit"
+                                className={`text-[10px] font-black uppercase ${level === "edit"
                                     ? "text-primary"
                                     : level === "view"
-                                    ? "text-blue-400"
-                                    : "text-muted-foreground/40"
-                                }`}
+                                      ? "text-blue-400"
+                                      : "text-muted-foreground/40"
+                                  }`}
                               >
                                 {level === "edit" ? "Escrita" : level === "view" ? "Leitura" : "Nenhum"}
                               </span>
@@ -2001,11 +1995,10 @@ function TabUsuarios({ isAdmin, currentUserProfile }: { isAdmin: boolean; curren
                     {authCheck.isSuperior && (
                       <button
                         onClick={() => handleToggleStatus(u)}
-                        className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider transition ${
-                          isInactive
+                        className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider transition ${isInactive
                             ? "bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 border border-emerald-500/20"
                             : "bg-amber-500/10 text-amber-400 hover:bg-amber-500/20 border border-amber-500/20"
-                        }`}
+                          }`}
                         title={isInactive ? "Reativar acesso do colaborador" : "Suspender temporariamente o acesso"}
                       >
                         {isInactive ? <UserCheck className="h-3 w-3" /> : <UserX className="h-3 w-3" />}
@@ -2289,13 +2282,12 @@ function TabUsuarios({ isAdmin, currentUserProfile }: { isAdmin: boolean; curren
                         onChange={(e) =>
                           setEditPermissions((prev) => ({ ...prev, [key]: e.target.value }))
                         }
-                        className={`rounded border border-white/10 bg-background px-1.5 py-1 text-[10px] font-black uppercase focus:outline-none ${
-                          editPermissions[key] === "edit"
+                        className={`rounded border border-white/10 bg-background px-1.5 py-1 text-[10px] font-black uppercase focus:outline-none ${editPermissions[key] === "edit"
                             ? "text-primary"
                             : editPermissions[key] === "view"
-                            ? "text-blue-400"
-                            : "text-muted-foreground/50"
-                        }`}
+                              ? "text-blue-400"
+                              : "text-muted-foreground/50"
+                          }`}
                       >
                         <option value="none" className="text-muted-foreground">Nenhum</option>
                         <option value="view" className="text-blue-400">Leitura</option>
@@ -2518,13 +2510,12 @@ function TabUsuarios({ isAdmin, currentUserProfile }: { isAdmin: boolean; curren
                         onChange={(e) =>
                           setNewPermissions((prev) => ({ ...prev, [key]: e.target.value }))
                         }
-                        className={`rounded border border-white/10 bg-background px-1.5 py-1 text-[10px] font-black uppercase focus:outline-none ${
-                          newPermissions[key] === "edit"
+                        className={`rounded border border-white/10 bg-background px-1.5 py-1 text-[10px] font-black uppercase focus:outline-none ${newPermissions[key] === "edit"
                             ? "text-primary"
                             : newPermissions[key] === "view"
-                            ? "text-blue-400"
-                            : "text-muted-foreground/50"
-                        }`}
+                              ? "text-blue-400"
+                              : "text-muted-foreground/50"
+                          }`}
                       >
                         <option value="none" className="text-muted-foreground">Nenhum</option>
                         <option value="view" className="text-blue-400">Leitura</option>
@@ -2563,22 +2554,22 @@ function TabUsuarios({ isAdmin, currentUserProfile }: { isAdmin: boolean; curren
 
 // ─── SAC Constants ───────────────────────────────────────────────────────────
 const TICKET_TYPES_SAC = [
-  { value: "bug",         label: "Bug / Erro",   emoji: "🐛", desc: "Algo não funciona corretamente",   border: "border-red-500/30 bg-red-500/5"      },
-  { value: "melhoria",   label: "Melhoria",      emoji: "💡", desc: "Ideia para melhorar o sistema",    border: "border-blue-500/30 bg-blue-500/5"    },
-  { value: "reclamacao", label: "Reclamação",     emoji: "😤", desc: "Algo que me incomoda",             border: "border-orange-500/30 bg-orange-500/5" },
-  { value: "outro",      label: "Outro",          emoji: "📝", desc: "Qualquer outro feedback",          border: "border-purple-500/30 bg-purple-500/5" },
+  { value: "bug", label: "Bug / Erro", emoji: "🐛", desc: "Algo não funciona corretamente", border: "border-red-500/30 bg-red-500/5" },
+  { value: "melhoria", label: "Melhoria", emoji: "💡", desc: "Ideia para melhorar o sistema", border: "border-blue-500/30 bg-blue-500/5" },
+  { value: "reclamacao", label: "Reclamação", emoji: "😤", desc: "Algo que me incomoda", border: "border-orange-500/30 bg-orange-500/5" },
+  { value: "outro", label: "Outro", emoji: "📝", desc: "Qualquer outro feedback", border: "border-purple-500/30 bg-purple-500/5" },
 ];
 const PRIORITIES_SAC = [
-  { value: "baixa",   label: "Baixa",   color: "text-green-400"  },
-  { value: "normal",  label: "Normal",  color: "text-blue-400"   },
-  { value: "alta",    label: "Alta",    color: "text-orange-400" },
-  { value: "critica", label: "Crítica", color: "text-red-400"    },
+  { value: "baixa", label: "Baixa", color: "text-green-400" },
+  { value: "normal", label: "Normal", color: "text-blue-400" },
+  { value: "alta", label: "Alta", color: "text-orange-400" },
+  { value: "critica", label: "Crítica", color: "text-red-400" },
 ];
 const STATUS_MAP_SAC: Record<string, { label: string; color: string }> = {
-  aberto:     { label: "Aberto",      color: "bg-blue-500/20 text-blue-400 border-blue-500/30"      },
-  em_analise: { label: "Em Análise",  color: "bg-orange-500/20 text-orange-400 border-orange-500/30" },
-  resolvido:  { label: "Resolvido",   color: "bg-green-500/20 text-green-400 border-green-500/30"   },
-  fechado:    { label: "Fechado",     color: "bg-white/10 text-muted-foreground border-white/10"    },
+  aberto: { label: "Aberto", color: "bg-blue-500/20 text-blue-400 border-blue-500/30" },
+  em_analise: { label: "Em Análise", color: "bg-orange-500/20 text-orange-400 border-orange-500/30" },
+  resolvido: { label: "Resolvido", color: "bg-green-500/20 text-green-400 border-green-500/30" },
+  fechado: { label: "Fechado", color: "bg-white/10 text-muted-foreground border-white/10" },
 };
 function sacTypeCard(type: string) {
   return TICKET_TYPES_SAC.find(t => t.value === type)?.border ?? "border-white/10 bg-white/[0.02]";
@@ -2586,15 +2577,15 @@ function sacTypeCard(type: string) {
 
 function TabSac({ isAdmin, userId }: { isAdmin: boolean; userId: string }) {
   const qc = useQueryClient();
-  const [type, setType]           = useState("bug");
-  const [priority, setPriority]   = useState("normal");
-  const [title, setTitle]         = useState("");
-  const [description, setDesc]    = useState("");
+  const [type, setType] = useState("bug");
+  const [priority, setPriority] = useState("normal");
+  const [title, setTitle] = useState("");
+  const [description, setDesc] = useState("");
   const [submitted, setSubmitted] = useState(false);
   const [filterStatus, setFilterStatus] = useState("todos");
-  const [filterType,   setFilterType]   = useState("todos");
-  const [expandedId,   setExpandedId]   = useState<string | null>(null);
-  const [adminNotes,   setAdminNotes]   = useState<Record<string, string>>({});
+  const [filterType, setFilterType] = useState("todos");
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [adminNotes, setAdminNotes] = useState<Record<string, string>>({});
 
   const { data: myTickets = [] } = useQuery({
     queryKey: ["sac_my_tickets", userId],
@@ -2646,7 +2637,7 @@ function TabSac({ isAdmin, userId }: { isAdmin: boolean; userId: string }) {
 
   const filteredTickets = allTickets.filter((t: any) => {
     if (filterStatus !== "todos" && t.status !== filterStatus) return false;
-    if (filterType   !== "todos" && t.type   !== filterType)   return false;
+    if (filterType !== "todos" && t.type !== filterType) return false;
     return true;
   });
   const newCount = allTickets.filter((t: any) => t.status === "aberto").length;
@@ -2764,8 +2755,8 @@ function TabSac({ isAdmin, userId }: { isAdmin: boolean; userId: string }) {
               ) : (
                 <div className="space-y-2 max-h-[400px] overflow-y-auto pr-1 custom-scrollbar">
                   {filteredTickets.map((tk: any) => {
-                    const st  = STATUS_MAP_SAC[tk.status] ?? STATUS_MAP_SAC.aberto;
-                    const tp  = TICKET_TYPES_SAC.find(t => t.value === tk.type);
+                    const st = STATUS_MAP_SAC[tk.status] ?? STATUS_MAP_SAC.aberto;
+                    const tp = TICKET_TYPES_SAC.find(t => t.value === tk.type);
                     const pri = PRIORITIES_SAC.find(p => p.value === tk.priority);
                     const isOpen = expandedId === tk.id;
                     return (
@@ -3002,8 +2993,8 @@ function TabAgente() {
   };
 
   const filteredKnowledge = knowledgeList.filter((k: any) => {
-    const matchesSearch = k.title.toLowerCase().includes(knowledgeSearch.toLowerCase()) || 
-                          k.content.toLowerCase().includes(knowledgeSearch.toLowerCase());
+    const matchesSearch = k.title.toLowerCase().includes(knowledgeSearch.toLowerCase()) ||
+      k.content.toLowerCase().includes(knowledgeSearch.toLowerCase());
     const matchesCategory = selectedCategoryFilter === "todos" || k.category === selectedCategoryFilter;
     return matchesSearch && matchesCategory;
   });
@@ -3170,11 +3161,10 @@ function TabAgente() {
                     <div key={k.id} className="rounded-xl border border-white/5 bg-background/40 p-4 flex flex-col justify-between hover:border-primary/20 transition">
                       <div className="flex items-start justify-between gap-3">
                         <div>
-                          <span className={`inline-block text-[8px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded-full border mb-1.5 ${
-                            k.category === "manual" ? "bg-blue-500/10 border-blue-500/20 text-blue-400" :
-                            k.category === "faq" ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400" :
-                            "bg-purple-500/10 border-purple-500/20 text-purple-400"
-                          }`}>
+                          <span className={`inline-block text-[8px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded-full border mb-1.5 ${k.category === "manual" ? "bg-blue-500/10 border-blue-500/20 text-blue-400" :
+                              k.category === "faq" ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400" :
+                                "bg-purple-500/10 border-purple-500/20 text-purple-400"
+                            }`}>
                             {k.category}
                           </span>
                           <h5 className="text-xs font-bold text-white">{k.title}</h5>
@@ -3204,7 +3194,7 @@ function TabAgente() {
               </h4>
 
               <p className="text-[11px] text-muted-foreground leading-relaxed">
-                Adicione dados de estoque de carros, FAQs de ofertas ou scripts de conversão. 
+                Adicione dados de estoque de carros, FAQs de ofertas ou scripts de conversão.
                 O sistema gerará automaticamente os vetores (embeddings) para que a Victoria consulte em tempo real.
               </p>
 
