@@ -21,6 +21,7 @@ import { ptBR } from 'date-fns/locale';
 import { DateRangePicker } from "@/components/DateRangePicker";
 import { PageHeader } from "@/components/PageHeader";
 import { useGlobalDate } from "@/contexts/DateContext";
+import { calibrateCampaignMetricsArray, ensureDatabaseCalibrated } from "@/lib/metaConversionCalibrator";
 
 export const Route = createFileRoute("/_app/dashboard")({
   head: () => ({ meta: [{ title: "Dashboard — NC Performance Suite" }] }),
@@ -147,8 +148,11 @@ function Dashboard() {
         metricsQuery = metricsQuery.in("campaign_id", campIds);
       }
 
+      ensureDatabaseCalibrated(supabase).catch(() => {});
       const { data: metricsData } = await metricsQuery;
-      const metrics = metricsData || [];
+      const metrics = (metricsData || []).map((m: any) =>
+        calibrateCampaignMetricsArray(m.campaigns?.name || "", [m])[0] || m
+      );
 
       const chartMap = new Map();
       let currentPeriod = { cost: 0, results: 0, trueConversions: 0, clicks: 0, impressions: 0, reach: 0 };
@@ -351,7 +355,8 @@ function Dashboard() {
           .lte("date", dateTo);
 
         if (rawMetrics && rawMetrics.length > 0) {
-          for (const m of rawMetrics) {
+          for (const rawM of rawMetrics) {
+            const m = calibrateCampaignMetricsArray(rawM.campaigns?.name || "", [rawM])[0] || rawM;
             const key = m.campaigns?.ad_account_id;
             if (!key) continue;
             if (!metricsMap[key]) {

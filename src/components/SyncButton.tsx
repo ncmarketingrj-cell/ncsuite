@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { formatDistanceToNow, format, subDays, subMonths, startOfMonth, endOfMonth } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { useAuth } from "@/lib/auth";
+import { calibrateMetaConversionsFromGraph } from "@/lib/metaConversionCalibrator";
 
 interface SyncButtonProps {
   mode?: "quick" | "full" | "max" | "month1" | "month2" | "month3";
@@ -110,6 +111,10 @@ export function SyncButton({ mode = "quick" }: SyncButtonProps) {
         throw new Error(msg);
       }
       if (data?.error) throw new Error(data.error);
+
+      if (body.time_range?.since && body.time_range?.until) {
+        await calibrateMetaConversionsFromGraph(supabase, body.time_range.since, body.time_range.until, "all");
+      }
 
       const msg = data?.message || (
         isQuick ? "7 dias atualizados!" :

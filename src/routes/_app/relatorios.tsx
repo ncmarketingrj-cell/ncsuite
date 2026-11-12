@@ -16,6 +16,7 @@ import { toast } from "sonner";
 import { DateRangePicker } from "@/components/DateRangePicker";
 import { TemplateModal } from "@/components/TemplateModal";
 import { WhatsAppSendModal } from "@/components/WhatsAppSendModal";
+import { calibrateCampaignMetricsArray, calibrateAdMetricsArray, ensureDatabaseCalibrated } from "@/lib/metaConversionCalibrator";
 
 interface CampaignData {
   id: string;
@@ -612,7 +613,8 @@ function RelatoriosPage() {
           `, selectedAccountId);
 
           mapped = (dbData || []).map((ad: any) => {
-            const filteredMetrics = (ad.asset_metrics || []).filter((x: any) => {
+            const calibratedAssetMetrics = calibrateAdMetricsArray(ad.name || "", ad.asset_metrics || []);
+            const filteredMetrics = calibratedAssetMetrics.filter((x: any) => {
               if (!x.date) return true;
               return x.date >= startLimit && x.date <= endLimit;
             });
@@ -644,8 +646,9 @@ function RelatoriosPage() {
 
         } else {
           // Default: campaign level
+          ensureDatabaseCalibrated(supabase).catch(() => {});
           const dbMetrics = await fetchPaginated("metrics", `
-            campaign_id, cost, conversions, impressions, clicks, reach, result_type,
+            campaign_id, cost, conversions, impressions, clicks, reach, result_type, date,
             campaigns!inner(id, name, ad_account_id, objective)
           `, selectedAccountId, (q) => {
              return q.gte("date", startLimit).lte("date", endLimit);
@@ -659,7 +662,8 @@ function RelatoriosPage() {
           // Agrupar métricas por campanha e identificar plataforma correta
           const metricsMap = new Map<string, { id: string, name: string, platform: string, cost: number; impressions: number; clicks: number; conversions: number; reach: number; resultType?: string; metaObjective?: string }>();
           
-          dbMetrics.forEach((m: any) => {
+          dbMetrics.forEach((rawM: any) => {
+            const [m] = calibrateCampaignMetricsArray(rawM.campaigns?.name || "", [rawM]);
             const campId = m.campaign_id;
             const adAccountId = m.campaigns?.ad_account_id;
             const matchedAccount = accounts.find(a => a.id === adAccountId);

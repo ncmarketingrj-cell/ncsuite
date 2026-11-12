@@ -8,6 +8,7 @@ import { ptBR } from "date-fns/locale";
 import { PageHeader } from "@/components/PageHeader";
 import { DateRangePicker } from "@/components/DateRangePicker";
 import { useGlobalDate, type Period } from "@/contexts/DateContext";
+import { calibrateCampaignMetricsArray, ensureDatabaseCalibrated } from "@/lib/metaConversionCalibrator";
 import {
   AreaChart, Area, XAxis, YAxis, ResponsiveContainer, Tooltip as RTooltip,
 } from "recharts";
@@ -1878,13 +1879,15 @@ function useCockpitData() {
       }
 
       const campaignsWithMetrics = (data as any[]) ?? [];
+      ensureDatabaseCalibrated(supabase).catch(() => {});
       const rows: any[] = [];
 
       for (const camp of campaignsWithMetrics) {
         if (!camp.metrics) continue;
         const campBudget = camp.daily_budget ?? camp.budget ?? 0;
+        const calibratedMetrics = calibrateCampaignMetricsArray(camp.name || "", camp.metrics);
 
-        for (const m of camp.metrics) {
+        for (const m of calibratedMetrics) {
           if (!m.date) continue;
           const d = m.date.split("T")[0];
           if (d < queryDateFrom || d > dateTo) continue;

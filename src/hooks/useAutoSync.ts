@@ -7,6 +7,7 @@
 import { useEffect, useRef, useCallback } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase-external/client";
+import { calibrateMetaConversionsFromGraph } from "@/lib/metaConversionCalibrator";
 
 const REALTIME_SYNC_INTERVAL_MS = 10 * 60 * 1000; // 10 minutos
 const STORAGE_REALTIME_KEY = "nc_last_realtime_sync";
@@ -98,6 +99,9 @@ export function useAutoSync() {
       if (failures.length === syncResults.length) {
         throw new Error("Todos os serviços de sincronização falharam.");
       }
+
+      // Calibra conversões reais de WhatsApp diretamente via Meta Graph API
+      await calibrateMetaConversionsFromGraph(supabase, timeRange.since, timeRange.until, "all");
 
       console.log(`[AUTO-SYNC] 🧠 Serviços sincronizados. Rodando motor de automações/alertas...`);
 
