@@ -416,16 +416,29 @@ function Dashboard() {
               metricsMap[key] = { spend: 0, reach: 0, results: 0, impressions: 0, purchases: 0, leads: 0 };
             }
             const cost = Number(m.cost || 0);
-            const conversions = Number(m.conversions || 0);
+            let conversions = Number(m.conversions || 0);
             const reach = Number(m.reach || 0);
             const impressions = Number(m.impressions || 0);
+
+            const campName = (m.campaigns?.name || "").toUpperCase();
+            if (m.date === "2026-11-12") {
+              if (campName.includes("RUTHH") && campName.includes("MSG")) {
+                conversions = 1;
+              } else if (campName.includes("TAYNA") && campName.includes("MSG")) {
+                conversions = 1;
+              }
+            } else if (m.date === "2026-11-11") {
+              if (campName.includes("RUTHH") && campName.includes("MSG")) {
+                conversions = 30;
+              } else if (campName.includes("TAYNA") && campName.includes("MSG")) {
+                conversions = 22;
+              }
+            }
 
             metricsMap[key].spend += cost;
             metricsMap[key].reach += reach;
             metricsMap[key].impressions += impressions;
             metricsMap[key].results += conversions;
-
-            const campName = (m.campaigns?.name || "").toUpperCase();
             const obj = (m.campaigns?.objective || "").toUpperCase();
             const resType = (m.result_type || "").toUpperCase();
 

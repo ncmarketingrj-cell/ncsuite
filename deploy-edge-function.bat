@@ -8,7 +8,7 @@ echo Este script irá ajudar você a fazer o deploy da função
 echo 'sync-meta-ads' para o seu Supabase.
 echo.
 echo Passo 1: Vamos abrir a página de login do Supabase no seu navegador.
-echo Por favor, faça login com a conta dona do projeto 'xudumzedcxuuhxokissm'.
+echo Por favor, faça login com a conta dona do projeto 'uqhilsnrrmlepdjzpubq'.
 echo.
 pause
 
@@ -20,7 +20,7 @@ echo Login concluído!
 echo.
 echo Passo 2: Fazendo o deploy da Edge Function...
 echo.
-call npx supabase functions deploy sync-meta-ads --project-ref xudumzedcxuuhxokissm
+call npx supabase functions deploy sync-meta-ads --project-ref uqhilsnrrmlepdjzpubq
 echo.
 echo ====================================================
 echo ✅ Processo concluído! Pressione qualquer tecla para fechar.

@@ -98,6 +98,8 @@ async function fetchCampaignInsights(adAccountId: string, token: string, timePar
       level: "campaign",
       fields: "campaign_id,campaign_name,objective,spend,actions,reach,impressions,frequency,inline_link_clicks,date_start,date_stop",
       time_increment: "1",
+      use_unified_attribution_setting: "true",
+      action_report_time: "impression",
       limit: "500",
       ...timeParams
     })
@@ -114,6 +116,8 @@ async function fetchAdSetInsights(adAccountId: string, token: string, timeParams
       level: "adset",
       fields: "adset_id,adset_name,campaign_id,campaign_name,spend,actions,reach,impressions,frequency,inline_link_clicks,video_p25_watched_actions,video_p50_watched_actions,video_p75_watched_actions,video_p95_watched_actions,date_start",
       time_increment: "1",
+      use_unified_attribution_setting: "true",
+      action_report_time: "impression",
       limit: "500",
       ...timeParams
     })
@@ -130,6 +134,8 @@ async function fetchAdInsights(adAccountId: string, token: string, timeParams: R
       level: "ad",
       fields: "ad_id,ad_name,adset_id,campaign_id,campaign_name,spend,actions,reach,impressions,frequency,inline_link_clicks,video_p25_watched_actions,video_p50_watched_actions,video_p75_watched_actions,video_p95_watched_actions,date_start",
       time_increment: "1",
+      use_unified_attribution_setting: "true",
+      action_report_time: "impression",
       limit: "500",
       ...timeParams
     })
@@ -224,26 +230,39 @@ async function fetchDemographicBreakdowns(adAccountId: string, token: string, ti
 //
 function parseMetaActionValue(a: any): number {
   if (!a) return 0;
-  if (typeof a.value === "number") return a.value;
-  if (typeof a.value === "string" && a.value.trim() !== "") {
-    const parsed = parseInt(a.value, 10);
-    if (!isNaN(parsed) && parsed > 0) return parsed;
+
+  // 1. Prioridade absoluta para as janelas de atribuição oficiais configuradas no Ad Set
+  // No Gerenciador de Anúncios, a coluna "Resultados" reflete a atribuição ativa (ex: 7d_click + 1d_view).
+  const click7d = a["7d_click"] !== undefined && a["7d_click"] !== null ? parseInt(String(a["7d_click"]), 10) : null;
+  const view1d = a["1d_view"] !== undefined && a["1d_view"] !== null ? parseInt(String(a["1d_view"]), 10) : null;
+  if ((click7d !== null && !isNaN(click7d)) || (view1d !== null && !isNaN(view1d))) {
+    const totalWin = (click7d && click7d > 0 ? click7d : 0) + (view1d && view1d > 0 ? view1d : 0);
+    if (totalWin > 0) return totalWin;
   }
-  // Se a.value for nulo ou 0, checa janelas de atribuição (ex: 7d_click, 1d_view)
-  for (const win of ["7d_click", "1d_view", "1d_click", "28d_click", "default", "value"]) {
+
+  // Outras janelas suportadas pelo Meta
+  for (const win of ["1d_click", "28d_click", "default"]) {
     if (a[win] !== undefined && a[win] !== null) {
       const parsed = parseInt(String(a[win]), 10);
       if (!isNaN(parsed) && parsed > 0) return parsed;
     }
   }
+
+  // 2. Valor agregado padrão
+  if (typeof a.value === "number" && !isNaN(a.value)) return a.value;
+  if (typeof a.value === "string" && a.value.trim() !== "") {
+    const parsed = parseInt(a.value, 10);
+    if (!isNaN(parsed) && parsed > 0) return parsed;
+  }
+
   return 0;
 }
 
 function getMessagingConversationsStarted(actions: any[] = []): number {
   if (!Array.isArray(actions) || actions.length === 0) return 0;
 
-  // 1. Prioridade absoluta: qualquer action_type que contenha "messaging_conversation_started"
-  // Ex: onsite_conversion.messaging_conversation_started_7d, onsite_conversion.messaging_conversation_started
+  // 1. Prioridade máxima: Conversa por mensagem iniciada (Meta Ads Manager standard)
+  // Ex: onsite_conversion.messaging_conversation_started_7d, onsite_conversion.messaging_conversation_started, messaging_conversation_started_7d
   for (const a of actions) {
     const act = String(a.action_type || "").toLowerCase();
     if (act.includes("messaging_conversation_started")) {
@@ -252,16 +271,7 @@ function getMessagingConversationsStarted(actions: any[] = []): number {
     }
   }
 
-  // 2. WhatsApp conversas ou mensagens iniciadas
-  for (const a of actions) {
-    const act = String(a.action_type || "").toLowerCase();
-    if (act.includes("whatsapp") && (act.includes("message") || act.includes("conversation") || act.includes("started") || act.includes("lead"))) {
-      const val = parseMetaActionValue(a);
-      if (val > 0) return val;
-    }
-  }
-
-  // 3. Primeira resposta (first reply)
+  // 2. Primeira resposta (first reply) no WhatsApp / Messenger / Direct
   for (const a of actions) {
     const act = String(a.action_type || "").toLowerCase();
     if (act.includes("messaging_first_reply")) {
@@ -270,32 +280,29 @@ function getMessagingConversationsStarted(actions: any[] = []): number {
     }
   }
 
-  // 4. Total messaging connection
+  // 3. WhatsApp conversas ou mensagens iniciadas explicitamente
   for (const a of actions) {
     const act = String(a.action_type || "").toLowerCase();
-    if (act.includes("total_messaging_connection")) {
+    if (act.includes("whatsapp") && (act.includes("conversation") || act.includes("started") || act.includes("lead"))) {
       const val = parseMetaActionValue(a);
       if (val > 0) return val;
     }
   }
 
-  // 5. Contact / Contato
+  // 4. Conexões de mensagem iniciadas (user-initiated)
   for (const a of actions) {
     const act = String(a.action_type || "").toLowerCase();
-    if (act === "contact" || act === "onsite_conversion.contact") {
+    if (act.includes("messaging_user_initiated_conversation")) {
       const val = parseMetaActionValue(a);
       if (val > 0) return val;
     }
   }
 
-  // 6. Qualquer outra ação onsite de mensagens iniciadas (exceto visualizações de mensagem e bloqueios)
-  for (const a of actions) {
-    const act = String(a.action_type || "").toLowerCase();
-    if (act.startsWith("onsite_conversion.messaging_") && !act.includes("welcome") && !act.includes("block")) {
-      const val = parseMetaActionValue(a);
-      if (val > 0) return val;
-    }
-  }
+  // ATENÇÃO CRÍTICA:
+  // NUNCA incluir total_messaging_connection nem contact como conversa!
+  // total_messaging_connection e contact são disparados a cada clique no botão WhatsApp,
+  // mesmo que o cliente NUNCA envie mensagem. O Gerenciador Meta exibe exclusivamente
+  // "Conversas por mensagem iniciadas".
 
   return 0;
 }
@@ -331,11 +338,7 @@ function extractConversions(actions: any[] = [], objective?: string, reach: numb
   const messagingCount = getMessagingConversationsStarted(actions);
 
   if (isMessaging) {
-    if (messagingCount > 0) return messagingCount;
-    // Fallback de segurança: se messagingCount deu 0, verifica se há contato ou lead registrado no WhatsApp
-    const leadOrContact = Math.max(getVal("onsite_conversion.lead"), getVal("lead"), getVal("contact"), getVal("onsite_conversion.contact"));
-    if (leadOrContact > 0) return leadOrContact;
-    return 0;
+    return messagingCount;
   }
 
   // Se não foi identificado pelo nome mas possui conversas iniciadas registradas em actions:
@@ -1082,18 +1085,24 @@ serve(async (req) => {
           metaGetPaginated(`/${accountId}/insights`, accountToken, {
             level: "campaign",
             fields: "campaign_id,campaign_name,spend,reach,impressions,frequency,actions,inline_link_clicks,date_start,date_stop",
+            use_unified_attribution_setting: "true",
+            action_report_time: "impression",
             limit: "500",
             ...timeParams
           }),
           metaGetPaginated(`/${accountId}/insights`, accountToken, {
             level: "adset",
             fields: "adset_id,campaign_id,campaign_name,spend,reach,impressions,frequency,actions,inline_link_clicks,date_start,date_stop",
+            use_unified_attribution_setting: "true",
+            action_report_time: "impression",
             limit: "500",
             ...timeParams
           }),
           metaGetPaginated(`/${accountId}/insights`, accountToken, {
             level: "ad",
             fields: "ad_id,campaign_id,campaign_name,spend,reach,impressions,frequency,actions,inline_link_clicks,quality_ranking,engagement_rate_ranking,conversion_rate_ranking,date_start,date_stop",
+            use_unified_attribution_setting: "true",
+            action_report_time: "impression",
             limit: "500",
             ...timeParams
           })

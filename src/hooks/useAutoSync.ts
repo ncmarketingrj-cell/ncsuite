@@ -6,7 +6,7 @@
 import { useEffect, useRef, useCallback } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase-external/client";
-import { ensureDatabaseCalibrated } from "@/lib/metaConversionCalibrator";
+import { ensureDatabaseCalibrated, calibrateMetaConversionsFromGraph } from "@/lib/metaConversionCalibrator";
 
 const REALTIME_SYNC_INTERVAL_MS = 3 * 60 * 1000; // 3 minutos rigorosos em tempo real
 const STORAGE_REALTIME_KEY = "nc_last_realtime_sync";
@@ -96,6 +96,13 @@ export function useAutoSync() {
       const failures = syncResults.filter(r => r.status === "rejected" || (r.status === "fulfilled" && r.value.error));
       if (failures.length === syncResults.length) {
         throw new Error("Todos os serviços de sincronização falharam.");
+      }
+
+      // Calibração em tempo real direta com Meta Graph API para D-1 e D0
+      try {
+        await calibrateMetaConversionsFromGraph(supabase, timeRange.since, timeRange.until, "all");
+      } catch (calibGraphErr) {
+        console.warn("[AUTO-SYNC] Calibração Graph ignorada:", calibGraphErr);
       }
 
       // Calibração rápida de segurança no banco
