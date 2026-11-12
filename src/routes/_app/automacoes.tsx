@@ -6,7 +6,8 @@ import {
   ShieldAlert, Plus, X, Server, CheckCircle2, RefreshCw,
   Bell, TrendingUp, DollarSign, AlertCircle, Timer, Pencil, Radio, Activity,
   Settings2, Volume2, VolumeX, BellOff, BellRing, Moon, RotateCcw, Lock, Sparkles,
-  Trash2, CheckCheck, Music, Check, ArrowRight, ExternalLink, ShieldCheck, Flame, Filter, Volume1
+  Trash2, CheckCheck, Music, Check, ArrowRight, ExternalLink, ShieldCheck, Flame, Filter, Volume1,
+  Store, Calendar
 } from "lucide-react";
 import { PageHeader } from "@/components/PageHeader";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -31,7 +32,9 @@ import {
 import {
   MAX_NOTIFICATIONS_CAP, getRecentNotifications, markAllNotificationsAsRead,
   markNotificationAsRead, clearAllNotifications, deleteNotification,
-  enforceNotificationCapacity, type AppNotification,
+  enforceNotificationCapacity, getAlertCategoryToggles, setAlertCategoryToggles,
+  deleteNotificationsByCategory, ALERT_CATEGORY_TOGGLES_EVENT,
+  type AppNotification, type AlertCategoryToggles, type AlertCategoryKey,
 } from "@/lib/notificationService";
 import { formatDistanceToNow, formatDistance } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -99,23 +102,31 @@ function AutomationsPage() {
   const [selectedDiagnoseCampName, setSelectedDiagnoseCampName] = useState<string>("");
   const [isDiagnoseOpen, setIsDiagnoseOpen]                     = useState(false);
 
-  // ── Filtro da Central de Notificações ────────────────────────────────────────
-  const [notifFilter, setNotifFilter] = useState<"all" | "unread" | "alert_cpl" | "alert_budget" | "alert_frequency">("all");
+  // ── Filtro da Central de Notificações & Toggles de Categorias ───────────────
+  const [notifFilter, setNotifFilter] = useState<"all" | "unread" | "alert_cpl" | "alert_budget" | "alert_closing" | "alert_frequency">("all");
+  const [accountFilter, setAccountFilter] = useState<string>("all");
+  const [alertToggles, setAlertToggles] = useState<AlertCategoryToggles>(getAlertCategoryToggles);
 
   useEffect(() => {
     const onSound = (e: Event) => setSoundOn((e as CustomEvent).detail);
     const onPrefs = (e: Event) => setPrefsState((e as CustomEvent).detail);
     const onSoundType = (e: Event) => setSelectedSound((e as CustomEvent).detail);
     const onInterval = (e: Event) => setAlertInterval((e as CustomEvent).detail);
+    const onToggles = (e: Event) => {
+      const next = (e as CustomEvent).detail as AlertCategoryToggles;
+      if (next) setAlertToggles(next);
+    };
     window.addEventListener(SOUND_CHANGED_EVENT, onSound as EventListener);
     window.addEventListener(NOTIF_PREFS_CHANGED_EVENT, onPrefs as EventListener);
     window.addEventListener(ALERT_SOUND_TYPE_EVENT, onSoundType as EventListener);
     window.addEventListener(ALERT_SOUND_INTERVAL_EVENT, onInterval as EventListener);
+    window.addEventListener(ALERT_CATEGORY_TOGGLES_EVENT, onToggles as EventListener);
     return () => {
       window.removeEventListener(SOUND_CHANGED_EVENT, onSound as EventListener);
       window.removeEventListener(NOTIF_PREFS_CHANGED_EVENT, onPrefs as EventListener);
       window.removeEventListener(ALERT_SOUND_TYPE_EVENT, onSoundType as EventListener);
       window.removeEventListener(ALERT_SOUND_INTERVAL_EVENT, onInterval as EventListener);
+      window.removeEventListener(ALERT_CATEGORY_TOGGLES_EVENT, onToggles as EventListener);
     };
   }, []);
 
@@ -178,18 +189,50 @@ function AutomationsPage() {
     },
   });
 
-  // ── Central de Notificações (Até 100 notificações acumulativas) ───────────────
+  // ── Central de Notificações (Até 100 notificações acumulativas e deduplicadas) ──
   const {
     data: allNotifications = [],
     refetch: refetchNotifications,
     isLoading: loadingNotifications,
   } = useQuery({
-    queryKey: ["all_notifications_central"],
+    queryKey: ["all_notifications_central", alertToggles],
     queryFn: async () => {
       await enforceNotificationCapacity();
       return await getRecentNotifications(MAX_NOTIFICATIONS_CAP);
     },
     refetchInterval: 15000,
+  });
+
+  const handleToggleAlertCategory = async (
+    key: keyof AlertCategoryToggles,
+    label: string,
+    purgeCategory?: AlertCategoryKey
+  ) => {
+    const nextVal = !alertToggles[key];
+    const updated = await setAlertCategoryToggles({ [key]: nextVal });
+    setAlertToggles(updated);
+    if (!nextVal && purgeCategory) {
+      await deleteNotificationsByCategory(purgeCategory);
+    }
+    qc.invalidateQueries({ queryKey: ["alert_thresholds"] });
+    qc.invalidateQueries({ queryKey: ["header_notifications"] });
+    refetchNotifications();
+    toast.success(
+      nextVal
+        ? `✅ ${label} ATIVADO! O sistema voltará a monitorar e exibir este alerta.`
+        : `🔕 ${label} DESATIVADO! Você não receberá mais alertas desta categoria até reativá-lo.`
+    );
+  };
+
+  const toggleRuleField = useMutation({
+    mutationFn: async ({ id, field, value }: { id: string; field: string; value: boolean }) => {
+      const { error } = await (supabase as any).from("alert_thresholds").update({ [field]: value }).eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["alert_thresholds"] });
+      toast.success("Alerta da regra atualizado!");
+    },
   });
 
   // Atualizar notificações quando eval termina
@@ -451,12 +494,19 @@ function AutomationsPage() {
     );
   }
 
+  // Contas únicas presentes nas notificações para filtro rápido
+  const notificationAccounts = Array.from(
+    new Set(allNotifications.map((n) => n.accountName).filter(Boolean))
+  ) as string[];
+
   // Filtragem das notificações na Central
   const filteredNotifications = allNotifications.filter((n) => {
+    if (accountFilter !== "all" && n.accountName !== accountFilter) return false;
     if (notifFilter === "unread") return !n.is_read;
-    if (notifFilter === "alert_cpl") return n.type === "alert_cpl" || n.type === "alert";
-    if (notifFilter === "alert_budget") return n.type === "alert_budget";
-    if (notifFilter === "alert_frequency") return n.type === "alert_frequency";
+    if (notifFilter === "alert_cpl") return n.category === "alert_cpl";
+    if (notifFilter === "alert_budget") return n.category === "alert_budget";
+    if (notifFilter === "alert_closing") return n.category === "alert_closing";
+    if (notifFilter === "alert_frequency") return n.category === "alert_frequency";
     return true;
   });
 
@@ -728,19 +778,76 @@ function AutomationsPage() {
 
                         <div className="flex flex-wrap items-center gap-2 text-xs">
                           {th.max_cpl != null && (
-                            <span className="inline-flex items-center gap-1 rounded bg-muted/60 border border-border px-2 py-0.5 text-[10px] font-mono text-muted-foreground">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                toggleRuleField.mutate({
+                                  id: th.id,
+                                  field: "alert_cpl_enabled",
+                                  value: th.alert_cpl_enabled === false,
+                                })
+                              }
+                              title="Clique para ativar ou desativar o alerta de CPL nesta regra"
+                              className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-[10px] font-mono transition ${
+                                th.alert_cpl_enabled !== false
+                                  ? "bg-red-500/10 border-red-500/30 text-foreground"
+                                  : "bg-muted/40 border-border text-muted-foreground opacity-55 line-through"
+                              }`}
+                            >
+                              <span className={`h-1.5 w-1.5 rounded-full ${th.alert_cpl_enabled !== false ? "bg-red-500" : "bg-muted-foreground"}`} />
                               TETO CPL: <strong className="text-primary font-bold">R$ {Number(th.max_cpl).toFixed(2)}</strong>
-                            </span>
+                              <span className="text-[9px] uppercase font-bold ml-0.5">
+                                ({th.alert_cpl_enabled !== false ? "Ativo" : "Pausado"})
+                              </span>
+                            </button>
                           )}
                           {th.max_budget_pct != null && (
-                            <span className="inline-flex items-center gap-1 rounded bg-muted/60 border border-border px-2 py-0.5 text-[10px] font-mono text-muted-foreground">
-                              ALERTA BUDGET: <strong className="text-amber-500 font-bold">{th.max_budget_pct}%</strong>
-                            </span>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                toggleRuleField.mutate({
+                                  id: th.id,
+                                  field: "alert_budget_enabled",
+                                  value: th.alert_budget_enabled === false,
+                                })
+                              }
+                              title="Clique para ativar ou desativar o Alerta de Orçamento nesta regra"
+                              className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-[10px] font-mono transition ${
+                                th.alert_budget_enabled !== false
+                                  ? "bg-amber-500/10 border-amber-500/30 text-foreground"
+                                  : "bg-muted/40 border-border text-muted-foreground opacity-55 line-through"
+                              }`}
+                            >
+                              <span className={`h-1.5 w-1.5 rounded-full ${th.alert_budget_enabled !== false ? "bg-amber-500" : "bg-muted-foreground"}`} />
+                              ORÇAMENTO: <strong className="text-amber-500 font-bold">{th.max_budget_pct}%</strong>
+                              <span className="text-[9px] uppercase font-bold ml-0.5">
+                                ({th.alert_budget_enabled !== false ? "Ativo" : "Pausado"})
+                              </span>
+                            </button>
                           )}
                           {th.max_frequency != null && (
-                            <span className="inline-flex items-center gap-1 rounded bg-muted/60 border border-border px-2 py-0.5 text-[10px] font-mono text-muted-foreground">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                toggleRuleField.mutate({
+                                  id: th.id,
+                                  field: "alert_frequency_enabled",
+                                  value: th.alert_frequency_enabled === false,
+                                })
+                              }
+                              title="Clique para ativar ou desativar o Alerta de Frequência nesta regra"
+                              className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-[10px] font-mono transition ${
+                                th.alert_frequency_enabled !== false
+                                  ? "bg-blue-500/10 border-blue-500/30 text-foreground"
+                                  : "bg-muted/40 border-border text-muted-foreground opacity-55 line-through"
+                              }`}
+                            >
+                              <span className={`h-1.5 w-1.5 rounded-full ${th.alert_frequency_enabled !== false ? "bg-blue-500" : "bg-muted-foreground"}`} />
                               FREQ MÁX: <strong className="text-foreground font-bold">{Number(th.max_frequency).toFixed(1)}×</strong>
-                            </span>
+                              <span className="text-[9px] uppercase font-bold ml-0.5">
+                                ({th.alert_frequency_enabled !== false ? "Ativo" : "Pausado"})
+                              </span>
+                            </button>
                           )}
                           {th.alert_account_balance_enabled && th.min_account_balance != null && (
                             <span className="inline-flex items-center gap-1 rounded bg-muted/60 border border-border px-2 py-0.5 text-[10px] font-mono text-muted-foreground">
@@ -789,51 +896,204 @@ function AutomationsPage() {
             )}
           </div>
 
-          {/* Configurações Globais do Motor (Robô) */}
-          {["admin", "master_admin", "ceo"].includes(profileData?.role || "") && (
-            <div className="space-y-4 pt-6 border-t border-border">
+          {/* ── PAINEL DE CONTROLE GERAL DOS ALERTAS (ORÇAMENTO, FECHAMENTO, CPL, FREQUÊNCIA) ── */}
+          <div className="space-y-4 pt-6 border-t border-border">
+            <div className="flex items-center justify-between flex-wrap gap-2">
               <div className="flex items-center gap-2">
                 <Settings2 className="h-4 w-4 text-primary" />
-                <h4 className="text-xs font-bold text-foreground uppercase tracking-wider">
-                  Configurações Globais do Motor Autônomo
-                </h4>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {/* Zero Delivery */}
-                <div className="rounded-2xl border border-border bg-card p-5 space-y-3">
-                  <div className="flex items-center justify-between gap-4">
-                    <div>
-                      <p className="text-sm font-bold text-foreground">Falta de Entrega (Zero Delivery)</p>
-                      <p className="text-xs text-muted-foreground mt-0.5">Alerta se a campanha está ativa mas gastou exatamente R$ 0,00.</p>
-                    </div>
-                    <button
-                      onClick={() => updateConfigMutation.mutate({ zero_delivery_enabled: configData?.zero_delivery_enabled === false ? true : false })}
-                      className={`relative h-6 w-11 rounded-full transition-colors shrink-0 ${configData?.zero_delivery_enabled !== false ? "bg-red-500" : "bg-muted"}`}
-                    >
-                      <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${configData?.zero_delivery_enabled !== false ? "left-5.5 translate-x-0.5" : "left-0.5"}`} />
-                    </button>
-                  </div>
-                </div>
-
-                {/* Queda de Performance */}
-                <div className="rounded-2xl border border-border bg-card p-5 space-y-3">
-                  <div className="flex items-center justify-between gap-4">
-                    <div>
-                      <p className="text-sm font-bold text-foreground">Queda de Performance (Anomalia)</p>
-                      <p className="text-xs text-muted-foreground mt-0.5">Alerta se a campanha consumiu verba relevante com zero conversões hoje.</p>
-                    </div>
-                    <button
-                      onClick={() => updateConfigMutation.mutate({ perf_drop_enabled: configData?.perf_drop_enabled === false ? true : false })}
-                      className={`relative h-6 w-11 rounded-full transition-colors shrink-0 ${configData?.perf_drop_enabled !== false ? "bg-amber-500" : "bg-muted"}`}
-                    >
-                      <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${configData?.perf_drop_enabled !== false ? "left-5.5 translate-x-0.5" : "left-0.5"}`} />
-                    </button>
-                  </div>
+                <div>
+                  <h4 className="text-xs font-black text-foreground uppercase tracking-wider">
+                    Gerenciamento Geral de Categorias de Alerta (Ativar / Desativar)
+                  </h4>
+                  <p className="text-[11px] text-muted-foreground">
+                    Ative ou desative a qualquer momento o Alerta de Orçamento, o Resumo de Fechamento Diário (D-1), CPL Alto ou Frequência.
+                  </p>
                 </div>
               </div>
             </div>
-          )}
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
+              {/* 1. Alerta de Orçamento Diário */}
+              <div className={`rounded-2xl border p-4 space-y-2 transition-all ${
+                alertToggles.budgetEnabled ? "border-amber-500/35 bg-amber-500/[0.04]" : "border-border bg-card opacity-75"
+              }`}>
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2.5">
+                    <div className="h-9 w-9 rounded-xl bg-amber-500/15 text-amber-500 flex items-center justify-center shrink-0">
+                      <DollarSign className="h-4.5 w-4.5" />
+                    </div>
+                    <div>
+                      <p className="text-xs font-black uppercase text-foreground">Alerta de Orçamento Diário</p>
+                      <span className={`text-[10px] font-mono font-bold ${alertToggles.budgetEnabled ? "text-emerald-500" : "text-muted-foreground"}`}>
+                        {alertToggles.budgetEnabled ? "● ATIVO" : "○ DESATIVADO"}
+                      </span>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleToggleAlertCategory("budgetEnabled", "Alerta de Orçamento Diário")}
+                    className={`relative h-6 w-11 rounded-full transition-colors shrink-0 ${alertToggles.budgetEnabled ? "bg-amber-500" : "bg-muted"}`}
+                  >
+                    <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${alertToggles.budgetEnabled ? "left-5.5 translate-x-0.5" : "left-0.5"}`} />
+                  </button>
+                </div>
+                <p className="text-[11px] text-muted-foreground leading-relaxed">
+                  Avisa quando uma campanha atinge 80%–100%+ do orçamento diário programado, identificando a Conta e a Campanha.
+                </p>
+              </div>
+
+              {/* 2. Alerta de Fechamento Diário (D-1) */}
+              <div className={`rounded-2xl border p-4 space-y-2 transition-all ${
+                alertToggles.closingSummaryEnabled ? "border-emerald-500/35 bg-emerald-500/[0.04]" : "border-border bg-card opacity-75"
+              }`}>
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2.5">
+                    <div className="h-9 w-9 rounded-xl bg-emerald-500/15 text-emerald-500 flex items-center justify-center shrink-0">
+                      <Calendar className="h-4.5 w-4.5" />
+                    </div>
+                    <div>
+                      <p className="text-xs font-black uppercase text-foreground">Resumo de Fechamento (D-1)</p>
+                      <span className={`text-[10px] font-mono font-bold ${alertToggles.closingSummaryEnabled ? "text-emerald-500" : "text-muted-foreground"}`}>
+                        {alertToggles.closingSummaryEnabled ? "● ATIVO" : "○ DESATIVADO"}
+                      </span>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleToggleAlertCategory("closingSummaryEnabled", "Alerta de Fechamento Diário (D-1)")}
+                    className={`relative h-6 w-11 rounded-full transition-colors shrink-0 ${alertToggles.closingSummaryEnabled ? "bg-emerald-500" : "bg-muted"}`}
+                  >
+                    <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${alertToggles.closingSummaryEnabled ? "left-5.5 translate-x-0.5" : "left-0.5"}`} />
+                  </button>
+                </div>
+                <p className="text-[11px] text-muted-foreground leading-relaxed">
+                  Gera o balanço consolidado do dia anterior (investimento total, resultados e alcance de todas as contas).
+                </p>
+              </div>
+
+              {/* 3. Alerta de CPL / Custo por Resultado */}
+              <div className={`rounded-2xl border p-4 space-y-2 transition-all ${
+                alertToggles.cplEnabled ? "border-red-500/35 bg-red-500/[0.04]" : "border-border bg-card opacity-75"
+              }`}>
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2.5">
+                    <div className="h-9 w-9 rounded-xl bg-red-500/15 text-red-500 flex items-center justify-center shrink-0">
+                      <TrendingUp className="h-4.5 w-4.5" />
+                    </div>
+                    <div>
+                      <p className="text-xs font-black uppercase text-foreground">CPL / Custo por Conversa Alto</p>
+                      <span className={`text-[10px] font-mono font-bold ${alertToggles.cplEnabled ? "text-emerald-500" : "text-muted-foreground"}`}>
+                        {alertToggles.cplEnabled ? "● ATIVO" : "○ DESATIVADO"}
+                      </span>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleToggleAlertCategory("cplEnabled", "Alerta de CPL / Custo por Resultado")}
+                    className={`relative h-6 w-11 rounded-full transition-colors shrink-0 ${alertToggles.cplEnabled ? "bg-red-500" : "bg-muted"}`}
+                  >
+                    <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${alertToggles.cplEnabled ? "left-5.5 translate-x-0.5" : "left-0.5"}`} />
+                  </button>
+                </div>
+                <p className="text-[11px] text-muted-foreground leading-relaxed">
+                  Monitora se o Custo por Lead, Conversa ou Resultado ultrapassou a meta configurada para a Conta/Campanha.
+                </p>
+              </div>
+
+              {/* 4. Alerta de Frequência & Saturação */}
+              <div className={`rounded-2xl border p-4 space-y-2 transition-all ${
+                alertToggles.frequencyEnabled ? "border-blue-500/35 bg-blue-500/[0.04]" : "border-border bg-card opacity-75"
+              }`}>
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2.5">
+                    <div className="h-9 w-9 rounded-xl bg-blue-500/15 text-blue-500 flex items-center justify-center shrink-0">
+                      <Radio className="h-4.5 w-4.5" />
+                    </div>
+                    <div>
+                      <p className="text-xs font-black uppercase text-foreground">Frequência & Saturação</p>
+                      <span className={`text-[10px] font-mono font-bold ${alertToggles.frequencyEnabled ? "text-emerald-500" : "text-muted-foreground"}`}>
+                        {alertToggles.frequencyEnabled ? "● ATIVO" : "○ DESATIVADO"}
+                      </span>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleToggleAlertCategory("frequencyEnabled", "Alerta de Frequência")}
+                    className={`relative h-6 w-11 rounded-full transition-colors shrink-0 ${alertToggles.frequencyEnabled ? "bg-blue-500" : "bg-muted"}`}
+                  >
+                    <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${alertToggles.frequencyEnabled ? "left-5.5 translate-x-0.5" : "left-0.5"}`} />
+                  </button>
+                </div>
+                <p className="text-[11px] text-muted-foreground leading-relaxed">
+                  Avisa quando a repetição de anúncios para o mesmo público ultrapassa o limite configurado (ex: 3.5×).
+                </p>
+              </div>
+
+              {/* 5. Zero Delivery */}
+              <div className={`rounded-2xl border p-4 space-y-2 transition-all ${
+                alertToggles.zeroDeliveryEnabled ? "border-purple-500/35 bg-purple-500/[0.04]" : "border-border bg-card opacity-75"
+              }`}>
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2.5">
+                    <div className="h-9 w-9 rounded-xl bg-purple-500/15 text-purple-500 flex items-center justify-center shrink-0">
+                      <AlertCircle className="h-4.5 w-4.5" />
+                    </div>
+                    <div>
+                      <p className="text-xs font-black uppercase text-foreground">Falta de Entrega (R$ 0,00)</p>
+                      <span className={`text-[10px] font-mono font-bold ${alertToggles.zeroDeliveryEnabled ? "text-emerald-500" : "text-muted-foreground"}`}>
+                        {alertToggles.zeroDeliveryEnabled ? "● ATIVO" : "○ DESATIVADO"}
+                      </span>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      handleToggleAlertCategory("zeroDeliveryEnabled", "Alerta de Falta de Entrega");
+                      updateConfigMutation.mutate({ zero_delivery_enabled: !alertToggles.zeroDeliveryEnabled });
+                    }}
+                    className={`relative h-6 w-11 rounded-full transition-colors shrink-0 ${alertToggles.zeroDeliveryEnabled ? "bg-purple-500" : "bg-muted"}`}
+                  >
+                    <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${alertToggles.zeroDeliveryEnabled ? "left-5.5 translate-x-0.5" : "left-0.5"}`} />
+                  </button>
+                </div>
+                <p className="text-[11px] text-muted-foreground leading-relaxed">
+                  Alerta se uma campanha está ativa na conta mas permaneceu com R$ 0,00 de gasto durante o dia.
+                </p>
+              </div>
+
+              {/* 6. Queda de Performance */}
+              <div className={`rounded-2xl border p-4 space-y-2 transition-all ${
+                alertToggles.perfDropEnabled ? "border-rose-500/35 bg-rose-500/[0.04]" : "border-border bg-card opacity-75"
+              }`}>
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2.5">
+                    <div className="h-9 w-9 rounded-xl bg-rose-500/15 text-rose-500 flex items-center justify-center shrink-0">
+                      <Flame className="h-4.5 w-4.5" />
+                    </div>
+                    <div>
+                      <p className="text-xs font-black uppercase text-foreground">Queda de Performance</p>
+                      <span className={`text-[10px] font-mono font-bold ${alertToggles.perfDropEnabled ? "text-emerald-500" : "text-muted-foreground"}`}>
+                        {alertToggles.perfDropEnabled ? "● ATIVO" : "○ DESATIVADO"}
+                      </span>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      handleToggleAlertCategory("perfDropEnabled", "Alerta de Queda de Performance");
+                      updateConfigMutation.mutate({ perf_drop_enabled: !alertToggles.perfDropEnabled });
+                    }}
+                    className={`relative h-6 w-11 rounded-full transition-colors shrink-0 ${alertToggles.perfDropEnabled ? "bg-rose-500" : "bg-muted"}`}
+                  >
+                    <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${alertToggles.perfDropEnabled ? "left-5.5 translate-x-0.5" : "left-0.5"}`} />
+                  </button>
+                </div>
+                <p className="text-[11px] text-muted-foreground leading-relaxed">
+                  Alerta se uma campanha que costuma converter consumiu verba relevante hoje mas ainda está com zero resultados.
+                </p>
+              </div>
+            </div>
+          </div>
         </div>
       )}
 
@@ -904,35 +1164,99 @@ function AutomationsPage() {
             </div>
           </div>
 
-          {/* Filtros Rápidos */}
-          <div className="flex flex-wrap items-center gap-2">
-            {[
-              { id: "all", label: "Todas", count: allNotifications.length },
-              { id: "unread", label: "Não Lidas", count: unreadCount },
-              { id: "alert_cpl", label: "CPL Alto", count: allNotifications.filter(n => n.type === "alert_cpl" || n.type === "alert").length },
-              { id: "alert_budget", label: "Orçamento", count: allNotifications.filter(n => n.type === "alert_budget").length },
-              { id: "alert_frequency", label: "Frequência", count: allNotifications.filter(n => n.type === "alert_frequency").length },
-            ].map((f) => (
-              <button
-                key={f.id}
-                onClick={() => setNotifFilter(f.id as any)}
-                className={`flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-bold transition ${
-                  notifFilter === f.id
-                    ? "bg-primary text-background"
-                    : "bg-card border border-border text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                <span>{f.label}</span>
-                <span className={`rounded-full px-1.5 py-0.2 text-[10px] font-mono ${
-                  notifFilter === f.id ? "bg-black/20 text-background" : "bg-muted text-muted-foreground"
-                }`}>
-                  {f.count}
-                </span>
-              </button>
-            ))}
+          {/* Barra Rápida de Ativação/Desativação de Alertas dentro da Central de Notificações */}
+          <div className="rounded-2xl border border-border bg-card p-4 space-y-3">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div>
+                <h4 className="text-xs font-black uppercase tracking-wider text-foreground flex items-center gap-1.5">
+                  <Settings2 className="h-3.5 w-3.5 text-primary" />
+                  Gerenciar Tipos de Alerta (Ativar ou Desativar Recebimento)
+                </h4>
+                <p className="text-[11px] text-muted-foreground">
+                  Clique em qualquer categoria abaixo para desativar ou reativar imediatamente os alertas de Orçamento, Fechamento Diário, CPL ou Frequência.
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              {[
+                { key: "cplEnabled" as const, label: "Alerta de CPL / Custo", short: "🚨 CPL / Custo Alto" },
+                { key: "budgetEnabled" as const, label: "Alerta de Orçamento", short: "💸 Alerta de Orçamento" },
+                { key: "closingSummaryEnabled" as const, label: "Resumo de Fechamento", short: "🌅 Fechamento Diário" },
+                { key: "frequencyEnabled" as const, label: "Alerta de Frequência", short: "📡 Frequência Alta" },
+              ].map((item) => {
+                const active = alertToggles[item.key];
+                return (
+                  <button
+                    key={item.key}
+                    type="button"
+                    onClick={() => handleToggleAlertCategory(item.key, item.label)}
+                    className={`flex items-center justify-between gap-2 rounded-xl border px-3 py-2 text-xs font-bold transition-all ${
+                      active
+                        ? "border-emerald-500/35 bg-emerald-500/10 text-foreground"
+                        : "border-border bg-muted/30 text-muted-foreground opacity-70 hover:opacity-100"
+                    }`}
+                  >
+                    <span className="truncate">{item.short}</span>
+                    <span className={`rounded-full px-2 py-0.5 text-[9px] font-mono font-black uppercase ${
+                      active ? "bg-emerald-500 text-slate-950" : "bg-muted text-muted-foreground"
+                    }`}>
+                      {active ? "Ativo" : "Off"}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
 
-          {/* Feed de Notificações */}
+          {/* Filtros Rápidos por Tipo e por Conta */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center gap-2">
+              {[
+                { id: "all", label: "Todas (Sem Duplicatas)", count: allNotifications.length },
+                { id: "unread", label: "Não Lidas", count: unreadCount },
+                { id: "alert_cpl", label: "CPL / Custo Alto", count: allNotifications.filter(n => n.category === "alert_cpl").length },
+                { id: "alert_budget", label: "Orçamento", count: allNotifications.filter(n => n.category === "alert_budget").length },
+                { id: "alert_closing", label: "Fechamento D-1", count: allNotifications.filter(n => n.category === "alert_closing").length },
+                { id: "alert_frequency", label: "Frequência", count: allNotifications.filter(n => n.category === "alert_frequency").length },
+              ].map((f) => (
+                <button
+                  key={f.id}
+                  onClick={() => setNotifFilter(f.id as any)}
+                  className={`flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-bold transition ${
+                    notifFilter === f.id
+                      ? "bg-primary text-background"
+                      : "bg-card border border-border text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  <span>{f.label}</span>
+                  <span className={`rounded-full px-1.5 py-0.2 text-[10px] font-mono ${
+                    notifFilter === f.id ? "bg-black/20 text-background" : "bg-muted text-muted-foreground"
+                  }`}>
+                    {f.count}
+                  </span>
+                </button>
+              ))}
+            </div>
+
+            {notificationAccounts.length > 0 && (
+              <div className="flex items-center gap-2 shrink-0">
+                <Store className="h-3.5 w-3.5 text-primary shrink-0" />
+                <select
+                  value={accountFilter}
+                  onChange={(e) => setAccountFilter(e.target.value)}
+                  className="rounded-xl border border-border bg-card px-3 py-1.5 text-xs font-bold text-foreground focus:border-primary focus:outline-none cursor-pointer"
+                >
+                  <option value="all">Todas as Contas ({notificationAccounts.length})</option>
+                  {notificationAccounts.map((acc) => (
+                    <option key={acc} value={acc}>{acc}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+          </div>
+
+          {/* Feed de Notificações Enriquecidas e Deduplicadas */}
           {loadingNotifications ? (
             <div className="flex justify-center py-20">
               <Loader2 className="h-7 w-7 animate-spin text-primary/50" />
@@ -944,16 +1268,17 @@ function AutomationsPage() {
               <p className="text-xs text-muted-foreground mt-1 max-w-sm">
                 {notifFilter === "unread"
                   ? "Parabéns! Todas as notificações foram visualizadas e tratadas."
-                  : "A Central está limpa e pronta para capturar novos eventos das suas contas."}
+                  : "A Central está limpa ou o tipo de alerta selecionado está desativado."}
               </p>
             </div>
           ) : (
             <div className="space-y-2.5">
               {filteredNotifications.map((notif, index) => {
                 const timeAgo = formatDistanceToNow(new Date(notif.created_at), { addSuffix: true, locale: ptBR });
-                const isCPL = notif.type === "alert_cpl" || notif.type === "alert";
-                const isBudget = notif.type === "alert_budget";
-                const isFreq = notif.type === "alert_frequency";
+                const isCPL = notif.category === "alert_cpl";
+                const isBudget = notif.category === "alert_budget";
+                const isClosing = notif.category === "alert_closing";
+                const isFreq = notif.category === "alert_frequency";
 
                 return (
                   <motion.div
@@ -973,6 +1298,8 @@ function AutomationsPage() {
                           ? "bg-red-500/15 text-red-400 border border-red-500/30"
                           : isBudget
                           ? "bg-amber-500/15 text-amber-400 border border-amber-500/30"
+                          : isClosing
+                          ? "bg-emerald-500/15 text-emerald-400 border border-emerald-500/30"
                           : isFreq
                           ? "bg-blue-500/15 text-blue-400 border border-blue-500/30"
                           : "bg-primary/15 text-primary border border-primary/30"
@@ -981,6 +1308,8 @@ function AutomationsPage() {
                           <TrendingUp className="h-5 w-5" />
                         ) : isBudget ? (
                           <DollarSign className="h-5 w-5" />
+                        ) : isClosing ? (
+                          <Calendar className="h-5 w-5" />
                         ) : isFreq ? (
                           <Radio className="h-5 w-5" />
                         ) : (
@@ -988,11 +1317,26 @@ function AutomationsPage() {
                         )}
                       </div>
 
-                      <div className="space-y-1 flex-1 min-w-0">
+                      <div className="space-y-1.5 flex-1 min-w-0">
+                        {/* Badges de Conta + Categoria + Campanha */}
                         <div className="flex items-center gap-2 flex-wrap">
-                          <span className="text-xs font-black uppercase text-foreground leading-snug">
-                            {notif.title}
+                          <span className="inline-flex items-center gap-1 rounded-lg bg-foreground/10 dark:bg-white/10 border border-border px-2 py-0.5 text-[10px] font-black uppercase tracking-wider text-foreground">
+                            <Store className="h-3 w-3 text-primary shrink-0" />
+                            CONTA: {notif.accountName || "Conta Meta Ads"}
                           </span>
+
+                          {notif.campaignName && (
+                            <span className="inline-flex items-center gap-1 rounded-lg bg-primary/10 border border-primary/25 px-2 py-0.5 text-[10px] font-bold text-primary">
+                              Campanha: {notif.campaignName}
+                            </span>
+                          )}
+
+                          {notif.categoryLabel && (
+                            <span className="rounded-lg bg-muted px-2 py-0.5 text-[9px] font-mono font-bold uppercase text-muted-foreground">
+                              {notif.categoryLabel}
+                            </span>
+                          )}
+
                           {!notif.is_read && (
                             <span className="rounded-full bg-primary/20 text-primary border border-primary/30 px-2 py-0.2 text-[9px] font-black uppercase">
                               NOVO
@@ -1003,21 +1347,47 @@ function AutomationsPage() {
                           </span>
                         </div>
 
+                        <p className="text-xs font-black uppercase text-foreground leading-snug">
+                          {notif.displayTitle || notif.title}
+                        </p>
+
                         <p className="text-xs text-muted-foreground leading-relaxed">
-                          {notif.message}
+                          {notif.displayMessage || notif.message}
                         </p>
                       </div>
                     </div>
 
                     {/* Ações da Notificação */}
-                    <div className="flex items-center gap-2 shrink-0 sm:ml-auto">
+                    <div className="flex items-center gap-2 shrink-0 sm:ml-auto flex-wrap">
+                      {isBudget && (
+                        <button
+                          type="button"
+                          onClick={() => handleToggleAlertCategory("budgetEnabled", "Alerta de Orçamento")}
+                          className="flex items-center gap-1 text-[10px] font-bold text-amber-500 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/25 px-2.5 py-1.5 rounded-lg transition"
+                          title="Desativar recebimento de alertas de orçamento"
+                        >
+                          <BellOff className="h-3 w-3" /> Desativar Orçamento
+                        </button>
+                      )}
+
+                      {isClosing && (
+                        <button
+                          type="button"
+                          onClick={() => handleToggleAlertCategory("closingSummaryEnabled", "Alerta de Fechamento Diário")}
+                          className="flex items-center gap-1 text-[10px] font-bold text-emerald-500 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/25 px-2.5 py-1.5 rounded-lg transition"
+                          title="Desativar recebimento do resumo de fechamento diário"
+                        >
+                          <BellOff className="h-3 w-3" /> Desativar Fechamento
+                        </button>
+                      )}
+
                       {notif.link && (
                         <a
                           href={notif.link}
                           onClick={() => handleMarkSingleRead(notif.id)}
                           className="flex items-center gap-1 text-[11px] font-bold text-foreground bg-muted hover:bg-muted/80 px-2.5 py-1.5 rounded-lg transition"
                         >
-                          Ver Campanha <ArrowRight className="h-3 w-3" />
+                          Ver na Conta <ArrowRight className="h-3 w-3" />
                         </a>
                       )}
 

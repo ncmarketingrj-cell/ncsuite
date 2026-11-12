@@ -13,7 +13,7 @@ import {
   MAX_ALERT_INTERVAL,
   ALERT_AUTO_STOP_MS,
 } from "@/lib/alertSounds";
-import { enforceNotificationCapacity } from "@/lib/notificationService";
+import { enforceNotificationCapacity, getAlertCategoryToggles } from "@/lib/notificationService";
 import { calibrateCampaignMetricsArray } from "@/lib/metaConversionCalibrator";
 
 // ─── Module-level singletons (shared across React instances) ──────────────────
@@ -265,9 +265,10 @@ async function runThresholdEvaluation() {
         const duration = daysSince === null ? "campanha ativa" : daysSince === 0 ? "iniciou hoje" : `${daysSince}d de campanha`;
 
         // ── Violação de custo por resultado ──────────────────────────────────
-        const cplEnabled    = threshold.alert_cpl_enabled       !== false;
-        const budgetEnabled = threshold.alert_budget_enabled     !== false;
-        const freqEnabled   = threshold.alert_frequency_enabled  !== false;
+        const categoryToggles = getAlertCategoryToggles();
+        const cplEnabled    = threshold.alert_cpl_enabled       !== false && categoryToggles.cplEnabled;
+        const budgetEnabled = threshold.alert_budget_enabled     !== false && categoryToggles.budgetEnabled;
+        const freqEnabled   = threshold.alert_frequency_enabled  !== false && categoryToggles.frequencyEnabled;
 
         if (cplEnabled && threshold.max_cpl !== null && threshold.max_cpl !== undefined && Number(threshold.max_cpl) > 0 && todayCost > 0 && todayConv > 0) {
           const costPerResult = todayCost / todayConv;
@@ -278,21 +279,27 @@ async function runThresholdEvaluation() {
               const { data: dup, error: dupErr } = await (supabase as any)
                 .from("notifications")
                 .select("id")
-                .eq("type", "alert_cpl")
-                .eq("user_id", user?.id)
+                .in("type", ["alert_cpl", "alert"])
                 .gte("created_at", dedupSince)
-                .ilike("link", `%${campaign.id}%`)
+                .ilike("title", `%${campaign.name.slice(0, 25)}%`)
                 .limit(1);
 
               if (!dupErr && !dup?.length) {
                 await (supabase as any).from("notifications").insert({
                   user_id:     user?.id ?? null,
-                  title:       `🚨 ${result.metricLabel} Alto — ${campaign.name.slice(0, 35)}`,
-                  message:     `${accName} • ${duration} — ${result.metricLabel} hoje R$ ${costPerResult.toFixed(2)} ultrapassou o limite de R$ ${(threshold.max_cpl as number).toFixed(2)}. ${todayConv} ${result.label}(s) gerados. Intervenha imediatamente.`,
+                  title:       `🚨 [${accName}] ${result.metricLabel} Alto — ${campaign.name.slice(0, 35)}`,
+                  message:     `Conta: ${accName} • Campanha: ${campaign.name} (${duration}) — ${result.metricLabel} hoje em R$ ${costPerResult.toFixed(2)} ultrapassou a meta de R$ ${(threshold.max_cpl as number).toFixed(2)}. Gasto hoje: R$ ${todayCost.toFixed(2)} • ${todayConv} ${result.label}(s) gerados.`,
                   is_critical: true,
                   is_read:     false,
                   type:        "alert_cpl",
                   link:        `/metricas?account=${campaign.ad_account_id}&campaign=${campaign.id}&date=${today}`,
+                  metadata: {
+                    account_id: campaign.ad_account_id,
+                    account_name: accName,
+                    campaign_id: campaign.id,
+                    campaign_name: campaign.name,
+                    alert_type: "HIGH_CPR",
+                  },
                 });
                 markDedupFired(cplKey);
                 totalNew++;
@@ -311,23 +318,29 @@ async function runThresholdEvaluation() {
               const { data: dup, error: dupErr } = await (supabase as any)
                 .from("notifications")
                 .select("id")
-                .eq("type", "alert_budget")
-                .eq("user_id", user?.id)
+                .in("type", ["alert_budget", "alert"])
                 .gte("created_at", dedupSince)
-                .ilike("link", `%${campaign.id}%`)
+                .ilike("title", `%Orçamento%${campaign.name.slice(0, 20)}%`)
                 .limit(1);
 
               if (!dupErr && !dup?.length) {
                 const isCritical    = pct >= 95;
-                const semResultado  = todayConv === 0 ? ` sem nenhum(a) ${result.label.toLowerCase()}` : "";
+                const semResultado  = todayConv === 0 ? ` (ainda sem ${result.label.toLowerCase()} hoje)` : ` (${todayConv} ${result.label.toLowerCase()}(s) hoje)`;
                 await (supabase as any).from("notifications").insert({
                   user_id:     user?.id ?? null,
-                  title:       `⚠️ Orçamento ${pct >= 100 ? "Esgotado" : "Crítico"} — ${campaign.name.slice(0, 35)}`,
-                  message:     `${accName} — ${pct.toFixed(0)}% do orçamento diário utilizado${semResultado}${pct >= 100 ? " — campanha pausou automaticamente" : " — prestes a esgotar"}. (Limite: ${threshold.max_budget_pct}%)`,
+                  title:       `💸 [${accName}] Orçamento ${pct.toFixed(0)}% — ${campaign.name.slice(0, 35)}`,
+                  message:     `Conta: ${accName} • Campanha: ${campaign.name} — Consumiu R$ ${todayCost.toFixed(2)} de R$ ${Number(campaign.budget).toFixed(2)} (${pct.toFixed(0)}% do orçamento diário)${semResultado}. Limite configurado: ${threshold.max_budget_pct}%.`,
                   is_critical: isCritical,
                   is_read:     false,
                   type:        "alert_budget",
                   link:        `/metricas?account=${campaign.ad_account_id}&campaign=${campaign.id}&date=${today}`,
+                  metadata: {
+                    account_id: campaign.ad_account_id,
+                    account_name: accName,
+                    campaign_id: campaign.id,
+                    campaign_name: campaign.name,
+                    alert_type: "BUDGET_WARNING",
+                  },
                 });
                 markDedupFired(budgetKey);
                 totalNew++;
@@ -347,22 +360,28 @@ async function runThresholdEvaluation() {
               const { data: dup, error: dupErr } = await (supabase as any)
                 .from("notifications")
                 .select("id")
-                .eq("type", "alert_frequency")
-                .eq("user_id", user?.id)
+                .in("type", ["alert_frequency", "alert"])
                 .gte("created_at", dedupSince)
-                .ilike("link", `%${campaign.id}%`)
+                .ilike("title", `%Frequência%${campaign.name.slice(0, 20)}%`)
                 .limit(1);
 
               if (!dupErr && !dup?.length) {
                 const accountNameFreq = (campaign.ad_accounts as any)?.name ?? `Conta ${String(campaign.ad_account_id).slice(-6)}`;
                 await (supabase as any).from("notifications").insert({
                   user_id:     user?.id ?? null,
-                  title:       `📡 Frequência Alta — ${campaign.name.slice(0, 35)}`,
-                  message:     `${accountNameFreq} — Frequência ${avgFreq.toFixed(1)}× ultrapassou o limite de ${(threshold.max_frequency as number).toFixed(1)}×. Audiência saturando — expanda o público ou renove os criativos.`,
+                  title:       `📡 [${accountNameFreq}] Frequência Alta — ${campaign.name.slice(0, 35)}`,
+                  message:     `Conta: ${accountNameFreq} • Campanha: ${campaign.name} — Frequência média em ${avgFreq.toFixed(1)}× (acima do limite de ${(threshold.max_frequency as number).toFixed(1)}×). Avalie renovação de criativos ou expansão de público.`,
                   is_critical: false,
                   is_read:     false,
                   type:        "alert_frequency",
                   link:        `/metricas?account=${campaign.ad_account_id}&campaign=${campaign.id}&date=${today}`,
+                  metadata: {
+                    account_id: campaign.ad_account_id,
+                    account_name: accountNameFreq,
+                    campaign_id: campaign.id,
+                    campaign_name: campaign.name,
+                    alert_type: "HIGH_FREQUENCY",
+                  },
                 });
                 markDedupFired(freqKey);
                 totalNew++;

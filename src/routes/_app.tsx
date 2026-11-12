@@ -31,6 +31,10 @@ import {
   markAllNotificationsAsRead,
   clearAllNotifications,
   deleteNotification,
+  getAlertCategoryToggles,
+  setAlertCategoryToggles,
+  ALERT_CATEGORY_TOGGLES_EVENT,
+  type AlertCategoryToggles,
 } from "@/lib/notificationService";
 import { playAlertTone } from "@/lib/alertSounds";
 import { canUserAccessConfig, canUserManageUsers, getUserLevel, isMasterAdmin } from "@/lib/userHierarchy";
@@ -286,15 +290,42 @@ function Shell() {
     return () => window.removeEventListener('open-ai-agent', handleOpenAI);
   }, []);
 
-  // Central de Notificações acumulativa (armazena até 100 notificações com auto-purge)
+  // Central de Notificações acumulativa (armazena até 100 notificações com auto-purge e deduplicação)
+  const [alertToggles, setAlertToggles] = useState<AlertCategoryToggles>(getAlertCategoryToggles);
+
   const { data: recentNotifications = [], refetch: refetchNotifications } = useQuery({
-    queryKey: ["header_notifications"],
+    queryKey: ["header_notifications", alertToggles],
     queryFn: async () => {
       await enforceNotificationCapacity();
       return await getRecentNotifications(MAX_NOTIFICATIONS_CAP);
     },
     refetchInterval: 15000,
   });
+
+  useEffect(() => {
+    const onTogglesChanged = (e: Event) => {
+      const next = (e as CustomEvent).detail as AlertCategoryToggles;
+      if (next) setAlertToggles(next);
+      refetchNotifications();
+    };
+    window.addEventListener(ALERT_CATEGORY_TOGGLES_EVENT, onTogglesChanged);
+    return () => window.removeEventListener(ALERT_CATEGORY_TOGGLES_EVENT, onTogglesChanged);
+  }, [refetchNotifications]);
+
+  const handleToggleAlertCategory = async (
+    key: keyof AlertCategoryToggles,
+    label: string
+  ) => {
+    const nextVal = !alertToggles[key];
+    const updated = await setAlertCategoryToggles({ [key]: nextVal });
+    setAlertToggles(updated);
+    refetchNotifications();
+    toast.success(
+      nextVal
+        ? `✅ ${label} reativado com sucesso!`
+        : `🔕 ${label} desativado. Você pode reativá-lo a qualquer momento.`
+    );
+  };
 
   const hasUnread = recentNotifications.some(n => !n.is_read);
   const prevLatestNotifIdRef = useRef<string | null>(null);
@@ -986,47 +1017,102 @@ function Shell() {
                         </div>
                       </div>
 
-                      {/* Barra de Capacidade Acumulativa (Até 100 notificações) */}
-                      <div className="mb-2 px-1">
-                        <div className="flex items-center justify-between text-[9px] font-mono text-muted-foreground mb-1">
-                          <span>Capacidade da Central</span>
-                          <span className={recentNotifications.length >= 90 ? "text-destructive font-bold" : "text-foreground"}>
-                            {recentNotifications.length} de {MAX_NOTIFICATIONS_CAP} max
+                      {/* Controles Rápidos: Ativar / Desativar Alertas (Orçamento, Fechamento, CPL, Freq) */}
+                      <div className="mb-2.5 rounded-xl border border-border bg-muted/30 p-2 space-y-1.5">
+                        <div className="flex items-center justify-between text-[9px] font-mono text-muted-foreground">
+                          <span className="font-bold uppercase tracking-wider text-foreground/80">
+                            Gerenciar Alertas Ativos (Clique p/ Ativar ou Desativar)
                           </span>
+                          <span>{recentNotifications.length} únicos</span>
                         </div>
-                        <div className="h-1.5 w-full rounded-full bg-white/10 overflow-hidden">
-                          <div
-                            className={`h-full transition-all duration-300 rounded-full ${
-                              recentNotifications.length >= 90
-                                ? "bg-destructive"
-                                : recentNotifications.length >= 70
-                                ? "bg-amber-500"
-                                : "bg-primary"
-                            }`}
-                            style={{ width: `${Math.min(100, (recentNotifications.length / MAX_NOTIFICATIONS_CAP) * 100)}%` }}
-                          />
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-1">
+                          {[
+                            { key: "cplEnabled" as const, label: "CPL / Custo", short: "🚨 CPL" },
+                            { key: "budgetEnabled" as const, label: "Alerta de Orçamento", short: "💸 Orçamento" },
+                            { key: "closingSummaryEnabled" as const, label: "Alerta de Fechamento", short: "🌅 Fechamento" },
+                            { key: "frequencyEnabled" as const, label: "Alerta de Frequência", short: "📡 Frequência" },
+                          ].map((item) => {
+                            const active = alertToggles[item.key];
+                            return (
+                              <button
+                                key={item.key}
+                                type="button"
+                                onClick={() => handleToggleAlertCategory(item.key, item.label)}
+                                className={`flex items-center justify-between gap-1 rounded-lg border px-2 py-1 text-[9px] font-black uppercase transition-all ${
+                                  active
+                                    ? "border-emerald-500/35 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+                                    : "border-border bg-background/60 text-muted-foreground opacity-65 hover:opacity-100"
+                                }`}
+                                title={active ? `Clique para desativar ${item.label}` : `Clique para reativar ${item.label}`}
+                              >
+                                <span className="truncate">{item.short}</span>
+                                <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${active ? "bg-emerald-500" : "bg-muted-foreground/40"}`} />
+                              </button>
+                            );
+                          })}
                         </div>
                       </div>
 
                       {recentNotifications.length === 0 ? (
                         <div className="py-8 text-center text-muted-foreground flex flex-col items-center justify-center">
                           <Activity className="h-8 w-8 text-muted-foreground/30 mb-2" />
-                          <p className="text-xs font-bold">Nenhum evento recente</p>
-                          <p className="text-[10px] text-muted-foreground/60 mt-0.5">As ações automáticas e alertas de tráfego aparecerão aqui.</p>
+                          <p className="text-xs font-bold">Nenhum alerta ativo no momento</p>
+                          <p className="text-[10px] text-muted-foreground/60 mt-0.5">
+                            Se você desativou algum tipo de alerta acima, clique nele para reativar quando desejar.
+                          </p>
                         </div>
                       ) : (
-                        <div className="space-y-1.5 max-h-[300px] overflow-y-auto pr-1 scrollbar-thin">
+                        <div className="space-y-2 max-h-[320px] overflow-y-auto pr-1 custom-scrollbar">
                           {recentNotifications.map((notif) => {
                             const timeAgo = formatDistanceToNow(new Date(notif.created_at), { addSuffix: true, locale: ptBR });
+                            const isBudget = notif.category === "alert_budget";
+                            const isClosing = notif.category === "alert_closing";
+                            const isCPL = notif.category === "alert_cpl";
+
                             return (
                               <div
                                 key={notif.id}
-                                className={`group flex items-start justify-between gap-2 rounded-xl p-2.5 border transition-all text-left relative ${
+                                className={`group flex flex-col gap-1.5 rounded-xl p-2.5 border transition-all text-left relative ${
                                   !notif.is_read
-                                    ? "bg-primary/[0.04] hover:bg-primary/[0.08] border-primary/20"
-                                    : "bg-white/[0.01] hover:bg-white/[0.04] border-transparent"
+                                    ? "bg-primary/[0.04] hover:bg-primary/[0.08] border-primary/25"
+                                    : "bg-muted/20 hover:bg-muted/40 border-border/60"
                                 }`}
                               >
+                                {/* Linha Superior: Conta + Categoria + Remover */}
+                                <div className="flex items-center justify-between gap-1.5">
+                                  <div className="flex items-center gap-1.5 flex-wrap min-w-0">
+                                    {!notif.is_read && (
+                                      <span className="h-1.5 w-1.5 rounded-full bg-primary shrink-0 animate-pulse" />
+                                    )}
+                                    <span className="inline-flex items-center gap-1 rounded-md bg-foreground/10 dark:bg-white/10 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider text-foreground truncate max-w-[180px]">
+                                      <Store className="h-2.5 w-2.5 text-primary shrink-0" />
+                                      {notif.accountName || "Conta Meta Ads"}
+                                    </span>
+                                    {notif.categoryLabel && (
+                                      <span className={`rounded-md px-1.5 py-0.5 text-[8px] font-bold uppercase border ${
+                                        isCPL
+                                          ? "bg-red-500/10 text-red-500 border-red-500/25"
+                                          : isBudget
+                                          ? "bg-amber-500/10 text-amber-500 border-amber-500/25"
+                                          : isClosing
+                                          ? "bg-emerald-500/10 text-emerald-500 border-emerald-500/25"
+                                          : "bg-primary/10 text-primary border-primary/25"
+                                      }`}>
+                                        {notif.categoryLabel}
+                                      </span>
+                                    )}
+                                  </div>
+
+                                  <button
+                                    onClick={(e) => handleDeleteNotification(e, notif.id)}
+                                    title="Remover esta notificação"
+                                    className="opacity-70 group-hover:opacity-100 p-1 text-muted-foreground hover:text-destructive rounded hover:bg-destructive/10 transition-all shrink-0"
+                                  >
+                                    <Trash2 className="h-3 w-3" />
+                                  </button>
+                                </div>
+
+                                {/* Corpo Clicável */}
                                 <Link
                                   to={notif.link || "/automacoes"}
                                   search={{ tab: "notificacoes" } as any}
@@ -1035,31 +1121,49 @@ function Shell() {
                                     await markAllNotificationsAsRead([notif.id]);
                                     refetchNotifications();
                                   }}
-                                  className="flex-1 min-w-0"
+                                  className="block min-w-0"
                                 >
-                                  <div className="flex items-center gap-1.5">
-                                    {!notif.is_read && (
-                                      <span className="h-1.5 w-1.5 rounded-full bg-primary shrink-0 animate-pulse" />
-                                    )}
-                                    <span className="text-[10px] font-black uppercase tracking-wider text-primary leading-tight truncate">
-                                      {notif.title}
-                                    </span>
-                                  </div>
-                                  <p className="text-[11px] text-foreground leading-relaxed font-medium mt-1">
-                                    {notif.message}
+                                  <p className="text-[11px] font-black text-foreground leading-snug">
+                                    {notif.displayTitle || notif.title}
                                   </p>
-                                  <span className="text-[9px] text-muted-foreground font-mono block mt-1">
-                                    {timeAgo}
-                                  </span>
+                                  <p className="text-[10.5px] text-muted-foreground leading-relaxed mt-0.5">
+                                    {notif.displayMessage || notif.message}
+                                  </p>
                                 </Link>
 
-                                <button
-                                  onClick={(e) => handleDeleteNotification(e, notif.id)}
-                                  title="Remover alerta"
-                                  className="opacity-0 group-hover:opacity-100 p-1 text-muted-foreground hover:text-destructive rounded hover:bg-destructive/10 transition-all shrink-0"
-                                >
-                                  <Trash2 className="h-3 w-3" />
-                                </button>
+                                {/* Rodapé do Card: Tempo + Ação rápida de Desativar categoria */}
+                                <div className="flex items-center justify-between gap-2 pt-1 border-t border-border/40 text-[9px]">
+                                  <span className="text-muted-foreground font-mono">{timeAgo}</span>
+                                  <div className="flex items-center gap-2">
+                                    {isBudget && (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleToggleAlertCategory("budgetEnabled", "Alerta de Orçamento")}
+                                        className="font-bold text-amber-500 hover:underline uppercase"
+                                      >
+                                        Desativar Orçamento
+                                      </button>
+                                    )}
+                                    {isClosing && (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleToggleAlertCategory("closingSummaryEnabled", "Alerta de Fechamento")}
+                                        className="font-bold text-emerald-500 hover:underline uppercase"
+                                      >
+                                        Desativar Fechamento
+                                      </button>
+                                    )}
+                                    {isCPL && (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleToggleAlertCategory("cplEnabled", "Alerta de CPL/Custo")}
+                                        className="font-bold text-red-400 hover:underline uppercase"
+                                      >
+                                        Silenciar CPL
+                                      </button>
+                                    )}
+                                  </div>
+                                </div>
                               </div>
                             );
                           })}
@@ -1502,11 +1606,33 @@ function Shell() {
                 <div className="rounded-xl bg-primary/12 border border-primary/25 p-2 text-primary shrink-0">
                   <Sparkles className="h-4 w-4 animate-pulse" />
                 </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-xs font-black uppercase tracking-wider text-primary">Victoria AI</p>
-                  <p className="text-[11px] font-bold text-foreground mt-0.5 truncate">{recentNotifications[0].title}</p>
-                  <p className="text-[10px] text-muted-foreground mt-1 leading-relaxed line-clamp-2">{recentNotifications[0].message}</p>
-                  <div className="mt-2 flex justify-end">
+                <div className="flex-1 min-w-0 pr-3">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className="inline-flex items-center gap-1 rounded bg-primary/15 border border-primary/30 px-1.5 py-0.5 text-[9px] font-black uppercase text-primary">
+                      <Store className="h-2.5 w-2.5" />
+                      {recentNotifications[0].accountName || "Conta Meta Ads"}
+                    </span>
+                    {recentNotifications[0].categoryLabel && (
+                      <span className="text-[9px] font-mono text-muted-foreground uppercase">
+                        • {recentNotifications[0].categoryLabel}
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-[11px] font-black text-foreground mt-1 leading-snug">
+                    {recentNotifications[0].displayTitle || recentNotifications[0].title}
+                  </p>
+                  <p className="text-[10.5px] text-muted-foreground mt-1 leading-relaxed line-clamp-3">
+                    {recentNotifications[0].displayMessage || recentNotifications[0].message}
+                  </p>
+                  <div className="mt-2.5 flex items-center justify-between gap-2 pt-1.5 border-t border-border/50">
+                    <Link
+                      to="/automacoes"
+                      search={{ tab: "notificacoes" } as any}
+                      onClick={() => setShowNotification(false)}
+                      className="text-[9px] font-bold uppercase text-muted-foreground hover:text-foreground"
+                    >
+                      Gerenciar Alertas
+                    </Link>
                     {(() => {
                       const rawLink = recentNotifications[0].link || "/automacoes";
                       const safeLink = rawLink.startsWith("/campanhas") ? rawLink.replace(/^\/campanhas/, "/metricas") : rawLink;
@@ -1520,9 +1646,9 @@ function Shell() {
                             refetchNotifications();
                             window.location.href = safeLink;
                           }}
-                          className="text-[9px] font-bold uppercase text-primary hover:underline cursor-pointer"
+                          className="text-[9px] font-black uppercase text-primary hover:underline cursor-pointer"
                         >
-                          Ver Detalhes
+                          Ver Campanha →
                         </a>
                       );
                     })()}

@@ -177,11 +177,22 @@ serve(async (req) => {
 
     let totalAlerts = 0
 
-    // Buscar todas as campanhas ativas
-    const { data: campaigns, error: campErr } = await supabase
-      .from("campaigns")
-      .select("id, name, status, external_id, daily_budget, budget_currency, ad_account_id, objective")
-      .in("status", ["active", "ACTIVE"])
+    // Buscar todas as campanhas ativas + nomes das contas
+    const [{ data: campaigns, error: campErr }, { data: allAdAccounts }] = await Promise.all([
+      supabase
+        .from("campaigns")
+        .select("id, name, status, external_id, daily_budget, budget_currency, ad_account_id, objective")
+        .in("status", ["active", "ACTIVE"]),
+      supabase
+        .from("ad_accounts")
+        .select("id, external_id, name"),
+    ])
+
+    const accountNameById = new Map<string, string>()
+    for (const acc of allAdAccounts || []) {
+      if (acc.id) accountNameById.set(String(acc.id), String(acc.name || "Conta Meta Ads"))
+      if (acc.external_id) accountNameById.set(String(acc.external_id), String(acc.name || "Conta Meta Ads"))
+    }
 
     if (campErr) {
       console.error("[AUTO] Erro ao buscar campanhas:", campErr.message)
@@ -244,7 +255,7 @@ serve(async (req) => {
         const freqEnabled = activeRule.alert_frequency_enabled !== false
 
         const ruleType = specificRule ? "Campanha" : (accountRule ? "Conta" : "Global")
-        const accountName = (activeRule.ad_accounts as any)?.name || campaign.ad_account_id || "Global"
+        const accountName = accountNameById.get(String(campaign.ad_account_id || "")) || (activeRule.ad_accounts as any)?.name || "Conta Meta Ads"
 
         // Métricas de hoje da tabela metrics (tem result_type e frequency)
         const { data: metricsRows } = await supabase
@@ -323,13 +334,14 @@ serve(async (req) => {
         if (cplEnabled && maxCpl && costPerResult !== null && costPerResult > maxCpl) {
           alertsToInsert.push({
             user_id:     userId,
-            title:       `🚨 ${result.metricLabel} Alto — ${campaign.name}`,
-            message:     `${result.metricLabel} hoje R$${costPerResult.toFixed(2)} ultrapassou o limite de R$${maxCpl.toFixed(2)}. Gasto: R$${spend.toFixed(2)} | ${conversions} ${result.label}(s). Intervenha imediatamente.`,
-            type:        "alert",
+            title:       `🚨 [${accountName}] ${result.metricLabel} Alto — ${campaign.name}`,
+            message:     `Conta: ${accountName} • Campanha: ${campaign.name} — ${result.metricLabel} hoje em R$ ${costPerResult.toFixed(2)} ultrapassou a meta de R$ ${maxCpl.toFixed(2)}. Gasto hoje: R$ ${spend.toFixed(2)} | ${conversions} ${result.label}(s).`,
+            type:        "alert_cpl",
             is_critical: true,
             link,
             metadata: {
               account_id:      targetAccId,
+              account_name:    accountName,
               campaign_id:     campaign.external_id,
               db_campaign_id:  campaign.id,
               campaign_name:   campaign.name,
@@ -343,21 +355,22 @@ serve(async (req) => {
               alert_type:      "HIGH_CPR"
             }
           })
-          console.log(`[AUTO] ⚠️ ALERTA ${result.metricLabel}: ${campaign.name} → R$${costPerResult.toFixed(2)} > R$${maxCpl.toFixed(2)}`)
+          console.log(`[AUTO] ⚠️ ALERTA ${result.metricLabel}: [${accountName}] ${campaign.name} → R$${costPerResult.toFixed(2)} > R$${maxCpl.toFixed(2)}`)
         }
 
         // ── Alerta de orçamento ───────────────────────────────────────────────
         if (budgetEnabled && maxBudgetPct !== null && dailyBudget > 0 && budgetUsedPct >= maxBudgetPct) {
-          const semResultado = conversions === 0 ? ` sem nenhum(a) ${result.label.toLowerCase()}` : ""
+          const semResultado = conversions === 0 ? ` sem nenhum(a) ${result.label.toLowerCase()} hoje` : ` (${conversions} ${result.label.toLowerCase()}(s) hoje)`
           alertsToInsert.push({
             user_id:     userId,
-            title:       `💸 Orçamento ${budgetUsedPct.toFixed(0)}% — ${campaign.name}`,
-            message:     `R$${spend.toFixed(2)} de R$${dailyBudget.toFixed(2)} gastos hoje (${budgetUsedPct.toFixed(0)}%${semResultado}). Clique para monitorar.`,
-            type:        "alert",
+            title:       `💸 [${accountName}] Orçamento ${budgetUsedPct.toFixed(0)}% — ${campaign.name}`,
+            message:     `Conta: ${accountName} • Campanha: ${campaign.name} — Consumiu R$ ${spend.toFixed(2)} de R$ ${dailyBudget.toFixed(2)} (${budgetUsedPct.toFixed(0)}% do orçamento diário${semResultado}).`,
+            type:        "alert_budget",
             is_critical: true,
             link,
             metadata: {
               account_id:       targetAccId,
+              account_name:     accountName,
               campaign_id:      campaign.external_id,
               db_campaign_id:   campaign.id,
               campaign_name:    campaign.name,
@@ -370,20 +383,21 @@ serve(async (req) => {
               alert_type:       "BUDGET_WARNING"
             }
           })
-          console.log(`[AUTO] ⚠️ ALERTA BUDGET: ${campaign.name} → ${budgetUsedPct.toFixed(0)}% | ${conversions} ${result.label}(s)`)
+          console.log(`[AUTO] ⚠️ ALERTA BUDGET: [${accountName}] ${campaign.name} → ${budgetUsedPct.toFixed(0)}% | ${conversions} ${result.label}(s)`)
         }
 
         // ── Alerta de frequência elevada ──────────────────────────────────────
         if (freqEnabled && maxFrequency && frequency > 0 && frequency > maxFrequency) {
           alertsToInsert.push({
             user_id:     userId,
-            title:       `🔁 Frequência Alta — ${campaign.name}`,
-            message:     `Frequência ${frequency.toFixed(1)}x ultrapassou o limite de ${maxFrequency}x. Audiência saturando — expanda o público ou renove os criativos. Gasto: R$${spend.toFixed(2)} | ${conversions} ${result.label}(s).`,
-            type:        "alert",
+            title:       `📡 [${accountName}] Frequência Alta — ${campaign.name}`,
+            message:     `Conta: ${accountName} • Campanha: ${campaign.name} — Frequência ${frequency.toFixed(1)}x ultrapassou o limite de ${maxFrequency}x. Gasto: R$ ${spend.toFixed(2)} | ${conversions} ${result.label}(s).`,
+            type:        "alert_frequency",
             is_critical: false,
             link,
             metadata: {
               account_id:       targetAccId,
+              account_name:     accountName,
               campaign_id:      campaign.external_id,
               db_campaign_id:   campaign.id,
               campaign_name:    campaign.name,
@@ -395,7 +409,7 @@ serve(async (req) => {
               alert_type:       "HIGH_FREQUENCY"
             }
           })
-          console.log(`[AUTO] ⚠️ ALERTA FREQUÊNCIA: ${campaign.name} → ${frequency.toFixed(1)}x > ${maxFrequency}x`)
+          console.log(`[AUTO] ⚠️ ALERTA FREQUÊNCIA: [${accountName}] ${campaign.name} → ${frequency.toFixed(1)}x > ${maxFrequency}x`)
         }
         } // Fim do else de minSpend
 
