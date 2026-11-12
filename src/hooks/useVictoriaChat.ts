@@ -2,7 +2,18 @@ import { useState, useEffect } from "react";
 import { supabase, EXTERNAL_SUPABASE_URL as VITE_SUPABASE_URL, EXTERNAL_SUPABASE_ANON_KEY as ANON_KEY } from "@/integrations/supabase-external/client";
 import { toast } from "sonner";
 import { extractPrintFn } from "@/lib/ocr.functions";
-import { fetchMarketIntelFn, FALLBACK_ARTICLES } from "@/lib/market.functions";
+import {
+  fetchMarketIntelFn,
+  FALLBACK_ARTICLES,
+  parseRssXmlToArticles,
+  parseSafeIsoDate,
+} from "@/lib/market.functions";
+import {
+  buildRadarFeeds,
+  MARKET_PORTALS,
+  type RadarTimeFilter,
+  type RadarRegionFilter,
+} from "@/lib/marketPortals";
 
 
 export type Message = {
@@ -122,6 +133,48 @@ export function useVictoriaChat(
     const s = localStorage.getItem("nc_last_market_scan");
     return s ? new Date(s) : null;
   });
+
+  // Filtros do Radar de Notícias (Período, Região/Estado e Checklist dos 30 Portais)
+  const [radarTimeFilter, setRadarTimeFilterState] = useState<RadarTimeFilter>(() => {
+    const saved = localStorage.getItem("nc_radar_time_filter");
+    return saved === "1d" || saved === "7d" || saved === "30d" ? saved : "7d";
+  });
+  const setRadarTimeFilter = (tf: RadarTimeFilter) => {
+    setRadarTimeFilterState(tf);
+    localStorage.setItem("nc_radar_time_filter", tf);
+  };
+
+  const [radarRegionFilter, setRadarRegionFilterState] = useState<RadarRegionFilter>(() => {
+    const saved = localStorage.getItem("nc_radar_region_filter");
+    if (saved === "BR" || saved === "RJ" || saved === "SP" || saved === "MG" || saved === "SUL" || saved === "NE") {
+      return saved;
+    }
+    return "BR";
+  });
+  const setRadarRegionFilter = (rf: RadarRegionFilter) => {
+    setRadarRegionFilterState(rf);
+    localStorage.setItem("nc_radar_region_filter", rf);
+  };
+
+  const [selectedPortalIds, setSelectedPortalIdsState] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem("nc_radar_selected_portals");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) return parsed;
+      }
+    } catch {}
+    return MARKET_PORTALS.map((p) => p.id);
+  });
+  const setSelectedPortalIds = (ids: string[] | ((prev: string[]) => string[])) => {
+    setSelectedPortalIdsState((prev) => {
+      const next = typeof ids === "function" ? ids(prev) : ids;
+      try {
+        localStorage.setItem("nc_radar_selected_portals", JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+  };
 
   // Carregar conversas do usuário
   const fetchConversations = async () => {
@@ -1206,44 +1259,188 @@ export function useVictoriaChat(
     toast.info("Radar de notícias foi limpo.");
   };
 
-  // Rastrear Notícias do Setor e Tráfego Pago (Acumulativo até 100 Artigos Únicos)
-  const fetchMarketIntel = async (showToast = true): Promise<MarketArticle[]> => {
+  // Rastrear Notícias Reais do Setor, Marketing e Leis (Acumulativo até 100 Artigos Únicos)
+  const fetchMarketIntel = async (
+    showToast = true,
+    overrideFilters?: {
+      timeFilter?: RadarTimeFilter;
+      regionFilter?: RadarRegionFilter;
+      selectedPortalIds?: string[];
+    }
+  ): Promise<MarketArticle[]> => {
+    const activeTime = overrideFilters?.timeFilter || radarTimeFilter;
+    const activeRegion = overrideFilters?.regionFilter || radarRegionFilter;
+    const activePortals = overrideFilters?.selectedPortalIds || selectedPortalIds;
+
+    if (activePortals.length === 0) {
+      if (showToast) toast.error("Marque pelo menos 1 portal no checklist de fontes para rastrear notícias.");
+      return [];
+    }
+
     setIsScanningMarket(true);
     try {
-      // 1. Invocar a Server Function nativa que busca feeds RSS em tempo real sem bloqueios de CORS
+      const feeds = buildRadarFeeds({
+        timeFilter: activeTime,
+        regionFilter: activeRegion,
+        selectedPortalIds: activePortals,
+      });
+
       let fetched: MarketArticle[] = [];
+
+      // CAMADA 1: Edge Function `victoria-agent` (Deno server-side, sem CORS)
       try {
-        const response = await fetchMarketIntelFn();
-        if (response && response.success && Array.isArray(response.articles) && response.articles.length > 0) {
-          fetched = response.articles;
+        const { data: { session } } = await supabase.auth.getSession();
+        const edgeRes = await fetch(`${VITE_SUPABASE_URL}/functions/v1/victoria-agent`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${session?.access_token || ""}`,
+            "apikey": ANON_KEY,
+          },
+          body: JSON.stringify({
+            action: "fetch_market_intel",
+            feeds,
+          }),
+        });
+        if (edgeRes.ok) {
+          const edgeJson = await edgeRes.json();
+          if (edgeJson?.success && Array.isArray(edgeJson.articles) && edgeJson.articles.length > 0) {
+            fetched = edgeJson.articles;
+          }
         }
-      } catch (fnErr) {
-        console.warn("[RADAR] Server function indisponível, aplicando fallback estratégico:", fnErr);
+      } catch (edgeErr) {
+        console.warn("[RADAR] Camada 1 (Edge Function) falhou, tentando Camada 2:", edgeErr);
       }
 
-      // Se a busca externa não retornar novos e não tiver nenhum artigo ainda, usa os de fallback
-      if ((!fetched || fetched.length === 0) && marketArticles.length === 0) {
-        fetched = FALLBACK_ARTICLES;
+      // CAMADA 2: TanStack Server Function (se disponível no ambiente)
+      if (fetched.length === 0) {
+        try {
+          const response = await fetchMarketIntelFn({
+            data: {
+              timeFilter: activeTime,
+              regionFilter: activeRegion,
+              selectedPortalIds: activePortals,
+            },
+          });
+          if (response && response.success && Array.isArray(response.articles) && response.articles.length > 0) {
+            fetched = response.articles;
+          }
+        } catch (fnErr) {
+          console.warn("[RADAR] Camada 2 (Server Function) indisponível, tentando Camada 3 (RSS Bridge):", fnErr);
+        }
+      }
+
+      // CAMADA 3: Ponte CORS pública no navegador (rss2json / allorigins) para garantir notícias REAIS no client SPA
+      if (fetched.length === 0) {
+        const clientArticles: MarketArticle[] = [];
+        const seenClientKeys = new Set<string>();
+
+        await Promise.all(
+          feeds.map(async (f) => {
+            // Tentativa 3A: api.rss2json.com
+            try {
+              const r2jUrl = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(f.url)}`;
+              const r = await fetch(r2jUrl);
+              if (r.ok) {
+                const json = await r.json();
+                if (json?.status === "ok" && Array.isArray(json.items)) {
+                  for (const item of json.items.slice(0, 12)) {
+                    const rawTitle = String(item.title || "").trim();
+                    const source = rawTitle.includes(" - ")
+                      ? rawTitle.split(" - ").pop() || item.author || "Notícias Automotivas"
+                      : item.author || "Notícias Automotivas";
+                    const pureTitle = rawTitle.includes(" - ")
+                      ? rawTitle.substring(0, rawTitle.lastIndexOf(" - "))
+                      : rawTitle;
+                    const key = pureTitle.toLowerCase().replace(/[^a-z0-9]/g, "");
+                    if (pureTitle && key.length > 5 && !seenClientKeys.has(key)) {
+                      seenClientKeys.add(key);
+                      clientArticles.push({
+                        id: `art_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+                        title: pureTitle,
+                        source,
+                        link: item.link || "",
+                        pubDate: parseSafeIsoDate(item.pubDate),
+                        snippet: String(item.description || "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().substring(0, 260),
+                        category: f.cat,
+                      });
+                    }
+                  }
+                  return;
+                }
+              }
+            } catch {}
+
+            // Tentativa 3B: api.allorigins.win/raw
+            try {
+              const aoUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(f.url)}`;
+              const r = await fetch(aoUrl);
+              if (r.ok) {
+                const xml = await r.text();
+                const parsed = parseRssXmlToArticles(xml, f.cat, 12);
+                for (const art of parsed) {
+                  const key = art.title.toLowerCase().replace(/[^a-z0-9]/g, "");
+                  if (key.length > 5 && !seenClientKeys.has(key)) {
+                    seenClientKeys.add(key);
+                    clientArticles.push(art);
+                  }
+                }
+              }
+            } catch {}
+          })
+        );
+
+        fetched = clientArticles;
+      }
+
+      // Filtragem temporal estrita no cliente (1d = até 36h, 7d = até 8 dias, 30d = até 32 dias)
+      const maxAgeMs =
+        activeTime === "1d"
+          ? 36 * 60 * 60 * 1000
+          : activeTime === "7d"
+          ? 8 * 24 * 60 * 60 * 1000
+          : 32 * 24 * 60 * 60 * 1000;
+      const nowMs = Date.now();
+
+      const freshFetched = fetched
+        .filter((a) => {
+          const t = new Date(a.pubDate).getTime();
+          if (isNaN(t)) return true;
+          return nowMs - t <= maxAgeMs;
+        })
+        .sort((a, b) => new Date(b.pubDate).getTime() - new Date(a.pubDate).getTime());
+
+      if (freshFetched.length === 0) {
+        if (showToast) {
+          toast.warning("Nenhuma notícia recente encontrada para os filtros selecionados. Tente ampliar o período (ex: Última Semana) ou marcar mais portais.");
+        }
+        return [];
       }
 
       let newCount = 0;
       let totalAccumulated = marketArticles.length;
 
       setMarketArticles(prev => {
-        // Chaves normalizadas para deduplicação (link ou título sem pontuação)
+        // Quando notícias reais chegam, removemos os placeholders iniciais `fb_*`
+        const realPrev = prev.filter(a => !a.id.startsWith("fb_"));
+
         const existingKeys = new Set(
-          prev.map(a => (a.link || a.title).toLowerCase().trim().replace(/[^a-z0-9]/g, ""))
+          realPrev.map(a => (a.link || a.title).toLowerCase().trim().replace(/[^a-z0-9]/g, ""))
         );
 
-        const newArticles = fetched.filter(a => {
-          const key = (a.link || a.title).toLowerCase().trim().replace(/[^a-z0-9]/g, "");
-          return key.length > 5 && !existingKeys.has(key);
+        const newArticles = freshFetched.filter(a => {
+          const linkKey = a.link ? a.link.toLowerCase().trim().replace(/[^a-z0-9]/g, "") : "";
+          const titleKey = a.title.toLowerCase().trim().replace(/[^a-z0-9]/g, "");
+          const isDup = (linkKey && existingKeys.has(linkKey)) || existingKeys.has(titleKey);
+          return titleKey.length > 5 && !isDup;
         });
 
         newCount = newArticles.length;
 
         // Acumula os novos no topo, preserva os existentes e limita ao teto de 100 artigos!
-        const combined = [...newArticles, ...prev].slice(0, 100);
+        const combined = [...newArticles, ...realPrev]
+          .sort((a, b) => new Date(b.pubDate).getTime() - new Date(a.pubDate).getTime())
+          .slice(0, 100);
         totalAccumulated = combined.length;
 
         try {
@@ -1260,14 +1457,15 @@ export function useVictoriaChat(
 
       if (showToast) {
         if (newCount > 0) {
-          toast.success(`Radar ampliado: +${newCount} novas notícias mapeadas (${totalAccumulated}/100 acumuladas).`);
+          toast.success(`Radar atualizado com notícias reais: +${newCount} novas notícias (${totalAccumulated}/100 acumuladas).`);
         } else {
-          toast.info(`Radar atualizado: nenhuma novidade repetida (${totalAccumulated}/100 notícias acumuladas).`);
+          toast.info(`Varredura concluída: ${freshFetched.length} notícias recentes verificadas, sem novidades duplicadas.`);
         }
       }
-      return fetched;
+      return freshFetched;
     } catch (err: any) {
       console.warn("Falha ao buscar radar de notícias:", err);
+      if (showToast) toast.error("Erro ao consultar portais de notícias: " + (err?.message || "Tente novamente."));
       return [];
     } finally {
       setIsScanningMarket(false);
@@ -1392,6 +1590,12 @@ export function useVictoriaChat(
     isScanningMarket,
     isLearningMarket,
     lastMarketScan,
+    radarTimeFilter,
+    setRadarTimeFilter,
+    radarRegionFilter,
+    setRadarRegionFilter,
+    selectedPortalIds,
+    setSelectedPortalIds,
     fetchMarketIntel,
     learnMarketIntel,
     deleteMarketArticles,

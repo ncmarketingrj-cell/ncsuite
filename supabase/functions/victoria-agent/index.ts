@@ -25,29 +25,35 @@ serve(async (req) => {
     }
 
     const body = await req.json();
-    const { action = "chat", messages, selectedAccountId, title, content, category, query, externalContext, regionalBenchmark, articlesToLearn } = body;
+    const { action = "chat", messages, selectedAccountId, title, content, category, query, externalContext, regionalBenchmark, articlesToLearn, feeds: customFeeds } = body;
     const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
 
     // =========================================================================
-    // AÇÃO: fetch_market_intel (Pesquisa de Mercado e Tendências em Tempo Real - R$ 0,00)
+    // AÇÃO: fetch_market_intel (Pesquisa de Mercado, Marketing e Leis em Tempo Real - R$ 0,00)
     // =========================================================================
     if (action === "fetch_market_intel") {
       try {
-        const feeds = [
+        const defaultFeeds = [
           {
             cat: "mercado",
-            url: "https://news.google.com/rss/search?q=mercado+automotivo+venda+carros+concessionarias+brasil&hl=pt-BR&gl=BR&ceid=BR:pt-419"
+            url: "https://news.google.com/rss/search?q=mercado+automotivo+venda+carros+concessionarias+brasil+when:7d&hl=pt-BR&gl=BR&ceid=BR:pt-419"
           },
           {
             cat: "lancamentos",
-            url: "https://news.google.com/rss/search?q=lancamento+carros+seminovos+vendas+veiculos+brasil&hl=pt-BR&gl=BR&ceid=BR:pt-419"
+            url: "https://news.google.com/rss/search?q=lancamento+carros+seminovos+vendas+veiculos+brasil+when:7d&hl=pt-BR&gl=BR&ceid=BR:pt-419"
           },
           {
             cat: "trafego",
-            url: "https://news.google.com/rss/search?q=trafego+pago+meta+ads+anuncios+lead+whatsapp&hl=pt-BR&gl=BR&ceid=BR:pt-419"
+            url: "https://news.google.com/rss/search?q=trafego+pago+meta+ads+anuncios+carros+whatsapp+when:7d&hl=pt-BR&gl=BR&ceid=BR:pt-419"
+          },
+          {
+            cat: "leis",
+            url: "https://news.google.com/rss/search?q=(lei+OR+CONTRAN+OR+SENATRAN+OR+DETRAN+OR+IPVA)+veiculos+carros+brasil+when:7d&hl=pt-BR&gl=BR&ceid=BR:pt-419"
           }
         ];
+
+        const feeds = Array.isArray(customFeeds) && customFeeds.length > 0 ? customFeeds : defaultFeeds;
 
         const allArticles: Array<{
           id: string;
@@ -58,9 +64,10 @@ serve(async (req) => {
           snippet: string;
           category: string;
         }> = [];
+        const seenKeys = new Set<string>();
 
         await Promise.all(
-          feeds.map(async (f) => {
+          feeds.map(async (f: { cat: string; url: string }) => {
             try {
               const res = await fetch(f.url, {
                 headers: {
@@ -73,7 +80,7 @@ serve(async (req) => {
               const itemMatches = xml.matchAll(/<item>([\s\S]*?)<\/item>/g);
               let count = 0;
               for (const match of itemMatches) {
-                if (count >= 5) break; // top 5 por categoria = 15 artigos recentes
+                if (count >= 12) break; // até 12 artigos por feed
                 const item = match[1];
 
                 const titleMatch = item.match(/<title><!\[CDATA\[(.*?)\]\]><\/title>/) || item.match(/<title>(.*?)<\/title>/);
@@ -86,18 +93,28 @@ serve(async (req) => {
                 const cleanTitle = rawTitle.replace(/&amp;/g, "&").replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&lt;/g, "<").replace(/&gt;/g, ">").trim();
                 const source = sourceMatch ? sourceMatch[1].trim() : (cleanTitle.split(" - ").pop() || "Setor Automotivo");
                 const pureTitle = cleanTitle.includes(" - ") ? cleanTitle.substring(0, cleanTitle.lastIndexOf(" - ")) : cleanTitle;
-                const snippet = descMatch ? descMatch[1].replace(/<[^>]+>/g, " ").replace(/&amp;/g, "&").replace(/\s+/g, " ").trim().substring(0, 240) : "";
+                const snippet = descMatch ? descMatch[1].replace(/<[^>]+>/g, " ").replace(/&amp;/g, "&").replace(/&nbsp;/g, " ").replace(/\s+/g, " ").trim().substring(0, 260) : "";
                 const link = linkMatch ? linkMatch[1].trim() : "";
 
-                if (pureTitle) {
+                let safeIso = new Date().toISOString();
+                if (pubDateMatch && pubDateMatch[1]) {
+                  const parsed = new Date(pubDateMatch[1].trim());
+                  if (!isNaN(parsed.getTime()) && parsed.getFullYear() >= 2000) {
+                    safeIso = parsed.toISOString();
+                  }
+                }
+
+                const dedupKey = pureTitle.toLowerCase().replace(/[^a-z0-9]/g, "");
+                if (pureTitle && dedupKey.length > 5 && !seenKeys.has(dedupKey)) {
+                  seenKeys.add(dedupKey);
                   allArticles.push({
                     id: `art_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
                     title: pureTitle,
                     source,
                     link,
-                    pubDate: pubDateMatch ? pubDateMatch[1].trim() : new Date().toISOString(),
+                    pubDate: safeIso,
                     snippet,
-                    category: f.cat
+                    category: f.cat || "mercado"
                   });
                   count++;
                 }
@@ -108,11 +125,13 @@ serve(async (req) => {
           })
         );
 
+        allArticles.sort((a, b) => new Date(b.pubDate).getTime() - new Date(a.pubDate).getTime());
+
         return new Response(JSON.stringify({
           success: true,
           articles: allArticles,
           scanned_at: new Date().toISOString(),
-          provider: "Google News Public RSS Feed (Custo R$ 0,00)"
+          provider: "Google News Public RSS Multi-Portais (Custo R$ 0,00)"
         }), {
           headers: { ...corsHeaders, "Content-Type": "application/json" }
         });
@@ -1109,6 +1128,9 @@ DIRETRIZES TÉCNICAS E ESTRATÉGICAS DE MARKETING AUTOMOTIVO:
    - **Leads no WhatsApp:** Resposta em menos de 5 minutos do comercial (após 15 minutos, 80% do lead é perdido).
    - **Formulários nativos (Lead Ads):** Perguntas de filtro (ex: "Qual a entrada?", "Tem carro na troca?").
    - **Campanhas de Seminovos vs Novos:** Carrosséis com fotos reais de múltiplos veículos vs taxa zero e parcelamento facilitado.
+5. **AUTONOMIA ABSOLUTA PARA ALTERAR DIAGNÓSTICOS (MENTE OFICIAL DO SISTEMA):**
+   - Você comanda a Mente Oficial do Sistema. Você TEM AUTONOMIA TOTAL para reclassificar e alterar o diagnóstico de qualquer campanha, conjunto, criativo ou funil com base no que aprendeu na sua BASE DE CONHECIMENTO RAG e nas notícias/leis do RADAR DE MERCADO.
+   - Se uma regra aprendida ou notícia/lei (ex: novas regras do CONTRAN/IPVA/SENATRAN, tendência de mercado ou diretriz tática inserida no RAG) contradisser um diagnóstico padrão ou indicar oportunidade/risco iminente, ALTEIRE O DIAGNÓSTICO explicitamente, citando a fonte/documento da Base de Conhecimento ou do Radar e prescrevendo a ação de ajuste imediato.
 
 GROUNDING DE TEMPO E DATAS:
 ${timeMetadata}

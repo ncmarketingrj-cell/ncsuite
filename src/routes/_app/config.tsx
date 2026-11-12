@@ -36,7 +36,6 @@ export const Route = createFileRoute("/_app/config")({
 
 const TABS = [
   { id: "conta", label: "Meu Perfil", icon: User, adminOnly: false },
-  { id: "agente", label: "Agente Victoria", icon: Brain, adminOnly: true },
   { id: "sac", label: "SAC / Feedback", icon: MessageSquareWarning, adminOnly: false },
   { id: "usuarios", label: "Gestão de Usuários", icon: Users, adminOnly: true },
   { id: "clientes", label: "Gestão de Clientes", icon: Building2, adminOnly: true },
@@ -168,7 +167,24 @@ function ConfigPage() {
         className="glass-panel p-8"
       >
         {tab === "conta" && <TabConta />}
-        {tab === "agente" && isAdmin && <TabAgente />}
+        {(tab as any) === "agente" && (
+          <div className="py-12 text-center max-w-lg mx-auto space-y-4">
+            <div className="h-16 w-16 mx-auto rounded-3xl bg-primary/10 border border-primary/20 flex items-center justify-center text-primary shadow-glow-sm">
+              <Brain className="h-8 w-8 animate-pulse" />
+            </div>
+            <h3 className="text-lg font-black text-foreground uppercase tracking-tight">Mente da Victoria AI Centralizada</h3>
+            <p className="text-xs text-muted-foreground leading-relaxed">
+              As configurações de personalidade, modelo neural, grounding RAG e radar de mercado foram unificadas na Central Neural dentro do Hub da Victoria AI.
+            </p>
+            <Link
+              to="/victoria"
+              search={{ tab: "mente" } as any}
+              className="inline-flex items-center gap-2 rounded-xl bg-primary px-5 py-2.5 text-xs font-bold text-primary-foreground hover:shadow-glow transition"
+            >
+              <Brain className="h-4 w-4" /> Acessar Mente da Victoria AI
+            </Link>
+          </div>
+        )}
         {tab === "sac" && <TabSac isAdmin={isAdmin} userId={user?.id ?? ""} />}
         {tab === "usuarios" && canManageUsers && <TabUsuarios isAdmin={isAdmin} currentUserProfile={profile} />}
         {tab === "clientes" && isAdmin && <TabClientes />}
@@ -1210,6 +1226,7 @@ const PERMISSION_PAGES = [
   { key: "cobrancas", label: "Cobranças" },
   { key: "strategy_map", label: "Mapa Estratégico" },
   { key: "agente", label: "Agente IA" },
+  { key: "gestao_victoria", label: "Mente da Victoria AI" },
   { key: "auditoria", label: "Auditoria Hub" },
   { key: "criar_usuarios", label: "Gestão Usuários" },
 ] as const;
@@ -1241,6 +1258,7 @@ const CARGO_DEFAULT_PERMISSIONS: Record<string, Record<string, "none" | "view" |
     cobrancas: "none",
     strategy_map: "edit",
     agente: "edit",
+    gestao_victoria: "none",
     auditoria: "none",
     criar_usuarios: "none",
   },
@@ -1256,6 +1274,7 @@ const CARGO_DEFAULT_PERMISSIONS: Record<string, Record<string, "none" | "view" |
     cobrancas: "none",
     strategy_map: "edit",
     agente: "edit",
+    gestao_victoria: "view",
     auditoria: "none",
     criar_usuarios: "none",
   },
@@ -1271,6 +1290,7 @@ const CARGO_DEFAULT_PERMISSIONS: Record<string, Record<string, "none" | "view" |
     cobrancas: "none",
     strategy_map: "edit",
     agente: "view",
+    gestao_victoria: "none",
     auditoria: "none",
     criar_usuarios: "none",
   },
@@ -1286,6 +1306,7 @@ const CARGO_DEFAULT_PERMISSIONS: Record<string, Record<string, "none" | "view" |
     cobrancas: "edit",
     strategy_map: "edit",
     agente: "edit",
+    gestao_victoria: "edit",
     auditoria: "edit",
     criar_usuarios: "edit",
   },
@@ -1301,6 +1322,7 @@ const CARGO_DEFAULT_PERMISSIONS: Record<string, Record<string, "none" | "view" |
     cobrancas: "none",
     strategy_map: "edit",
     agente: "view",
+    gestao_victoria: "none",
     auditoria: "none",
     criar_usuarios: "none",
   },
@@ -1316,6 +1338,7 @@ const CARGO_DEFAULT_PERMISSIONS: Record<string, Record<string, "none" | "view" |
     cobrancas: "edit",
     strategy_map: "edit",
     agente: "edit",
+    gestao_victoria: "edit",
     auditoria: "edit",
     criar_usuarios: "edit",
   },
@@ -1331,6 +1354,7 @@ const CARGO_DEFAULT_PERMISSIONS: Record<string, Record<string, "none" | "view" |
     cobrancas: "edit",
     strategy_map: "edit",
     agente: "edit",
+    gestao_victoria: "edit",
     auditoria: "edit",
     criar_usuarios: "edit",
   },
@@ -1346,6 +1370,7 @@ const CARGO_DEFAULT_PERMISSIONS: Record<string, Record<string, "none" | "view" |
     cobrancas: "edit",
     strategy_map: "edit",
     agente: "edit",
+    gestao_victoria: "edit",
     auditoria: "edit",
     criar_usuarios: "edit",
   },
@@ -1361,6 +1386,7 @@ const CARGO_DEFAULT_PERMISSIONS: Record<string, Record<string, "none" | "view" |
     cobrancas: "none",
     strategy_map: "none",
     agente: "view",
+    gestao_victoria: "none",
     auditoria: "none",
     criar_usuarios: "none",
   },
@@ -1376,6 +1402,7 @@ const CARGO_DEFAULT_PERMISSIONS: Record<string, Record<string, "none" | "view" |
     cobrancas: "none",
     strategy_map: "edit",
     agente: "edit",
+    gestao_victoria: "view",
     auditoria: "none",
     criar_usuarios: "none",
   },
@@ -1391,6 +1418,7 @@ const CARGO_DEFAULT_PERMISSIONS: Record<string, Record<string, "none" | "view" |
     cobrancas: "none",
     strategy_map: "none",
     agente: "none",
+    gestao_victoria: "none",
     auditoria: "none",
     criar_usuarios: "none",
   }

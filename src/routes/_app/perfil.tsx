@@ -128,6 +128,14 @@ export const PERMISSION_MODULES: PermissionModuleDef[] = [
     mode: "full",
   },
   {
+    key: "gestao_victoria",
+    label: "Mente da Victoria AI",
+    description: "Central neural: calibração de IA, aprendizado RAG, radar de mercado e diretrizes táticas",
+    hub: "operacao",
+    hubLabel: "Hub Operação & Automações",
+    mode: "full",
+  },
+  {
     key: "strategy_map",
     label: "Mapa Estratégico",
     description: "Whiteboard de funis, jornadas e mapas mentais",
@@ -204,61 +212,61 @@ const CARGO_DEFAULT_PERMISSIONS: Record<string, Record<string, "none" | "view" |
     dashboard: "view", metricas: "view", simulador: "view", cockpit: "edit",
     clientes: "view", relatorios: "edit", criativos: "edit", social: "none",
     automacoes: "edit", reunioes: "none", cobrancas: "none", strategy_map: "edit",
-    agente: "edit", auditoria: "view", criar_usuarios: "none",
+    agente: "edit", gestao_victoria: "none", auditoria: "view", criar_usuarios: "none",
   },
   "Social Media": {
     dashboard: "view", metricas: "none", simulador: "none", cockpit: "none",
     clientes: "view", relatorios: "edit", criativos: "edit", social: "edit",
     automacoes: "none", reunioes: "none", cobrancas: "none", strategy_map: "edit",
-    agente: "view", auditoria: "none", criar_usuarios: "none",
+    agente: "view", gestao_victoria: "none", auditoria: "none", criar_usuarios: "none",
   },
   "Gerente": {
     dashboard: "view", metricas: "view", simulador: "view", cockpit: "edit",
     clientes: "edit", relatorios: "edit", criativos: "edit", social: "edit",
     automacoes: "view", reunioes: "edit", cobrancas: "none", strategy_map: "edit",
-    agente: "edit", auditoria: "view", criar_usuarios: "view",
+    agente: "edit", gestao_victoria: "view", auditoria: "view", criar_usuarios: "view",
   },
   "Diretor": {
     dashboard: "view", metricas: "view", simulador: "view", cockpit: "edit",
     clientes: "edit", relatorios: "edit", criativos: "edit", social: "edit",
     automacoes: "edit", reunioes: "edit", cobrancas: "edit", strategy_map: "edit",
-    agente: "edit", auditoria: "edit", criar_usuarios: "edit",
+    agente: "edit", gestao_victoria: "edit", auditoria: "edit", criar_usuarios: "edit",
   },
   "CEO": {
     dashboard: "view", metricas: "view", simulador: "view", cockpit: "edit",
     clientes: "edit", relatorios: "edit", criativos: "edit", social: "edit",
     automacoes: "edit", reunioes: "edit", cobrancas: "edit", strategy_map: "edit",
-    agente: "edit", auditoria: "edit", criar_usuarios: "edit",
+    agente: "edit", gestao_victoria: "edit", auditoria: "edit", criar_usuarios: "edit",
   },
   "Administrador": {
     dashboard: "view", metricas: "view", simulador: "view", cockpit: "edit",
     clientes: "edit", relatorios: "edit", criativos: "edit", social: "edit",
     automacoes: "edit", reunioes: "edit", cobrancas: "edit", strategy_map: "edit",
-    agente: "edit", auditoria: "edit", criar_usuarios: "edit",
+    agente: "edit", gestao_victoria: "edit", auditoria: "edit", criar_usuarios: "edit",
   },
   "Desenvolvedor": {
     dashboard: "view", metricas: "view", simulador: "view", cockpit: "edit",
     clientes: "edit", relatorios: "edit", criativos: "edit", social: "edit",
     automacoes: "edit", reunioes: "edit", cobrancas: "edit", strategy_map: "edit",
-    agente: "edit", auditoria: "edit", criar_usuarios: "edit",
+    agente: "edit", gestao_victoria: "edit", auditoria: "edit", criar_usuarios: "edit",
   },
   "Designer": {
     dashboard: "view", metricas: "none", simulador: "none", cockpit: "none",
     clientes: "view", relatorios: "none", criativos: "edit", social: "view",
     automacoes: "none", reunioes: "none", cobrancas: "none", strategy_map: "edit",
-    agente: "view", auditoria: "none", criar_usuarios: "none",
+    agente: "view", gestao_victoria: "none", auditoria: "none", criar_usuarios: "none",
   },
   "SDR": {
     dashboard: "view", metricas: "none", simulador: "none", cockpit: "none",
     clientes: "view", relatorios: "none", criativos: "none", social: "none",
     automacoes: "none", reunioes: "edit", cobrancas: "none", strategy_map: "none",
-    agente: "view", auditoria: "none", criar_usuarios: "none",
+    agente: "view", gestao_victoria: "none", auditoria: "none", criar_usuarios: "none",
   },
   "Outros": {
     dashboard: "view", metricas: "none", simulador: "none", cockpit: "none",
     clientes: "none", relatorios: "none", criativos: "none", social: "none",
     automacoes: "none", reunioes: "none", cobrancas: "none", strategy_map: "none",
-    agente: "none", auditoria: "none", criar_usuarios: "none",
+    agente: "none", gestao_victoria: "none", auditoria: "none", criar_usuarios: "none",
   },
 };
 
@@ -812,7 +820,7 @@ function MyProfileSection({
         </div>
 
         <p className="text-xs text-muted-foreground">
-          Abaixo estão os 13 módulos operacionais da NC Suite e o seu nível de acesso ativo no momento.
+          Abaixo estão os 14 módulos operacionais da NC Suite e o seu nível de acesso ativo no momento.
         </p>
 
         <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 pt-2">

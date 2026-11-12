@@ -1,4 +1,10 @@
 import { createServerFn } from "@tanstack/react-start";
+import {
+  buildRadarFeeds,
+  MARKET_PORTALS,
+  type RadarRegionFilter,
+  type RadarTimeFilter,
+} from "./marketPortals";
 
 export interface ServerMarketArticle {
   id: string;
@@ -7,7 +13,7 @@ export interface ServerMarketArticle {
   link: string;
   pubDate: string;
   snippet: string;
-  category: "mercado" | "lancamentos" | "trafego";
+  category: "mercado" | "lancamentos" | "trafego" | "leis";
 }
 
 /**
@@ -44,6 +50,77 @@ export function formatArticleDate(rawDate?: string | null): string {
   }
 }
 
+/**
+ * Extrai artigos de uma string XML RSS do Google News.
+ */
+export function parseRssXmlToArticles(
+  xml: string,
+  category: ServerMarketArticle["category"],
+  limit = 12
+): ServerMarketArticle[] {
+  const articles: ServerMarketArticle[] = [];
+  const itemMatches = xml.matchAll(/<item>([\s\S]*?)<\/item>/g);
+  let count = 0;
+
+  for (const match of itemMatches) {
+    if (count >= limit) break;
+    const item = match[1];
+
+    const titleMatch =
+      item.match(/<title><!\[CDATA\[(.*?)\]\]><\/title>/) ||
+      item.match(/<title>(.*?)<\/title>/);
+    const linkMatch =
+      item.match(/<link>(.*?)<\/link>/) ||
+      item.match(/<link><!\[CDATA\[(.*?)\]\]><\/link>/);
+    const pubDateMatch = item.match(/<pubDate>(.*?)<\/pubDate>/);
+    const sourceMatch = item.match(/<source[^>]*>(.*?)<\/source>/);
+    const descMatch =
+      item.match(/<description><!\[CDATA\[(.*?)\]\]><\/description>/) ||
+      item.match(/<description>(.*?)<\/description>/);
+
+    const rawTitle = titleMatch ? titleMatch[1] : "";
+    const cleanTitle = rawTitle
+      .replace(/&amp;/g, "&")
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'")
+      .replace(/&lt;/g, "<")
+      .replace(/&gt;/g, ">")
+      .trim();
+
+    const source = sourceMatch
+      ? sourceMatch[1].trim()
+      : cleanTitle.split(" - ").pop() || "Setor Automotivo";
+    const pureTitle = cleanTitle.includes(" - ")
+      ? cleanTitle.substring(0, cleanTitle.lastIndexOf(" - "))
+      : cleanTitle;
+    const snippet = descMatch
+      ? descMatch[1]
+          .replace(/<[^>]+>/g, " ")
+          .replace(/&amp;/g, "&")
+          .replace(/&nbsp;/g, " ")
+          .replace(/\s+/g, " ")
+          .trim()
+          .substring(0, 260)
+      : "";
+    const link = linkMatch ? linkMatch[1].trim() : "";
+
+    if (pureTitle && pureTitle.length > 5) {
+      articles.push({
+        id: `art_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+        title: pureTitle,
+        source,
+        link,
+        pubDate: parseSafeIsoDate(pubDateMatch ? pubDateMatch[1].trim() : null),
+        snippet,
+        category,
+      });
+      count++;
+    }
+  }
+
+  return articles;
+}
+
 export const FALLBACK_ARTICLES: ServerMarketArticle[] = [
   {
     id: "fb_1",
@@ -74,68 +151,38 @@ export const FALLBACK_ARTICLES: ServerMarketArticle[] = [
   },
   {
     id: "fb_4",
-    title: "Lançamentos e Seminovos: Estoque com laudo cautelar e IPVA 2026 embutido acelera giro de loja em 18 dias",
-    source: "Quatro Rodas / AutoEsporte",
-    link: "https://quatrorodas.abril.com.br",
+    title: "CONTRAN e SENATRAN atualizam regras de transferência digital de veículos e vistoria cautelar",
+    source: "Gov.br / SENATRAN",
+    link: "https://www.gov.br/transportes",
     pubDate: new Date().toISOString(),
-    snippet: "Compradores no Sudeste priorizam procedência e custos fixos já quitados para fechar negócio sem surpresas.",
-    category: "lancamentos",
-  },
-  {
-    id: "fb_5",
-    title: "Taxas de Financiamento de Veículos: Bancos ampliam prazos para seminovos de até 8 anos",
-    source: "Automotive Business",
-    link: "https://www.automotivebusiness.com.br",
-    pubDate: new Date().toISOString(),
-    snippet: "Novas linhas de crédito automotivo estimulam o giro de veículos usados nas concessionárias e lojas independentes de todo o país.",
-    category: "mercado",
-  },
-  {
-    id: "fb_6",
-    title: "Vídeos Curtos no Reels de Veículos: Formato POV do motorista eleva retenção e clique em 41%",
-    source: "Meta Ads Performance Lab",
-    link: "https://www.facebook.com/business",
-    pubDate: new Date().toISOString(),
-    snippet: "Vídeos no formato POV (ponto de vista ao volante) apresentando som do motor, painel e acabamento geram engajamento muito superior a fotos estáticas.",
-    category: "trafego",
+    snippet: "Novas diretrizes nacionais simplificam a comunicação de venda eletrônica em cartórios e DETRANs estaduais para lojas e concessionárias.",
+    category: "leis",
   },
 ];
 
+export interface FetchRadarInput {
+  timeFilter?: RadarTimeFilter;
+  regionFilter?: RadarRegionFilter;
+  selectedPortalIds?: string[];
+}
+
 export const fetchMarketIntelFn = createServerFn({ method: "POST" })
-  .handler(async (): Promise<{
+  .inputValidator((d?: FetchRadarInput) => d || {})
+  .handler(async ({ data }): Promise<{
     success: boolean;
     articles: ServerMarketArticle[];
     scanned_at: string;
     provider: string;
   }> => {
     try {
-      // Cobertura completa de instâncias do mercado automotivo e tráfego pago
-      const feeds: Array<{ cat: "mercado" | "lancamentos" | "trafego"; url: string }> = [
-        {
-          cat: "mercado",
-          url: "https://news.google.com/rss/search?q=mercado+automotivo+venda+carros+concessionarias+brasil+fenabrave&hl=pt-BR&gl=BR&ceid=BR:pt-419",
-        },
-        {
-          cat: "mercado",
-          url: "https://news.google.com/rss/search?q=seminovos+venda+veiculos+mercado+automotivo+rio+de+janeiro&hl=pt-BR&gl=BR&ceid=BR:pt-419",
-        },
-        {
-          cat: "trafego",
-          url: "https://news.google.com/rss/search?q=trafego+pago+meta+ads+anuncios+lead+whatsapp+conversao&hl=pt-BR&gl=BR&ceid=BR:pt-419",
-        },
-        {
-          cat: "trafego",
-          url: "https://news.google.com/rss/search?q=marketing+digital+concessionaria+revenda+veiculos+leads&hl=pt-BR&gl=BR&ceid=BR:pt-419",
-        },
-        {
-          cat: "lancamentos",
-          url: "https://news.google.com/rss/search?q=lancamento+carros+seminovos+financiamento+veiculos+brasil&hl=pt-BR&gl=BR&ceid=BR:pt-419",
-        },
-        {
-          cat: "lancamentos",
-          url: "https://news.google.com/rss/search?q=autoesporte+quatro+rodas+mercado+veiculos+comprar+carro&hl=pt-BR&gl=BR&ceid=BR:pt-419",
-        },
-      ];
+      const timeFilter: RadarTimeFilter = data?.timeFilter || "7d";
+      const regionFilter: RadarRegionFilter = data?.regionFilter || "BR";
+      const selectedPortalIds: string[] =
+        data?.selectedPortalIds && data.selectedPortalIds.length > 0
+          ? data.selectedPortalIds
+          : MARKET_PORTALS.map((p) => p.id);
+
+      const feeds = buildRadarFeeds({ timeFilter, regionFilter, selectedPortalIds });
 
       const allArticles: ServerMarketArticle[] = [];
       const seenTitles = new Set<string>();
@@ -144,7 +191,7 @@ export const fetchMarketIntelFn = createServerFn({ method: "POST" })
         feeds.map(async (feed) => {
           try {
             const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 7000);
+            const timeoutId = setTimeout(() => controller.abort(), 8000);
             const res = await fetch(feed.url, {
               signal: controller.signal,
               headers: {
@@ -155,98 +202,36 @@ export const fetchMarketIntelFn = createServerFn({ method: "POST" })
 
             if (!res.ok) return;
             const xml = await res.text();
+            const parsed = parseRssXmlToArticles(xml, feed.cat, 12);
 
-            const itemMatches = xml.matchAll(/<item>([\s\S]*?)<\/item>/g);
-            let count = 0;
-            for (const match of itemMatches) {
-              if (count >= 10) break; // Até 10 artigos de alta relevância por feed
-              const item = match[1];
-
-              const titleMatch =
-                item.match(/<title><!\[CDATA\[(.*?)\]\]><\/title>/) ||
-                item.match(/<title>(.*?)<\/title>/);
-              const linkMatch =
-                item.match(/<link>(.*?)<\/link>/) ||
-                item.match(/<link><!\[CDATA\[(.*?)\]\]><\/link>/);
-              const pubDateMatch = item.match(/<pubDate>(.*?)<\/pubDate>/);
-              const sourceMatch = item.match(/<source[^>]*>(.*?)<\/source>/);
-              const descMatch =
-                item.match(/<description><!\[CDATA\[(.*?)\]\]><\/description>/) ||
-                item.match(/<description>(.*?)<\/description>/);
-
-              const rawTitle = titleMatch ? titleMatch[1] : "";
-              const cleanTitle = rawTitle
-                .replace(/&amp;/g, "&")
-                .replace(/&quot;/g, '"')
-                .replace(/&#39;/g, "'")
-                .replace(/&lt;/g, "<")
-                .replace(/&gt;/g, ">")
-                .trim();
-
-              const source = sourceMatch
-                ? sourceMatch[1].trim()
-                : cleanTitle.split(" - ").pop() || "Setor Automotivo";
-              const pureTitle = cleanTitle.includes(" - ")
-                ? cleanTitle.substring(0, cleanTitle.lastIndexOf(" - "))
-                : cleanTitle;
-              const snippet = descMatch
-                ? descMatch[1]
-                    .replace(/<[^>]+>/g, " ")
-                    .replace(/&amp;/g, "&")
-                    .replace(/\s+/g, " ")
-                    .trim()
-                    .substring(0, 240)
-                : "";
-              const link = linkMatch ? linkMatch[1].trim() : "";
-
-              // Evitar duplicados na mesma varredura
-              const normalizedTitle = pureTitle.toLowerCase().replace(/[^a-z0-9]/g, "");
-              if (pureTitle && normalizedTitle.length > 5 && !seenTitles.has(normalizedTitle)) {
+            for (const art of parsed) {
+              const normalizedTitle = art.title.toLowerCase().replace(/[^a-z0-9]/g, "");
+              if (normalizedTitle.length > 5 && !seenTitles.has(normalizedTitle)) {
                 seenTitles.add(normalizedTitle);
-
-                const safeIso = parseSafeIsoDate(pubDateMatch ? pubDateMatch[1].trim() : null);
-
-                allArticles.push({
-                  id: `art_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
-                  title: pureTitle,
-                  source,
-                  link,
-                  pubDate: safeIso,
-                  snippet,
-                  category: feed.cat,
-                });
-                count++;
+                allArticles.push(art);
               }
             }
           } catch (e) {
-            console.warn(`[MARKET_INTEL] Feed ${feed.cat} indisponível, continuando...`, e);
+            console.warn(`[MARKET_INTEL] Feed ${feed.label} indisponível, continuando...`, e);
           }
         })
       );
 
-      if (allArticles.length === 0) {
-        return {
-          success: true,
-          articles: FALLBACK_ARTICLES,
-          scanned_at: new Date().toISOString(),
-          provider: "NC Performance Curated Strategic Radar",
-        };
-      }
+      allArticles.sort((a, b) => new Date(b.pubDate).getTime() - new Date(a.pubDate).getTime());
 
       return {
-        success: true,
+        success: allArticles.length > 0,
         articles: allArticles,
         scanned_at: new Date().toISOString(),
-        provider: "Google News Public RSS Feed Multi-Fontes (Custo R$ 0,00)",
+        provider: "Google News Public RSS Multi-Portais (Custo R$ 0,00)",
       };
     } catch (err: any) {
-      console.warn("[MARKET_INTEL] Erro na varredura, utilizando artigos estratégicos:", err);
+      console.warn("[MARKET_INTEL] Erro na varredura server-side:", err);
       return {
-        success: true,
-        articles: FALLBACK_ARTICLES,
+        success: false,
+        articles: [],
         scanned_at: new Date().toISOString(),
-        provider: "NC Performance Curated Strategic Radar (Fallback)",
+        provider: "Erro na varredura",
       };
     }
   });
-
