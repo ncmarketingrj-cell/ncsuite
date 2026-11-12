@@ -6,6 +6,7 @@ import { Activity, Users } from "lucide-react";
 import { supabase } from "@/integrations/supabase-external/client";
 import { UserAvatar } from "@/components/UserAvatar";
 import { isUserOnlineNow } from "@/lib/activityPixelService";
+import { resolveUserAvatar } from "@/lib/userService";
 
 interface TeamPresenceTopBarProps {
   canManageUsers?: boolean;
@@ -19,21 +20,25 @@ export function TeamPresenceTopBar({ canManageUsers = false }: TeamPresenceTopBa
     queryFn: async () => {
       const { data, error } = await (supabase as any)
         .from("profiles")
-        .select("id, full_name, email, avatar_url, position, status, last_seen_at")
+        .select("id, full_name, email, avatar_url, permissions, position, status, last_seen_at")
         .neq("status", "inativo")
         .order("full_name", { ascending: true });
 
+      let list = data || [];
       if (error && /last_seen_at/i.test(error.message || "")) {
         const fallback = await (supabase as any)
           .from("profiles")
-          .select("id, full_name, email, avatar_url, position, status")
+          .select("id, full_name, email, avatar_url, permissions, position, status")
           .order("full_name", { ascending: true });
-        return (fallback.data || []).filter((m: any) => m.status !== "inativo");
+        list = (fallback.data || []).filter((m: any) => m.status !== "inativo");
       }
-      return data || [];
+      return list.map((m: any) => ({
+        ...m,
+        avatar_url: resolveUserAvatar(m),
+      }));
     },
-    staleTime: 25_000,
-    refetchInterval: 30_000,
+    staleTime: 15_000,
+    refetchInterval: 25_000,
   });
 
   if (!members || members.length === 0) return null;

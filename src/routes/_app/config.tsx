@@ -27,6 +27,8 @@ import {
   updateSystemUser,
   deleteSystemUser,
   toggleUserStatus,
+  resolveUserAvatar,
+  saveUserAvatarImmediate,
 } from "@/lib/userService";
 import { AvatarUpload } from "@/components/AvatarUpload";
 import { UserAvatar } from "@/components/UserAvatar";
@@ -1107,37 +1109,45 @@ function TabConta() {
     if (profile) {
       setFullName(profile.full_name || "");
       setPosition(profile.position || POSITIONS_LIST[0]);
-      setAvatarUrl(profile.avatar_url || "");
+      setAvatarUrl(resolveUserAvatar({ ...profile, user_metadata: user?.user_metadata }) || "");
       setAgencyName(profile.agency_name || "NC AGÊNCIA");
       setWhatsappNumbers(profile.whatsapp_numbers || []);
     }
-  }, [profile]);
+  }, [profile, user]);
 
   const handleSave = async () => {
     if (!user?.id) return;
     setSaving(true);
     try {
+      const nextPerms = {
+        ...((profile as any)?.permissions || {}),
+        _avatar_url: avatarUrl || null,
+      };
       const { error } = await supabase.from("profiles").upsert({
         id: user.id,
         full_name: fullName,
         position,
-        avatar_url: avatarUrl,
+        avatar_url: avatarUrl || null,
+        permissions: nextPerms,
         agency_name: agencyName,
         whatsapp_numbers: whatsappNumbers.filter(n => n.trim() !== ""),
         updated_at: new Date().toISOString(),
       });
       if (error) throw error;
 
+      await saveUserAvatarImmediate(user.id, avatarUrl || null, user.email);
+
       // Também atualiza o full_name nos metadados da autenticação do Supabase
       await supabase.auth.updateUser({
-        data: { full_name: fullName, position, avatar_url: avatarUrl }
+        data: { full_name: fullName, position, avatar_url: avatarUrl || null }
       });
 
       qc.invalidateQueries({ queryKey: ["profiles"] });
       qc.invalidateQueries({ queryKey: ["current_user_profile"] });
       qc.invalidateQueries({ queryKey: ["team_avatars_directory"] });
       qc.invalidateQueries({ queryKey: ["admin_users_list"] });
-      toast.success("Perfil atualizado com sucesso!");
+      qc.invalidateQueries({ queryKey: ["workflow_pixel_snapshot"] });
+      toast.success("Perfil e foto atualizados com sucesso!");
     } catch (err: any) {
       toast.error(err.message || "Erro ao salvar perfil");
     } finally {
@@ -1499,7 +1509,10 @@ function TabUsuarios({ isAdmin, currentUserProfile }: { isAdmin: boolean; curren
         .select("*")
         .order("created_at", { ascending: false });
       if (error) throw error;
-      return (data ?? []) as any[];
+      return (data ?? []).map((u: any) => ({
+        ...u,
+        avatar_url: resolveUserAvatar(u),
+      }));
     },
   });
 
@@ -1545,7 +1558,7 @@ function TabUsuarios({ isAdmin, currentUserProfile }: { isAdmin: boolean; curren
     setEditRole(targetUser.role || "outro");
     setEditStatus(targetUser.status === "inativo" ? "inativo" : "ativo");
     setEditPermissions(targetUser.permissions || CARGO_DEFAULT_PERMISSIONS[targetUser.position] || {});
-    setEditAvatarUrl(targetUser.avatar_url || "");
+    setEditAvatarUrl(resolveUserAvatar(targetUser) || "");
   };
 
   // Abrir modal de cadastro

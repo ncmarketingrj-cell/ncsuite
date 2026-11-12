@@ -36,6 +36,8 @@ import {
   updateOwnPassword,
   deleteSystemUser,
   toggleUserStatus,
+  resolveUserAvatar,
+  saveUserAvatarImmediate,
 } from "@/lib/userService";
 
 export const Route = createFileRoute("/_app/perfil")({
@@ -309,8 +311,16 @@ function ProfileRoutePage() {
     queryFn: async () => {
       if (!user?.id) return null;
       const { data, error } = await supabase.from("profiles").select("*").eq("id", user.id).maybeSingle();
-      if (error) throw error;
-      return data;
+      if (error || !data) return null;
+      const resolvedAvatar = resolveUserAvatar({
+        ...data,
+        email: (data as any).email || user.email,
+        user_metadata: user.user_metadata,
+      });
+      return {
+        ...data,
+        avatar_url: resolvedAvatar || data.avatar_url || null,
+      };
     },
     enabled: !!user?.id,
   });
@@ -476,10 +486,10 @@ function MyProfileSection({
     if (profile) {
       setFullName(profile.full_name || "");
       setPosition(profile.position || POSITIONS_LIST[0]);
-      setAvatarUrl(profile.avatar_url || "");
+      setAvatarUrl(resolveUserAvatar({ ...profile, user_metadata: user?.user_metadata }) || "");
       setWhatsappNumbers(profile.whatsapp_numbers || []);
     }
-  }, [profile]);
+  }, [profile, user]);
 
   // Salvar perfil
   const handleSaveProfile = async () => {
@@ -487,17 +497,24 @@ function MyProfileSection({
     setSavingProfile(true);
     try {
       const cleanPhones = whatsappNumbers.map(p => p.trim()).filter(Boolean);
+      const nextPerms = {
+        ...(profile?.permissions || {}),
+        _avatar_url: avatarUrl || null,
+      };
       const { error } = await supabase
         .from("profiles")
         .update({
           full_name: fullName.trim(),
           position,
           avatar_url: avatarUrl || null,
+          permissions: nextPerms,
           whatsapp_numbers: cleanPhones,
           updated_at: new Date().toISOString(),
         })
         .eq("id", user.id);
       if (error) throw error;
+
+      await saveUserAvatarImmediate(user.id, avatarUrl || null, user.email);
 
       await supabase.auth.updateUser({
         data: { full_name: fullName.trim(), position, avatar_url: avatarUrl || null }
@@ -507,7 +524,8 @@ function MyProfileSection({
       qc.invalidateQueries({ queryKey: ["current_user_profile"] });
       qc.invalidateQueries({ queryKey: ["team_avatars_directory"] });
       qc.invalidateQueries({ queryKey: ["admin_users_list"] });
-      toast.success("Perfil profissional salvo com sucesso!");
+      qc.invalidateQueries({ queryKey: ["workflow_pixel_snapshot"] });
+      toast.success("Perfil e foto profissional salvos com sucesso!");
     } catch (err: any) {
       toast.error(err?.message || "Erro ao salvar dados do perfil");
     } finally {
@@ -940,7 +958,10 @@ function TeamManagementSection({
         .select("*")
         .order("created_at", { ascending: false });
       if (error) throw error;
-      return (data ?? []) as any[];
+      return (data ?? []).map((u: any) => ({
+        ...u,
+        avatar_url: resolveUserAvatar(u),
+      }));
     },
   });
 
@@ -969,7 +990,7 @@ function TeamManagementSection({
     setEditRole(targetUser.role || "outro");
     setEditStatus(targetUser.status === "inativo" ? "inativo" : "ativo");
     setEditPermissions(targetUser.permissions || CARGO_DEFAULT_PERMISSIONS[targetUser.position] || {});
-    setEditAvatarUrl(targetUser.avatar_url || "");
+    setEditAvatarUrl(resolveUserAvatar(targetUser) || "");
   };
 
   // Abrir Modal de Cadastro

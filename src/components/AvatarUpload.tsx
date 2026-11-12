@@ -1,6 +1,8 @@
 import React, { useState, useRef } from "react";
-import { Camera, UploadCloud, Trash2, Loader2, User } from "lucide-react";
+import { Camera, UploadCloud, Trash2, Loader2, User, CheckCircle2 } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase-external/client";
+import { saveUserAvatarImmediate } from "@/lib/userService";
 import { toast } from "sonner";
 
 interface AvatarUploadProps {
@@ -11,6 +13,7 @@ interface AvatarUploadProps {
   size?: "sm" | "md" | "lg" | "xl";
   className?: string;
   disabled?: boolean;
+  autoSave?: boolean;
 }
 
 const SIZE_CLASSES = {
@@ -20,6 +23,74 @@ const SIZE_CLASSES = {
   xl: "h-32 w-32",
 };
 
+/**
+ * Redimensiona e comprime a imagem para um quadrado nítido (240x240) em WebP/JPEG (~10-16KB).
+ * Garante carregamento instantâneo e funciona como fallback infalível mesmo se o bucket Storage estiver privado.
+ */
+function compressImageToDataUrl(file: File, maxDim = 240, quality = 0.84): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("Falha ao ler o arquivo de imagem."));
+    reader.onload = () => {
+      const img = new Image();
+      img.onerror = () => reject(new Error("Formato de imagem inválido."));
+      img.onload = () => {
+        try {
+          const canvas = document.createElement("canvas");
+          canvas.width = maxDim;
+          canvas.height = maxDim;
+          const ctx = canvas.getContext("2d");
+          if (!ctx) {
+            resolve(String(reader.result || ""));
+            return;
+          }
+
+          // Crop central quadrado (object-cover)
+          const minSide = Math.min(img.width, img.height);
+          const sx = (img.width - minSide) / 2;
+          const sy = (img.height - minSide) / 2;
+
+          ctx.clearRect(0, 0, maxDim, maxDim);
+          ctx.drawImage(img, sx, sy, minSide, minSide, 0, 0, maxDim, maxDim);
+
+          // Tenta WebP primeiro (menor tamanho e suporta transparência), fallback para JPEG
+          let dataUrl = canvas.toDataURL("image/webp", quality);
+          if (!dataUrl || !dataUrl.startsWith("data:image/webp")) {
+            dataUrl = canvas.toDataURL("image/jpeg", quality);
+          }
+          resolve(dataUrl);
+        } catch (err) {
+          reject(err);
+        }
+      };
+      img.src = String(reader.result || "");
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+/**
+ * Verifica se uma URL pública do Storage realmente carrega no navegador (bucket público ativo).
+ */
+function verifyPublicUrlLoads(url: string, timeoutMs = 2500): Promise<boolean> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    const timer = setTimeout(() => {
+      img.src = "";
+      resolve(false);
+    }, timeoutMs);
+    img.onload = () => {
+      clearTimeout(timer);
+      resolve(true);
+    };
+    img.onerror = () => {
+      clearTimeout(timer);
+      resolve(false);
+    };
+    img.src = url;
+  });
+}
+
 export function AvatarUpload({
   value,
   onChange,
@@ -28,10 +99,21 @@ export function AvatarUpload({
   size = "lg",
   className = "",
   disabled = false,
+  autoSave = true,
 }: AvatarUploadProps) {
+  const qc = useQueryClient();
   const [loading, setLoading] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
+  const [savedBadge, setSavedBadge] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const refreshGlobalAvatarQueries = () => {
+    qc.invalidateQueries({ queryKey: ["current_user_profile"] });
+    qc.invalidateQueries({ queryKey: ["profiles"] });
+    qc.invalidateQueries({ queryKey: ["admin_users_list"] });
+    qc.invalidateQueries({ queryKey: ["team_avatars_directory"] });
+    qc.invalidateQueries({ queryKey: ["workflow_pixel_snapshot"] });
+  };
 
   const processFile = async (file: File) => {
     if (!file) return;
@@ -50,23 +132,48 @@ export function AvatarUpload({
     }
 
     setLoading(true);
+    setSavedBadge(false);
     try {
-      const fileExt = file.name.split(".").pop()?.toLowerCase() || "jpg";
-      const userPrefix = userId ? userId.replace(/[^a-zA-Z0-9_-]/g, "") : "user";
-      const fileName = `${userPrefix}_${Date.now()}_${Math.random().toString(36).substring(2, 8)}.${fileExt}`;
-      const filePath = `avatars/${fileName}`;
+      // 1. Gera versão otimizada 240x240 (sempre disponível e rápida)
+      const compressedDataUrl = await compressImageToDataUrl(file, 240, 0.84);
+      let finalUrl = compressedDataUrl;
 
-      const { error: uploadError } = await supabase.storage
-        .from("media")
-        .upload(filePath, file, { cacheControl: "3600", upsert: true });
+      // 2. Tenta enviar também ao Supabase Storage ('media') e valida se a URL pública é acessível
+      try {
+        const fileExt = file.name.split(".").pop()?.toLowerCase() || "jpg";
+        const userPrefix = userId ? userId.replace(/[^a-zA-Z0-9_-]/g, "") : "user";
+        const fileName = `${userPrefix}_${Date.now()}_${Math.random().toString(36).substring(2, 8)}.${fileExt}`;
+        const filePath = `avatars/${fileName}`;
 
-      if (uploadError) throw uploadError;
+        const { error: uploadError } = await supabase.storage
+          .from("media")
+          .upload(filePath, file, { cacheControl: "3600", upsert: true });
 
-      const { data } = supabase.storage.from("media").getPublicUrl(filePath);
-      if (!data?.publicUrl) throw new Error("Não foi possível gerar o link público da foto.");
+        if (!uploadError) {
+          const { data } = supabase.storage.from("media").getPublicUrl(filePath);
+          if (data?.publicUrl) {
+            const isPublicReachable = await verifyPublicUrlLoads(data.publicUrl);
+            if (isPublicReachable) {
+              finalUrl = data.publicUrl;
+            }
+          }
+        }
+      } catch {
+        // Usa automaticamente o compressedDataUrl como fallback seguro
+      }
 
-      onChange(data.publicUrl);
-      toast.success("Foto de perfil carregada com sucesso!");
+      onChange(finalUrl);
+
+      // 3. Se temos o userId e autoSave está ativo, persiste IMEDIATAMENTE no banco (profiles + permissions + Auth)
+      if (userId && autoSave) {
+        await saveUserAvatarImmediate(userId, finalUrl);
+        refreshGlobalAvatarQueries();
+        setSavedBadge(true);
+        toast.success("Foto de perfil salva e ativada em todo o sistema!");
+      } else {
+        setSavedBadge(true);
+        toast.success("Foto de perfil carregada e pronta!");
+      }
     } catch (err: any) {
       console.error("[AvatarUpload] Erro:", err);
       toast.error(`Falha no upload da foto: ${err?.message || "Erro desconhecido"}`);
@@ -75,6 +182,24 @@ export function AvatarUpload({
       if (fileInputRef.current) {
         fileInputRef.current.value = "";
       }
+    }
+  };
+
+  const handleRemoveAvatar = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    onChange("");
+    setSavedBadge(false);
+    if (userId && autoSave) {
+      setLoading(true);
+      try {
+        await saveUserAvatarImmediate(userId, null);
+        refreshGlobalAvatarQueries();
+        toast.info("Foto de perfil removida do sistema.");
+      } finally {
+        setLoading(false);
+      }
+    } else {
+      toast.info("Foto de perfil removida.");
     }
   };
 
@@ -116,7 +241,7 @@ export function AvatarUpload({
           className={`relative group shrink-0 rounded-full border-2 cursor-pointer overflow-hidden transition-all duration-300 shadow-xl ${sizeClass} ${
             isDragging
               ? "border-primary scale-105 shadow-glow"
-              : "border-white/15 hover:border-primary/60 bg-muted/20"
+              : "border-border dark:border-white/15 hover:border-primary/60 bg-muted/20"
           } ${disabled ? "opacity-50 cursor-not-allowed" : ""}`}
           title="Clique ou arraste uma foto para fazer upload"
         >
@@ -166,12 +291,12 @@ export function AvatarUpload({
               type="button"
               onClick={() => fileInputRef.current?.click()}
               disabled={disabled || loading}
-              className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 px-3.5 py-2 text-xs font-bold text-foreground transition-all hover:border-primary/40 active:scale-95 disabled:opacity-50"
+              className="inline-flex items-center gap-2 rounded-xl border border-border dark:border-white/10 bg-muted/40 dark:bg-white/5 hover:bg-muted dark:hover:bg-white/10 px-3.5 py-2 text-xs font-bold text-foreground transition-all hover:border-primary/40 active:scale-95 disabled:opacity-50"
             >
               {loading ? (
                 <>
                   <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
-                  <span>Enviando foto...</span>
+                  <span>Salvando foto...</span>
                 </>
               ) : (
                 <>
@@ -184,23 +309,25 @@ export function AvatarUpload({
             {value && (
               <button
                 type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onChange("");
-                  toast.info("Foto de perfil removida.");
-                }}
+                onClick={handleRemoveAvatar}
                 disabled={disabled || loading}
-                className="inline-flex items-center gap-1.5 rounded-xl border border-red-500/20 bg-red-500/5 hover:bg-red-500/15 px-3 py-2 text-xs font-semibold text-red-400 transition active:scale-95 disabled:opacity-50"
+                className="inline-flex items-center gap-1.5 rounded-xl border border-red-500/20 bg-red-500/5 hover:bg-red-500/15 px-3 py-2 text-xs font-semibold text-red-600 dark:text-red-400 transition active:scale-95 disabled:opacity-50"
                 title="Remover foto atual"
               >
                 <Trash2 className="h-3.5 w-3.5" />
                 <span>Remover</span>
               </button>
             )}
+
+            {(savedBadge || Boolean(value)) && !loading && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 border border-emerald-500/25 px-2.5 py-1 text-[10px] font-bold text-emerald-700 dark:text-emerald-400">
+                <CheckCircle2 className="h-3 w-3" /> Foto Ativa
+              </span>
+            )}
           </div>
 
           <p className="text-[11px] text-muted-foreground leading-relaxed">
-            Formatos suportados: <strong>PNG, JPG ou WEBP</strong> de até <strong>5MB</strong>. Você também pode arrastar o arquivo diretamente para o círculo.
+            Formatos suportados: <strong>PNG, JPG ou WEBP</strong> de até <strong>5MB</strong>. Ao selecionar a foto, ela já é salva e ativada automaticamente no sistema.
           </p>
         </div>
       </div>

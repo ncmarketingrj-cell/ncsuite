@@ -101,7 +101,7 @@ html.light {
   --secondary-foreground: 220 30% 10%;
   --accent: 0 78% 42%;
   --accent-foreground: 0 0% 100%;
-  --success: 142 68% 28%;
+  --success: 161 94% 20%;          /* #065f46 — Verde Esmeralda Floresta profundo de altíssima leitura */
   --success-foreground: 0 0% 100%;
   --muted: 220 12% 76%;            /* #BBC1CB — cinza neutro de apoio */
   --muted-foreground: 220 18% 28%; /* #3A4353 — texto secundário grafite de alta legibilidade */
@@ -118,6 +118,30 @@ html.light {
   --sidebar-accent-foreground: 220 32% 10%;
   --sidebar-border: 220 12% 68%;
   --sidebar-ring: 0 88% 46%;
+
+  /* Tokens Tailwind v4 redefinidos no Modo Claro para eliminar o verde neon ilegível */
+  --color-emerald-200: #065f46;
+  --color-emerald-300: #065f46;
+  --color-emerald-400: #065f46;
+  --color-emerald-500: #047857;
+  --color-emerald-600: #065f46;
+  --color-green-200: #166534;
+  --color-green-300: #166534;
+  --color-green-400: #166534;
+  --color-green-500: #15803d;
+  --color-green-600: #166534;
+  --color-teal-300: #0f766e;
+  --color-teal-400: #0f766e;
+  --color-teal-500: #0d9488;
+  --color-lime-300: #3f6212;
+  --color-lime-400: #3f6212;
+  --color-lime-500: #4d7c0f;
+  --color-amber-300: #92400e;
+  --color-amber-400: #92400e;
+  --color-yellow-300: #854d0e;
+  --color-yellow-400: #854d0e;
+  --color-cyan-300: #0e7490;
+  --color-cyan-400: #0e7490;
 }
 
 /* ═══════════════════════════════════════════
@@ -560,6 +584,146 @@ html.light {
   html.light .text-zinc-500,
   html.light .text-zinc-600 {
     color: hsl(var(--muted-foreground)) !important;
+  }
+
+  /* ========================================================================
+     SUBSTITUIÇÃO GLOBAL DO VERDE NEON E TONS PASTÉIS ILEGÍVEIS NO MODO CLARO
+     Substitui qualquer verde neon (#00d294, #10b981, #34d399, #25D366, #22c55e)
+     por Verde Esmeralda Floresta Executivo (#065f46 / #047857) de contraste AAA
+     ======================================================================== */
+  html.light .text-emerald-100,
+  html.light .text-emerald-200,
+  html.light .text-emerald-300,
+  html.light .text-emerald-400,
+  html.light .text-emerald-500,
+  html.light .text-emerald-600,
+  html.light .text-green-100,
+  html.light .text-green-200,
+  html.light .text-green-300,
+  html.light .text-green-400,
+  html.light .text-green-500,
+  html.light .text-green-600,
+  html.light .text-teal-200,
+  html.light .text-teal-300,
+  html.light .text-teal-400,
+  html.light .text-teal-500,
+  html.light .text-lime-200,
+  html.light .text-lime-300,
+  html.light .text-lime-400,
+  html.light .text-lime-500,
+  html.light .text-success,
+  html.light .text-\[\#25D366\],
+  html.light .text-\[\#10b981\],
+  html.light .text-\[\#10B981\],
+  html.light .text-\[\#34d399\],
+  html.light .text-\[\#34D399\],
+  html.light .text-\[\#22c55e\],
+  html.light .text-\[\#22C55E\],
+  html.light .text-\[\#4ade80\],
+  html.light .text-\[\#4ADE80\],
+  html.light .text-\[\#00ff88\],
+  html.light .text-\[\#00d294\],
+  html.light .hover\:text-emerald-300:hover,
+  html.light .hover\:text-emerald-400:hover,
+  html.light .hover\:text-emerald-500:hover,
+  html.light .hover\:text-green-400:hover,
+  html.light .hover\:text-green-500:hover,
+  html.light [style*="color: rgb(16, 185, 129)"],
+  html.light [style*="color: rgb(52, 211, 153)"],
+  html.light [style*="color: rgb(34, 197, 94)"],
+  html.light [style*="color: rgb(37, 211, 102)"],
+  html.light [style*="color: rgb(74, 222, 128)"],
+  html.light [style*="color:#10b981"],
+  html.light [style*="color: #10b981"],
+  html.light [style*="color:#10B981"],
+  html.light [style*="color: #10B981"],
+  html.light [style*="color:#34d399"],
+  html.light [style*="color: #34d399"],
+  html.light [style*="color:#22c55e"],
+  html.light [style*="color: #22c55e"],
+  html.light [style*="color:#25D366"],
+  html.light [style*="color: #25D366"] {
+    color: #065f46 !important;
+  }
+
+  /* Fundos suaves e bordas de badges verdes no Modo Claro para leitura nítida */
+  html.light .bg-emerald-500\/5,
+  html.light .bg-emerald-500\/8,
+  html.light .bg-emerald-500\/10,
+  html.light .bg-emerald-500\/15,
+  html.light .bg-emerald-500\/20,
+  html.light .bg-emerald-400\/10,
+  html.light .bg-emerald-400\/15,
+  html.light .bg-green-500\/5,
+  html.light .bg-green-500\/10,
+  html.light .bg-green-500\/15,
+  html.light .bg-green-500\/20,
+  html.light .bg-\[\#25D366\]\/10,
+  html.light .bg-\[\#25D366\]\/15,
+  html.light .bg-\[\#25D366\]\/20 {
+    background-color: rgba(4, 120, 87, 0.13) !important;
+  }
+
+  html.light .border-emerald-500\/15,
+  html.light .border-emerald-500\/20,
+  html.light .border-emerald-500\/25,
+  html.light .border-emerald-500\/30,
+  html.light .border-emerald-500\/40,
+  html.light .border-emerald-400\/20,
+  html.light .border-emerald-400\/30,
+  html.light .border-green-500\/20,
+  html.light .border-green-500\/30,
+  html.light .border-green-500\/40,
+  html.light .border-\[\#25D366\]\/20,
+  html.light .border-\[\#25D366\]\/30 {
+    border-color: rgba(4, 120, 87, 0.36) !important;
+  }
+
+  /* Botões sólidos em verde (ex: WhatsApp / Ações positivas) com texto branco nítido */
+  html.light button.bg-emerald-500,
+  html.light button.bg-emerald-600,
+  html.light button.bg-green-500,
+  html.light button.bg-green-600,
+  html.light a.bg-emerald-500,
+  html.light a.bg-emerald-600,
+  html.light a.bg-green-600 {
+    background-color: #047857 !important;
+    color: #ffffff !important;
+  }
+
+  /* Outros tons neon/pastel (âmbar, amarelo, ciano, azul claro, roxo claro) ajustados p/ Modo Claro */
+  html.light .text-amber-200,
+  html.light .text-amber-300,
+  html.light .text-amber-400,
+  html.light .text-yellow-200,
+  html.light .text-yellow-300,
+  html.light .text-yellow-400,
+  html.light .text-yellow-500 {
+    color: #92400e !important;
+  }
+
+  html.light .text-cyan-200,
+  html.light .text-cyan-300,
+  html.light .text-cyan-400,
+  html.light .text-sky-200,
+  html.light .text-sky-300,
+  html.light .text-sky-400 {
+    color: #0e7490 !important;
+  }
+
+  html.light .text-blue-200,
+  html.light .text-blue-300,
+  html.light .text-blue-400 {
+    color: #1e40af !important;
+  }
+
+  html.light .text-purple-200,
+  html.light .text-purple-300,
+  html.light .text-purple-400,
+  html.light .text-violet-200,
+  html.light .text-violet-300,
+  html.light .text-violet-400 {
+    color: #5b21b6 !important;
   }
 
   html.light .border-white\/5,

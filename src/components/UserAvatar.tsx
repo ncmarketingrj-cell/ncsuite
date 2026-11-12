@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { User } from "lucide-react";
+import { resolveUserAvatar } from "@/lib/userService";
 
 export type AvatarPresenceStatus = "online" | "today" | "offline" | "inactive" | null;
 
@@ -7,6 +8,8 @@ interface UserAvatarProps {
   src?: string | null;
   name?: string | null;
   email?: string | null;
+  userId?: string | null;
+  permissions?: Record<string, any> | null;
   size?: "xs" | "sm" | "md" | "lg" | "xl";
   rounded?: "full" | "xl" | "2xl";
   onlineStatus?: AvatarPresenceStatus;
@@ -54,19 +57,37 @@ export function UserAvatar({
   src,
   name,
   email,
+  userId,
+  permissions,
   size = "sm",
   rounded = "full",
   onlineStatus = null,
   className = "",
 }: UserAvatarProps) {
   const [imgError, setImgError] = useState(false);
+  const [cacheVersion, setCacheVersion] = useState(0);
+
+  useEffect(() => {
+    const handleAvatarUpdated = () => setCacheVersion((v) => v + 1);
+    window.addEventListener("nc-avatar-updated", handleAvatarUpdated);
+    return () => window.removeEventListener("nc-avatar-updated", handleAvatarUpdated);
+  }, []);
+
+  const effectiveSrc = React.useMemo(() => {
+    return resolveUserAvatar({
+      id: userId,
+      email,
+      avatar_url: src,
+      permissions,
+    });
+  }, [src, userId, email, permissions, cacheVersion]);
 
   useEffect(() => {
     setImgError(false);
-  }, [src]);
+  }, [effectiveSrc]);
 
   const initials = getInitials(name, email);
-  const showImage = Boolean(src && src.trim() && !imgError);
+  const showImage = Boolean(effectiveSrc && effectiveSrc.trim() && !imgError);
 
   const statusConfig =
     onlineStatus === "online"
@@ -86,7 +107,7 @@ export function UserAvatar({
       >
         {showImage ? (
           <img
-            src={src!}
+            src={effectiveSrc!}
             alt={name || email || "Foto de perfil"}
             onError={() => setImgError(true)}
             className="h-full w-full object-cover"

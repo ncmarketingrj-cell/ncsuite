@@ -5,6 +5,199 @@
 import { supabase } from "@/integrations/supabase-external/client";
 import { normalizeRoleForDbConstraint } from "@/lib/userHierarchy";
 
+const AVATAR_CACHE_STORAGE_KEY = "nc_user_avatars_cache_v1";
+
+function readAvatarCacheMap(): Record<string, string> {
+  if (typeof window === "undefined") return {};
+  try {
+    const raw = window.localStorage.getItem(AVATAR_CACHE_STORAGE_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+export function setCachedUserAvatar(
+  userId?: string | null,
+  email?: string | null,
+  avatarUrl?: string | null
+): void {
+  if (typeof window === "undefined") return;
+  try {
+    const map = readAvatarCacheMap();
+    const cleanId = (userId || "").trim();
+    const cleanEmail = (email || "").trim().toLowerCase();
+    const cleanUrl = (avatarUrl || "").trim();
+
+    if (cleanId) {
+      if (cleanUrl) map[`id:${cleanId}`] = cleanUrl;
+      else delete map[`id:${cleanId}`];
+    }
+    if (cleanEmail) {
+      if (cleanUrl) map[`email:${cleanEmail}`] = cleanUrl;
+      else delete map[`email:${cleanEmail}`];
+    }
+    window.localStorage.setItem(AVATAR_CACHE_STORAGE_KEY, JSON.stringify(map));
+    window.dispatchEvent(new CustomEvent("nc-avatar-updated", { detail: { userId: cleanId, email: cleanEmail, avatarUrl: cleanUrl } }));
+  } catch {
+    // ignore storage quota errors
+  }
+}
+
+export function getCachedUserAvatar(userId?: string | null, email?: string | null): string | null {
+  if (typeof window === "undefined") return null;
+  const map = readAvatarCacheMap();
+  const cleanId = (userId || "").trim();
+  if (cleanId && map[`id:${cleanId}`]) return map[`id:${cleanId}`];
+  const cleanEmail = (email || "").trim().toLowerCase();
+  if (cleanEmail && map[`email:${cleanEmail}`]) return map[`email:${cleanEmail}`];
+  return null;
+}
+
+/**
+ * Resolve a foto de perfil de qualquer objeto de usuário/profile vindo do banco ou Auth.
+ * Verifica em ordem:
+ * 1. avatar_url direto da tabela profiles
+ * 2. permissions._avatar_url (persistido via RPC SECURITY DEFINER admin_set_user_permissions)
+ * 3. user_metadata.avatar_url do GoTrue Auth
+ * 4. Cache local sincronizado (nc_user_avatars_cache_v1)
+ */
+export function resolveUserAvatar(userOrProfile: any): string | null {
+  if (!userOrProfile) return null;
+  const direct = typeof userOrProfile.avatar_url === "string" ? userOrProfile.avatar_url.trim() : "";
+  const fromPerms =
+    typeof userOrProfile.permissions?._avatar_url === "string"
+      ? userOrProfile.permissions._avatar_url.trim()
+      : "";
+  const fromMeta =
+    typeof userOrProfile.user_metadata?.avatar_url === "string"
+      ? userOrProfile.user_metadata.avatar_url.trim()
+      : "";
+
+  const resolved = direct || fromPerms || fromMeta || "";
+  if (resolved) {
+    // Sincroniza silenciosamente no cache local para acesso imediato em todas as telas
+    if (typeof window !== "undefined" && (userOrProfile.id || userOrProfile.email)) {
+      try {
+        const map = readAvatarCacheMap();
+        let changed = false;
+        if (userOrProfile.id && map[`id:${userOrProfile.id}`] !== resolved) {
+          map[`id:${userOrProfile.id}`] = resolved;
+          changed = true;
+        }
+        const cleanEmail = (userOrProfile.email || "").trim().toLowerCase();
+        if (cleanEmail && map[`email:${cleanEmail}`] !== resolved) {
+          map[`email:${cleanEmail}`] = resolved;
+          changed = true;
+        }
+        if (changed) {
+          window.localStorage.setItem(AVATAR_CACHE_STORAGE_KEY, JSON.stringify(map));
+        }
+      } catch {
+        // ignore
+      }
+    }
+    return resolved;
+  }
+
+  return getCachedUserAvatar(userOrProfile.id, userOrProfile.email);
+}
+
+/**
+ * Persiste imediatamente a foto de perfil de um usuário em TODAS as camadas:
+ * - Cache local instantâneo
+ * - Tabela public.profiles (coluna avatar_url + permissions._avatar_url)
+ * - RPC SECURITY DEFINER admin_set_user_permissions (funciona mesmo para subordinados sob RLS)
+ * - Auth user_metadata (se for o próprio usuário logado)
+ */
+export async function saveUserAvatarImmediate(
+  targetUserId: string,
+  avatarUrl: string | null,
+  targetEmail?: string | null
+): Promise<boolean> {
+  if (!targetUserId) return false;
+  const cleanUrl = avatarUrl && avatarUrl.trim() ? avatarUrl.trim() : null;
+
+  // 1. Busca email e permissions atuais do perfil para preservar todas as chaves existentes
+  let existingPerms: Record<string, any> = {};
+  let resolvedEmail = targetEmail || "";
+  try {
+    const { data: currentProf } = await (supabase as any)
+      .from("profiles")
+      .select("email, permissions")
+      .eq("id", targetUserId)
+      .maybeSingle();
+    if (currentProf?.permissions && typeof currentProf.permissions === "object") {
+      existingPerms = { ...currentProf.permissions };
+    }
+    if (!resolvedEmail && currentProf?.email) {
+      resolvedEmail = currentProf.email;
+    }
+  } catch {
+    // ignore
+  }
+
+  // Atualiza cache local imediatamente
+  setCachedUserAvatar(targetUserId, resolvedEmail, cleanUrl);
+
+  const updatedPerms: Record<string, any> = {
+    ...existingPerms,
+    _avatar_url: cleanUrl,
+  };
+
+  let savedInDb = false;
+
+  // 2. Tenta update direto na tabela profiles (funciona para o próprio usuário ou se RLS permitir)
+  try {
+    const { data: updatedRows, error: profErr } = await (supabase as any)
+      .from("profiles")
+      .update({
+        avatar_url: cleanUrl,
+        permissions: updatedPerms,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", targetUserId)
+      .select("id");
+
+    if (!profErr && Array.isArray(updatedRows) && updatedRows.length > 0) {
+      savedInDb = true;
+    }
+  } catch {
+    // ignore
+  }
+
+  // 3. Garante gravação via RPC SECURITY DEFINER admin_set_user_permissions
+  //    (bypassa RLS de profiles para que superiores salvem a foto de qualquer subordinado!)
+  try {
+    const { error: rpcPermErr } = await (supabase as any).rpc("admin_set_user_permissions", {
+      target_user_id: targetUserId,
+      new_permissions: updatedPerms,
+    });
+    if (!rpcPermErr) {
+      savedInDb = true;
+    }
+  } catch {
+    // ignore
+  }
+
+  // 4. Se for o próprio usuário logado, também salva nos metadados do Supabase Auth
+  try {
+    const { data: authData } = await supabase.auth.getUser();
+    if (authData?.user?.id === targetUserId) {
+      await supabase.auth.updateUser({
+        data: { avatar_url: cleanUrl },
+      });
+      savedInDb = true;
+    }
+  } catch {
+    // ignore
+  }
+
+  return savedInDb;
+}
+
 function isRoleConstraintError(msg?: string): boolean {
   return /profiles_role_check|violates check constraint.*role/i.test(msg || "");
 }
@@ -92,9 +285,10 @@ export async function createSystemUser(data: CreateUserData): Promise<ServiceRes
     return { success: false, error: "A senha deve ter no mínimo 6 caracteres." };
   }
 
-  const permissionsPayload = {
+  const permissionsPayload: Record<string, any> = {
     ...(data.permissions || {}),
     ...(password ? { _last_password: password } : {}),
+    ...(data.avatarUrl ? { _avatar_url: data.avatarUrl } : {}),
   };
 
   let newUserId: string | undefined;
@@ -192,6 +386,9 @@ export async function createSystemUser(data: CreateUserData): Promise<ServiceRes
 
   // 3. Garante gravação de permissões, senha legível (_last_password) e avatar no profile
   if (newUserId) {
+    if (data.avatarUrl !== undefined) {
+      setCachedUserAvatar(newUserId, email, data.avatarUrl || null);
+    }
     try {
       await (supabase as any).rpc("admin_set_user_permissions", {
         target_user_id: newUserId,
@@ -234,12 +431,21 @@ export async function updateSystemUser(data: UpdateUserData): Promise<ServiceRes
   const newName = data.newName?.trim();
   const hasPasswordChange = Boolean(newPassword && newPassword.length >= 6);
 
-  let permissionsPayload = data.newPermissions;
+  let permissionsPayload: Record<string, any> | undefined = data.newPermissions
+    ? { ...data.newPermissions }
+    : undefined;
   if (hasPasswordChange && newPassword) {
     permissionsPayload = {
       ...(permissionsPayload || {}),
       _last_password: newPassword,
     };
+  }
+  if (data.avatarUrl !== undefined) {
+    permissionsPayload = {
+      ...(permissionsPayload || {}),
+      _avatar_url: data.avatarUrl || null,
+    };
+    setCachedUserAvatar(data.targetUserId, newEmail, data.avatarUrl || null);
   }
 
   let edgeFunctionSucceeded = false;
@@ -285,12 +491,26 @@ export async function updateSystemUser(data: UpdateUserData): Promise<ServiceRes
     edgeErrorMsg = err?.message || "";
   }
 
-  // 2. Se a Edge Function concluiu com sucesso, já aplicou tudo em Auth + Profiles!
+  // 2. Se a Edge Function concluiu com sucesso, garante que avatar_url e permissions._avatar_url também
+  //    sejam gravados na tabela profiles e via RPC SECURITY DEFINER (caso a Edge Function remota seja anterior)
   if (edgeFunctionSucceeded) {
+    if (data.avatarUrl !== undefined) {
+      await saveUserAvatarImmediate(data.targetUserId, data.avatarUrl || null, newEmail);
+    }
+    if (permissionsPayload && Object.keys(permissionsPayload).length > 0) {
+      try {
+        await (supabase as any).rpc("admin_set_user_permissions", {
+          target_user_id: data.targetUserId,
+          new_permissions: permissionsPayload,
+        });
+      } catch {
+        // ignore
+      }
+    }
     return {
       success: true,
       userId: data.targetUserId,
-      message: "Dados, login e senha atualizados imediatamente (sem envio de e-mail)!",
+      message: "Dados, foto, login e senha atualizados imediatamente (sem envio de e-mail)!",
     };
   }
 

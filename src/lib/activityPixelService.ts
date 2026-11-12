@@ -1,4 +1,5 @@
 import { supabase } from "@/integrations/supabase-external/client";
+import { resolveUserAvatar } from "@/lib/userService";
 
 export interface RouteMeta {
   pageLabel: string;
@@ -178,7 +179,7 @@ export async function fetchTeamActivitySnapshot(params: {
   const [profilesRes, dailyRes] = await Promise.all([
     (supabase as any)
       .from("profiles")
-      .select("id, full_name, email, position, role, avatar_url, status, updated_at, last_seen_at, last_route, last_page_label")
+      .select("id, full_name, email, position, role, avatar_url, permissions, status, updated_at, last_seen_at, last_route, last_page_label")
       .order("full_name", { ascending: true }),
     (supabase as any)
       .from("user_activity_daily")
@@ -193,10 +194,15 @@ export async function fetchTeamActivitySnapshot(params: {
   if (profilesRes.error && /last_seen_at|last_route|last_page_label/i.test(profilesRes.error.message || "")) {
     const fallbackProf = await (supabase as any)
       .from("profiles")
-      .select("id, full_name, email, position, role, avatar_url, status, updated_at")
+      .select("id, full_name, email, position, role, avatar_url, permissions, status, updated_at")
       .order("full_name", { ascending: true });
     profiles = fallbackProf.data || [];
   }
+
+  profiles = profiles.map((p: any) => ({
+    ...p,
+    avatar_url: resolveUserAvatar(p),
+  }));
 
   const migrationPending = Boolean(dailyRes.error && isMissingPixelSchemaError(dailyRes.error));
   const rangeDaily: ActivityDailyRecord[] = migrationPending ? [] : dailyRes.data || [];

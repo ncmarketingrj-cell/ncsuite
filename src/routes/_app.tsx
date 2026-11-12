@@ -1094,6 +1094,8 @@ function Shell() {
               >
                 <UserAvatar
                   src={profile?.avatar_url}
+                  userId={user?.id}
+                  permissions={profile?.permissions}
                   name={profile?.full_name}
                   email={user?.email}
                   size="sm"
@@ -1129,6 +1131,8 @@ function Shell() {
                       >
                         <UserAvatar
                           src={profile?.avatar_url}
+                          userId={user?.id}
+                          permissions={profile?.permissions}
                           name={profile?.full_name}
                           email={user?.email}
                           size="md"

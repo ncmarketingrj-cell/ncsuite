@@ -2,6 +2,7 @@ import { useAuth } from "@/lib/auth";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase-external/client";
 import { hasPermissionAccess, hasPermissionEdit, isMasterAdmin } from "@/lib/userHierarchy";
+import { resolveUserAvatar } from "@/lib/userService";
 
 const RESTRICTED_BY_DEFAULT = new Set(["criar_usuarios", "gestao_victoria"]);
 
@@ -17,8 +18,16 @@ export function usePagePermission() {
         .select("*")
         .eq("id", user.id)
         .maybeSingle();
-      if (error) return null;
-      return data;
+      if (error || !data) return null;
+      const resolvedAvatar = resolveUserAvatar({
+        ...data,
+        email: (data as any).email || user.email,
+        user_metadata: user.user_metadata,
+      });
+      return {
+        ...data,
+        avatar_url: resolvedAvatar || data.avatar_url || null,
+      };
     },
     enabled: !!user?.id,
   });
