@@ -100,8 +100,22 @@ export function useVictoriaChat(
 
   // ═══════════════════════════════════════════════════════════════════════
   // Pesquisa de Mercado em Tempo Real & Aprendizado Autônomo (Custo R$ 0,00)
+  // Acumulativo até 100 artigos com persistência em localStorage
   // ═══════════════════════════════════════════════════════════════════════
-  const [marketArticles, setMarketArticles] = useState<MarketArticle[]>([]);
+  const [marketArticles, setMarketArticles] = useState<MarketArticle[]>(() => {
+    try {
+      const stored = localStorage.getItem("nc_market_radar_articles_v2");
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed;
+        }
+      }
+    } catch (e) {
+      console.warn("Erro ao carregar radar de mercado do storage:", e);
+    }
+    return FALLBACK_ARTICLES;
+  });
   const [isScanningMarket, setIsScanningMarket] = useState(false);
   const [isLearningMarket, setIsLearningMarket] = useState(false);
   const [lastMarketScan, setLastMarketScan] = useState<Date | null>(() => {
@@ -746,8 +760,13 @@ export function useVictoriaChat(
     }
   };
 
-  // Adicionar Conhecimento (RAG) via Edge Function
+  // Adicionar Conhecimento (RAG) com limite estrito de até 50 documentos
   const addKnowledge = async (title: string, content: string, category: 'inventory' | 'brand_voice' | 'manual' | 'strategy' | 'custom') => {
+    if (knowledgeList.length >= 50) {
+      toast.error("Capacidade máxima atingida: 50/50 documentos treinados. Exclua ou edite um documento para liberar espaço.");
+      return false;
+    }
+
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const res = await fetch(
@@ -783,13 +802,77 @@ export function useVictoriaChat(
           created_at: new Date(bodyData.data.created_at)
         };
         setKnowledgeList(prev => [newItem, ...prev]);
-        toast.success("Documento adicionado com sucesso!");
+        toast.success(`Documento treinado adicionado com sucesso! (${knowledgeList.length + 1}/50)`);
         return true;
       }
       return false;
     } catch (err: any) {
       console.error("Erro ao adicionar conhecimento:", err);
       toast.error("Erro ao processar documento: " + err.message);
+      return false;
+    }
+  };
+
+  // Editar / Atualizar Conhecimento existente (com re-embedding e sincronização)
+  const updateKnowledge = async (
+    id: string,
+    title: string,
+    category: KnowledgeItem['category'],
+    content: string
+  ): Promise<boolean> => {
+    try {
+      // 1. Tentar atualizar via Edge Function para recalcular embedding geométrico
+      let updatedViaFn = false;
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        const res = await fetch(`${VITE_SUPABASE_URL}/functions/v1/victoria-agent`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${session?.access_token || ""}`,
+            "apikey": ANON_KEY
+          },
+          body: JSON.stringify({
+            action: "update_knowledge",
+            id,
+            title,
+            content,
+            category
+          })
+        });
+
+        if (res.ok) {
+          const bodyData = await res.json();
+          if (bodyData.success) {
+            updatedViaFn = true;
+          }
+        }
+      } catch (fnErr) {
+        console.warn("[UPDATE_KNOWLEDGE] Edge function indisponível, aplicando fallback direto:", fnErr);
+      }
+
+      // 2. Se a Edge Function não concluiu, fazer o update direto no Supabase
+      if (!updatedViaFn) {
+        const { error } = await supabase
+          .from("victoria_knowledge" as any)
+          .update({
+            title,
+            category,
+            content,
+            updated_at: new Date().toISOString()
+          })
+          .eq("id", id);
+
+        if (error) throw error;
+      }
+
+      // 3. Atualizar estado local
+      setKnowledgeList(prev => prev.map(k => k.id === id ? { ...k, title, category, content } : k));
+      toast.success("Documento treinado atualizado com sucesso!");
+      return true;
+    } catch (err: any) {
+      console.error("Erro ao atualizar conhecimento:", err);
+      toast.error("Erro ao atualizar documento: " + (err?.message || "Tente novamente."));
       return false;
     }
   };
@@ -1097,53 +1180,114 @@ export function useVictoriaChat(
   };
 
   // ═══════════════════════════════════════════════════════════════════════
-  // Rastrear Notícias do Setor e Tráfego Pago (Custo Zero via RSS Público / Server Function)
+  // Gerenciamento Acumulativo de Artigos do Radar de Mercado (Até 100 itens)
   // ═══════════════════════════════════════════════════════════════════════
+
+  // Excluir artigos selecionados ou individuais
+  const deleteMarketArticles = (articleIds: string[]) => {
+    if (!articleIds || articleIds.length === 0) return;
+    const toDeleteSet = new Set(articleIds);
+    setMarketArticles(prev => {
+      const remaining = prev.filter(art => !toDeleteSet.has(art.id));
+      try {
+        localStorage.setItem("nc_market_radar_articles_v2", JSON.stringify(remaining));
+      } catch (e) {
+        console.warn("Falha ao salvar no storage:", e);
+      }
+      return remaining;
+    });
+    toast.success(`${articleIds.length} artigo(s) removido(s) do Radar.`);
+  };
+
+  // Limpar todos os artigos do Radar
+  const clearMarketArticles = () => {
+    setMarketArticles([]);
+    localStorage.removeItem("nc_market_radar_articles_v2");
+    toast.info("Radar de notícias foi limpo.");
+  };
+
+  // Rastrear Notícias do Setor e Tráfego Pago (Acumulativo até 100 Artigos Únicos)
   const fetchMarketIntel = async (showToast = true): Promise<MarketArticle[]> => {
     setIsScanningMarket(true);
     try {
       // 1. Invocar a Server Function nativa que busca feeds RSS em tempo real sem bloqueios de CORS
-      let articles: MarketArticle[] = [];
+      let fetched: MarketArticle[] = [];
       try {
         const response = await fetchMarketIntelFn();
         if (response && response.success && Array.isArray(response.articles) && response.articles.length > 0) {
-          articles = response.articles;
+          fetched = response.articles;
         }
       } catch (fnErr) {
         console.warn("[RADAR] Server function indisponível, aplicando fallback estratégico:", fnErr);
       }
 
-      // 2. Se a busca externa não retornar artigos, aplica artigos estratégicos validados
-      if (!articles || articles.length === 0) {
-        articles = FALLBACK_ARTICLES;
+      // Se a busca externa não retornar novos e não tiver nenhum artigo ainda, usa os de fallback
+      if ((!fetched || fetched.length === 0) && marketArticles.length === 0) {
+        fetched = FALLBACK_ARTICLES;
       }
 
-      setMarketArticles(articles);
+      let newCount = 0;
+      let totalAccumulated = marketArticles.length;
+
+      setMarketArticles(prev => {
+        // Chaves normalizadas para deduplicação (link ou título sem pontuação)
+        const existingKeys = new Set(
+          prev.map(a => (a.link || a.title).toLowerCase().trim().replace(/[^a-z0-9]/g, ""))
+        );
+
+        const newArticles = fetched.filter(a => {
+          const key = (a.link || a.title).toLowerCase().trim().replace(/[^a-z0-9]/g, "");
+          return key.length > 5 && !existingKeys.has(key);
+        });
+
+        newCount = newArticles.length;
+
+        // Acumula os novos no topo, preserva os existentes e limita ao teto de 100 artigos!
+        const combined = [...newArticles, ...prev].slice(0, 100);
+        totalAccumulated = combined.length;
+
+        try {
+          localStorage.setItem("nc_market_radar_articles_v2", JSON.stringify(combined));
+        } catch (e) {
+          console.warn("Falha ao gravar artigos no storage:", e);
+        }
+        return combined;
+      });
+
       const now = new Date();
       setLastMarketScan(now);
       localStorage.setItem("nc_last_market_scan", now.toISOString());
 
       if (showToast) {
-        toast.success(`Radar atualizado: ${articles.length} notícias e estratégias do mercado mapeadas.`);
+        if (newCount > 0) {
+          toast.success(`Radar ampliado: +${newCount} novas notícias mapeadas (${totalAccumulated}/100 acumuladas).`);
+        } else {
+          toast.info(`Radar atualizado: nenhuma novidade repetida (${totalAccumulated}/100 notícias acumuladas).`);
+        }
       }
-      return articles;
+      return fetched;
     } catch (err: any) {
       console.warn("Falha ao buscar radar de notícias:", err);
-      setMarketArticles(FALLBACK_ARTICLES);
-      return FALLBACK_ARTICLES;
+      return [];
     } finally {
       setIsScanningMarket(false);
     }
   };
 
   // ═══════════════════════════════════════════════════════════════════════
-  // Absorver Aprendizados do Radar no RAG Vetorial da Victoria
+  // Absorver Artigos Selecionados no RAG Vetorial da Victoria (Até 50 Documentos)
   // ═══════════════════════════════════════════════════════════════════════
-  const learnMarketIntel = async (articles: MarketArticle[]) => {
+  const learnMarketIntel = async (articles: MarketArticle[]): Promise<boolean> => {
     if (!articles || articles.length === 0) {
-      toast.error("Nenhuma notícia disponível para aprender.");
+      toast.error("Selecione ao menos um artigo para absorver no RAG.");
       return false;
     }
+
+    if (knowledgeList.length >= 50) {
+      toast.error("Capacidade máxima atingida: 50/50 documentos treinados. Exclua ou edite algum documento para liberar espaço.");
+      return false;
+    }
+
     setIsLearningMarket(true);
     try {
       const { data: { user } } = await supabase.auth.getUser();
@@ -1153,28 +1297,59 @@ export function useVictoriaChat(
 
       const nowStr = new Date().toLocaleDateString("pt-BR");
       const summaryContent = articles
-        .map((art) => `- [${art.source}] ${art.title}\n  Contexto: ${art.snippet}\n  Link: ${art.link}`)
+        .map((art) => `- [${art.source}] ${art.title}\n  Data: ${new Date(art.pubDate).toLocaleDateString("pt-BR")}\n  Contexto: ${art.snippet}\n  Fonte: ${art.link}`)
         .join("\n\n");
 
-      const docTitle = `[RADAR MERCADO AUTOMOTIVO] Tendências & Lançamentos — ${nowStr}`;
-      const docContent = `SÍNTESE DE MERCADO E NOTÍCIAS AUTOMOTIVAS COLETADAS EM TEMPO REAL (${nowStr}):\n\n${summaryContent}\n\nDIRETRIZES PARA GESTÃO DE TRÁFEGO PAGO AUTOMOTIVO:\n- Alinhar anúncios com os modelos e notícias em alta.\n- Ofertas agressivas de seminovos devem aproveitar a busca por IPVA, taxa zero e financiamento ágil.\n- Monitorar CPL regional (especialmente no Rio de Janeiro com meta estrita de R$ 5,00 por conversa de WhatsApp).\n- Criativos dinâmicos com fotos de estoque real batem catálogos estáticos.`;
+      const docTitle = articles.length === 1
+        ? `[RADAR MERCADO] ${articles[0].title.slice(0, 75)}`
+        : `[RADAR MERCADO AUTOMOTIVO] Inteligência & Tendências — ${nowStr} (${articles.length} notícias)`;
 
-      const { data: savedDoc, error: insertErr } = await supabase
-        .from("victoria_knowledge" as any)
-        .insert({
-          user_id: user.id,
-          category: "strategy",
-          title: docTitle,
-          content: docContent,
-        })
-        .select()
-        .single();
+      const docContent = `SÍNTESE DE MERCADO E NOTÍCIAS AUTOMOTIVAS COLETADAS EM TEMPO REAL (${nowStr}):\n\n${summaryContent}\n\nDIRETRIZES ESTRATÉGICAS PARA GESTÃO DE TRÁFEGO PAGO AUTOMOTIVO (VICTORIA AI):\n- Alinhar anúncios com os modelos e notícias em alta.\n- Ofertas agressivas de seminovos devem aproveitar a busca por IPVA, taxa zero e financiamento facilitado.\n- Monitorar CPL regional (especialmente no Rio de Janeiro com meta estrita de R$ 5,00 por conversa de WhatsApp).\n- Criativos dinâmicos com fotos reais do pátio com iluminação natural convertem até 54% mais que catálogo estático.\n- Resposta no WhatsApp em menos de 5 minutos reduz o CPL efetivo pela metade e garante SLA da agência.`;
 
-      if (insertErr) {
-        throw new Error(insertErr.message);
+      // 1. Tentar absorver via Edge Function (gera embedding geométrico com Gemini)
+      let savedViaFn = false;
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        const res = await fetch(`${VITE_SUPABASE_URL}/functions/v1/victoria-agent`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${session?.access_token || ""}`,
+            "apikey": ANON_KEY
+          },
+          body: JSON.stringify({
+            action: "learn_market_intel",
+            articlesToLearn: articles
+          })
+        });
+
+        if (res.ok) {
+          const bodyData = await res.json();
+          if (bodyData.success) {
+            savedViaFn = true;
+          }
+        }
+      } catch (fnErr) {
+        console.warn("[LEARN_MARKET] Edge function indisponível, aplicando inserção direta:", fnErr);
       }
 
-      toast.success("🧠 Victoria absorveu o aprendizado de mercado na sua memória!");
+      // 2. Se a Edge Function não inseriu, inserir diretamente na tabela do Supabase
+      if (!savedViaFn) {
+        const { error: insertErr } = await supabase
+          .from("victoria_knowledge" as any)
+          .insert({
+            user_id: user.id,
+            category: "strategy",
+            title: docTitle,
+            content: docContent,
+          });
+
+        if (insertErr) {
+          throw new Error(insertErr.message);
+        }
+      }
+
+      toast.success(`🧠 Victoria absorveu ${articles.length} notícia(s) na sua Base de Conhecimento! (${knowledgeList.length + 1}/50)`);
       await fetchKnowledge();
       return true;
     } catch (err: any) {
@@ -1205,6 +1380,7 @@ export function useVictoriaChat(
     knowledgeList,
     loadingKnowledge,
     addKnowledge,
+    updateKnowledge,
     deleteKnowledge,
     fetchKnowledge,
     ragSnippets,
@@ -1217,6 +1393,8 @@ export function useVictoriaChat(
     isLearningMarket,
     lastMarketScan,
     fetchMarketIntel,
-    learnMarketIntel
+    learnMarketIntel,
+    deleteMarketArticles,
+    clearMarketArticles
   };
 }

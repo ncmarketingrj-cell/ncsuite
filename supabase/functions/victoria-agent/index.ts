@@ -263,6 +263,72 @@ serve(async (req) => {
     }
 
     // =========================================================================
+    // AÇÃO: update_knowledge (Atualização de documento com novo embedding)
+    // =========================================================================
+    if (action === "update_knowledge") {
+      const docId = body.id;
+      if (!docId || !title || !content || !category) {
+        return new Response(JSON.stringify({ error: "Missing id, title, content or category" }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" }
+        });
+      }
+
+      let embedding: number[] | null = null;
+      if (GEMINI_API_KEY) {
+        try {
+          const embedRes = await fetch(
+            `https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent?key=${GEMINI_API_KEY}`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                model: "models/text-embedding-004",
+                content: {
+                  parts: [{ text: `${title}\n\n${content}` }]
+                }
+              })
+            }
+          );
+          if (embedRes.ok) {
+            const embedData = await embedRes.json();
+            embedding = embedData.embedding?.values || null;
+          }
+        } catch (e) {
+          console.error("Falha ao gerar embedding na atualização:", e);
+        }
+      }
+
+      const updatePayload: Record<string, any> = {
+        title,
+        category,
+        content,
+        updated_at: new Date().toISOString()
+      };
+      if (embedding) {
+        updatePayload.embedding = embedding;
+      }
+
+      const { data, error: updateErr } = await supabase
+        .from("victoria_knowledge")
+        .update(updatePayload)
+        .eq("id", docId)
+        .select()
+        .single();
+
+      if (updateErr) {
+        return new Response(JSON.stringify({ error: updateErr.message }), {
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" }
+        });
+      }
+
+      return new Response(JSON.stringify({ success: true, data }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" }
+      });
+    }
+
+    // =========================================================================
     // AÇÃO: diagnose_alert (Diagnóstico Causal de Alerta por IA)
     // =========================================================================
     if (action === "diagnose_alert") {

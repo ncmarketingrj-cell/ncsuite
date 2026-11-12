@@ -7,11 +7,13 @@ import {
   Loader2, User, Sparkles, TrendingUp, BarChart3, MessageSquare, 
   ShieldAlert, Settings, ArrowLeft, ArrowUpRight, Check, Play,
   BookOpen, FolderClosed, Zap, Share2, Mic, MicOff, UploadCloud, FileText, Database,
-  Pencil, Radio, Target, ExternalLink, Brain, RefreshCw, ArrowDown
+  Pencil, Radio, Target, ExternalLink, Brain, RefreshCw, ArrowDown,
+  CheckSquare, Square
 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { supabase } from "@/integrations/supabase-external/client";
-import { useVictoriaChat, type Message, type Conversation } from "@/hooks/useVictoriaChat";
+import { useVictoriaChat, type Message, type Conversation, type KnowledgeItem } from "@/hooks/useVictoriaChat";
+import { formatArticleDate } from "@/lib/market.functions";
 import { ActionCard } from "@/components/victoria/ActionCard";
 import ReactMarkdown from "react-markdown";
 import { toast } from "sonner";
@@ -45,6 +47,16 @@ function VictoriaHubPage() {
   const [savingKnowledge, setSavingKnowledge] = useState(false);
   const [extractingFile, setExtractingFile] = useState(false);
   const [seedingKnowledge, setSeedingKnowledge] = useState(false);
+
+  // Estados do Radar de Mercado (Seleção Múltipla e Exclusão Acumulativa)
+  const [selectedArticleIds, setSelectedArticleIds] = useState<Set<string>>(new Set());
+
+  // Estados de Edição de Documento Treinado (RAG)
+  const [editingDoc, setEditingDoc] = useState<KnowledgeItem | null>(null);
+  const [editDocTitle, setEditDocTitle] = useState("");
+  const [editDocCategory, setEditDocCategory] = useState<KnowledgeItem['category']>("strategy");
+  const [editDocContent, setEditDocContent] = useState("");
+  const [savingDocEdit, setSavingDocEdit] = useState(false);
 
   // Estados de Entrada por Voz
   const [isListening, setIsListening] = useState(false);
@@ -267,6 +279,74 @@ function VictoriaHubPage() {
       toast.error("Nenhum documento pôde ser importado. Verifique a conexão.");
     }
     setSeedingKnowledge(false);
+  };
+
+  // Funções do Radar de Mercado (Seleção Múltipla & Exclusão Acumulativa)
+  const toggleSelectArticle = (id: string) => {
+    setSelectedArticleIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAllArticles = () => {
+    if (selectedArticleIds.size === chat.marketArticles.length && chat.marketArticles.length > 0) {
+      setSelectedArticleIds(new Set());
+    } else {
+      setSelectedArticleIds(new Set(chat.marketArticles.map(a => a.id)));
+    }
+  };
+
+  const handleDeleteSelectedArticles = () => {
+    if (selectedArticleIds.size === 0) return;
+    chat.deleteMarketArticles(Array.from(selectedArticleIds));
+    setSelectedArticleIds(new Set());
+  };
+
+  const handleAbsorbSelectedArticles = async () => {
+    const targetArticles = selectedArticleIds.size > 0
+      ? chat.marketArticles.filter(a => selectedArticleIds.has(a.id))
+      : chat.marketArticles;
+
+    if (targetArticles.length === 0) {
+      toast.error("Nenhum artigo selecionado para absorver no RAG.");
+      return;
+    }
+
+    const success = await chat.learnMarketIntel(targetArticles);
+    if (success) {
+      setSelectedArticleIds(new Set());
+    }
+  };
+
+  // Funções de Edição de Documento Treinado (RAG)
+  const handleOpenEditDoc = (doc: KnowledgeItem) => {
+    setEditingDoc(doc);
+    setEditDocTitle(doc.title);
+    setEditDocCategory(doc.category);
+    setEditDocContent(doc.content);
+  };
+
+  const handleSaveEditDoc = async () => {
+    if (!editingDoc || !editDocTitle.trim() || !editDocContent.trim()) {
+      toast.error("Por favor, preencha o título e o conteúdo do documento.");
+      return;
+    }
+
+    setSavingDocEdit(true);
+    const ok = await chat.updateKnowledge(
+      editingDoc.id,
+      editDocTitle.trim(),
+      editDocCategory,
+      editDocContent.trim()
+    );
+    setSavingDocEdit(false);
+
+    if (ok) {
+      setEditingDoc(null);
+    }
   };
 
   // Extrair texto de documentos (PDF, TXT, MD) localmente no navegador
@@ -682,7 +762,7 @@ function VictoriaHubPage() {
                 </button>
 
                 <button
-                  onClick={() => chat.learnMarketIntel(chat.marketArticles)}
+                  onClick={handleAbsorbSelectedArticles}
                   disabled={chat.isLearningMarket || chat.marketArticles.length === 0}
                   className="flex items-center gap-2 px-4 py-2 rounded-xl bg-red-600/20 border border-red-500/40 text-red-500 hover:bg-red-500/30 font-black text-xs uppercase tracking-wider active:scale-95 transition-all disabled:opacity-40"
                 >
@@ -691,7 +771,11 @@ function VictoriaHubPage() {
                   ) : (
                     <Brain className="h-4 w-4 text-red-500" />
                   )}
-                  {chat.isLearningMarket ? "Treinando IA..." : "Absorver no RAG"}
+                  {chat.isLearningMarket
+                    ? "Treinando IA..."
+                    : selectedArticleIds.size > 0
+                    ? `Absorver Selecionados (${selectedArticleIds.size})`
+                    : "Absorver no RAG"}
                 </button>
               </div>
             </div>
@@ -775,13 +859,86 @@ function VictoriaHubPage() {
               </div>
             </div>
 
-            {/* SEÇÃO DE NOTÍCIAS EM TEMPO REAL */}
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <h3 className="text-sm font-black uppercase tracking-wider text-foreground flex items-center gap-2">
-                  <Radio className="h-4 w-4 text-primary" /> Notícias e Tendências Mapeadas do Mercado Automotivo
-                </h3>
-                <span className="text-[10px] font-bold text-muted-foreground uppercase">{chat.marketArticles.length} Artigos Carregados</span>
+            {/* SEÇÃO DE NOTÍCIAS EM TEMPO REAL ACUMULATIVAS (ATÉ 100 ARTIGOS) */}
+            <div className="space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-card/40 border border-border/60 rounded-2xl p-4">
+                <div>
+                  <h3 className="text-sm font-black uppercase tracking-wider text-foreground flex items-center gap-2">
+                    <Radio className="h-4 w-4 text-primary" /> Notícias e Tendências Mapeadas do Mercado Automotivo
+                  </h3>
+                  <p className="text-[10px] text-muted-foreground mt-0.5">
+                    Banco de notícias acumulativas (até 100 artigos). Selecione para absorver no RAG ou exclua individualmente.
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <span className={`px-3 py-1 rounded-xl text-[10px] font-black uppercase tracking-wider border ${
+                    chat.marketArticles.length >= 90
+                      ? "bg-red-500/15 border-red-500/30 text-red-400"
+                      : "bg-primary/10 border-primary/30 text-primary"
+                  }`}>
+                    {chat.marketArticles.length} / 100 Artigos Acumulados
+                  </span>
+                </div>
+              </div>
+
+              {/* BARRA DE AÇÕES EM LOTE: SELEÇÃO, EXCLUSÃO E ABSORÇÃO */}
+              <div className="flex flex-wrap items-center justify-between gap-3 bg-card/25 border border-border/50 rounded-xl px-4 py-2.5">
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={toggleSelectAllArticles}
+                    disabled={chat.marketArticles.length === 0}
+                    className="flex items-center gap-1.5 text-xs font-bold text-foreground hover:text-primary transition-colors disabled:opacity-40"
+                  >
+                    {selectedArticleIds.size > 0 && selectedArticleIds.size === chat.marketArticles.length ? (
+                      <CheckSquare className="h-4 w-4 text-primary" />
+                    ) : (
+                      <Square className="h-4 w-4 text-muted-foreground" />
+                    )}
+                    <span>
+                      {selectedArticleIds.size === chat.marketArticles.length && chat.marketArticles.length > 0
+                        ? "Desmarcar Todos"
+                        : "Selecionar Todos"}
+                    </span>
+                  </button>
+
+                  {selectedArticleIds.size > 0 && (
+                    <span className="text-[10px] font-bold text-primary bg-primary/10 px-2.5 py-0.5 rounded-lg border border-primary/25">
+                      {selectedArticleIds.size} de {chat.marketArticles.length} selecionado(s)
+                    </span>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-2">
+                  {selectedArticleIds.size > 0 && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={handleDeleteSelectedArticles}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-red-500/10 border border-red-500/30 hover:bg-red-500/20 text-red-400 font-bold text-[10px] uppercase tracking-wider transition-all"
+                        title="Excluir artigos selecionados"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                        Excluir Selecionados ({selectedArticleIds.size})
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={handleAbsorbSelectedArticles}
+                        disabled={chat.isLearningMarket}
+                        className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-primary text-primary-foreground font-black text-[10px] uppercase tracking-wider hover:brightness-110 active:scale-95 transition-all shadow-glow-sm disabled:opacity-50"
+                      >
+                        {chat.isLearningMarket ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <Brain className="h-3.5 w-3.5" />
+                        )}
+                        Absorver Selecionados ({selectedArticleIds.size})
+                      </button>
+                    </>
+                  )}
+                </div>
               </div>
 
               {chat.isScanningMarket ? (
@@ -789,41 +946,95 @@ function VictoriaHubPage() {
                   <Loader2 className="h-8 w-8 animate-spin text-primary mx-auto" />
                   <p className="text-xs font-bold text-foreground mt-3 uppercase tracking-wider">Varrendo portais de notícias e tráfego pago em tempo real...</p>
                 </div>
+              ) : chat.marketArticles.length === 0 ? (
+                <div className="py-16 text-center rounded-2xl border border-dashed border-border/60 bg-card/20 space-y-2">
+                  <Radio className="h-8 w-8 text-muted-foreground/40 mx-auto" />
+                  <p className="text-xs font-bold text-foreground uppercase tracking-wider">Nenhum artigo no radar no momento.</p>
+                  <p className="text-[11px] text-muted-foreground">Clique em "Rastrear Notícias Agora" para fazer uma busca completa na web.</p>
+                </div>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  {chat.marketArticles.map(art => (
-                    <div
-                      key={art.id}
-                      className="group p-4 rounded-xl border border-border/60 bg-card/40 hover:bg-card/70 hover:border-primary/40 transition-all flex flex-col justify-between"
-                    >
-                      <div>
-                        <div className="flex items-center justify-between text-[10px] text-muted-foreground mb-1.5">
-                          <span className="font-black uppercase tracking-wider text-primary">{art.source}</span>
-                          <span>{new Date(art.pubDate).toLocaleDateString("pt-BR")}</span>
+                  {chat.marketArticles.map(art => {
+                    const isSelected = selectedArticleIds.has(art.id);
+                    return (
+                      <div
+                        key={art.id}
+                        className={`group p-4 rounded-xl border transition-all flex flex-col justify-between cursor-pointer ${
+                          isSelected
+                            ? "border-primary bg-primary/[0.08] shadow-glow-sm"
+                            : "border-border/60 bg-card/40 hover:bg-card/70 hover:border-border"
+                        }`}
+                        onClick={() => toggleSelectArticle(art.id)}
+                      >
+                        <div>
+                          <div className="flex items-center justify-between text-[10px] text-muted-foreground mb-2">
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  toggleSelectArticle(art.id);
+                                }}
+                                className="text-foreground hover:text-primary transition-colors"
+                              >
+                                {isSelected ? (
+                                  <CheckSquare className="h-4 w-4 text-primary" />
+                                ) : (
+                                  <Square className="h-4 w-4 text-muted-foreground/60" />
+                                )}
+                              </button>
+                              <span className="font-black uppercase tracking-wider text-primary truncate max-w-[180px]">{art.source}</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-[10px] text-muted-foreground font-medium">{formatArticleDate(art.pubDate)}</span>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  chat.deleteMarketArticles([art.id]);
+                                  setSelectedArticleIds(prev => {
+                                    const next = new Set(prev);
+                                    next.delete(art.id);
+                                    return next;
+                                  });
+                                }}
+                                title="Excluir este artigo do Radar"
+                                className="p-1 rounded-md text-muted-foreground hover:text-red-400 hover:bg-red-500/10 transition-colors"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </button>
+                            </div>
+                          </div>
+                          <h4 className={`text-xs font-bold leading-snug transition-colors ${
+                            isSelected ? "text-primary" : "text-foreground group-hover:text-primary"
+                          }`}>
+                            {art.title}
+                          </h4>
+                          {art.snippet && (
+                            <p className="text-[11px] text-muted-foreground mt-2 line-clamp-3 leading-relaxed">
+                              {art.snippet}
+                            </p>
+                          )}
                         </div>
-                        <h4 className="text-xs font-bold text-foreground leading-snug group-hover:text-primary transition-colors">
-                          {art.title}
-                        </h4>
-                        {art.snippet && (
-                          <p className="text-[11px] text-muted-foreground mt-2 line-clamp-3 leading-relaxed">
-                            {art.snippet}
-                          </p>
+                        {art.link && (
+                          <div className="mt-3 pt-2 border-t border-border/30 flex items-center justify-between">
+                            <span className="text-[9px] font-bold text-muted-foreground/60 uppercase">
+                              {art.category === "mercado" ? "Mercado Automotivo" : art.category === "trafego" ? "Tráfego Pago" : "Lançamentos"}
+                            </span>
+                            <a
+                              href={art.link}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              onClick={(e) => e.stopPropagation()}
+                              className="text-[10px] font-bold uppercase text-primary hover:underline flex items-center gap-1"
+                            >
+                              Ler Fonte Original <ExternalLink className="h-3 w-3" />
+                            </a>
+                          </div>
                         )}
                       </div>
-                      {art.link && (
-                        <div className="mt-3 pt-2 border-t border-border/30 flex justify-end">
-                          <a
-                            href={art.link}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-[10px] font-bold uppercase text-primary hover:underline flex items-center gap-1"
-                          >
-                            Ler Fonte Original <ExternalLink className="h-3 w-3" />
-                          </a>
-                        </div>
-                      )}
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -898,7 +1109,18 @@ function VictoriaHubPage() {
                 {/* Formulário de Envio (2 colunas) */}
                 <div className="lg:col-span-2 flex flex-col gap-4 p-5 bg-card/30 border border-border/40 rounded-2xl backdrop-blur-md relative overflow-hidden">
                   <div className="absolute inset-x-0 top-0 h-[2px] bg-gradient-to-r from-amber-500/30 to-yellow-600/10" />
-                  <h4 className="text-xs font-black uppercase text-foreground">Novo Documento</h4>
+                  
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-xs font-black uppercase text-foreground">Novo Documento</h4>
+                    <span className="text-[9px] font-bold text-muted-foreground uppercase">Capacidade: {chat.knowledgeList.length}/50</span>
+                  </div>
+
+                  {chat.knowledgeList.length >= 50 && (
+                    <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/30 text-[10px] text-red-400 font-bold flex items-center gap-2">
+                      <ShieldAlert className="h-4 w-4 shrink-0 text-red-500" />
+                      <span>Limite de 50 documentos treinados atingido. Edite ou exclua documentos para liberar espaço.</span>
+                    </div>
+                  )}
                   
                   <div className="flex flex-col gap-1.5">
                     <label className="text-[9px] font-black uppercase text-muted-foreground/80">Título</label>
@@ -907,7 +1129,8 @@ function VictoriaHubPage() {
                       placeholder="Ex: Ficha do Corolla XEi 2023"
                       value={newKnowledgeTitle}
                       onChange={(e) => setNewKnowledgeTitle(e.target.value)}
-                      className="w-full bg-input/20 border border-border/60 rounded-xl px-3 py-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-amber-500/30 focus:border-amber-500/30"
+                      disabled={chat.knowledgeList.length >= 50}
+                      className="w-full bg-input/20 border border-border/60 rounded-xl px-3 py-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-amber-500/30 focus:border-amber-500/30 disabled:opacity-50"
                     />
                   </div>
 
@@ -917,7 +1140,8 @@ function VictoriaHubPage() {
                       <select
                         value={newKnowledgeCategory}
                         onChange={(e: any) => setNewKnowledgeCategory(e.target.value)}
-                        className="w-full bg-input/20 border border-border/60 rounded-xl px-3 py-2 text-xs text-foreground focus:outline-none"
+                        disabled={chat.knowledgeList.length >= 50}
+                        className="w-full bg-input/20 border border-border/60 rounded-xl px-3 py-2 text-xs text-foreground focus:outline-none disabled:opacity-50"
                       >
                         <option value="inventory">Estoque de Carros</option>
                         <option value="brand_voice">Voz da Marca</option>
@@ -938,7 +1162,7 @@ function VictoriaHubPage() {
                       />
                       <button
                         type="button"
-                        disabled={extractingFile}
+                        disabled={chat.knowledgeList.length >= 50 || extractingFile}
                         onClick={() => docInputRef.current?.click()}
                         className="w-full py-2 px-3 bg-background border border-border hover:bg-white/5 text-[10px] font-bold rounded-xl transition-all uppercase text-muted-foreground hover:text-foreground flex items-center justify-center gap-1.5 disabled:opacity-50"
                       >
@@ -959,13 +1183,14 @@ function VictoriaHubPage() {
                       placeholder="Cole aqui o texto do documento ou deixe que a extração de arquivo preencha esta área..."
                       value={newKnowledgeContent}
                       onChange={(e) => setNewKnowledgeContent(e.target.value)}
-                      className="w-full bg-input/20 border border-border/60 rounded-xl px-3 py-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-amber-500/30 focus:border-amber-500/30 font-mono resize-none"
+                      disabled={chat.knowledgeList.length >= 50}
+                      className="w-full bg-input/20 border border-border/60 rounded-xl px-3 py-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-amber-500/30 focus:border-amber-500/30 font-mono resize-none disabled:opacity-50"
                     />
                   </div>
 
                   <button
                     onClick={handleSaveKnowledge}
-                    disabled={savingKnowledge || extractingFile || !newKnowledgeTitle.trim() || !newKnowledgeContent.trim()}
+                    disabled={chat.knowledgeList.length >= 50 || savingKnowledge || extractingFile || !newKnowledgeTitle.trim() || !newKnowledgeContent.trim()}
                     className="w-full py-2.5 rounded-xl bg-amber-500 hover:brightness-110 text-black font-extrabold text-xs uppercase tracking-wider transition-all disabled:opacity-40 flex items-center justify-center gap-2 mt-2 shadow-[0_0_15px_rgba(245,158,11,0.2)]"
                   >
                     {savingKnowledge ? (
@@ -973,14 +1198,25 @@ function VictoriaHubPage() {
                     ) : (
                       <Sparkles className="h-4 w-4" />
                     )}
-                    Treinar Victoria AI
+                    {chat.knowledgeList.length >= 50 ? "Capacidade Máxima (50/50)" : "Treinar Victoria AI"}
                   </button>
                 </div>
 
                 {/* Lista de Conhecimentos Cadastrados (3 colunas) */}
                 <div className="lg:col-span-3 flex flex-col gap-4">
                   <div className="flex items-center justify-between">
-                    <h4 className="text-xs font-black uppercase text-foreground">Documentos Treinados ({chat.knowledgeList.length})</h4>
+                    <div className="flex items-center gap-2">
+                      <h4 className="text-xs font-black uppercase text-foreground">Documentos Treinados</h4>
+                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-black tracking-wide border ${
+                        chat.knowledgeList.length >= 50
+                          ? "bg-red-500/20 text-red-400 border-red-500/40"
+                          : chat.knowledgeList.length >= 40
+                          ? "bg-amber-500/20 text-amber-400 border-amber-500/40"
+                          : "bg-emerald-500/20 text-emerald-400 border-emerald-500/40"
+                      }`}>
+                        {chat.knowledgeList.length} / 50
+                      </span>
+                    </div>
                     
                     {/* Busca Local */}
                     <div className="relative flex items-center w-48">
@@ -1037,12 +1273,24 @@ function VictoriaHubPage() {
                                   {k.content}
                                 </p>
                               </div>
-                              <button
-                                onClick={() => chat.deleteKnowledge(k.id)}
-                                className="p-1.5 rounded-lg border border-transparent hover:border-red-500/20 hover:bg-red-500/10 text-muted-foreground hover:text-red-500 transition-colors shrink-0"
-                              >
-                                <Trash2 className="h-3.5 w-3.5" />
-                              </button>
+                              <div className="flex items-center gap-1 shrink-0">
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenEditDoc(k)}
+                                  title="Editar Documento Treinado"
+                                  className="p-1.5 rounded-lg border border-transparent hover:border-amber-500/30 hover:bg-amber-500/10 text-muted-foreground hover:text-amber-400 transition-colors"
+                                >
+                                  <Pencil className="h-3.5 w-3.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => chat.deleteKnowledge(k.id)}
+                                  title="Excluir Documento"
+                                  className="p-1.5 rounded-lg border border-transparent hover:border-red-500/30 hover:bg-red-500/10 text-muted-foreground hover:text-red-500 transition-colors"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </button>
+                              </div>
                             </div>
                           );
                         })
@@ -1425,6 +1673,87 @@ function VictoriaHubPage() {
           </>
         )}
       </div>
+
+      {/* MODAL DE EDIÇÃO DE DOCUMENTO TREINADO (RAG) */}
+      {editingDoc && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200">
+          <div className="w-full max-w-xl bg-card border border-border/80 rounded-2xl shadow-2xl p-6 flex flex-col gap-4 relative">
+            <div className="flex items-center justify-between border-b border-border/50 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="h-9 w-9 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400">
+                  <Pencil className="h-4 w-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-black text-foreground uppercase tracking-tight">Editar Documento Treinado</h3>
+                  <p className="text-[10px] text-muted-foreground">Atualize o grounding e re-calibre a memória da Victoria AI</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditingDoc(null)}
+                className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-white/5 transition-colors"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <label className="text-[9px] font-black uppercase text-muted-foreground/80">Título do Documento</label>
+              <input
+                type="text"
+                value={editDocTitle}
+                onChange={(e) => setEditDocTitle(e.target.value)}
+                className="w-full bg-input/20 border border-border/60 rounded-xl px-3 py-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-amber-500/30 focus:border-amber-500/30"
+              />
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <label className="text-[9px] font-black uppercase text-muted-foreground/80">Categoria</label>
+              <select
+                value={editDocCategory}
+                onChange={(e: any) => setEditDocCategory(e.target.value)}
+                className="w-full bg-input/20 border border-border/60 rounded-xl px-3 py-2 text-xs text-foreground focus:outline-none"
+              >
+                <option value="inventory">Estoque de Carros</option>
+                <option value="brand_voice">Voz da Marca</option>
+                <option value="manual">Manuais e Fichas</option>
+                <option value="strategy">Estratégia & Tráfego</option>
+                <option value="custom">Personalizado</option>
+              </select>
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <label className="text-[9px] font-black uppercase text-muted-foreground/80">Conteúdo do Grounding</label>
+              <textarea
+                rows={9}
+                value={editDocContent}
+                onChange={(e) => setEditDocContent(e.target.value)}
+                className="w-full bg-input/20 border border-border/60 rounded-xl px-3 py-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-amber-500/30 focus:border-amber-500/30 font-mono resize-none leading-relaxed"
+              />
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-border/40">
+              <button
+                type="button"
+                onClick={() => setEditingDoc(null)}
+                disabled={savingDocEdit}
+                className="px-4 py-2 rounded-xl border border-border hover:bg-white/5 text-xs font-bold text-muted-foreground hover:text-foreground transition-all uppercase"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveEditDoc}
+                disabled={savingDocEdit || !editDocTitle.trim() || !editDocContent.trim()}
+                className="flex items-center gap-2 px-5 py-2 rounded-xl bg-amber-500 hover:brightness-110 text-black font-extrabold text-xs uppercase tracking-wider transition-all disabled:opacity-40 shadow-[0_0_15px_rgba(245,158,11,0.25)]"
+              >
+                {savingDocEdit ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+                {savingDocEdit ? "Salvando Alterações..." : "Salvar Alterações"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
