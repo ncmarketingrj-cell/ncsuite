@@ -8,7 +8,7 @@ import {
   Sun, Moon, Menu, X, BarChart3, LineChart, Palette, Link2,
   ChevronDown, RefreshCw, Users, Store,
   Volume2, VolumeX, LogOut, CreditCard, Share2, ArrowRight, GitBranch, Brain, ChevronRight,
-  Lock, GaugeCircle, FlaskConical, TrendingUp, Trash2, CheckCheck
+  Lock, GaugeCircle, FlaskConical, TrendingUp, Trash2, CheckCheck, Calendar, HelpCircle
 } from "lucide-react";
 import { AuthProvider, useAuth } from "@/lib/auth";
 import { supabase } from "@/integrations/supabase-external/client";
@@ -91,11 +91,12 @@ const TRAFEGO_NAV_ITEMS: NavItem[] = [
 ];
 
 const SOCIAL_NAV_ITEMS: NavItem[] = [
+  { to: "/social", icon: Calendar, label: "Planejador & Feed" },
   { to: "/social-insights", icon: BarChart3, label: "Insights Meta" },
   { to: "/social-audit", icon: TrendingUp, label: "Auditoria Orgânica" },
   { to: "/link-bio", icon: Link2, label: "Link Bio" },
   { to: "/formulario", icon: FileText, label: "Formulário" },
-  { to: "/quiz", icon: BarChart3, label: "Quiz" },
+  { to: "/quiz", icon: HelpCircle, label: "Quiz" },
 ];
 
 const GESTAO_NAV_ITEMS: NavItem[] = [
@@ -419,7 +420,7 @@ function Shell() {
               onClick={() => {
                 setActiveModule("social");
                 localStorage.setItem("nc_active_module", "social");
-                nav({ to: "/social-insights" });
+                nav({ to: "/social" });
               }}
               className="group relative rounded-2xl border border-border bg-card p-6 text-left cursor-pointer transition-all duration-300 hover:border-pink-500/40 hover:shadow-lg shadow-sm"
             >
@@ -646,7 +647,7 @@ function Shell() {
                             setActiveModule("social");
                             localStorage.setItem("nc_active_module", "social");
                             setShowModuleMenu(false);
-                            nav({ to: "/social-insights" });
+                            nav({ to: "/social" });
                           }}
                           className={`flex w-full items-center gap-2 rounded-xl px-2.5 py-2 text-xs font-bold transition-all ${
                             activeModule === "social" ? "bg-pink-500/10 text-pink-500" : "text-foreground/80 hover:bg-muted"

@@ -23,6 +23,7 @@ import { Route as AppUploadRouteImport } from './routes/_app/upload'
 import { Route as AppStrategyMapRouteImport } from './routes/_app/strategy-map'
 import { Route as AppSocialInsightsRouteImport } from './routes/_app/social-insights'
 import { Route as AppSocialAuditRouteImport } from './routes/_app/social-audit'
+import { Route as AppSocialRouteImport } from './routes/_app/social'
 import { Route as AppSimuladorRouteImport } from './routes/_app/simulador'
 import { Route as AppReunioesRouteImport } from './routes/_app/reunioes'
 import { Route as AppRelatoriosRouteImport } from './routes/_app/relatorios'
@@ -114,6 +115,11 @@ const AppSocialInsightsRoute = AppSocialInsightsRouteImport.update({
 const AppSocialAuditRoute = AppSocialAuditRouteImport.update({
   id: '/social-audit',
   path: '/social-audit',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppSocialRoute = AppSocialRouteImport.update({
+  id: '/social',
+  path: '/social',
   getParentRoute: () => AppRoute,
 } as any)
 const AppSimuladorRoute = AppSimuladorRouteImport.update({
@@ -258,6 +264,7 @@ export interface FileRoutesByFullPath {
   '/relatorios': typeof AppRelatoriosRoute
   '/reunioes': typeof AppReunioesRoute
   '/simulador': typeof AppSimuladorRoute
+  '/social': typeof AppSocialRoute
   '/social-audit': typeof AppSocialAuditRoute
   '/social-insights': typeof AppSocialInsightsRoute
   '/strategy-map': typeof AppStrategyMapRoute
@@ -296,6 +303,7 @@ export interface FileRoutesByTo {
   '/relatorios': typeof AppRelatoriosRoute
   '/reunioes': typeof AppReunioesRoute
   '/simulador': typeof AppSimuladorRoute
+  '/social': typeof AppSocialRoute
   '/social-audit': typeof AppSocialAuditRoute
   '/social-insights': typeof AppSocialInsightsRoute
   '/strategy-map': typeof AppStrategyMapRoute
@@ -336,6 +344,7 @@ export interface FileRoutesById {
   '/_app/relatorios': typeof AppRelatoriosRoute
   '/_app/reunioes': typeof AppReunioesRoute
   '/_app/simulador': typeof AppSimuladorRoute
+  '/_app/social': typeof AppSocialRoute
   '/_app/social-audit': typeof AppSocialAuditRoute
   '/_app/social-insights': typeof AppSocialInsightsRoute
   '/_app/strategy-map': typeof AppStrategyMapRoute
@@ -376,6 +385,7 @@ export interface FileRouteTypes {
     | '/relatorios'
     | '/reunioes'
     | '/simulador'
+    | '/social'
     | '/social-audit'
     | '/social-insights'
     | '/strategy-map'
@@ -414,6 +424,7 @@ export interface FileRouteTypes {
     | '/relatorios'
     | '/reunioes'
     | '/simulador'
+    | '/social'
     | '/social-audit'
     | '/social-insights'
     | '/strategy-map'
@@ -453,6 +464,7 @@ export interface FileRouteTypes {
     | '/_app/relatorios'
     | '/_app/reunioes'
     | '/_app/simulador'
+    | '/_app/social'
     | '/_app/social-audit'
     | '/_app/social-insights'
     | '/_app/strategy-map'
@@ -575,6 +587,13 @@ declare module '@tanstack/react-router' {
       path: '/social-audit'
       fullPath: '/social-audit'
       preLoaderRoute: typeof AppSocialAuditRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/social': {
+      id: '/_app/social'
+      path: '/social'
+      fullPath: '/social'
+      preLoaderRoute: typeof AppSocialRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/simulador': {
@@ -798,6 +817,7 @@ interface AppRouteChildren {
   AppRelatoriosRoute: typeof AppRelatoriosRoute
   AppReunioesRoute: typeof AppReunioesRoute
   AppSimuladorRoute: typeof AppSimuladorRoute
+  AppSocialRoute: typeof AppSocialRoute
   AppSocialAuditRoute: typeof AppSocialAuditRoute
   AppSocialInsightsRoute: typeof AppSocialInsightsRoute
   AppStrategyMapRoute: typeof AppStrategyMapRoute
@@ -827,6 +847,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppRelatoriosRoute: AppRelatoriosRoute,
   AppReunioesRoute: AppReunioesRoute,
   AppSimuladorRoute: AppSimuladorRoute,
+  AppSocialRoute: AppSocialRoute,
   AppSocialAuditRoute: AppSocialAuditRoute,
   AppSocialInsightsRoute: AppSocialInsightsRoute,
   AppStrategyMapRoute: AppStrategyMapRoute,

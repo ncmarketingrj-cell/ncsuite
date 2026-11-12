@@ -320,7 +320,15 @@ function SocialAuditPage() {
           <p className="text-xs text-muted-foreground">Análise profissional do que funciona e plano de escala orgânica de seguidores.</p>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap">
+          <Link
+            to="/social"
+            className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-pink-500 to-rose-600 px-4 py-2 text-xs font-bold text-white shadow-lg shadow-pink-500/20 hover:opacity-90 active:scale-95 transition"
+          >
+            <Calendar className="w-3.5 h-3.5" />
+            <span>Planejador & Feed</span>
+          </Link>
+
           {/* Seletor de Contas */}
           <div className="relative">
             <select

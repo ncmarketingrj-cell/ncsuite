@@ -585,7 +585,14 @@ function SocialInsightsPage() {
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          <Link
+            to="/social"
+            className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-pink-500 to-rose-600 px-4 py-2.5 text-xs font-bold text-white shadow-lg shadow-pink-500/20 hover:opacity-90 active:scale-95 transition"
+          >
+            <Calendar className="h-4 w-4" />
+            <span>Planejador & Feed</span>
+          </Link>
           <button
             onClick={handleManualSync}
             disabled={isSyncing}
