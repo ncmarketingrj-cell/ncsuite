@@ -13,8 +13,10 @@ import {
   AlertTriangle, XCircle, CheckCircle2, Info, Settings2,
   ChevronRight, Megaphone, FlaskConical, Pencil,
   BarChart2, PieChart as PieIcon, SlidersHorizontal,
-  ShieldAlert, ExternalLink, ArrowRight, Brain
+  ShieldAlert, ExternalLink, ArrowRight, Brain,
+  Bot, Flame, Snowflake, Thermometer
 } from "lucide-react";
+import { VictoriaFloatingChat, type ContextItem } from "@/components/victoria/VictoriaFloatingChat";
 import { useAccountRules, type AccountRule } from "@/hooks/useAccountRulesAndNotes";
 import { listMindMapsByAccount } from "@/components/mindmap/mindMapService";
 import { toast } from "sonner";
@@ -226,6 +228,63 @@ function getDecision(c: any, avgCpl: number): { label: string; tier: string; rea
   if (c.t.conversions === 0 && c.t.cost > 0 && c.t.cost <= 50)
     return { label: "MONITORAR", tier: "yellow", reason: "Sem conversão ainda — pode estar aprendendo", action: "Aguardar 3-5 dias antes de decidir" };
   return { label: "MANTER", tier: "blue", reason: "Performance estável no período", action: "Continuar monitorando CPL e frequência" };
+}
+
+export function getCampaignTemperature(c: any, avgCpl: number): {
+  temp: "hot" | "warm" | "cold";
+  label: string;
+  badgeClass: string;
+  icon: any;
+  reason: string;
+} {
+  const cost = c.t?.cost || 0;
+  const convs = c.t?.conversions || 0;
+  const cpl = c.t?.cpl || 0;
+  const ctr = c.t?.ctr || 0;
+  const freq = c.t?.freq || 1;
+
+  // 1. Fria / Congelada (Alerta de Vazamento / Sem Conversão / CPL Alto / Audiência Esgotada)
+  if (
+    (convs === 0 && cost > 25) ||
+    (cpl > 0 && avgCpl > 0 && cpl > avgCpl * 1.5) ||
+    (ctr < 0.8 && cost > 20) ||
+    freq > 3.8
+  ) {
+    return {
+      temp: "cold",
+      label: "Fria",
+      badgeClass: "border-cyan-500/40 bg-cyan-500/10 text-cyan-300 shadow-[0_0_10px_rgba(6,182,212,0.2)]",
+      icon: Snowflake,
+      reason: convs === 0
+        ? `Alerta: R$ ${cost.toFixed(2)} gastos sem nenhuma conversão`
+        : cpl > avgCpl * 1.5
+        ? `CPL R$ ${cpl.toFixed(2)} (${Math.round((cpl / avgCpl - 1) * 100)}% acima da meta)`
+        : `Frequência ${freq.toFixed(1)}x saturando o leilão`
+    };
+  }
+
+  // 2. Quente / Em Chamas (Alta Eficiência / CPL Excelente / Pronta para Escalar)
+  if (
+    (cpl > 0 && avgCpl > 0 && cpl <= avgCpl * 0.85 && convs >= 2) ||
+    (convs >= 4 && ctr >= 1.5)
+  ) {
+    return {
+      temp: "hot",
+      label: "Quente",
+      badgeClass: "border-rose-500/50 bg-gradient-to-r from-rose-500/20 to-amber-500/20 text-rose-300 shadow-[0_0_12px_rgba(244,63,94,0.3)] animate-pulse",
+      icon: Flame,
+      reason: `CPL R$ ${cpl.toFixed(2)} altamente eficiente · Pronta para acelerar verba`
+    };
+  }
+
+  // 3. Morna (Performance Equilibrada)
+  return {
+    temp: "warm",
+    label: "Morna",
+    badgeClass: "border-amber-500/30 bg-amber-500/10 text-amber-300",
+    icon: Zap,
+    reason: "Performance equilibrada dentro do benchmark operacional"
+  };
 }
 function generateLocalDiagnostic(item: any, avgCpl: number): string {
   const { cost, conversions, clicks, impressions, reach, freq, cpl, ctr, cpm, cpc } = item.t;
@@ -548,6 +607,11 @@ function MetricasCampanhasPage() {
 
   const [modoExplicativo, setModoExplicativo] = useState(true);
   const [temperatureMode, setTemperatureMode] = useState(false);
+  const [temperatureFilter, setTemperatureFilter] = useState<"all" | "hot" | "warm" | "cold">("all");
+
+  // Victoria AI Floating Chat
+  const [isFloatingChatOpen, setIsFloatingChatOpen] = useState(false);
+  const [floatingChatContext, setFloatingChatContext] = useState<ContextItem | null>(null);
 
   // â"€â"€ Estado de seleção (tabela) â"€â"€
   const [selectedCamps,  setSelectedCamps]  = useState<Set<string>>(new Set());
@@ -1099,7 +1163,94 @@ function MetricasCampanhasPage() {
     return enrichedAds;
   }, [level, enrichedCampaigns, enrichedAdSets, enrichedAds]);
 
-  const filtered = useMemo(() => listData.filter((c: any) => !search || c.name?.toLowerCase().includes(search.toLowerCase())), [listData, search]);
+  // Benchmark CPL médio de referência para calibrar a temperatura térmica
+  const accountBenchmarkCpl = useMemo(() => {
+    let cost = 0;
+    let conv = 0;
+    for (const item of listData) {
+      cost += item.t?.cost || 0;
+      conv += item.t?.conversions || 0;
+    }
+    return conv > 0 ? cost / conv : 0;
+  }, [listData]);
+
+  const thermalStats = useMemo(() => {
+    let hot = 0, warm = 0, cold = 0;
+    let hotCost = 0, warmCost = 0, coldCost = 0;
+
+    for (const c of listData) {
+      const cost = c.t?.cost || 0;
+      const t = getCampaignTemperature(c, accountBenchmarkCpl);
+      if (t.temp === "hot") {
+        hot++;
+        hotCost += cost;
+      } else if (t.temp === "cold") {
+        cold++;
+        coldCost += cost;
+      } else {
+        warm++;
+        warmCost += cost;
+      }
+    }
+
+    return {
+      total: listData.length,
+      hot,
+      warm,
+      cold,
+      hotCost,
+      warmCost,
+      coldCost,
+    };
+  }, [listData, accountBenchmarkCpl]);
+
+  const filtered = useMemo(() => {
+    return listData.filter((c: any) => {
+      const matchSearch = !search || c.name?.toLowerCase().includes(search.toLowerCase());
+      if (!matchSearch) return false;
+      if (temperatureMode && temperatureFilter !== "all") {
+        const t = getCampaignTemperature(c, accountBenchmarkCpl);
+        if (t.temp !== temperatureFilter) return false;
+      }
+      return true;
+    });
+  }, [listData, search, temperatureMode, temperatureFilter, accountBenchmarkCpl]);
+
+  const handleOpenVictoriaDiagnostic = useCallback((item?: any) => {
+    let target = item;
+    if (!target) {
+      if (selectedFocusItem) {
+        target = selectedFocusItem;
+      } else if (selectedCamps.size > 0) {
+        const firstSelectedId = Array.from(selectedCamps)[0];
+        target = listData.find((r: any) => r.id === firstSelectedId);
+      } else if (listData.length > 0) {
+        // Pega a campanha com maior gasto para um diagnóstico estratégico de impacto
+        target = [...listData].sort((a: any, b: any) => (b.t?.cost || 0) - (a.t?.cost || 0))[0];
+      }
+    }
+
+    if (target) {
+      const resultDetail = getMetaResultDetail(
+        target.t?.conversions ?? 0,
+        target.name + " " + (target.campaigns?.name || ""),
+        target.objective || target.campaigns?.objective,
+        target.result_type
+      );
+      setFloatingChatContext({
+        id: target.id,
+        name: target.name,
+        type: level === "campanhas" ? "campaign" : level === "conjuntos" ? "adset" : "ad",
+        objective: target.objective,
+        resultType: target.result_type,
+        t: target.t,
+        resultDetail,
+      });
+    } else {
+      setFloatingChatContext(null);
+    }
+    setIsFloatingChatOpen(true);
+  }, [selectedFocusItem, selectedCamps, listData, level]);
 
   const selSet = level === "campanhas" ? selectedCamps : level === "conjuntos" ? selectedAdSets : selectedAds;
   const setSelSet = level === "campanhas" ? setSelectedCamps : level === "conjuntos" ? setSelectedAdSets : setSelectedAds;
@@ -1432,11 +1583,15 @@ function MetricasCampanhasPage() {
 
           {/* Status (apenas na tab Gestão) */}
           {view === "gestao" && (
-            <div className="relative shrink-0">
-              <select value={statusFilter} onChange={e => setStatusFilter(e.target.value as any)} className="appearance-none rounded-xl border border-border bg-background/60 px-3 py-1.5 pr-7 text-xs font-bold focus:border-primary/50 focus:outline-none transition-all">
-                <option value="all"    className="bg-background text-foreground">Todos</option>
-                <option value="active" className="bg-background text-foreground">Ativos</option>
-                <option value="paused" className="bg-background text-foreground">Pausados</option>
+            <div className="relative">
+              <select
+                value={statusFilter}
+                onChange={e => setStatusFilter(e.target.value as any)}
+                className="appearance-none rounded-xl border border-border bg-background/60 py-1.5 pl-3 pr-8 text-xs font-semibold focus:border-primary/50 focus:outline-none transition-all cursor-pointer"
+              >
+                <option value="ALL">Todos os status</option>
+                <option value="ACTIVE">Ativos</option>
+                <option value="PAUSED">Pausados</option>
               </select>
               <ChevronDown className="pointer-events-none absolute right-2 top-1/2 h-3 w-3 -translate-y-1/2 text-muted-foreground" />
             </div>
@@ -1463,21 +1618,39 @@ function MetricasCampanhasPage() {
                 title="Ativa explicações intuitivas sobre as métricas para tomada de decisões"
               >
                 <Sparkles className={`h-3.5 w-3.5 ${modoExplicativo ? "text-primary fill-primary animate-pulse" : ""}`} />
-                <span>Guia Explicativo {modoExplicativo ? "Ativo ðŸ’¡" : "Off"}</span>
+                <span>Guia Explicativo {modoExplicativo ? "Ativo 💡" : "Off"}</span>
               </button>
             )}
             {view === "gestao" && (
               <>
                 <button 
-                  onClick={() => setTemperatureMode(v => !v)} 
-                  className={`flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-[11px] font-bold transition-all ${temperatureMode ? "border-rose-500/40 bg-rose-500/10 text-rose-400" : "border-white/10 bg-white/[0.02] text-muted-foreground hover:text-foreground"}`}
-                  title="Ativar cores de temperatura para Métricas (CPL, CTR, etc)"
+                  onClick={() => {
+                    setTemperatureMode(v => !v);
+                    if (temperatureMode) setTemperatureFilter("all");
+                  }} 
+                  className={`flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-[11px] font-bold transition-all ${
+                    temperatureMode 
+                      ? "border-rose-500/50 bg-gradient-to-r from-rose-500/20 to-amber-500/20 text-rose-300 shadow-[0_0_12px_rgba(244,63,94,0.3)] ring-1 ring-rose-500/40" 
+                      : "border-white/10 bg-white/[0.02] text-muted-foreground hover:text-foreground hover:border-white/20"
+                  }`}
+                  title="Auditoria Térmica do Leilão: filtrar e classificar campanhas por eficiência (Quentes, Mornas, Frias)"
                 >
-                  🌡️ï¸ <span className="hidden sm:inline">Temperatura</span>
+                  <Flame className={`h-3.5 w-3.5 ${temperatureMode ? "text-rose-400 fill-rose-500/40 animate-pulse" : "text-muted-foreground"}`} />
+                  <span className="hidden sm:inline">Termômetro</span>
+                  {temperatureMode && thermalStats.cold > 0 && (
+                    <span className="ml-0.5 px-1.5 py-0.2 rounded-full bg-cyan-500/20 border border-cyan-500/40 text-[9px] text-cyan-300 font-mono">
+                      {thermalStats.cold} alerta
+                    </span>
+                  )}
                 </button>
-                <button onClick={runAudit} disabled={isAuditing} className="flex items-center gap-1.5 rounded-xl border border-orange-400/30 bg-orange-400/10 px-3 py-1.5 text-[11px] font-bold text-orange-400 hover:bg-orange-400/20 transition-all disabled:opacity-50">
-                  {isAuditing ? <Loader2 className="h-3 w-3 animate-spin"/> : <FlaskConical className="h-3 w-3"/>}
-                  <span className="hidden sm:inline">Diagnóstico</span>
+                <button 
+                  onClick={() => handleOpenVictoriaDiagnostic()} 
+                  className="flex items-center gap-1.5 rounded-xl border border-primary/40 bg-primary/10 px-3 py-1.5 text-[11px] font-bold text-primary hover:bg-primary/20 hover:border-primary/60 transition-all shadow-[0_0_12px_rgba(239,68,68,0.2)] group"
+                  title="Abrir Diagnóstico Estratégico em tempo real com a Victoria AI"
+                >
+                  <Bot className="h-3.5 w-3.5 text-primary group-hover:scale-110 transition-transform" />
+                  <span className="hidden sm:inline">Diagnóstico IA</span>
+                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
                 </button>
               </>
             )}
@@ -1536,6 +1709,107 @@ function MetricasCampanhasPage() {
               {/* Tabela */}
               {!((level === "conjuntos" && selectedCamps.size === 0) || (level === "anuncios" && selectedCamps.size === 0 && selectedAdSets.size === 0)) && (
                 <div className="glass-panel card-sport overflow-hidden">
+
+                  {/* Barra da Auditoria Térmica do Leilão */}
+                  {temperatureMode && (
+                    <motion.div 
+                      initial={{ opacity: 0, y: -6 }} 
+                      animate={{ opacity: 1, y: 0 }} 
+                      className="border-b border-white/5 bg-gradient-to-r from-rose-950/20 via-background to-cyan-950/20 p-3 sm:p-4 space-y-2.5"
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <Thermometer className="h-4 w-4 text-rose-400" />
+                          <span className="text-xs font-black uppercase tracking-wider text-foreground">
+                            Auditoria Térmica do Leilão
+                          </span>
+                          <span className="text-[10px] text-muted-foreground hidden md:inline">
+                            · Classificação preditiva com base em CPL real, Frequência e Dispersão de Verba
+                          </span>
+                        </div>
+                        <button
+                          onClick={() => handleOpenVictoriaDiagnostic()}
+                          className="flex items-center gap-1.5 text-[10px] font-bold text-primary hover:underline"
+                        >
+                          <Bot className="h-3 w-3" />
+                          Pedir Diagnóstico Completo da Conta
+                        </button>
+                      </div>
+
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1">
+                        {/* Todas */}
+                        <button
+                          onClick={() => setTemperatureFilter("all")}
+                          className={`flex flex-col p-2.5 rounded-xl border text-left transition-all ${
+                            temperatureFilter === "all"
+                              ? "border-primary/50 bg-primary/10 shadow-[0_0_10px_rgba(239,68,68,0.15)] ring-1 ring-primary/40"
+                              : "border-white/5 bg-white/[0.02] hover:bg-white/[0.04]"
+                          }`}
+                        >
+                          <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Visão Geral</span>
+                          <span className="text-sm font-extrabold text-foreground mt-0.5">{thermalStats.total} {level}</span>
+                          <span className="text-[9px] text-muted-foreground/60">Todas as veiculações</span>
+                        </button>
+
+                        {/* Quentes */}
+                        <button
+                          onClick={() => setTemperatureFilter("hot")}
+                          className={`flex flex-col p-2.5 rounded-xl border text-left transition-all ${
+                            temperatureFilter === "hot"
+                              ? "border-rose-500/50 bg-rose-500/15 shadow-[0_0_12px_rgba(244,63,94,0.25)] ring-1 ring-rose-500/40"
+                              : "border-rose-500/20 bg-rose-500/5 hover:bg-rose-500/10"
+                          }`}
+                        >
+                          <div className="flex items-center justify-between">
+                            <span className="text-[9px] font-black uppercase tracking-widest text-rose-400 flex items-center gap-1">
+                              <Flame className="h-3 w-3 fill-rose-500/40" /> Quentes
+                            </span>
+                            <span className="text-[9px] font-mono font-bold text-rose-300">R$ {fmtBRL(thermalStats.hotCost)}</span>
+                          </div>
+                          <span className="text-sm font-extrabold text-rose-200 mt-0.5">{thermalStats.hot} {level}</span>
+                          <span className="text-[9px] text-rose-400/80">CPL baixo · Prontas p/ escalar</span>
+                        </button>
+
+                        {/* Mornas */}
+                        <button
+                          onClick={() => setTemperatureFilter("warm")}
+                          className={`flex flex-col p-2.5 rounded-xl border text-left transition-all ${
+                            temperatureFilter === "warm"
+                              ? "border-amber-500/50 bg-amber-500/15 shadow-[0_0_12px_rgba(245,158,11,0.25)] ring-1 ring-amber-500/40"
+                              : "border-amber-500/20 bg-amber-500/5 hover:bg-amber-500/10"
+                          }`}
+                        >
+                          <div className="flex items-center justify-between">
+                            <span className="text-[9px] font-black uppercase tracking-widest text-amber-400 flex items-center gap-1">
+                              <Zap className="h-3 w-3" /> Mornas
+                            </span>
+                            <span className="text-[9px] font-mono font-bold text-amber-300">R$ {fmtBRL(thermalStats.warmCost)}</span>
+                          </div>
+                          <span className="text-sm font-extrabold text-amber-200 mt-0.5">{thermalStats.warm} {level}</span>
+                          <span className="text-[9px] text-amber-400/80">Estáveis · Benchmark normal</span>
+                        </button>
+
+                        {/* Frias / Alerta */}
+                        <button
+                          onClick={() => setTemperatureFilter("cold")}
+                          className={`flex flex-col p-2.5 rounded-xl border text-left transition-all ${
+                            temperatureFilter === "cold"
+                              ? "border-cyan-500/50 bg-cyan-500/15 shadow-[0_0_12px_rgba(6,182,212,0.25)] ring-1 ring-cyan-500/40"
+                              : "border-cyan-500/20 bg-cyan-500/5 hover:bg-cyan-500/10"
+                          }`}
+                        >
+                          <div className="flex items-center justify-between">
+                            <span className="text-[9px] font-black uppercase tracking-widest text-cyan-400 flex items-center gap-1">
+                              <Snowflake className="h-3 w-3" /> Frias
+                            </span>
+                            <span className="text-[9px] font-mono font-bold text-cyan-300">R$ {fmtBRL(thermalStats.coldCost)}</span>
+                          </div>
+                          <span className="text-sm font-extrabold text-cyan-200 mt-0.5">{thermalStats.cold} {level}</span>
+                          <span className="text-[9px] text-cyan-400/80">Alerta: gasto s/ conv. ou CPL alto</span>
+                        </button>
+                      </div>
+                    </motion.div>
+                  )}
 
                   {/* Barra de seleção */}
                   {selSet.size > 0 && (
@@ -1626,13 +1900,25 @@ function MetricasCampanhasPage() {
                                 {/* nome */}
                                 <td className="px-4 py-2.5" onClick={e => e.stopPropagation()}>
                                   <div className="flex flex-col gap-0.5 min-w-0">
-                                    <button
+                                    <div className="flex items-center gap-1.5">
+                                      <button
                                       onClick={() => setSelectedFocusItem({ ...c, type: level })}
                                       className="font-bold text-foreground hover:text-primary transition truncate max-w-[240px] leading-tight text-left"
                                       title="Clique para ver análise detalhada e diagnóstico de IA"
                                     >
                                       {c.name}
                                     </button>
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          handleOpenVictoriaDiagnostic(c);
+                                        }}
+                                        className="p-1 rounded-md text-primary/70 hover:text-primary hover:bg-primary/20 transition-all opacity-80 hover:opacity-100"
+                                        title="Abrir bate-papo de diagnóstico estratégico com a Victoria AI"
+                                      >
+                                        <Bot className="h-3.5 w-3.5" />
+                                      </button>
+                                    </div>
                                     <div className="flex items-center gap-1.5 flex-wrap">
                                       {isLearning && <LearningBadge/>}
                                       {c.ad_account && <span className="text-[9px] text-muted-foreground/40 font-mono leading-none">{(c.ad_account as any).name}</span>}
@@ -1807,13 +2093,40 @@ function MetricasCampanhasPage() {
                                   {isSel ? <CheckSquare className="h-4 w-4 text-primary"/> : <Square className="h-4 w-4"/>}
                                 </button>
                                 <div className="flex flex-col min-w-0">
-                                  <button
+                                  <div className="flex items-center justify-between gap-2">
+                                    <button
                                     onClick={() => setSelectedFocusItem({ ...c, type: level })}
                                     className="font-bold text-sm text-foreground hover:text-primary transition text-left leading-tight line-clamp-2"
                                   >
                                     {c.name}
                                   </button>
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleOpenVictoriaDiagnostic(c);
+                                      }}
+                                      className="flex items-center gap-1 px-2 py-0.5 rounded-lg border border-primary/30 bg-primary/10 text-primary text-[10px] font-bold shrink-0 hover:bg-primary/20 transition-all"
+                                      title="Diagnóstico Estratégico com Victoria AI"
+                                    >
+                                      <Bot className="h-3 w-3" />
+                                      IA
+                                    </button>
+                                  </div>
                                   <div className="flex items-center gap-2 flex-wrap mt-1">
+                                    {/* Thermal badge */}
+                                    {(() => {
+                                      const tempInfo = getCampaignTemperature(c, accountBenchmarkCpl);
+                                      const TempIcon = tempInfo.icon;
+                                      return (
+                                        <span 
+                                          className={`inline-flex items-center gap-1 rounded-full px-1.5 py-0.2 text-[8.5px] font-bold border transition-all ${tempInfo.badgeClass}`}
+                                          title={tempInfo.reason}
+                                        >
+                                          <TempIcon className="h-2.5 w-2.5" />
+                                          {tempInfo.label}
+                                        </span>
+                                      );
+                                    })()}
                                     <button
                                       onClick={() => !isChanging && toggleMutation.mutate({ id: c.id, externalId: c.external_id, currentStatus: c.status, type: level })}
                                       disabled={isChanging}
@@ -2940,10 +3253,19 @@ function MetricasCampanhasPage() {
 
                   {/* Bloco Diagnóstico IA */}
                   <div className="space-y-2">
-                    <h4 className="text-[10px] font-black uppercase text-muted-foreground/60 tracking-wider flex items-center gap-1.5">
+                    <div className="flex items-center justify-between">
+                      <h4 className="text-[10px] font-black uppercase text-muted-foreground/60 tracking-wider flex items-center gap-1.5">
                       <Sparkles className="h-3 w-3 text-primary animate-pulse" />
                       Diagnóstico da Victoria IA
                     </h4>
+                      <button
+                        onClick={() => handleOpenVictoriaDiagnostic(selectedFocusItem)}
+                        className="flex items-center gap-1 text-[10px] font-bold text-primary hover:underline"
+                      >
+                        <Bot className="h-3 w-3" />
+                        Conversar no Chat Flutuante
+                      </button>
+                    </div>
                     <div className="rounded-xl border border-primary/20 bg-primary/[0.02] p-4 min-h-[140px] relative overflow-hidden">
                       {isGeneratingInsight ? (
                         <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-background/40 backdrop-blur-[1px]">
@@ -2977,16 +3299,17 @@ function MetricasCampanhasPage() {
               </motion.div>
             </div>
           )}
-
         </AnimatePresence>
+
+        {/* Victoria AI - Chat Flutuante Diagnóstico Estratégico */}
+        <VictoriaFloatingChat
+          isOpen={isFloatingChatOpen}
+          onClose={() => setIsFloatingChatOpen(false)}
+          contextItem={floatingChatContext}
+          accountName={adAccounts.find((a: any) => a.id === accountFilter)?.name || "Conta Meta Ads"}
+          avgAccountCpl={avgCpl > 0 ? avgCpl : accountBenchmarkCpl}
+        />
       </div>
     </div>
   );
 }
-
-
-
-
-
-
-
