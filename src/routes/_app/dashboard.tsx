@@ -426,6 +426,8 @@ function Dashboard() {
                 conversions = 1;
               } else if (campName.includes("TAYNA") && campName.includes("MSG")) {
                 conversions = 1;
+              } else if (campName.includes("TRAFEGO NC INSTA") || campName.includes("NC INSTA")) {
+                conversions = 0;
               }
             } else if (m.date === "2026-11-11") {
               if (campName.includes("RUTHH") && campName.includes("MSG")) {
@@ -448,17 +450,28 @@ function Dashboard() {
                                 campName.includes("WHATSAPP") ||
                                 campName.includes("DIRECT") ||
                                 campName.includes("CONVERSA") ||
-                                ["OUTCOME_LEADS", "LEAD_GENERATION", "MESSAGES", "OUTCOME_ENGAGEMENT"].includes(obj) ||
-                                ["OUTCOME_LEADS", "LEAD_GENERATION", "MESSAGES", "OUTCOME_ENGAGEMENT"].includes(resType);
+                                ["MESSAGES"].includes(obj) ||
+                                ["MESSAGES"].includes(resType);
 
-            const isPurchase = ["CONVERSIONS", "OUTCOME_SALES"].includes(obj) || ["CONVERSIONS", "OUTCOME_SALES"].includes(resType);
+            const isLeadGen = ["OUTCOME_LEADS", "LEAD_GENERATION"].includes(obj) ||
+                              ["OUTCOME_LEADS", "LEAD_GENERATION"].includes(resType) ||
+                              campName.includes("LEAD") || campName.includes("CADASTRO");
 
-            if (isMessaging) {
+            const isPurchase = ["CONVERSIONS", "OUTCOME_SALES", "CATALOG_SALES"].includes(obj) ||
+                               ["CONVERSIONS", "OUTCOME_SALES", "CATALOG_SALES"].includes(resType) ||
+                               campName.includes("COMPRA") || campName.includes("VENDA") || campName.includes("PURCHASE");
+
+            const isTraffic = ["OUTCOME_TRAFFIC", "LINK_CLICKS"].includes(obj) ||
+                              campName.includes("TRAFEGO") || campName.includes("TRÁFEGO") || campName.includes("INSTA");
+
+            if (isMessaging || isLeadGen) {
               metricsMap[key].leads += conversions;
             } else if (isPurchase) {
               metricsMap[key].purchases += conversions;
+            } else if (isTraffic) {
+              // Tráfego não é lead nem compra
             } else {
-              const isVanity = ["OUTCOME_AWARENESS", "VIDEO_VIEWS"].includes(obj);
+              const isVanity = ["OUTCOME_AWARENESS", "VIDEO_VIEWS", "POST_ENGAGEMENT"].includes(obj);
               if (!isVanity && conversions > 0) {
                 metricsMap[key].leads += conversions;
               }
@@ -482,7 +495,7 @@ function Dashboard() {
           const rowLeads = Number(row.leads || 0);
           const rowResults = Number(row.results || 0);
           const rowPurchases = Number(row.purchases || 0);
-          const effectiveLeads = rowLeads > 0 ? rowLeads : (rowPurchases === 0 ? rowResults : 0);
+          const effectiveLeads = rowLeads > 0 ? rowLeads : 0;
 
           if (!metricsMap[key]) {
             metricsMap[key] = {
@@ -507,13 +520,7 @@ function Dashboard() {
         console.warn("[Dashboard] Falha ao consultar daily_metrics:", errDaily);
       }
 
-      // 3. Salvaguarda: se houver resultados/conversões e nenhuma purchase, nunca exibe Mensagens zeradas!
-      for (const key of Object.keys(metricsMap)) {
-        if (metricsMap[key].leads === 0 && metricsMap[key].purchases === 0 && metricsMap[key].results > 0) {
-          metricsMap[key].leads = metricsMap[key].results;
-        }
-      }
-
+      // 3. Clientes vinculados às contas
       const { data: clientsData } = await (supabase as any)
         .from("clients")
         .select("id, name, meta_ad_account_id, logo_url");
@@ -1266,18 +1273,15 @@ function Dashboard() {
                   <div className="bg-white/[0.03] border border-white/5 rounded-xl p-2.5">
                     <p className="text-[8px] font-black uppercase tracking-widest text-muted-foreground">CPL</p>
                     <p className="text-xs font-black font-mono text-foreground mt-1">
-                      {(() => {
-                        const effLeads = row.metrics.leads > 0 ? row.metrics.leads : (row.metrics.purchases === 0 ? row.metrics.results : 0);
-                        return effLeads > 0 
-                          ? (row.metrics.spend / effLeads).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) 
-                          : "—";
-                      })()}
+                      {row.metrics.leads > 0 
+                        ? (row.metrics.spend / row.metrics.leads).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) 
+                        : "—"}
                     </p>
                   </div>
                   <div className="bg-white/[0.03] border border-white/5 rounded-xl p-2.5">
                     <p className="text-[8px] font-black uppercase tracking-widest text-muted-foreground">Mensagens</p>
                     <p className="text-xs font-black font-mono text-foreground mt-1">
-                      {(row.metrics.leads > 0 ? row.metrics.leads : (row.metrics.purchases === 0 ? row.metrics.results : 0)).toLocaleString('pt-BR')}
+                      {row.metrics.leads > 0 ? row.metrics.leads.toLocaleString('pt-BR') : "—"}
                     </p>
                   </div>
                   <div className="bg-white/[0.03] border border-white/5 rounded-xl p-2.5">
@@ -1346,15 +1350,12 @@ function Dashboard() {
                     <td className="py-4 text-right font-mono text-[11px] font-bold tabular-nums text-foreground">{row.metrics.reach.toLocaleString('pt-BR')}</td>
                     <td className="py-4 text-right font-mono text-[11px] font-bold tabular-nums text-foreground">{row.metrics.impressions.toLocaleString('pt-BR')}</td>
                     <td className="py-4 text-right font-mono text-[11px] font-bold tabular-nums text-foreground">
-                      {(row.metrics.leads > 0 ? row.metrics.leads : (row.metrics.purchases === 0 ? row.metrics.results : 0)).toLocaleString('pt-BR')}
+                      {row.metrics.leads > 0 ? row.metrics.leads.toLocaleString('pt-BR') : "—"}
                     </td>
                     <td className="py-4 text-right font-mono text-[11px] font-bold tabular-nums text-foreground">
-                      {(() => {
-                        const effLeads = row.metrics.leads > 0 ? row.metrics.leads : (row.metrics.purchases === 0 ? row.metrics.results : 0);
-                        return effLeads > 0 
-                          ? (row.metrics.spend / effLeads).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) 
-                          : "—";
-                      })()}
+                      {row.metrics.leads > 0 
+                        ? (row.metrics.spend / row.metrics.leads).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) 
+                        : "—"}
                     </td>
                     <td className="py-4 text-right font-mono text-[11px] font-bold tabular-nums text-foreground">{row.metrics.purchases.toLocaleString('pt-BR')}</td>
                     <td className="py-4 text-right font-mono text-[11px] font-black tabular-nums text-primary">

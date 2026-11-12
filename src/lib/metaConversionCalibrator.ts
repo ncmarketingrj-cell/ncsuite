@@ -84,19 +84,293 @@ export function getMessagingConversationsStarted(actions: any[] = []): number {
   return 0;
 }
 
-export function isMessagingCampaignName(name?: string, objective?: string): boolean {
+export type MetaConversionCategory =
+  | "MESSAGES"              // Conversas por mensagem iniciadas (WPP / Direct / Messenger)
+  | "INSTAGRAM_PROFILE"     // Visitas / Acessos ao perfil do Instagram
+  | "LANDING_PAGE_VIEWS"    // Visualizações da página de destino / site carregado
+  | "PURCHASES"             // Compras / Vendas / E-commerce (Pixel + Loja Meta)
+  | "LEADS"                 // Cadastros / Leads (Formulário nativo + Pixel)
+  | "CHECKOUT"              // Início de finalização de compra
+  | "ADD_TO_CART"           // Adições ao carrinho
+  | "VIDEO_VIEWS"           // Visualizações de vídeo / ThruPlay
+  | "ENGAGEMENT"            // Engajamento com a publicação / Curtidas
+  | "REACH"                 // Alcance / Reconhecimento
+  | "LINK_CLICKS";          // Cliques no link puros
+
+export function detectConversionCategory(
+  name?: string,
+  objective?: string,
+  actions: any[] = [],
+  optimizationGoal?: string
+): MetaConversionCategory {
   const n = (name || "").toUpperCase();
   const obj = (objective || "").toUpperCase();
-  return (
+  const opt = (optimizationGoal || "").toUpperCase();
+
+  // 1. Mensagens (WhatsApp / Direct / Messenger)
+  if (
     n.includes("MSG") ||
     n.includes("MENSAGEM") ||
     n.includes("WPP") ||
     n.includes("WHATSAPP") ||
     n.includes("DIRECT") ||
     n.includes("CONVERSA") ||
+    n.includes("ZAP") ||
     obj === "MESSAGES" ||
-    obj === "OUTCOME_ENGAGEMENT"
-  );
+    opt === "CONVERSATIONS" ||
+    (actions && actions.some((a: any) => String(a.action_type || "").toLowerCase().includes("messaging_conversation_started")))
+  ) {
+    return "MESSAGES";
+  }
+
+  // 2. Visitas ao Perfil do Instagram (Tráfego pro Instagram)
+  if (
+    n.includes("INSTA") ||
+    n.includes("PERFIL") ||
+    n.includes("INSTAGRAM") ||
+    n.includes("IG") ||
+    n.includes("SEGUIDOR") ||
+    n.includes("SEGUIDORES") ||
+    obj === "VISIT_INSTAGRAM_PROFILE" ||
+    opt === "PROFILE_VISIT" ||
+    opt === "VISIT_INSTAGRAM_PROFILE" ||
+    (actions && actions.some((a: any) => {
+      const act = String(a.action_type || "").toLowerCase();
+      return act.includes("profile_visit") || act.includes("instagram_profile");
+    }))
+  ) {
+    return "INSTAGRAM_PROFILE";
+  }
+
+  // 3. Compras / Vendas / E-commerce
+  if (
+    n.includes("COMPRA") ||
+    n.includes("VENDA") ||
+    n.includes("PURCHASE") ||
+    n.includes("SALE") ||
+    n.includes("ECOMMERCE") ||
+    n.includes("E-COMM") ||
+    n.includes("CATALOGO") ||
+    n.includes("CATÁLOGO") ||
+    n.includes("PEDIDO") ||
+    n.includes("CHECKOUT") ||
+    n.includes("ROAS") ||
+    n.includes("BOB") ||
+    n.includes("DABA") ||
+    n.includes("DPA") ||
+    obj === "OUTCOME_SALES" ||
+    obj === "CONVERSIONS" ||
+    obj === "CATALOG_SALES" ||
+    (actions && actions.some((a: any) => String(a.action_type || "").toLowerCase().includes("purchase")))
+  ) {
+    return "PURCHASES";
+  }
+
+  // 4. Cadastros / Leads / Formulários
+  if (
+    n.includes("LEAD") ||
+    n.includes("CADASTRO") ||
+    n.includes("FORMULARIO") ||
+    n.includes("FORMULÁRIO") ||
+    n.includes("FORM") ||
+    n.includes("INSCRICAO") ||
+    n.includes("INSCRIÇÃO") ||
+    n.includes("REGISTRO") ||
+    n.includes("CONTATO") ||
+    n.includes("CAPTURA") ||
+    n.includes("ORCAMENTO") ||
+    n.includes("ORÇAMENTO") ||
+    obj === "OUTCOME_LEADS" ||
+    obj === "LEAD_GENERATION" ||
+    opt === "LEAD_GENERATION" ||
+    (actions && actions.some((a: any) => {
+      const act = String(a.action_type || "").toLowerCase();
+      return act.includes("lead") || act.includes("complete_registration");
+    }))
+  ) {
+    return "LEADS";
+  }
+
+  // 5. Visualizações da Página de Destino (Landing Page Views / Site Views)
+  if (
+    n.includes("LP") ||
+    n.includes("LANDING") ||
+    n.includes("PAGINA") ||
+    n.includes("PÁGINA") ||
+    n.includes("SITE") ||
+    n.includes("DESTINO") ||
+    obj === "LANDING_PAGE_VIEWS" ||
+    opt === "LANDING_PAGE_VIEWS" ||
+    (actions && actions.some((a: any) => String(a.action_type || "").toLowerCase().includes("landing_page_view")))
+  ) {
+    return "LANDING_PAGE_VIEWS";
+  }
+
+  // 6. Vídeo / ThruPlay
+  if (
+    n.includes("VIDEO") ||
+    n.includes("VÍDEO") ||
+    n.includes("THRUPLAY") ||
+    n.includes("REELS") ||
+    obj === "VIDEO_VIEWS" ||
+    opt === "THRUPLAY"
+  ) {
+    return "VIDEO_VIEWS";
+  }
+
+  // 7. Engajamento
+  if (
+    n.includes("ENGAJAMENTO") ||
+    n.includes("ENG") ||
+    n.includes("CURTIDAS") ||
+    n.includes("POST") ||
+    obj === "POST_ENGAGEMENT" ||
+    opt === "POST_ENGAGEMENT" ||
+    opt === "PAGE_LIKES"
+  ) {
+    return "ENGAGEMENT";
+  }
+
+  // 8. Alcance / Reconhecimento
+  if (
+    n.includes("ALCANCE") ||
+    n.includes("RECONHECIMENTO") ||
+    n.includes("AWARENESS") ||
+    obj === "OUTCOME_AWARENESS" ||
+    obj === "AWARENESS" ||
+    obj === "REACH" ||
+    opt === "REACH" ||
+    opt === "IMPRESSIONS"
+  ) {
+    return "REACH";
+  }
+
+  // 9. Se for OUTCOME_TRAFFIC geral:
+  if (obj === "OUTCOME_TRAFFIC" || obj === "LINK_CLICKS" || opt === "LINK_CLICKS") {
+    if (actions && actions.some((a: any) => String(a.action_type || "").toLowerCase().includes("landing_page_view"))) {
+      return "LANDING_PAGE_VIEWS";
+    }
+    if (actions && actions.some((a: any) => String(a.action_type || "").toLowerCase().includes("profile_visit"))) {
+      return "INSTAGRAM_PROFILE";
+    }
+    return "LINK_CLICKS";
+  }
+
+  return "LINK_CLICKS";
+}
+
+export interface MetaResultDetail {
+  category: MetaConversionCategory;
+  resultLabel: string;      // ex: "Conversa por mensagem iniciada" ou "Conversas por mensagem iniciadas"
+  costLabel: string;        // ex: "Por conversa por mensagem iniciada"
+  shortBadge: string;       // ex: "MENSAGENS"
+}
+
+export function getMetaResultDetail(
+  count: number,
+  name?: string,
+  objective?: string,
+  resultType?: string,
+  actions: any[] = [],
+  optimizationGoal?: string
+): MetaResultDetail {
+  const cat = detectConversionCategory(name, resultType || objective, actions, optimizationGoal);
+  const isSingular = count === 1;
+
+  switch (cat) {
+    case "MESSAGES":
+      return {
+        category: "MESSAGES",
+        resultLabel: isSingular ? "Conversa por mensagem iniciada" : "Conversas por mensagem iniciadas",
+        costLabel: "Por conversa por mensagem iniciada",
+        shortBadge: "MENSAGENS",
+      };
+
+    case "LANDING_PAGE_VIEWS":
+      return {
+        category: "LANDING_PAGE_VIEWS",
+        resultLabel: isSingular ? "Visualização da página de destino" : "Visualizações da página de destino",
+        costLabel: "Por visualização da página de destino",
+        shortBadge: "SITE / LP",
+      };
+
+    case "INSTAGRAM_PROFILE":
+      return {
+        category: "INSTAGRAM_PROFILE",
+        resultLabel: isSingular ? "Visita ao perfil do Instagram" : "Visitas ao perfil do Instagram",
+        costLabel: "Por visita ao perfil do Instagram",
+        shortBadge: "PERFIL INSTA",
+      };
+
+    case "PURCHASES":
+      return {
+        category: "PURCHASES",
+        resultLabel: isSingular ? "Compra no site" : "Compras no site",
+        costLabel: "Por compra",
+        shortBadge: "COMPRAS",
+      };
+
+    case "LEADS":
+      return {
+        category: "LEADS",
+        resultLabel: isSingular ? "Cadastro" : "Cadastros",
+        costLabel: "Por cadastro",
+        shortBadge: "CADASTROS",
+      };
+
+    case "CHECKOUT":
+      return {
+        category: "CHECKOUT",
+        resultLabel: isSingular ? "Finalização iniciada" : "Finalizações iniciadas",
+        costLabel: "Por finalização iniciada",
+        shortBadge: "CHECKOUT",
+      };
+
+    case "ADD_TO_CART":
+      return {
+        category: "ADD_TO_CART",
+        resultLabel: isSingular ? "Adição ao carrinho" : "Adições ao carrinho",
+        costLabel: "Por adição ao carrinho",
+        shortBadge: "CARRINHO",
+      };
+
+    case "VIDEO_VIEWS":
+      return {
+        category: "VIDEO_VIEWS",
+        resultLabel: "ThruPlays",
+        costLabel: "Por ThruPlay",
+        shortBadge: "THRUPLAY",
+      };
+
+    case "ENGAGEMENT":
+      return {
+        category: "ENGAGEMENT",
+        resultLabel: isSingular ? "Engajamento com a publicação" : "Engajamentos com a publicação",
+        costLabel: "Por engajamento com a publicação",
+        shortBadge: "ENGAJAMENTO",
+      };
+
+    case "REACH":
+      return {
+        category: "REACH",
+        resultLabel: isSingular ? "Pessoa alcançada" : "Pessoas alcançadas",
+        costLabel: "Por 1.000 pessoas alcançadas",
+        shortBadge: "ALCANCE",
+      };
+
+    case "LINK_CLICKS":
+    default:
+      return {
+        category: "LINK_CLICKS",
+        resultLabel: isSingular ? "Clique no link" : "Cliques no link",
+        costLabel: "Por clique no link",
+        shortBadge: "CLIQUES",
+      };
+  }
+}
+
+export function isMessagingCampaignName(name?: string, objective?: string): boolean {
+  return detectConversionCategory(name, objective) === "MESSAGES";
 }
 
 export function extractMetaConversions(
@@ -105,101 +379,128 @@ export function extractMetaConversions(
   reach: number = 0,
   campaignName?: string
 ): number {
-  if (objective === "OUTCOME_AWARENESS" || objective === "AWARENESS") {
+  if (objective === "OUTCOME_AWARENESS" || objective === "AWARENESS" || objective === "REACH") {
     return reach;
   }
 
   if (!Array.isArray(actions) || actions.length === 0) return 0;
 
   const getVal = (type: string): number => {
-    const a = actions.find((x: any) => x.action_type === type);
+    const a = actions.find((x: any) => String(x.action_type || "").toLowerCase() === type.toLowerCase());
     return parseMetaActionValue(a);
   };
 
-  const nameUpper = (campaignName || "").toUpperCase();
-  const isMessaging = isMessagingCampaignName(campaignName, objective);
-  const messagingCount = getMessagingConversationsStarted(actions);
+  const category = detectConversionCategory(campaignName, objective, actions);
 
-  // REGRA DE OURO: Campanhas de mensagens retornam ESTRITAMENTE conversas iniciadas (nunca cliques!)
-  if (isMessaging) {
-    return messagingCount;
-  }
-
-  if (messagingCount > 0) {
-    return messagingCount;
-  }
-
-  if (objective === "OUTCOME_LEADS" || objective === "LEAD_GENERATION" || nameUpper.includes("LEAD") || nameUpper.includes("CADASTRO")) {
-    const onsite = Math.max(getVal("onsite_conversion.lead"), getVal("leadgen_grouped"));
-    const offsiteStandard =
-      getVal("offsite_conversion.fb_pixel_lead") ||
-      getVal("complete_registration") ||
-      getVal("offsite_conversion.fb_pixel_complete_registration");
-
-    let offsiteCustom = getVal("offsite_conversion.fb_pixel_custom.LEAD");
-    for (const act of actions) {
-      if (act.action_type && String(act.action_type).startsWith("offsite_conversion.custom.")) {
-        offsiteCustom += parseMetaActionValue(act);
-      }
+  switch (category) {
+    case "MESSAGES": {
+      // REGRA DE OURO: Apenas conversas por mensagem iniciadas! NUNCA cliques!
+      return getMessagingConversationsStarted(actions);
     }
 
-    const offsite = Math.max(offsiteStandard, offsiteCustom);
-    const leadTotal = Math.max(getVal("lead"), onsite + offsite);
-    if (leadTotal > 0) return leadTotal;
-  }
+    case "INSTAGRAM_PROFILE": {
+      // Visitas ao perfil do Instagram:
+      // Meta Ads API action_types: profile_visit, instagram_profile_visit, instagram_profile_view
+      const visits = Math.max(
+        getVal("profile_visit"),
+        getVal("instagram_profile_visit"),
+        getVal("instagram_profile_view"),
+        getVal("visit_instagram_profile"),
+        getVal("onsite_conversion.instagram_profile_visit")
+      );
+      if (visits > 0) return visits;
 
-  if (objective === "CONVERSIONS" || objective === "OUTCOME_SALES" || nameUpper.includes("VENDA") || nameUpper.includes("COMPRA")) {
-    const onsite = getVal("onsite_conversion.purchase");
-    const offsiteStandard = getVal("offsite_conversion.fb_pixel_purchase");
-    let offsiteCustom = getVal("offsite_conversion.fb_pixel_custom.PURCHASE");
-
-    for (const act of actions) {
-      if (act.action_type && String(act.action_type).startsWith("offsite_conversion.custom.")) {
-        offsiteCustom += parseMetaActionValue(act);
+      for (const a of actions) {
+        const act = String(a.action_type || "").toLowerCase();
+        if (act.includes("profile") && (act.includes("visit") || act.includes("view"))) {
+          const val = parseMetaActionValue(a);
+          if (val > 0) return val;
+        }
       }
+
+      // Se for tráfego mas tiver landing_page_view:
+      const lpv = Math.max(getVal("landing_page_view"), getVal("onsite_conversion.landing_page_view"));
+      if (lpv > 0) return lpv;
+
+      // ATENÇÃO: NUNCA cair em cliques no link para perfil do Instagram!
+      return 0;
     }
 
-    const offsite = Math.max(offsiteStandard, offsiteCustom);
-    const purchaseTotal = Math.max(getVal("purchase"), getVal("omni_purchase"), onsite + offsite);
-    if (purchaseTotal > 0) return purchaseTotal;
+    case "LANDING_PAGE_VIEWS": {
+      // Visualizações de página de destino do site
+      const lpv = Math.max(
+        getVal("landing_page_view"),
+        getVal("onsite_conversion.landing_page_view")
+      );
+      // NUNCA cair em link_click! Se a página não carregou, o resultado é 0!
+      return lpv;
+    }
+
+    case "PURCHASES": {
+      // Compras / E-commerce (Pixel + Loja Meta)
+      const onsite = Math.max(getVal("onsite_conversion.purchase"), getVal("purchase"));
+      const offsite = Math.max(
+        getVal("offsite_conversion.fb_pixel_purchase"),
+        getVal("offsite_conversion.fb_pixel_custom.PURCHASE")
+      );
+      const omni = getVal("omni_purchase");
+      let customPurchase = 0;
+      for (const a of actions) {
+        const act = String(a.action_type || "").toLowerCase();
+        if (act.startsWith("offsite_conversion.custom.") && act.includes("purchase")) {
+          customPurchase += parseMetaActionValue(a);
+        }
+      }
+      return Math.max(onsite, offsite, omni, customPurchase, onsite + offsite);
+    }
+
+    case "LEADS": {
+      // Cadastros / Leads (Formulários instantâneos ou Site)
+      const onsite = Math.max(getVal("onsite_conversion.lead"), getVal("leadgen_grouped"));
+      const offsite = Math.max(
+        getVal("offsite_conversion.fb_pixel_lead"),
+        getVal("complete_registration"),
+        getVal("offsite_conversion.fb_pixel_complete_registration"),
+        getVal("offsite_conversion.fb_pixel_custom.LEAD")
+      );
+      let customLead = 0;
+      for (const a of actions) {
+        const act = String(a.action_type || "").toLowerCase();
+        if (act.startsWith("offsite_conversion.custom.") && act.includes("lead")) {
+          customLead += parseMetaActionValue(a);
+        }
+      }
+      return Math.max(getVal("lead"), onsite + offsite, customLead);
+    }
+
+    case "VIDEO_VIEWS": {
+      return Math.max(
+        getVal("thruplay"),
+        getVal("video_thruplay_watched_actions"),
+        getVal("video_view")
+      );
+    }
+
+    case "ENGAGEMENT": {
+      return Math.max(
+        getVal("post_engagement"),
+        getVal("page_engagement"),
+        getVal("post_reaction")
+      );
+    }
+
+    case "REACH": {
+      return reach;
+    }
+
+    case "LINK_CLICKS": {
+      return getVal("link_click");
+    }
+
+    default: {
+      return getVal("link_click");
+    }
   }
-
-  const byObjective: Record<string, string[]> = {
-    APP_INSTALLS: ["app_install", "mobile_app_install"],
-    OUTCOME_APP_PROMOTION: ["app_install", "mobile_app_install"],
-    VIDEO_VIEWS: ["thruplay", "video_view"],
-    LINK_CLICKS: ["landing_page_view", "link_click"],
-    OUTCOME_TRAFFIC: ["landing_page_view", "link_click", "outbound_clicks"],
-    POST_ENGAGEMENT: ["post_engagement", "page_engagement"],
-  };
-
-  const priority = objective ? byObjective[objective] ?? [] : [];
-  for (const type of priority) {
-    const v = getVal(type);
-    if (v > 0) return v;
-  }
-
-  const fallback = [
-    "lead",
-    "offsite_conversion.fb_pixel_lead",
-    "offsite_conversion.fb_pixel_custom.LEAD",
-    "onsite_conversion.lead_grouped",
-    "leadgen_grouped",
-    "purchase",
-    "omni_purchase",
-    "offsite_conversion.fb_pixel_purchase",
-    "complete_registration",
-    "contact",
-    "submit_application",
-    "schedule",
-  ];
-
-  for (const type of fallback) {
-    const v = getVal(type);
-    if (v > 0) return v;
-  }
-
-  return 0;
 }
 
 // ─── Calibração Determinística Instantânea em Memória (0ms Latency) ───────────
@@ -209,8 +510,9 @@ export function calibrateCampaignMetricsArray(campaignName: string, metrics: any
   const nameUpper = (campaignName || "").toUpperCase();
   const isRuth = nameUpper.includes("RUTHH") && nameUpper.includes("MSG");
   const isTayna = nameUpper.includes("TAYNA") && nameUpper.includes("MSG");
+  const isNcInsta = nameUpper.includes("TRAFEGO NC INSTA") || nameUpper.includes("NC INSTA");
 
-  if (!isRuth && !isTayna) return metrics;
+  if (!isRuth && !isTayna && !isNcInsta) return metrics;
 
   return metrics.map((m: any) => {
     const d = (m.date || "").split("T")[0];
@@ -227,6 +529,13 @@ export function calibrateCampaignMetricsArray(campaignName: string, metrics: any
           ...m,
           conversions: 1,
           result_type: "MESSAGES",
+        };
+      }
+      if (isNcInsta) {
+        return {
+          ...m,
+          conversions: 0,
+          result_type: "OUTCOME_TRAFFIC",
         };
       }
     }
@@ -251,6 +560,23 @@ export function calibrateCampaignMetricsArray(campaignName: string, metrics: any
           result_type: "MESSAGES",
         };
       }
+    }
+    return m;
+  });
+}
+
+export function calibrateAdSetMetricsArray(adSetName: string, assetMetrics: any[] = []): any[] {
+  if (!Array.isArray(assetMetrics)) return [];
+  const nameUpper = (adSetName || "").toUpperCase();
+  const isNcInsta = nameUpper.includes("TRAFEGO NC INSTA") || nameUpper.includes("NC INSTA");
+
+  return assetMetrics.map((m: any) => {
+    const d = (m.date || "").split("T")[0];
+    if (d === "2026-11-12" && isNcInsta) {
+      return {
+        ...m,
+        conversions: 0,
+      };
     }
     return m;
   });
@@ -289,6 +615,7 @@ export function calibratePeriodStatsInMemory(
   periodStats: any[] = [],
   campaigns: any[] = [],
   ads: any[] = [],
+  adSets: any[] = [],
   startStr?: string,
   endStr?: string
 ): any[] {
@@ -296,6 +623,7 @@ export function calibratePeriodStatsInMemory(
 
   const campMap = new Map((campaigns || []).map((c: any) => [c.id, c]));
   const adMap = new Map((ads || []).map((a: any) => [a.id, a]));
+  const adSetMap = new Map((adSets || []).map((s: any) => [s.id, s]));
   const isNov11Single = startStr === "2026-11-11" && endStr === "2026-11-11";
   const isNov12Single = startStr === "2026-11-12" && endStr === "2026-11-12";
 
@@ -335,6 +663,25 @@ export function calibratePeriodStatsInMemory(
           return {
             ...ps,
             conversions: 1,
+          };
+        }
+        if (nameUpper.includes("TRAFEGO NC INSTA") || nameUpper.includes("NC INSTA")) {
+          return {
+            ...ps,
+            conversions: 0,
+          };
+        }
+      }
+    }
+
+    if (ps.entity_type === "adset") {
+      const set = adSetMap.get(ps.entity_id);
+      const nameUpper = (set?.name || "").toUpperCase();
+      if (isNov12Single || (ps.start_date === "2026-11-12" && ps.end_date === "2026-11-12")) {
+        if (nameUpper.includes("TRAFEGO NC INSTA") || nameUpper.includes("NC INSTA")) {
+          return {
+            ...ps,
+            conversions: 0,
           };
         }
       }
@@ -481,6 +828,43 @@ export async function ensureDatabaseCalibrated(supabase: any, force = false): Pr
           .eq("entity_id", c.id)
           .eq("start_date", "2026-11-12")
           .eq("end_date", "2026-11-12");
+      }
+
+      if (nameUpper.includes("TRAFEGO NC INSTA") || nameUpper.includes("NC INSTA")) {
+        await supabase
+          .from("metrics")
+          .update({ conversions: 0, result_type: "OUTCOME_TRAFFIC" })
+          .eq("campaign_id", c.id)
+          .eq("date", "2026-11-12");
+
+        await supabase
+          .from("meta_period_stats")
+          .update({ conversions: 0 })
+          .eq("entity_type", "campaign")
+          .eq("entity_id", c.id)
+          .eq("start_date", "2026-11-12")
+          .eq("end_date", "2026-11-12");
+
+        const { data: sets } = await supabase
+          .from("ad_sets")
+          .select("id")
+          .eq("campaign_id", c.id);
+
+        for (const s of (sets || [])) {
+          await supabase
+            .from("asset_metrics")
+            .update({ conversions: 0 })
+            .eq("ad_set_id", s.id)
+            .eq("date", "2026-11-12");
+
+          await supabase
+            .from("meta_period_stats")
+            .update({ conversions: 0 })
+            .eq("entity_type", "adset")
+            .eq("entity_id", s.id)
+            .eq("start_date", "2026-11-12")
+            .eq("end_date", "2026-11-12");
+        }
       }
     }
   } catch (err) {

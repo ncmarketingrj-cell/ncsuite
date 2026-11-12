@@ -307,121 +307,269 @@ function getMessagingConversationsStarted(actions: any[] = []): number {
   return 0;
 }
 
+function detectConversionCategory(
+  name?: string,
+  objective?: string,
+  actions: any[] = []
+): string {
+  const n = (name || "").toUpperCase();
+  const obj = (objective || "").toUpperCase();
+
+  // 1. Mensagens (WhatsApp / Direct / Messenger)
+  if (
+    n.includes("MSG") ||
+    n.includes("MENSAGEM") ||
+    n.includes("WPP") ||
+    n.includes("WHATSAPP") ||
+    n.includes("DIRECT") ||
+    n.includes("CONVERSA") ||
+    n.includes("ZAP") ||
+    obj === "MESSAGES" ||
+    (actions && actions.some((a: any) => String(a.action_type || "").toLowerCase().includes("messaging_conversation_started")))
+  ) {
+    return "MESSAGES";
+  }
+
+  // 2. Visitas ao Perfil do Instagram (Tráfego pro Instagram)
+  if (
+    n.includes("INSTA") ||
+    n.includes("PERFIL") ||
+    n.includes("INSTAGRAM") ||
+    n.includes("IG") ||
+    n.includes("SEGUIDOR") ||
+    n.includes("SEGUIDORES") ||
+    obj === "VISIT_INSTAGRAM_PROFILE" ||
+    (actions && actions.some((a: any) => {
+      const act = String(a.action_type || "").toLowerCase();
+      return act.includes("profile_visit") || act.includes("instagram_profile");
+    }))
+  ) {
+    return "INSTAGRAM_PROFILE";
+  }
+
+  // 3. Compras / Vendas / E-commerce
+  if (
+    n.includes("COMPRA") ||
+    n.includes("VENDA") ||
+    n.includes("PURCHASE") ||
+    n.includes("SALE") ||
+    n.includes("ECOMMERCE") ||
+    n.includes("E-COMM") ||
+    n.includes("CATALOGO") ||
+    n.includes("CATÁLOGO") ||
+    n.includes("PEDIDO") ||
+    n.includes("CHECKOUT") ||
+    n.includes("ROAS") ||
+    n.includes("BOB") ||
+    n.includes("DABA") ||
+    n.includes("DPA") ||
+    obj === "OUTCOME_SALES" ||
+    obj === "CONVERSIONS" ||
+    obj === "CATALOG_SALES" ||
+    (actions && actions.some((a: any) => String(a.action_type || "").toLowerCase().includes("purchase")))
+  ) {
+    return "PURCHASES";
+  }
+
+  // 4. Cadastros / Leads / Formulários
+  if (
+    n.includes("LEAD") ||
+    n.includes("CADASTRO") ||
+    n.includes("FORMULARIO") ||
+    n.includes("FORMULÁRIO") ||
+    n.includes("FORM") ||
+    n.includes("INSCRICAO") ||
+    n.includes("INSCRIÇÃO") ||
+    n.includes("REGISTRO") ||
+    n.includes("CONTATO") ||
+    n.includes("CAPTURA") ||
+    n.includes("ORCAMENTO") ||
+    n.includes("ORÇAMENTO") ||
+    obj === "OUTCOME_LEADS" ||
+    obj === "LEAD_GENERATION" ||
+    (actions && actions.some((a: any) => {
+      const act = String(a.action_type || "").toLowerCase();
+      return act.includes("lead") || act.includes("complete_registration");
+    }))
+  ) {
+    return "LEADS";
+  }
+
+  // 5. Visualizações da Página de Destino (Landing Page Views / Site Views)
+  if (
+    n.includes("LP") ||
+    n.includes("LANDING") ||
+    n.includes("PAGINA") ||
+    n.includes("PÁGINA") ||
+    n.includes("SITE") ||
+    n.includes("DESTINO") ||
+    obj === "LANDING_PAGE_VIEWS" ||
+    (actions && actions.some((a: any) => String(a.action_type || "").toLowerCase().includes("landing_page_view")))
+  ) {
+    return "LANDING_PAGE_VIEWS";
+  }
+
+  // 6. Vídeo / ThruPlay
+  if (
+    n.includes("VIDEO") ||
+    n.includes("VÍDEO") ||
+    n.includes("THRUPLAY") ||
+    n.includes("REELS") ||
+    obj === "VIDEO_VIEWS"
+  ) {
+    return "VIDEO_VIEWS";
+  }
+
+  // 7. Engajamento
+  if (
+    n.includes("ENGAJAMENTO") ||
+    n.includes("ENG") ||
+    n.includes("CURTIDAS") ||
+    n.includes("POST") ||
+    obj === "POST_ENGAGEMENT"
+  ) {
+    return "ENGAGEMENT";
+  }
+
+  // 8. Alcance / Reconhecimento
+  if (
+    n.includes("ALCANCE") ||
+    n.includes("RECONHECIMENTO") ||
+    n.includes("AWARENESS") ||
+    obj === "OUTCOME_AWARENESS" ||
+    obj === "AWARENESS" ||
+    obj === "REACH"
+  ) {
+    return "REACH";
+  }
+
+  // 9. Se for OUTCOME_TRAFFIC geral:
+  if (obj === "OUTCOME_TRAFFIC" || obj === "LINK_CLICKS") {
+    if (actions && actions.some((a: any) => String(a.action_type || "").toLowerCase().includes("landing_page_view"))) {
+      return "LANDING_PAGE_VIEWS";
+    }
+    if (actions && actions.some((a: any) => String(a.action_type || "").toLowerCase().includes("profile_visit"))) {
+      return "INSTAGRAM_PROFILE";
+    }
+    return "LINK_CLICKS";
+  }
+
+  return "LINK_CLICKS";
+}
+
 function extractConversions(actions: any[] = [], objective?: string, reach: number = 0, campaignName?: string): number {
-  // Se for campanha de Alcance/Reconhecimento, o Gerenciador Meta exibe o próprio Alcance como "Resultado"
-  if (objective === "OUTCOME_AWARENESS" || objective === "AWARENESS") {
+  if (objective === "OUTCOME_AWARENESS" || objective === "AWARENESS" || objective === "REACH") {
     return reach;
   }
 
   if (!Array.isArray(actions) || actions.length === 0) return 0;
 
   const getVal = (type: string): number => {
-    const a = actions.find((x: any) => x.action_type === type);
+    const a = actions.find((x: any) => String(x.action_type || "").toLowerCase() === type.toLowerCase());
     return parseMetaActionValue(a);
   };
 
-  const nameUpper = (campaignName || "").toUpperCase();
-  const isMessaging = nameUpper.includes("MSG") || 
-                      nameUpper.includes("MENSAGEM") || 
-                      nameUpper.includes("WPP") || 
-                      nameUpper.includes("WHATSAPP") || 
-                      nameUpper.includes("DIRECT") || 
-                      nameUpper.includes("CONVERSA") ||
-                      objective === "MESSAGES" ||
-                      objective === "OUTCOME_ENGAGEMENT";
+  const category = detectConversionCategory(campaignName, objective, actions);
 
-  // 1. REGRA DE OURO PARA WHATSAPP / MENSAGENS:
-  // Se a campanha ou anúncio é voltado para mensagens (ex: RUTHH - MSG, TAYNA - MSG),
-  // o Resultado exibido no Gerenciador Meta é ESTRITAMENTE o número de conversas por mensagem iniciadas.
-  // NUNCA deve cair em link_click, landing_page_view ou outbound_clicks!
-  // Se um anúncio teve zero conversas (ex: PCX que teve 7 cliques mas zero mensagens), o resultado é 0!
-  const messagingCount = getMessagingConversationsStarted(actions);
-
-  if (isMessaging) {
-    return messagingCount;
-  }
-
-  // Se não foi identificado pelo nome mas possui conversas iniciadas registradas em actions:
-  if (messagingCount > 0) {
-    return messagingCount;
-  }
-
-  // 2. Tratar Leads de formulário / cadastro de forma agregada (Onsite + Offsite)
-  if (objective === "OUTCOME_LEADS" || objective === "LEAD_GENERATION" || nameUpper.includes("LEAD") || nameUpper.includes("CADASTRO")) {
-    const onsite = Math.max(getVal("onsite_conversion.lead"), getVal("leadgen_grouped"));
-    const offsiteStandard = getVal("offsite_conversion.fb_pixel_lead") || 
-                            getVal("complete_registration") || 
-                            getVal("offsite_conversion.fb_pixel_complete_registration");
-    
-    let offsiteCustom = getVal("offsite_conversion.fb_pixel_custom.LEAD");
-    for (const act of actions) {
-      if (act.action_type && act.action_type.startsWith("offsite_conversion.custom.")) {
-        offsiteCustom += parseMetaActionValue(act);
-      }
+  switch (category) {
+    case "MESSAGES": {
+      return getMessagingConversationsStarted(actions);
     }
 
-    const offsite = Math.max(offsiteStandard, offsiteCustom);
-    const leadTotal = Math.max(getVal("lead"), onsite + offsite);
-    if (leadTotal > 0) return leadTotal;
-  }
+    case "INSTAGRAM_PROFILE": {
+      const visits = Math.max(
+        getVal("profile_visit"),
+        getVal("instagram_profile_visit"),
+        getVal("instagram_profile_view"),
+        getVal("visit_instagram_profile"),
+        getVal("onsite_conversion.instagram_profile_visit")
+      );
+      if (visits > 0) return visits;
 
-  // 3. Tratar Vendas/Compras de forma agregada (Onsite Shop + Offsite Pixel)
-  if (objective === "CONVERSIONS" || objective === "OUTCOME_SALES" || nameUpper.includes("VENDA") || nameUpper.includes("COMPRA")) {
-    const onsite = getVal("onsite_conversion.purchase");
-    const offsiteStandard = getVal("offsite_conversion.fb_pixel_purchase");
-    let offsiteCustom = getVal("offsite_conversion.fb_pixel_custom.PURCHASE");
-    
-    for (const act of actions) {
-      if (act.action_type && act.action_type.startsWith("offsite_conversion.custom.")) {
-        offsiteCustom += parseMetaActionValue(act);
+      for (const a of actions) {
+        const act = String(a.action_type || "").toLowerCase();
+        if (act.includes("profile") && (act.includes("visit") || act.includes("view"))) {
+          const val = parseMetaActionValue(a);
+          if (val > 0) return val;
+        }
       }
+
+      const lpv = Math.max(getVal("landing_page_view"), getVal("onsite_conversion.landing_page_view"));
+      if (lpv > 0) return lpv;
+
+      return 0;
     }
-    
-    const offsite = Math.max(offsiteStandard, offsiteCustom);
-    const purchaseTotal = Math.max(getVal("purchase"), onsite + offsite);
-    if (purchaseTotal > 0) return purchaseTotal;
+
+    case "LANDING_PAGE_VIEWS": {
+      return Math.max(
+        getVal("landing_page_view"),
+        getVal("onsite_conversion.landing_page_view")
+      );
+    }
+
+    case "PURCHASES": {
+      const onsite = Math.max(getVal("onsite_conversion.purchase"), getVal("purchase"));
+      const offsite = Math.max(
+        getVal("offsite_conversion.fb_pixel_purchase"),
+        getVal("offsite_conversion.fb_pixel_custom.PURCHASE")
+      );
+      const omni = getVal("omni_purchase");
+      let customPurchase = 0;
+      for (const a of actions) {
+        const act = String(a.action_type || "").toLowerCase();
+        if (act.startsWith("offsite_conversion.custom.") && act.includes("purchase")) {
+          customPurchase += parseMetaActionValue(a);
+        }
+      }
+      return Math.max(onsite, offsite, omni, customPurchase, onsite + offsite);
+    }
+
+    case "LEADS": {
+      const onsite = Math.max(getVal("onsite_conversion.lead"), getVal("leadgen_grouped"));
+      const offsite = Math.max(
+        getVal("offsite_conversion.fb_pixel_lead"),
+        getVal("complete_registration"),
+        getVal("offsite_conversion.fb_pixel_complete_registration"),
+        getVal("offsite_conversion.fb_pixel_custom.LEAD")
+      );
+      let customLead = 0;
+      for (const a of actions) {
+        const act = String(a.action_type || "").toLowerCase();
+        if (act.startsWith("offsite_conversion.custom.") && act.includes("lead")) {
+          customLead += parseMetaActionValue(a);
+        }
+      }
+      return Math.max(getVal("lead"), onsite + offsite, customLead);
+    }
+
+    case "VIDEO_VIEWS": {
+      return Math.max(
+        getVal("thruplay"),
+        getVal("video_thruplay_watched_actions"),
+        getVal("video_view")
+      );
+    }
+
+    case "ENGAGEMENT": {
+      return Math.max(
+        getVal("post_engagement"),
+        getVal("page_engagement"),
+        getVal("post_reaction")
+      );
+    }
+
+    case "REACH": {
+      return reach;
+    }
+
+    case "LINK_CLICKS": {
+      return getVal("link_click");
+    }
+
+    default: {
+      return getVal("link_click");
+    }
   }
-
-  // Mapeamento objetivo → action_types primários (apenas para campanhas genuinamente não-mensagens)
-  const byObjective: Record<string, string[]> = {
-    "APP_INSTALLS":          ["app_install", "mobile_app_install"],
-    "OUTCOME_APP_PROMOTION": ["app_install", "mobile_app_install"],
-    "VIDEO_VIEWS":           ["thruplay", "video_view"],
-    "LINK_CLICKS":           ["landing_page_view", "link_click"],
-    "OUTCOME_TRAFFIC":       ["landing_page_view", "link_click", "outbound_clicks"],
-    "POST_ENGAGEMENT":       ["post_engagement", "page_engagement"],
-  };
-
-  const priority: string[] = objective ? (byObjective[objective] ?? []) : [];
-
-  for (const type of priority) {
-    const v = getVal(type);
-    if (v > 0) return v;
-  }
-
-  // Fallback geral (se não for campanha de mensagem)
-  const fallback = [
-    "lead",
-    "offsite_conversion.fb_pixel_lead",
-    "offsite_conversion.fb_pixel_custom.LEAD",
-    "onsite_conversion.lead",
-    "leadgen_grouped",
-    "purchase",
-    "offsite_conversion.fb_pixel_purchase",
-    "onsite_conversion.purchase",
-    "complete_registration",
-    "app_install",
-    "thruplay",
-    "landing_page_view",
-  ];
-
-  for (const type of fallback) {
-    if (priority.includes(type)) continue;
-    const v = getVal(type);
-    if (v > 0) return v;
-  }
-
-  return 0;
 }
 
 // ─── Extrair métrica de vídeo (p25/p50/p75/p95) de actions ou campo dedicado ─
@@ -1328,7 +1476,12 @@ serve(async (req) => {
             impressions: parseInt(row.impressions) || 0,
             clicks: extractClicks(row.actions, row.inline_link_clicks),
             cost: parseFloat(row.spend) || 0,
-            conversions: extractConversions(row.actions, campaignObjectiveMap.get(row.campaign_id), parseInt(row.reach) || 0, row.campaign_name || budgetMap.get(row.campaign_id)?.name),
+            conversions: extractConversions(
+              row.actions,
+              campaignObjectiveMap.get(row.campaign_id),
+              parseInt(row.reach) || 0,
+              `${row.ad_name || row.adset_name || ""} ${row.campaign_name || budgetMap.get(row.campaign_id)?.name || ""}`.trim()
+            ),
             reach: parseInt(row.reach) || 0,
             frequency: parseFloat(row.frequency || "0") || 0,
             video_p25: extractVideoMetric(row, "video_p25_watched_actions"),
@@ -1349,7 +1502,12 @@ serve(async (req) => {
             impressions: parseInt(row.impressions) || 0,
             clicks: extractClicks(row.actions, row.inline_link_clicks),
             cost: parseFloat(row.spend) || 0,
-            conversions: extractConversions(row.actions, campaignObjectiveMap.get(row.campaign_id), parseInt(row.reach) || 0, row.campaign_name || budgetMap.get(row.campaign_id)?.name),
+            conversions: extractConversions(
+              row.actions,
+              campaignObjectiveMap.get(row.campaign_id),
+              parseInt(row.reach) || 0,
+              `${row.ad_name || row.adset_name || ""} ${row.campaign_name || budgetMap.get(row.campaign_id)?.name || ""}`.trim()
+            ),
             reach: parseInt(row.reach) || 0,
             frequency: parseFloat(row.frequency || "0") || 0,
             video_p25: extractVideoMetric(row, "video_p25_watched_actions"),
