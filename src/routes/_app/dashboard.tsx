@@ -627,18 +627,14 @@ function Dashboard() {
                 onClick={() => setShowAccounts(!showAccounts)}
                 className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-xs font-black uppercase tracking-widest transition hover:border-primary/40 hover:bg-white/10"
               >
-                {selectedClientId !== "all" ? (
-                  <Users className="h-3.5 w-3.5 text-primary" />
-                ) : selectedAccountId !== "all" ? (
+                {selectedAccountId !== "all" ? (
                   selectedAccount?.platform === "Google Ads" ? <Globe className="h-3.5 w-3.5 text-[#4285F4]" /> : <Target className="h-3.5 w-3.5 text-primary" />
                 ) : (
                   <Target className="h-3.5 w-3.5 text-primary" />
                 )}
-                {selectedClientId !== "all"
-                  ? clients.find((c: any) => c.id === selectedClientId)?.name || "Cliente"
-                  : selectedAccountId !== "all"
-                    ? selectedAccount?.name
-                    : "Geral"}
+                {selectedAccountId !== "all"
+                  ? selectedAccount?.name
+                  : "Geral"}
                 <ChevronDown className={`h-3 w-3 transition ${showAccounts ? "rotate-180" : ""}`} />
               </button>
 
@@ -650,30 +646,14 @@ function Dashboard() {
                   >
                     <button
                       onClick={() => { setSelectedAccountId("all"); setSelectedClientId("all"); setShowAccounts(false); }}
-                      className={`flex w-full items-center gap-3 rounded-xl px-4 py-3 text-left text-[11px] font-bold uppercase tracking-widest transition ${selectedAccountId === "all" && selectedClientId === "all" ? "bg-primary/20 text-primary" : "hover:bg-white/5 text-muted-foreground"}`}
+                      className={`flex w-full items-center gap-3 rounded-xl px-4 py-3 text-left text-[11px] font-bold uppercase tracking-widest transition ${selectedAccountId === "all" ? "bg-primary/20 text-primary" : "hover:bg-white/5 text-muted-foreground"}`}
                     >
                       <Globe className="h-4 w-4" /> Visão Geral
                     </button>
                     <div className="my-2 h-px bg-white/5" />
 
-                    <div className="px-4 py-2 text-[9px] font-black uppercase tracking-widest text-muted-foreground/50">Por Cliente</div>
-                    <div className="max-h-[150px] overflow-y-auto custom-scrollbar">
-                      {clients.map((c: any) => (
-                        <button
-                          key={`client-${c.id}`}
-                          onClick={() => { setSelectedClientId(c.id); setSelectedAccountId("all"); setShowAccounts(false); }}
-                          className={`flex w-full items-center gap-3 rounded-xl px-4 py-3 text-left text-[11px] font-bold uppercase tracking-widest transition ${selectedClientId === c.id ? "bg-primary/20 text-primary" : "hover:bg-white/5 text-muted-foreground"}`}
-                        >
-                          <Users className="h-3.5 w-3.5 opacity-50" />
-                          {c.name}
-                        </button>
-                      ))}
-                    </div>
-
-                    <div className="my-2 h-px bg-white/5" />
-
                     <div className="px-4 py-2 text-[9px] font-black uppercase tracking-widest text-muted-foreground/50">Por Conta de Anúncio</div>
-                    <div className="max-h-[150px] overflow-y-auto custom-scrollbar">
+                    <div className="max-h-[300px] overflow-y-auto custom-scrollbar">
                       {accounts.map((acc: any) => (
                         <button
                           key={`acc-${acc.id}`}
@@ -702,14 +682,14 @@ function Dashboard() {
               onChange={handleDateChange}
             />
 
-            {(selectedAccountId !== "all" || selectedClientId !== "all") && (
+            {selectedAccountId !== "all" && (
               <button
                 onClick={() => { setSelectedAccountId("all"); setSelectedClientId("all"); }}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-primary/15 border border-primary/30 text-[10px] font-black uppercase tracking-wider text-primary hover:bg-primary/25 transition-all shadow-sm"
                 title="Limpar filtro e ver todas as contas"
               >
                 <span className="truncate max-w-[140px] sm:max-w-[200px]">
-                  Filtro: {selectedAccount?.name || clients.find((c: any) => c.id === selectedClientId)?.name || "Filtrado"}
+                  Conta: {selectedAccount?.name || "Filtrada"}
                 </span>
                 <X className="h-3 w-3 shrink-0" />
               </button>
