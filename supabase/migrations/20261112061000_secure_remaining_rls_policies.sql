@@ -16,7 +16,6 @@ CREATE POLICY "ad_sets_auth_policy" ON public.ad_sets
       WHERE profiles.id = auth.uid() 
       AND profiles.role IN ('admin', 'master_admin', 'ceo', 'diretor', 'gerente', 'coordenador', 'gestor_trafego', 'employee')
     )
-    OR auth.uid() IS NOT NULL
   )
   WITH CHECK (
     EXISTS (
@@ -38,7 +37,6 @@ CREATE POLICY "ads_auth_policy" ON public.ads
       WHERE profiles.id = auth.uid() 
       AND profiles.role IN ('admin', 'master_admin', 'ceo', 'diretor', 'gerente', 'coordenador', 'gestor_trafego', 'employee')
     )
-    OR auth.uid() IS NOT NULL
   )
   WITH CHECK (
     EXISTS (
@@ -60,7 +58,6 @@ CREATE POLICY "asset_metrics_auth_policy" ON public.asset_metrics
       WHERE profiles.id = auth.uid() 
       AND profiles.role IN ('admin', 'master_admin', 'ceo', 'diretor', 'gerente', 'coordenador', 'gestor_trafego', 'employee')
     )
-    OR auth.uid() IS NOT NULL
   )
   WITH CHECK (
     EXISTS (
@@ -83,7 +80,6 @@ CREATE POLICY "client_notes_auth_policy" ON public.client_notes
       WHERE profiles.id = auth.uid() 
       AND profiles.role IN ('admin', 'master_admin', 'ceo', 'diretor', 'gerente', 'coordenador', 'gestor_trafego', 'employee')
     )
-    OR auth.uid() IS NOT NULL
   )
   WITH CHECK (
     user_id = auth.uid()
@@ -106,7 +102,6 @@ CREATE POLICY "crm_pipelines_auth_policy" ON public.crm_pipelines
       WHERE profiles.id = auth.uid() 
       AND profiles.role IN ('admin', 'master_admin', 'ceo', 'diretor', 'gerente', 'coordenador', 'gestor_trafego', 'employee')
     )
-    OR auth.uid() IS NOT NULL
   )
   WITH CHECK (
     EXISTS (

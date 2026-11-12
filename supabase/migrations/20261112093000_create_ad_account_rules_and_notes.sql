@@ -30,8 +30,22 @@ ALTER TABLE public.ad_account_rules ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "ad_account_rules_auth" ON public.ad_account_rules;
 CREATE POLICY "ad_account_rules_auth" ON public.ad_account_rules
   FOR ALL TO authenticated
-  USING (auth.uid() IS NOT NULL)
-  WITH CHECK (auth.uid() IS NOT NULL);
+  USING (
+    created_by = auth.uid()
+    OR EXISTS (
+      SELECT 1 FROM public.profiles 
+      WHERE profiles.id = auth.uid() 
+      AND profiles.role IN ('admin', 'master_admin', 'ceo', 'diretor', 'gerente', 'coordenador', 'gestor_trafego', 'employee')
+    )
+  )
+  WITH CHECK (
+    created_by = auth.uid()
+    OR EXISTS (
+      SELECT 1 FROM public.profiles 
+      WHERE profiles.id = auth.uid() 
+      AND profiles.role IN ('admin', 'master_admin', 'ceo', 'diretor', 'gerente', 'coordenador', 'gestor_trafego', 'employee')
+    )
+  );
 
 -- 2. AD_ACCOUNT_NOTES
 CREATE TABLE IF NOT EXISTS public.ad_account_notes (
@@ -59,8 +73,22 @@ ALTER TABLE public.ad_account_notes ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "ad_account_notes_auth" ON public.ad_account_notes;
 CREATE POLICY "ad_account_notes_auth" ON public.ad_account_notes
   FOR ALL TO authenticated
-  USING (auth.uid() IS NOT NULL)
-  WITH CHECK (auth.uid() IS NOT NULL);
+  USING (
+    created_by = auth.uid()
+    OR EXISTS (
+      SELECT 1 FROM public.profiles 
+      WHERE profiles.id = auth.uid() 
+      AND profiles.role IN ('admin', 'master_admin', 'ceo', 'diretor', 'gerente', 'coordenador', 'gestor_trafego', 'employee')
+    )
+  )
+  WITH CHECK (
+    created_by = auth.uid()
+    OR EXISTS (
+      SELECT 1 FROM public.profiles 
+      WHERE profiles.id = auth.uid() 
+      AND profiles.role IN ('admin', 'master_admin', 'ceo', 'diretor', 'gerente', 'coordenador', 'gestor_trafego', 'employee')
+    )
+  );
 
 -- 3. VINCULAÇÃO DE MIND_MAPS COM AD_ACCOUNT
 DO $$

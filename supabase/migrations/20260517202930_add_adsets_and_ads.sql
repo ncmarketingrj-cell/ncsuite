@@ -56,6 +56,6 @@ ALTER TABLE public.ads ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.asset_metrics ENABLE ROW LEVEL SECURITY;
 
 -- Políticas de leitura para usuários autenticados
-CREATE POLICY "Enable read access for authenticated users" ON public.ad_sets FOR SELECT TO authenticated USING (auth.uid() IS NOT NULL);
-CREATE POLICY "Enable read access for authenticated users" ON public.ads FOR SELECT TO authenticated USING (auth.uid() IS NOT NULL);
-CREATE POLICY "Enable read access for authenticated users" ON public.asset_metrics FOR SELECT TO authenticated USING (auth.uid() IS NOT NULL);
+CREATE POLICY "Enable read access for authenticated users" ON public.ad_sets FOR SELECT TO authenticated USING (EXISTS (SELECT 1 FROM public.profiles WHERE profiles.id = auth.uid()));
+CREATE POLICY "Enable read access for authenticated users" ON public.ads FOR SELECT TO authenticated USING (EXISTS (SELECT 1 FROM public.profiles WHERE profiles.id = auth.uid()));
+CREATE POLICY "Enable read access for authenticated users" ON public.asset_metrics FOR SELECT TO authenticated USING (EXISTS (SELECT 1 FROM public.profiles WHERE profiles.id = auth.uid()));
