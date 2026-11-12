@@ -4,13 +4,13 @@ import { useQuery } from "@tanstack/react-query";
 import { useState, useMemo, useRef, useEffect } from "react";
 import {
   FileText, BarChart3, ArrowUpRight, Activity, Layers,
-  ChevronDown, Globe, Target, TrendingUp, TrendingDown, DollarSign, MousePointer2, Users, Trophy,
+  ChevronDown, Globe, Target, TrendingUp, TrendingDown, DollarSign, MousePointer2, Users, Trophy, Coins,
   Loader2, GaugeCircle, PieChart as PieChartIcon, Sparkles, Eye, HelpCircle, CheckCircle2,
   AlertCircle, ArrowRight, Zap, Award, X
 } from "lucide-react";
 import { classifyCampaignType } from "./cockpit";
 
-const COLORS = ["#ef4444", "#3b82f6", "#10b981", "#8b5cf6", "#f59e0b", "#06b6d4"];
+const COLORS = ["#ef4444", "#3b82f6", "#10b981", "#8b5cf6", "#f59e0b", "#06b6d4", "#ec4899", "#14b8a6"];
 import { supabase } from "@/integrations/supabase-external/client";
 import {
   Tooltip, ResponsiveContainer,
@@ -27,6 +27,32 @@ export const Route = createFileRoute("/_app/dashboard")({
   head: () => ({ meta: [{ title: "Dashboard — NC Performance Suite" }] }),
   component: Dashboard,
 });
+
+function CustomPieTooltip({ active, payload }: any) {
+  if (active && payload && payload.length) {
+    const data = payload[0]?.payload;
+    if (!data) return null;
+    return (
+      <div className="rounded-xl border border-white/10 bg-popover/95 backdrop-blur-md px-3.5 py-2.5 shadow-2xl z-50 pointer-events-none text-left">
+        <p className="text-xs font-bold text-popover-foreground max-w-[220px] truncate">{data.name}</p>
+        <div className="flex items-center gap-2 mt-1">
+          <span className="text-xs font-mono font-black text-primary">
+            R$ {Number(data.value || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          </span>
+          <span className="text-[10px] font-mono text-muted-foreground font-bold">
+            • {(data.percentage ?? 0).toFixed(1)}%
+          </span>
+        </div>
+        {data.conversions > 0 && (
+          <p className="text-[10px] text-emerald-400 font-mono mt-0.5">
+            {data.conversions} {data.conversions === 1 ? 'conversão' : 'conversões'}
+          </p>
+        )}
+      </div>
+    );
+  }
+  return null;
+}
 
 function Dashboard() {
   const navigate = useNavigate();
@@ -227,11 +253,30 @@ function Dashboard() {
       });
 
       const barData = campaignsRanked.slice(0, 8).map(c => ({ name: c.name.toUpperCase(), Gasto: c.cost, Resultados: c.conversions }));
-      const pieData = campaignsRanked.filter(c => c.cost > 0).slice(0, 6).map(c => ({ 
-        name: c.name, 
+      
+      const activeCampaigns = campaignsRanked.filter((c: any) => c.cost > 0);
+      const topForPie = activeCampaigns.slice(0, 7);
+      const othersForPie = activeCampaigns.slice(7);
+      const otherCost = othersForPie.reduce((acc: number, c: any) => acc + c.cost, 0);
+      const otherPercentage = othersForPie.reduce((acc: number, c: any) => acc + c.percentage, 0);
+
+      const pieData = topForPie.map((c: any) => ({
+        id: c.id,
+        name: c.name,
         value: c.cost,
-        percentage: c.percentage 
+        percentage: c.percentage,
+        conversions: c.conversions || 0,
       }));
+
+      if (otherCost > 0) {
+        pieData.push({
+          id: undefined,
+          name: `Outras (${othersForPie.length})`,
+          value: otherCost,
+          percentage: otherPercentage,
+          conversions: othersForPie.reduce((acc: number, c: any) => acc + (c.conversions || 0), 0),
+        });
+      }
 
       // Estatísticas executivas do período
       let bestDay = chartData.length > 0 ? chartData[0] : null;
@@ -906,93 +951,226 @@ function Dashboard() {
         </motion.div>
 
         {/* DISTRIBUIÇÃO DA VERBA PUBLICITÁRIA */}
-        <motion.div
-          initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}
-          className="glass-panel p-4 sm:p-6 lg:p-8 min-w-0 flex flex-col justify-between"
-        >
-          <div>
-            <div className="mb-4 flex items-center justify-between">
-              <div>
-                <h3 className="header-sport text-xs sm:text-sm font-black tracking-widest uppercase flex items-center gap-2">
-                  <PieChartIcon className="h-4 w-4 text-primary" />
-                  Distribuição da Verba Publicitária
-                </h3>
-                <p className="text-[10px] text-muted-foreground uppercase mt-1 tracking-widest">
-                  Divisão percentual e financeira do orçamento entre as campanhas
-                </p>
-              </div>
-            </div>
+        {(() => {
+          const pieList = performanceData?.pieData || [];
+          const totalSpend = performanceData?.totals?.cost || 0;
+          const topLeader = pieList[0];
+          const top2Spend = (pieList[0]?.value || 0) + (pieList[1]?.value || 0);
+          const top2Share = totalSpend > 0 ? (top2Spend / totalSpend) * 100 : 0;
+          const totalCampaignsCount = performanceData?.campaignsRanked?.length || pieList.length || 1;
+          const avgSpendPerCamp = totalSpend / Math.max(1, totalCampaignsCount);
 
-            {/* Layout Duplo: Donut na Esquerda + Legenda Detalhada na Direita */}
-            <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-center">
-              <div className="md:col-span-5 h-[220px] relative flex items-center justify-center">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart margin={{ top: 0, right: 0, bottom: 0, left: 0 }}>
-                    <Pie
-                      data={performanceData?.pieData || []}
-                      cx="50%"
-                      cy="50%"
-                      innerRadius="60%"
-                      outerRadius="85%"
-                      paddingAngle={4}
-                      dataKey="value"
-                      stroke="none"
-                    >
-                      {(performanceData?.pieData || []).map((_, index) => (
-                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                      ))}
-                    </Pie>
-                    <Tooltip
-                      contentStyle={{ backgroundColor: 'hsl(var(--background))', borderColor: 'hsl(var(--border))', borderRadius: '12px' }}
-                      itemStyle={{ fontSize: '11px', fontWeight: 800, fontFamily: 'monospace' }}
-                      formatter={(value: any) => [`R$ ${Number(value).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, 'Investimento']}
-                    />
-                  </PieChart>
-                </ResponsiveContainer>
-                <div className="absolute inset-0 flex items-center justify-center pointer-events-none flex-col">
-                  <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Total</span>
-                  <span className="text-base sm:text-lg font-black font-mono mt-0.5 text-foreground">
-                    R$ {(performanceData?.totals?.cost || 0).toLocaleString('pt-BR', { maximumFractionDigits: 0 })}
+          return (
+            <motion.div
+              initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}
+              className="glass-panel p-4 sm:p-6 lg:p-8 min-w-0 flex flex-col justify-between"
+            >
+              <div>
+                <div className="mb-4 flex items-center justify-between">
+                  <div>
+                    <h3 className="header-sport text-xs sm:text-sm font-black tracking-widest uppercase flex items-center gap-2">
+                      <PieChartIcon className="h-4 w-4 text-primary" />
+                      Distribuição da Verba Publicitária
+                    </h3>
+                    <p className="text-[10px] text-muted-foreground uppercase mt-1 tracking-widest">
+                      Divisão percentual e financeira do orçamento entre as campanhas
+                    </p>
+                  </div>
+                  <span className="text-[9px] font-black uppercase tracking-wider text-muted-foreground bg-white/5 border border-white/10 px-2 py-1 rounded-lg">
+                    {pieList.length} {pieList.length === 1 ? 'Fatia' : 'Fatias'}
                   </span>
+                </div>
+
+                {/* Layout Duplo: Donut na Esquerda + Legenda Detalhada na Direita */}
+                <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-center">
+                  <div className="md:col-span-5 h-[230px] sm:h-[250px] relative flex items-center justify-center">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart margin={{ top: 0, right: 0, bottom: 0, left: 0 }}>
+                        <Pie
+                          data={pieList}
+                          cx="50%"
+                          cy="50%"
+                          innerRadius="65%"
+                          outerRadius="90%"
+                          paddingAngle={3}
+                          dataKey="value"
+                          stroke="hsl(var(--background))"
+                          strokeWidth={2}
+                        >
+                          {pieList.map((_, index) => (
+                            <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                          ))}
+                        </Pie>
+                        <Tooltip content={<CustomPieTooltip />} />
+                      </PieChart>
+                    </ResponsiveContainer>
+                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none flex-col z-0">
+                      <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Total</span>
+                      <span className="text-base sm:text-lg font-black font-mono mt-0.5 text-foreground">
+                        R$ {totalSpend.toLocaleString('pt-BR', { maximumFractionDigits: 0 })}
+                      </span>
+                      <span className="text-[9px] font-mono text-muted-foreground/70 mt-0.5">
+                        {totalCampaignsCount} {totalCampaignsCount === 1 ? 'campanha' : 'campanhas'}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Lista Detalhada com Nome, % e R$ com barras de progresso */}
+                  <div className="md:col-span-7 space-y-2 max-h-[250px] overflow-y-auto custom-scrollbar pr-1">
+                    {pieList.map((item: any, idx: number) => {
+                      const pct = item.percentage ? item.percentage : ((item.value / (totalSpend || 1)) * 100);
+                      const color = COLORS[idx % COLORS.length];
+                      return (
+                        <div
+                          key={idx}
+                          onClick={() => {
+                            if (item.id) {
+                              navigate({ to: "/metricas", search: { campaign: item.id } });
+                            }
+                          }}
+                          className={`group p-2.5 rounded-xl bg-white/[0.02] border border-white/5 hover:bg-white/[0.05] hover:border-white/10 transition-all ${item.id ? 'cursor-pointer' : ''}`}
+                        >
+                          <div className="flex items-center justify-between gap-2 mb-1.5">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <div
+                                className="h-2.5 w-2.5 rounded-full shrink-0 shadow-sm"
+                                style={{ backgroundColor: color }}
+                              />
+                              <span className="text-xs font-bold text-foreground truncate max-w-[130px] sm:max-w-[170px] group-hover:text-primary transition-colors">
+                                {item.name}
+                              </span>
+                            </div>
+                            <div className="text-right shrink-0 flex items-center gap-2">
+                              <span className="text-xs font-black font-mono text-foreground">
+                                {pct.toFixed(1)}%
+                              </span>
+                              <span className="text-[11px] font-mono text-muted-foreground">
+                                R$ {item.value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Mini Barra de Proporção */}
+                          <div className="h-1 w-full bg-white/5 rounded-full overflow-hidden">
+                            <div
+                              className="h-full rounded-full transition-all duration-500"
+                              style={{
+                                width: `${Math.min(100, Math.max(3, pct))}%`,
+                                backgroundColor: color,
+                              }}
+                            />
+                          </div>
+                        </div>
+                      );
+                    })}
+
+                    {pieList.length === 0 && (
+                      <div className="text-center py-8 text-xs text-muted-foreground/60">
+                        Sem movimentação financeira no período.
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Grid Estratégico de Alocação de Capital (Preenchimento inteligente do espaço) */}
+                <div className="mt-4 pt-4 border-t border-white/5 grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                  {/* Card 1: Campanha Líder */}
+                  <div className="p-3 rounded-xl bg-white/[0.02] border border-white/5 flex flex-col justify-between">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[9px] font-black uppercase tracking-wider text-muted-foreground">Líder de Verba</span>
+                      <Trophy className="h-3.5 w-3.5 text-amber-400" />
+                    </div>
+                    <div className="mt-2">
+                      <div className="text-sm font-black font-mono text-foreground truncate">
+                        {topLeader ? `${(topLeader.percentage ?? ((topLeader.value / (totalSpend || 1)) * 100)).toFixed(1)}%` : "0%"}
+                      </div>
+                      <p className="text-[10px] text-muted-foreground truncate mt-0.5" title={topLeader?.name || "Nenhuma"}>
+                        {topLeader?.name || "Nenhuma"}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Card 2: Média por Campanha */}
+                  <div className="p-3 rounded-xl bg-white/[0.02] border border-white/5 flex flex-col justify-between">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[9px] font-black uppercase tracking-wider text-muted-foreground">Média / Campanha</span>
+                      <Coins className="h-3.5 w-3.5 text-emerald-400" />
+                    </div>
+                    <div className="mt-2">
+                      <div className="text-sm font-black font-mono text-foreground truncate">
+                        R$ {avgSpendPerCamp.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </div>
+                      <p className="text-[10px] text-muted-foreground truncate mt-0.5">
+                        Em {totalCampaignsCount} {totalCampaignsCount === 1 ? 'campanha' : 'campanhas'}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Card 3: Concentração Top 2 */}
+                  <div className="p-3 rounded-xl bg-white/[0.02] border border-white/5 flex flex-col justify-between">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[9px] font-black uppercase tracking-wider text-muted-foreground">Concentração Top 2</span>
+                      <Zap className="h-3.5 w-3.5 text-primary" />
+                    </div>
+                    <div className="mt-2">
+                      <div className="text-sm font-black font-mono text-foreground truncate">
+                        {top2Share.toFixed(0)}%
+                      </div>
+                      <p className="text-[10px] font-semibold truncate mt-0.5">
+                        {top2Share >= 75 ? (
+                          <span className="text-amber-400">Alta concentração</span>
+                        ) : top2Share >= 45 ? (
+                          <span className="text-blue-400">Moderada</span>
+                        ) : (
+                          <span className="text-emerald-400">Diversificada</span>
+                        )}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Card 4: Total Alocado */}
+                  <div className="p-3 rounded-xl bg-white/[0.02] border border-white/5 flex flex-col justify-between">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[9px] font-black uppercase tracking-wider text-muted-foreground">Total Alocado</span>
+                      <DollarSign className="h-3.5 w-3.5 text-primary" />
+                    </div>
+                    <div className="mt-2">
+                      <div className="text-sm font-black font-mono text-foreground truncate">
+                        R$ {totalSpend.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </div>
+                      <p className="text-[10px] text-muted-foreground truncate mt-0.5">
+                        100% monitorado
+                      </p>
+                    </div>
+                  </div>
                 </div>
               </div>
 
-              {/* Lista Detalhada com Nome, % e R$ */}
-              <div className="md:col-span-7 space-y-2 max-h-[240px] overflow-y-auto custom-scrollbar pr-1">
-                {(performanceData?.pieData || []).map((item: any, idx: number) => (
-                  <div key={idx} className="flex items-center justify-between gap-2 p-2 rounded-xl bg-white/[0.02] border border-white/5 hover:bg-white/[0.04] transition-colors">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <div className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: COLORS[idx % COLORS.length] }} />
-                      <span className="text-xs font-bold text-foreground truncate max-w-[140px] sm:max-w-[160px]">
-                        {item.name}
-                      </span>
-                    </div>
-                    <div className="text-right shrink-0">
-                      <span className="text-xs font-black font-mono text-foreground">
-                        {item.percentage ? item.percentage.toFixed(1) : ((item.value / (performanceData?.totals?.cost || 1)) * 100).toFixed(1)}%
-                      </span>
-                      <span className="text-[10px] font-mono text-muted-foreground ml-2">
-                        R$ {item.value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                      </span>
-                    </div>
-                  </div>
-                ))}
-
-                {(performanceData?.pieData || []).length === 0 && (
-                  <div className="text-center py-6 text-xs text-muted-foreground/60">
-                    Sem movimentação financeira no período.
-                  </div>
-                )}
+              {/* Rodapé Executivo de Análise de Verba */}
+              <div className="mt-4 pt-3 border-t border-white/5 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-[10px]">
+                <div className="flex items-center gap-1.5 text-muted-foreground min-w-0">
+                  <Sparkles className="h-3.5 w-3.5 text-primary shrink-0" />
+                  <span className="truncate">
+                    {topLeader ? (
+                      <>
+                        A campanha líder concentra <strong className="text-foreground font-mono">{(topLeader.percentage ?? ((topLeader.value / (totalSpend || 1)) * 100)).toFixed(0)}%</strong> da verba. {top2Share >= 70 ? "Alocação altamente focada nas frentes prioritárias." : "Orçamento distribuído entre múltiplas iniciativas."}
+                      </>
+                    ) : (
+                      "Nenhum investimento registrado no período."
+                    )}
+                  </span>
+                </div>
+                <button
+                  onClick={() => navigate({ to: "/metricas" })}
+                  className="inline-flex items-center gap-1 text-primary hover:text-primary/80 font-bold uppercase tracking-wider text-[9px] shrink-0 transition-colors"
+                >
+                  <span>Ver Métricas</span>
+                  <ArrowRight className="h-3 w-3" />
+                </button>
               </div>
-            </div>
-          </div>
-
-          <div className="mt-4 pt-3 border-t border-white/5 text-[10px] text-muted-foreground">
-            💡 {(performanceData?.pieData || []).length > 0 ? (
-              <>A campanha líder concentra <strong className="text-foreground">{((performanceData?.pieData?.[0]?.value / (performanceData?.totals?.cost || 1)) * 100).toFixed(0)}%</strong> do orçamento total.</>
-            ) : "Nenhum investimento registrado."}
-          </div>
-        </motion.div>
+            </motion.div>
+          );
+        })()}
 
       </div>
 
