@@ -376,3 +376,4 @@ export function MindMeisterNode({ id, data, selected }: { id: string; data: any;
     </div>
   );
 }
+

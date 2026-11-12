@@ -421,3 +421,4 @@ export async function deleteMindMap(mapId: string): Promise<boolean> {
     return false;
   }
 }
+

@@ -140,3 +140,4 @@ export const MIND_MAP_TEMPLATES: MindMapTemplate[] = [
     ],
   },
 ];
+

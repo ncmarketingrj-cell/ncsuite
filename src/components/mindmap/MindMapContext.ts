@@ -17,3 +17,4 @@ export const MindMapActionsContext = createContext<MindMapActionsCtx>({
   deleteNode: () => {},
   searchTerm: "",
 });
+
