@@ -1055,7 +1055,13 @@ function Shell() {
                       className="absolute right-0 top-full z-50 mt-2 w-56 rounded-2xl border border-border bg-card p-2 shadow-2xl"
                     >
                       {/* Identity */}
-                      <div className="flex items-center gap-3 px-3 py-2.5 border-b border-border mb-1.5">
+                      <Link
+                        to="/config"
+                        search={{ tab: "conta" } as any}
+                        onClick={() => setShowUserMenu(false)}
+                        className="flex items-center gap-3 px-3 py-2.5 border-b border-border mb-1.5 hover:bg-muted/40 transition-colors rounded-xl"
+                        title="Ir para Meu Perfil em Configurações"
+                      >
                         <div className="h-8 w-8 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center overflow-hidden shrink-0">
                           {profile?.avatar_url
                             ? <img src={profile.avatar_url} alt="Avatar" className="h-full w-full object-cover" />
@@ -1065,14 +1071,20 @@ function Shell() {
                           <p className="text-xs font-bold truncate">{profile?.full_name || "Usuário"}</p>
                           <p className="text-[10px] text-muted-foreground truncate">{user?.email}</p>
                         </div>
-                      </div>
+                      </Link>
                       {/* Actions */}
-                      <button
-                        onClick={() => { setIsProfileOpen(true); setShowUserMenu(false); }}
-                        className="w-full flex items-center gap-2.5 rounded-xl px-3 py-2 text-[12px] font-medium text-foreground hover:bg-muted/50 transition-all"
+                      <Link
+                        to="/config"
+                        search={{ tab: "conta" } as any}
+                        onClick={() => setShowUserMenu(false)}
+                        className={`w-full flex items-center gap-2.5 rounded-xl px-3 py-2 text-[12px] font-medium transition-all ${
+                          path.startsWith("/config")
+                            ? "bg-primary/10 text-primary font-bold"
+                            : "text-foreground hover:bg-muted/50"
+                        }`}
                       >
                         <User className="h-3.5 w-3.5 text-muted-foreground" /> Meu Perfil
-                      </button>
+                      </Link>
                       <Link
                         to={"/automacoes" as any}
                         onClick={() => setShowUserMenu(false)}

@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState, useEffect, useMemo, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Settings, User, Building2, Plug, BookOpen, Cpu, Plus, Trash2, Globe, Check, X, Loader2, Wifi, WifiOff, ChevronDown, Zap, Brain, LayoutDashboard, FileText, Target, Upload, Send, Users, Database, Lock, MessageSquareWarning, Bug, Lightbulb, Frown, HelpCircle, StickyNote, Filter, Eye, Clock, Megaphone, Share2, RefreshCw, Instagram, Sparkles, Crown, Shield, ShieldCheck, Key, EyeOff, Copy, UserCheck, UserX, Award, Briefcase, Phone, Palette, ArrowUpDown, ChevronRight, AlertTriangle } from "lucide-react";
@@ -28,6 +28,9 @@ import { AvatarUpload } from "@/components/AvatarUpload";
 
 export const Route = createFileRoute("/_app/config")({
   head: () => ({ meta: [{ title: "Configurações — NC Suite" }] }),
+  validateSearch: (search: Record<string, unknown>): { tab?: string } => ({
+    tab: typeof search.tab === "string" ? search.tab : undefined,
+  }),
   component: ConfigPage,
 });
 
@@ -44,8 +47,26 @@ const TABS = [
 type Tab = typeof TABS[number]["id"];
 
 function ConfigPage() {
+  const search = Route.useSearch();
+  const navigate = useNavigate();
   const { user } = useAuth();
-  const [tab, setTab] = useState<Tab>("conta");
+  const [tab, setTab] = useState<Tab>(() => {
+    if (search.tab && TABS.some(t => t.id === search.tab)) {
+      return search.tab as Tab;
+    }
+    return "conta";
+  });
+
+  useEffect(() => {
+    if (search.tab && TABS.some(t => t.id === search.tab) && search.tab !== tab) {
+      setTab(search.tab as Tab);
+    }
+  }, [search.tab]);
+
+  const handleTabChange = (newTab: Tab) => {
+    setTab(newTab);
+    navigate({ search: { tab: newTab } as any, replace: true });
+  };
 
   const { data: profile } = useQuery({
     queryKey: ["current_user_profile", user?.id],
@@ -98,7 +119,7 @@ function ConfigPage() {
         {visibleTabs.map((t) => (
           <button
             key={t.id}
-            onClick={() => setTab(t.id)}
+            onClick={() => handleTabChange(t.id)}
             className={`relative flex items-center gap-2 whitespace-nowrap rounded-full px-5 py-2.5 text-xs font-bold transition-all ${tab === t.id ? "bg-primary text-primary-foreground shadow-glow-sm" : "text-muted-foreground hover:bg-white/[0.05]"}`}
           >
             <t.icon className="h-3.5 w-3.5" /> {t.label}
