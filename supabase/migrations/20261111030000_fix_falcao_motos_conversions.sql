@@ -211,3 +211,4 @@ WHERE UPPER(name) ~ '(MSG|MENSAGEM|WPP|WHATSAPP|DIRECT|CONVERSA)'
 
 -- Notificar recarga de schema para postgREST
 NOTIFY pgrst, 'reload schema';
+
