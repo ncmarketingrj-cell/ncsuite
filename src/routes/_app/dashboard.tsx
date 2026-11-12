@@ -105,6 +105,8 @@ function Dashboard() {
 
   const { data: accounts = [] } = useQuery({
     queryKey: ["ad-accounts"],
+    refetchInterval: 3 * 60 * 1000,
+    refetchIntervalInBackground: true,
     queryFn: async () => {
       const { data } = await supabase.from("ad_accounts").select("*").order("name");
       return (data as any[]) ?? [];
@@ -113,6 +115,9 @@ function Dashboard() {
 
   const { data: performanceData } = useQuery({
     queryKey: ["dash-performance-custom", selectedAccountId, selectedClientId, dateFrom, dateTo],
+    refetchInterval: 3 * 60 * 1000, // Atualização automática em tempo real a cada 3 min
+    refetchIntervalInBackground: true,
+    staleTime: 30 * 1000,
     queryFn: async () => {
       const parseLocalDate = (str: string) => {
         const [y, m, d] = str.split("-").map(Number);
@@ -364,6 +369,9 @@ function Dashboard() {
   // ─── Query: Tabela de Desempenho de Contas (Command Center) ───────────────────
   const { data: accountsTableData = [], isLoading: isLoadingTable } = useQuery({
     queryKey: ["dashboard-accounts-table-data", dateFrom, dateTo],
+    refetchInterval: 3 * 60 * 1000, // Atualização automática em tempo real a cada 3 min
+    refetchIntervalInBackground: true,
+    staleTime: 30 * 1000,
     queryFn: async () => {
       const { data: adAccounts } = await (supabase as any)
         .from("ad_accounts")

@@ -113,7 +113,11 @@ export function SyncButton({ mode = "quick" }: SyncButtonProps) {
       if (data?.error) throw new Error(data.error);
 
       if (body.time_range?.since && body.time_range?.until) {
-        await calibrateMetaConversionsFromGraph(supabase, body.time_range.since, body.time_range.until, "all");
+        try {
+          await calibrateMetaConversionsFromGraph(supabase, body.time_range.since, body.time_range.until, "all");
+        } catch (calibErr) {
+          console.warn("[SyncButton] Calibração local ignorada:", calibErr);
+        }
       }
 
       const msg = data?.message || (

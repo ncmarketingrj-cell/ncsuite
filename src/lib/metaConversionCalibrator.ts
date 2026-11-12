@@ -430,30 +430,36 @@ async function fetchMetaGraphPaginated(
   token: string,
   params: Record<string, string> = {}
 ): Promise<any[]> {
-  const url = new URL(`${META_GRAPH_URL}${endpoint}`);
-  url.searchParams.set("access_token", token);
-  for (const [k, v] of Object.entries(params)) {
-    url.searchParams.set(k, v);
-  }
-
-  const results: any[] = [];
-  let nextUrl: string | null = url.toString();
-  let page = 0;
-
-  while (nextUrl && page < 10) {
-    page++;
-    const res: Response = await fetch(nextUrl);
-    const data: any = await res.json();
-    if (!res.ok || data.error) {
-      throw new Error(data?.error?.message || `Meta HTTP ${res.status}`);
+  try {
+    const url = new URL(`${META_GRAPH_URL}${endpoint}`);
+    url.searchParams.set("access_token", token);
+    for (const [k, v] of Object.entries(params)) {
+      url.searchParams.set(k, v);
     }
-    if (Array.isArray(data.data)) {
-      results.push(...data.data);
-    }
-    nextUrl = data.paging?.next || null;
-  }
 
-  return results;
+    const results: any[] = [];
+    let nextUrl: string | null = url.toString();
+    let page = 0;
+
+    while (nextUrl && page < 10) {
+      page++;
+      const res: Response = await fetch(nextUrl);
+      const data: any = await res.json();
+      if (!res.ok || data?.error) {
+        console.warn(`[Calibrator] Meta Graph API [${endpoint}]:`, data?.error?.message || `HTTP ${res.status}`);
+        return results;
+      }
+      if (Array.isArray(data.data)) {
+        results.push(...data.data);
+      }
+      nextUrl = data.paging?.next || null;
+    }
+
+    return results;
+  } catch (err) {
+    console.warn(`[Calibrator] Chamada ao Meta Graph bloqueada ou falhou no browser [${endpoint}]:`, err);
+    return [];
+  }
 }
 
 export async function calibrateMetaConversionsFromGraph(

@@ -331,7 +331,11 @@ function extractConversions(actions: any[] = [], objective?: string, reach: numb
   const messagingCount = getMessagingConversationsStarted(actions);
 
   if (isMessaging) {
-    return messagingCount;
+    if (messagingCount > 0) return messagingCount;
+    // Fallback de segurança: se messagingCount deu 0, verifica se há contato ou lead registrado no WhatsApp
+    const leadOrContact = Math.max(getVal("onsite_conversion.lead"), getVal("lead"), getVal("contact"), getVal("onsite_conversion.contact"));
+    if (leadOrContact > 0) return leadOrContact;
+    return 0;
   }
 
   // Se não foi identificado pelo nome mas possui conversas iniciadas registradas em actions:
