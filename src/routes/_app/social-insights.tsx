@@ -1,559 +1,458 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import { useState, useEffect, useMemo, useCallback, Fragment } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   BarChart3, Users, Eye, Globe, Sparkles, Heart, MessageSquare,
-  ArrowLeft, RefreshCw, AlertCircle, Instagram, Facebook, ThumbsUp,
+  RefreshCw, Instagram, Facebook, ThumbsUp,
   Loader2, Bot, UserPlus, Activity, Clock, TrendingUp, TrendingDown,
-  Wifi, WifiOff, Image, Film, Layers, Share2, Calendar, Target,
-  Zap, Award, Compass, HelpCircle, ChevronDown, Check, Play, ExternalLink,
-  Search, Filter, Info, MessageCircle, BarChart, ChevronRight
+  Wifi, WifiOff, Image as ImageIcon, Film, Layers, Share2, Calendar,
+  Bookmark, ExternalLink, MessageCircle, ChevronDown, AlertCircle, Play
 } from "lucide-react";
 import {
-  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  BarChart as RechartsBarChart, Bar, PieChart, Pie, Cell, LineChart, Line, Legend,
-  RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar
+  XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+  BarChart, Bar, Cell, ReferenceLine
 } from "recharts";
-import { supabase } from "@/integrations/supabase-external/client";
 import { toast } from "sonner";
-import { format, parseISO, eachDayOfInterval, subDays } from "date-fns";
-import { ptBR } from "date-fns/locale";
+import { format, parseISO } from "date-fns";
 import { useGlobalDate, getLocalDateString } from "@/contexts/DateContext";
 import { DateRangePicker } from "@/components/DateRangePicker";
+import { supabase } from "@/integrations/supabase-external/client";
+import {
+  fetchLiveSocialAccounts,
+  fetchRealSocialInsights,
+  type RealSocialPost,
+} from "@/lib/metaSocialService";
+import ReactMarkdown from "react-markdown";
 
 export const Route = createFileRoute("/_app/social-insights")({
   head: () => ({ meta: [{ title: "Insights do Meta — NC Suite" }] }),
   component: SocialInsightsPage,
 });
 
-// ─── Tipos e Interfaces ───────────────────────────────────────────────────────
-interface DailyPoint {
-  date: string;
-  label: string;
-  reachIg: number;
-  reachFb: number;
-  impressionsIg: number;
-  impressionsFb: number;
-  engIg: number;
-  engFb: number;
-  newFollowersIg: number;
-  newFollowersFb: number;
-  profileViews: number;
-  clicks: number;
-}
-
-interface KPIs {
-  followersIg: number;
-  followersFb: number;
-  newFollowersIg: number;
-  newFollowersFb: number;
-  reachIg: number;
-  reachFb: number;
-  impressionsIg: number;
-  impressionsFb: number;
-  engIg: number;
-  engFb: number;
-  profileViews: number;
-  clicks: number;
-  growthReachIg: number;
-  growthReachFb: number;
-  growthFollowersIg: number;
-  growthFollowersFb: number;
-  demographics: { 
-    gender: { male: number; female: number }; 
-    age: { range: string; male: number; female: number }[] 
-  };
-}
-
-// ─── Gerador de dados determinísticos para a concessionária real-like ──────────
-function seedRng(seed: number) {
-  let s = seed;
-  return () => { s = (s * 1664525 + 1013904223) & 0xffffffff; return Math.abs(s) / 0x7fffffff; };
-}
-
-function buildPageSeed(pageId: string, pageName: string) {
-  let seed = 0;
-  const str = pageId + pageName;
-  for (let i = 0; i < str.length; i++) seed += str.charCodeAt(i) * (i + 1);
-  return seed;
-}
-
-// Produz dados 100% reais, sem warnings de teste ou dados fictícios
-function generateHighFidelityDailyData(
-  pageId: string,
-  pageName: string,
-  dateFrom: string,
-  dateTo: string
-): DailyPoint[] {
-  const baseSeed = buildPageSeed(pageId, pageName);
-  const d1 = new Date(dateFrom + "T00:00:00");
-  const d2 = new Date(dateTo + "T00:00:00");
-  const days: DailyPoint[] = [];
-  const cur = new Date(d1);
-
-  while (cur <= d2) {
-    const dayStr = cur.toISOString().split("T")[0];
-    let daySeed = baseSeed;
-    for (const c of dayStr) daySeed += c.charCodeAt(0) * 31;
-    const rng = seedRng(daySeed);
-
-    const baseReach = Math.round((2800 + rng() * 1900 + rng() * 1100));
-    days.push({
-      date: dayStr,
-      label: format(cur, "dd/MM"),
-      reachIg: Math.round(baseReach * (0.65 + rng() * 0.15)),
-      reachFb: Math.round(baseReach * (0.25 + rng() * 0.10)),
-      impressionsIg: Math.round(baseReach * (1.6 + rng() * 0.4)),
-      impressionsFb: Math.round(baseReach * (0.60 + rng() * 0.15)),
-      engIg: Math.round(baseReach * (0.08 + rng() * 0.04)),
-      engFb: Math.round(baseReach * (0.04 + rng() * 0.02)),
-      newFollowersIg: Math.max(0, Math.round((14 + rng() * 18))),
-      newFollowersFb: Math.max(0, Math.round((3 + rng() * 8))),
-      profileViews: Math.round(baseReach * (0.15 + rng() * 0.05)),
-      clicks: Math.round(baseReach * (0.03 + rng() * 0.02)),
-    });
-    cur.setDate(cur.getDate() + 1);
-  }
-  return days;
-}
-
-function computeKPIs(dailyData: DailyPoint[], baseSeed: number): KPIs {
-  const rng = seedRng(baseSeed);
-  const reachIg = dailyData.reduce((a, d) => a + d.reachIg, 0);
-  const reachFb = dailyData.reduce((a, d) => a + d.reachFb, 0);
-  const impressionsIg = dailyData.reduce((a, d) => a + d.impressionsIg, 0);
-  const impressionsFb = dailyData.reduce((a, d) => a + d.impressionsFb, 0);
-  const engIg = dailyData.reduce((a, d) => a + d.engIg, 0);
-  const engFb = dailyData.reduce((a, d) => a + d.engFb, 0);
-  const newFollowersIg = dailyData.reduce((a, d) => a + d.newFollowersIg, 0);
-  const newFollowersFb = dailyData.reduce((a, d) => a + d.newFollowersFb, 0);
-  const profileViews = dailyData.reduce((a, d) => a + d.profileViews, 0);
-  const clicks = dailyData.reduce((a, d) => a + d.clicks, 0);
-
-  return {
-    followersIg: 18450 + Math.round(rng() * 400),
-    followersFb: 6120 + Math.round(rng() * 150),
-    newFollowersIg,
-    newFollowersFb,
-    reachIg,
-    reachFb,
-    impressionsIg,
-    impressionsFb,
-    engIg,
-    engFb,
-    profileViews,
-    clicks,
-    growthReachIg: 14.8,
-    growthReachFb: 6.2,
-    growthFollowersIg: 3.5,
-    growthFollowersFb: 1.1,
-    demographics: {
-      gender: { male: 68, female: 32 }, // segmento automotivo tende a ser mais masculino
-      age: [
-        { range: "18-24", male: 8, female: 4 },
-        { range: "25-34", male: 32, female: 12 },
-        { range: "35-44", male: 22, female: 9 },
-        { range: "45-54", male: 11, female: 5 },
-        { range: "55+", male: 5, female: 2 },
-      ]
-    }
-  };
-}
-
-// ─── Heatmap de Engajamento (Dias x Horas) ────────────────────────────────────
 const DAYS_OF_WEEK = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
 const HOURS = Array.from({ length: 24 }, (_, i) => `${String(i).padStart(2, "0")}h`);
 
-// Matriz de calor determinística baseada no segmento automotivo
-function getEngagementMatrix(baseSeed: number) {
-  const rng = seedRng(baseSeed);
-  const matrix: number[][] = [];
-  
-  for (let day = 0; day < 7; day++) {
-    const row: number[] = [];
-    for (let hour = 0; hour < 24; hour++) {
-      let weight = 0.15;
-      
-      // Horários comerciais e finais de tarde (picos)
-      if (hour >= 18 && hour <= 21) {
-        weight = 0.85 + rng() * 0.15;
-      } else if (hour >= 11 && hour <= 14) {
-        weight = 0.70 + rng() * 0.20;
-      } else if (hour >= 8 && hour <= 17) {
-        weight = 0.50 + rng() * 0.20;
-      } else if (hour >= 22 || hour <= 6) {
-        weight = 0.05 + rng() * 0.10;
-      }
-      
-      // Fim de semana tem pico de tarde
-      if (day === 0 || day === 6) {
-        if (hour >= 14 && hour <= 18) {
-          weight = 0.90;
-        }
-      }
-      row.push(weight);
-    }
-    matrix.push(row);
+type ChartMetricKey = "reachIg" | "newFollowers" | "engFb" | "viewsFb";
+
+function PostMediaPreview({
+  post,
+  mediaFit,
+}: {
+  post: RealSocialPost;
+  mediaFit: "cover" | "contain";
+}) {
+  const [videoFailed, setVideoFailed] = useState(false);
+  const [imgFailed, setImgFailed] = useState(false);
+
+  const isVideo = post.post_type === "reels" || Boolean(post.media_url?.includes(".mp4"));
+  const previewImage = post.thumbnail_url || (!isVideo ? post.media_url : null);
+
+  if (isVideo && post.media_url && !videoFailed) {
+    return (
+      <div className="relative w-full h-full flex items-center justify-center bg-black">
+        <video
+          src={post.media_url}
+          poster={post.thumbnail_url || undefined}
+          controls
+          muted
+          playsInline
+          preload="metadata"
+          onError={() => setVideoFailed(true)}
+          className={`w-full h-full ${mediaFit === "cover" ? "object-cover" : "object-contain"}`}
+        />
+      </div>
+    );
   }
-  return matrix;
+
+  if (previewImage && !imgFailed) {
+    return (
+      <div className="relative w-full h-full flex items-center justify-center bg-neutral-950">
+        <img
+          src={previewImage}
+          alt={post.title}
+          onError={() => setImgFailed(true)}
+          className={`w-full h-full transition-transform duration-500 ${
+            mediaFit === "cover" ? "object-cover group-hover/media:scale-105" : "object-contain"
+          }`}
+        />
+        {isVideo && (
+          <a
+            href={post.permalink || "#"}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={(e) => e.stopPropagation()}
+            className="absolute inset-0 flex items-center justify-center bg-black/30 hover:bg-black/45 transition-colors"
+            title="Assistir Reels no Instagram"
+          >
+            <span className="h-11 w-11 rounded-full bg-white/90 text-black flex items-center justify-center shadow-lg">
+              <Play className="h-5 w-5 fill-current ml-0.5" />
+            </span>
+          </a>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col items-center justify-center text-muted-foreground p-4 text-center space-y-2">
+      {post.platform === "facebook" && post.content ? (
+        <p className="text-[11px] text-slate-200 line-clamp-6 leading-relaxed bg-white/[0.03] border border-white/10 rounded-xl p-3 text-left">
+          {post.content}
+        </p>
+      ) : (
+        <>
+          <ImageIcon className="w-7 h-7 text-muted-foreground/50" />
+          <span className="text-[10px] leading-snug">
+            Mídia externa protegida pela Meta. Use "Ver Post" para abrir no aplicativo.
+          </span>
+        </>
+      )}
+    </div>
+  );
 }
 
-// ─── Componente Principal ─────────────────────────────────────────────────────
 function SocialInsightsPage() {
   const qc = useQueryClient();
   const [selectedPage, setSelectedPage] = useState("all");
   const { dateFrom, dateTo, setDateFrom, setDateTo } = useGlobalDate();
-  
+
+  // Controles do gráfico de evolução
+  const [chartDaysWindow, setChartDaysWindow] = useState<7 | 14 | 30>(14);
+  const [chartMetric, setChartMetric] = useState<ChartMetricKey>("reachIg");
+
   // Estados de IA
   const [isGeneratingAi, setIsGeneratingAi] = useState(false);
   const [aiReport, setAiReport] = useState<string | null>(null);
   const [aiReportTab, setAiReportTab] = useState<"general" | "content" | "public">("general");
-  
+
   const [countdown, setCountdown] = useState(300);
   const [isSyncing, setIsSyncing] = useState(false);
-  const [lastSync, setLastSync] = useState<Date | null>(new Date());
-  
+  const [lastSync, setLastSync] = useState<Date | null>(null);
+
   // Filtros de postagem
-  const [sortPostsBy, setSortPostsBy] = useState<"reach" | "likes" | "comments" | "engagement">("reach");
-  const [postTypeFilter, setPostTypeFilter] = useState<"all" | "reels" | "image" | "stories">("all");
+  const [sortPostsBy, setSortPostsBy] = useState<"recent" | "reach" | "likes" | "comments" | "engagement">("recent");
+  const [postTypeFilter, setPostTypeFilter] = useState<"all" | "reels" | "image" | "carousel">("all");
   const [selectedPostDetail, setSelectedPostDetail] = useState<string | null>(null);
   const [mediaFit, setMediaFit] = useState<"cover" | "contain">("contain");
 
-  const dateRange = useMemo(() => ({
-    startDate: new Date(dateFrom + "T12:00:00"),
-    endDate: new Date(dateTo + "T12:00:00"),
-  }), [dateFrom, dateTo]);
+  const dateRange = useMemo(
+    () => ({
+      startDate: new Date(dateFrom + "T12:00:00"),
+      endDate: new Date(dateTo + "T12:00:00"),
+    }),
+    [dateFrom, dateTo]
+  );
 
-  const setDateRange = useCallback((range: { startDate: Date; endDate: Date }) => {
-    setDateFrom(getLocalDateString(range.startDate));
-    setDateTo(getLocalDateString(range.endDate));
-  }, [setDateFrom, setDateTo]);
+  const setDateRange = useCallback(
+    (range: { startDate: Date; endDate: Date }) => {
+      setDateFrom(getLocalDateString(range.startDate));
+      setDateTo(getLocalDateString(range.endDate));
+    },
+    [setDateFrom, setDateTo]
+  );
 
-  // Contas sociais configuradas
-  const { data: socialPages = [] } = useQuery({
-    queryKey: ["social_pages_insights"],
-    queryFn: async () => {
-      const { data } = await supabase.from("social_pages").select("*").order("page_name");
-      return (data || []) as any[];
-    }
+  // 1. Contas reais conectadas no Meta (/me/accounts)
+  const { data: liveAccountsData, isLoading: loadingAccounts } = useQuery({
+    queryKey: ["live_meta_social_accounts"],
+    queryFn: async () => fetchLiveSocialAccounts(false),
+    staleTime: 10 * 60 * 1000,
+    retry: 1,
   });
 
-  // Pages fallback se vazio
-  const activePages = useMemo(() => {
-    if (socialPages.length > 0) return socialPages;
-    return [
-      { page_id: "nc_motors", page_name: "NC Motors Premium", instagram_handle: "ncmotors.br", facebook_followers: 6120, instagram_followers: 18450 }
-    ];
-  }, [socialPages]);
+  const activePages = liveAccountsData?.accounts || [];
+  const masterToken = liveAccountsData?.masterToken || null;
 
-  // ─── Insights do Meta do período (Posts reais e métricas do Graph API) ──────────
-  const { data: insightsData, isFetching: fetchingInsights } = useQuery({
-    queryKey: ["social_insights_data", selectedPage, dateFrom, dateTo],
+  // 2. Insights e posts 100% REAIS da Meta Graph API v21.0
+  const {
+    data: realInsights,
+    isFetching: fetchingInsights,
+    refetch: refetchInsights,
+  } = useQuery({
+    queryKey: ["real_social_insights_v21", selectedPage, dateFrom, dateTo, chartDaysWindow, activePages.length],
+    enabled: !loadingAccounts,
     queryFn: async () => {
-      try {
-        const { data, error } = await supabase.functions.invoke("sync-social-media", {
-          body: { action: "get-insights", page_id: selectedPage, date_from: dateFrom, date_to: dateTo },
-        });
-        if (error) throw error;
-        return data;
-      } catch (err: any) {
-        console.warn("Erro ao buscar insights do Meta:", err.message);
-        return { mock: true };
-      }
+      const result = await fetchRealSocialInsights({
+        accounts: activePages,
+        selectedPageId: selectedPage,
+        dateFrom,
+        dateTo,
+        chartDaysOverride: chartDaysWindow,
+        masterToken,
+      });
+      setLastSync(new Date());
+      return result;
     },
-    staleTime: 5 * 60 * 1000,
+    staleTime: 3 * 60 * 1000,
     retry: false,
   });
 
-  // Dados diários de alta fidelidade (Integrando reais do Meta se disponíveis)
-  const { dailyData, kpis, baseSeed } = useMemo(() => {
-    const selectedPageObj: any = activePages.find((sp: any) => sp.page_id === selectedPage);
-    let pageId = selectedPage;
-    let pageName = "NC Motors Premium";
+  const kpis = realInsights?.kpis || {
+    followersIg: 0,
+    followersFb: 0,
+    newFollowersIg: 0,
+    newFollowersFb: 0,
+    reachIg: 0,
+    viewsIg: 0,
+    viewsFb: 0,
+    interactionsIg: 0,
+    interactionsFb: 0,
+    accountsEngaged: 0,
+    profileViews: 0,
+    websiteClicks: 0,
+    reachDeltaPct: null,
+    followersDeltaPct: null,
+  };
 
-    if (selectedPageObj) {
-      pageId = selectedPageObj.page_id;
-      pageName = selectedPageObj.page_name;
-    }
+  const dailySeries = realInsights?.dailySeries || [];
+  const demographics = realInsights?.demographics || {
+    available: false,
+    totalSample: 0,
+    gender: { male: 0, female: 0 },
+    age: [],
+  };
+  const heatmapMatrix = realInsights?.heatmapMatrix || Array.from({ length: 7 }, () => Array(24).fill(0));
+  const hasPostsForHeatmap = Boolean(realInsights?.hasPostsForHeatmap);
 
-    const bs = buildPageSeed(pageId, pageName);
-    const daily = generateHighFidelityDailyData(pageId, pageName, dateFrom, dateTo);
-    
-    // Sobrescrever se tivermos dados reais de seguidores
-    const k = computeKPIs(daily, bs);
-    if (insightsData && !insightsData.mock) {
-      if (insightsData.ig_followers) k.followersIg = insightsData.ig_followers;
-      if (insightsData.fb_followers) k.followersFb = insightsData.fb_followers;
-    }
-    
-    return { dailyData: daily, kpis: k, baseSeed: bs };
-  }, [activePages, selectedPage, dateFrom, dateTo, insightsData]);
+  // Série pronta para o gráfico redesenhado (sempre legível e com resumo imediato)
+  const chartView = useMemo(() => {
+    const mapped = dailySeries.map((d) => {
+      let value = 0;
+      if (chartMetric === "reachIg") value = d.reachIg;
+      else if (chartMetric === "newFollowers") value = d.newFollowersIg + d.newFollowersFb;
+      else if (chartMetric === "engFb") value = d.engFb;
+      else if (chartMetric === "viewsFb") value = d.viewsFb;
 
-  // Matrix do Heatmap de engajamento
-  const engagementMatrix = useMemo(() => getEngagementMatrix(baseSeed), [baseSeed]);
+      return {
+        ...d,
+        value,
+      };
+    });
 
-  // Posts do período: unificando dados reais do Meta Graph API (se conectados) com fallbacks determinísticos premium
+    const total = mapped.reduce((acc, item) => acc + item.value, 0);
+    const nonZero = mapped.filter((item) => item.value > 0);
+    const avg = mapped.length > 0 ? Math.round(total / mapped.length) : 0;
+    const peak = nonZero.length > 0
+      ? nonZero.reduce((best, cur) => (cur.value > best.value ? cur : best), nonZero[0])
+      : null;
+
+    return {
+      data: mapped,
+      total,
+      avg,
+      peak,
+      hasAnyData: total > 0,
+    };
+  }, [dailySeries, chartMetric]);
+
+  // Posts reais filtrados e ordenados
   const listPosts = useMemo(() => {
-    const realIgMedia = insightsData?.ig_media || [];
-    const realFbPosts = insightsData?.fb_posts || [];
-
-    if (realIgMedia.length > 0 || realFbPosts.length > 0) {
-      const unified: any[] = [];
-
-      // Mapear posts reais do Instagram
-      realIgMedia.forEach((item: any) => {
-        const title = item.caption ? item.caption.split('\n')[0] : "Publicação no Instagram";
-        const isVideo = item.media_type === "VIDEO" || item.media_type === "REELS";
-        const likes = item.like_count || 0;
-        const comments = item.comments_count || 0;
-        const reach = item.reach || Math.max(120, likes * 14 + 10);
-        const impressions = item.impressions || Math.max(150, likes * 18 + 15);
-        const eng = (likes + comments) / Math.max(1, reach);
-        
-        let ai_sentiment = "Engajamento Orgânico";
-        let ai_recommendation = "Criativo gerou boa receptividade orgânica no feed. Recomendado responder aos comentários em menos de 15 minutos.";
-        if (eng > 0.08) {
-          ai_sentiment = "Altamente Engajador";
-          ai_recommendation = `Este post performou muito acima da média no Instagram. O formato ${item.media_type} reteve a audiência. Recomendação: replique o tema ou impulsione com R$ 15/dia.`;
-        } else if (item.caption?.toLowerCase().includes("venda") || item.caption?.toLowerCase().includes("preço") || item.caption?.toLowerCase().includes("fipe")) {
-          ai_sentiment = "Foco Comercial";
-          ai_recommendation = "Conteúdo comercial direto. Ótimo gancho para captura de leads e encaminhamento para o pipeline do CRM.";
-        }
-
-        unified.push({
-          id: item.id,
-          title: title.length > 45 ? title.slice(0, 42) + "..." : title,
-          content: item.caption || "",
-          post_type: isVideo ? "reels" : item.media_type === "CAROUSEL_ALBUM" ? "carousel" : "image",
-          platform: "instagram",
-          likes_count: likes,
-          comments_count: comments,
-          reach_count: reach,
-          impressions_count: impressions,
-          media_url: item.media_url,
-          permalink: item.permalink,
-          published_at: item.timestamp,
-          ai_sentiment,
-          ai_recommendation
-        });
-      });
-
-      // Mapear posts reais do Facebook
-      realFbPosts.forEach((item: any) => {
-        const title = item.message ? item.message.split('\n')[0] : "Publicação no Facebook";
-        const likes = item.likes?.summary?.total_count || item.like_count || 0;
-        const comments = item.comments?.summary?.total_count || item.comments_count || 0;
-        const reach = Math.max(80, likes * 9 + 5);
-        const impressions = Math.max(100, likes * 12 + 8);
-        const eng = (likes + comments) / Math.max(1, reach);
-
-        let ai_sentiment = "Institucional Facebook";
-        let ai_recommendation = "Publicação contribui para a presença e alcance local da marca no Facebook.";
-        if (eng > 0.06) {
-          ai_sentiment = "Engajamento Positivo";
-          ai_recommendation = "Boa recepção no Facebook. Usuários engajaram com o conteúdo visual.";
-        }
-
-        unified.push({
-          id: item.id,
-          title: title.length > 45 ? title.slice(0, 42) + "..." : title,
-          content: item.message || "",
-          post_type: "image",
-          platform: "facebook",
-          likes_count: likes,
-          comments_count: comments,
-          reach_count: reach,
-          impressions_count: impressions,
-          media_url: item.media_url || null,
-          permalink: item.id ? `https://facebook.com/${item.id}` : null,
-          published_at: item.created_time,
-          ai_sentiment,
-          ai_recommendation
-        });
-      });
-
-      // Filtrar por tipo
-      let filtered = unified;
-      if (postTypeFilter !== "all") {
-        filtered = filtered.filter(p => p.post_type === postTypeFilter);
-      }
-
-      // Ordenar
-      return filtered.sort((a, b) => {
-        if (sortPostsBy === "reach") return b.reach_count - a.reach_count;
-        if (sortPostsBy === "likes") return b.likes_count - a.likes_count;
-        if (sortPostsBy === "comments") return b.comments_count - a.comments_count;
-        const engA = (a.likes_count + a.comments_count) / Math.max(1, a.reach_count);
-        const engB = (b.likes_count + b.comments_count) / Math.max(1, b.reach_count);
-        return engB - engA;
-      });
-    }
-
-    // Fallback determinístico premium caso não haja dados reais ou conta conectada
-    const postsData = [
-      {
-        id: "p1",
-        title: "🔥 LANÇAMENTO: Nova Toyota Hilux GR-Sport 2026",
-        content: "🔥 LANÇAMENTO: Nova Toyota Hilux GR-Sport 2026!\n\nA picape que redefine limites está pronta para encarar qualquer desafio. Motor turbo diesel recalibrado, suspensão esportiva Gazoo Racing e acabamento premium no interior.\n\nVenha fazer um test drive exclusivo na NC Motors!\n\n#toyotahilux #hiluxgrsport #gazooracing #ncmotors #picape #4x4",
-        post_type: "reels",
-        platform: "both",
-        reach_count: 14200,
-        likes_count: 850,
-        comments_count: 94,
-        impressions_count: 22400,
-        published_at: subDays(new Date(), 1).toISOString(),
-        media_url: "https://images.unsplash.com/photo-1533473359331-0135ef1b58bf?auto=format&fit=crop&q=80&w=600",
-        permalink: "https://instagram.com",
-        ai_sentiment: "Altamente Positivo",
-        ai_recommendation: "Criativo focado em design esportivo performou 40% acima da média. Excelente para impulsionamento local para público de alta renda."
-      },
-      {
-        id: "p2",
-        title: "⚡ Diga adeus ao IPVA! Entenda as condições de taxa zero",
-        content: "⚡ DIGA ADEUS AO IPVA 2026!\n\nNeste fim de semana na NC Motors, você compra seu seminovo premium com IPVA 2026 totalmente quitado, transferência grátis e taxa de financiamento a partir de 0% a.m.\n\nClique no link da bio e fale diretamente com o time comercial.\n\n#NCSuite #NCPerformance #CarrosPremium #TaxaZero #SeminovosComGarantia",
-        post_type: "image",
-        platform: "instagram",
-        reach_count: 9800,
-        likes_count: 512,
-        comments_count: 148,
-        impressions_count: 14300,
-        published_at: subDays(new Date(), 3).toISOString(),
-        media_url: "https://images.unsplash.com/photo-1568605117036-5fe5e7bab0b7?auto=format&fit=crop&q=80&w=600",
-        permalink: "https://instagram.com",
-        ai_sentiment: "Foco Comercial",
-        ai_recommendation: "A oferta de taxa zero e IPVA grátis gerou grande volume de comentários perguntando valores. Recomenda-se acionar o time comercial para capturar os leads diretamente nos comentários."
-      },
-      {
-        id: "p3",
-        title: "🎥 Tour premium: Conheça os detalhes do BMW M3 Competition",
-        content: "🎥 DETALHES QUE IMPRESSIONAM!\n\nUm tour completo por uma das maiores obras de engenharia da BMW M Division: a M3 Competition. Performance brutal, ronco espetacular de 510cv e cockpit inspirado em pistas de corrida.\n\nDisponível em nosso showroom.\n\n#bmwm3 #m3competition #bmwgram #esportivos #NCPerformance",
-        post_type: "reels",
-        platform: "instagram",
-        reach_count: 24800,
-        likes_count: 1950,
-        comments_count: 204,
-        impressions_count: 38900,
-        published_at: subDays(new Date(), 5).toISOString(),
-        media_url: "https://images.unsplash.com/photo-1555215695-3004980ad54e?auto=format&fit=crop&q=80&w=600",
-        permalink: "https://instagram.com",
-        ai_sentiment: "Altamente Engajador",
-        ai_recommendation: "Tour em vídeo dinâmico mantém alta taxa de retenção. O som do motor no início serviu como gancho perfeito (hook) de 3 segundos."
-      },
-      {
-        id: "p4",
-        title: "🚗 Seminovos NC: Garantia de 2 anos e laudo cautelar aprovado",
-        content: "🚗 SEGURANÇA E TRANSPARÊNCIA NA COMPRA DO SEU PRÓXIMO CARRO!\n\nNa NC Motors, todo veículo passa por rigoroso check-list de 150 itens e tem laudo cautelar 100% aprovado. Por isso, oferecemos garantia integral de até 2 anos.\n\nEscolha quem entende de performance e segurança.\n\n#NCSuite #GarantiaEstendida #LaudoCautelar #SegurancaAutomotiva #SeminovosPremium",
-        post_type: "image",
-        platform: "facebook",
-        reach_count: 6500,
-        likes_count: 180,
-        comments_count: 32,
-        impressions_count: 9100,
-        published_at: subDays(new Date(), 7).toISOString(),
-        media_url: "https://images.unsplash.com/photo-1525609004556-c46c7d6cf0a3?auto=format&fit=crop&q=80&w=600",
-        permalink: "https://facebook.com",
-        ai_sentiment: "Informativo/Institucional",
-        ai_recommendation: "Embora o alcance tenha sido menor, posts de segurança do estoque atraem leads de funil avançado (prontos para compra)."
-      },
-      {
-        id: "p5",
-        title: "💡 Dica de especialista: 5 cuidados na hora de trocar seu carro",
-        content: "💡 VAI TROCAR DE CARRO? FIQUE ATENTO!\n\nConfira as dicas do nosso gerente comercial para não cometer erros na avaliação do seu usado:\n\n1. Faça a higienização completa antes da avaliação.\n2. Tenha o manual e chave reserva em mãos.\n3. Faça pequenos reparos estéticos.\n4. Pesquise a tabela Fipe como referência.\n5. Escolha concessionárias sólidas para a troca.\n\n#DicasAutomotivas #AvaliacaoDeVeiculos #NCSuite #MercadoAutomotivo",
-        post_type: "stories",
-        platform: "instagram",
-        reach_count: 4200,
-        likes_count: 240,
-        comments_count: 18,
-        impressions_count: 6800,
-        published_at: subDays(new Date(), 10).toISOString(),
-        media_url: "https://images.unsplash.com/photo-1503376780353-7e6692767b70?auto=format&fit=crop&q=80&w=600",
-        permalink: "https://instagram.com",
-        ai_sentiment: "Útil/Educacional",
-        ai_recommendation: "Bom engajamento nos stories. Adicione sticker de enquete no próximo post para qualificar a intenção de troca dos seguidores."
-      }
-    ];
-
-    // Aplicar filtros
-    let filtered = postsData;
+    const raw = realInsights?.posts || [];
+    let filtered = [...raw];
     if (postTypeFilter !== "all") {
-      filtered = filtered.filter(p => p.post_type === postTypeFilter);
+      filtered = filtered.filter((p) => p.post_type === postTypeFilter);
     }
 
-    // Aplicar ordenação
     return filtered.sort((a, b) => {
+      if (sortPostsBy === "recent") {
+        return new Date(b.published_at || 0).getTime() - new Date(a.published_at || 0).getTime();
+      }
       if (sortPostsBy === "reach") return b.reach_count - a.reach_count;
       if (sortPostsBy === "likes") return b.likes_count - a.likes_count;
       if (sortPostsBy === "comments") return b.comments_count - a.comments_count;
-      const engA = (a.likes_count + a.comments_count) / a.reach_count;
-      const engB = (b.likes_count + b.comments_count) / b.reach_count;
-      return engB - engA;
+      return b.engagement_rate - a.engagement_rate;
     });
-  }, [insightsData, sortPostsBy, postTypeFilter]);
+  }, [realInsights?.posts, postTypeFilter, sortPostsBy]);
 
-  // Sincronização automática
+  // Sincronização automática (countdown visual + refetch)
   useEffect(() => {
     const timer = setInterval(() => {
-      setCountdown(prev => (prev <= 1 ? 300 : prev - 1));
+      setCountdown((prev) => {
+        if (prev <= 1) {
+          refetchInsights();
+          return 300;
+        }
+        return prev - 1;
+      });
     }, 1000);
     return () => clearInterval(timer);
-  }, []);
+  }, [refetchInsights]);
 
-  const handleManualSync = () => {
+  const handleManualSync = async () => {
     setIsSyncing(true);
-    setTimeout(() => {
-      setIsSyncing(false);
+    try {
+      await fetchLiveSocialAccounts(true);
+      await qc.invalidateQueries({ queryKey: ["live_meta_social_accounts"] });
+      await refetchInsights();
       setLastSync(new Date());
       setCountdown(300);
-      toast.success("Dados de redes sociais sincronizados com sucesso!");
-    }, 1200);
+      toast.success("Contas e métricas reais atualizadas direto da Meta API!");
+    } catch (err: any) {
+      toast.error(err?.message || "Erro ao sincronizar com a Meta API.");
+    } finally {
+      setIsSyncing(false);
+    }
   };
 
-  const generateAiInsights = () => {
+  const generateAiInsights = async () => {
     setIsGeneratingAi(true);
-    setTimeout(() => {
-      setAiReport("diagnostico_gerado");
+    const accLabel =
+      selectedPage === "all"
+        ? `Consolidado (${activePages.length} páginas conectadas)`
+        : activePages.find((p) => p.page_id === selectedPage)?.page_name || selectedPage;
+
+    const topPostsSummary = listPosts
+      .slice(0, 5)
+      .map(
+        (p, idx) =>
+          `${idx + 1}. [${p.platform.toUpperCase()} - ${p.accountHandle}] "${p.title}" | Alcance: ${p.reach_count} | Views: ${p.views_count} | Curtidas: ${p.likes_count} | Comentários: ${p.comments_count} | Engajamento: ${p.engagement_rate.toFixed(1)}%`
+      )
+      .join("\n");
+
+    try {
+      const { data, error } = await supabase.functions.invoke("victoria-agent", {
+        body: {
+          action: "chat",
+          message: `Analise estes DADOS REAIS da Meta Graph API v21.0 da conta "${accLabel}" no período ${dateFrom} a ${dateTo}:
+- Seguidores Totais: ${kpis.followersIg} IG + ${kpis.followersFb} FB
+- Novos Seguidores no Período: ${kpis.newFollowersIg + kpis.newFollowersFb}
+- Alcance Instagram: ${kpis.reachIg}
+- Visualizações Totais (IG + FB): ${kpis.viewsIg + kpis.viewsFb}
+- Interações Totais: ${kpis.interactionsIg + kpis.interactionsFb}
+- Visitas ao Perfil IG: ${kpis.profileViews} | Cliques no Site: ${kpis.websiteClicks}
+Top Publicações Reais:
+${topPostsSummary || "Nenhuma publicação encontrada no período."}
+
+Responda de forma objetiva e tática em Markdown com:
+1. Pontos fortes reais observados nos números
+2. Gargalos reais e ações práticas para aumentar leads automotivos
+3. Quais formatos/posts reais merecem impulsionamento.`,
+        },
+      });
+      if (error || !data?.reply) throw new Error("Fallback local");
+      setAiReport(data.reply);
+      toast.success("Diagnóstico da Victoria AI gerado com dados reais!");
+    } catch {
+      const topPost = listPosts[0];
+      const totalFollowers = kpis.followersIg + kpis.followersFb;
+      const totalViews = kpis.viewsIg + kpis.viewsFb;
+      const totalInt = kpis.interactionsIg + kpis.interactionsFb;
+      setAiReport(
+        `### 📊 Diagnóstico Baseado nos Dados Reais (${accLabel})\n\n` +
+          `- **Base Atual:** **${totalFollowers.toLocaleString("pt-BR")} seguidores** (${kpis.followersIg.toLocaleString("pt-BR")} no Instagram e ${kpis.followersFb.toLocaleString("pt-BR")} no Facebook), com **+${(kpis.newFollowersIg + kpis.newFollowersFb).toLocaleString("pt-BR")} novos seguidores** no período.\n` +
+          `- **Distribuição e Retenção:** **${kpis.reachIg.toLocaleString("pt-BR")} pessoas alcançadas** no Instagram e **${totalViews.toLocaleString("pt-BR")} visualizações totais**.\n` +
+          `- **Conversão de Perfil:** **${kpis.profileViews.toLocaleString("pt-BR")} visitas no perfil** geraram **${kpis.websiteClicks.toLocaleString("pt-BR")} cliques no link da bio** e **${totalInt.toLocaleString("pt-BR")} interações reais**.\n` +
+          (topPost
+            ? `- **Destaque Real no Feed:** "${topPost.title}" (${topPost.accountHandle}) atingiu **${topPost.views_count.toLocaleString("pt-BR")} visualizações**, **${topPost.likes_count} curtidas** e **${topPost.comments_count} comentários**.`
+            : `- **Publicações:** Nenhuma publicação encontrada ainda para esta conta.`)
+      );
+      toast.success("Diagnóstico calculado a partir das métricas reais da conta.");
+    } finally {
       setIsGeneratingAi(false);
-      toast.success("Diagnóstico da Victoria AI gerado com sucesso!");
-    }, 1500);
+    }
   };
 
-  // Gráfico do Funil de Engajamento Social
-  // Alcance -> Impressões -> Engajamento -> Cliques na Bio
+  // Funil real de conversão social
   const funnelData = useMemo(() => {
-    const reach = kpis.reachIg + kpis.reachFb;
-    const impressions = kpis.impressionsIg + kpis.impressionsFb;
-    const eng = kpis.engIg + kpis.engFb;
-    const clicks = kpis.clicks;
+    const totalViews = kpis.viewsIg + kpis.viewsFb;
+    const reachBase = Math.max(kpis.reachIg, totalViews > 0 ? totalViews : 1);
+    const totalInteractions = kpis.interactionsIg + kpis.interactionsFb;
+    const pctOf = (v: number) => (reachBase > 0 ? Math.min(100, Math.round((v / reachBase) * 100)) : 0);
 
     return [
-      { step: "Exposição (Alcance)", value: reach, percentage: 100, fill: "hsl(var(--primary))" },
-      { step: "Frequência (Impressões)", value: impressions, percentage: Math.round((impressions / reach) * 100), fill: "hsl(var(--primary) / 0.8)" },
-      { step: "Interação (Engajamento)", value: eng, percentage: Math.round((eng / reach) * 100), fill: "#ec4899" },
-      { step: "Ação (Cliques no Link)", value: clicks, percentage: Math.round((clicks / reach) * 100), fill: "#10b981" }
+      {
+        step: "Alcance Instagram",
+        value: kpis.reachIg,
+        percentage: kpis.reachIg > 0 ? 100 : 0,
+        fill: "hsl(var(--primary))",
+      },
+      {
+        step: "Visualizações (IG + FB)",
+        value: totalViews,
+        percentage: totalViews > 0 ? Math.min(100, Math.round((totalViews / Math.max(kpis.reachIg, totalViews)) * 100)) : 0,
+        fill: "#f59e0b",
+      },
+      {
+        step: "Interações Totais",
+        value: totalInteractions,
+        percentage: pctOf(totalInteractions),
+        fill: "#ec4899",
+      },
+      {
+        step: "Visitas ao Perfil",
+        value: kpis.profileViews,
+        percentage: pctOf(kpis.profileViews),
+        fill: "#8b5cf6",
+      },
+      {
+        step: "Cliques no Link / Bio",
+        value: kpis.websiteClicks,
+        percentage: kpis.websiteClicks > 0 ? Math.max(2, pctOf(kpis.websiteClicks)) : 0,
+        fill: "#10b981",
+      },
     ];
   }, [kpis]);
 
-  // Demográficos formatados para o gráfico de barras agrupadas
   const ageChartData = useMemo(() => {
-    return kpis.demographics.age.map(a => ({
+    return demographics.age.map((a) => ({
       range: a.range,
       Homens: a.male,
-      Mulheres: a.female
+      Mulheres: a.female,
     }));
-  }, [kpis]);
+  }, [demographics]);
 
-  const CustomTooltip = ({ active, payload, label }: any) => {
+  const isConnected = Boolean(masterToken && activePages.length > 0);
+  const totalFollowersAll = kpis.followersIg + kpis.followersFb;
+  const totalViewsAll = kpis.viewsIg + kpis.viewsFb;
+  const totalInteractionsAll = kpis.interactionsIg + kpis.interactionsFb;
+  const totalNewFollowersAll = kpis.newFollowersIg + kpis.newFollowersFb;
+  const bioCtr = kpis.profileViews > 0 ? ((kpis.websiteClicks / kpis.profileViews) * 100).toFixed(1) : "0.0";
+
+  const chartMetricMeta: Record<ChartMetricKey, { label: string; color: string; desc: string }> = {
+    reachIg: {
+      label: "Alcance IG",
+      color: "#ef4444",
+      desc: "Pessoas únicas alcançadas por dia no Instagram",
+    },
+    newFollowers: {
+      label: "Novos Seguidores",
+      color: "#06b6d4",
+      desc: "Crescimento diário de novos seguidores (IG + FB)",
+    },
+    engFb: {
+      label: "Engajamento FB",
+      color: "#8b5cf6",
+      desc: "Interações diárias nas publicações do Facebook",
+    },
+    viewsFb: {
+      label: "Visitas Página FB",
+      color: "#f59e0b",
+      desc: "Visualizações diárias na Página do Facebook",
+    },
+  };
+
+  const CustomChartTooltip = ({ active, payload }: any) => {
     if (!active || !payload?.length) return null;
+    const item = payload[0]?.payload;
     return (
-      <div className="bg-[#0c0c14]/95 border border-white/10 backdrop-blur-md rounded-xl px-3 py-2.5 shadow-xl text-[11px] space-y-1">
-        <p className="font-bold text-white mb-1">{label}</p>
-        {payload.map((p: any) => (
-          <p key={p.name} style={{ color: p.color }} className="font-mono flex items-center gap-1.5 font-bold">
-            <span className="w-2 h-2 rounded-full inline-block" style={{ backgroundColor: p.color }} />
-            {p.name}: {p.value?.toLocaleString("pt-BR")}
+      <div className="bg-[#0c0c14]/95 border border-white/15 backdrop-blur-md rounded-xl px-3.5 py-2.5 shadow-xl text-xs space-y-1">
+        <p className="font-black text-white flex items-center justify-between gap-4">
+          <span>{item.label} ({item.date})</span>
+          {item.isSelectedRange && (
+            <span className="text-[9px] px-1.5 py-0.5 rounded bg-primary/20 text-primary uppercase">No filtro</span>
+          )}
+        </p>
+        <p className="font-mono text-white font-bold">
+          {chartMetricMeta[chartMetric].label}:{" "}
+          <span style={{ color: chartMetricMeta[chartMetric].color }}>
+            {Number(item.value || 0).toLocaleString("pt-BR")}
+          </span>
+        </p>
+        {chartMetric === "newFollowers" && (
+          <p className="text-[10px] text-muted-foreground font-mono">
+            IG: +{item.newFollowersIg} | FB: +{item.newFollowersFb}
           </p>
-        ))}
+        )}
       </div>
     );
   };
@@ -563,23 +462,34 @@ function SocialInsightsPage() {
       {/* Top Header */}
       <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 border-b border-white/5 pb-5">
         <div className="space-y-1">
-          <span className="label-mono text-primary text-[10px] uppercase tracking-widest font-black">Meta Ads & Organic Analytics</span>
+          <span className="label-mono text-primary text-[10px] uppercase tracking-widest font-black">
+            Meta Graph API v21.0 • Dados Reais Verificados
+          </span>
           <h2 className="text-2xl font-black tracking-wider text-foreground uppercase flex items-center gap-2 mt-0.5">
             <BarChart3 className="h-6 w-6 text-primary" /> Performance do Meta
           </h2>
           <div className="flex flex-wrap items-center gap-3 text-[10px] text-muted-foreground font-semibold">
-            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-0.5 font-black text-emerald-400">
-              <Wifi className="w-2.5 h-2.5" /> API CONECTADA
-            </span>
+            {isConnected ? (
+              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-0.5 font-black text-emerald-400">
+                <Wifi className="w-2.5 h-2.5" /> API CONECTADA ({activePages.length} contas reais)
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/10 border border-amber-500/20 px-2.5 py-0.5 font-black text-amber-400">
+                <WifiOff className="w-2.5 h-2.5" /> TOKEN META NÃO CONECTADO
+              </span>
+            )}
             <span>·</span>
             <span className="flex items-center gap-1">
               <Clock className="w-3 h-3" />
-              Sincronizando em <strong className="text-white font-mono">{Math.floor(countdown / 60)}:{String(countdown % 60).padStart(2, "0")}</strong>
+              Próximo sync{" "}
+              <strong className="text-white font-mono">
+                {Math.floor(countdown / 60)}:{String(countdown % 60).padStart(2, "0")}
+              </strong>
             </span>
             {lastSync && (
               <>
                 <span>·</span>
-                <span>Último Sync: {format(lastSync, "HH:mm:ss")}</span>
+                <span>Atualizado às {format(lastSync, "HH:mm:ss")}</span>
               </>
             )}
           </div>
@@ -591,20 +501,20 @@ function SocialInsightsPage() {
             className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-pink-500 to-rose-600 px-4 py-2.5 text-xs font-bold text-white shadow-lg shadow-pink-500/20 hover:opacity-90 active:scale-95 transition"
           >
             <Calendar className="h-4 w-4" />
-            <span>Planejador & Feed</span>
+            <span>Planejador &amp; Feed</span>
           </Link>
           <button
             onClick={handleManualSync}
-            disabled={isSyncing}
+            disabled={isSyncing || fetchingInsights}
             className="flex items-center gap-2 rounded-xl border border-white/10 bg-card px-4 py-2.5 text-xs font-bold text-muted-foreground hover:text-foreground hover:bg-white/5 active:scale-95 transition disabled:opacity-50 cursor-pointer"
           >
-            <RefreshCw className={`h-3.5 w-3.5 ${isSyncing ? "animate-spin" : ""}`} />
+            <RefreshCw className={`h-3.5 w-3.5 ${isSyncing || fetchingInsights ? "animate-spin" : ""}`} />
             Sincronizar Agora
           </button>
           <button
             onClick={generateAiInsights}
-            disabled={isGeneratingAi}
-            className="flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-xs font-bold text-primary-foreground shadow-glow hover:opacity-90 active:scale-95 transition cursor-pointer"
+            disabled={isGeneratingAi || !isConnected}
+            className="flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-xs font-bold text-primary-foreground shadow-glow hover:opacity-90 active:scale-95 transition cursor-pointer disabled:opacity-50"
           >
             {isGeneratingAi ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
             Diagnóstico Victoria AI
@@ -612,22 +522,52 @@ function SocialInsightsPage() {
         </div>
       </div>
 
+      {/* Aviso honesto se não houver Token configurado */}
+      {!loadingAccounts && !isConnected && (
+        <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <AlertCircle className="h-5 w-5 text-amber-400 shrink-0" />
+            <div className="text-xs">
+              <p className="font-bold text-amber-300">Conexão Meta necessária para exibir métricas reais</p>
+              <p className="text-muted-foreground">
+                {liveAccountsData?.error || "Configure seu Token Master em Configurações → Integrações Master."}
+              </p>
+            </div>
+          </div>
+          <Link
+            to="/config"
+            className="shrink-0 px-3 py-1.5 rounded-xl bg-amber-500 text-black text-xs font-black uppercase hover:opacity-90"
+          >
+            Ir para Integrações
+          </Link>
+        </div>
+      )}
+
       {/* Filtros de Escopo */}
       <div className="flex flex-wrap items-center justify-between gap-4 p-4 border border-white/5 bg-white/[0.01] rounded-2xl">
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap">
           <span className="text-xs text-muted-foreground font-black uppercase tracking-wider">Conta Conectada:</span>
           <select
             value={selectedPage}
-            onChange={(e) => setSelectedPage(e.target.value)}
-            className="rounded-xl border border-white/10 bg-background px-3 py-1.5 text-xs text-foreground focus:outline-none focus:border-primary/50 font-bold"
+            onChange={(e) => {
+              setSelectedPage(e.target.value);
+              setAiReport(null);
+              setSelectedPostDetail(null);
+            }}
+            className="rounded-xl border border-white/10 bg-background px-3 py-1.5 text-xs text-foreground focus:outline-none focus:border-primary/50 font-bold max-w-[340px]"
           >
-            <option value="all">Todas as Contas (Consolidado)</option>
-            {activePages.map((sp: any) => (
+            <option value="all">Principais Contas Conectadas (Consolidado)</option>
+            {activePages.map((sp) => (
               <option key={sp.page_id} value={sp.page_id}>
-                {sp.page_name} (@{sp.instagram_handle})
+                {sp.page_name}{sp.instagram_handle ? ` (@${sp.instagram_handle} · ${sp.instagram_followers.toLocaleString("pt-BR")} seg)` : ` (FB · ${sp.facebook_followers} seg)`}
               </option>
             ))}
           </select>
+          {fetchingInsights && (
+            <span className="inline-flex items-center gap-1.5 text-[11px] font-bold text-primary">
+              <Loader2 className="h-3.5 w-3.5 animate-spin" /> Carregando dados reais da Meta...
+            </span>
+          )}
         </div>
         <div className="flex items-center gap-3">
           <span className="text-xs text-muted-foreground font-black uppercase tracking-wider">Janela de Análise:</span>
@@ -639,41 +579,47 @@ function SocialInsightsPage() {
         </div>
       </div>
 
-      {/* Cards de KPIs Principais com Sparklines */}
+      {/* Cards de KPIs Principais (100% Reais) */}
       <div className="grid gap-4 grid-cols-2 md:grid-cols-3 lg:grid-cols-6">
         {/* 1. Alcance */}
         <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="glass-panel p-4 space-y-2 relative overflow-hidden">
           <div className="absolute top-0 left-0 w-full h-[2px] bg-gradient-to-r from-violet-500 to-indigo-500" />
           <div className="flex items-center justify-between text-muted-foreground">
-            <span className="text-[10px] font-bold uppercase tracking-wider">Alcance do Perfil</span>
+            <span className="text-[10px] font-bold uppercase tracking-wider">Alcance Instagram</span>
             <Eye className="h-4 w-4 text-violet-400" />
           </div>
           <p className="text-2xl font-black text-white tracking-tight">
-            {(kpis.reachIg + kpis.reachFb).toLocaleString("pt-BR")}
+            {kpis.reachIg.toLocaleString("pt-BR")}
           </p>
           <div className="flex items-center justify-between text-[10px] pt-1">
-            <span className="text-muted-foreground">IG: {kpis.reachIg.toLocaleString("pt-BR")}</span>
-            <span className="text-emerald-400 font-bold">+{kpis.growthReachIg}%</span>
+            <span className="text-muted-foreground">Contas únicas</span>
+            {kpis.reachDeltaPct !== null ? (
+              <span className={`font-bold ${kpis.reachDeltaPct >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
+                {kpis.reachDeltaPct >= 0 ? `+${kpis.reachDeltaPct}%` : `${kpis.reachDeltaPct}%`}
+              </span>
+            ) : (
+              <span className="text-muted-foreground/60 font-mono">Meta v21</span>
+            )}
           </div>
         </motion.div>
 
-        {/* 2. Impressões */}
+        {/* 2. Visualizações */}
         <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }} className="glass-panel p-4 space-y-2 relative overflow-hidden">
           <div className="absolute top-0 left-0 w-full h-[2px] bg-gradient-to-r from-amber-500 to-orange-500" />
           <div className="flex items-center justify-between text-muted-foreground">
-            <span className="text-[10px] font-bold uppercase tracking-wider">Impressões</span>
+            <span className="text-[10px] font-bold uppercase tracking-wider">Visualizações</span>
             <Activity className="h-4 w-4 text-amber-400" />
           </div>
           <p className="text-2xl font-black text-white tracking-tight">
-            {(kpis.impressionsIg + kpis.impressionsFb).toLocaleString("pt-BR")}
+            {totalViewsAll.toLocaleString("pt-BR")}
           </p>
           <div className="flex items-center justify-between text-[10px] pt-1">
-            <span className="text-muted-foreground">FB: {kpis.impressionsFb.toLocaleString("pt-BR")}</span>
-            <span className="text-emerald-400 font-bold">+{kpis.growthReachFb}%</span>
+            <span className="text-muted-foreground">IG: {kpis.viewsIg.toLocaleString("pt-BR")}</span>
+            <span className="text-muted-foreground">FB: {kpis.viewsFb.toLocaleString("pt-BR")}</span>
           </div>
         </motion.div>
 
-        {/* 3. Engajamento */}
+        {/* 3. Interações */}
         <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="glass-panel p-4 space-y-2 relative overflow-hidden">
           <div className="absolute top-0 left-0 w-full h-[2px] bg-gradient-to-r from-pink-500 to-rose-500" />
           <div className="flex items-center justify-between text-muted-foreground">
@@ -681,124 +627,238 @@ function SocialInsightsPage() {
             <ThumbsUp className="h-4 w-4 text-pink-400" />
           </div>
           <p className="text-2xl font-black text-white tracking-tight">
-            {(kpis.engIg + kpis.engFb).toLocaleString("pt-BR")}
+            {totalInteractionsAll.toLocaleString("pt-BR")}
           </p>
           <div className="flex items-center justify-between text-[10px] pt-1">
-            <span className="text-muted-foreground">Taxa: 4.8%</span>
-            <span className="text-emerald-400 font-bold">+18.9%</span>
+            <span className="text-muted-foreground">Engajadas: {kpis.accountsEngaged.toLocaleString("pt-BR")}</span>
+            <span className="text-muted-foreground">FB: {kpis.interactionsFb.toLocaleString("pt-BR")}</span>
           </div>
         </motion.div>
 
-        {/* 4. Novos Seguidores */}
+        {/* 4. Seguidores Reais */}
         <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }} className="glass-panel p-4 space-y-2 relative overflow-hidden">
           <div className="absolute top-0 left-0 w-full h-[2px] bg-gradient-to-r from-cyan-500 to-blue-500" />
           <div className="flex items-center justify-between text-muted-foreground">
-            <span className="text-[10px] font-bold uppercase tracking-wider">Novos Seguidores</span>
+            <span className="text-[10px] font-bold uppercase tracking-wider">Seguidores Reais</span>
             <UserPlus className="h-4 w-4 text-cyan-400" />
           </div>
           <p className="text-2xl font-black text-white tracking-tight">
-            +{(kpis.newFollowersIg + kpis.newFollowersFb).toLocaleString("pt-BR")}
+            {totalFollowersAll.toLocaleString("pt-BR")}
           </p>
           <div className="flex items-center justify-between text-[10px] pt-1">
-            <span className="text-muted-foreground">Total: {(kpis.followersIg + kpis.followersFb).toLocaleString("pt-BR")}</span>
-            <span className="text-emerald-400 font-bold">+{kpis.growthFollowersIg}%</span>
+            <span className="text-cyan-400 font-bold">
+              {totalNewFollowersAll >= 0 ? `+${totalNewFollowersAll.toLocaleString("pt-BR")}` : totalNewFollowersAll.toLocaleString("pt-BR")} no período
+            </span>
+            <span className="text-muted-foreground">IG {kpis.followersIg.toLocaleString("pt-BR")} · FB {kpis.followersFb}</span>
           </div>
         </motion.div>
 
-        {/* 5. Clicks no Link */}
+        {/* 5. Cliques na Bio */}
         <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }} className="glass-panel p-4 space-y-2 relative overflow-hidden">
           <div className="absolute top-0 left-0 w-full h-[2px] bg-gradient-to-r from-emerald-500 to-teal-500" />
           <div className="flex items-center justify-between text-muted-foreground">
-            <span className="text-[10px] font-bold uppercase tracking-wider">Cliques na Bio</span>
+            <span className="text-[10px] font-bold uppercase tracking-wider">Cliques no Site</span>
             <Globe className="h-4 w-4 text-emerald-400" />
           </div>
           <p className="text-2xl font-black text-white tracking-tight">
-            {kpis.clicks.toLocaleString("pt-BR")}
+            {kpis.websiteClicks.toLocaleString("pt-BR")}
           </p>
           <div className="flex items-center justify-between text-[10px] pt-1">
-            <span className="text-muted-foreground">Taxa de Cliques: 3.2%</span>
-            <span className="text-emerald-400 font-bold">+12.4%</span>
+            <span className="text-muted-foreground">CTR Perfil: {bioCtr}%</span>
+            <span className="text-muted-foreground">Bio / Link</span>
           </div>
         </motion.div>
 
-        {/* 6. Acessos Perfil */}
+        {/* 6. Visitas ao Perfil */}
         <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.25 }} className="glass-panel p-4 space-y-2 relative overflow-hidden">
           <div className="absolute top-0 left-0 w-full h-[2px] bg-gradient-to-r from-purple-500 to-pink-500" />
           <div className="flex items-center justify-between text-muted-foreground">
-            <span className="text-[10px] font-bold uppercase tracking-wider">Visitas Perfil</span>
+            <span className="text-[10px] font-bold uppercase tracking-wider">Visitas Perfil IG</span>
             <Users className="h-4 w-4 text-purple-400" />
           </div>
           <p className="text-2xl font-black text-white tracking-tight">
             {kpis.profileViews.toLocaleString("pt-BR")}
           </p>
           <div className="flex items-center justify-between text-[10px] pt-1">
-            <span className="text-muted-foreground">Intenção: Alta</span>
-            <span className="text-emerald-400 font-bold">+5.7%</span>
+            <span className="text-muted-foreground">No período filtrado</span>
+            <span className="text-muted-foreground">Instagram</span>
           </div>
         </motion.div>
       </div>
 
       {/* Gráficos Visuais Principais */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        
-        {/* Linha Temporal: Alcance Orgânico & Impressões */}
+        {/* Evolução Diária Redesenhada — Clara, em Barras + Média + Seletor de Janela e Métrica */}
         <div className="lg:col-span-8 glass-panel p-5 space-y-4">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
             <div>
-              <h4 className="text-xs font-black text-white uppercase tracking-wider">Evolução do Alcance & Impressões</h4>
-              <p className="text-[9px] text-muted-foreground mt-0.5">Comportamento de visualização diária no Facebook e Instagram.</p>
+              <div className="flex items-center gap-2 flex-wrap">
+                <h4 className="text-xs font-black text-white uppercase tracking-wider">
+                  Evolução Diária do Perfil
+                </h4>
+                <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase bg-primary/15 text-primary border border-primary/25">
+                  Janela de {chartDaysWindow} dias até {format(parseISO(dateTo), "dd/MM")}
+                </span>
+              </div>
+              <p className="text-[10px] text-muted-foreground mt-0.5">
+                {chartMetricMeta[chartMetric].desc}.
+              </p>
             </div>
-            <div className="flex items-center gap-4 text-[10px] font-bold">
-              <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-primary" /> Instagram</span>
-              <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-violet-500" /> Facebook</span>
+
+            <div className="flex flex-wrap items-center gap-2">
+              {/* Seletor de métrica */}
+              <div className="flex bg-white/5 p-1 rounded-xl gap-1 text-[10px] font-bold">
+                {(Object.keys(chartMetricMeta) as ChartMetricKey[]).map((key) => (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => setChartMetric(key)}
+                    className={`px-2.5 py-1 rounded-lg transition-colors cursor-pointer ${
+                      chartMetric === key
+                        ? "bg-primary text-primary-foreground"
+                        : "text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    {chartMetricMeta[key].label}
+                  </button>
+                ))}
+              </div>
+
+              {/* Janela rápida do gráfico */}
+              <div className="flex bg-white/5 p-1 rounded-xl gap-1 text-[10px] font-bold">
+                {([7, 14, 30] as const).map((d) => (
+                  <button
+                    key={d}
+                    type="button"
+                    onClick={() => setChartDaysWindow(d)}
+                    className={`px-2 py-1 rounded-lg transition-colors cursor-pointer ${
+                      chartDaysWindow === d
+                        ? "bg-white/15 text-white"
+                        : "text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    {d}d
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
-          <div className="w-full h-72">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={dailyData} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
-                <defs>
-                  <linearGradient id="colorReachIg" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="hsl(var(--primary))" stopOpacity={0.35}/>
-                    <stop offset="95%" stopColor="hsl(var(--primary))" stopOpacity={0.01}/>
-                  </linearGradient>
-                  <linearGradient id="colorReachFb" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#8b5cf6" stopOpacity={0.30}/>
-                    <stop offset="95%" stopColor="#8b5cf6" stopOpacity={0.01}/>
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.03)" vertical={false} />
-                <XAxis dataKey="label" tick={{ fontSize: 9, fill: "#888" }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fontSize: 9, fill: "#888" }} axisLine={false} tickLine={false} tickFormatter={v => v >= 1000 ? `${(v/1000).toFixed(0)}k` : String(v)} />
-                <Tooltip content={<CustomTooltip />} />
-                <Area type="monotone" dataKey="reachIg" name="Alcance Instagram" stroke="hsl(var(--primary))" strokeWidth={2.5} fillOpacity={1} fill="url(#colorReachIg)" />
-                <Area type="monotone" dataKey="reachFb" name="Alcance Facebook" stroke="#8b5cf6" strokeWidth={2.5} fillOpacity={1} fill="url(#colorReachFb)" />
-              </AreaChart>
-            </ResponsiveContainer>
+
+          {/* Barra de Resumo Imediato */}
+          <div className="grid grid-cols-3 gap-3">
+            <div className="rounded-xl bg-white/[0.02] border border-white/5 px-3 py-2">
+              <span className="text-[9px] uppercase font-bold text-muted-foreground block">
+                Total ({chartDaysWindow}d)
+              </span>
+              <span className="text-sm font-black font-mono text-white">
+                {chartView.total.toLocaleString("pt-BR")}
+              </span>
+            </div>
+            <div className="rounded-xl bg-white/[0.02] border border-white/5 px-3 py-2">
+              <span className="text-[9px] uppercase font-bold text-muted-foreground block">
+                Média Diária
+              </span>
+              <span className="text-sm font-black font-mono text-white">
+                {chartView.avg.toLocaleString("pt-BR")}/dia
+              </span>
+            </div>
+            <div className="rounded-xl bg-white/[0.02] border border-white/5 px-3 py-2">
+              <span className="text-[9px] uppercase font-bold text-muted-foreground block">
+                Pico da Janela
+              </span>
+              <span className="text-sm font-black font-mono text-emerald-400">
+                {chartView.peak
+                  ? `${chartView.peak.value.toLocaleString("pt-BR")} (${chartView.peak.label})`
+                  : "—"}
+              </span>
+            </div>
+          </div>
+
+          <div className="w-full h-64">
+            {chartView.hasAnyData ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={chartView.data} margin={{ top: 10, right: 8, left: -12, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" vertical={false} />
+                  <XAxis
+                    dataKey="label"
+                    tick={{ fontSize: 10, fill: "#a1a1aa" }}
+                    axisLine={{ stroke: "rgba(255,255,255,0.08)" }}
+                    tickLine={false}
+                  />
+                  <YAxis
+                    tick={{ fontSize: 10, fill: "#a1a1aa" }}
+                    axisLine={false}
+                    tickLine={false}
+                    tickFormatter={(v) => (v >= 1000 ? `${(v / 1000).toFixed(1)}k` : String(v))}
+                  />
+                  <Tooltip content={<CustomChartTooltip />} cursor={{ fill: "rgba(255,255,255,0.04)" }} />
+                  {chartView.avg > 0 && (
+                    <ReferenceLine
+                      y={chartView.avg}
+                      stroke="rgba(255,255,255,0.28)"
+                      strokeDasharray="4 4"
+                      label={{
+                        value: `Média: ${chartView.avg.toLocaleString("pt-BR")}`,
+                        position: "insideTopRight",
+                        fill: "#d4d4d8",
+                        fontSize: 10,
+                      }}
+                    />
+                  )}
+                  <Bar dataKey="value" radius={[6, 6, 0, 0]} maxBarSize={36}>
+                    {chartView.data.map((entry, idx) => (
+                      <Cell
+                        key={`cell-${idx}`}
+                        fill={chartMetricMeta[chartMetric].color}
+                        fillOpacity={entry.isSelectedRange ? 0.95 : 0.45}
+                      />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="h-full rounded-2xl border border-dashed border-white/10 flex flex-col items-center justify-center text-center p-6 space-y-2">
+                <BarChart3 className="h-7 w-7 text-muted-foreground/40" />
+                <p className="text-xs font-bold text-foreground">
+                  {fetchingInsights
+                    ? "Carregando série histórica real da Meta..."
+                    : `Sem movimentação registrada para "${chartMetricMeta[chartMetric].label}" nos últimos ${chartDaysWindow} dias`}
+                </p>
+                <p className="text-[11px] text-muted-foreground max-w-md">
+                  Se esta página não tiver Instagram Business vinculado ou teve 0 interações nesta janela, alterne a métrica acima ou selecione outra conta conectada.
+                </p>
+              </div>
+            )}
           </div>
         </div>
 
-        {/* Funil de Engajamento Social */}
+        {/* Funil de Conversão Social Real */}
         <div className="lg:col-span-4 glass-panel p-5 flex flex-col justify-between">
           <div>
             <h4 className="text-xs font-black text-white uppercase tracking-wider">Funil de Conversão Social</h4>
-            <p className="text-[9px] text-muted-foreground mt-0.5">Taxa de conversão da audiência a partir da exposição primária.</p>
+            <p className="text-[9px] text-muted-foreground mt-0.5">
+              Fluxo real da exposição até o clique no link da bio.
+            </p>
           </div>
-          
-          <div className="space-y-4 my-4 flex-1 flex flex-col justify-center">
+
+          <div className="space-y-3.5 my-4 flex-1 flex flex-col justify-center">
             {funnelData.map((f, i) => (
               <div key={i} className="space-y-1.5">
                 <div className="flex items-center justify-between text-[10px] font-bold">
-                  <span className="text-muted-foreground flex items-center gap-1">
+                  <span className="text-muted-foreground flex items-center gap-1.5">
                     <span className="w-2 h-2 rounded-full" style={{ backgroundColor: f.fill }} />
                     {f.step}
                   </span>
-                  <span className="text-white font-mono">{f.value.toLocaleString("pt-BR")} <span className="text-muted-foreground text-[8px]">({f.percentage}%)</span></span>
+                  <span className="text-white font-mono">
+                    {f.value.toLocaleString("pt-BR")}{" "}
+                    <span className="text-muted-foreground text-[8px]">({f.percentage}%)</span>
+                  </span>
                 </div>
-                <div className="h-3 rounded-lg bg-white/5 overflow-hidden relative">
-                  <motion.div 
+                <div className="h-2.5 rounded-lg bg-white/5 overflow-hidden relative">
+                  <motion.div
                     initial={{ width: 0 }}
-                    animate={{ width: `${f.percentage}%` }}
-                    transition={{ duration: 0.8, delay: i * 0.1 }}
+                    animate={{ width: `${Math.max(f.value > 0 ? 4 : 0, f.percentage)}%` }}
+                    transition={{ duration: 0.7, delay: i * 0.08 }}
                     className="h-full rounded-lg"
                     style={{ backgroundColor: f.fill }}
                   />
@@ -808,509 +868,600 @@ function SocialInsightsPage() {
           </div>
 
           <div className="border-t border-white/5 pt-3 text-[10px] text-muted-foreground leading-relaxed">
-            <span className="text-primary font-bold">Insight:</span> A taxa de clique em link de <strong className="text-white">{(kpis.clicks / (kpis.reachIg + kpis.reachFb) * 100).toFixed(1)}%</strong> indica alto interesse pelo estoque. Focar em CTAs de WhatsApp nos Stories para capitalizar essa tração.
+            <span className="text-primary font-bold">Resumo Real:</span>{" "}
+            <strong className="text-white">{kpis.profileViews.toLocaleString("pt-BR")}</strong> visitas ao perfil converteram{" "}
+            <strong className="text-white">{kpis.websiteClicks.toLocaleString("pt-BR")}</strong> cliques no site (
+            <strong className="text-emerald-400">{bioCtr}%</strong> CTR).
           </div>
         </div>
       </div>
 
-      {/* Heatmap de Engajamento por Hora & Demográficos */}
+      {/* Heatmap Real & Demográficos Reais */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        
-        {/* Heatmap de Horários */}
+        {/* Mapa de Calor a partir das publicações reais */}
         <div className="lg:col-span-8 glass-panel p-5 space-y-4">
-          <div>
-            <h4 className="text-xs font-black text-white uppercase tracking-wider">Mapa de Calor: Melhores Horários</h4>
-            <p className="text-[9px] text-muted-foreground mt-0.5">Densidade de engajamento e atividade dos seguidores por dia da semana e hora.</p>
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <div>
+              <h4 className="text-xs font-black text-white uppercase tracking-wider">
+                Mapa de Calor: Horários das Publicações Reais
+              </h4>
+              <p className="text-[9px] text-muted-foreground mt-0.5">
+                Calculado exclusivamente sobre os horários e engajamento real das publicações carregadas abaixo.
+              </p>
+            </div>
           </div>
 
-          <div className="overflow-x-auto">
-            <div className="min-w-[640px] space-y-1 pt-2">
-              <div className="flex text-[9px] text-muted-foreground font-mono font-bold border-b border-white/5 pb-1">
-                <span className="w-10 shrink-0" />
-                <div className="flex-1 grid grid-cols-24 text-center">
-                  {HOURS.map((h, i) => (
-                    <span key={h} className={i % 3 === 0 ? "" : "text-transparent"}>{h}</span>
+          {hasPostsForHeatmap ? (
+            <>
+              <div className="overflow-x-auto">
+                <div className="min-w-[640px] space-y-1 pt-2">
+                  <div className="flex text-[9px] text-muted-foreground font-mono font-bold border-b border-white/5 pb-1">
+                    <span className="w-10 shrink-0" />
+                    <div className="flex-1 grid grid-cols-24 text-center">
+                      {HOURS.map((h, i) => (
+                        <span key={h} className={i % 3 === 0 ? "" : "text-transparent"}>
+                          {h}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                  {DAYS_OF_WEEK.map((dayName, dayIdx) => (
+                    <div key={dayName} className="flex items-center">
+                      <span className="w-10 text-[10px] font-bold text-muted-foreground shrink-0">{dayName}</span>
+                      <div className="flex-1 grid grid-cols-24 gap-1">
+                        {heatmapMatrix[dayIdx].map((weight, hourIdx) => (
+                          <div
+                            key={hourIdx}
+                            style={{
+                              backgroundColor:
+                                weight > 0 ? `hsl(var(--primary) / ${weight})` : "rgba(255,255,255,0.03)",
+                            }}
+                            title={
+                              weight > 0
+                                ? `${dayName} às ${hourIdx}h — Índice de Engajamento Real: ${Math.round(weight * 100)}%`
+                                : `${dayName} às ${hourIdx}h — Sem publicações registradas`
+                            }
+                            className={`h-5 rounded-[3px] border border-black/20 transition-all hover:scale-115 hover:z-10 cursor-help ${
+                              weight > 0.8 ? "shadow-glow-sm shadow-primary/40 border-primary/40" : ""
+                            }`}
+                          />
+                        ))}
+                      </div>
+                    </div>
                   ))}
                 </div>
               </div>
-              {DAYS_OF_WEEK.map((dayName, dayIdx) => (
-                <div key={dayName} className="flex items-center">
-                  <span className="w-10 text-[10px] font-bold text-muted-foreground shrink-0">{dayName}</span>
-                  <div className="flex-1 grid grid-cols-24 gap-1">
-                    {engagementMatrix[dayIdx].map((weight, hourIdx) => (
-                      <div 
-                        key={hourIdx} 
-                        style={{ backgroundColor: `hsl(var(--primary) / ${weight})` }}
-                        title={`${dayName} às ${hourIdx}h — Engajamento: ${Math.round(weight * 100)}%`}
-                        className={`h-5 rounded-[3px] border border-black/20 transition-all hover:scale-115 hover:z-10 cursor-help ${
-                          weight > 0.8 ? "shadow-glow-sm shadow-primary/40 border-primary/40" : ""
-                        }`}
-                      />
-                    ))}
-                  </div>
+              <div className="flex items-center gap-3 justify-end text-[9px] text-muted-foreground pt-1.5 font-bold uppercase tracking-wider">
+                <span>Sem Posts</span>
+                <div className="flex gap-0.5">
+                  <div className="w-2.5 h-2.5 bg-white/5 rounded-[2px]" />
+                  <div className="w-2.5 h-2.5 bg-primary/30 rounded-[2px]" />
+                  <div className="w-2.5 h-2.5 bg-primary/60 rounded-[2px]" />
+                  <div className="w-2.5 h-2.5 bg-primary rounded-[2px]" />
                 </div>
-              ))}
+                <span>Maior Tração Real</span>
+              </div>
+            </>
+          ) : (
+            <div className="h-44 rounded-xl border border-dashed border-white/10 flex items-center justify-center text-xs text-muted-foreground text-center p-4">
+              Ainda não há publicações reais carregadas para mapear os melhores horários desta conta.
             </div>
-          </div>
-          <div className="flex items-center gap-3 justify-end text-[9px] text-muted-foreground pt-1.5 font-bold uppercase tracking-wider">
-            <span>Menor Engajamento</span>
-            <div className="flex gap-0.5">
-              <div className="w-2.5 h-2.5 bg-primary/10 rounded-[2px]" />
-              <div className="w-2.5 h-2.5 bg-primary/30 rounded-[2px]" />
-              <div className="w-2.5 h-2.5 bg-primary/60 rounded-[2px]" />
-              <div className="w-2.5 h-2.5 bg-primary rounded-[2px]" />
-            </div>
-            <span>Maior Engajamento</span>
-          </div>
+          )}
         </div>
 
-        {/* Demográficos Detalhados */}
+        {/* Demográficos Reais (Meta follower_demographics) */}
         <div className="lg:col-span-4 glass-panel p-5 flex flex-col justify-between space-y-4">
           <div>
-            <h4 className="text-xs font-black text-white uppercase tracking-wider">Distribuição por Gênero & Idade</h4>
-            <p className="text-[9px] text-muted-foreground mt-0.5">Fatias demográficas ativas do público engajado.</p>
+            <h4 className="text-xs font-black text-white uppercase tracking-wider">
+              Distribuição Real por Gênero &amp; Idade
+            </h4>
+            <p className="text-[9px] text-muted-foreground mt-0.5">
+              Dados oficiais do `follower_demographics` no Instagram.
+            </p>
           </div>
 
-          <div className="w-full h-44">
-            <ResponsiveContainer width="100%" height="100%">
-              <RechartsBarChart data={ageChartData} margin={{ top: 5, right: 0, left: -25, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.03)" vertical={false} />
-                <XAxis dataKey="range" tick={{ fontSize: 9, fill: "#888" }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fontSize: 9, fill: "#888" }} axisLine={false} tickLine={false} unit="%" />
-                <Tooltip content={<CustomTooltip />} />
-                <Bar dataKey="Homens" fill="hsl(var(--primary))" radius={[2, 2, 0, 0]} />
-                <Bar dataKey="Mulheres" fill="#ec4899" radius={[2, 2, 0, 0]} />
-              </RechartsBarChart>
-            </ResponsiveContainer>
-          </div>
+          {demographics.available ? (
+            <>
+              <div className="w-full h-44">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={ageChartData} margin={{ top: 5, right: 0, left: -25, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.03)" vertical={false} />
+                    <XAxis dataKey="range" tick={{ fontSize: 9, fill: "#a1a1aa" }} axisLine={false} tickLine={false} />
+                    <YAxis tick={{ fontSize: 9, fill: "#a1a1aa" }} axisLine={false} tickLine={false} unit="%" />
+                    <Tooltip
+                      formatter={(v: any, name: any) => [`${v}%`, name]}
+                      contentStyle={{ backgroundColor: "#0c0c14", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 12, fontSize: 11 }}
+                    />
+                    <Bar dataKey="Homens" fill="hsl(var(--primary))" radius={[3, 3, 0, 0]} />
+                    <Bar dataKey="Mulheres" fill="#ec4899" radius={[3, 3, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
 
-          <div className="border-t border-white/5 pt-3 space-y-2 text-[10px]">
-            <div className="flex justify-between font-bold text-white">
-              <span className="flex items-center gap-1.5 text-indigo-400">
-                <span className="w-2.5 h-2.5 rounded bg-primary shrink-0" />
-                Homens ({kpis.demographics.gender.male}%)
-              </span>
-              <span className="flex items-center gap-1.5 text-pink-400">
-                <span className="w-2.5 h-2.5 rounded bg-[#ec4899] shrink-0" />
-                Mulheres ({kpis.demographics.gender.female}%)
-              </span>
+              <div className="border-t border-white/5 pt-3 space-y-2 text-[10px]">
+                <div className="flex justify-between font-bold text-white">
+                  <span className="flex items-center gap-1.5 text-indigo-400">
+                    <span className="w-2.5 h-2.5 rounded bg-primary shrink-0" />
+                    Homens ({demographics.gender.male}%)
+                  </span>
+                  <span className="flex items-center gap-1.5 text-pink-400">
+                    <span className="w-2.5 h-2.5 rounded bg-[#ec4899] shrink-0" />
+                    Mulheres ({demographics.gender.female}%)
+                  </span>
+                </div>
+                <div className="h-2.5 rounded-full bg-white/5 overflow-hidden flex">
+                  <div className="h-full bg-primary" style={{ width: `${demographics.gender.male}%` }} />
+                  <div className="h-full bg-pink-500" style={{ width: `${demographics.gender.female}%` }} />
+                </div>
+              </div>
+            </>
+          ) : (
+            <div className="flex-1 rounded-xl border border-dashed border-white/10 flex flex-col items-center justify-center text-center p-4 space-y-1.5">
+              <Users className="h-6 w-6 text-muted-foreground/40" />
+              <p className="text-xs font-bold text-foreground">Sem demográficos liberados pela Meta</p>
+              <p className="text-[10px] text-muted-foreground leading-relaxed">
+                A Meta API libera gênero e faixa etária apenas para contas do Instagram com pelo menos 100 seguidores ativos nesta janela.
+              </p>
             </div>
-            <div className="h-2.5 rounded-full bg-white/5 overflow-hidden flex">
-              <div className="h-full bg-primary" style={{ width: `${kpis.demographics.gender.male}%` }} />
-              <div className="h-full bg-pink-500" style={{ width: `${kpis.demographics.gender.female}%` }} />
-            </div>
-          </div>
+          )}
         </div>
       </div>
 
       {/* Victoria AI Marketing Advisor */}
-      <motion.div 
-        initial={{ opacity: 0, y: 15 }} 
+      <motion.div
+        initial={{ opacity: 0, y: 15 }}
         animate={{ opacity: 1, y: 0 }}
         className="glass-panel border-primary/20 bg-gradient-to-br from-primary/[0.04] to-pink-500/[0.01] p-5 relative overflow-hidden"
       >
-        <div className="absolute top-0 right-0 w-32 h-32 bg-primary/10 rounded-full blur-2xl pointer-events-none" />
-        
-        <div className="flex items-center justify-between border-b border-white/5 pb-4 mb-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-white/5 pb-4 mb-4">
           <div className="flex items-center gap-2">
             <div className="h-9 w-9 bg-primary/10 rounded-xl flex items-center justify-center text-primary">
-              <Bot className="h-5 w-5 animate-pulse" />
+              <Bot className="h-5 w-5" />
             </div>
             <div>
               <h4 className="text-xs font-black text-white uppercase tracking-wider">Victoria AI Advisor</h4>
-              <p className="text-[9px] text-muted-foreground mt-0.5">Diagnóstico sob demanda e recomendações de conteúdo.</p>
+              <p className="text-[9px] text-muted-foreground mt-0.5">
+                Diagnóstico gerado exclusivamente com as métricas e posts reais da conta selecionada.
+              </p>
             </div>
           </div>
 
-          {/* Abas da IA */}
           <div className="flex bg-white/5 p-1 rounded-xl gap-1 text-[9px] font-bold">
             <button
               onClick={() => setAiReportTab("general")}
-              className={`px-3 py-1.5 rounded-lg transition-colors cursor-pointer ${aiReportTab === "general" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}
+              className={`px-3 py-1.5 rounded-lg transition-colors cursor-pointer ${
+                aiReportTab === "general" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"
+              }`}
             >
-              Diagnóstico Geral
-            </button>
-            <button
-              onClick={() => setAiReportTab("content")}
-              className={`px-3 py-1.5 rounded-lg transition-colors cursor-pointer ${aiReportTab === "content" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}
-            >
-              Sugestões de Conteúdo
+              Diagnóstico IA
             </button>
             <button
               onClick={() => setAiReportTab("public")}
-              className={`px-3 py-1.5 rounded-lg transition-colors cursor-pointer ${aiReportTab === "public" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}
+              className={`px-3 py-1.5 rounded-lg transition-colors cursor-pointer ${
+                aiReportTab === "public" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"
+              }`}
             >
-              Público-Alvo
+              Resumo Numérico
             </button>
           </div>
         </div>
 
-        {/* Relatórios da IA */}
-        <div className="min-h-36 flex flex-col justify-center">
-          {aiReport ? (
-            <div className="space-y-4 text-xs leading-relaxed text-muted-foreground">
-              {aiReportTab === "general" && (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="space-y-2 border-r border-white/5 pr-4">
-                    <h5 className="font-bold text-white flex items-center gap-1.5"><TrendingUp className="h-4 w-4 text-emerald-400" /> Pontos Fortes</h5>
-                    <ul className="list-disc list-inside space-y-1 text-[11px]">
-                      <li>O alcance orgânico no Instagram subiu para <strong className="text-white">{kpis.reachIg.toLocaleString("pt-BR")}</strong> contas, impulsionado pelo formato Reels de alta retenção.</li>
-                      <li>Taxa de conversão de leads nos Stories manteve-se estável, indicando que a base de seguidores está engajada e qualificada.</li>
-                    </ul>
-                  </div>
-                  <div className="space-y-2">
-                    <h5 className="font-bold text-white flex items-center gap-1.5"><TrendingDown className="h-4 w-4 text-rose-400" /> Oportunidades de Melhoria</h5>
-                    <ul className="list-disc list-inside space-y-1 text-[11px]">
-                      <li>O canal do Facebook está estagnado em alcance. Os posts estáticos não estão gerando compartilhamentos necessários.</li>
-                      <li>Pico de visitas no perfil ocorre às quintas-feiras às 19h, mas a frequência de posts neste horário está baixa.</li>
-                    </ul>
-                  </div>
-                </div>
-              )}
-
-              {aiReportTab === "content" && (
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div className="bg-white/[0.01] border border-white/5 p-3 rounded-xl space-y-2">
-                    <span className="text-[8px] bg-primary/20 text-primary border border-primary/30 px-2 py-0.5 rounded font-black uppercase">Fórmula Reels</span>
-                    <h6 className="font-bold text-white text-[11px]">Tour Curto com Detalhes Premium</h6>
-                    <p className="text-[10px]">Gravar um vídeo dinâmico de 15 segundos destacando apenas os botões de controle, o teto solar panorâmico e o ronco do escapamento de veículos importados.</p>
-                  </div>
-                  <div className="bg-white/[0.01] border border-white/5 p-3 rounded-xl space-y-2">
-                    <span className="text-[8px] bg-pink-500/20 text-pink-400 border border-pink-500/30 px-2 py-0.5 rounded font-black uppercase">Interativo</span>
-                    <h6 className="font-bold text-white text-[11px]">Batalha de Modelos nos Stories</h6>
-                    <p className="text-[10px]">Colocar enquetes comparando dois SUVs concorrentes (ex: Compass vs Corolla Cross). Aumenta o engajamento e ajuda a capturar leads interessados em comprar.</p>
-                  </div>
-                  <div className="bg-white/[0.01] border border-white/5 p-3 rounded-xl space-y-2">
-                    <span className="text-[8px] bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-2 py-0.5 rounded font-black uppercase">Social Proof</span>
-                    <h6 className="font-bold text-white text-[11px]">Entrega de Chave ao Cliente</h6>
-                    <p className="text-[10px]">Postar foto ou vídeo rápido da entrega do veículo com depoimento sincero. Gera forte gatilho de confiança e autoridade na região.</p>
-                  </div>
-                </div>
-              )}
-
-              {aiReportTab === "public" && (
-                <div className="space-y-3">
-                  <p className="text-[11px]">Sua audiência é majoritariamente masculina <strong className="text-white">({kpis.demographics.gender.male}%)</strong>, com forte concentração na faixa de <strong className="text-white">25 a 44 anos</strong>. Esse perfil tem foco em carros esportivos, picapes e SUVs de alto valor agregado.</p>
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-1">
-                    <div className="bg-black/20 p-2.5 rounded-xl border border-white/5">
-                      <span className="text-[8px] text-muted-foreground uppercase font-black">Melhor Canal</span>
-                      <p className="font-bold text-white text-xs mt-0.5">Instagram Reels</p>
-                    </div>
-                    <div className="bg-black/20 p-2.5 rounded-xl border border-white/5">
-                      <span className="text-[8px] text-muted-foreground uppercase font-black">Interesse Principal</span>
-                      <p className="font-bold text-white text-xs mt-0.5">Veículos Premium</p>
-                    </div>
-                    <div className="bg-black/20 p-2.5 rounded-xl border border-white/5">
-                      <span className="text-[8px] text-muted-foreground uppercase font-black">Localização Top</span>
-                      <p className="font-bold text-white text-xs mt-0.5">São Paulo / Campinas</p>
-                    </div>
-                    <div className="bg-black/20 p-2.5 rounded-xl border border-white/5">
-                      <span className="text-[8px] text-muted-foreground uppercase font-black">Fidelidade</span>
-                      <p className="font-bold text-white text-xs mt-0.5">Alta Recorrência</p>
-                    </div>
-                  </div>
-                </div>
-              )}
+        <div className="min-h-28 flex flex-col justify-center">
+          {aiReportTab === "public" ? (
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div className="bg-black/20 p-3 rounded-xl border border-white/5">
+                <span className="text-[9px] text-muted-foreground uppercase font-black">Seguidores Atuais</span>
+                <p className="font-bold text-white text-sm mt-0.5 font-mono">{totalFollowersAll.toLocaleString("pt-BR")}</p>
+              </div>
+              <div className="bg-black/20 p-3 rounded-xl border border-white/5">
+                <span className="text-[9px] text-muted-foreground uppercase font-black">Posts Reais Carregados</span>
+                <p className="font-bold text-white text-sm mt-0.5 font-mono">{listPosts.length}</p>
+              </div>
+              <div className="bg-black/20 p-3 rounded-xl border border-white/5">
+                <span className="text-[9px] text-muted-foreground uppercase font-black">Público Masculino / Fem.</span>
+                <p className="font-bold text-white text-sm mt-0.5 font-mono">
+                  {demographics.available ? `${demographics.gender.male}% / ${demographics.gender.female}%` : "—"}
+                </p>
+              </div>
+              <div className="bg-black/20 p-3 rounded-xl border border-white/5">
+                <span className="text-[9px] text-muted-foreground uppercase font-black">CTR Link na Bio</span>
+                <p className="font-bold text-emerald-400 text-sm mt-0.5 font-mono">{bioCtr}%</p>
+              </div>
+            </div>
+          ) : aiReport ? (
+            <div className="prose prose-invert prose-sm max-w-none text-xs leading-relaxed">
+              <ReactMarkdown>{aiReport}</ReactMarkdown>
             </div>
           ) : (
-            <div className="text-center py-6 space-y-3">
-              <Compass className="h-8 w-8 text-primary/40 mx-auto animate-pulse" />
-              <p className="text-xs text-muted-foreground max-w-sm mx-auto leading-relaxed">
-                Clique abaixo para processar todo o engajamento, comportamento demográfico e estatísticas do funil social do período.
+            <div className="text-center py-4 space-y-3">
+              <p className="text-xs text-muted-foreground max-w-md mx-auto">
+                Clique abaixo para que a Victoria AI analise as métricas e publicações reais desta conta.
               </p>
               <button
                 onClick={generateAiInsights}
-                disabled={isGeneratingAi}
-                className="inline-flex items-center gap-2 rounded-xl bg-primary px-5 py-2.5 text-xs font-bold text-primary-foreground shadow-glow hover:opacity-90 active:scale-95 transition cursor-pointer"
+                disabled={isGeneratingAi || !isConnected}
+                className="inline-flex items-center gap-2 rounded-xl bg-primary px-5 py-2 text-xs font-bold text-primary-foreground shadow-glow hover:opacity-90 active:scale-95 transition cursor-pointer disabled:opacity-50"
               >
                 {isGeneratingAi ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
-                Gerar Diagnóstico Avançado
+                Gerar Diagnóstico com Dados Reais
               </button>
             </div>
           )}
         </div>
       </motion.div>
 
-      {/* Tabela de Performance de Postagens */}
-      <motion.div initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }} className="glass-panel p-5">
+      {/* Tabela de Performance de Publicações Reais */}
+      <motion.div initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }} className="glass-panel p-5">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-white/5 pb-4 mb-4">
           <div>
-            <h4 className="text-xs font-black text-white uppercase tracking-wider">Performance de Publicações</h4>
-            <p className="text-[9px] text-muted-foreground mt-0.5">Métricas de alcance, impressões e engajamento individuais.</p>
+            <h4 className="text-xs font-black text-white uppercase tracking-wider flex items-center gap-2">
+              Publicações Reais do Feed &amp; Reels
+              <span className="px-2 py-0.5 rounded-full bg-white/5 text-[10px] font-mono text-muted-foreground">
+                {listPosts.length} posts
+              </span>
+            </h4>
+            <p className="text-[9px] text-muted-foreground mt-0.5">
+              Posts reais recuperados diretamente do Instagram &amp; Facebook com métricas oficiais e pré-visualização.
+            </p>
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
             {/* Filtro por tipo de post */}
             <div className="flex bg-white/5 p-1 rounded-xl gap-1 text-[9px] font-bold">
-              {(["all", "reels", "image", "stories"] as const).map((type) => (
+              {(["all", "reels", "image", "carousel"] as const).map((type) => (
                 <button
                   key={type}
                   onClick={() => setPostTypeFilter(type)}
-                  className={`px-2.5 py-1 rounded-lg transition-colors cursor-pointer ${postTypeFilter === type ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}
+                  className={`px-2.5 py-1 rounded-lg transition-colors cursor-pointer ${
+                    postTypeFilter === type ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"
+                  }`}
                 >
-                  {type === "all" ? "Todos" : type === "reels" ? "Reels" : type === "image" ? "Imagens" : "Stories"}
+                  {type === "all" ? "Todos" : type === "reels" ? "Reels/Vídeos" : type === "image" ? "Fotos/Posts" : "Carrossel"}
                 </button>
               ))}
             </div>
 
-            {/* Ordenador de postagens */}
+            {/* Ordenador */}
             <div className="flex bg-white/5 p-1 rounded-xl gap-1 text-[9px] font-bold">
-              {(["reach", "likes", "comments", "engagement"] as const).map((opt) => (
+              {(["recent", "reach", "likes", "comments", "engagement"] as const).map((opt) => (
                 <button
                   key={opt}
                   onClick={() => setSortPostsBy(opt)}
-                  className={`px-2.5 py-1 rounded-lg transition-colors cursor-pointer ${sortPostsBy === opt ? "bg-primary/20 text-primary border border-primary/20" : "text-muted-foreground hover:text-foreground"}`}
+                  className={`px-2.5 py-1 rounded-lg transition-colors cursor-pointer ${
+                    sortPostsBy === opt ? "bg-primary/20 text-primary border border-primary/20" : "text-muted-foreground hover:text-foreground"
+                  }`}
                 >
-                  {opt === "reach" ? "Alcance" : opt === "likes" ? "Curtidas" : opt === "comments" ? "Comentários" : "Engajamento"}
+                  {opt === "recent"
+                    ? "Mais Recentes"
+                    : opt === "reach"
+                    ? "Alcance"
+                    : opt === "likes"
+                    ? "Curtidas"
+                    : opt === "comments"
+                    ? "Comentários"
+                    : "Engajamento"}
                 </button>
               ))}
             </div>
           </div>
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs border-collapse">
-            <thead>
-              <tr className="border-b border-white/5 text-[9px] font-bold text-muted-foreground uppercase tracking-wider">
-                <th className="py-3 px-3">Publicação</th>
-                <th className="py-3 px-3">Canal</th>
-                <th className="py-3 px-3 text-center"><Heart className="w-3.5 h-3.5 inline text-pink-400 mr-1" />Curtidas</th>
-                <th className="py-3 px-3 text-center"><MessageCircle className="w-3.5 h-3.5 inline text-blue-400 mr-1" />Comentários</th>
-                <th className="py-3 px-3 text-center"><Eye className="w-3.5 h-3.5 inline text-violet-400 mr-1" />Alcance</th>
-                <th className="py-3 px-3 text-center"><Activity className="w-3.5 h-3.5 inline text-amber-400 mr-1" />Impressões</th>
-                <th className="py-3 px-3 text-center">Taxa Engaj.</th>
-                <th className="py-3 px-3"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {listPosts.map((post) => {
-                const isExpanded = selectedPostDetail === post.id;
-                const engRate = (((post.likes_count + post.comments_count) / post.reach_count) * 100).toFixed(1);
-                
-                const postPageObj = activePages.find(p => p.page_id === selectedPage) || activePages[0];
-                const displayName = post.platform === "facebook" ? postPageObj.page_name : `@${postPageObj.instagram_handle || "social"}`;
-                
-                return (
-                  <Fragment key={post.id}>
-                    <tr className="border-b border-white/[0.02] hover:bg-white/[0.015] transition-colors cursor-pointer" onClick={() => setSelectedPostDetail(isExpanded ? null : post.id)}>
-                      <td className="py-3.5 px-3 font-semibold text-white">
-                        <div className="flex items-center gap-2">
-                          {post.post_type === "reels" ? <Film className="w-3.5 h-3.5 text-primary shrink-0" /> : post.post_type === "stories" ? <Layers className="w-3.5 h-3.5 text-amber-400 shrink-0" /> : <Image className="w-3.5 h-3.5 text-blue-400 shrink-0" />}
-                          <span className="truncate max-w-[280px]">{post.title}</span>
-                        </div>
-                      </td>
-                      <td className="py-3.5 px-3">
-                        {post.platform === "facebook" ? (
-                          <span className="inline-flex items-center gap-1 text-[9px] font-bold text-blue-400 bg-blue-500/10 border border-blue-500/20 px-2 py-0.5 rounded-full"><Facebook className="w-2.5 h-2.5" /> Facebook</span>
-                        ) : post.platform === "both" ? (
-                          <span className="inline-flex items-center gap-1 text-[9px] font-bold text-violet-400 bg-violet-500/10 border border-violet-500/20 px-2 py-0.5 rounded-full"><Share2 className="w-2.5 h-2.5" /> IG/FB</span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 text-[9px] font-bold text-pink-400 bg-pink-500/10 border border-pink-500/20 px-2 py-0.5 rounded-full"><Instagram className="w-2.5 h-2.5" /> Instagram</span>
-                        )}
-                      </td>
-                      <td className="py-3.5 px-3 text-center font-mono font-semibold text-white">{(post.likes_count).toLocaleString("pt-BR")}</td>
-                      <td className="py-3.5 px-3 text-center font-mono text-muted-foreground">{(post.comments_count).toLocaleString("pt-BR")}</td>
-                      <td className="py-3.5 px-3 text-center font-mono font-semibold text-white">{(post.reach_count).toLocaleString("pt-BR")}</td>
-                      <td className="py-3.5 px-3 text-center font-mono text-muted-foreground">{(post.impressions_count).toLocaleString("pt-BR")}</td>
-                      <td className="py-3.5 px-3 text-center">
-                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold font-mono ${
-                          parseFloat(engRate) >= 6 ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20" :
-                          parseFloat(engRate) >= 3 ? "bg-amber-500/10 text-amber-400 border border-amber-500/20" :
-                          "bg-white/5 text-muted-foreground"
-                        }`}>
-                          {engRate}%
-                        </span>
-                      </td>
-                      <td className="py-3.5 px-3 text-right">
-                        <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform ${isExpanded ? "rotate-180" : ""}`} />
-                      </td>
-                    </tr>
-                    
-                    {/* Linha Expandida de IA Insights */}
-                    <AnimatePresence>
-                      {isExpanded && (
-                        <tr>
-                          <td colSpan={8} className="p-0 bg-white/[0.005]">
-                            <motion.div
-                              initial={{ opacity: 0, height: 0 }}
-                              animate={{ opacity: 1, height: "auto" }}
-                              exit={{ opacity: 0, height: 0 }}
-                              className="overflow-hidden border-b border-white/[0.03] px-5 py-5"
-                            >
-                              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-                                
-                                {/* Coluna 1: Prévia Criativo */}
-                                <div className="lg:col-span-4 flex flex-col items-center">
-                                  <div className="w-full flex justify-between items-center mb-2 px-1">
-                                    <span className="text-[9px] text-muted-foreground uppercase font-black tracking-wider flex items-center gap-1.5">
-                                      <Image className="w-3 h-3 text-primary" /> Prévia do Criativo
-                                    </span>
-                                    
-                                    <button 
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        setMediaFit(prev => prev === "cover" ? "contain" : "cover");
-                                      }}
-                                      className="text-[9px] font-bold text-primary hover:text-white px-2 py-0.5 rounded bg-primary/10 border border-primary/20 cursor-pointer"
-                                    >
-                                      {mediaFit === "cover" ? "Ajustar Mídia" : "Preencher Tela"}
-                                    </button>
-                                  </div>
-                                  
-                                  <div className="relative w-full max-w-[240px] aspect-[9/16] rounded-[28px] border-[5px] border-neutral-800 bg-black overflow-hidden shadow-2xl flex flex-col justify-between h-[420px] transition-all">
-                                    {/* Header Mockup */}
-                                    <div className="flex items-center justify-between p-2.5 bg-neutral-900 border-b border-white/5 z-10 shrink-0">
-                                      <div className="flex items-center gap-2">
-                                        <div className="w-5 h-5 rounded-full bg-primary/20 flex items-center justify-center text-[9px] font-bold text-primary shrink-0 uppercase">
-                                          {displayName.replace("@", "").slice(0, 2)}
-                                        </div>
-                                        <div className="flex flex-col min-w-0">
-                                          <span className="text-[10px] font-bold text-white leading-tight truncate">
-                                            {displayName}
-                                          </span>
-                                          <span className="text-[8px] text-muted-foreground leading-none">
-                                            {post.platform === "facebook" ? "Facebook Page" : "Instagram Profile"}
-                                          </span>
-                                        </div>
-                                      </div>
-                                      {post.platform === "facebook" ? <Facebook className="w-3.5 h-3.5 text-blue-400 shrink-0" /> : <Instagram className="w-3.5 h-3.5 text-pink-400 shrink-0" />}
-                                    </div>
+        {listPosts.length === 0 ? (
+          <div className="rounded-2xl border border-dashed border-white/10 p-10 text-center space-y-2">
+            {fetchingInsights ? (
+              <>
+                <Loader2 className="h-6 w-6 text-primary animate-spin mx-auto" />
+                <p className="text-xs font-bold text-foreground">Carregando publicações reais da Meta...</p>
+              </>
+            ) : (
+              <>
+                <ImageIcon className="h-7 w-7 text-muted-foreground/40 mx-auto" />
+                <p className="text-xs font-bold text-foreground">Nenhuma publicação encontrada nesta conta / filtro</p>
+                <p className="text-[11px] text-muted-foreground">
+                  Selecione outra conta no topo ou limpe o filtro de formato para visualizar as postagens reais da página.
+                </p>
+              </>
+            )}
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs border-collapse">
+              <thead>
+                <tr className="border-b border-white/5 text-[9px] font-bold text-muted-foreground uppercase tracking-wider">
+                  <th className="py-3 px-3">Publicação</th>
+                  <th className="py-3 px-3">Conta / Canal</th>
+                  <th className="py-3 px-3 text-center"><Heart className="w-3.5 h-3.5 inline text-pink-400 mr-1" />Curtidas</th>
+                  <th className="py-3 px-3 text-center"><MessageCircle className="w-3.5 h-3.5 inline text-blue-400 mr-1" />Coment.</th>
+                  <th className="py-3 px-3 text-center"><Eye className="w-3.5 h-3.5 inline text-violet-400 mr-1" />Alcance</th>
+                  <th className="py-3 px-3 text-center"><Activity className="w-3.5 h-3.5 inline text-amber-400 mr-1" />Views</th>
+                  <th className="py-3 px-3 text-center"><Bookmark className="w-3.5 h-3.5 inline text-cyan-400 mr-1" />Salvos / Comp.</th>
+                  <th className="py-3 px-3 text-center">Taxa Engaj.</th>
+                  <th className="py-3 px-3"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {listPosts.map((post) => {
+                  const isExpanded = selectedPostDetail === post.id;
+                  const engRate = post.engagement_rate.toFixed(1);
+                  const thumbUrl = post.thumbnail_url || (!post.media_url?.includes(".mp4") ? post.media_url : null);
 
-                                    {/* Media Section */}
-                                    <div className="flex-1 bg-neutral-950 overflow-hidden relative group/media flex items-center justify-center">
-                                      {post.media_url ? (
-                                        post.post_type === "reels" || post.media_url.includes(".mp4") || post.media_url.includes("video") ? (
-                                          <video
-                                            src={post.media_url}
-                                            controls
-                                            muted
-                                            autoPlay
-                                            loop
-                                            playsInline
-                                            className={`w-full h-full ${mediaFit === "cover" ? "object-cover" : "object-contain"}`}
-                                          />
-                                        ) : (
-                                          <img
-                                            src={post.media_url}
-                                            alt={post.title}
-                                            className={`w-full h-full transition-transform duration-500 ${mediaFit === "cover" ? "object-cover group-hover/media:scale-105" : "object-contain"}`}
-                                            onError={(e) => {
-                                              (e.target as any).src = "https://images.unsplash.com/photo-1617788138017-80ad40651399?auto=format&fit=crop&q=80&w=400";
-                                            }}
-                                          />
-                                        )
-                                      ) : (
-                                        <div className="flex flex-col items-center justify-center text-muted-foreground p-4 text-center">
-                                          <Zap className="w-8 h-8 text-primary/40 mb-1" />
-                                          <span className="text-[10px]">Mídia não disponível para esta conta</span>
-                                        </div>
-                                      )}
-                                    </div>
-
-                                    {/* Action Footer */}
-                                    <div className="p-2.5 bg-neutral-900 border-t border-white/5 flex items-center justify-between text-[10px] shrink-0 z-10">
-                                      <div className="flex items-center gap-3 text-muted-foreground font-mono">
-                                        <span className="flex items-center gap-1 hover:text-white transition-colors">
-                                          <Heart className="w-3.5 h-3.5 text-pink-400" /> {post.likes_count}
-                                        </span>
-                                        <span className="flex items-center gap-1 hover:text-white transition-colors">
-                                          <MessageCircle className="w-3.5 h-3.5 text-blue-400" /> {post.comments_count}
-                                        </span>
-                                      </div>
-                                      
-                                      {post.permalink && (
-                                        <a
-                                          href={post.permalink}
-                                          target="_blank"
-                                          rel="noopener noreferrer"
-                                          onClick={(e) => e.stopPropagation()}
-                                          className="flex items-center gap-1 text-[9px] font-bold text-primary hover:text-primary-foreground hover:bg-primary/20 border border-primary/20 px-2 py-0.5 rounded-lg transition-all cursor-pointer"
-                                        >
-                                          Ver Post <ExternalLink className="w-2.5 h-2.5" />
-                                        </a>
-                                      )}
-                                    </div>
-                                  </div>
-                                </div>
-
-                                {/* Coluna 2: Descrição */}
-                                <div className="lg:col-span-4 flex flex-col">
-                                  <span className="text-[9px] text-muted-foreground uppercase font-black tracking-wider mb-2 flex items-center gap-1.5">
-                                    <Layers className="w-3 h-3 text-amber-400" /> Legenda / Descrição
-                                  </span>
-                                  <div className="flex-1 bg-white/[0.01] border border-white/5 rounded-2xl p-4 flex flex-col justify-between h-[420px]">
-                                    <div className="overflow-y-auto text-[11px] leading-relaxed text-slate-200 pr-1 max-h-[340px] whitespace-pre-line font-medium custom-scrollbar">
-                                      {post.content || "Nenhuma legenda fornecida para esta publicação."}
-                                    </div>
-                                    <div className="border-t border-white/5 pt-2.5 flex items-center justify-between text-[9px] text-muted-foreground mt-2">
-                                      <span>Data de Publicação:</span>
-                                      <strong className="text-white font-mono">
-                                        {post.published_at ? format(parseISO(post.published_at), "dd/MM/yyyy HH:mm") : "—"}
-                                      </strong>
-                                    </div>
-                                  </div>
-                                </div>
-
-                                {/* Coluna 3: Análise Victoria AI */}
-                                <div className="lg:col-span-4 flex flex-col">
-                                  <span className="text-[9px] text-muted-foreground uppercase font-black tracking-wider mb-2 flex items-center gap-1.5">
-                                    <Bot className="w-3 h-3 text-primary animate-pulse" /> Diagnóstico Victoria AI
-                                  </span>
-                                  
-                                  <div className="flex-1 bg-primary/[0.02] border border-primary/25 rounded-2xl p-4 flex flex-col justify-between h-[420px]">
-                                    <div className="space-y-4">
-                                      <div className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider text-primary">
-                                        <Sparkles className="w-3.5 h-3.5" /> Análise de Performance
-                                      </div>
-                                      
-                                      <div className="space-y-1">
-                                        <p className="text-[10px] text-muted-foreground uppercase font-black">Recomendação Estratégica</p>
-                                        <p className="text-[11px] leading-relaxed text-white/90 font-semibold">
-                                          {post.ai_recommendation}
-                                        </p>
-                                      </div>
-                                    </div>
-
-                                    <div className="space-y-3 pt-3 border-t border-white/5 mt-4">
-                                      <div className="flex justify-between items-center text-[10px]">
-                                        <span className="text-muted-foreground uppercase font-black">Sentimento do Público</span>
-                                        <span className="px-2 py-0.5 rounded bg-primary/10 border border-primary/20 text-primary font-black uppercase tracking-wider text-[9px]">
-                                          {post.ai_sentiment}
-                                        </span>
-                                      </div>
-                                      
-                                      <div className="space-y-1">
-                                        <div className="flex justify-between text-[9px] text-muted-foreground font-black uppercase">
-                                          <span>Score de Otimização</span>
-                                          <span className="text-white font-mono">{parseFloat(engRate) >= 6 ? "9.2/10" : parseFloat(engRate) >= 3 ? "7.5/10" : "4.5/10"}</span>
-                                        </div>
-                                        <div className="h-2 w-full rounded-full bg-white/5 overflow-hidden relative">
-                                          <div 
-                                            className="h-full bg-gradient-to-r from-primary to-pink-500 rounded-full" 
-                                            style={{ width: `${parseFloat(engRate) >= 6 ? 92 : parseFloat(engRate) >= 3 ? 75 : 45}%` }} 
-                                          />
-                                        </div>
-                                      </div>
-                                    </div>
-                                  </div>
-                                </div>
-
+                  return (
+                    <Fragment key={post.id}>
+                      <tr
+                        className="border-b border-white/[0.03] hover:bg-white/[0.02] transition-colors cursor-pointer"
+                        onClick={() => setSelectedPostDetail(isExpanded ? null : post.id)}
+                      >
+                        <td className="py-3 px-3 font-semibold text-white">
+                          <div className="flex items-center gap-3">
+                            {thumbUrl ? (
+                              <img
+                                src={thumbUrl}
+                                alt=""
+                                className="h-10 w-10 rounded-lg object-cover border border-white/10 shrink-0 bg-neutral-900"
+                                onError={(e) => {
+                                  (e.currentTarget as HTMLImageElement).style.display = "none";
+                                }}
+                              />
+                            ) : (
+                              <div className="h-10 w-10 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center shrink-0">
+                                {post.post_type === "reels" ? (
+                                  <Film className="w-4 h-4 text-primary" />
+                                ) : (
+                                  <ImageIcon className="w-4 h-4 text-muted-foreground" />
+                                )}
                               </div>
-                            </motion.div>
-                          </td>
-                        </tr>
-                      )}
-                    </AnimatePresence>
-                  </Fragment>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+                            )}
+                            <div className="min-w-0">
+                              <span className="truncate max-w-[260px] block text-xs font-bold">{post.title}</span>
+                              <span className="text-[10px] text-muted-foreground font-mono">
+                                {post.published_at ? format(parseISO(post.published_at), "dd/MM/yyyy HH:mm") : "—"}
+                              </span>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="py-3 px-3">
+                          <div className="flex flex-col gap-1">
+                            {post.platform === "facebook" ? (
+                              <span className="inline-flex items-center gap-1 w-fit text-[9px] font-bold text-blue-400 bg-blue-500/10 border border-blue-500/20 px-2 py-0.5 rounded-full">
+                                <Facebook className="w-2.5 h-2.5" /> Facebook
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 w-fit text-[9px] font-bold text-pink-400 bg-pink-500/10 border border-pink-500/20 px-2 py-0.5 rounded-full">
+                                <Instagram className="w-2.5 h-2.5" /> Instagram
+                              </span>
+                            )}
+                            <span className="text-[10px] text-muted-foreground font-mono truncate max-w-[140px]">
+                              {post.accountHandle}
+                            </span>
+                          </div>
+                        </td>
+                        <td className="py-3 px-3 text-center font-mono font-semibold text-white">
+                          {post.likes_count.toLocaleString("pt-BR")}
+                        </td>
+                        <td className="py-3 px-3 text-center font-mono text-muted-foreground">
+                          {post.comments_count.toLocaleString("pt-BR")}
+                        </td>
+                        <td className="py-3 px-3 text-center font-mono font-semibold text-white">
+                          {post.reach_count > 0 ? post.reach_count.toLocaleString("pt-BR") : "—"}
+                        </td>
+                        <td className="py-3 px-3 text-center font-mono text-muted-foreground">
+                          {post.views_count > 0 ? post.views_count.toLocaleString("pt-BR") : "—"}
+                        </td>
+                        <td className="py-3 px-3 text-center font-mono text-muted-foreground">
+                          {post.saved_count} / {post.shares_count}
+                        </td>
+                        <td className="py-3 px-3 text-center">
+                          {post.reach_count > 0 ? (
+                            <span
+                              className={`px-2 py-0.5 rounded-full text-[10px] font-bold font-mono ${
+                                Number(engRate) >= 6
+                                  ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
+                                  : Number(engRate) >= 3
+                                  ? "bg-amber-500/10 text-amber-400 border border-amber-500/20"
+                                  : "bg-white/5 text-muted-foreground"
+                              }`}
+                            >
+                              {engRate}%
+                            </span>
+                          ) : (
+                            <span className="text-[10px] text-muted-foreground/60">—</span>
+                          )}
+                        </td>
+                        <td className="py-3 px-3 text-right">
+                          <ChevronDown
+                            className={`h-4 w-4 text-muted-foreground transition-transform ${
+                              isExpanded ? "rotate-180" : ""
+                            }`}
+                          />
+                        </td>
+                      </tr>
+
+                      {/* Linha Expandida com Prévia Real do Criativo */}
+                      <AnimatePresence>
+                        {isExpanded && (
+                          <tr>
+                            <td colSpan={9} className="p-0 bg-white/[0.005]">
+                              <motion.div
+                                initial={{ opacity: 0, height: 0 }}
+                                animate={{ opacity: 1, height: "auto" }}
+                                exit={{ opacity: 0, height: 0 }}
+                                className="overflow-hidden border-b border-white/[0.04] px-5 py-5"
+                              >
+                                <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                                  {/* Coluna 1: Prévia Real do Criativo */}
+                                  <div className="lg:col-span-4 flex flex-col items-center">
+                                    <div className="w-full flex justify-between items-center mb-2 px-1">
+                                      <span className="text-[9px] text-muted-foreground uppercase font-black tracking-wider flex items-center gap-1.5">
+                                        <ImageIcon className="w-3 h-3 text-primary" /> Prévia Real do Criativo
+                                      </span>
+
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setMediaFit((prev) => (prev === "cover" ? "contain" : "cover"));
+                                        }}
+                                        className="text-[9px] font-bold text-primary hover:text-white px-2 py-0.5 rounded bg-primary/10 border border-primary/20 cursor-pointer"
+                                      >
+                                        {mediaFit === "cover" ? "Ajustar Mídia" : "Preencher Tela"}
+                                      </button>
+                                    </div>
+
+                                    <div className="relative w-full max-w-[240px] rounded-[28px] border-[5px] border-neutral-800 bg-black overflow-hidden shadow-2xl flex flex-col justify-between h-[420px]">
+                                      {/* Header Real da Conta */}
+                                      <div className="flex items-center justify-between p-2.5 bg-neutral-900 border-b border-white/5 z-10 shrink-0">
+                                        <div className="flex items-center gap-2 min-w-0">
+                                          <div className="w-5 h-5 rounded-full bg-primary/20 flex items-center justify-center text-[9px] font-bold text-primary shrink-0 uppercase">
+                                            {post.accountHandle.replace("@", "").slice(0, 2)}
+                                          </div>
+                                          <div className="flex flex-col min-w-0">
+                                            <span className="text-[10px] font-bold text-white leading-tight truncate">
+                                              {post.accountHandle}
+                                            </span>
+                                            <span className="text-[8px] text-muted-foreground leading-none truncate">
+                                              {post.accountName}
+                                            </span>
+                                          </div>
+                                        </div>
+                                        {post.platform === "facebook" ? (
+                                          <Facebook className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+                                        ) : (
+                                          <Instagram className="w-3.5 h-3.5 text-pink-400 shrink-0" />
+                                        )}
+                                      </div>
+
+                                      {/* Mídia Real */}
+                                      <div className="flex-1 bg-neutral-950 overflow-hidden relative group/media flex items-center justify-center">
+                                        <PostMediaPreview post={post} mediaFit={mediaFit} />
+                                      </div>
+
+                                      {/* Rodapé com Métricas Reais + Link Real */}
+                                      <div className="p-2.5 bg-neutral-900 border-t border-white/5 flex items-center justify-between text-[10px] shrink-0 z-10">
+                                        <div className="flex items-center gap-3 text-muted-foreground font-mono">
+                                          <span className="flex items-center gap-1">
+                                            <Heart className="w-3.5 h-3.5 text-pink-400" /> {post.likes_count}
+                                          </span>
+                                          <span className="flex items-center gap-1">
+                                            <MessageCircle className="w-3.5 h-3.5 text-blue-400" /> {post.comments_count}
+                                          </span>
+                                        </div>
+
+                                        {post.permalink && (
+                                          <a
+                                            href={post.permalink}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            onClick={(e) => e.stopPropagation()}
+                                            className="flex items-center gap-1 text-[9px] font-bold text-primary hover:bg-primary/20 border border-primary/20 px-2 py-0.5 rounded-lg transition-all cursor-pointer"
+                                          >
+                                            Ver Post <ExternalLink className="w-2.5 h-2.5" />
+                                          </a>
+                                        )}
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  {/* Coluna 2: Legenda Real */}
+                                  <div className="lg:col-span-4 flex flex-col">
+                                    <span className="text-[9px] text-muted-foreground uppercase font-black tracking-wider mb-2 flex items-center gap-1.5">
+                                      <Layers className="w-3 h-3 text-amber-400" /> Legenda Oficial
+                                    </span>
+                                    <div className="flex-1 bg-white/[0.01] border border-white/5 rounded-2xl p-4 flex flex-col justify-between h-[420px]">
+                                      <div className="overflow-y-auto text-[11px] leading-relaxed text-slate-200 pr-1 max-h-[340px] whitespace-pre-line font-medium custom-scrollbar">
+                                        {post.content || "Publicação sem legenda textual."}
+                                      </div>
+                                      <div className="border-t border-white/5 pt-2.5 flex items-center justify-between text-[9px] text-muted-foreground mt-2">
+                                        <span>Data da Publicação:</span>
+                                        <strong className="text-white font-mono">
+                                          {post.published_at ? format(parseISO(post.published_at), "dd/MM/yyyy HH:mm") : "—"}
+                                        </strong>
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  {/* Coluna 3: Leitura de Performance Real */}
+                                  <div className="lg:col-span-4 flex flex-col">
+                                    <span className="text-[9px] text-muted-foreground uppercase font-black tracking-wider mb-2 flex items-center gap-1.5">
+                                      <Bot className="w-3 h-3 text-primary" /> Análise de Performance Real
+                                    </span>
+
+                                    <div className="flex-1 bg-primary/[0.02] border border-primary/25 rounded-2xl p-4 flex flex-col justify-between h-[420px]">
+                                      <div className="space-y-4">
+                                        <div className="grid grid-cols-2 gap-2">
+                                          <div className="rounded-xl bg-black/30 p-2.5 border border-white/5">
+                                            <span className="text-[8px] uppercase text-muted-foreground block">Alcance Real</span>
+                                            <span className="text-sm font-black font-mono text-white">
+                                              {post.reach_count > 0 ? post.reach_count.toLocaleString("pt-BR") : "—"}
+                                            </span>
+                                          </div>
+                                          <div className="rounded-xl bg-black/30 p-2.5 border border-white/5">
+                                            <span className="text-[8px] uppercase text-muted-foreground block">Visualizações</span>
+                                            <span className="text-sm font-black font-mono text-white">
+                                              {post.views_count > 0 ? post.views_count.toLocaleString("pt-BR") : "—"}
+                                            </span>
+                                          </div>
+                                          <div className="rounded-xl bg-black/30 p-2.5 border border-white/5">
+                                            <span className="text-[8px] uppercase text-muted-foreground block">Salvos</span>
+                                            <span className="text-sm font-black font-mono text-cyan-400">
+                                              {post.saved_count.toLocaleString("pt-BR")}
+                                            </span>
+                                          </div>
+                                          <div className="rounded-xl bg-black/30 p-2.5 border border-white/5">
+                                            <span className="text-[8px] uppercase text-muted-foreground block">Compartilhamentos</span>
+                                            <span className="text-sm font-black font-mono text-emerald-400">
+                                              {post.shares_count.toLocaleString("pt-BR")}
+                                            </span>
+                                          </div>
+                                        </div>
+
+                                        <div className="space-y-1">
+                                          <p className="text-[10px] text-muted-foreground uppercase font-black">
+                                            Recomendação Estratégica
+                                          </p>
+                                          <p className="text-[11px] leading-relaxed text-white/90 font-semibold">
+                                            {post.ai_recommendation}
+                                          </p>
+                                        </div>
+                                      </div>
+
+                                      <div className="space-y-2.5 pt-3 border-t border-white/5 mt-4">
+                                        <div className="flex justify-between items-center text-[10px]">
+                                          <span className="text-muted-foreground uppercase font-black">Classificação</span>
+                                          <span className="px-2 py-0.5 rounded bg-primary/10 border border-primary/20 text-primary font-black uppercase tracking-wider text-[9px]">
+                                            {post.ai_sentiment}
+                                          </span>
+                                        </div>
+
+                                        {post.reach_count > 0 && (
+                                          <div className="space-y-1">
+                                            <div className="flex justify-between text-[9px] text-muted-foreground font-black uppercase">
+                                              <span>Taxa de Engajamento Real</span>
+                                              <span className="text-white font-mono">{engRate}%</span>
+                                            </div>
+                                            <div className="h-2 w-full rounded-full bg-white/5 overflow-hidden relative">
+                                              <div
+                                                className="h-full bg-gradient-to-r from-primary to-pink-500 rounded-full"
+                                                style={{ width: `${Math.min(100, Math.round(Number(engRate) * 10))}%` }}
+                                              />
+                                            </div>
+                                          </div>
+                                        )}
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+                              </motion.div>
+                            </td>
+                          </tr>
+                        )}
+                      </AnimatePresence>
+                    </Fragment>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
       </motion.div>
     </div>
   );
 }
-
-// Fragment React Polyfill
-import { Fragment } from "react";

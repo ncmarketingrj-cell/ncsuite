@@ -556,10 +556,10 @@ serve(async (req) => {
         ig_media_count: 0,
       }
 
-      // Facebook Page Insights por dia
+      // Facebook Page Insights por dia (Graph API v21.0)
       if (fbPageId) {
         try {
-          const fbMetrics = "page_fans,page_impressions_organic,page_reach,page_views_total,page_engaged_users"
+          const fbMetrics = "page_views_total,page_post_engagements,page_daily_follows,page_follows"
           const fbRes = await fetch(`${META_API_BASE}/${fbPageId}/insights?metric=${fbMetrics}&period=day&since=${date_from}&until=${date_to}&access_token=${token}`)
           const fbData = await fbRes.json()
           if (!fbData.error) results.fb_insights = fbData.data || []
@@ -568,13 +568,13 @@ serve(async (req) => {
           const fbFanData = await fbFanRes.json()
           if (!fbFanData.error) results.fb_followers = fbFanData.followers_count || fbFanData.fan_count || 0
 
-          const fbPostsRes = await fetch(`${META_API_BASE}/${fbPageId}/posts?fields=id,message,created_time,likes.summary(true),comments.summary(true),shares&limit=15&access_token=${token}`)
+          const fbPostsRes = await fetch(`${META_API_BASE}/${fbPageId}/posts?fields=id,message,created_time,full_picture,permalink_url,likes.summary(true),comments.summary(true),shares&limit=15&access_token=${token}`)
           const fbPostsData = await fbPostsRes.json()
           results.fb_posts = fbPostsData.data || []
         } catch (e: any) { console.error("Erro FB insights:", e.message) }
       }
 
-      // Instagram Insights por dia
+      // Instagram Insights por dia (Graph API v21.0)
       if (igAccountId) {
         try {
           const igAccountRes = await fetch(`${META_API_BASE}/${igAccountId}?fields=followers_count,media_count&access_token=${token}`)
@@ -584,24 +584,30 @@ serve(async (req) => {
             results.ig_media_count = igAccountData.media_count || 0
           }
 
-          const igMetrics = "impressions,reach,profile_views"
-          const igRes = await fetch(`${META_API_BASE}/${igAccountId}/insights?metric=${igMetrics}&period=day&since=${date_from}&until=${date_to}&access_token=${token}`)
+          const igRes = await fetch(`${META_API_BASE}/${igAccountId}/insights?metric=reach,follower_count&period=day&since=${date_from}&until=${date_to}&access_token=${token}`)
           const igData = await igRes.json()
           if (!igData.error) results.ig_insights = igData.data || []
 
-          const igMediaRes = await fetch(`${META_API_BASE}/${igAccountId}/media?fields=id,caption,media_type,like_count,comments_count,timestamp,media_url,permalink&limit=15&access_token=${token}`)
+          const igTotalsRes = await fetch(`${META_API_BASE}/${igAccountId}/insights?metric=views,total_interactions,accounts_engaged,profile_views,website_clicks&metric_type=total_value&period=day&since=${date_from}&until=${date_to}&access_token=${token}`)
+          const igTotalsData = await igTotalsRes.json()
+          if (!igTotalsData.error) results.ig_totals = igTotalsData.data || []
+
+          const igMediaRes = await fetch(`${META_API_BASE}/${igAccountId}/media?fields=id,caption,media_type,media_product_type,thumbnail_url,media_url,permalink,timestamp,like_count,comments_count&limit=18&access_token=${token}`)
           const igMediaData = await igMediaRes.json()
           const igMediaList = igMediaData.data || []
 
-          // Buscar insights individuais de cada post
-          for (const media of igMediaList.slice(0, 10)) {
+          // Buscar insights individuais de cada post (v21.0)
+          for (const media of igMediaList.slice(0, 15)) {
             try {
-              const mediaInsRes = await fetch(`${META_API_BASE}/${media.id}/insights?metric=impressions,reach&access_token=${token}`)
+              const mediaInsRes = await fetch(`${META_API_BASE}/${media.id}/insights?metric=reach,views,saved,shares,total_interactions&access_token=${token}`)
               const mediaInsData = await mediaInsRes.json()
               if (!mediaInsData.error && mediaInsData.data) {
                 for (const ins of mediaInsData.data) {
-                  if (ins.name === "impressions") media.impressions = ins.values?.[0]?.value || 0
+                  if (ins.name === "views") media.views = ins.values?.[0]?.value || 0
                   if (ins.name === "reach") media.reach = ins.values?.[0]?.value || 0
+                  if (ins.name === "saved") media.saved = ins.values?.[0]?.value || 0
+                  if (ins.name === "shares") media.shares = ins.values?.[0]?.value || 0
+                  if (ins.name === "total_interactions") media.total_interactions = ins.values?.[0]?.value || 0
                 }
               }
             } catch (e) { /* ignorar erros por post */ }
