@@ -88,7 +88,6 @@ const TRAFEGO_NAV_ITEMS: NavItem[] = [
   { to: "/criativos", icon: Palette, label: "Criativos" },
   { to: "/automacoes", icon: Zap, label: "Automações" },
   { to: "/auditoria", icon: Activity, label: "Auditoria Hub" },
-  { to: "/config", icon: Settings, label: "Configurações" },
 ];
 
 const SOCIAL_NAV_ITEMS: NavItem[] = [
@@ -97,7 +96,6 @@ const SOCIAL_NAV_ITEMS: NavItem[] = [
   { to: "/link-bio", icon: Link2, label: "Link Bio" },
   { to: "/formulario", icon: FileText, label: "Formulário" },
   { to: "/quiz", icon: BarChart3, label: "Quiz" },
-  { to: "/config", icon: Settings, label: "Configurações" },
 ];
 
 const GESTAO_NAV_ITEMS: NavItem[] = [
@@ -106,17 +104,14 @@ const GESTAO_NAV_ITEMS: NavItem[] = [
   { to: "/cobrancas", icon: CreditCard, label: "Cobranças" },
   { to: "/auditoria", icon: Activity, label: "Auditoria Hub" },
   { to: "/upload", icon: Upload, label: "Upload" },
-  { to: "/config", icon: Settings, label: "Configurações" },
 ];
 
 const FUNIL_NAV_ITEMS: NavItem[] = [
   { to: "/strategy-map", icon: Brain, label: "Strategy Map" },
-  { to: "/config", icon: Settings, label: "Configurações" },
 ];
 
 const VICTORIA_NAV_ITEMS: NavItem[] = [
   { to: "/victoria", icon: Bot, label: "Victoria AI Chat" },
-  { to: "/config", icon: Settings, label: "Configurações" },
 ];
 
 
@@ -1015,6 +1010,17 @@ function Shell() {
                       >
                         <User className="h-3.5 w-3.5 text-muted-foreground" /> Meu Perfil
                       </button>
+                      <Link
+                        to="/config"
+                        onClick={() => setShowUserMenu(false)}
+                        className={`w-full flex items-center gap-2.5 rounded-xl px-3 py-2 text-[12px] font-medium transition-all ${
+                          path.startsWith("/config")
+                            ? "bg-primary/10 text-primary font-bold"
+                            : "text-foreground hover:bg-muted/50"
+                        }`}
+                      >
+                        <Settings className="h-3.5 w-3.5 text-muted-foreground" /> Configurações
+                      </Link>
                       <button
                         onClick={() => { setShowUserMenu(false); handleSignOut(); }}
                         className="w-full flex items-center gap-2.5 rounded-xl px-3 py-2 text-[12px] font-medium text-red-400 hover:bg-red-500/10 transition-all"
