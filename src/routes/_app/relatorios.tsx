@@ -1758,15 +1758,15 @@ function RelatoriosPage() {
                     value={generatedText}
                     onChange={(e) => setGeneratedText(e.target.value)}
                     rows={18}
-                    className="w-full rounded-xl border border-white/10 bg-black/60 p-4 text-xs font-mono text-green-400 focus:outline-none focus:border-primary/50 resize-none whitespace-pre leading-relaxed leading-[1.6]"
+                    className="w-full rounded-xl border border-border bg-background/80 p-4 text-xs font-mono text-emerald-600 dark:text-emerald-400 focus:outline-none focus:border-primary/50 resize-none whitespace-pre leading-relaxed leading-[1.6]"
                   />
                 </div>
               </div>
 
-              <div className="rounded-xl bg-white/[0.02] border border-white/5 p-3 flex items-start gap-2.5 mt-4">
+              <div className="rounded-xl bg-muted/40 border border-border p-3 flex items-start gap-2.5 mt-4">
                 <Brain className="h-5 w-5 text-primary flex-shrink-0 mt-0.5" />
                 <div>
-                  <p className="text-[10px] font-black uppercase tracking-wider text-white">Dica da Victoria 🧠</p>
+                  <p className="text-[10px] font-black uppercase tracking-wider text-foreground">Dica da Victoria 🧠</p>
                   <p className="text-[10px] text-muted-foreground mt-0.5 leading-relaxed">
                     Você pode alterar livremente o texto acima caso queira fazer observações manuais ou anotações específicas antes de clicar em Enviar.
                   </p>

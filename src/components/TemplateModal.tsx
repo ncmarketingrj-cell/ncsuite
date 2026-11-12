@@ -111,34 +111,34 @@ export function TemplateModal({ isOpen, onClose, onSuccess, templates }: Templat
         initial={{ opacity: 0, scale: 0.95, y: 10 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.95, y: 10 }}
-        className="relative w-full max-w-2xl bg-black border border-white/10 rounded-2xl shadow-2xl flex flex-col overflow-hidden"
+        className="relative w-full max-w-2xl bg-card border border-border rounded-2xl shadow-2xl flex flex-col overflow-hidden"
         style={{ maxHeight: "calc(100vh - 40px)" }}
       >
-        <div className="flex items-center justify-between p-5 border-b border-white/5 bg-white/[0.02]">
+        <div className="flex items-center justify-between p-5 border-b border-border bg-muted/30">
           <div className="flex items-center gap-3">
-            <div className="h-8 w-8 rounded-lg bg-primary/20 flex items-center justify-center border border-primary/30">
+            <div className="h-8 w-8 rounded-lg bg-primary/10 flex items-center justify-center border border-primary/20">
               <FileText className="h-4 w-4 text-primary" />
             </div>
             <div>
-              <h2 className="text-sm font-black uppercase tracking-widest text-white">Gerenciar Templates</h2>
+              <h2 className="text-sm font-black uppercase tracking-widest text-foreground">Gerenciar Templates</h2>
               <p className="text-[10px] text-muted-foreground mt-0.5">Crie modelos para WhatsApp e PDF</p>
             </div>
           </div>
-          <button onClick={onClose} className="h-8 w-8 rounded-lg hover:bg-white/10 flex items-center justify-center transition border border-transparent hover:border-white/10">
+          <button onClick={onClose} className="h-8 w-8 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground flex items-center justify-center transition border border-transparent hover:border-border">
             <X className="h-4 w-4" />
           </button>
         </div>
 
-        <div className="flex border-b border-white/5 bg-background">
+        <div className="flex border-b border-border bg-muted/40">
           <button 
             onClick={() => setActiveTab("list")}
-            className={`flex-1 py-3 text-xs font-bold uppercase tracking-widest transition-colors border-b-2 ${activeTab === "list" ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-white"}`}
+            className={`flex-1 py-3 text-xs font-bold uppercase tracking-widest transition-colors border-b-2 ${activeTab === "list" ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}
           >
             Meus Templates
           </button>
           <button 
             onClick={() => { setActiveTab("create"); resetForm(); }}
-            className={`flex-1 py-3 text-xs font-bold uppercase tracking-widest transition-colors border-b-2 flex items-center justify-center gap-1.5 ${activeTab === "create" ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-white"}`}
+            className={`flex-1 py-3 text-xs font-bold uppercase tracking-widest transition-colors border-b-2 flex items-center justify-center gap-1.5 ${activeTab === "create" ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}
           >
             <Plus className="h-3.5 w-3.5" /> Novo Template
           </button>
@@ -149,20 +149,20 @@ export function TemplateModal({ isOpen, onClose, onSuccess, templates }: Templat
             <div className="space-y-3">
               {templates.filter(t => !t.is_system).length === 0 ? (
                 <div className="text-center py-10 text-muted-foreground">
-                  <p className="text-sm font-bold">Nenhum template customizado</p>
+                  <p className="text-sm font-bold text-foreground/80">Nenhum template customizado</p>
                   <p className="text-[10px] mt-1">Crie seu primeiro template ao lado.</p>
                 </div>
               ) : (
                 templates.filter(t => !t.is_system).map(t => (
-                  <div key={t.id} className="flex items-center justify-between p-4 rounded-xl border border-white/5 bg-white/[0.01] hover:bg-white/[0.03] transition group">
+                  <div key={t.id} className="flex items-center justify-between p-4 rounded-xl border border-border bg-card/60 hover:bg-muted/40 transition group">
                     <div>
-                      <h3 className="text-xs font-bold text-white uppercase">{t.name}</h3>
+                      <h3 className="text-xs font-bold text-foreground uppercase">{t.name}</h3>
                       <p className="text-[9px] text-muted-foreground uppercase tracking-widest mt-1">
-                        Layout PDF: <span className="text-primary">{t.pdf_layout}</span>
+                        Layout PDF: <span className="text-primary font-bold">{t.pdf_layout}</span>
                       </p>
                     </div>
                     <div className="flex items-center gap-2">
-                      <button onClick={() => handleEdit(t)} className="px-3 py-1.5 rounded-lg bg-white/5 text-[10px] font-bold text-white hover:bg-white/10 transition uppercase tracking-widest">
+                      <button onClick={() => handleEdit(t)} className="px-3 py-1.5 rounded-lg bg-muted border border-border text-[10px] font-bold text-foreground hover:bg-muted/80 transition uppercase tracking-widest">
                         Editar
                       </button>
                       <button onClick={() => handleDelete(t.id)} className="h-7 w-7 rounded-lg bg-red-500/10 text-red-500 hover:bg-red-500/20 flex items-center justify-center transition">
@@ -182,7 +182,7 @@ export function TemplateModal({ isOpen, onClose, onSuccess, templates }: Templat
                 <input 
                   value={name} onChange={e => setName(e.target.value)}
                   placeholder="Ex: Mensagem VIP Semanal"
-                  className="w-full rounded-xl border border-white/10 bg-background/50 px-4 py-3 text-sm font-bold focus:border-primary focus:outline-none"
+                  className="w-full rounded-xl border border-border bg-background px-4 py-3 text-sm font-bold text-foreground focus:border-primary focus:outline-none"
                 />
               </div>
 
@@ -190,7 +190,7 @@ export function TemplateModal({ isOpen, onClose, onSuccess, templates }: Templat
                 <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Layout do PDF</label>
                 <select 
                   value={pdfLayout} onChange={e => setPdfLayout(e.target.value)}
-                  className="w-full rounded-xl border border-white/10 bg-background/50 px-4 py-3 text-sm font-bold focus:border-primary focus:outline-none"
+                  className="w-full rounded-xl border border-border bg-background px-4 py-3 text-sm font-bold text-foreground focus:border-primary focus:outline-none"
                 >
                   <option value="classic">Clássico (Com Detalhes de Campanha)</option>
                   <option value="analytical">Analítico (Apenas Agrupamento por Objetivo)</option>
@@ -205,11 +205,11 @@ export function TemplateModal({ isOpen, onClose, onSuccess, templates }: Templat
                 <textarea 
                   value={messageTemplate} onChange={e => setMessageTemplate(e.target.value)}
                   rows={8}
-                  className="w-full rounded-xl border border-white/10 bg-background/50 p-4 text-xs font-mono text-green-400 focus:outline-none focus:border-primary/50 resize-none whitespace-pre leading-relaxed"
+                  className="w-full rounded-xl border border-border bg-background p-4 text-xs font-mono text-emerald-600 dark:text-emerald-400 focus:outline-none focus:border-primary resize-none whitespace-pre leading-relaxed"
                 />
                 <div className="flex flex-wrap gap-1 mt-2">
                   {['{{NOME_CLIENTE}}', '{{PERIODO}}', '{{INVESTIMENTO}}', '{{TOTAL_RESULTADOS}}', '{{CPA_MEDIO}}', '{{TOTAL_CAMPANHAS}}', '{{RESULTADOS_POR_TIPO}}', '{{LISTA_CAMPANHAS}}', '{{AGENCIA}}'].map(tag => (
-                    <span key={tag} onClick={() => setMessageTemplate(prev => prev + tag)} className="cursor-pointer bg-white/5 border border-white/10 rounded px-1.5 py-0.5 text-[9px] font-mono hover:bg-primary/20 hover:text-primary transition">
+                    <span key={tag} onClick={() => setMessageTemplate(prev => prev + tag)} className="cursor-pointer bg-muted border border-border rounded px-1.5 py-0.5 text-[9px] font-mono text-muted-foreground hover:bg-primary/20 hover:text-primary transition">
                       {tag}
                     </span>
                   ))}
@@ -218,7 +218,7 @@ export function TemplateModal({ isOpen, onClose, onSuccess, templates }: Templat
 
               <button 
                 onClick={handleSave} disabled={isLoading}
-                className="w-full mt-4 flex items-center justify-center gap-2 rounded-xl bg-primary px-4 py-3.5 text-xs font-black uppercase tracking-widest text-background hover:shadow-glow transition disabled:opacity-50"
+                className="w-full mt-4 flex items-center justify-center gap-2 rounded-xl bg-primary px-4 py-3.5 text-xs font-black uppercase tracking-widest text-primary-foreground hover:shadow-glow transition disabled:opacity-50"
               >
                 {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
                 {editingId ? "Atualizar Template" : "Salvar Template"}

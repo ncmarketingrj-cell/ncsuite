@@ -145,27 +145,27 @@ export function WhatsAppSendModal({
           initial={{ opacity: 0, scale: 0.95, y: 15 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.95, y: 15 }}
-          className="relative w-full max-w-lg rounded-2xl border border-white/10 bg-[#0d0f14] shadow-2xl overflow-hidden flex flex-col max-h-[92vh]"
+          className="relative w-full max-w-lg rounded-2xl border border-border bg-card shadow-2xl overflow-hidden flex flex-col max-h-[92vh]"
         >
           {/* Header */}
-          <div className="flex items-center justify-between border-b border-white/10 bg-white/[0.02] px-6 py-4">
+          <div className="flex items-center justify-between border-b border-border bg-muted/30 px-6 py-4">
             <div className="flex items-center gap-3">
               <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#25D366]/20 border border-[#25D366]/30 text-[#25D366]">
                 <Send className="h-5 w-5" />
               </div>
               <div>
-                <h3 className="text-sm font-black uppercase tracking-wider text-white flex items-center gap-2">
+                <h3 className="text-sm font-black uppercase tracking-wider text-foreground flex items-center gap-2">
                   Enviar para o WhatsApp
                 </h3>
                 <p className="text-[10px] text-muted-foreground font-medium">
                   {storeName ? `Loja / Cliente: ` : "Selecione o destino do relatório"}
-                  {storeName && <span className="text-white font-bold">{storeName}</span>}
+                  {storeName && <span className="text-foreground font-bold">{storeName}</span>}
                 </p>
               </div>
             </div>
             <button
               onClick={onClose}
-              className="rounded-lg p-1.5 text-muted-foreground hover:bg-white/10 hover:text-white transition"
+              className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground transition"
             >
               <X className="h-4 w-4" />
             </button>
@@ -173,14 +173,14 @@ export function WhatsAppSendModal({
 
           <div className="p-6 space-y-5 overflow-y-auto scrollbar-thin">
             {/* Seletor de Modalidade (Tabs) */}
-            <div className="grid grid-cols-3 gap-1.5 p-1 rounded-xl bg-white/5 border border-white/10 text-[10px] font-black uppercase tracking-wider">
+            <div className="grid grid-cols-3 gap-1.5 p-1 rounded-xl bg-muted border border-border text-[10px] font-black uppercase tracking-wider">
               <button
                 type="button"
                 onClick={() => setActiveTab("phone")}
                 className={`flex items-center justify-center gap-1.5 py-2.5 rounded-lg transition-all ${
                   activeTab === "phone"
                     ? "bg-[#25D366] text-black shadow-md font-black"
-                    : "text-muted-foreground hover:text-white"
+                    : "text-muted-foreground hover:text-foreground"
                 }`}
               >
                 <Phone className="h-3.5 w-3.5" />
@@ -192,7 +192,7 @@ export function WhatsAppSendModal({
                 className={`flex items-center justify-center gap-1.5 py-2.5 rounded-lg transition-all ${
                   activeTab === "group"
                     ? "bg-[#25D366] text-black shadow-md font-black"
-                    : "text-muted-foreground hover:text-white"
+                    : "text-muted-foreground hover:text-foreground"
                 }`}
               >
                 <Users className="h-3.5 w-3.5" />
@@ -204,7 +204,7 @@ export function WhatsAppSendModal({
                 className={`flex items-center justify-center gap-1.5 py-2.5 rounded-lg transition-all ${
                   activeTab === "picker"
                     ? "bg-[#25D366] text-black shadow-md font-black"
-                    : "text-muted-foreground hover:text-white"
+                    : "text-muted-foreground hover:text-foreground"
                 }`}
               >
                 <Share2 className="h-3.5 w-3.5" />
@@ -229,7 +229,7 @@ export function WhatsAppSendModal({
                     value={phoneNumber}
                     onChange={(e) => setPhoneNumber(e.target.value)}
                     placeholder="Ex: (21) 98765-4321 ou 21987654321"
-                    className="w-full rounded-xl border border-white/10 bg-background/80 pl-10 pr-4 py-3 text-xs font-bold text-white placeholder:text-muted-foreground focus:outline-none focus:border-[#25D366] transition"
+                    className="w-full rounded-xl border border-border bg-background pl-10 pr-4 py-3 text-xs font-bold text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-[#25D366] transition"
                   />
                 </div>
                 <p className="text-[10px] text-muted-foreground leading-relaxed">
@@ -255,11 +255,11 @@ export function WhatsAppSendModal({
                     value={groupLink}
                     onChange={(e) => setGroupLink(e.target.value)}
                     placeholder="Ex: https://chat.whatsapp.com/B9xK3mN..."
-                    className="w-full rounded-xl border border-white/10 bg-background/80 pl-10 pr-4 py-3 text-xs font-bold text-white placeholder:text-muted-foreground focus:outline-none focus:border-[#25D366] transition font-mono"
+                    className="w-full rounded-xl border border-border bg-background pl-10 pr-4 py-3 text-xs font-bold text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-[#25D366] transition font-mono"
                   />
                 </div>
-                <div className="rounded-xl border border-white/10 bg-white/[0.02] p-3 text-[10px] text-muted-foreground space-y-1 leading-relaxed">
-                  <p className="text-white font-bold flex items-center gap-1.5">
+                <div className="rounded-xl border border-border bg-muted/30 p-3 text-[10px] text-muted-foreground space-y-1 leading-relaxed">
+                  <p className="text-foreground font-bold flex items-center gap-1.5">
                     <BookmarkCheck className="h-3.5 w-3.5 text-[#25D366]" /> Prático e Didático:
                   </p>
                   <p>
@@ -276,8 +276,8 @@ export function WhatsAppSendModal({
                 animate={{ opacity: 1, y: 0 }}
                 className="space-y-3"
               >
-                <div className="rounded-xl border border-white/10 bg-white/[0.02] p-4 text-xs text-muted-foreground space-y-2 leading-relaxed">
-                  <p className="text-white font-bold flex items-center gap-2">
+                <div className="rounded-xl border border-border bg-muted/30 p-4 text-xs text-muted-foreground space-y-2 leading-relaxed">
+                  <p className="text-foreground font-bold flex items-center gap-2">
                     <Share2 className="h-4 w-4 text-[#25D366]" /> Seletor Geral do WhatsApp
                   </p>
                   <p className="text-[11px]">
@@ -297,9 +297,9 @@ export function WhatsAppSendModal({
                   type="checkbox"
                   checked={rememberDestination}
                   onChange={(e) => setRememberDestination(e.target.checked)}
-                  className="rounded border-white/20 bg-background text-[#25D366] focus:ring-0 focus:ring-offset-0 h-4 w-4"
+                  className="rounded border-border bg-background text-[#25D366] focus:ring-0 focus:ring-offset-0 h-4 w-4"
                 />
-                <span className="text-[11px] font-bold text-white/90">
+                <span className="text-[11px] font-bold text-foreground/90">
                   Salvar este destino para <span className="text-[#25D366]">{storeName || "esta loja"}</span> (lembrar nos próximos meses)
                 </span>
               </label>
@@ -323,18 +323,18 @@ export function WhatsAppSendModal({
                   {isCopied ? "Copiado!" : "Copiar Texto"}
                 </button>
               </div>
-              <div className="max-h-28 overflow-y-auto rounded-xl border border-white/10 bg-black/40 p-3 text-[10px] font-mono text-zinc-300 leading-relaxed whitespace-pre scrollbar-thin">
+              <div className="max-h-28 overflow-y-auto rounded-xl border border-border bg-muted/40 p-3 text-[10px] font-mono text-foreground leading-relaxed whitespace-pre scrollbar-thin">
                 {reportText.slice(0, 350)}...
               </div>
             </div>
           </div>
 
           {/* Footer com Botão de Ação */}
-          <div className="flex items-center justify-between border-t border-white/10 bg-white/[0.02] px-6 py-4">
+          <div className="flex items-center justify-between border-t border-border bg-muted/30 px-6 py-4">
             <button
               type="button"
               onClick={onClose}
-              className="text-xs font-bold text-muted-foreground hover:text-white transition px-3 py-2"
+              className="text-xs font-bold text-muted-foreground hover:text-foreground transition px-3 py-2"
             >
               Cancelar
             </button>
