@@ -69,8 +69,16 @@ function LoginPage() {
     setLoading(true);
     try {
       if (mode === "login") {
-        const { error } = await supabase.auth.signInWithPassword({ email, password });
-        if (error) throw error;
+        const { error } = await supabase.auth.signInWithPassword({ email: email.trim().toLowerCase(), password });
+        if (error) {
+          if (/invalid login credentials/i.test(error.message)) {
+            throw new Error("E-mail ou senha incorretos. Se um gestor alterou sua senha recentemente, peça as credenciais atualizadas em Meu Perfil.");
+          }
+          if (/email not confirmed/i.test(error.message)) {
+            throw new Error("Conta pendente de ativação no Auth. Solicite ao administrador que salve suas credenciais para liberação imediata.");
+          }
+          throw error;
+        }
         const dest = redirect || "/hub";
         localStorage.setItem("nc_active_module", dest === "/hub" ? "hub" : "trafego");
         toast.success("Bem-vindo de volta");

@@ -25,6 +25,7 @@ import {
 import {
   createSystemUser,
   updateSystemUser,
+  updateOwnPassword,
   deleteSystemUser,
   toggleUserStatus,
 } from "@/lib/userService";
@@ -519,25 +520,18 @@ function MyProfileSection({
 
     setSavingPassword(true);
     try {
-      const { error } = await supabase.auth.updateUser({
-        password: newPassword.trim(),
+      const res = await updateOwnPassword(user.id, newPassword.trim(), profile?.permissions || {}, {
+        role: profile?.role,
+        position: profile?.position,
+        fullName: profile?.full_name,
       });
-      if (error) throw error;
+      if (!res.success) throw new Error(res.error || "Falha ao alterar senha.");
 
-      // Salva nota em permissions._last_password para permitir visualização
-      const existingPerms = profile?.permissions || {};
-      await supabase.from("profiles").update({
-        permissions: {
-          ...existingPerms,
-          _last_password: newPassword.trim(),
-        },
-        updated_at: new Date().toISOString(),
-      }).eq("id", user.id);
-
-      toast.success("Sua senha foi alterada com sucesso!");
+      toast.success(res.message || "Sua senha foi alterada com sucesso!");
       setNewPassword("");
       setConfirmPassword("");
       qc.invalidateQueries({ queryKey: ["current_user_profile"] });
+      qc.invalidateQueries({ queryKey: ["admin_users_list"] });
     } catch (err: any) {
       toast.error(err?.message || "Falha ao alterar senha.");
     } finally {
@@ -1667,6 +1661,9 @@ function TeamManagementSection({
                       <p className="text-xs text-muted-foreground mt-0.5">
                         Editando colaborador: <strong className="text-foreground">{editingUser.full_name || editingUser.email}</strong>
                       </p>
+                      <span className="inline-flex items-center gap-1 mt-1 text-[10px] font-bold text-emerald-400">
+                        <CheckCheck className="h-3 w-3" /> Alteração imediata — sem envio de e-mail de confirmação
+                      </span>
                     </div>
                   </div>
                   <button
@@ -2066,6 +2063,9 @@ function TeamManagementSection({
                       <p className="text-xs text-muted-foreground mt-0.5">
                         Crie o login, senha inicial e defina as permissões por HUB da plataforma.
                       </p>
+                      <span className="inline-flex items-center gap-1 mt-1 text-[10px] font-bold text-emerald-400">
+                        <CheckCheck className="h-3 w-3" /> Ativação imediata — nenhum e-mail de confirmação é enviado
+                      </span>
                     </div>
                   </div>
                   <button

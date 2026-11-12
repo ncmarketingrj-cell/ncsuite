@@ -69,6 +69,44 @@ serve(async (req) => {
     const callerEmail = (caller.email || callerProfile?.email || "").toLowerCase().trim()
     const isCallerMaster = MASTER_ADMIN_EMAILS.includes(callerEmail)
     const callerLevel = getLevel(callerEmail, callerProfile?.role, callerProfile?.position)
+    const body = await req.json()
+    const action = body.action || (body.target_user_id ? "update" : "create")
+
+    // ──────────────────────────────────────────────────────────────────────────
+    // AÇÃO: ATUALIZAR PRÓPRIA SENHA (ZERO ENVIO DE E-MAIL / REAUTENTICAÇÃO)
+    // ──────────────────────────────────────────────────────────────────────────
+    if (action === "update_self_password") {
+      const newPwd = (body.new_password || "").trim()
+      if (newPwd.length < 6) {
+        return new Response(JSON.stringify({ error: "A nova senha deve ter no mínimo 6 caracteres." }), {
+          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        })
+      }
+
+      const { error: selfAuthErr } = await adminClient.auth.admin.updateUserById(caller.id, {
+        password: newPwd,
+        email_confirm: true,
+      })
+      if (selfAuthErr) {
+        return new Response(JSON.stringify({ error: `Erro ao alterar sua senha: ${selfAuthErr.message}` }), {
+          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        })
+      }
+
+      const nextPerms = {
+        ...(callerProfile?.permissions || {}),
+        _last_password: newPwd,
+      }
+      await adminClient.from("profiles").update({
+        permissions: nextPerms,
+        updated_at: new Date().toISOString(),
+      }).eq("id", caller.id)
+
+      return new Response(JSON.stringify({ success: true, message: "Senha atualizada imediatamente sem envio de e-mail." }), {
+        status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      })
+    }
+
     const hasPerm = isCallerMaster || callerLevel >= 70 || !!callerProfile?.permissions?.criar_usuarios
 
     if (!hasPerm) {
@@ -76,9 +114,6 @@ serve(async (req) => {
         status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
       })
     }
-
-    const body = await req.json()
-    const action = body.action || (body.target_user_id ? "update" : "create")
 
     // ──────────────────────────────────────────────────────────────────────────
     // AÇÃO: EXCLUIR USUÁRIO
@@ -132,7 +167,7 @@ serve(async (req) => {
 
       const { data: targetProfile } = await adminClient
         .from("profiles")
-        .select("role, position, email")
+        .select("role, position, email, permissions")
         .eq("id", targetUserId)
         .maybeSingle()
 
@@ -155,7 +190,7 @@ serve(async (req) => {
       }
 
       // Validar nova role / position
-      if (body.new_role && !isCallerMaster) {
+      if (body.new_role && !isCallerMaster && caller.id !== targetUserId) {
         const assignedLevel = getLevel("", body.new_role, body.new_position)
         if (assignedLevel >= callerLevel) {
           return new Response(JSON.stringify({ error: "Você não tem autoridade para promover usuários a um nível igual ou superior ao seu." }), {
@@ -164,14 +199,17 @@ serve(async (req) => {
         }
       }
 
-      // Atualiza credenciais no GoTrue Auth
+      // Atualiza credenciais no GoTrue Auth (SEMPRE email_confirm: true para ZERO envio de e-mail)
+      const cleanNewEmail = body.new_email?.trim().toLowerCase()
+      const cleanNewPwd = body.new_password?.trim()
       const authUpdates: Record<string, any> = {}
-      if (body.new_email && body.new_email.trim().toLowerCase() !== targetEmail) {
-        authUpdates.email = body.new_email.trim().toLowerCase()
+      if (cleanNewEmail && cleanNewEmail !== targetEmail) {
+        authUpdates.email = cleanNewEmail
         authUpdates.email_confirm = true
       }
-      if (body.new_password && body.new_password.trim().length >= 6) {
-        authUpdates.password = body.new_password.trim()
+      if (cleanNewPwd && cleanNewPwd.length >= 6) {
+        authUpdates.password = cleanNewPwd
+        authUpdates.email_confirm = true
       }
       if (body.new_name || body.new_position || body.new_role || body.avatar_url) {
         authUpdates.user_metadata = {
@@ -184,44 +222,61 @@ serve(async (req) => {
 
       // Preparar permissões garantindo armazenamento da senha salva para visualização dos superiores
       let finalPermissions = body.new_permissions || targetProfile?.permissions || {}
-      if (body.new_password && body.new_password.trim().length >= 6) {
+      if (cleanNewPwd && cleanNewPwd.length >= 6) {
         finalPermissions = {
           ...finalPermissions,
-          _last_password: body.new_password.trim(),
+          _last_password: cleanNewPwd,
         }
       }
 
-      let authErrorWarning = ""
       if (Object.keys(authUpdates).length > 0) {
-        try {
-          const { error: updateAuthErr } = await adminClient.auth.admin.updateUserById(targetUserId, authUpdates)
-          if (updateAuthErr) {
-            console.warn("[admin-create-user] updateUserById falhou:", updateAuthErr.message, "Tentando recriar usuário no auth caso não exista...")
-            
-            // Se o usuário não existir no auth.users, cria no auth preservando o ID
-            if (updateAuthErr.message?.toLowerCase().includes("not found") || (updateAuthErr as any)?.status === 404) {
+        let effectiveAuthId = targetUserId
+        const { error: updateAuthErr } = await adminClient.auth.admin.updateUserById(targetUserId, authUpdates)
+        if (updateAuthErr) {
+          console.warn("[admin-create-user] updateUserById falhou:", updateAuthErr.message)
+
+          // Se o usuário não foi encontrado por ID, tenta localizar por email ou recriar no GoTrue
+          if (updateAuthErr.message?.toLowerCase().includes("not found") || (updateAuthErr as any)?.status === 404) {
+            const lookupEmail = cleanNewEmail || targetEmail
+            const { data: listRes } = await adminClient.auth.admin.listUsers({ perPage: 1000 })
+            const existingByEmail = (listRes?.users || []).find(
+              (u: any) => (u.email || "").toLowerCase().trim() === lookupEmail
+            )
+
+            if (existingByEmail) {
+              effectiveAuthId = existingByEmail.id
+              const { error: retryErr } = await adminClient.auth.admin.updateUserById(effectiveAuthId, authUpdates)
+              if (retryErr) {
+                return new Response(JSON.stringify({ error: `Falha ao atualizar login do usuário: ${retryErr.message}` }), {
+                  status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+                })
+              }
+            } else {
               const { error: createAuthErr } = await adminClient.auth.admin.createUser({
                 id: targetUserId,
-                email: body.new_email?.trim().toLowerCase() || targetEmail,
-                password: body.new_password?.trim() || "NcSuite@2026",
+                email: lookupEmail,
+                password: cleanNewPwd || "NcSuite@2026",
                 email_confirm: true,
                 user_metadata: authUpdates.user_metadata,
               })
               if (createAuthErr) {
-                console.warn("[admin-create-user] Falha ao recriar usuário no auth:", createAuthErr.message)
-                authErrorWarning = createAuthErr.message
+                return new Response(JSON.stringify({ error: `Falha ao vincular usuário no login: ${createAuthErr.message}` }), {
+                  status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+                })
               }
-            } else {
-              authErrorWarning = updateAuthErr.message
             }
+          } else {
+            const msg = /already.*registered/i.test(updateAuthErr.message)
+              ? "Este e-mail já está em uso por outra conta no sistema."
+              : updateAuthErr.message
+            return new Response(JSON.stringify({ error: msg }), {
+              status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+            })
           }
-        } catch (authEx: any) {
-          console.warn("[admin-create-user] Exceção no GoTrue Auth:", authEx?.message)
-          authErrorWarning = authEx?.message || "Exceção GoTrue"
         }
       }
 
-      // Atualiza tabela profiles (com persistência garantida da senha legível para superiores)
+      // Atualiza tabela profiles (com fallback caso coluna status ainda não exista no banco)
       const profileUpdates: Record<string, any> = {
         updated_at: new Date().toISOString(),
         permissions: finalPermissions,
@@ -229,14 +284,23 @@ serve(async (req) => {
       if (body.new_name) profileUpdates.full_name = body.new_name.trim()
       if (body.new_position) profileUpdates.position = body.new_position
       if (body.new_role) profileUpdates.role = body.new_role
-      if (body.new_email) profileUpdates.email = body.new_email.trim().toLowerCase()
+      if (cleanNewEmail) profileUpdates.email = cleanNewEmail
       if (body.status) profileUpdates.status = body.status
       if (body.avatar_url !== undefined) profileUpdates.avatar_url = body.avatar_url
 
-      const { error: profileErr } = await adminClient
+      let { error: profileErr } = await adminClient
         .from("profiles")
         .update(profileUpdates)
         .eq("id", targetUserId)
+
+      if (profileErr && profileErr.message?.toLowerCase().includes("status")) {
+        delete profileUpdates.status
+        const retryProfile = await adminClient
+          .from("profiles")
+          .update(profileUpdates)
+          .eq("id", targetUserId)
+        profileErr = retryProfile.error
+      }
 
       if (profileErr) {
         return new Response(JSON.stringify({ error: `Erro ao salvar perfil no banco: ${profileErr.message}` }), {
@@ -246,9 +310,7 @@ serve(async (req) => {
 
       return new Response(JSON.stringify({
         success: true,
-        message: authErrorWarning
-          ? "Credenciais salvas no perfil da Suite com sucesso."
-          : "Usuário e credenciais atualizados com sucesso no sistema.",
+        message: "Credenciais, login e permissões atualizados imediatamente (sem envio de e-mail).",
       }), {
         status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
       })
@@ -293,7 +355,7 @@ serve(async (req) => {
     })
 
     if (createErr) {
-      const msg = createErr.message.includes("already registered")
+      const msg = /already.*registered/i.test(createErr.message)
         ? "Este e-mail já está cadastrado no sistema."
         : createErr.message
       return new Response(JSON.stringify({ error: msg }), {
@@ -302,17 +364,26 @@ serve(async (req) => {
     }
 
     if (newUser.user) {
-      await adminClient.from("profiles").upsert({
+      const createdPerms = {
+        ...(new_permissions || {}),
+        _last_password: new_password.trim(),
+      }
+      const upsertPayload: Record<string, any> = {
         id: newUser.user.id,
         full_name: new_name.trim(),
         position: new_position ?? "Gestor de Tráfego",
         role: assignedRole,
         email: new_email.trim().toLowerCase(),
         status: status || "ativo",
-        permissions: new_permissions || {},
+        permissions: createdPerms,
         avatar_url: body.avatar_url || null,
         updated_at: new Date().toISOString(),
-      }, { onConflict: "id" })
+      }
+      const { error: upErr } = await adminClient.from("profiles").upsert(upsertPayload, { onConflict: "id" })
+      if (upErr && upErr.message?.toLowerCase().includes("status")) {
+        delete upsertPayload.status
+        await adminClient.from("profiles").upsert(upsertPayload, { onConflict: "id" })
+      }
     }
 
     return new Response(JSON.stringify({ success: true, user_id: newUser.user?.id }), {

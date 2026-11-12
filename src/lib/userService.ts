@@ -34,8 +34,46 @@ export interface ServiceResult {
   error?: string;
 }
 
+export function translateAuthError(msg?: string): string {
+  const raw = (msg || "").trim();
+  if (!raw) return "Erro desconhecido na autenticação.";
+  if (/already.*registered/i.test(raw) || /already in use/i.test(raw)) {
+    return "Este e-mail já está cadastrado em outra conta.";
+  }
+  if (/invalid login credentials/i.test(raw)) {
+    return "E-mail ou senha incorretos.";
+  }
+  if (/email not confirmed/i.test(raw)) {
+    return "Conta ainda não confirmada no Auth. O administrador pode reconfirmar salvando as credenciais.";
+  }
+  if (/reauthentication/i.test(raw)) {
+    return "O Supabase solicitou reautenticação por e-mail. Aplicando atualização direta sem envio de e-mail...";
+  }
+  if (/gen_salt/i.test(raw)) {
+    return "Função de criptografia pendente no banco (execute a migration 20261112180000_fix_auth_credentials_no_email.sql ou publique a Edge Function admin-create-user).";
+  }
+  return raw;
+}
+
+async function extractEdgeError(edgeErr: any, edgeRes?: any): Promise<string> {
+  if (edgeRes?.error) return String(edgeRes.error);
+  if (!edgeErr) return "";
+  try {
+    if ("context" in edgeErr && typeof edgeErr.context?.json === "function") {
+      const errBody = await edgeErr.context.json();
+      if (errBody?.error || errBody?.message) {
+        return String(errBody.error || errBody.message);
+      }
+    }
+  } catch {
+    // ignore parse failure
+  }
+  return String(edgeErr.message || "");
+}
+
 /**
- * Cria um novo usuário utilizando a Edge Function administrativa
+ * Cria um novo usuário com ativação imediata (SEM envio de e-mail de confirmação).
+ * Tenta a Edge Function administrativa primeiro e faz fallback automático via RPC admin_create_user.
  */
 export async function createSystemUser(data: CreateUserData): Promise<ServiceResult> {
   const email = data.email.trim().toLowerCase();
@@ -54,6 +92,10 @@ export async function createSystemUser(data: CreateUserData): Promise<ServiceRes
     ...(password ? { _last_password: password } : {}),
   };
 
+  let newUserId: string | undefined;
+  let edgeErrorMsg = "";
+
+  // 1. Tenta Edge Function admin-create-user (cria com email_confirm: true, zero e-mail enviado)
   try {
     const { data: res, error } = await supabase.functions.invoke("admin-create-user", {
       body: {
@@ -69,51 +111,78 @@ export async function createSystemUser(data: CreateUserData): Promise<ServiceRes
       },
     });
 
-    if (error) {
-      // Fallback para mensagens legíveis
-      const errMsg = error.message || "Falha na chamada administrativa.";
-      return { success: false, error: errMsg };
+    if (!error && !res?.error) {
+      newUserId = res?.user_id;
+    } else {
+      edgeErrorMsg = await extractEdgeError(error, res);
     }
-
-    if (res?.error) {
-      return { success: false, error: res.error };
-    }
-
-    const newUserId = res?.user_id;
-
-    // Se forneceu permissões e a Edge Function não gravou diretamente
-    if (newUserId) {
-      try {
-        await (supabase as any).rpc("admin_set_user_permissions", {
-          target_user_id: newUserId,
-          new_permissions: permissionsPayload,
-        });
-      } catch (e) {
-        console.warn("[userService] Aviso ao definir permissões via RPC:", e);
-      }
-      try {
-        await (supabase as any).from("profiles").update({
-          permissions: permissionsPayload,
-        }).eq("id", newUserId);
-      } catch (e) {
-        // ignore
-      }
-    }
-
-    return {
-      success: true,
-      userId: newUserId,
-      message: "Usuário criado com sucesso e pronto para login!",
-    };
   } catch (err: any) {
-    return { success: false, error: err?.message || "Erro inesperado ao criar usuário." };
+    edgeErrorMsg = err?.message || "";
   }
+
+  // Se erro explícito de validação (e-mail duplicado / hierarquia), interrompe imediatamente
+  if (!newUserId && /cadastrado|registered|hierarquia|negado|inválid|obrigatório|mínimo/i.test(edgeErrorMsg)) {
+    return { success: false, error: translateAuthError(edgeErrorMsg) };
+  }
+
+  // 2. Fallback seguro via RPC admin_create_user (também cria já confirmado em auth.users + auth.identities, SEM envio de e-mail)
+  if (!newUserId) {
+    try {
+      const { data: rpcUserId, error: rpcErr } = await (supabase as any).rpc("admin_create_user", {
+        new_email: email,
+        new_password: password,
+        new_name: name,
+        new_position: data.position || "Gestor de Tráfego",
+        new_role: data.role || "outro",
+      });
+      if (rpcErr) {
+        return {
+          success: false,
+          error: translateAuthError(rpcErr.message || edgeErrorMsg),
+        };
+      }
+      newUserId = rpcUserId;
+    } catch (rpcEx: any) {
+      return {
+        success: false,
+        error: translateAuthError(rpcEx?.message || edgeErrorMsg || "Não foi possível criar o usuário."),
+      };
+    }
+  }
+
+  // 3. Garante gravação de permissões, senha legível (_last_password) e avatar no profile
+  if (newUserId) {
+    try {
+      await (supabase as any).rpc("admin_set_user_permissions", {
+        target_user_id: newUserId,
+        new_permissions: permissionsPayload,
+      });
+    } catch (e) {
+      console.warn("[userService] Aviso ao definir permissões via RPC:", e);
+    }
+    try {
+      const profPayload: Record<string, any> = {
+        permissions: permissionsPayload,
+        avatar_url: data.avatarUrl || null,
+        updated_at: new Date().toISOString(),
+      };
+      await (supabase as any).from("profiles").update(profPayload).eq("id", newUserId);
+    } catch {
+      // ignore
+    }
+  }
+
+  return {
+    success: true,
+    userId: newUserId,
+    message: "Usuário criado e ativado imediatamente (sem necessidade de confirmação por e-mail)!",
+  };
 }
 
 /**
- * Atualiza um usuário: permite alterar Login (e-mail), Senha, Nome, Cargo, Role e Permissões.
- * Tenta a Edge Function primeiro (para atualizar auth.users sem confirmação de email)
- * e aplica fallbacks via RPC e atualização direta em profiles.
+ * Atualiza um usuário: permite alterar Login (e-mail), Senha, Nome, Cargo, Role e Permissões
+ * com ativação imediata e SEM envio de e-mail de confirmação.
+ * IMPORTANTE: nunca grava _last_password em profiles se a troca real de senha no Auth falhar.
  */
 export async function updateSystemUser(data: UpdateUserData): Promise<ServiceResult> {
   if (!data.targetUserId) {
@@ -123,9 +192,10 @@ export async function updateSystemUser(data: UpdateUserData): Promise<ServiceRes
   const newEmail = data.newEmail?.trim().toLowerCase();
   const newPassword = data.newPassword?.trim();
   const newName = data.newName?.trim();
+  const hasPasswordChange = Boolean(newPassword && newPassword.length >= 6);
 
   let permissionsPayload = data.newPermissions;
-  if (newPassword && newPassword.length >= 6) {
+  if (hasPasswordChange && newPassword) {
     permissionsPayload = {
       ...(permissionsPayload || {}),
       _last_password: newPassword,
@@ -135,14 +205,14 @@ export async function updateSystemUser(data: UpdateUserData): Promise<ServiceRes
   let edgeFunctionSucceeded = false;
   let edgeErrorMsg = "";
 
-  // 1. Tenta a Edge Function administrativa (tem acesso ao Supabase Service Role Key)
+  // 1. Tenta a Edge Function administrativa (GoTrue Admin API com email_confirm: true)
   try {
     const { data: edgeRes, error: edgeErr } = await supabase.functions.invoke("admin-create-user", {
       body: {
         action: "update",
         target_user_id: data.targetUserId,
         new_email: newEmail || undefined,
-        new_password: newPassword && newPassword.length >= 6 ? newPassword : undefined,
+        new_password: hasPasswordChange ? newPassword : undefined,
         new_name: newName || undefined,
         new_position: data.newPosition,
         new_role: data.newRole,
@@ -155,58 +225,77 @@ export async function updateSystemUser(data: UpdateUserData): Promise<ServiceRes
     if (!edgeErr && !edgeRes?.error) {
       edgeFunctionSucceeded = true;
     } else {
-      if (edgeErr) {
-        try {
-          if ('context' in edgeErr && typeof (edgeErr as any).context?.json === 'function') {
-            const errBody = await (edgeErr as any).context.json();
-            edgeErrorMsg = errBody?.error || errBody?.message || edgeErr.message;
-          } else {
-            edgeErrorMsg = edgeErr.message;
-          }
-        } catch (_) {
-          edgeErrorMsg = edgeErr.message;
-        }
-      } else {
-        edgeErrorMsg = edgeRes?.error || "";
-      }
+      edgeErrorMsg = await extractEdgeError(edgeErr, edgeRes);
     }
   } catch (err: any) {
     edgeErrorMsg = err?.message || "";
   }
 
-  // 2. Se a Edge Function concluiu com sucesso, maravilha!
+  // 2. Se a Edge Function concluiu com sucesso, já aplicou tudo em Auth + Profiles!
   if (edgeFunctionSucceeded) {
     return {
       success: true,
       userId: data.targetUserId,
-      message: "Dados, login e credenciais do usuário atualizados com sucesso!",
+      message: "Dados, login e senha atualizados imediatamente (sem envio de e-mail)!",
     };
   }
 
-  // 3. Fallback: Executa a RPC admin_update_user no banco
+  // Se erro explícito de permissão/hierarquia/proteção master, aborta
+  if (/negado|insuficiente|protegid|absolut/i.test(edgeErrorMsg)) {
+    return { success: false, error: translateAuthError(edgeErrorMsg) };
+  }
+
+  // 3. Fallback via RPC admin_update_user no banco (tenta 7 parâmetros e faz fallback automático para 5 parâmetros)
   let rpcSucceeded = false;
+  let rpcErrorMsg = "";
   try {
-    const rpcPayload: any = {
+    const rpc7Payload: any = {
       target_user_id: data.targetUserId,
       new_role: data.newRole || "outro",
       new_position: data.newPosition || "Gestor de Tráfego",
       new_name: newName || "",
-      new_password: newPassword && newPassword.length >= 6 ? newPassword : null,
+      new_password: hasPasswordChange ? newPassword : null,
+      new_email: newEmail || null,
+      new_status: data.status || null,
     };
 
-    // Alguns schemas suportam new_email e status
-    if (newEmail) rpcPayload.new_email = newEmail;
-    if (data.status) rpcPayload.new_status = data.status;
-
-    const { error: rpcErr } = await (supabase as any).rpc("admin_update_user", rpcPayload);
-    if (!rpcErr) {
+    const { error: rpc7Err } = await (supabase as any).rpc("admin_update_user", rpc7Payload);
+    if (!rpc7Err) {
       rpcSucceeded = true;
+    } else if (
+      rpc7Err.message?.includes("schema cache") ||
+      rpc7Err.code === "PGRST202"
+    ) {
+      // Banco ainda com assinatura antiga de 5 parâmetros
+      const { error: rpc5Err } = await (supabase as any).rpc("admin_update_user", {
+        target_user_id: data.targetUserId,
+        new_role: data.newRole || "outro",
+        new_position: data.newPosition || "Gestor de Tráfego",
+        new_name: newName || "",
+        new_password: hasPasswordChange ? newPassword : null,
+      });
+      if (!rpc5Err) {
+        rpcSucceeded = true;
+      } else {
+        rpcErrorMsg = rpc5Err.message || "";
+      }
+    } else {
+      rpcErrorMsg = rpc7Err.message || "";
     }
-  } catch (rpcErr) {
-    console.warn("[userService] RPC admin_update_user falhou ou formato antigo, tentando fallback direto:", rpcErr);
+  } catch (rpcErr: any) {
+    rpcErrorMsg = rpcErr?.message || "";
   }
 
-  // 4. Fallback direto no profiles (garante que nome, cargo, status, role, email e senha persistam)
+  // Se admin solicitou alteração real de SENHA, ela PRECISA ter sido aplicada no Auth (via Edge Function ou RPC)!
+  // Nunca gravar _last_password em profiles se o login real não foi atualizado.
+  if (hasPasswordChange && !rpcSucceeded) {
+    return {
+      success: false,
+      error: translateAuthError(rpcErrorMsg || edgeErrorMsg || "Não foi possível atualizar a senha no servidor de autenticação."),
+    };
+  }
+
+  // 4. Atualiza dados complementares e _last_password em profiles
   let directProfileSucceeded = false;
   try {
     const updatePayload: Record<string, any> = {
@@ -220,45 +309,135 @@ export async function updateSystemUser(data: UpdateUserData): Promise<ServiceRes
     if (permissionsPayload) updatePayload.permissions = permissionsPayload;
     if (data.avatarUrl !== undefined) updatePayload.avatar_url = data.avatarUrl;
 
-    const { error: profErr } = await (supabase as any)
+    let { error: profErr } = await (supabase as any)
       .from("profiles")
       .update(updatePayload)
       .eq("id", data.targetUserId);
 
+    if (profErr && profErr.message?.toLowerCase().includes("status")) {
+      delete updatePayload.status;
+      const retry = await (supabase as any)
+        .from("profiles")
+        .update(updatePayload)
+        .eq("id", data.targetUserId);
+      profErr = retry.error;
+    }
+
     if (!profErr) {
       directProfileSucceeded = true;
-    } else {
-      console.error("[userService] Erro ao atualizar tabela profiles:", profErr);
     }
   } catch (profErr) {
     console.error("[userService] Erro ao atualizar tabela profiles:", profErr);
   }
 
-  // 5. Se houver permissões, garante a atualização via RPC
+  // 5. Se houver permissões, garante a atualização via RPC (somente após Auth bem-sucedido quando houver senha)
   if (permissionsPayload && Object.keys(permissionsPayload).length > 0) {
     try {
       await (supabase as any).rpc("admin_set_user_permissions", {
         target_user_id: data.targetUserId,
         new_permissions: permissionsPayload,
       });
+      directProfileSucceeded = true;
     } catch (permErr) {
       console.warn("[userService] Aviso ao definir permissões via RPC:", permErr);
     }
   }
 
-  if (rpcSucceeded || edgeFunctionSucceeded || directProfileSucceeded) {
+  if (rpcSucceeded || directProfileSucceeded) {
     return {
       success: true,
       userId: data.targetUserId,
-      message: "Credenciais e permissões atualizadas com sucesso!",
+      message: "Credenciais, login e permissões atualizados com sucesso (sem envio de e-mail)!",
     };
   }
 
-  if (edgeErrorMsg && !edgeErrorMsg.includes("non-2xx")) {
-    return { success: false, error: edgeErrorMsg };
+  return {
+    success: false,
+    error: translateAuthError(rpcErrorMsg || edgeErrorMsg || "Não foi possível salvar as alterações."),
+  };
+}
+
+/**
+ * Atualiza a própria senha do usuário logado sem disparo de e-mail de confirmação/reautenticação.
+ */
+export async function updateOwnPassword(
+  userId: string,
+  newPassword: string,
+  existingPermissions: Record<string, any> = {},
+  meta?: { role?: string; position?: string; fullName?: string }
+): Promise<ServiceResult> {
+  const cleanPwd = newPassword.trim();
+  if (cleanPwd.length < 6) {
+    return { success: false, error: "A nova senha deve ter no mínimo 6 caracteres." };
   }
 
-  return { success: true, userId: data.targetUserId, message: "Dados do colaborador atualizados." };
+  let changed = false;
+  let lastError = "";
+
+  // 1. Tenta via Admin Edge Function (zero e-mail de confirmação/reautenticação)
+  try {
+    const { data: res, error } = await supabase.functions.invoke("admin-create-user", {
+      body: {
+        action: "update_self_password",
+        new_password: cleanPwd,
+      },
+    });
+    if (!error && !res?.error) {
+      changed = true;
+    } else {
+      lastError = await extractEdgeError(error, res);
+    }
+  } catch (e: any) {
+    lastError = e?.message || "";
+  }
+
+  // 2. Fallback: RPC admin_update_user para próprio ID
+  if (!changed) {
+    try {
+      const { error: rpcErr } = await (supabase as any).rpc("admin_update_user", {
+        target_user_id: userId,
+        new_role: meta?.role || "outro",
+        new_position: meta?.position || "Outros",
+        new_name: meta?.fullName || "",
+        new_password: cleanPwd,
+      });
+      if (!rpcErr) {
+        changed = true;
+      } else {
+        lastError = rpcErr.message || lastError;
+      }
+    } catch (e: any) {
+      lastError = e?.message || lastError;
+    }
+  }
+
+  // 3. Fallback nativo: supabase.auth.updateUser (só se não exigir confirmação de e-mail)
+  if (!changed) {
+    const { error: authErr } = await supabase.auth.updateUser({ password: cleanPwd });
+    if (!authErr) {
+      changed = true;
+    } else {
+      lastError = authErr.message || lastError;
+    }
+  }
+
+  if (!changed) {
+    return { success: false, error: translateAuthError(lastError) };
+  }
+
+  // Só atualiza _last_password depois que o Auth realmente aceitou a nova senha
+  await (supabase as any)
+    .from("profiles")
+    .update({
+      permissions: {
+        ...(existingPermissions || {}),
+        _last_password: cleanPwd,
+      },
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", userId);
+
+  return { success: true, message: "Sua senha foi alterada com sucesso!" };
 }
 
 /**
