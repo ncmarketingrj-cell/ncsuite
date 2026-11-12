@@ -9,7 +9,7 @@ import {
   ChevronDown, RefreshCw, Users, Store,
   Volume2, VolumeX, LogOut, CreditCard, Share2, ArrowRight, GitBranch, Brain, ChevronRight,
   Lock, GaugeCircle, FlaskConical, TrendingUp, Trash2, CheckCheck, Calendar, HelpCircle,
-  ShieldAlert
+  ShieldAlert, Timer
 } from "lucide-react";
 import { AuthProvider, useAuth } from "@/lib/auth";
 import { supabase } from "@/integrations/supabase-external/client";
@@ -244,7 +244,7 @@ function Shell() {
   const { runSync } = useAutoSync();
 
   // ── Motor de Alertas Sonoros ──────────────────────────────────────────────────
-  const { acknowledgeAll, soundEnabled, toggleSound } = useAlertEngine();
+  const { acknowledgeAll, soundEnabled, toggleSound, alertInterval } = useAlertEngine();
 
   // Ouvir mudanças de status do sync
   useEffect(() => {
@@ -888,6 +888,15 @@ function Shell() {
                           </div>
                         </div>
                         <div className="flex items-center gap-1.5">
+                          <Link
+                            to="/automacoes"
+                            search={{ tab: "personalizacao" }}
+                            title={`Temporizador entre toques de alerta: ${alertInterval}s (Clique para personalizar)`}
+                            className="flex items-center gap-1 rounded-lg border border-border bg-muted/40 hover:border-primary/30 hover:bg-primary/10 px-1.5 py-0.5 text-[9px] font-mono font-bold text-muted-foreground hover:text-primary transition-all uppercase tracking-wider"
+                          >
+                            <Timer className="h-2.5 w-2.5 text-primary" /> {alertInterval}s
+                          </Link>
+
                           <button
                             onClick={toggleSound}
                             title={soundEnabled ? "Desativar som dos alertas" : "Ativar som dos alertas"}

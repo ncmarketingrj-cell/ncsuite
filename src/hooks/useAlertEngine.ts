@@ -4,7 +4,12 @@
 import { useEffect, useRef, useCallback, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase-external/client";
-import { playAlertTone } from "@/lib/alertSounds";
+import {
+  playAlertTone,
+  getAlertIntervalPreference,
+  setAlertIntervalPreference,
+  ALERT_SOUND_INTERVAL_EVENT,
+} from "@/lib/alertSounds";
 import { enforceNotificationCapacity } from "@/lib/notificationService";
 
 // ─── Module-level singletons (shared across React instances) ──────────────────
@@ -391,18 +396,30 @@ function playAlertSound(alertId: string) {
 
   try {
     let stopped = false;
+    let timerId: ReturnType<typeof setTimeout> | null = null;
+
     // Toca imediatamente o tom configurado
     playAlertTone();
 
-    const loop = setInterval(() => {
-      if (stopped) { clearInterval(loop); return; }
-      playAlertTone();
-    }, 6000);
+    // Temporizador configurável entre toques (permite espaçar ou diminuir o tempo)
+    const scheduleNext = () => {
+      if (stopped) return;
+      const intervalSec = getAlertIntervalPreference();
+      const intervalMs = Math.max(2000, intervalSec * 1000);
+
+      timerId = setTimeout(() => {
+        if (stopped) return;
+        playAlertTone();
+        scheduleNext();
+      }, intervalMs);
+    };
+
+    scheduleNext();
 
     activeOscillators.set(alertId, {
       stop: () => {
         stopped = true;
-        clearInterval(loop);
+        if (timerId) clearTimeout(timerId);
         activeOscillators.delete(alertId);
       },
     });
@@ -480,16 +497,20 @@ export function useAlertEngine() {
   const permissionGranted = useRef(false);
   const [soundEnabled, setSoundEnabledState] = useState(getSoundEnabled);
   const [notifPrefs, setNotifPrefsState] = useState<NotifPrefs>(getNotifPrefs);
+  const [alertInterval, setAlertIntervalState] = useState(getAlertIntervalPreference);
 
   // Sincroniza estado React quando outra instância ou aba muda as preferências
   useEffect(() => {
     const onSound = (e: Event) => setSoundEnabledState((e as CustomEvent).detail);
     const onPrefs = (e: Event) => setNotifPrefsState((e as CustomEvent).detail);
+    const onInterval = (e: Event) => setAlertIntervalState((e as CustomEvent).detail);
     window.addEventListener(SOUND_CHANGED_EVENT, onSound);
     window.addEventListener(NOTIF_PREFS_CHANGED_EVENT, onPrefs);
+    window.addEventListener(ALERT_SOUND_INTERVAL_EVENT, onInterval);
     return () => {
       window.removeEventListener(SOUND_CHANGED_EVENT, onSound);
       window.removeEventListener(NOTIF_PREFS_CHANGED_EVENT, onPrefs);
+      window.removeEventListener(ALERT_SOUND_INTERVAL_EVENT, onInterval);
     };
   }, []);
 
@@ -501,6 +522,10 @@ export function useAlertEngine() {
 
   const updateNotifPrefs = useCallback((patch: Partial<NotifPrefs>) => {
     setNotifPrefs(patch);
+  }, []);
+
+  const updateAlertInterval = useCallback((sec: number) => {
+    setAlertIntervalPreference(sec);
   }, []);
 
   useEffect(() => {
@@ -593,5 +618,7 @@ export function useAlertEngine() {
     toggleSound,
     notifPrefs,
     updateNotifPrefs,
+    alertInterval,
+    updateAlertInterval,
   };
 }

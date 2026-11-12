@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Zap, Loader2, Play, Pause, Clock, History, AlertTriangle,
@@ -24,7 +24,8 @@ import {
 import {
   ALERT_SOUNDS, getAlertSoundPreference, setAlertSoundPreference,
   getAlertVolumePreference, setAlertVolumePreference, playAlertTone,
-  ALERT_SOUND_TYPE_EVENT, type AlertSoundDef,
+  getAlertIntervalPreference, setAlertIntervalPreference,
+  ALERT_SOUND_TYPE_EVENT, ALERT_SOUND_INTERVAL_EVENT, type AlertSoundDef,
 } from "@/lib/alertSounds";
 import {
   MAX_NOTIFICATIONS_CAP, getRecentNotifications, markAllNotificationsAsRead,
@@ -79,11 +80,16 @@ function AutomationsPage() {
   const [evalStatus, setEvalStatus] = useState<EvalStatus>(getEvalStatus);
 
   // ── Preferências sonoras & personalização ────────────────────────────────────
-  const [soundOn, setSoundOn]               = useState(getSoundEnabled);
-  const [prefs, setPrefsState]              = useState<NotifPrefs>(getNotifPrefs);
-  const [selectedSound, setSelectedSound]   = useState(getAlertSoundPreference);
-  const [alertVolume, setAlertVolume]       = useState(getAlertVolumePreference);
-  const [playingSoundId, setPlayingSoundId] = useState<string | null>(null);
+  const [soundOn, setSoundOn]                           = useState(getSoundEnabled);
+  const [prefs, setPrefsState]                          = useState<NotifPrefs>(getNotifPrefs);
+  const [selectedSound, setSelectedSound]               = useState(getAlertSoundPreference);
+  const [alertVolume, setAlertVolume]                   = useState(getAlertVolumePreference);
+  const [alertInterval, setAlertInterval]               = useState(getAlertIntervalPreference);
+  const [playingSoundId, setPlayingSoundId]             = useState<string | null>(null);
+  const [isSimulatingInterval, setIsSimulatingInterval] = useState(false);
+  const [simulationProgress, setSimulationProgress]     = useState(0);
+  const [simulationStep, setSimulationStep]             = useState<1 | 2 | null>(null);
+  const simulationTimerRef                              = useRef<any>(null);
 
   // ── Diagnóstico Victoria AI ──────────────────────────────────────────────────
   const [selectedDiagnoseCampId, setSelectedDiagnoseCampId]     = useState<string | null>(null);
@@ -97,13 +103,24 @@ function AutomationsPage() {
     const onSound = (e: Event) => setSoundOn((e as CustomEvent).detail);
     const onPrefs = (e: Event) => setPrefsState((e as CustomEvent).detail);
     const onSoundType = (e: Event) => setSelectedSound((e as CustomEvent).detail);
+    const onInterval = (e: Event) => setAlertInterval((e as CustomEvent).detail);
     window.addEventListener(SOUND_CHANGED_EVENT, onSound as EventListener);
     window.addEventListener(NOTIF_PREFS_CHANGED_EVENT, onPrefs as EventListener);
     window.addEventListener(ALERT_SOUND_TYPE_EVENT, onSoundType as EventListener);
+    window.addEventListener(ALERT_SOUND_INTERVAL_EVENT, onInterval as EventListener);
     return () => {
       window.removeEventListener(SOUND_CHANGED_EVENT, onSound as EventListener);
       window.removeEventListener(NOTIF_PREFS_CHANGED_EVENT, onPrefs as EventListener);
       window.removeEventListener(ALERT_SOUND_TYPE_EVENT, onSoundType as EventListener);
+      window.removeEventListener(ALERT_SOUND_INTERVAL_EVENT, onInterval as EventListener);
+    };
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (simulationTimerRef.current) {
+        clearInterval(simulationTimerRef.current);
+      }
     };
   }, []);
 
@@ -324,6 +341,58 @@ function AutomationsPage() {
   const handleVolumeChange = (vol: number) => {
     setAlertVolume(vol);
     setAlertVolumePreference(vol);
+  };
+
+  const handleIntervalChange = (sec: number) => {
+    const clamped = Math.max(2, Math.min(120, Math.round(sec)));
+    setAlertInterval(clamped);
+    setAlertIntervalPreference(clamped);
+  };
+
+  const handleStopSimulation = () => {
+    if (simulationTimerRef.current) {
+      clearInterval(simulationTimerRef.current);
+      simulationTimerRef.current = null;
+    }
+    setIsSimulatingInterval(false);
+    setSimulationProgress(0);
+    setSimulationStep(null);
+  };
+
+  const handleSimulateIntervalSequence = () => {
+    handleStopSimulation();
+    setIsSimulatingInterval(true);
+    setSimulationStep(1);
+    setSimulationProgress(0);
+
+    // 1º toque imediato
+    playAlertTone(selectedSound, alertVolume);
+    toast.info(`🔔 Toque 1 disparado! Temporizador aguardando ${alertInterval}s até o próximo toque...`, { duration: 3000 });
+
+    const totalDurationMs = alertInterval * 1000;
+    const startTime = Date.now();
+
+    simulationTimerRef.current = setInterval(() => {
+      const elapsed = Date.now() - startTime;
+      const progress = Math.min(100, (elapsed / totalDurationMs) * 100);
+      setSimulationProgress(progress);
+
+      if (elapsed >= totalDurationMs) {
+        if (simulationTimerRef.current) {
+          clearInterval(simulationTimerRef.current);
+          simulationTimerRef.current = null;
+        }
+        setSimulationStep(2);
+        setSimulationProgress(100);
+        playAlertTone(selectedSound, alertVolume);
+        toast.success(`🔔 Toque 2 disparado após ${alertInterval}s de intervalo!`, { duration: 4000 });
+        setTimeout(() => {
+          setIsSimulatingInterval(false);
+          setSimulationProgress(0);
+          setSimulationStep(null);
+        }, 1200);
+      }
+    }, 50);
   };
 
   const handleTestVolume = () => {
@@ -1042,6 +1111,136 @@ function AutomationsPage() {
               >
                 <Play className="h-3 w-3 fill-current" /> Testar Volume
               </button>
+            </div>
+
+            {/* Temporizador Configurável entre Toques */}
+            <div className="pt-5 border-t border-border space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-start gap-3">
+                  <div className="h-9 w-9 rounded-xl bg-primary/10 text-primary border border-primary/20 flex items-center justify-center shrink-0 mt-0.5">
+                    <Timer className="h-4.5 w-4.5" />
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-black uppercase tracking-wider text-foreground flex items-center gap-2 flex-wrap">
+                      Temporizador entre Toques
+                      <span className={`rounded-full px-2 py-0.5 text-[9px] font-mono font-black uppercase ${
+                        alertInterval <= 4
+                          ? "bg-red-500/15 text-red-400 border border-red-500/30"
+                          : alertInterval <= 12
+                          ? "bg-primary/15 text-primary border border-primary/30"
+                          : alertInterval <= 30
+                          ? "bg-blue-500/15 text-blue-400 border border-blue-500/30"
+                          : "bg-emerald-500/15 text-emerald-400 border border-emerald-500/30"
+                      }`}>
+                        {alertInterval <= 4 ? "⚡ Urgente / Rápido" : alertInterval <= 12 ? "🎯 Equilibrado (Padrão)" : alertInterval <= 30 ? "☕ Espaçado" : "🌿 Discreto / Lento"}
+                      </span>
+                    </h4>
+                    <p className="text-[11px] text-muted-foreground mt-0.5 max-w-xl">
+                      Ajuste o espaçamento de tempo entre um bipe/toque e o seguinte para alertas contínuos. Aumente para espaçar ou diminua para receber avisos mais rápidos.
+                    </p>
+                  </div>
+                </div>
+
+                {/* Botão de Simulação do Temporizador */}
+                <div className="flex items-center gap-2 shrink-0 sm:self-center">
+                  {isSimulatingInterval ? (
+                    <button
+                      onClick={handleStopSimulation}
+                      className="flex items-center gap-1.5 rounded-xl border border-destructive/30 bg-destructive/10 px-3.5 py-2 text-xs font-bold text-destructive hover:bg-destructive/20 transition active:scale-95 shadow-sm"
+                    >
+                      <X className="h-3.5 w-3.5" /> Parar Teste
+                    </button>
+                  ) : (
+                    <button
+                      onClick={handleSimulateIntervalSequence}
+                      className="flex items-center gap-1.5 rounded-xl border border-primary/30 bg-primary/10 px-3.5 py-2 text-xs font-bold text-primary hover:bg-primary/20 transition active:scale-95 shadow-sm"
+                      title="Toca o 1º som, aguarda o temporizador configurado e toca o 2º som para você validar o espaçamento exato"
+                    >
+                      <Play className="h-3.5 w-3.5 fill-current" /> Simular Sequência (2 Toques)
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Barra de Progresso da Simulação (quando ativa) */}
+              <AnimatePresence>
+                {isSimulatingInterval && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: "auto" }}
+                    exit={{ opacity: 0, height: 0 }}
+                    className="rounded-xl border border-primary/30 bg-primary/5 p-3.5 space-y-2 overflow-hidden"
+                  >
+                    <div className="flex items-center justify-between text-xs font-mono font-bold">
+                      <span className="text-primary flex items-center gap-2">
+                        <Clock className="h-4 w-4 animate-spin text-primary" />
+                        {simulationStep === 1
+                          ? `Toque 1 disparado • Temporizador aguardando ${alertInterval}s até o Toque 2...`
+                          : `✅ Toque 2 disparado com sucesso após ${alertInterval}s!`}
+                      </span>
+                      <span className="text-foreground font-black">{simulationProgress.toFixed(0)}%</span>
+                    </div>
+                    <div className="h-2 w-full rounded-full bg-muted overflow-hidden">
+                      <motion.div
+                        className="h-full bg-primary rounded-full shadow-glow-sm"
+                        style={{ width: `${simulationProgress}%` }}
+                      />
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              {/* Slider de Tempo + Presets Rápidos */}
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-center">
+                <div className="lg:col-span-7 flex items-center gap-3">
+                  <Clock className="h-4 w-4 text-muted-foreground shrink-0" />
+                  <input
+                    type="range"
+                    min="2"
+                    max="60"
+                    step="1"
+                    value={alertInterval}
+                    onChange={(e) => handleIntervalChange(parseInt(e.target.value, 10))}
+                    className="w-full accent-primary cursor-pointer"
+                  />
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <input
+                      type="number"
+                      min="2"
+                      max="120"
+                      value={alertInterval}
+                      onChange={(e) => handleIntervalChange(parseInt(e.target.value, 10) || 2)}
+                      className="w-16 rounded-lg border border-border bg-background px-2 py-1 text-xs font-mono font-black text-foreground text-center focus:border-primary outline-none"
+                    />
+                    <span className="text-xs font-mono font-bold text-muted-foreground">seg</span>
+                  </div>
+                </div>
+
+                {/* Presets Rápidos */}
+                <div className="lg:col-span-5 flex items-center gap-1.5 flex-wrap lg:justify-end">
+                  {[
+                    { label: "3s", sec: 3, hint: "Rápido" },
+                    { label: "6s", sec: 6, hint: "Padrão NC" },
+                    { label: "10s", sec: 10, hint: "Moderado" },
+                    { label: "15s", sec: 15, hint: "Espaçado" },
+                    { label: "30s", sec: 30, hint: "Tranquilo" },
+                    { label: "60s", sec: 60, hint: "1 minuto" },
+                  ].map((preset) => (
+                    <button
+                      key={preset.sec}
+                      onClick={() => handleIntervalChange(preset.sec)}
+                      className={`rounded-lg px-2.5 py-1 text-xs font-mono font-bold transition active:scale-95 ${
+                        alertInterval === preset.sec
+                          ? "bg-primary text-background shadow-glow-sm"
+                          : "bg-muted text-muted-foreground hover:text-foreground hover:bg-muted/80 border border-border/60"
+                      }`}
+                      title={`${preset.label} (${preset.hint})`}
+                    >
+                      {preset.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
           </div>
 

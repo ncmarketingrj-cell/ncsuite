@@ -84,7 +84,15 @@ export const ALERT_SOUNDS: AlertSoundDef[] = [
 
 const SOUND_PREF_KEY = "nc_alert_sound_type";
 const VOLUME_PREF_KEY = "nc_alert_sound_volume";
+const INTERVAL_PREF_KEY = "nc_alert_sound_interval";
 export const ALERT_SOUND_TYPE_EVENT = "nc:alert-sound-type-changed";
+export const ALERT_SOUND_INTERVAL_EVENT = "nc:alert-sound-interval-changed";
+
+// Parâmetros da cadência e segurança sonora:
+export const MIN_ALERT_INTERVAL = 5;       // 5 segundos de intermitência mínima
+export const MAX_ALERT_INTERVAL = 60;      // 1 minuto (60 segundos) de intermitência máxima
+export const DEFAULT_ALERT_INTERVAL = 10;  // 10 segundos padrão
+export const ALERT_AUTO_STOP_MS = 3 * 60 * 1000; // Regra de 3 minutos sem visualização para auto-silenciamento
 
 export function getAlertSoundPreference(): string {
   if (typeof window === "undefined" || typeof localStorage === "undefined") return "ferrari_pulse";
@@ -118,6 +126,29 @@ export function setAlertVolumePreference(vol: number): void {
   try {
     localStorage.setItem(VOLUME_PREF_KEY, vol.toString());
   } catch {}
+}
+
+export function getAlertIntervalPreference(): number {
+  if (typeof window === "undefined" || typeof localStorage === "undefined") return DEFAULT_ALERT_INTERVAL;
+  try {
+    const raw = localStorage.getItem(INTERVAL_PREF_KEY);
+    if (raw === null) return DEFAULT_ALERT_INTERVAL;
+    const parsed = parseInt(raw, 10);
+    if (isNaN(parsed) || parsed < MIN_ALERT_INTERVAL) return MIN_ALERT_INTERVAL;
+    if (parsed > MAX_ALERT_INTERVAL) return MAX_ALERT_INTERVAL;
+    return parsed;
+  } catch {
+    return DEFAULT_ALERT_INTERVAL;
+  }
+}
+
+export function setAlertIntervalPreference(intervalSeconds: number): void {
+  if (typeof window === "undefined" || typeof localStorage === "undefined") return;
+  const clamped = Math.max(MIN_ALERT_INTERVAL, Math.min(MAX_ALERT_INTERVAL, Math.round(intervalSeconds)));
+  try {
+    localStorage.setItem(INTERVAL_PREF_KEY, clamped.toString());
+  } catch {}
+  window.dispatchEvent(new CustomEvent(ALERT_SOUND_INTERVAL_EVENT, { detail: clamped }));
 }
 
 let activeAudioCtx: AudioContext | null = null;
