@@ -1,11 +1,12 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState, useEffect, useMemo, useRef } from "react";
+import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   User, Shield, ShieldCheck, Crown, Star, Award, Target, Briefcase, Palette,
   Phone, Lock, Key, Copy, Check, Eye, EyeOff, Plus, Trash2, Search, X, Loader2,
   ArrowRight, Settings, AlertTriangle, ExternalLink, RefreshCw, Sparkles, UserCheck,
-  UserX, MessageSquareWarning, Zap, CheckCheck, HelpCircle, Mail, ChevronDown
+  UserX, MessageSquareWarning, Zap, CheckCheck, HelpCircle, Mail, ChevronDown, Share2
 } from "lucide-react";
 import { PageHeader } from "@/components/PageHeader";
 import { AvatarUpload } from "@/components/AvatarUpload";
@@ -949,10 +950,10 @@ function TeamManagementSection({
     toast.success(msg);
   };
 
-  const copyFullAccessCredentials = (u: any) => {
-    const email = u.email || "";
-    const pwd = u.permissions?._last_password || "(Senha definida pelo usuário)";
-    const text = `*NC Suite — Credenciais de Acesso*\n👤 Usuário: ${u.full_name || "Membro"}\n📧 Login: ${email}\n🔑 Senha: ${pwd}\n🌐 Acesso: https://ncsuite.lovable.app/login`;
+  const copyFullAccessCredentials = (u: any, customEmail?: string, customPass?: string) => {
+    const email = (customEmail ?? u?.email) || "";
+    const pwd = customPass || u?.permissions?._last_password || "(Senha definida pelo usuário)";
+    const text = `🚀 *Acesso NC Performance Suite*\n👤 Usuário: ${u?.full_name || "Membro"}\n📧 Login: ${email}\n🔑 Senha: ${pwd}\n🌐 Acesso: ${window.location.origin}/login`;
     copyToClipboard(text, "Credenciais completas copiadas para envio!");
   };
 
@@ -1425,17 +1426,17 @@ function TeamManagementSection({
                 </div>
 
                 {/* ── SEÇÃO DE CREDENCIAIS (LOGIN & SENHA) ── */}
-                <div className="rounded-2xl border border-white/5 bg-black/30 p-3 space-y-2">
+                <div className="rounded-2xl border border-border dark:border-white/5 bg-muted/40 dark:bg-black/30 p-3 space-y-2">
                   <div className="flex items-center justify-between text-[11px]">
-                    <div className="flex items-center gap-1.5 text-muted-foreground">
-                      <Mail className="h-3.5 w-3.5 text-primary" />
-                      <span className="font-bold uppercase tracking-wider text-[9px]">Login / E-mail:</span>
-                      <span className="font-mono text-foreground">{u.email || "Sem e-mail"}</span>
+                    <div className="flex items-center gap-1.5 text-muted-foreground min-w-0">
+                      <Mail className="h-3.5 w-3.5 text-primary shrink-0" />
+                      <span className="font-bold uppercase tracking-wider text-[9px] shrink-0">Login / E-mail:</span>
+                      <span className="font-mono text-foreground truncate">{u.email || "Sem e-mail"}</span>
                     </div>
                     {u.email && (
                       <button
                         onClick={() => copyToClipboard(u.email, "E-mail de login copiado!")}
-                        className="text-muted-foreground hover:text-primary transition p-1"
+                        className="text-muted-foreground hover:text-primary transition p-1 shrink-0"
                         title="Copiar login"
                       >
                         <Copy className="h-3 w-3" />
@@ -1444,28 +1445,28 @@ function TeamManagementSection({
                   </div>
 
                   {/* Senha Criada / Atual visível para superiores */}
-                  <div className="flex items-center justify-between text-[11px] border-t border-white/5 pt-2">
-                    <div className="flex items-center gap-1.5 text-muted-foreground">
-                      <Key className="h-3.5 w-3.5 text-amber-400" />
-                      <span className="font-bold uppercase tracking-wider text-[9px]">Senha:</span>
+                  <div className="flex items-center justify-between text-[11px] border-t border-border dark:border-white/5 pt-2">
+                    <div className="flex items-center gap-1.5 text-muted-foreground min-w-0">
+                      <Key className="h-3.5 w-3.5 text-amber-500 dark:text-amber-400 shrink-0" />
+                      <span className="font-bold uppercase tracking-wider text-[9px] shrink-0">Senha:</span>
                       {authCheck.isSuperior || (isSelf && isCallerMaster) ? (
                         savedPassword ? (
-                          <span className="font-mono font-bold text-foreground">
+                          <span className="font-mono font-bold text-foreground truncate">
                             {(isRevealed || showAllPasswords) ? savedPassword : "••••••••••••"}
                           </span>
                         ) : (
-                          <span className="text-[10px] text-muted-foreground/60 italic">
+                          <span className="text-[10px] text-muted-foreground/60 italic truncate">
                             Definida pelo usuário / Criptografada
                           </span>
                         )
                       ) : (
-                        <span className="text-[10px] text-muted-foreground/40 italic">
+                        <span className="text-[10px] text-muted-foreground/40 italic truncate">
                           Protegida pela Hierarquia
                         </span>
                       )}
                     </div>
 
-                    <div className="flex items-center gap-1">
+                    <div className="flex items-center gap-1 shrink-0">
                       {savedPassword && (authCheck.isSuperior || (isSelf && isCallerMaster)) && (
                         <>
                           <button
@@ -1477,7 +1478,7 @@ function TeamManagementSection({
                           </button>
                           <button
                             onClick={() => copyToClipboard(savedPassword, "Senha copiada!")}
-                            className="text-muted-foreground hover:text-amber-400 transition p-1"
+                            className="text-muted-foreground hover:text-amber-500 dark:hover:text-amber-400 transition p-1"
                             title="Copiar senha"
                           >
                             <Copy className="h-3 w-3" />
@@ -1488,10 +1489,11 @@ function TeamManagementSection({
                       {u.email && (authCheck.isSuperior || (isSelf && isCallerMaster)) && (
                         <button
                           onClick={() => copyFullAccessCredentials(u)}
-                          className="text-[9px] font-bold text-primary hover:underline px-1 transition"
+                          className="inline-flex items-center gap-1 text-[10px] font-black uppercase text-primary hover:bg-primary/15 bg-primary/10 border border-primary/25 px-2.5 py-1 rounded-lg transition ml-1"
                           title="Copiar dados de acesso completos para enviar ao membro"
                         >
-                          Copiar Acesso
+                          <Share2 className="h-3 w-3" />
+                          <span>Copiar Acesso</span>
                         </button>
                       )}
                     </div>
@@ -1694,374 +1696,448 @@ function TeamManagementSection({
       )}
 
       {/* ── MODAL: EDITAR LOGIN / SENHA & ACESSOS (RESPONSIVO E ANTI-CORTE) ── */}
-      <AnimatePresence>
-        {editingUser && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 overflow-y-auto bg-black/85 backdrop-blur-md p-3 sm:p-6"
-          >
-            <div className="min-h-full flex items-center justify-center py-4 sm:py-8">
+      {typeof document !== "undefined" &&
+        createPortal(
+          <AnimatePresence>
+            {editingUser && (
               <motion.div
-                initial={{ scale: 0.96, opacity: 0, y: 12 }}
-                animate={{ scale: 1, opacity: 1, y: 0 }}
-                exit={{ scale: 0.96, opacity: 0, y: 12 }}
-                className="relative w-full max-w-2xl bg-card border border-white/15 rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[88vh] my-auto"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="fixed inset-0 z-[100] overflow-y-auto bg-slate-950/60 dark:bg-black/85 backdrop-blur-md p-3 sm:p-6"
               >
-                {/* Cabeçalho Fixo do Modal */}
-                <div className="shrink-0 flex items-start justify-between gap-3 p-5 sm:p-6 border-b border-white/10 bg-background/80 backdrop-blur-md">
-                  <div className="flex items-center gap-3">
-                    <div className="h-10 w-10 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center text-primary shrink-0">
-                      <Key className="h-5 w-5" />
-                    </div>
-                    <div>
-                      <h4 className="font-display text-base font-bold text-foreground">
-                        Gerenciar Credenciais & Acessos
-                      </h4>
-                      <p className="text-xs text-muted-foreground mt-0.5">
-                        Editando colaborador: <strong className="text-foreground">{editingUser.full_name || editingUser.email}</strong>
-                      </p>
-                      <span className="inline-flex items-center gap-1 mt-1 text-[10px] font-bold text-emerald-400">
-                        <CheckCheck className="h-3 w-3" /> Alteração imediata — sem envio de e-mail de confirmação
-                      </span>
-                    </div>
-                  </div>
-                  <button
-                    onClick={() => setEditingUser(null)}
-                    className="rounded-xl p-2 text-muted-foreground hover:bg-white/10 hover:text-foreground transition"
+                <div className="min-h-full flex items-center justify-center py-4 sm:py-8">
+                  <motion.div
+                    initial={{ scale: 0.96, opacity: 0, y: 12 }}
+                    animate={{ scale: 1, opacity: 1, y: 0 }}
+                    exit={{ scale: 0.96, opacity: 0, y: 12 }}
+                    className="relative w-full max-w-2xl bg-card border border-border dark:border-white/15 rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[88vh] my-auto"
                   >
-                    <X className="h-4 w-4" />
-                  </button>
-                </div>
-
-                {/* Corpo do Modal com Scroll Interno Suave */}
-                <div className="flex-1 overflow-y-auto custom-scrollbar p-5 sm:p-6 space-y-5">
-                  {/* ── 1. CARD: SENHA SALVA ATUAL DO COLABORADOR ── */}
-                  {editingUser.permissions?._last_password ? (
-                    <div className="rounded-2xl border border-amber-500/30 bg-amber-500/[0.08] p-4 space-y-2">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <Key className="h-4 w-4 text-amber-400" />
-                          <span className="text-xs font-bold text-amber-300 uppercase tracking-wider">
-                            Senha Salva Atualmente
+                    {/* Cabeçalho Fixo do Modal */}
+                    <div className="shrink-0 flex items-start justify-between gap-3 p-5 sm:p-6 border-b border-border dark:border-white/10 bg-background/95 dark:bg-background/80 backdrop-blur-md">
+                      <div className="flex items-center gap-3">
+                        <div className="h-10 w-10 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center text-primary shrink-0">
+                          <Key className="h-5 w-5" />
+                        </div>
+                        <div>
+                          <h4 className="font-display text-base font-bold text-foreground">
+                            Gerenciar Credenciais & Acessos
+                          </h4>
+                          <p className="text-xs text-muted-foreground mt-0.5">
+                            Editando colaborador: <strong className="text-foreground">{editingUser.full_name || editingUser.email}</strong>
+                          </p>
+                          <span className="inline-flex items-center gap-1 mt-1 text-[10px] font-bold text-emerald-600 dark:text-emerald-400">
+                            <CheckCheck className="h-3 w-3" /> Alteração imediata — sem envio de e-mail de confirmação
                           </span>
                         </div>
-                        <span className="text-[9px] font-mono text-amber-400/90 bg-amber-500/20 px-2 py-0.5 rounded-full border border-amber-500/30 font-bold">
-                          Visível para Superiores
-                        </span>
                       </div>
-                      <div className="flex items-center justify-between gap-3 bg-black/50 rounded-xl p-3 border border-white/10">
-                        <span className="font-mono text-sm font-bold text-foreground tracking-wider">
-                          {editShowPassword ? (editPassword || editingUser.permissions._last_password) : "••••••••••••"}
-                        </span>
-                        <div className="flex items-center gap-1.5">
-                          <button
-                            type="button"
-                            onClick={() => setEditShowPassword(!editShowPassword)}
-                            className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-white/5 transition"
-                            title={editShowPassword ? "Ocultar senha" : "Ver senha"}
-                          >
-                            {editShowPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => copyToClipboard(editingUser.permissions._last_password, "Senha salva copiada!")}
-                            className="p-1.5 rounded-lg text-muted-foreground hover:text-amber-400 hover:bg-white/5 transition"
-                            title="Copiar senha salva"
-                          >
-                            <Copy className="h-4 w-4" />
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="rounded-2xl border border-blue-500/20 bg-blue-500/[0.05] p-3 text-xs text-muted-foreground flex items-center gap-2.5">
-                      <Key className="h-4 w-4 text-blue-400 shrink-0" />
-                      <p>
-                        Este colaborador ainda não possui senha de visualização direta gravada. Digite ou gere uma senha abaixo para atualizar.
-                      </p>
-                    </div>
-                  )}
-
-                  {/* ── 2. FOTO & CREDENCIAIS ── */}
-                  <div className="space-y-3 rounded-2xl border border-white/10 bg-white/[0.02] p-4">
-                    <AvatarUpload
-                      value={editAvatarUrl}
-                      onChange={setEditAvatarUrl}
-                      userId={editingUser?.id}
-                      label="Foto de Perfil do Colaborador (Visível para toda a equipe)"
-                      size="md"
-                    />
-
-                    <div className="space-y-1.5">
-                      <label className="label-mono text-[10px] text-muted-foreground uppercase font-bold">
-                        Nome Completo
-                      </label>
-                      <input
-                        value={editName}
-                        onChange={(e) => setEditName(e.target.value)}
-                        placeholder="Nome completo do colaborador"
-                        className="w-full rounded-xl border border-white/10 bg-background/50 px-3.5 py-2.5 text-sm text-foreground focus:border-primary focus:outline-none"
-                      />
-                    </div>
-
-                    <div className="space-y-1.5">
-                      <label className="label-mono text-[10px] text-muted-foreground uppercase font-bold flex items-center justify-between">
-                        <span>E-mail / Login de Acesso</span>
-                        <span className="text-[9px] text-primary font-bold">Editável</span>
-                      </label>
-                      <input
-                        type="email"
-                        value={editEmail}
-                        onChange={(e) => setEditEmail(e.target.value)}
-                        placeholder="colaborador@empresa.com"
-                        className="w-full rounded-xl border border-white/10 bg-background/50 px-3.5 py-2.5 text-sm text-foreground focus:border-primary focus:outline-none font-mono"
-                      />
-                    </div>
-
-                    <div className="space-y-1.5">
-                      <div className="flex items-center justify-between">
-                        <label className="label-mono text-[10px] text-muted-foreground uppercase font-bold">
-                          Senha de Acesso
-                        </label>
-                        <div className="flex items-center gap-2">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const pwd = generateStrongPassword();
-                              setEditPassword(pwd);
-                              setEditShowPassword(true);
-                              copyToClipboard(pwd, "Nova senha forte gerada e copiada!");
-                            }}
-                            className="text-[10px] font-bold text-primary hover:underline flex items-center gap-1"
-                          >
-                            <Sparkles className="h-3 w-3" /> Gerar Senha Forte
-                          </button>
-                          {editPassword && (
-                            <button
-                              type="button"
-                              onClick={() => copyToClipboard(editPassword, "Senha copiada!")}
-                              className="text-[10px] font-bold text-muted-foreground hover:text-foreground flex items-center gap-1"
-                            >
-                              <Copy className="h-3 w-3" /> Copiar
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                      <div className="relative">
-                        <input
-                          type={editShowPassword ? "text" : "password"}
-                          value={editPassword}
-                          onChange={(e) => setEditPassword(e.target.value)}
-                          placeholder="Digite para alterar ou mantenha a atual"
-                          className="w-full rounded-xl border border-white/10 bg-background/50 pl-3.5 pr-10 py-2.5 text-sm text-foreground focus:border-primary focus:outline-none font-mono"
-                        />
+                      <div className="flex items-center gap-2">
                         <button
                           type="button"
-                          onClick={() => setEditShowPassword(!editShowPassword)}
-                          className="absolute right-3 top-3 text-muted-foreground hover:text-foreground"
+                          onClick={() =>
+                            copyFullAccessCredentials(
+                              { ...editingUser, full_name: editName || editingUser.full_name },
+                              editEmail || editingUser.email,
+                              editPassword || editingUser.permissions?._last_password
+                            )
+                          }
+                          className="inline-flex items-center gap-1.5 rounded-xl bg-primary/10 hover:bg-primary/20 border border-primary/25 px-3 py-2 text-[11px] font-black uppercase tracking-wider text-primary transition"
+                          title="Copiar Login + Senha + Link de acesso prontos para enviar no WhatsApp"
                         >
-                          {editShowPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                          <Share2 className="h-3.5 w-3.5" />
+                          <span>Copiar Acesso p/ Envio</span>
+                        </button>
+                        <button
+                          onClick={() => setEditingUser(null)}
+                          className="rounded-xl p-2 text-muted-foreground hover:bg-muted dark:hover:bg-white/10 hover:text-foreground transition"
+                        >
+                          <X className="h-4 w-4" />
                         </button>
                       </div>
                     </div>
-                  </div>
 
-                  {/* ── 3 & 4. CARGO vs PATENTE HIERÁRQUICA + PERMISSÕES DIDÁTICAS ── */}
-                  <DidacticUserAccessEditor
-                    position={editPosition}
-                    onPositionChange={setEditPosition}
-                    role={editRole}
-                    onRoleChange={setEditRole}
-                    permissions={editPermissions}
-                    onPermissionsChange={setEditPermissions}
-                    allowedRoles={allowedAssignable.roles}
-                    allowedPositions={allowedAssignable.positions}
-                    autoApplyCargoDefaults={false}
-                  />
-                </div>
+                    {/* Corpo do Modal com Scroll Interno Suave */}
+                    <div className="flex-1 overflow-y-auto custom-scrollbar p-5 sm:p-6 space-y-5">
+                      {/* ── 1. CARD: SENHA SALVA ATUAL DO COLABORADOR ── */}
+                      {editingUser.permissions?._last_password ? (
+                        <div className="rounded-2xl border border-amber-500/35 bg-amber-500/[0.08] p-4 space-y-2">
+                          <div className="flex items-center justify-between flex-wrap gap-2">
+                            <div className="flex items-center gap-2">
+                              <Key className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+                              <span className="text-xs font-bold text-amber-800 dark:text-amber-300 uppercase tracking-wider">
+                                Senha Salva Atualmente
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-[9px] font-mono text-amber-800 dark:text-amber-300 bg-amber-500/20 px-2 py-0.5 rounded-full border border-amber-500/30 font-bold">
+                                Visível para Superiores
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  copyFullAccessCredentials(
+                                    { ...editingUser, full_name: editName || editingUser.full_name },
+                                    editEmail || editingUser.email,
+                                    editPassword || editingUser.permissions?._last_password
+                                  )
+                                }
+                                className="inline-flex items-center gap-1 text-[10px] font-black uppercase text-primary hover:underline"
+                              >
+                                <Share2 className="h-3 w-3" /> Copiar Acesso Completo
+                              </button>
+                            </div>
+                          </div>
+                          <div className="flex items-center justify-between gap-3 bg-muted/60 dark:bg-black/50 rounded-xl p-3 border border-border dark:border-white/10">
+                            <span className="font-mono text-sm font-bold text-foreground tracking-wider">
+                              {editShowPassword ? (editPassword || editingUser.permissions._last_password) : "••••••••••••"}
+                            </span>
+                            <div className="flex items-center gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => setEditShowPassword(!editShowPassword)}
+                                className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted dark:hover:bg-white/5 transition"
+                                title={editShowPassword ? "Ocultar senha" : "Ver senha"}
+                              >
+                                {editShowPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => copyToClipboard(editingUser.permissions._last_password, "Senha salva copiada!")}
+                                className="p-1.5 rounded-lg text-muted-foreground hover:text-amber-600 dark:hover:text-amber-400 hover:bg-muted dark:hover:bg-white/5 transition"
+                                title="Copiar senha salva"
+                              >
+                                <Copy className="h-4 w-4" />
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="rounded-2xl border border-blue-500/20 bg-blue-500/[0.05] p-3 text-xs text-muted-foreground flex items-center gap-2.5">
+                          <Key className="h-4 w-4 text-blue-500 dark:text-blue-400 shrink-0" />
+                          <p>
+                            Este colaborador ainda não possui senha de visualização direta gravada. Digite ou gere uma senha abaixo para atualizar.
+                          </p>
+                        </div>
+                      )}
 
-                {/* Rodapé Fixo do Modal (Sempre Acessível) */}
-                <div className="shrink-0 flex items-center justify-end gap-3 p-4 sm:p-5 border-t border-white/10 bg-background/90 backdrop-blur-md">
-                  <button
-                    type="button"
-                    onClick={() => setEditingUser(null)}
-                    className="rounded-xl border border-white/10 px-4 py-2 text-xs font-bold text-muted-foreground hover:bg-white/5 transition"
-                  >
-                    Cancelar
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleSaveEdit}
-                    disabled={savingEdit}
-                    className="inline-flex items-center gap-2 rounded-xl bg-primary px-5 py-2.5 text-xs font-black uppercase tracking-wider text-primary-foreground shadow-glow hover:shadow-glow-lg transition active:scale-95 disabled:opacity-50"
-                  >
-                    {savingEdit ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
-                    <span>Salvar Credenciais & Acessos</span>
-                  </button>
+                      {/* ── 2. FOTO & CREDENCIAIS ── */}
+                      <div className="space-y-3 rounded-2xl border border-border dark:border-white/10 bg-muted/20 dark:bg-white/[0.02] p-4">
+                        <AvatarUpload
+                          value={editAvatarUrl}
+                          onChange={setEditAvatarUrl}
+                          userId={editingUser?.id}
+                          label="Foto de Perfil do Colaborador (Visível para toda a equipe)"
+                          size="md"
+                        />
+
+                        <div className="space-y-1.5">
+                          <label className="label-mono text-[10px] text-muted-foreground uppercase font-bold">
+                            Nome Completo
+                          </label>
+                          <input
+                            value={editName}
+                            onChange={(e) => setEditName(e.target.value)}
+                            placeholder="Nome completo do colaborador"
+                            className="w-full rounded-xl border border-border dark:border-white/10 bg-background px-3.5 py-2.5 text-sm text-foreground focus:border-primary focus:outline-none"
+                          />
+                        </div>
+
+                        <div className="space-y-1.5">
+                          <label className="label-mono text-[10px] text-muted-foreground uppercase font-bold flex items-center justify-between">
+                            <span>E-mail / Login de Acesso</span>
+                            <span className="text-[9px] text-primary font-bold">Editável</span>
+                          </label>
+                          <input
+                            type="email"
+                            value={editEmail}
+                            onChange={(e) => setEditEmail(e.target.value)}
+                            placeholder="colaborador@empresa.com"
+                            className="w-full rounded-xl border border-border dark:border-white/10 bg-background px-3.5 py-2.5 text-sm text-foreground focus:border-primary focus:outline-none font-mono"
+                          />
+                        </div>
+
+                        <div className="space-y-1.5">
+                          <div className="flex items-center justify-between">
+                            <label className="label-mono text-[10px] text-muted-foreground uppercase font-bold">
+                              Senha de Acesso
+                            </label>
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const pwd = generateStrongPassword();
+                                  setEditPassword(pwd);
+                                  setEditShowPassword(true);
+                                  copyToClipboard(pwd, "Nova senha forte gerada e copiada!");
+                                }}
+                                className="text-[10px] font-bold text-primary hover:underline flex items-center gap-1"
+                              >
+                                <Sparkles className="h-3 w-3" /> Gerar Senha Forte
+                              </button>
+                              {editPassword && (
+                                <button
+                                  type="button"
+                                  onClick={() => copyToClipboard(editPassword, "Senha copiada!")}
+                                  className="text-[10px] font-bold text-muted-foreground hover:text-foreground flex items-center gap-1"
+                                >
+                                  <Copy className="h-3 w-3" /> Copiar
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                          <div className="relative">
+                            <input
+                              type={editShowPassword ? "text" : "password"}
+                              value={editPassword}
+                              onChange={(e) => setEditPassword(e.target.value)}
+                              placeholder="Digite para alterar ou mantenha a atual"
+                              className="w-full rounded-xl border border-border dark:border-white/10 bg-background pl-3.5 pr-10 py-2.5 text-sm text-foreground focus:border-primary focus:outline-none font-mono"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setEditShowPassword(!editShowPassword)}
+                              className="absolute right-3 top-3 text-muted-foreground hover:text-foreground"
+                            >
+                              {editShowPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* ── 3 & 4. CARGO vs PATENTE HIERÁRQUICA + PERMISSÕES DIDÁTICAS ── */}
+                      <DidacticUserAccessEditor
+                        position={editPosition}
+                        onPositionChange={setEditPosition}
+                        role={editRole}
+                        onRoleChange={setEditRole}
+                        permissions={editPermissions}
+                        onPermissionsChange={setEditPermissions}
+                        allowedRoles={allowedAssignable.roles}
+                        allowedPositions={allowedAssignable.positions}
+                        autoApplyCargoDefaults={false}
+                      />
+                    </div>
+
+                    {/* Rodapé Fixo do Modal (Sempre Acessível) */}
+                    <div className="shrink-0 flex items-center justify-between gap-3 p-4 sm:p-5 border-t border-border dark:border-white/10 bg-background/95 dark:bg-background/90 backdrop-blur-md">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          copyFullAccessCredentials(
+                            { ...editingUser, full_name: editName || editingUser.full_name },
+                            editEmail || editingUser.email,
+                            editPassword || editingUser.permissions?._last_password
+                          )
+                        }
+                        className="inline-flex items-center gap-1.5 rounded-xl border border-primary/30 bg-primary/10 hover:bg-primary/20 px-3.5 py-2 text-xs font-bold text-primary transition"
+                      >
+                        <Share2 className="h-3.5 w-3.5" />
+                        <span>Copiar Acesso p/ Envio</span>
+                      </button>
+
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setEditingUser(null)}
+                          className="rounded-xl border border-border dark:border-white/10 px-4 py-2 text-xs font-bold text-muted-foreground hover:bg-muted dark:hover:bg-white/5 transition"
+                        >
+                          Cancelar
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleSaveEdit}
+                          disabled={savingEdit}
+                          className="inline-flex items-center gap-2 rounded-xl bg-primary px-5 py-2.5 text-xs font-black uppercase tracking-wider text-primary-foreground shadow-glow hover:shadow-glow-lg transition active:scale-95 disabled:opacity-50"
+                        >
+                          {savingEdit ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+                          <span>Salvar Credenciais & Acessos</span>
+                        </button>
+                      </div>
+                    </div>
+                  </motion.div>
                 </div>
               </motion.div>
-            </div>
-          </motion.div>
+            )}
+          </AnimatePresence>,
+          document.body
         )}
-      </AnimatePresence>
 
       {/* ── MODAL: CADASTRAR NOVO COLABORADOR (RESPONSIVO E ANTI-CORTE) ── */}
-      <AnimatePresence>
-        {showAddModal && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 overflow-y-auto bg-black/85 backdrop-blur-md p-3 sm:p-6"
-          >
-            <div className="min-h-full flex items-center justify-center py-4 sm:py-8">
+      {typeof document !== "undefined" &&
+        createPortal(
+          <AnimatePresence>
+            {showAddModal && (
               <motion.div
-                initial={{ scale: 0.96, opacity: 0, y: 12 }}
-                animate={{ scale: 1, opacity: 1, y: 0 }}
-                exit={{ scale: 0.96, opacity: 0, y: 12 }}
-                className="relative w-full max-w-2xl bg-card border border-white/15 rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[88vh] my-auto"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="fixed inset-0 z-[100] overflow-y-auto bg-slate-950/60 dark:bg-black/85 backdrop-blur-md p-3 sm:p-6"
               >
-                {/* Cabeçalho Fixo */}
-                <div className="shrink-0 flex items-start justify-between gap-3 p-5 sm:p-6 border-b border-white/10 bg-background/80 backdrop-blur-md">
-                  <div className="flex items-center gap-3">
-                    <div className="h-10 w-10 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center text-primary shrink-0">
-                      <Plus className="h-5 w-5" />
-                    </div>
-                    <div>
-                      <h4 className="font-display text-base font-bold text-foreground">
-                        Cadastrar Novo Colaborador
-                      </h4>
-                      <p className="text-xs text-muted-foreground mt-0.5">
-                        Crie o login, senha inicial e defina as permissões por HUB da plataforma.
-                      </p>
-                      <span className="inline-flex items-center gap-1 mt-1 text-[10px] font-bold text-emerald-400">
-                        <CheckCheck className="h-3 w-3" /> Ativação imediata — nenhum e-mail de confirmação é enviado
-                      </span>
-                    </div>
-                  </div>
-                  <button
-                    onClick={() => setShowAddModal(false)}
-                    className="rounded-xl p-2 text-muted-foreground hover:bg-white/10 hover:text-foreground transition"
+                <div className="min-h-full flex items-center justify-center py-4 sm:py-8">
+                  <motion.div
+                    initial={{ scale: 0.96, opacity: 0, y: 12 }}
+                    animate={{ scale: 1, opacity: 1, y: 0 }}
+                    exit={{ scale: 0.96, opacity: 0, y: 12 }}
+                    className="relative w-full max-w-2xl bg-card border border-border dark:border-white/15 rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[88vh] my-auto"
                   >
-                    <X className="h-4 w-4" />
-                  </button>
-                </div>
-
-                {/* Corpo do Formulário com Scroll Interno */}
-                <div className="flex-1 overflow-y-auto custom-scrollbar p-5 sm:p-6 space-y-5">
-                  <div className="space-y-3 rounded-2xl border border-white/10 bg-white/[0.02] p-4">
-                    <div className="space-y-1.5">
-                      <label className="label-mono text-[10px] text-muted-foreground uppercase font-bold">
-                        Nome Completo *
-                      </label>
-                      <input
-                        value={newName}
-                        onChange={(e) => setNewName(e.target.value)}
-                        placeholder="Ex: Carlos Eduardo"
-                        className="w-full rounded-xl border border-white/10 bg-background/50 px-3.5 py-2.5 text-sm text-foreground focus:border-primary focus:outline-none"
-                      />
-                    </div>
-
-                    <div className="space-y-1.5">
-                      <label className="label-mono text-[10px] text-muted-foreground uppercase font-bold">
-                        E-mail de Login *
-                      </label>
-                      <input
-                        type="email"
-                        value={newEmail}
-                        onChange={(e) => setNewEmail(e.target.value)}
-                        placeholder="carlos@ncperformance.com.br"
-                        className="w-full rounded-xl border border-white/10 bg-background/50 px-3.5 py-2.5 text-sm text-foreground focus:border-primary focus:outline-none font-mono"
-                      />
-                    </div>
-
-                    <div className="space-y-1.5">
-                      <div className="flex items-center justify-between">
-                        <label className="label-mono text-[10px] text-muted-foreground uppercase font-bold">
-                          Senha Inicial *
-                        </label>
-                        <div className="flex items-center gap-2">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const pwd = generateStrongPassword();
-                              setNewPassword(pwd);
-                              setNewShowPassword(true);
-                              copyToClipboard(pwd, "Senha gerada e copiada!");
-                            }}
-                            className="text-[10px] font-bold text-primary hover:underline flex items-center gap-1"
-                          >
-                            <Sparkles className="h-3 w-3" /> Gerar Forte
-                          </button>
-                          {newPassword && (
-                            <button
-                              type="button"
-                              onClick={() => copyToClipboard(newPassword, "Senha copiada!")}
-                              className="text-[10px] font-bold text-muted-foreground hover:text-foreground flex items-center gap-1"
-                            >
-                              <Copy className="h-3 w-3" /> Copiar
-                            </button>
-                          )}
+                    {/* Cabeçalho Fixo */}
+                    <div className="shrink-0 flex items-start justify-between gap-3 p-5 sm:p-6 border-b border-border dark:border-white/10 bg-background/95 dark:bg-background/80 backdrop-blur-md">
+                      <div className="flex items-center gap-3">
+                        <div className="h-10 w-10 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center text-primary shrink-0">
+                          <Plus className="h-5 w-5" />
+                        </div>
+                        <div>
+                          <h4 className="font-display text-base font-bold text-foreground">
+                            Cadastrar Novo Colaborador
+                          </h4>
+                          <p className="text-xs text-muted-foreground mt-0.5">
+                            Crie o login, senha inicial e defina as permissões por HUB da plataforma.
+                          </p>
+                          <span className="inline-flex items-center gap-1 mt-1 text-[10px] font-bold text-emerald-600 dark:text-emerald-400">
+                            <CheckCheck className="h-3 w-3" /> Ativação imediata — nenhum e-mail de confirmação é enviado
+                          </span>
                         </div>
                       </div>
-                      <div className="relative">
-                        <input
-                          type={newShowPassword ? "text" : "password"}
-                          value={newPassword}
-                          onChange={(e) => setNewPassword(e.target.value)}
-                          placeholder="Senha do usuário (mínimo 6 dígitos)"
-                          className="w-full rounded-xl border border-white/10 bg-background/50 pl-3.5 pr-10 py-2.5 text-sm text-foreground focus:border-primary focus:outline-none font-mono"
-                        />
+                      <button
+                        onClick={() => setShowAddModal(false)}
+                        className="rounded-xl p-2 text-muted-foreground hover:bg-muted dark:hover:bg-white/10 hover:text-foreground transition"
+                      >
+                        <X className="h-4 w-4" />
+                      </button>
+                    </div>
+
+                    {/* Corpo do Formulário com Scroll Interno */}
+                    <div className="flex-1 overflow-y-auto custom-scrollbar p-5 sm:p-6 space-y-5">
+                      <div className="space-y-3 rounded-2xl border border-border dark:border-white/10 bg-muted/20 dark:bg-white/[0.02] p-4">
+                        <div className="space-y-1.5">
+                          <label className="label-mono text-[10px] text-muted-foreground uppercase font-bold">
+                            Nome Completo *
+                          </label>
+                          <input
+                            value={newName}
+                            onChange={(e) => setNewName(e.target.value)}
+                            placeholder="Ex: Carlos Eduardo"
+                            className="w-full rounded-xl border border-border dark:border-white/10 bg-background px-3.5 py-2.5 text-sm text-foreground focus:border-primary focus:outline-none"
+                          />
+                        </div>
+
+                        <div className="space-y-1.5">
+                          <label className="label-mono text-[10px] text-muted-foreground uppercase font-bold">
+                            E-mail de Login *
+                          </label>
+                          <input
+                            type="email"
+                            value={newEmail}
+                            onChange={(e) => setNewEmail(e.target.value)}
+                            placeholder="carlos@ncperformance.com.br"
+                            className="w-full rounded-xl border border-border dark:border-white/10 bg-background px-3.5 py-2.5 text-sm text-foreground focus:border-primary focus:outline-none font-mono"
+                          />
+                        </div>
+
+                        <div className="space-y-1.5">
+                          <div className="flex items-center justify-between">
+                            <label className="label-mono text-[10px] text-muted-foreground uppercase font-bold">
+                              Senha Inicial *
+                            </label>
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const pwd = generateStrongPassword();
+                                  setNewPassword(pwd);
+                                  setNewShowPassword(true);
+                                  copyToClipboard(pwd, "Senha gerada e copiada!");
+                                }}
+                                className="text-[10px] font-bold text-primary hover:underline flex items-center gap-1"
+                              >
+                                <Sparkles className="h-3 w-3" /> Gerar Forte
+                              </button>
+                              {newPassword && (
+                                <button
+                                  type="button"
+                                  onClick={() => copyToClipboard(newPassword, "Senha copiada!")}
+                                  className="text-[10px] font-bold text-muted-foreground hover:text-foreground flex items-center gap-1"
+                                >
+                                  <Copy className="h-3 w-3" /> Copiar
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                          <div className="relative">
+                            <input
+                              type={newShowPassword ? "text" : "password"}
+                              value={newPassword}
+                              onChange={(e) => setNewPassword(e.target.value)}
+                              placeholder="Senha do usuário (mínimo 6 dígitos)"
+                              className="w-full rounded-xl border border-border dark:border-white/10 bg-background pl-3.5 pr-10 py-2.5 text-sm text-foreground focus:border-primary focus:outline-none font-mono"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setNewShowPassword(!newShowPassword)}
+                              className="absolute right-3 top-3 text-muted-foreground hover:text-foreground"
+                            >
+                              {newShowPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+
+                      <DidacticUserAccessEditor
+                        position={newPosition}
+                        onPositionChange={setNewPosition}
+                        role={newRole}
+                        onRoleChange={setNewRole}
+                        permissions={newPermissions}
+                        onPermissionsChange={setNewPermissions}
+                        allowedRoles={allowedAssignable.roles}
+                        allowedPositions={allowedAssignable.positions}
+                        autoApplyCargoDefaults={true}
+                      />
+                    </div>
+
+                    {/* Rodapé Fixo */}
+                    <div className="shrink-0 flex items-center justify-between gap-3 p-4 sm:p-5 border-t border-border dark:border-white/10 bg-background/95 dark:bg-background/90 backdrop-blur-md">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          copyFullAccessCredentials(
+                            { full_name: newName || "Novo Colaborador" },
+                            newEmail,
+                            newPassword
+                          )
+                        }
+                        className="inline-flex items-center gap-1.5 rounded-xl border border-primary/30 bg-primary/10 hover:bg-primary/20 px-3.5 py-2 text-xs font-bold text-primary transition"
+                      >
+                        <Share2 className="h-3.5 w-3.5" />
+                        <span>Copiar Acesso p/ Envio</span>
+                      </button>
+
+                      <div className="flex items-center gap-2">
                         <button
                           type="button"
-                          onClick={() => setNewShowPassword(!newShowPassword)}
-                          className="absolute right-3 top-3 text-muted-foreground hover:text-foreground"
+                          onClick={() => setShowAddModal(false)}
+                          className="rounded-xl border border-border dark:border-white/10 px-4 py-2 text-xs font-bold text-muted-foreground hover:bg-muted dark:hover:bg-white/5 transition"
                         >
-                          {newShowPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                          Cancelar
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleCreateUser}
+                          disabled={creating}
+                          className="inline-flex items-center gap-2 rounded-xl bg-primary px-5 py-2.5 text-xs font-black uppercase tracking-wider text-primary-foreground shadow-glow hover:shadow-glow-lg transition active:scale-95 disabled:opacity-50"
+                        >
+                          {creating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+                          <span>Criar Colaborador</span>
                         </button>
                       </div>
                     </div>
-                  </div>
-
-                  <DidacticUserAccessEditor
-                    position={newPosition}
-                    onPositionChange={setNewPosition}
-                    role={newRole}
-                    onRoleChange={setNewRole}
-                    permissions={newPermissions}
-                    onPermissionsChange={setNewPermissions}
-                    allowedRoles={allowedAssignable.roles}
-                    allowedPositions={allowedAssignable.positions}
-                    autoApplyCargoDefaults={true}
-                  />
-                </div>
-
-                {/* Rodapé Fixo */}
-                <div className="shrink-0 flex items-center justify-end gap-3 p-4 sm:p-5 border-t border-white/10 bg-background/90 backdrop-blur-md">
-                  <button
-                    type="button"
-                    onClick={() => setShowAddModal(false)}
-                    className="rounded-xl border border-white/10 px-4 py-2 text-xs font-bold text-muted-foreground hover:bg-white/5 transition"
-                  >
-                    Cancelar
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleCreateUser}
-                    disabled={creating}
-                    className="inline-flex items-center gap-2 rounded-xl bg-primary px-5 py-2.5 text-xs font-black uppercase tracking-wider text-primary-foreground shadow-glow hover:shadow-glow-lg transition active:scale-95 disabled:opacity-50"
-                  >
-                    {creating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-                    <span>Criar Colaborador</span>
-                  </button>
+                  </motion.div>
                 </div>
               </motion.div>
-            </div>
-          </motion.div>
+            )}
+          </AnimatePresence>,
+          document.body
         )}
-      </AnimatePresence>
     </div>
   );
 }

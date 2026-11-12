@@ -1,7 +1,8 @@
 import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { useState, useEffect, useMemo, useRef } from "react";
+import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { Settings, User, Building2, Plug, BookOpen, Cpu, Plus, Trash2, Globe, Check, X, Loader2, Wifi, WifiOff, ChevronDown, Zap, Brain, LayoutDashboard, FileText, Target, Upload, Send, Users, Database, Lock, MessageSquareWarning, Bug, Lightbulb, Frown, HelpCircle, StickyNote, Filter, Eye, Clock, Megaphone, Share2, RefreshCw, Instagram, Sparkles, Crown, Shield, ShieldCheck, Key, EyeOff, Copy, UserCheck, UserX, Award, Briefcase, Phone, Palette, ArrowUpDown, ChevronRight, AlertTriangle } from "lucide-react";
+import { Settings, User, Building2, Plug, BookOpen, Cpu, Plus, Trash2, Globe, Check, X, Loader2, Wifi, WifiOff, ChevronDown, Zap, Brain, LayoutDashboard, FileText, Target, Upload, Send, Users, Database, Lock, MessageSquareWarning, Bug, Lightbulb, Frown, HelpCircle, StickyNote, Filter, Eye, Clock, Megaphone, Share2, RefreshCw, Instagram, Sparkles, Crown, Shield, ShieldCheck, Key, EyeOff, Copy, UserCheck, UserX, Award, Briefcase, Phone, Palette, ArrowUpDown, ChevronRight, AlertTriangle, Mail } from "lucide-react";
 import { SyncButton } from "@/components/SyncButton";
 import { toast } from "sonner";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -1509,6 +1510,29 @@ function TabUsuarios({ isAdmin, currentUserProfile }: { isAdmin: boolean; curren
     toast.success(msg);
   };
 
+  // Visibilidade de senhas salvas nos cards
+  const [revealedPasswords, setRevealedPasswords] = useState<Record<string, boolean>>({});
+  const [showAllPasswords, setShowAllPasswords] = useState(false);
+
+  const toggleRevealPassword = (userId: string) => {
+    setRevealedPasswords((prev) => ({ ...prev, [userId]: !prev[userId] }));
+  };
+
+  // Copiar credenciais completas (Login + Senha + Link) prontas para enviar no WhatsApp
+  const copyFullAccessCredentials = (targetUser: any, customEmail?: string, customPass?: string) => {
+    const email = (customEmail ?? targetUser?.email) || "Não definido";
+    const savedPass = customPass || targetUser?.permissions?._last_password;
+    const text = savedPass
+      ? `🚀 *Acesso NC Performance Suite*\n👤 Nome: ${targetUser?.full_name || "Colaborador"}\n📧 Login: ${email}\n🔑 Senha: ${savedPass}\n🌐 Link: ${window.location.origin}/login`
+      : `🚀 *Acesso NC Performance Suite*\n👤 Nome: ${targetUser?.full_name || "Colaborador"}\n📧 Login: ${email}\n🌐 Link: ${window.location.origin}/login`;
+    navigator.clipboard.writeText(text);
+    toast.success(
+      savedPass
+        ? "Credenciais completas (Login + Senha + Link) copiadas para envio!"
+        : "Login e Link copiados! (Defina uma senha para copiar com senha)"
+    );
+  };
+
   // Abrir modal de edição com dados populados
   const handleOpenEdit = (targetUser: any) => {
     setEditingUser(targetUser);
@@ -1765,7 +1789,7 @@ function TabUsuarios({ isAdmin, currentUserProfile }: { isAdmin: boolean; curren
     <div className="space-y-6">
       {/* ══════════ SUB-NAVEGAÇÃO: COLABORADORES vs PIXEL DE MONITORAMENTO ══════════ */}
       <div className="flex items-center justify-between gap-3 flex-wrap">
-        <div className="inline-flex rounded-2xl border border-white/10 bg-black/30 p-1 gap-1">
+        <div className="inline-flex rounded-2xl border border-border dark:border-white/10 bg-muted/40 dark:bg-black/30 p-1 gap-1">
           <button
             type="button"
             onClick={() => setSubView("colaboradores")}
@@ -1797,7 +1821,7 @@ function TabUsuarios({ isAdmin, currentUserProfile }: { isAdmin: boolean; curren
       ) : (
         <>
       {/* ══════════ BANNER DE AUTORIDADE HIERÁRQUICA DO USUÁRIO CONECTADO ══════════ */}
-      <div className="relative overflow-hidden rounded-2xl border border-white/10 bg-gradient-to-r from-background via-white/[0.02] to-background p-5 shadow-2xl">
+      <div className="relative overflow-hidden rounded-2xl border border-border dark:border-white/10 bg-gradient-to-r from-card via-muted/20 to-card dark:from-background dark:via-white/[0.02] dark:to-background p-5 shadow-xl">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div className="flex items-start gap-4">
             <div className={`h-12 w-12 rounded-2xl border flex items-center justify-center shadow-lg shrink-0 ${callerInfo.badgeBg} ${callerInfo.badgeBorder} ${callerInfo.badgeText}`}>
@@ -1870,7 +1894,7 @@ function TabUsuarios({ isAdmin, currentUserProfile }: { isAdmin: boolean; curren
       </div>
 
       {/* ══════════ BARRA DE PESQUISA & ABAS DE FILTRO HIERÁRQUICO ══════════ */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-white/5 pb-3">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-border dark:border-white/5 pb-3">
         <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-hide">
           {[
             { id: "todos", label: "Todos", count: users.length },
@@ -1885,29 +1909,45 @@ function TabUsuarios({ isAdmin, currentUserProfile }: { isAdmin: boolean; curren
               onClick={() => setFilterTab(tab.id as any)}
               className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition-all whitespace-nowrap ${filterTab === tab.id
                   ? "bg-primary text-primary-foreground shadow-glow-sm"
-                  : "bg-white/5 text-muted-foreground hover:bg-white/10 hover:text-foreground"
+                  : "bg-muted/50 dark:bg-white/5 text-muted-foreground hover:bg-muted dark:hover:bg-white/10 hover:text-foreground"
                 }`}
             >
               <span>{tab.label}</span>
-              <span className={`text-[9px] font-mono px-1 rounded ${filterTab === tab.id ? "bg-black/30 text-white" : "bg-white/10 text-muted-foreground"}`}>
+              <span className={`text-[9px] font-mono px-1 rounded ${filterTab === tab.id ? "bg-black/30 text-white" : "bg-muted dark:bg-white/10 text-muted-foreground"}`}>
                 {tab.count}
               </span>
             </button>
           ))}
         </div>
 
-        <div className="relative w-full sm:w-64 shrink-0">
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Buscar por nome, email ou cargo..."
-            className="w-full rounded-xl border border-white/10 bg-background/50 pl-3 pr-8 py-2 text-xs focus:border-primary focus:outline-none"
-          />
-          {search && (
-            <button onClick={() => setSearch("")} className="absolute right-2.5 top-2.5 text-muted-foreground hover:text-foreground">
-              <X className="h-3.5 w-3.5" />
-            </button>
-          )}
+        <div className="flex items-center gap-2 w-full sm:w-auto shrink-0">
+          <button
+            type="button"
+            onClick={() => setShowAllPasswords((v) => !v)}
+            className={`inline-flex items-center gap-1.5 rounded-xl border px-3 py-2 text-[11px] font-bold transition whitespace-nowrap ${
+              showAllPasswords
+                ? "border-amber-500/40 bg-amber-500/15 text-amber-700 dark:text-amber-300"
+                : "border-border dark:border-white/10 bg-muted/40 dark:bg-white/5 text-muted-foreground hover:text-foreground"
+            }`}
+            title="Revelar ou ocultar senhas salvas de todos os seus subordinados"
+          >
+            {showAllPasswords ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+            <span className="hidden md:inline">{showAllPasswords ? "Ocultar Senhas" : "Ver Senhas Salvas"}</span>
+          </button>
+
+          <div className="relative flex-1 sm:w-64">
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Buscar por nome, email ou cargo..."
+              className="w-full rounded-xl border border-border dark:border-white/10 bg-background/80 dark:bg-background/50 pl-3 pr-8 py-2 text-xs focus:border-primary focus:outline-none text-foreground"
+            />
+            {search && (
+              <button onClick={() => setSearch("")} className="absolute right-2.5 top-2.5 text-muted-foreground hover:text-foreground">
+                <X className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
         </div>
       </div>
 
@@ -1985,20 +2025,6 @@ function TabUsuarios({ isAdmin, currentUserProfile }: { isAdmin: boolean; curren
                       <p className="text-xs text-muted-foreground/80 mt-0.5 truncate font-medium">
                         {u.position || "Sem cargo definido"}
                       </p>
-
-                      {/* Login / Email com botão de copiar */}
-                      <div className="flex items-center gap-1.5 mt-1 text-[11px] text-muted-foreground group">
-                        <span className="font-mono truncate">{u.email || "Sem e-mail cadastrado"}</span>
-                        {u.email && (
-                          <button
-                            onClick={() => copyToClipboard(u.email, "E-mail de login copiado!")}
-                            className="text-muted-foreground hover:text-primary transition p-0.5"
-                            title="Copiar login do usuário"
-                          >
-                            <Copy className="h-3 w-3" />
-                          </button>
-                        )}
-                      </div>
                     </div>
                   </div>
 
@@ -2016,12 +2042,93 @@ function TabUsuarios({ isAdmin, currentUserProfile }: { isAdmin: boolean; curren
                   </div>
                 </div>
 
+                {/* ── SEÇÃO DE CREDENCIAIS (LOGIN, SENHA & BOTÃO COPIAR ACESSO) ── */}
+                <div className="rounded-2xl border border-border dark:border-white/5 bg-muted/40 dark:bg-black/30 p-3 space-y-2">
+                  {/* Linha 1: E-mail / Login */}
+                  <div className="flex items-center justify-between gap-2 text-xs">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <Mail className="h-3.5 w-3.5 text-primary shrink-0" />
+                      <span className="text-[10px] font-bold uppercase text-muted-foreground shrink-0">Login / E-mail:</span>
+                      <span className="font-mono font-bold text-foreground truncate">
+                        {u.email || "Sem e-mail cadastrado"}
+                      </span>
+                    </div>
+                    {u.email && (
+                      <button
+                        type="button"
+                        onClick={() => copyToClipboard(u.email, "E-mail de login copiado!")}
+                        className="p-1 rounded-md text-muted-foreground hover:text-primary hover:bg-muted dark:hover:bg-white/5 transition shrink-0"
+                        title="Copiar e-mail de login"
+                      >
+                        <Copy className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Linha 2: Senha de Acesso (Visível para Superiores ou Próprio Usuário) */}
+                  {(authCheck.isSuperior || isSelf) && (
+                    <div className="flex items-center justify-between gap-2 pt-2 border-t border-border dark:border-white/5 text-xs">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <Key className="h-3.5 w-3.5 text-amber-500 dark:text-amber-400 shrink-0" />
+                        <span className="text-[10px] font-bold uppercase text-muted-foreground shrink-0">Senha:</span>
+                        {u.permissions?._last_password ? (
+                          <span className="font-mono font-bold text-foreground tracking-wider truncate">
+                            {showAllPasswords || revealedPasswords[u.id]
+                              ? u.permissions._last_password
+                              : "••••••••••"}
+                          </span>
+                        ) : (
+                          <span className="text-[11px] italic text-muted-foreground/70 truncate">
+                            Criptografada (Clique em Editar p/ definir)
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="flex items-center gap-1 shrink-0">
+                        {u.permissions?._last_password ? (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => toggleRevealPassword(u.id)}
+                              className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted dark:hover:bg-white/5 transition"
+                              title={showAllPasswords || revealedPasswords[u.id] ? "Ocultar senha" : "Ver senha"}
+                            >
+                              {showAllPasswords || revealedPasswords[u.id] ? (
+                                <EyeOff className="h-3.5 w-3.5" />
+                              ) : (
+                                <Eye className="h-3.5 w-3.5" />
+                              )}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => copyToClipboard(u.permissions._last_password, "Senha copiada!")}
+                              className="p-1 rounded-md text-muted-foreground hover:text-amber-500 hover:bg-muted dark:hover:bg-white/5 transition"
+                              title="Copiar senha"
+                            >
+                              <Copy className="h-3.5 w-3.5" />
+                            </button>
+                          </>
+                        ) : null}
+                        <button
+                          type="button"
+                          onClick={() => copyFullAccessCredentials(u)}
+                          className="inline-flex items-center gap-1 text-[10px] font-black uppercase text-primary hover:bg-primary/15 bg-primary/10 border border-primary/25 px-2.5 py-1 rounded-lg transition ml-1"
+                          title="Copiar Login + Senha + Link de Acesso para enviar ao colaborador"
+                        >
+                          <Share2 className="h-3 w-3" />
+                          <span>Copiar Acesso</span>
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
                 {/* Linha de Relação Hierárquica com o Usuário Logado */}
-                <div className="rounded-xl border border-white/5 bg-black/20 p-2.5 flex items-center justify-between text-[11px]">
+                <div className="rounded-xl border border-border dark:border-white/5 bg-muted/30 dark:bg-black/20 p-2.5 flex items-center justify-between text-[11px]">
                   <div className="flex items-center gap-2 min-w-0">
                     {targetInfo.level === 100 ? (
-                      <span className="flex items-center gap-1.5 font-bold text-amber-300">
-                        <Crown className="h-3.5 w-3.5 text-amber-400 shrink-0" />
+                      <span className="flex items-center gap-1.5 font-bold text-amber-700 dark:text-amber-300">
+                        <Crown className="h-3.5 w-3.5 text-amber-500 dark:text-amber-400 shrink-0" />
                         Administrador Master — Proteção Absoluta Vitalícia
                       </span>
                     ) : isSelf ? (
@@ -2030,8 +2137,8 @@ function TabUsuarios({ isAdmin, currentUserProfile }: { isAdmin: boolean; curren
                         Seu próprio usuário autenticado
                       </span>
                     ) : authCheck.isSuperior ? (
-                      <span className="flex items-center gap-1.5 font-bold text-emerald-400 truncate">
-                        <Check className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
+                      <span className="flex items-center gap-1.5 font-bold text-emerald-600 dark:text-emerald-400 truncate">
+                        <Check className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
                         Seu Subordinado (Você pode editar login, senha e acessos)
                       </span>
                     ) : (
@@ -2166,147 +2273,424 @@ function TabUsuarios({ isAdmin, currentUserProfile }: { isAdmin: boolean; curren
       {/* ══════════════════════════════════════════════════════════════════════════════ */}
       {/* MODAL DE EDIÇÃO COMPLETA: LOGIN (EMAIL), SENHA, CARGO, ROLE E PERMISSÕES     */}
       {/* ══════════════════════════════════════════════════════════════════════════════ */}
-      <AnimatePresence>
-        {editingUser && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 overflow-y-auto bg-black/85 backdrop-blur-md p-3 sm:p-6"
-          >
-            <div className="min-h-full flex items-center justify-center py-4 sm:py-8">
+      {typeof document !== "undefined" &&
+        createPortal(
+          <AnimatePresence>
+            {editingUser && (
               <motion.div
-                initial={{ scale: 0.96, opacity: 0, y: 12 }}
-                animate={{ scale: 1, opacity: 1, y: 0 }}
-                exit={{ scale: 0.96, opacity: 0, y: 12 }}
-                className="relative w-full max-w-2xl bg-card border border-white/15 rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[88vh] my-auto"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="fixed inset-0 z-[100] overflow-y-auto bg-slate-950/60 dark:bg-black/85 backdrop-blur-md p-3 sm:p-6"
               >
-                {/* Header do Modal */}
-                <div className="shrink-0 flex items-start justify-between gap-3 p-5 sm:p-6 border-b border-white/10 bg-background/80 backdrop-blur-md">
-                  <div className="flex items-center gap-3">
-                    <div className="h-10 w-10 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center text-primary shrink-0">
-                      <Key className="h-5 w-5" />
-                    </div>
-                    <div>
-                      <h4 className="font-display text-base font-bold text-foreground">
-                        Gerenciar Credenciais & Acessos
-                      </h4>
-                      <p className="text-xs text-muted-foreground mt-0.5">
-                        Editando usuário: <strong className="text-foreground">{editingUser.full_name || editingUser.email}</strong>
-                      </p>
-                    </div>
-                  </div>
-                  <button
-                    onClick={() => setEditingUser(null)}
-                    className="rounded-xl p-2 text-muted-foreground hover:bg-white/10 hover:text-foreground transition"
+                <div className="min-h-full flex items-center justify-center py-4 sm:py-8">
+                  <motion.div
+                    initial={{ scale: 0.96, opacity: 0, y: 12 }}
+                    animate={{ scale: 1, opacity: 1, y: 0 }}
+                    exit={{ scale: 0.96, opacity: 0, y: 12 }}
+                    className="relative w-full max-w-2xl bg-card border border-border dark:border-white/15 rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[88vh] my-auto"
                   >
-                    <X className="h-4 w-4" />
-                  </button>
+                    {/* Header do Modal */}
+                    <div className="shrink-0 flex items-start justify-between gap-3 p-5 sm:p-6 border-b border-border dark:border-white/10 bg-background/95 dark:bg-background/80 backdrop-blur-md">
+                      <div className="flex items-center gap-3">
+                        <div className="h-10 w-10 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center text-primary shrink-0">
+                          <Key className="h-5 w-5" />
+                        </div>
+                        <div>
+                          <h4 className="font-display text-base font-bold text-foreground">
+                            Gerenciar Credenciais & Acessos
+                          </h4>
+                          <p className="text-xs text-muted-foreground mt-0.5">
+                            Editando usuário: <strong className="text-foreground">{editingUser.full_name || editingUser.email}</strong>
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            copyFullAccessCredentials(
+                              { ...editingUser, full_name: editName || editingUser.full_name },
+                              editEmail || editingUser.email,
+                              editPassword || editingUser.permissions?._last_password
+                            )
+                          }
+                          className="inline-flex items-center gap-1.5 rounded-xl bg-primary/10 hover:bg-primary/20 border border-primary/25 px-3 py-2 text-[11px] font-black uppercase tracking-wider text-primary transition"
+                          title="Copiar Login + Senha + Link de acesso prontos para enviar no WhatsApp"
+                        >
+                          <Share2 className="h-3.5 w-3.5" />
+                          <span>Copiar Acesso p/ Envio</span>
+                        </button>
+                        <button
+                          onClick={() => setEditingUser(null)}
+                          className="rounded-xl p-2 text-muted-foreground hover:bg-muted dark:hover:bg-white/10 hover:text-foreground transition"
+                        >
+                          <X className="h-4 w-4" />
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Corpo do Modal */}
+                    <div className="flex-1 overflow-y-auto custom-scrollbar p-5 sm:p-6 space-y-5">
+                      {/* Informação de Autoridade */}
+                      <div className="rounded-xl border border-primary/20 bg-primary/5 p-3 flex items-center gap-2.5 text-xs text-foreground">
+                        <ShieldCheck className="h-4 w-4 text-primary shrink-0" />
+                        <p>
+                          Como <strong>{callerInfo.title} (Nível {callerLevel})</strong>, você possui autoridade para atualizar o <strong>login de acesso (e-mail)</strong>, <strong>redefinir a senha</strong> e os privilégios deste colaborador.
+                        </p>
+                      </div>
+
+                      {/* ── CARD: SENHA SALVA ATUAL DO COLABORADOR ── */}
+                      {editingUser.permissions?._last_password ? (
+                        <div className="rounded-2xl border border-amber-500/35 bg-amber-500/[0.08] p-4 space-y-2">
+                          <div className="flex items-center justify-between flex-wrap gap-2">
+                            <div className="flex items-center gap-2">
+                              <Key className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+                              <span className="text-xs font-bold text-amber-800 dark:text-amber-300 uppercase tracking-wider">
+                                Senha Salva Atualmente
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-[9px] font-mono text-amber-800 dark:text-amber-300 bg-amber-500/20 px-2 py-0.5 rounded-full border border-amber-500/30 font-bold">
+                                Visível para Superiores
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  copyFullAccessCredentials(
+                                    { ...editingUser, full_name: editName || editingUser.full_name },
+                                    editEmail || editingUser.email,
+                                    editPassword || editingUser.permissions?._last_password
+                                  )
+                                }
+                                className="inline-flex items-center gap-1 text-[10px] font-black uppercase text-primary hover:underline"
+                              >
+                                <Share2 className="h-3 w-3" /> Copiar Acesso Completo
+                              </button>
+                            </div>
+                          </div>
+                          <div className="flex items-center justify-between gap-3 bg-muted/60 dark:bg-black/50 rounded-xl p-3 border border-border dark:border-white/10">
+                            <span className="font-mono text-sm font-bold text-foreground tracking-wider">
+                              {editShowPassword ? (editPassword || editingUser.permissions._last_password) : "••••••••••••"}
+                            </span>
+                            <div className="flex items-center gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => setEditShowPassword(!editShowPassword)}
+                                className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted dark:hover:bg-white/5 transition"
+                                title={editShowPassword ? "Ocultar senha" : "Ver senha"}
+                              >
+                                {editShowPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => copyToClipboard(editingUser.permissions._last_password, "Senha salva copiada!")}
+                                className="p-1.5 rounded-lg text-muted-foreground hover:text-amber-600 dark:hover:text-amber-400 hover:bg-muted dark:hover:bg-white/5 transition"
+                                title="Copiar senha salva"
+                              >
+                                <Copy className="h-3 w-3" />
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      ) : null}
+
+                      {/* ── SEÇÃO 1: CREDENCIAIS DE LOGIN & ACESSO ── */}
+                      <div className="space-y-3 rounded-2xl border border-border dark:border-white/10 bg-muted/20 dark:bg-white/[0.02] p-4">
+                        <div className="flex items-center justify-between flex-wrap gap-2">
+                          <div className="flex items-center gap-2">
+                            <Key className="h-4 w-4 text-primary" />
+                            <h5 className="text-xs font-bold uppercase tracking-wider text-foreground">
+                              Credenciais de Acesso (Login & Senha)
+                            </h5>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              copyFullAccessCredentials(
+                                { ...editingUser, full_name: editName || editingUser.full_name },
+                                editEmail || editingUser.email,
+                                editPassword || editingUser.permissions?._last_password
+                              )
+                            }
+                            className="inline-flex items-center gap-1 text-[10px] font-black uppercase text-primary hover:bg-primary/15 bg-primary/10 border border-primary/25 px-2.5 py-1 rounded-lg transition"
+                          >
+                            <Share2 className="h-3 w-3" /> Copiar Acesso (Login + Senha)
+                          </button>
+                        </div>
+
+                        {/* E-mail / Login */}
+                        <div className="space-y-1">
+                          <div className="flex items-center justify-between">
+                            <label className="label-mono text-[10px] text-muted-foreground uppercase font-bold">
+                              Login de Acesso (E-mail)
+                            </label>
+                            <span className="text-[10px] text-primary font-bold">Totalmente Editável</span>
+                          </div>
+                          <input
+                            type="email"
+                            value={editEmail}
+                            onChange={(e) => setEditEmail(e.target.value)}
+                            placeholder="email.colaborador@empresa.com"
+                            className="w-full rounded-xl border border-border dark:border-white/10 bg-background px-3.5 py-2.5 text-sm focus:border-primary focus:outline-none font-mono text-foreground"
+                          />
+                          <p className="text-[10px] text-muted-foreground">
+                            Ao alterar este campo, o colaborador passará a utilizar este novo e-mail para entrar no sistema.
+                          </p>
+                        </div>
+
+                        {/* Senha de Acesso */}
+                        <div className="space-y-1 pt-2 border-t border-border dark:border-white/5">
+                          <div className="flex items-center justify-between">
+                            <label className="label-mono text-[10px] text-muted-foreground uppercase font-bold">
+                              Nova Senha de Acesso
+                            </label>
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const pass = generateStrongPassword();
+                                  setEditPassword(pass);
+                                  setEditShowPassword(true);
+                                  copyToClipboard(pass, "Senha gerada e copiada!");
+                                }}
+                                className="text-[10px] font-black uppercase text-primary hover:underline flex items-center gap-1"
+                              >
+                                <Sparkles className="h-3 w-3" /> Gerar Segura
+                              </button>
+                              {editPassword && (
+                                <button
+                                  type="button"
+                                  onClick={() => copyToClipboard(editPassword, "Senha copiada para enviar!")}
+                                  className="text-[10px] font-black uppercase text-emerald-600 dark:text-emerald-400 hover:underline flex items-center gap-1"
+                                >
+                                  <Copy className="h-3 w-3" /> Copiar Senha
+                                </button>
+                              )}
+                            </div>
+                          </div>
+
+                          <div className="relative">
+                            <input
+                              type={editShowPassword ? "text" : "password"}
+                              value={editPassword}
+                              onChange={(e) => setEditPassword(e.target.value)}
+                              placeholder="Digite para alterar ou mantenha a atual"
+                              className="w-full rounded-xl border border-border dark:border-white/10 bg-background px-3.5 py-2.5 pr-10 text-sm focus:border-primary focus:outline-none font-mono text-foreground"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setEditShowPassword((v) => !v)}
+                              className="absolute right-3 top-3 text-muted-foreground hover:text-foreground"
+                            >
+                              {editShowPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* ── SEÇÃO 2: DADOS PESSOAIS & CARGO ── */}
+                      <div className="rounded-2xl border border-border dark:border-white/10 bg-muted/20 dark:bg-white/[0.02] p-4">
+                        <AvatarUpload
+                          value={editAvatarUrl}
+                          onChange={setEditAvatarUrl}
+                          userId={editingUser.id}
+                          label="Foto de Perfil do Colaborador (Upload)"
+                          size="md"
+                        />
+                      </div>
+
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <div className="space-y-1">
+                          <label className="label-mono text-[10px] text-muted-foreground uppercase font-bold">
+                            Nome Completo
+                          </label>
+                          <input
+                            value={editName}
+                            onChange={(e) => setEditName(e.target.value)}
+                            placeholder="Nome do colaborador"
+                            className="w-full rounded-xl border border-border dark:border-white/10 bg-background px-3.5 py-2.5 text-sm focus:border-primary focus:outline-none text-foreground"
+                          />
+                        </div>
+
+                        <div className="space-y-1">
+                          <label className="label-mono text-[10px] text-muted-foreground uppercase font-bold">
+                            Status da Conta
+                          </label>
+                          <select
+                            value={editStatus}
+                            onChange={(e) => setEditStatus(e.target.value as any)}
+                            className="w-full rounded-xl border border-border dark:border-white/10 bg-background px-3.5 py-2.5 text-xs font-bold text-foreground focus:outline-none cursor-pointer"
+                          >
+                            <option value="ativo">🟢 Ativo (Acesso Liberado)</option>
+                            <option value="inativo">🔴 Suspenso (Acesso Bloqueado)</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      {/* ── SEÇÃO 3: CARGO vs PATENTE & PERMISSÕES DIDÁTICAS POR HUB ── */}
+                      <DidacticUserAccessEditor
+                        position={editPosition}
+                        onPositionChange={setEditPosition}
+                        role={editRole}
+                        onRoleChange={setEditRole}
+                        permissions={editPermissions}
+                        onPermissionsChange={setEditPermissions}
+                        allowedRoles={allowedAssignable.roles}
+                        allowedPositions={allowedAssignable.positions}
+                        autoApplyCargoDefaults={false}
+                      />
+                    </div>
+
+                    {/* Rodapé Fixo de Ações */}
+                    <div className="shrink-0 flex items-center justify-between gap-3 p-4 sm:p-5 border-t border-border dark:border-white/10 bg-background/95 dark:bg-background/90 backdrop-blur-md">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          copyFullAccessCredentials(
+                            { ...editingUser, full_name: editName || editingUser.full_name },
+                            editEmail || editingUser.email,
+                            editPassword || editingUser.permissions?._last_password
+                          )
+                        }
+                        className="inline-flex items-center gap-1.5 rounded-xl border border-primary/30 bg-primary/10 hover:bg-primary/20 px-3.5 py-2 text-xs font-bold text-primary transition"
+                      >
+                        <Share2 className="h-3.5 w-3.5" />
+                        <span>Copiar Acesso p/ Envio</span>
+                      </button>
+
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setEditingUser(null)}
+                          className="rounded-xl border border-border dark:border-white/10 px-4 py-2 text-xs font-bold text-muted-foreground hover:bg-muted dark:hover:bg-white/5 transition"
+                        >
+                          Cancelar
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleSaveEdit}
+                          disabled={saving}
+                          className="inline-flex items-center gap-2 rounded-xl bg-primary px-6 py-2.5 text-xs font-black uppercase tracking-wider text-primary-foreground shadow-glow hover:shadow-glow-lg transition active:scale-95 disabled:opacity-50"
+                        >
+                          {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+                          <span>{saving ? "Salvando..." : "Salvar Credenciais e Acessos"}</span>
+                        </button>
+                      </div>
+                    </div>
+                  </motion.div>
                 </div>
+              </motion.div>
+            )}
+          </AnimatePresence>,
+          document.body
+        )}
 
-                {/* Corpo do Modal */}
-                <div className="flex-1 overflow-y-auto custom-scrollbar p-5 sm:p-6 space-y-5">
-                  {/* Informação de Autoridade */}
-                  <div className="rounded-xl border border-primary/20 bg-primary/5 p-3 flex items-center gap-2.5 text-xs text-foreground">
-                    <ShieldCheck className="h-4 w-4 text-primary shrink-0" />
-                    <p>
-                      Como <strong>{callerInfo.title} (Nível {callerLevel})</strong>, você possui autoridade para atualizar o <strong>login de acesso (e-mail)</strong>, <strong>redefinir a senha</strong> e os privilégios deste colaborador.
-                    </p>
-                  </div>
-
-                  {/* ── CARD: SENHA SALVA ATUAL DO COLABORADOR ── */}
-                  {editingUser.permissions?._last_password ? (
-                    <div className="rounded-2xl border border-amber-500/30 bg-amber-500/[0.08] p-4 space-y-2">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <Key className="h-4 w-4 text-amber-400" />
-                          <span className="text-xs font-bold text-amber-300 uppercase tracking-wider">
-                            Senha Salva Atualmente
-                          </span>
+      {/* ══════════════════════════════════════════════════════════════════════════════ */}
+      {/* MODAL DE CADASTRO: NOVO USUÁRIO                                              */}
+      {/* ══════════════════════════════════════════════════════════════════════════════ */}
+      {typeof document !== "undefined" &&
+        createPortal(
+          <AnimatePresence>
+            {showAddModal && (
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="fixed inset-0 z-[100] overflow-y-auto bg-slate-950/60 dark:bg-black/85 backdrop-blur-md p-3 sm:p-6"
+              >
+                <div className="min-h-full flex items-center justify-center py-4 sm:py-8">
+                  <motion.div
+                    initial={{ scale: 0.96, opacity: 0, y: 12 }}
+                    animate={{ scale: 1, opacity: 1, y: 0 }}
+                    exit={{ scale: 0.96, opacity: 0, y: 12 }}
+                    className="relative w-full max-w-2xl bg-card border border-border dark:border-white/15 rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[88vh] my-auto"
+                  >
+                    {/* Header Fixo */}
+                    <div className="shrink-0 flex items-start justify-between gap-3 p-5 sm:p-6 border-b border-border dark:border-white/10 bg-background/95 dark:bg-background/80 backdrop-blur-md">
+                      <div className="flex items-center gap-3">
+                        <div className="h-10 w-10 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center text-primary shrink-0">
+                          <Plus className="h-5 w-5" />
                         </div>
-                        <span className="text-[9px] font-mono text-amber-400/90 bg-amber-500/20 px-2 py-0.5 rounded-full border border-amber-500/30 font-bold">
-                          Visível para Superiores
-                        </span>
-                      </div>
-                      <div className="flex items-center justify-between gap-3 bg-black/50 rounded-xl p-3 border border-white/10">
-                        <span className="font-mono text-sm font-bold text-foreground tracking-wider">
-                          {editShowPassword ? (editPassword || editingUser.permissions._last_password) : "••••••••••••"}
-                        </span>
-                        <div className="flex items-center gap-1.5">
-                          <button
-                            type="button"
-                            onClick={() => setEditShowPassword(!editShowPassword)}
-                            className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-white/5 transition"
-                            title={editShowPassword ? "Ocultar senha" : "Ver senha"}
-                          >
-                            {editShowPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => copyToClipboard(editingUser.permissions._last_password, "Senha salva copiada!")}
-                            className="p-1.5 rounded-lg text-muted-foreground hover:text-amber-400 hover:bg-white/5 transition"
-                            title="Copiar senha salva"
-                          >
-                            <Copy className="h-3 w-3" />
-                          </button>
+                        <div>
+                          <h4 className="font-display text-base font-bold text-foreground">
+                            Cadastrar Novo Usuário na Suite
+                          </h4>
+                          <p className="text-xs text-muted-foreground mt-0.5">
+                            Crie o login com e-mail e senha confirmados para acesso imediato.
+                          </p>
                         </div>
                       </div>
-                    </div>
-                  ) : null}
-
-                  {/* ── SEÇÃO 1: CREDENCIAIS DE LOGIN & ACESSO ── */}
-                  <div className="space-y-3 rounded-2xl border border-white/10 bg-white/[0.02] p-4">
-                    <div className="flex items-center gap-2">
-                      <Key className="h-4 w-4 text-primary" />
-                      <h5 className="text-xs font-bold uppercase tracking-wider text-foreground">
-                        Credenciais de Acesso (Login & Senha)
-                      </h5>
+                      <button
+                        onClick={() => setShowAddModal(false)}
+                        className="rounded-xl p-2 text-muted-foreground hover:bg-muted dark:hover:bg-white/10 hover:text-foreground transition"
+                      >
+                        <X className="h-4 w-4" />
+                      </button>
                     </div>
 
-                    {/* E-mail / Login */}
-                    <div className="space-y-1">
-                      <div className="flex items-center justify-between">
-                        <label className="label-mono text-[10px] text-muted-foreground uppercase font-bold">
-                          Login de Acesso (E-mail)
-                        </label>
-                        <span className="text-[10px] text-primary font-bold">Totalmente Editável</span>
-                      </div>
+                    {/* Corpo Rolável */}
+                    <div className="flex-1 overflow-y-auto custom-scrollbar p-5 sm:p-6 space-y-4">
+
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="sm:col-span-2 rounded-xl border border-border dark:border-white/10 bg-muted/20 dark:bg-white/[0.02] p-4">
+                      <AvatarUpload
+                        value={newAvatarUrl}
+                        onChange={setNewAvatarUrl}
+                        label="Foto de Perfil do Novo Colaborador (Upload Opcional)"
+                        size="md"
+                      />
+                    </div>
+
+                    <div className="space-y-1 sm:col-span-2">
+                      <label className="label-mono text-[10px] text-muted-foreground uppercase font-bold">
+                        Nome Completo
+                      </label>
+                      <input
+                        value={newName}
+                        onChange={(e) => setNewName(e.target.value)}
+                        placeholder="Ex: Ana Clara Santos"
+                        className="w-full rounded-lg border border-border dark:border-white/10 bg-background px-3 py-2 text-sm focus:border-primary focus:outline-none text-foreground"
+                      />
+                    </div>
+
+                    <div className="space-y-1 sm:col-span-2">
+                      <label className="label-mono text-[10px] text-muted-foreground uppercase font-bold">
+                        E-mail / Login de Acesso
+                      </label>
                       <input
                         type="email"
-                        value={editEmail}
-                        onChange={(e) => setEditEmail(e.target.value)}
-                        placeholder="email.colaborador@empresa.com"
-                        className="w-full rounded-xl border border-white/10 bg-background/60 px-3.5 py-2.5 text-sm focus:border-primary focus:outline-none font-mono text-foreground"
+                        value={newEmail}
+                        onChange={(e) => setNewEmail(e.target.value)}
+                        placeholder="ana.santos@empresa.com"
+                        className="w-full rounded-lg border border-border dark:border-white/10 bg-background px-3 py-2 text-sm focus:border-primary focus:outline-none font-mono text-foreground"
                       />
-                      <p className="text-[10px] text-muted-foreground">
-                        Ao alterar este campo, o colaborador passará a utilizar este novo e-mail para entrar no sistema.
-                      </p>
                     </div>
 
-                    {/* Senha de Acesso */}
-                    <div className="space-y-1 pt-2 border-t border-white/5">
+                    {/* Senha */}
+                    <div className="space-y-1 sm:col-span-2">
                       <div className="flex items-center justify-between">
                         <label className="label-mono text-[10px] text-muted-foreground uppercase font-bold">
-                          Nova Senha de Acesso
+                          Senha Inicial
                         </label>
                         <div className="flex items-center gap-2">
                           <button
                             type="button"
                             onClick={() => {
                               const pass = generateStrongPassword();
-                              setEditPassword(pass);
-                              setEditShowPassword(true);
+                              setNewPassword(pass);
+                              setNewShowPassword(true);
                               copyToClipboard(pass, "Senha gerada e copiada!");
                             }}
                             className="text-[10px] font-black uppercase text-primary hover:underline flex items-center gap-1"
                           >
-                            <Sparkles className="h-3 w-3" /> Gerar Segura
+                            <Sparkles className="h-3 w-3" /> Gerar Aleatória
                           </button>
-                          {editPassword && (
+                          {newPassword && (
                             <button
                               type="button"
-                              onClick={() => copyToClipboard(editPassword, "Senha copiada para enviar!")}
-                              className="text-[10px] font-black uppercase text-emerald-400 hover:underline flex items-center gap-1"
+                              onClick={() => copyToClipboard(newPassword, "Senha copiada para enviar!")}
+                              className="text-[10px] font-black uppercase text-emerald-600 dark:text-emerald-400 hover:underline flex items-center gap-1"
                             >
                               <Copy className="h-3 w-3" /> Copiar Senha
                             </button>
@@ -2316,268 +2700,80 @@ function TabUsuarios({ isAdmin, currentUserProfile }: { isAdmin: boolean; curren
 
                       <div className="relative">
                         <input
-                          type={editShowPassword ? "text" : "password"}
-                          value={editPassword}
-                          onChange={(e) => setEditPassword(e.target.value)}
-                          placeholder="Digite para alterar ou mantenha a atual"
-                          className="w-full rounded-xl border border-white/10 bg-background/60 px-3.5 py-2.5 pr-10 text-sm focus:border-primary focus:outline-none font-mono text-foreground"
+                          type={newShowPassword ? "text" : "password"}
+                          value={newPassword}
+                          onChange={(e) => setNewPassword(e.target.value)}
+                          placeholder="Mínimo 6 caracteres"
+                          className="w-full rounded-lg border border-border dark:border-white/10 bg-background px-3 py-2 pr-10 text-sm focus:border-primary focus:outline-none font-mono text-foreground"
                         />
                         <button
                           type="button"
-                          onClick={() => setEditShowPassword((v) => !v)}
-                          className="absolute right-3 top-3 text-muted-foreground hover:text-foreground"
+                          onClick={() => setNewShowPassword((v) => !v)}
+                          className="absolute right-3 top-2.5 text-muted-foreground hover:text-foreground"
                         >
-                          {editShowPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                          {newShowPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                         </button>
                       </div>
                     </div>
                   </div>
 
-                  {/* ── SEÇÃO 2: DADOS PESSOAIS & CARGO ── */}
-                  <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-4">
-                    <AvatarUpload
-                      value={editAvatarUrl}
-                      onChange={setEditAvatarUrl}
-                      userId={editingUser.id}
-                      label="Foto de Perfil do Colaborador (Upload)"
-                      size="md"
-                    />
-                  </div>
-
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <div className="space-y-1">
-                      <label className="label-mono text-[10px] text-muted-foreground uppercase font-bold">
-                        Nome Completo
-                      </label>
-                      <input
-                        value={editName}
-                        onChange={(e) => setEditName(e.target.value)}
-                        placeholder="Nome do colaborador"
-                        className="w-full rounded-xl border border-white/10 bg-background/60 px-3.5 py-2.5 text-sm focus:border-primary focus:outline-none text-foreground"
-                      />
-                    </div>
-
-                    <div className="space-y-1">
-                      <label className="label-mono text-[10px] text-muted-foreground uppercase font-bold">
-                        Status da Conta
-                      </label>
-                      <select
-                        value={editStatus}
-                        onChange={(e) => setEditStatus(e.target.value as any)}
-                        className="w-full rounded-xl border border-white/10 bg-background px-3.5 py-2.5 text-xs font-bold text-foreground focus:outline-none cursor-pointer"
-                      >
-                        <option value="ativo">🟢 Ativo (Acesso Liberado)</option>
-                        <option value="inativo">🔴 Suspenso (Acesso Bloqueado)</option>
-                      </select>
-                    </div>
-                  </div>
-
-                  {/* ── SEÇÃO 3: CARGO vs PATENTE & PERMISSÕES DIDÁTICAS POR HUB ── */}
                   <DidacticUserAccessEditor
-                    position={editPosition}
-                    onPositionChange={setEditPosition}
-                    role={editRole}
-                    onRoleChange={setEditRole}
-                    permissions={editPermissions}
-                    onPermissionsChange={setEditPermissions}
+                    position={newPosition}
+                    onPositionChange={setNewPosition}
+                    role={newRole}
+                    onRoleChange={setNewRole}
+                    permissions={newPermissions}
+                    onPermissionsChange={setNewPermissions}
                     allowedRoles={allowedAssignable.roles}
                     allowedPositions={allowedAssignable.positions}
-                    autoApplyCargoDefaults={false}
+                    autoApplyCargoDefaults={true}
                   />
-                </div>
 
-                {/* Rodapé Fixo de Ações */}
-                <div className="shrink-0 flex items-center justify-end gap-3 p-4 sm:p-5 border-t border-white/10 bg-background/90 backdrop-blur-md">
-                  <button
-                    type="button"
-                    onClick={() => setEditingUser(null)}
-                    className="rounded-xl border border-white/10 px-4 py-2 text-xs font-bold text-muted-foreground hover:bg-white/5 transition"
-                  >
-                    Cancelar
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleSaveEdit}
-                    disabled={saving}
-                    className="inline-flex items-center gap-2 rounded-xl bg-primary px-6 py-2.5 text-xs font-black uppercase tracking-wider text-primary-foreground shadow-glow hover:shadow-glow-lg transition active:scale-95 disabled:opacity-50"
-                  >
-                    {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
-                    <span>{saving ? "Salvando..." : "Salvar Credenciais e Acessos"}</span>
-                  </button>
-                </div>
-              </motion.div>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* ══════════════════════════════════════════════════════════════════════════════ */}
-      {/* MODAL DE CADASTRO: NOVO USUÁRIO                                              */}
-      {/* ══════════════════════════════════════════════════════════════════════════════ */}
-      <AnimatePresence>
-        {showAddModal && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 overflow-y-auto bg-black/85 backdrop-blur-md p-3 sm:p-6"
-          >
-            <div className="min-h-full flex items-center justify-center py-4 sm:py-8">
-              <motion.div
-                initial={{ scale: 0.96, opacity: 0, y: 12 }}
-                animate={{ scale: 1, opacity: 1, y: 0 }}
-                exit={{ scale: 0.96, opacity: 0, y: 12 }}
-                className="relative w-full max-w-2xl bg-card border border-white/15 rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[88vh] my-auto"
-              >
-                {/* Header Fixo */}
-                <div className="shrink-0 flex items-start justify-between gap-3 p-5 sm:p-6 border-b border-white/10 bg-background/80 backdrop-blur-md">
-                  <div className="flex items-center gap-3">
-                    <div className="h-10 w-10 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center text-primary shrink-0">
-                      <Plus className="h-5 w-5" />
                     </div>
-                    <div>
-                      <h4 className="font-display text-base font-bold text-foreground">
-                        Cadastrar Novo Usuário na Suite
-                      </h4>
-                      <p className="text-xs text-muted-foreground mt-0.5">
-                        Crie o login com e-mail e senha confirmados para acesso imediato.
-                      </p>
-                    </div>
-                  </div>
-                  <button
-                    onClick={() => setShowAddModal(false)}
-                    className="rounded-xl p-2 text-muted-foreground hover:bg-white/10 hover:text-foreground transition"
-                  >
-                    <X className="h-4 w-4" />
-                  </button>
-                </div>
 
-                {/* Corpo Rolável */}
-                <div className="flex-1 overflow-y-auto custom-scrollbar p-5 sm:p-6 space-y-4">
-
-              <div className="grid gap-3 sm:grid-cols-2">
-                <div className="sm:col-span-2 rounded-xl border border-white/10 bg-white/[0.02] p-4">
-                  <AvatarUpload
-                    value={newAvatarUrl}
-                    onChange={setNewAvatarUrl}
-                    label="Foto de Perfil do Novo Colaborador (Upload Opcional)"
-                    size="md"
-                  />
-                </div>
-
-                <div className="space-y-1 sm:col-span-2">
-                  <label className="label-mono text-[10px] text-muted-foreground uppercase font-bold">
-                    Nome Completo
-                  </label>
-                  <input
-                    value={newName}
-                    onChange={(e) => setNewName(e.target.value)}
-                    placeholder="Ex: Ana Clara Santos"
-                    className="w-full rounded-lg border border-white/10 bg-background/60 px-3 py-2 text-sm focus:border-primary focus:outline-none text-foreground"
-                  />
-                </div>
-
-                <div className="space-y-1 sm:col-span-2">
-                  <label className="label-mono text-[10px] text-muted-foreground uppercase font-bold">
-                    E-mail / Login de Acesso
-                  </label>
-                  <input
-                    type="email"
-                    value={newEmail}
-                    onChange={(e) => setNewEmail(e.target.value)}
-                    placeholder="ana.santos@empresa.com"
-                    className="w-full rounded-lg border border-white/10 bg-background/60 px-3 py-2 text-sm focus:border-primary focus:outline-none font-mono text-foreground"
-                  />
-                </div>
-
-                {/* Senha */}
-                <div className="space-y-1 sm:col-span-2">
-                  <div className="flex items-center justify-between">
-                    <label className="label-mono text-[10px] text-muted-foreground uppercase font-bold">
-                      Senha Inicial
-                    </label>
-                    <div className="flex items-center gap-2">
+                    {/* Rodapé Fixo */}
+                    <div className="shrink-0 flex items-center justify-between gap-3 p-4 sm:p-5 border-t border-border dark:border-white/10 bg-background/95 dark:bg-background/90 backdrop-blur-md">
                       <button
                         type="button"
-                        onClick={() => {
-                          const pass = generateStrongPassword();
-                          setNewPassword(pass);
-                          setNewShowPassword(true);
-                          copyToClipboard(pass, "Senha gerada e copiada!");
-                        }}
-                        className="text-[10px] font-black uppercase text-primary hover:underline flex items-center gap-1"
+                        onClick={() =>
+                          copyFullAccessCredentials(
+                            { full_name: newName || "Novo Colaborador" },
+                            newEmail,
+                            newPassword
+                          )
+                        }
+                        className="inline-flex items-center gap-1.5 rounded-xl border border-primary/30 bg-primary/10 hover:bg-primary/20 px-3.5 py-2 text-xs font-bold text-primary transition"
                       >
-                        <Sparkles className="h-3 w-3" /> Gerar Aleatória
+                        <Share2 className="h-3.5 w-3.5" />
+                        <span>Copiar Acesso p/ Envio</span>
                       </button>
-                      {newPassword && (
+
+                      <div className="flex items-center gap-2">
                         <button
                           type="button"
-                          onClick={() => copyToClipboard(newPassword, "Senha copiada para enviar!")}
-                          className="text-[10px] font-black uppercase text-emerald-400 hover:underline flex items-center gap-1"
+                          onClick={() => setShowAddModal(false)}
+                          className="rounded-xl border border-border dark:border-white/10 px-4 py-2 text-xs font-bold text-muted-foreground hover:bg-muted dark:hover:bg-white/5 transition"
                         >
-                          <Copy className="h-3 w-3" /> Copiar Senha
+                          Cancelar
                         </button>
-                      )}
+                        <button
+                          type="button"
+                          onClick={handleCreateUser}
+                          disabled={creating}
+                          className="inline-flex items-center gap-2 rounded-xl bg-primary px-6 py-2.5 text-xs font-black uppercase tracking-wider text-primary-foreground shadow-glow hover:shadow-glow-lg transition active:scale-95 disabled:opacity-50"
+                        >
+                          {creating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+                          <span>{creating ? "Cadastrando..." : "Cadastrar Usuário"}</span>
+                        </button>
+                      </div>
                     </div>
-                  </div>
-
-                  <div className="relative">
-                    <input
-                      type={newShowPassword ? "text" : "password"}
-                      value={newPassword}
-                      onChange={(e) => setNewPassword(e.target.value)}
-                      placeholder="Mínimo 6 caracteres"
-                      className="w-full rounded-lg border border-white/10 bg-background/60 px-3 py-2 pr-10 text-sm focus:border-primary focus:outline-none font-mono text-foreground"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setNewShowPassword((v) => !v)}
-                      className="absolute right-3 top-2.5 text-muted-foreground hover:text-foreground"
-                    >
-                      {newShowPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              <DidacticUserAccessEditor
-                position={newPosition}
-                onPositionChange={setNewPosition}
-                role={newRole}
-                onRoleChange={setNewRole}
-                permissions={newPermissions}
-                onPermissionsChange={setNewPermissions}
-                allowedRoles={allowedAssignable.roles}
-                allowedPositions={allowedAssignable.positions}
-                autoApplyCargoDefaults={true}
-              />
-
-                </div>
-
-                {/* Rodapé Fixo */}
-                <div className="shrink-0 flex items-center justify-end gap-3 p-4 sm:p-5 border-t border-white/10 bg-background/90 backdrop-blur-md">
-                  <button
-                    type="button"
-                    onClick={() => setShowAddModal(false)}
-                    className="rounded-xl border border-white/10 px-4 py-2 text-xs font-bold text-muted-foreground hover:bg-white/5 transition"
-                  >
-                    Cancelar
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleCreateUser}
-                    disabled={creating}
-                    className="inline-flex items-center gap-2 rounded-xl bg-primary px-6 py-2.5 text-xs font-black uppercase tracking-wider text-primary-foreground shadow-glow hover:shadow-glow-lg transition active:scale-95 disabled:opacity-50"
-                  >
-                    {creating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-                    <span>{creating ? "Cadastrando..." : "Cadastrar Usuário"}</span>
-                  </button>
+                  </motion.div>
                 </div>
               </motion.div>
-            </div>
-          </motion.div>
+            )}
+          </AnimatePresence>,
+          document.body
         )}
-      </AnimatePresence>
     </div>
   );
 }

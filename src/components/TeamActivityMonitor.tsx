@@ -254,17 +254,17 @@ export function TeamActivityMonitor() {
 
         {/* ── AVISO SE A MIGRATION DO PIXEL AINDA NÃO FOI EXECUTADA NO BANCO REMOTO ── */}
         {snapshot?.migrationPending && (
-          <div className="rounded-2xl border border-amber-500/35 bg-amber-500/10 p-4 flex items-start gap-3 text-xs text-amber-200">
-            <AlertTriangle className="h-5 w-5 text-amber-400 shrink-0 mt-0.5" />
+          <div className="rounded-2xl border border-amber-500/35 bg-amber-500/10 p-4 flex items-start gap-3 text-xs text-amber-800 dark:text-amber-200">
+            <AlertTriangle className="h-5 w-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
             <div className="space-y-1">
-              <p className="font-bold text-amber-300 uppercase tracking-wider text-[11px]">
+              <p className="font-bold text-amber-700 dark:text-amber-300 uppercase tracking-wider text-[11px]">
                 Ativação do Banco Pendente (SQL Migration)
               </p>
-              <p className="text-amber-100/90 leading-relaxed">
-                As tabelas <code className="px-1 py-0.5 rounded bg-black/40 font-mono">user_activity_daily</code> e{" "}
-                <code className="px-1 py-0.5 rounded bg-black/40 font-mono">user_activity_events</code> ainda não foram criadas no Supabase remoto.
+              <p className="text-amber-900/90 dark:text-amber-100/90 leading-relaxed">
+                As tabelas <code className="px-1 py-0.5 rounded bg-muted dark:bg-black/40 font-mono">user_activity_daily</code> e{" "}
+                <code className="px-1 py-0.5 rounded bg-muted dark:bg-black/40 font-mono">user_activity_events</code> ainda não foram criadas no Supabase remoto.
                 Execute o arquivo{" "}
-                <code className="px-1 py-0.5 rounded bg-black/40 font-mono">
+                <code className="px-1 py-0.5 rounded bg-muted dark:bg-black/40 font-mono">
                   supabase/migrations/20261112200000_rbac_didactic_roles_avatars_and_activity_pixel.sql
                 </code>{" "}
                 no SQL Editor do seu projeto Supabase para ativar a gravação completa dos logs diários e trilha do fluxo.
@@ -274,10 +274,10 @@ export function TeamActivityMonitor() {
         )}
 
         {/* ── KPIs DO DIA SELECIONADO ── */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 pt-2 border-t border-white/5">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 pt-2 border-t border-border dark:border-white/5">
           <div className="rounded-2xl border border-emerald-500/25 bg-emerald-500/[0.06] p-3.5 flex items-center justify-between">
             <div>
-              <p className="text-[10px] font-black uppercase tracking-wider text-emerald-400">Online Agora</p>
+              <p className="text-[10px] font-black uppercase tracking-wider text-emerald-600 dark:text-emerald-400">Online Agora</p>
               <p className="text-2xl font-black text-foreground mt-0.5">
                 {isViewingToday ? kpis.onlineCount : "—"}
               </p>
@@ -285,39 +285,39 @@ export function TeamActivityMonitor() {
                 {isViewingToday ? "Pulso ativo (< 2 min)" : "Disponível apenas para hoje"}
               </p>
             </div>
-            <Wifi className="h-5 w-5 text-emerald-400" />
+            <Wifi className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
           </div>
 
           <div className="rounded-2xl border border-blue-500/25 bg-blue-500/[0.06] p-3.5 flex items-center justify-between">
             <div>
-              <p className="text-[10px] font-black uppercase tracking-wider text-blue-400">Acessaram no Dia</p>
+              <p className="text-[10px] font-black uppercase tracking-wider text-blue-600 dark:text-blue-400">Acessaram no Dia</p>
               <p className="text-2xl font-black text-foreground mt-0.5">
                 {kpis.accessedCount}
                 <span className="text-xs font-mono text-muted-foreground">/{kpis.totalActiveAccounts}</span>
               </p>
               <p className="text-[10px] text-muted-foreground">Usuários ativos que logaram</p>
             </div>
-            <UserCheck className="h-5 w-5 text-blue-400" />
+            <UserCheck className="h-5 w-5 text-blue-600 dark:text-blue-400" />
           </div>
 
           <div className="rounded-2xl border border-red-500/25 bg-red-500/[0.06] p-3.5 flex items-center justify-between">
             <div>
-              <p className="text-[10px] font-black uppercase tracking-wider text-red-400">Não Acessaram</p>
+              <p className="text-[10px] font-black uppercase tracking-wider text-red-600 dark:text-red-400">Não Acessaram</p>
               <p className="text-2xl font-black text-foreground mt-0.5">{kpis.absentCount}</p>
               <p className="text-[10px] text-muted-foreground">Sem registro em {formatShortBrDate(selectedDate)}</p>
             </div>
-            <UserX className="h-5 w-5 text-red-400" />
+            <UserX className="h-5 w-5 text-red-600 dark:text-red-400" />
           </div>
 
           <div className="rounded-2xl border border-purple-500/25 bg-purple-500/[0.06] p-3.5 flex items-center justify-between">
             <div>
-              <p className="text-[10px] font-black uppercase tracking-wider text-purple-300">Média / Tempo Ativo</p>
+              <p className="text-[10px] font-black uppercase tracking-wider text-purple-600 dark:text-purple-300">Média / Tempo Ativo</p>
               <p className="text-2xl font-black text-foreground mt-0.5">{formatDurationCompact(kpis.avgSeconds)}</p>
               <p className="text-[10px] text-muted-foreground">
                 Total equipe: {formatDurationCompact(kpis.totalSeconds)}
               </p>
             </div>
-            <Clock className="h-5 w-5 text-purple-400" />
+            <Clock className="h-5 w-5 text-purple-600 dark:text-purple-400" />
           </div>
         </div>
       </div>
@@ -325,7 +325,7 @@ export function TeamActivityMonitor() {
       {/* ── CONTROLES DE MODO (DIA vs MATRIZ HISTÓRICA) + FILTROS ── */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
         <div className="flex items-center gap-2 flex-wrap">
-          <div className="inline-flex rounded-xl border border-white/10 bg-black/30 p-1">
+          <div className="inline-flex rounded-xl border border-border dark:border-white/10 bg-muted/40 dark:bg-black/30 p-1">
             <button
               type="button"
               onClick={() => setViewMode("diario")}
@@ -362,8 +362,8 @@ export function TeamActivityMonitor() {
                   onClick={() => setStatusFilter(pill.id)}
                   className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[11px] font-bold transition whitespace-nowrap ${
                     statusFilter === pill.id
-                      ? "bg-white/15 text-foreground border border-white/20"
-                      : "bg-white/5 text-muted-foreground hover:bg-white/10"
+                      ? "bg-muted dark:bg-white/15 text-foreground border border-border dark:border-white/20"
+                      : "bg-muted/40 dark:bg-white/5 text-muted-foreground hover:bg-muted dark:hover:bg-white/10"
                   }`}
                 >
                   <span>{pill.label}</span>
@@ -372,12 +372,12 @@ export function TeamActivityMonitor() {
               ))}
             </div>
           ) : (
-            <div className="inline-flex rounded-xl border border-white/10 bg-black/30 p-1">
+            <div className="inline-flex rounded-xl border border-border dark:border-white/10 bg-muted/40 dark:bg-black/30 p-1">
               <button
                 type="button"
                 onClick={() => setMatrixDays(7)}
                 className={`rounded-lg px-2.5 py-1 text-[11px] font-bold transition ${
-                  matrixDays === 7 ? "bg-white/15 text-foreground" : "text-muted-foreground"
+                  matrixDays === 7 ? "bg-card dark:bg-white/15 text-foreground shadow-sm" : "text-muted-foreground"
                 }`}
               >
                 7 dias
@@ -386,7 +386,7 @@ export function TeamActivityMonitor() {
                 type="button"
                 onClick={() => setMatrixDays(14)}
                 className={`rounded-lg px-2.5 py-1 text-[11px] font-bold transition ${
-                  matrixDays === 14 ? "bg-white/15 text-foreground" : "text-muted-foreground"
+                  matrixDays === 14 ? "bg-card dark:bg-white/15 text-foreground shadow-sm" : "text-muted-foreground"
                 }`}
               >
                 14 dias
@@ -555,7 +555,7 @@ export function TeamActivityMonitor() {
 
                   {/* ── TRILHA DE FLUXO DO USUÁRIO EXPANDIDA ── */}
                   {isExpanded && (
-                    <div className="border-t border-white/10 bg-black/35 p-4 space-y-3">
+                    <div className="border-t border-border dark:border-white/10 bg-muted/30 dark:bg-black/35 p-4 space-y-3">
                       <div className="flex items-center justify-between flex-wrap gap-2">
                         <span className="text-[10px] font-black uppercase tracking-wider text-primary flex items-center gap-1.5">
                           <Activity className="h-3.5 w-3.5" />
@@ -581,7 +581,7 @@ export function TeamActivityMonitor() {
                           {expandedTrail.map((ev) => (
                             <div
                               key={ev.id}
-                              className="flex items-center justify-between gap-3 rounded-xl border border-white/5 bg-white/[0.02] px-3 py-2 text-xs"
+                              className="flex items-center justify-between gap-3 rounded-xl border border-border dark:border-white/5 bg-card/80 dark:bg-white/[0.02] px-3 py-2 text-xs"
                             >
                               <div className="flex items-center gap-2.5 min-w-0">
                                 <span className="font-mono text-[11px] font-bold text-emerald-400 shrink-0">

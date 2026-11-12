@@ -213,6 +213,10 @@ function Shell() {
       nextModule = "gestao";
     } else if (path.startsWith("/strategy-map")) {
       nextModule = "funil";
+    } else if (path.startsWith("/perfil") || path.startsWith("/config")) {
+      if (activeModule === "hub") {
+        nextModule = "trafego";
+      }
     }
 
     if (nextModule !== activeModule) {
@@ -390,8 +394,8 @@ function Shell() {
     return <Navigate to="/login" search={{ redirect: path }} />;
   }
 
-  // Se o activeModule for "hub", renderiza a tela de seleção de módulos (Cards direcionais)
-  if (activeModule === "hub") {
+  // Se o activeModule for "hub" (e não estivermos em /perfil ou /config), renderiza a tela de seleção de módulos
+  if (activeModule === "hub" && !path.startsWith("/perfil") && !path.startsWith("/config")) {
     const isHubDark = theme === "dark";
     return (
       <div
@@ -585,21 +589,31 @@ function Shell() {
               {theme === "dark" ? "Modo Claro" : "Modo Escuro"}
             </button>
             <div className="h-3 w-px bg-border" />
-            <Link
-              to="/perfil"
-              className="text-[10px] font-bold text-muted-foreground hover:text-foreground uppercase tracking-wider flex items-center gap-1.5 transition-colors"
+            <button
+              type="button"
+              onClick={() => {
+                setActiveModule("trafego");
+                localStorage.setItem("nc_active_module", "trafego");
+                nav({ to: "/perfil" });
+              }}
+              className="text-[10px] font-bold text-muted-foreground hover:text-foreground uppercase tracking-wider flex items-center gap-1.5 transition-colors cursor-pointer"
             >
               <User className="h-3.5 w-3.5" /> Meu Perfil
-            </Link>
+            </button>
             {canAccessConfig && (
               <>
                 <div className="h-3 w-px bg-border" />
-                <Link
-                  to="/config"
-                  className="text-[10px] font-bold text-muted-foreground hover:text-foreground uppercase tracking-wider flex items-center gap-1.5 transition-colors"
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveModule("trafego");
+                    localStorage.setItem("nc_active_module", "trafego");
+                    nav({ to: "/config" });
+                  }}
+                  className="text-[10px] font-bold text-muted-foreground hover:text-foreground uppercase tracking-wider flex items-center gap-1.5 transition-colors cursor-pointer"
                 >
                   <Settings className="h-3.5 w-3.5" /> Configurações
-                </Link>
+                </button>
               </>
             )}
             <div className="h-3 w-px bg-border" />
