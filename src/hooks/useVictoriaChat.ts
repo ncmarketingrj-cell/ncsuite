@@ -14,6 +14,7 @@ import {
   type RadarTimeFilter,
   type RadarRegionFilter,
 } from "@/lib/marketPortals";
+import { META_ADS_MASTER_KNOWLEDGE_DOCS } from "@/lib/metaAlgorithmEngine";
 
 
 export type Message = {
@@ -202,7 +203,7 @@ export function useVictoriaChat(
     }
   };
 
-  // Carregar base de conhecimento
+  // Carregar base de conhecimento (e auto-treinar o Parecer Técnico Meta Ads 2026 se ainda não constar no banco)
   const fetchKnowledge = async () => {
     setLoadingKnowledge(true);
     try {
@@ -212,17 +213,91 @@ export function useVictoriaChat(
         .order("created_at", { ascending: false });
 
       if (error) throw error;
-      setKnowledgeList(
-        (data || []).map((k: any) => ({
-          id: k.id,
-          category: k.category,
-          title: k.title,
-          content: k.content,
-          created_at: new Date(k.created_at)
-        }))
+      const dbItems: KnowledgeItem[] = (data || []).map((k: any) => ({
+        id: k.id,
+        category: k.category,
+        title: k.title,
+        content: k.content,
+        created_at: new Date(k.created_at)
+      }));
+
+      // Garantir que os 4 documentos do Parecer Técnico e Estrutural do Meta Ads estejam na base da Victoria AI
+      const existingTitles = new Set(dbItems.map(item => item.title.trim().toLowerCase()));
+      const missingMasterDocs = META_ADS_MASTER_KNOWLEDGE_DOCS.filter(
+        doc => !existingTitles.has(doc.title.trim().toLowerCase())
       );
+
+      if (missingMasterDocs.length > 0 && dbItems.length + missingMasterDocs.length <= 50) {
+        try {
+          const { data: { user } } = await supabase.auth.getUser();
+          if (user?.id) {
+            for (const doc of missingMasterDocs) {
+              const { data: inserted } = await (supabase
+                .from("victoria_knowledge" as any)
+                .insert({
+                  user_id: user.id,
+                  category: doc.category,
+                  title: doc.title,
+                  content: doc.content,
+                })
+                .select("id, category, title, content, created_at")
+                .maybeSingle() as any);
+
+              if (inserted?.id) {
+                dbItems.unshift({
+                  id: inserted.id,
+                  category: inserted.category,
+                  title: inserted.title,
+                  content: inserted.content,
+                  created_at: new Date(inserted.created_at),
+                });
+              } else {
+                dbItems.unshift({
+                  id: doc.id,
+                  category: doc.category,
+                  title: doc.title,
+                  content: doc.content,
+                  created_at: new Date(),
+                });
+              }
+            }
+          } else {
+            for (const doc of missingMasterDocs) {
+              dbItems.unshift({
+                id: doc.id,
+                category: doc.category,
+                title: doc.title,
+                content: doc.content,
+                created_at: new Date(),
+              });
+            }
+          }
+        } catch {
+          for (const doc of missingMasterDocs) {
+            dbItems.unshift({
+              id: doc.id,
+              category: doc.category,
+              title: doc.title,
+              content: doc.content,
+              created_at: new Date(),
+            });
+          }
+        }
+      }
+
+      setKnowledgeList(dbItems);
     } catch (err: any) {
       console.error("Erro ao carregar base de conhecimento:", err);
+      // Fallback local imediato com os documentos mestres do Meta Ads
+      setKnowledgeList(
+        META_ADS_MASTER_KNOWLEDGE_DOCS.map(doc => ({
+          id: doc.id,
+          category: doc.category,
+          title: doc.title,
+          content: doc.content,
+          created_at: new Date(),
+        }))
+      );
     } finally {
       setLoadingKnowledge(false);
     }
@@ -510,14 +585,17 @@ export function useVictoriaChat(
         });
       }
 
-      // 4. Busca vetorial no hook antes de chamar o chat (C4)
-      // Só chama a Gemini API se houver documentos cadastrados na base de conhecimento
+      // 4. Busca vetorial no hook antes de chamar o chat (C4) + Injeção garantida do Parecer Técnico Meta Ads 2026
       const ragResults = (content.trim() && knowledgeList.length > 0)
         ? await searchKnowledge(content)
         : [];
-      const externalContext = ragResults.length > 0
+      const masterMetaContext = META_ADS_MASTER_KNOWLEDGE_DOCS
+        .map(d => `[BASE DE CONHECIMENTO TREINADA — ${d.category.toUpperCase()}] ${d.title}:\n${d.content}`)
+        .join("\n\n");
+      const ragText = ragResults.length > 0
         ? ragResults.map(s => `[CONHECIMENTO — ${s.category.toUpperCase()}] ${s.title}: ${s.content}`).join("\n\n")
-        : undefined;
+        : "";
+      const externalContext = [masterMetaContext, ragText].filter(Boolean).join("\n\n---\n\n");
 
       // 5. Invocar a IA Victoria por Streaming SSE
       const { data: { session } } = await supabase.auth.getSession();
@@ -1010,7 +1088,12 @@ export function useVictoriaChat(
         title: "Capacidades e Comandos da Victoria no NC Suite",
         category: "custom",
         content: "CAPACIDADES DA VICTORIA:\n\nANÁLISE: campanhas 7/15/30 dias, CPL/CTR por campanha, melhor/pior campanha, relatório executivo formatado, dados de dias específicos (ontem, sábado, fim de semana).\n\nEXECUÇÃO (com aprovação): atualizar orçamento, pausar campanha, criar estrutura de funil.\n\nSOCIAL: análise de páginas conectadas, melhores posts, sugestão de calendário de conteúdo.\n\nPESQUISA WEB: ativar com 'pesquise sobre', 'procure na internet', 'últimas tendências de'. Victoria usa Google Search via Gemini Grounding.\n\nCOMUNICAÇÃO: português brasileiro, tom estratégico sênior, nunca age como IA genérica, foca em ações concretas e resultados.\n\nCOMANDOS ÚTEIS: 'Diagnóstico das campanhas', 'Gere relatório executivo', 'Como melhorar o CPL?', 'Crie funil para [produto]', 'Pesquise tendências de tráfego pago automotivo'."
-      }
+      },
+      ...META_ADS_MASTER_KNOWLEDGE_DOCS.map(d => ({
+        title: d.title,
+        category: d.category,
+        content: d.content,
+      }))
     ];
 
     // Obter user_id atual

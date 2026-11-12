@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { supabase, EXTERNAL_SUPABASE_URL, EXTERNAL_SUPABASE_ANON_KEY } from "@/integrations/supabase-external/client";
+import { META_ADS_MASTER_KNOWLEDGE_DOCS } from "@/lib/metaAlgorithmEngine";
 import { toast } from "sonner";
 
 export interface ContextItem {
@@ -179,7 +180,8 @@ Use markdown com tópicos, negrito e destaques visuais elegantes.`;
               { role: "user", content: systemDiagnosticPrompt }
             ],
             selectedAccountId: contextItem?.id,
-            externalContext: `Campanha: ${targetName} | Gasto: R$ ${cost.toFixed(2)} | Resultados: ${convs} | CPL: R$ ${cpl.toFixed(2)} | CTR: ${ctr.toFixed(2)}% | Freq: ${freq.toFixed(1)}x`
+            externalContext: `Campanha: ${targetName} | Gasto: R$ ${cost.toFixed(2)} | Resultados: ${convs} | CPL: R$ ${cpl.toFixed(2)} | CTR: ${ctr.toFixed(2)}% | Freq: ${freq.toFixed(1)}x\n\n` +
+              META_ADS_MASTER_KNOWLEDGE_DOCS.map(d => `[BASE TREINADA] ${d.title}:\n${d.content}`).join("\n\n")
           })
         }
       );
@@ -315,7 +317,8 @@ Use markdown com tópicos, negrito e destaques visuais elegantes.`;
             action: "chat",
             messages: conversationHistory,
             selectedAccountId: contextItem?.id,
-            externalContext: `Campanha em discussão: ${contextItem?.name || accountName} | Gasto: R$ ${contextItem?.t?.cost?.toFixed(2) || "0"} | Conversões: ${contextItem?.t?.conversions || 0} | CPL: R$ ${contextItem?.t?.cpl?.toFixed(2) || "0"}`
+            externalContext: `Campanha em discussão: ${contextItem?.name || accountName} | Gasto: R$ ${contextItem?.t?.cost?.toFixed(2) || "0"} | Conversões: ${contextItem?.t?.conversions || 0} | CPL: R$ ${contextItem?.t?.cpl?.toFixed(2) || "0"}\n\n` +
+              META_ADS_MASTER_KNOWLEDGE_DOCS.map(d => `[BASE TREINADA] ${d.title}:\n${d.content}`).join("\n\n")
           })
         }
       );
