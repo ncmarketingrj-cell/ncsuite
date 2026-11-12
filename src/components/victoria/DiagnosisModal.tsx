@@ -81,7 +81,7 @@ export const DiagnosisModal: React.FC<DiagnosisModalProps> = ({
       setDiagnosis(resData.diagnosis || "Não foi possível estruturar o diagnóstico.");
     } catch (err) {
       console.error("[DIAGNOSIS_ERROR]", err);
-      setDiagnosis("Desculpe comandante, tive um problema de comunicação com o servidor de IA ao cruzar as métricas de leilão recentes desta campanha.");
+      setDiagnosis("Desculpe, tive um problema de comunicação com o servidor de IA ao cruzar as métricas de leilão recentes desta campanha.");
     } finally {
       setLoading(false);
     }

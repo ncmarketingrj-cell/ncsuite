@@ -562,7 +562,9 @@ Escreva em formato altamente profissional, com dados baseados na série de métr
     ]);
 
     const vConfig = vConfigRes.data;
-    const userName = profileRes.data?.full_name?.split(" ")[0] || user.email?.split("@")[0] || "Gestor";
+    const rawFullName = body.user_name || profileRes.data?.full_name || user.user_metadata?.full_name || user.email?.split("@")[0] || "";
+    const cleanFirst = rawFullName.trim().split(" ")[0];
+    const userName = cleanFirst ? cleanFirst.charAt(0).toUpperCase() + cleanFirst.slice(1) : "Parceiro";
 
     const userSystemPrompt = vConfig?.system_prompt || null;
     const userModelName = vConfig?.model_name || "gemini-2.5-flash"; // default inteligente
@@ -1015,12 +1017,12 @@ Sua arquitetura mental é a síntese das maiores mentes do marketing estratégic
 8. **Ciência de Vendas (Joe Girard):** A lei dos 250 (cada cliente satisfeito influencia outros 250). Transforme clientes em "cães de caça" que trazem novos compradores. Use o sistema Roda Gigante (Ferris Wheel) para prospecção ininterrupta e organização cirúrgica de CRM.
 9. **Arsenal Tecnológico Automotivo:** Targeted VIN Advertising (campanhas baseadas no chassi/VIN do estoque real), Streaming Media & Nitro Specials (ofertas agressivas em tempo real no site), otimização de feeds e gestão de reputação por IA.
 
-PERSONALIDADE E ATITUDE (Carioca do Leblon / Sênior de Agência):
-- Você fala de forma natural e com extrema autoridade, como uma estrategista carioca sênior da Zona Sul do Rio (Leblon). Você é profissional, porém descontraída, confiante e direta ao ponto.
-- Chame o usuário pelo primeiro nome dele: **${userName}**. NUNCA o chame de "Comandante", "Chefe", "Usuário" ou qualquer termo genérico/robótico.
-- Use expressões cariocas naturais de agência no Rio de forma fluida (sem parecer caricato ou exagerado, mas com personalidade marcante): "Cara", "Olha só, ${userName}", "Esquece", "Coisa linda", "Aí", "Sacou?", "Vamo pra cima", "Foco no pátio girando".
-- Se ele falar algo como "tranquilo e calmo?", responda à altura: "Tranquilo e calmo nada, ${userName}! A gente tá com leilão do Meta Ads fritando e CPL caindo a cada minuto. Tranquilidade pra mim é só quando o pátio de seminovos esvaziar e o comercial fechar venda atrás de venda! Vamo pro jogo!"
-- NUNCA dê respostas neutras de IA genérica. Se o usuário puxar assunto, responda como alguém que trabalha no time da NC Agência: "Fala, ${userName}! Cara, passei o fim de semana com o olho nos conjuntos de anúncios pra garantir que os leads caíssem quentes. Vamos pro que interessa, o que a gente vai otimizar hoje?"
+PERSONALIDADE E ATITUDE:
+- Você fala de forma natural e com extrema autoridade como uma estrategista sênior da NC Performance. Você é profissional, confiante e direta ao ponto.
+- REGRA CRÍTICA E INVIOLÁVEL: Dirija-se ao usuário SEMPRE pelo primeiro nome dele: **${userName}**. NUNCA o chame de "Comandante", "Chefe", "Usuário", "Gestor" ou qualquer outro apelido/termo genérico/robótico. Chame-o única e exclusivamente por **${userName}**.
+- Ao iniciar a conversa ou cumprimentar, use o nome dele: "Fala, ${userName}!", "Olá, ${userName}!", "Olha só, ${userName}". NUNCA use "Comandante".
+- Se ele falar algo como "tranquilo e calmo?", responda: "Tranquilo e calmo nada, ${userName}! A gente tá com leilão do Meta Ads fritando e CPL caindo a cada minuto. Tranquilidade pra mim é só quando o pátio de seminovos esvaziar e o comercial fechar venda atrás de venda! Vamo pro jogo!"
+- Se o usuário puxar assunto, responda como alguém do time: "Fala, ${userName}! Passei o fim de semana com o olho nos conjuntos de anúncios pra garantir que os leads caíssem quentes. Vamos pro que interessa, o que a gente vai otimizar hoje?"
 
 DIRETRIZES TÉCNICAS E ESTRATÉGICAS DE MARKETING AUTOMOTIVO:
 1. **Analise os Períodos com Precisão:**
@@ -1229,6 +1231,7 @@ REGRAS DE RESPOSTA:
     }
 
     let promptWithRAG = userSystemPrompt || defaultSystemPrompt;
+    promptWithRAG += `\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nREGRA MANDATÓRIA DE TRATAMENTO:\n- Você DEVE se dirigir ao usuário SEMPRE pelo primeiro nome dele: **${userName}**.\n- É TERMINANTEMENTE PROIBIDO utilizar a palavra "Comandante", "Chefe", "Usuário" ou apelidos similares. Trate-o por **${userName}**.\n- Ao cumprimentar no início da resposta, use o nome dele: "Olá, ${userName}!", "Fala, ${userName}!". NUNCA use "Comandante".\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
     if (knowledgeCtx) {
       promptWithRAG += `\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nBASE DE CONHECIMENTO NC PERFORMANCE (Utilize como verdade absoluta para todas as respostas):\n\n${knowledgeCtx}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
     }
@@ -1328,7 +1331,7 @@ REGRAS DE RESPOSTA:
     }
 
     // Fallback SSE se nenhuma das streams funcionar
-    const fallbackText = `### 🤖 Victoria AI — Modo Analítico Local\n\nDesculpe comandante, tive um problema de comunicação com o servidor de IA. Mas os dados do banco de dados continuam ativos. O que deseja auditar especificamente?`;
+    const fallbackText = `### 🤖 Victoria AI — Modo Analítico Local\n\nDesculpe, ${userName}, tive um problema de comunicação com o servidor de IA. Mas os dados do banco de dados continuam ativos. O que deseja auditar especificamente?`;
     const encoder = new TextEncoder();
     const sseChunk = `data: ${JSON.stringify({
       choices: [{ delta: { content: fallbackText } }]

@@ -42,9 +42,20 @@ export function AIAgentSidebar({ isOpen, onClose }: AIAgentSidebarProps) {
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [appliedActions, setAppliedActions] = useState<Record<number, boolean>>({});
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
+  const isAutoScroll = useRef(true);
+
+  const handleContainerScroll = () => {
+    const el = messagesContainerRef.current;
+    if (!el) return;
+    const fromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    isAutoScroll.current = fromBottom < 100;
+  };
 
   const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    if (isAutoScroll.current && messagesContainerRef.current) {
+      messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight;
+    }
   };
 
   useEffect(() => {
@@ -74,7 +85,7 @@ export function AIAgentSidebar({ isOpen, onClose }: AIAgentSidebarProps) {
     setMessages([
       { 
         role: "assistant", 
-        content: `### 🤖 Comandante Estratégica Victoria AI v2.5\n\nExcelente, Comandante! Travei o meu foco operacional estritamente na conta **"${name}"**.\n\nEstou conectada ao banco de dados e pronta para auditar os números desta conta. O que deseja analisar agora?`, 
+        content: `### 🤖 Victoria AI v2.5\n\nExcelente! Travei o meu foco operacional estritamente na conta **"${name}"**.\n\nEstou conectada ao banco de dados e pronta para auditar os números desta conta. O que deseja analisar agora?`, 
         timestamp: new Date() 
       }
     ]);
@@ -83,6 +94,7 @@ export function AIAgentSidebar({ isOpen, onClose }: AIAgentSidebarProps) {
   const handleSend = async () => {
     if (!prompt.trim() || loading) return;
 
+    isAutoScroll.current = true;
     const userMsg: Message = { 
       role: "user", 
       content: prompt, 
@@ -182,9 +194,9 @@ export function AIAgentSidebar({ isOpen, onClose }: AIAgentSidebarProps) {
 
         // 2. Inteligência Humana e Dinâmica de Linguagem baseada no Prompt do Usuário
         if (query.includes("performance") || query.includes("desempenho") || query.includes("como tá") || query.includes("como ta")) {
-          intro = `Fala, Comandante! Fiz um raio-x completo na nossa conta de anúncios agora mesmo. Puxei os dados consolidados do NC Database e montei o diagnóstico tático da operação.
+          intro = `Olá! Fiz um raio-x completo na nossa conta de anúncios agora mesmo. Puxei os dados consolidados do NC Database e montei o diagnóstico tático da operação.
 
-Olha, no geral, estamos comandando **${activeCount} campanhas ativas** rodando no Meta Ads. O investimento acumulado já soma **R$ ${totalInvest.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}**, trazendo um retorno robusto de **${totalConversions.toLocaleString("pt-BR")} leads qualificados** para o CRM das lojas. Nosso CPL (Custo por Lead) geral da conta está estabilizado em uma excelente média de **R$ ${globalCpl.toFixed(2)}**.`;
+Olha, no geral, estamos gerenciando **${activeCount} campanhas ativas** rodando no Meta Ads. O investimento acumulado já soma **R$ ${totalInvest.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}**, trazendo um retorno robusto de **${totalConversions.toLocaleString("pt-BR")} leads qualificados** para o CRM das lojas. Nosso CPL (Custo por Lead) geral da conta está estabilizado em uma média de **R$ ${globalCpl.toFixed(2)}**.`;
 
           if (efficientCamp) {
             body += `\n\n### ⚡ Campanha Campeã (Alta Eficiência)
@@ -203,7 +215,7 @@ Precisamos ligar o sinal vermelho na campanha **"${inefficientCamp.name}"**. Ela
 O que achou desse diagnóstico? Quer que eu analise alguma campanha específica no detalhe?`;
 
         } else if (query.includes("escala") || query.includes("orçamento") || query.includes("budget") || query.includes("aumentar") || query.includes("verba")) {
-          intro = `Excelente iniciativa, Comandante! Escalar com inteligência é o segredo para não derreter o ROI. Analisando as nossas **${activeCount} campanhas ativas**, identifiquei exatamente onde temos margem saudável para colocar mais combustível na máquina de tráfego pago.`;
+          intro = `Excelente iniciativa! Escalar com inteligência é o segredo para não derreter o ROI. Analisando as nossas **${activeCount} campanhas ativas**, identifiquei exatamente onde temos margem saudável para colocar mais combustível na máquina de tráfego pago.`;
 
           if (efficientCamp) {
             body += `\n\n### 🚀 Recomendação de Escala Segura (15%):
@@ -223,7 +235,7 @@ Não mexa de forma alguma no orçamento de **"${inefficientCamp.name}"**. O cust
 Pronto para rodar essa otimização?`;
 
         } else if (query.includes("breakdown") || query.includes("idade") || query.includes("gênero") || query.includes("público") || query.includes("segmentação") || query.includes("genero")) {
-          intro = `Análise de público na mesa, Comandante! Entender com precisão quem está convertendo é o que separa os amadores dos estrategistas seniores de tráfego pago automotivo.`;
+          intro = `Análise de público na mesa! Entender com precisão quem está convertendo é o que separa os amadores dos estrategistas seniores de tráfego pago automotivo.`;
 
           body = `\n\n### 👥 Perfil de Conversão (Dados Consolidados):
 Ao auditar nosso histórico total de **${totalConversions.toLocaleString("pt-BR")} conversões**, identifiquei padrões muito claros no comportamento do público:
@@ -240,7 +252,7 @@ Quer que eu monte uma estrutura de copy focada especificamente nessa faixa etár
 
         } else {
           // Resposta customizada super premium e de alto nível para conversas gerais
-          intro = `Fala, Comandante! Fico extremamente feliz em conversar com você sobre estratégias de tráfego pago. Já estou com toda a nossa base de dados operando e a postos na central da NC. 
+          intro = `Olá! Fico extremamente feliz em conversar com você sobre estratégias de tráfego pago. Já estou com toda a nossa base de dados operando e a postos na central da NC. 
 
 Atualmente, estamos gerenciando **${activeCount} campanhas ativas** com um investimento consolidado de **R$ ${totalInvest.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}** e gerando **${totalConversions.toLocaleString("pt-BR")} leads**. Nosso custo médio por lead está saudável, girando em torno de **R$ ${globalCpl.toFixed(2)}**.`;
 
@@ -249,7 +261,7 @@ Atualmente, estamos gerenciando **${activeCount} campanhas ativas** com um inves
 * 🎯 **Auditoria de Criativos:** Entender quais anúncios estão performando acima do CTR ideal de 1.20%.
 * 📈 **Estratégia de Escala:** Como alocar os próximos reais de verba na conta de forma segura e consistente.`;
 
-          conclusion = `\n\nEstou pronta para te entregar qualquer dado histórico e estruturar o plano de ataque perfeito. Qual o próximo passo, comandante?`;
+          conclusion = `\n\nEstou pronta para te entregar qualquer dado histórico e estruturar o plano de ataque perfeito. Qual o próximo passo?`;
         }
 
         responseText = `${intro}${body}${conclusion}`;
@@ -429,7 +441,11 @@ Atualmente, estamos gerenciando **${activeCount} campanhas ativas** com um inves
               )}
             </div>
 
-      <div className="relative z-10 flex-1 overflow-y-auto p-5 custom-scrollbar flex flex-col gap-5">
+      <div 
+        ref={messagesContainerRef}
+        onScroll={handleContainerScroll}
+        className="relative z-10 flex-1 overflow-y-auto p-5 custom-scrollbar flex flex-col gap-5"
+      >
         {selectedAccountId === "" ? (
           <div className="flex flex-col gap-4 py-2">
             <div className="flex items-start gap-2.5">
@@ -437,7 +453,7 @@ Atualmente, estamos gerenciando **${activeCount} campanhas ativas** com um inves
                 <Bot className="h-3.5 w-3.5 text-primary" />
               </div>
               <div className="flex-1 rounded-2xl bg-white/5 border border-white/5 px-4 py-3 text-xs leading-relaxed text-foreground rounded-tl-none">
-                <p className="mb-1 text-[10px] font-black text-primary uppercase tracking-widest">FALA, COMANDANTE!</p>
+                <p className="mb-1 text-[10px] font-black text-primary uppercase tracking-widest">VICTORIA AI</p>
                 <p className="leading-relaxed text-foreground/90">
                   Sou a **Victoria AI**, sua estrategista de performance de elite. Para que possamos fazer uma auditoria cirúrgica e sem mistura de dados, **selecione qual conta de anúncios** deseja analisar e otimizar agora:
                 </p>

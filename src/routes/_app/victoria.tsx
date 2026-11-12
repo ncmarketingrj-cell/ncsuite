@@ -7,8 +7,9 @@ import {
   Loader2, User, Sparkles, TrendingUp, BarChart3, MessageSquare, 
   ShieldAlert, Settings, ArrowLeft, ArrowUpRight, Check, Play,
   BookOpen, FolderClosed, Zap, Share2, Mic, MicOff, UploadCloud, FileText, Database,
-  Pencil, Radio, Target, ExternalLink, Brain, RefreshCw
+  Pencil, Radio, Target, ExternalLink, Brain, RefreshCw, ArrowDown
 } from "lucide-react";
+import { useAuth } from "@/lib/auth";
 import { supabase } from "@/integrations/supabase-external/client";
 import { useVictoriaChat, type Message, type Conversation } from "@/hooks/useVictoriaChat";
 import { ActionCard } from "@/components/victoria/ActionCard";
@@ -49,12 +50,33 @@ function VictoriaHubPage() {
   const [isListening, setIsListening] = useState(false);
   const recognitionRef = useRef<any>(null);
   
+  const { user } = useAuth();
+  const { data: userProfile } = useQuery({
+    queryKey: ["current_user_profile", user?.id],
+    queryFn: async () => {
+      if (!user?.id) return null;
+      const { data } = await supabase.from("profiles").select("full_name").eq("id", user.id).maybeSingle();
+      return data;
+    },
+    enabled: !!user?.id,
+  });
+
+  const userName = useMemo(() => {
+    const raw = userProfile?.full_name || user?.user_metadata?.full_name || user?.email?.split("@")[0] || "";
+    const first = raw.trim().split(" ")[0];
+    return first ? first.charAt(0).toUpperCase() + first.slice(1) : "Parceiro";
+  }, [userProfile, user]);
+
   const chatEndRef = useRef<HTMLDivElement>(null);
+  const chatContainerRef = useRef<HTMLDivElement>(null);
+  const isAutoScrollEnabled = useRef(true);
+  const [showScrollBottomBtn, setShowScrollBottomBtn] = useState(false);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
   const docInputRef = useRef<HTMLInputElement>(null);
 
   // Hook customizado com lógica e persistência de conversas
-  const chat = useVictoriaChat(selectedAccountId, setSelectedAccountId);
+  const chat = useVictoriaChat(selectedAccountId, setSelectedAccountId, userName);
 
   // Buscar contas de anúncio para o dropdown
   const { data: accounts = [] } = useQuery({
@@ -72,9 +94,41 @@ function VictoriaHubPage() {
     toast.success(`Foco travado na conta selecionada!`);
   };
 
-  // Rolar para o final do chat
+  // Controle inteligente de rolagem: permite ao usuário rolar para cima livremente sem travar
+  const handleChatScroll = () => {
+    const el = chatContainerRef.current;
+    if (!el) return;
+    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    // Se o usuário estiver a menos de 100px do fundo, acompanha o streaming
+    const nearBottom = distanceFromBottom < 100;
+    isAutoScrollEnabled.current = nearBottom;
+    setShowScrollBottomBtn(!nearBottom);
+  };
+
+  const scrollToBottom = (behavior: ScrollBehavior = "smooth") => {
+    if (chatContainerRef.current) {
+      chatContainerRef.current.scrollTo({
+        top: chatContainerRef.current.scrollHeight,
+        behavior,
+      });
+    } else {
+      chatEndRef.current?.scrollIntoView({ behavior });
+    }
+  };
+
+  // Quando troca de conversa: rola suave para o final e reativa auto-scroll
   useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    isAutoScrollEnabled.current = true;
+    setShowScrollBottomBtn(false);
+    scrollToBottom("smooth");
+  }, [chat.activeConversationId]);
+
+  // Durante a digitação/streaming da Victoria:
+  useEffect(() => {
+    // SÓ rola para baixo se o usuário NÃO tiver rolado para cima manualmente!
+    if (isAutoScrollEnabled.current && chatContainerRef.current) {
+      chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
+    }
   }, [chat.messages, chat.isTyping]);
 
   // Upload de Imagem
@@ -102,6 +156,10 @@ function VictoriaHubPage() {
   // Enviar Mensagem
   const handleSend = async () => {
     if ((!prompt.trim() && !selectedImage) || chat.isTyping) return;
+
+    isAutoScrollEnabled.current = true;
+    setShowScrollBottomBtn(false);
+    scrollToBottom("smooth");
 
     const currentPrompt = prompt;
     const currentImage = selectedImage;
@@ -999,8 +1057,12 @@ function VictoriaHubPage() {
              INTERFACE TRADICIONAL DO CHAT COM IA
              =================================================================== */
           <>
-            {/* Corpo do Chat / Mensagens */}
-            <div className="flex-1 overflow-y-auto px-6 py-6 flex flex-col gap-6 custom-scrollbar">
+            {/* Corpo do Chat / Mensagens com scroll livre sem travamentos */}
+            <div
+              ref={chatContainerRef}
+              onScroll={handleChatScroll}
+              className="relative flex-1 overflow-y-auto px-6 py-6 flex flex-col gap-6 custom-scrollbar"
+            >
               {chat.messages.length === 0 ? (
                 /* TELA DE BOAS VINDAS (WELCOME SCREEN) */
                 <div className="flex-1 flex flex-col items-center justify-center max-w-2xl mx-auto py-8 text-center gap-8">
@@ -1011,7 +1073,7 @@ function VictoriaHubPage() {
                       <Bot className="h-8 w-8 text-amber-500 animate-pulse" />
                     </div>
                     <h1 className="text-xl font-display font-black tracking-tight text-foreground mt-2">
-                      Fala, Comandante! Sou a Victoria AI.
+                      Olá, {userName}! Sou a Victoria AI.
                     </h1>
                     <p className="text-xs text-muted-foreground/80 leading-relaxed max-w-md">
                       Sou a estrategista sênior da NC Performance. Tenho acesso total ao banco de dados (funis, métricas, social, clientes) e estou pronta para auditar campanhas, clonar estruturas ou gerar relatórios em segundos.
@@ -1023,7 +1085,7 @@ function VictoriaHubPage() {
                     <div className="p-4 bg-amber-500/10 border border-amber-500/20 rounded-2xl text-xs text-amber-400 max-w-md text-left flex items-start gap-3">
                       <ShieldAlert className="h-5 w-5 shrink-0 mt-0.5" />
                       <div>
-                        <strong className="font-extrabold uppercase text-[10px] tracking-wider">Atenção Comandante:</strong>
+                        <strong className="font-extrabold uppercase text-[10px] tracking-wider">Atenção, {userName}:</strong>
                         <p className="mt-0.5 leading-relaxed text-muted-foreground/90">Para realizar auditorias financeiras e análises demográficas exatas de tráfego, selecione uma conta de anúncios no canto superior direito.</p>
                       </div>
                     </div>
@@ -1245,6 +1307,27 @@ function VictoriaHubPage() {
                 </div>
               )}
             </div>
+
+            {/* Botão flutuante para rolar para o final quando o usuário subiu a conversa */}
+            <AnimatePresence>
+              {showScrollBottomBtn && (
+                <motion.button
+                  type="button"
+                  initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                  onClick={() => {
+                    isAutoScrollEnabled.current = true;
+                    setShowScrollBottomBtn(false);
+                    scrollToBottom("smooth");
+                  }}
+                  className="fixed bottom-24 right-8 z-30 flex items-center gap-1.5 px-3.5 py-2 rounded-full bg-card/95 border border-primary/40 text-primary text-xs font-bold shadow-2xl backdrop-blur-md hover:bg-muted transition-all active:scale-95"
+                >
+                  <ArrowDown className="h-3.5 w-3.5 animate-bounce" />
+                  <span>Rolar para o final</span>
+                </motion.button>
+              )}
+            </AnimatePresence>
 
             {/* Rodapé / Input de Chat */}
             <footer className="p-4 border-t border-border/60 bg-background/50 backdrop-blur-md">

@@ -59,7 +59,11 @@ export interface RegionalBenchmark {
   notes: string;
 }
 
-export function useVictoriaChat(selectedAccountId: string, setSelectedAccountId: (id: string) => void) {
+export function useVictoriaChat(
+  selectedAccountId: string,
+  setSelectedAccountId: (id: string) => void,
+  userName?: string
+) {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -463,6 +467,7 @@ export function useVictoriaChat(selectedAccountId: string, setSelectedAccountId:
             action: "chat",
             messages: requestMessages,
             selectedAccountId: selectedAccountId || undefined,
+            user_name: userName || undefined,
             externalContext,
             regionalBenchmark
           })
@@ -989,6 +994,7 @@ export function useVictoriaChat(selectedAccountId: string, setSelectedAccountId:
             action: "chat",
             messages: requestMessages,
             selectedAccountId: selectedAccountId || undefined,
+            user_name: userName || undefined,
           })
         }
       );
