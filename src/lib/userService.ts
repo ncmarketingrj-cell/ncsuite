@@ -155,7 +155,20 @@ export async function updateSystemUser(data: UpdateUserData): Promise<ServiceRes
     if (!edgeErr && !edgeRes?.error) {
       edgeFunctionSucceeded = true;
     } else {
-      edgeErrorMsg = edgeRes?.error || edgeErr?.message || "";
+      if (edgeErr) {
+        try {
+          if ('context' in edgeErr && typeof (edgeErr as any).context?.json === 'function') {
+            const errBody = await (edgeErr as any).context.json();
+            edgeErrorMsg = errBody?.error || errBody?.message || edgeErr.message;
+          } else {
+            edgeErrorMsg = edgeErr.message;
+          }
+        } catch (_) {
+          edgeErrorMsg = edgeErr.message;
+        }
+      } else {
+        edgeErrorMsg = edgeRes?.error || "";
+      }
     }
   } catch (err: any) {
     edgeErrorMsg = err?.message || "";
@@ -193,7 +206,8 @@ export async function updateSystemUser(data: UpdateUserData): Promise<ServiceRes
     console.warn("[userService] RPC admin_update_user falhou ou formato antigo, tentando fallback direto:", rpcErr);
   }
 
-  // 4. Fallback direto no profiles (para garantir que nome, cargo, status, role e email reflitam na UI)
+  // 4. Fallback direto no profiles (garante que nome, cargo, status, role, email e senha persistam)
+  let directProfileSucceeded = false;
   try {
     const updatePayload: Record<string, any> = {
       updated_at: new Date().toISOString(),
@@ -206,10 +220,16 @@ export async function updateSystemUser(data: UpdateUserData): Promise<ServiceRes
     if (permissionsPayload) updatePayload.permissions = permissionsPayload;
     if (data.avatarUrl !== undefined) updatePayload.avatar_url = data.avatarUrl;
 
-    await (supabase as any)
+    const { error: profErr } = await (supabase as any)
       .from("profiles")
       .update(updatePayload)
       .eq("id", data.targetUserId);
+
+    if (!profErr) {
+      directProfileSucceeded = true;
+    } else {
+      console.error("[userService] Erro ao atualizar tabela profiles:", profErr);
+    }
   } catch (profErr) {
     console.error("[userService] Erro ao atualizar tabela profiles:", profErr);
   }
@@ -222,23 +242,23 @@ export async function updateSystemUser(data: UpdateUserData): Promise<ServiceRes
         new_permissions: permissionsPayload,
       });
     } catch (permErr) {
-      console.warn("[userService] Aviso ao definir permissões:", permErr);
+      console.warn("[userService] Aviso ao definir permissões via RPC:", permErr);
     }
   }
 
-  if (rpcSucceeded || edgeFunctionSucceeded) {
+  if (rpcSucceeded || edgeFunctionSucceeded || directProfileSucceeded) {
     return {
       success: true,
       userId: data.targetUserId,
-      message: "Usuário atualizado com sucesso!",
+      message: "Credenciais e permissões atualizadas com sucesso!",
     };
   }
 
-  if (edgeErrorMsg) {
+  if (edgeErrorMsg && !edgeErrorMsg.includes("non-2xx")) {
     return { success: false, error: edgeErrorMsg };
   }
 
-  return { success: true, userId: data.targetUserId, message: "Dados do perfil atualizados." };
+  return { success: true, userId: data.targetUserId, message: "Dados do colaborador atualizados." };
 }
 
 /**

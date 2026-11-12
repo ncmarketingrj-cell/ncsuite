@@ -38,22 +38,151 @@ export const Route = createFileRoute("/_app/perfil")({
 });
 
 // ──────────────────────────────────────────────────────────────────────────────
-// Constantes de Módulos & Cargos
+// Estrutura Robusta de Módulos & Permissões por HUB da NC Suite
 // ──────────────────────────────────────────────────────────────────────────────
-export const PERMISSION_MODULES = [
-  { key: "dashboard", label: "Command Center", description: "Painel executivo com gráficos e metas" },
-  { key: "metricas", label: "Métricas", description: "Tabelas analíticas de campanhas e anúncios" },
-  { key: "clientes", label: "Clientes", description: "Lojas, ad accounts e acessos a clientes" },
-  { key: "relatorios", label: "Relatórios", description: "Geração e exportação de relatórios em PDF" },
-  { key: "criativos", label: "Criativos", description: "Biblioteca de criativos e ranking de mídia" },
-  { key: "social", label: "Social Media", description: "Planejador de feed, posts e insights do Instagram" },
-  { key: "automacoes", label: "Automações", description: "Central de alertas sonoros e regras inteligentes" },
-  { key: "reunioes", label: "Reuniões", description: "Agendamentos, pautas e atas de reuniões" },
-  { key: "cobrancas", label: "Cobranças", description: "Faturas, links de cobrança e snapshots" },
-  { key: "strategy_map", label: "Mapa Estratégico", description: "Mapas mentais de funil e jornadas de venda" },
-  { key: "agente", label: "Agente IA", description: "Victoria AI, diagnósticos e chat estratégico" },
-  { key: "auditoria", label: "Auditoria Hub", description: "Logs de auditoria e integridade do motor" },
-  { key: "criar_usuarios", label: "Gestão Usuários", description: "Cadastro e alteração de credenciais da equipe" },
+export type PermissionMode = "read_only" | "full";
+
+export interface PermissionModuleDef {
+  key: string;
+  label: string;
+  description: string;
+  hub: "trafego" | "operacao" | "gestao";
+  hubLabel: string;
+  mode: PermissionMode; // read_only (apenas Bloqueado ou Liberado) | full (Bloqueado, Leitura ou Escrita)
+}
+
+export const PERMISSION_MODULES: PermissionModuleDef[] = [
+  // ── HUB TRÁFEGO & PERFORMANCE ──
+  {
+    key: "dashboard",
+    label: "Command Center",
+    description: "Painel executivo com métricas consolidadas e gráficos",
+    hub: "trafego",
+    hubLabel: "Hub Tráfego & Performance",
+    mode: "read_only", // Analítico: Visualizar ou Bloqueado
+  },
+  {
+    key: "metricas",
+    label: "Métricas & KPIs",
+    description: "Tabelas analíticas de campanhas, conjuntos e anúncios",
+    hub: "trafego",
+    hubLabel: "Hub Tráfego & Performance",
+    mode: "read_only", // Analítico: Visualizar ou Bloqueado
+  },
+  {
+    key: "simulador",
+    label: "Simulador",
+    description: "Simulador de cenários de CPL, investimento e leads",
+    hub: "trafego",
+    hubLabel: "Hub Tráfego & Performance",
+    mode: "read_only", // Analítico: Simular ou Bloqueado
+  },
+  {
+    key: "cockpit",
+    label: "Cockpit",
+    description: "Controle operacional de campanhas e alteração de orçamento",
+    hub: "trafego",
+    hubLabel: "Hub Tráfego & Performance",
+    mode: "full", // Operacional: Leitura ou Escrita (Pausar/Orçamento)
+  },
+  {
+    key: "relatorios",
+    label: "Relatórios",
+    description: "Geração e exportação de relatórios executivos em PDF",
+    hub: "trafego",
+    hubLabel: "Hub Tráfego & Performance",
+    mode: "full",
+  },
+  {
+    key: "criativos",
+    label: "Criativos",
+    description: "Biblioteca de criativos, upload de peças e ranking",
+    hub: "trafego",
+    hubLabel: "Hub Tráfego & Performance",
+    mode: "full",
+  },
+  {
+    key: "auditoria",
+    label: "Auditoria Hub",
+    description: "Diagnóstico de integridade e varreduras do motor",
+    hub: "trafego",
+    hubLabel: "Hub Tráfego & Performance",
+    mode: "full",
+  },
+
+  // ── HUB OPERAÇÃO, REGRAS & IA ──
+  {
+    key: "automacoes",
+    label: "Automações",
+    description: "Central de regras inteligentes, gatilhos e alertas",
+    hub: "operacao",
+    hubLabel: "Hub Operação & Automações",
+    mode: "full",
+  },
+  {
+    key: "agente",
+    label: "Victoria AI",
+    description: "Assistente de IA, grounding RAG e comandos autônomos",
+    hub: "operacao",
+    hubLabel: "Hub Operação & Automações",
+    mode: "full",
+  },
+  {
+    key: "strategy_map",
+    label: "Mapa Estratégico",
+    description: "Whiteboard de funis, jornadas e mapas mentais",
+    hub: "operacao",
+    hubLabel: "Hub Operação & Automações",
+    mode: "full",
+  },
+  {
+    key: "reunioes",
+    label: "Reuniões",
+    description: "Agendamento de reuniões, atas e pautas",
+    hub: "operacao",
+    hubLabel: "Hub Operação & Automações",
+    mode: "full",
+  },
+
+  // ── HUB GESTÃO & ADMINISTRATIVO ──
+  {
+    key: "clientes",
+    label: "Clientes",
+    description: "Lojas, ad accounts integradas e dados de clientes",
+    hub: "gestao",
+    hubLabel: "Hub Gestão & Clientes",
+    mode: "full",
+  },
+  {
+    key: "cobrancas",
+    label: "Cobranças",
+    description: "Faturas, links de cobrança e controle financeiro",
+    hub: "gestao",
+    hubLabel: "Hub Gestão & Clientes",
+    mode: "full",
+  },
+  {
+    key: "social",
+    label: "Social Media",
+    description: "Planejador de feed, posts e insights do Instagram",
+    hub: "gestao",
+    hubLabel: "Hub Gestão & Clientes",
+    mode: "full",
+  },
+  {
+    key: "criar_usuarios",
+    label: "Gestão Usuários",
+    description: "Cadastro de colaboradores, senhas e permissões",
+    hub: "gestao",
+    hubLabel: "Hub Gestão & Clientes",
+    mode: "full",
+  },
+];
+
+export const HUBS_DEFINITIONS = [
+  { id: "trafego", label: "Hub Tráfego & Performance", icon: "gauge", colorBadge: "text-primary border-primary/30 bg-primary/10" },
+  { id: "operacao", label: "Hub Operação & Automações", icon: "zap", colorBadge: "text-amber-400 border-amber-500/30 bg-amber-500/10" },
+  { id: "gestao", label: "Hub Gestão & Clientes", icon: "building", colorBadge: "text-blue-400 border-blue-500/30 bg-blue-500/10" },
 ] as const;
 
 export const POSITIONS_LIST = [
@@ -72,64 +201,64 @@ export const POSITIONS_LIST = [
 
 const CARGO_DEFAULT_PERMISSIONS: Record<string, Record<string, "none" | "view" | "edit">> = {
   "Gestor de Tráfego": {
-    dashboard: "edit", metricas: "edit", clientes: "view", relatorios: "edit",
-    criativos: "edit", social: "none", automacoes: "edit", reunioes: "none",
-    cobrancas: "none", strategy_map: "edit", agente: "edit", auditoria: "none",
-    criar_usuarios: "none",
+    dashboard: "view", metricas: "view", simulador: "view", cockpit: "edit",
+    clientes: "view", relatorios: "edit", criativos: "edit", social: "none",
+    automacoes: "edit", reunioes: "none", cobrancas: "none", strategy_map: "edit",
+    agente: "edit", auditoria: "view", criar_usuarios: "none",
   },
   "Social Media": {
-    dashboard: "view", metricas: "none", clientes: "view", relatorios: "edit",
-    criativos: "edit", social: "edit", automacoes: "none", reunioes: "none",
-    cobrancas: "none", strategy_map: "edit", agente: "view", auditoria: "none",
-    criar_usuarios: "none",
+    dashboard: "view", metricas: "none", simulador: "none", cockpit: "none",
+    clientes: "view", relatorios: "edit", criativos: "edit", social: "edit",
+    automacoes: "none", reunioes: "none", cobrancas: "none", strategy_map: "edit",
+    agente: "view", auditoria: "none", criar_usuarios: "none",
   },
   "Gerente": {
-    dashboard: "edit", metricas: "edit", clientes: "edit", relatorios: "edit",
-    criativos: "edit", social: "edit", automacoes: "view", reunioes: "edit",
-    cobrancas: "none", strategy_map: "edit", agente: "edit", auditoria: "none",
-    criar_usuarios: "view",
+    dashboard: "view", metricas: "view", simulador: "view", cockpit: "edit",
+    clientes: "edit", relatorios: "edit", criativos: "edit", social: "edit",
+    automacoes: "view", reunioes: "edit", cobrancas: "none", strategy_map: "edit",
+    agente: "edit", auditoria: "view", criar_usuarios: "view",
   },
   "Diretor": {
-    dashboard: "edit", metricas: "edit", clientes: "edit", relatorios: "edit",
-    criativos: "edit", social: "edit", automacoes: "edit", reunioes: "edit",
-    cobrancas: "edit", strategy_map: "edit", agente: "edit", auditoria: "edit",
-    criar_usuarios: "edit",
+    dashboard: "view", metricas: "view", simulador: "view", cockpit: "edit",
+    clientes: "edit", relatorios: "edit", criativos: "edit", social: "edit",
+    automacoes: "edit", reunioes: "edit", cobrancas: "edit", strategy_map: "edit",
+    agente: "edit", auditoria: "edit", criar_usuarios: "edit",
   },
   "CEO": {
-    dashboard: "edit", metricas: "edit", clientes: "edit", relatorios: "edit",
-    criativos: "edit", social: "edit", automacoes: "edit", reunioes: "edit",
-    cobrancas: "edit", strategy_map: "edit", agente: "edit", auditoria: "edit",
-    criar_usuarios: "edit",
+    dashboard: "view", metricas: "view", simulador: "view", cockpit: "edit",
+    clientes: "edit", relatorios: "edit", criativos: "edit", social: "edit",
+    automacoes: "edit", reunioes: "edit", cobrancas: "edit", strategy_map: "edit",
+    agente: "edit", auditoria: "edit", criar_usuarios: "edit",
   },
   "Administrador": {
-    dashboard: "edit", metricas: "edit", clientes: "edit", relatorios: "edit",
-    criativos: "edit", social: "edit", automacoes: "edit", reunioes: "edit",
-    cobrancas: "edit", strategy_map: "edit", agente: "edit", auditoria: "edit",
-    criar_usuarios: "edit",
+    dashboard: "view", metricas: "view", simulador: "view", cockpit: "edit",
+    clientes: "edit", relatorios: "edit", criativos: "edit", social: "edit",
+    automacoes: "edit", reunioes: "edit", cobrancas: "edit", strategy_map: "edit",
+    agente: "edit", auditoria: "edit", criar_usuarios: "edit",
   },
   "Desenvolvedor": {
-    dashboard: "edit", metricas: "edit", clientes: "edit", relatorios: "edit",
-    criativos: "edit", social: "edit", automacoes: "edit", reunioes: "edit",
-    cobrancas: "edit", strategy_map: "edit", agente: "edit", auditoria: "edit",
-    criar_usuarios: "edit",
+    dashboard: "view", metricas: "view", simulador: "view", cockpit: "edit",
+    clientes: "edit", relatorios: "edit", criativos: "edit", social: "edit",
+    automacoes: "edit", reunioes: "edit", cobrancas: "edit", strategy_map: "edit",
+    agente: "edit", auditoria: "edit", criar_usuarios: "edit",
   },
   "Designer": {
-    dashboard: "view", metricas: "none", clientes: "view", relatorios: "none",
-    criativos: "edit", social: "view", automacoes: "none", reunioes: "none",
-    cobrancas: "none", strategy_map: "edit", agente: "view", auditoria: "none",
-    criar_usuarios: "none",
+    dashboard: "view", metricas: "none", simulador: "none", cockpit: "none",
+    clientes: "view", relatorios: "none", criativos: "edit", social: "view",
+    automacoes: "none", reunioes: "none", cobrancas: "none", strategy_map: "edit",
+    agente: "view", auditoria: "none", criar_usuarios: "none",
   },
   "SDR": {
-    dashboard: "view", metricas: "none", clientes: "view", relatorios: "none",
-    criativos: "none", social: "none", automacoes: "none", reunioes: "edit",
-    cobrancas: "none", strategy_map: "none", agente: "view", auditoria: "none",
-    criar_usuarios: "none",
+    dashboard: "view", metricas: "none", simulador: "none", cockpit: "none",
+    clientes: "view", relatorios: "none", criativos: "none", social: "none",
+    automacoes: "none", reunioes: "edit", cobrancas: "none", strategy_map: "none",
+    agente: "view", auditoria: "none", criar_usuarios: "none",
   },
   "Outros": {
-    dashboard: "view", metricas: "none", clientes: "none", relatorios: "none",
-    criativos: "none", social: "none", automacoes: "none", reunioes: "none",
-    cobrancas: "none", strategy_map: "none", agente: "none", auditoria: "none",
-    criar_usuarios: "none",
+    dashboard: "view", metricas: "none", simulador: "none", cockpit: "none",
+    clientes: "none", relatorios: "none", criativos: "none", social: "none",
+    automacoes: "none", reunioes: "none", cobrancas: "none", strategy_map: "none",
+    agente: "none", auditoria: "none", criar_usuarios: "none",
   },
 };
 
@@ -742,8 +871,9 @@ function TeamManagementSection({
   const [search, setSearch] = useState("");
   const [filterTab, setFilterTab] = useState<"todos" | "subordinados" | "diretoria" | "gerencia" | "gestores" | "operacao" | "inativos">("todos");
 
-  // Revelação de senhas geradas
+  // Revelação de senhas geradas (individual e global)
   const [revealedPasswords, setRevealedPasswords] = useState<Record<string, boolean>>({});
+  const [showAllPasswords, setShowAllPasswords] = useState(false);
 
   const togglePasswordReveal = (userId: string) => {
     setRevealedPasswords((prev) => ({ ...prev, [userId]: !prev[userId] }));
@@ -758,7 +888,7 @@ function TeamManagementSection({
   const [editingUser, setEditingUser] = useState<any | null>(null);
   const [editEmail, setEditEmail] = useState("");
   const [editPassword, setEditPassword] = useState("");
-  const [editShowPassword, setEditShowPassword] = useState(false);
+  const [editShowPassword, setEditShowPassword] = useState(true);
   const [editName, setEditName] = useState("");
   const [editPosition, setEditPosition] = useState("Gestor de Tráfego");
   const [editRole, setEditRole] = useState("outro");
@@ -772,7 +902,7 @@ function TeamManagementSection({
   const [newName, setNewName] = useState("");
   const [newEmail, setNewEmail] = useState("");
   const [newPassword, setNewPassword] = useState("");
-  const [newShowPassword, setNewShowPassword] = useState(false);
+  const [newShowPassword, setNewShowPassword] = useState(true);
   const [newPosition, setNewPosition] = useState("Gestor de Tráfego");
   const [newRole, setNewRole] = useState("gestor_trafego");
   const [newPermissions, setNewPermissions] = useState<Record<string, string>>({});
@@ -809,8 +939,9 @@ function TeamManagementSection({
   const handleOpenEdit = (targetUser: any) => {
     setEditingUser(targetUser);
     setEditEmail(targetUser.email || "");
-    setEditPassword(targetUser.permissions?._last_password || "");
-    setEditShowPassword(false);
+    const saved = targetUser.permissions?._last_password || "";
+    setEditPassword(saved);
+    setEditShowPassword(true); // Exibe imediatamente para o administrador superior
     setEditName(targetUser.full_name || "");
     setEditPosition(targetUser.position || "Gestor de Tráfego");
     setEditRole(targetUser.role || "outro");
@@ -1084,8 +1215,8 @@ function TeamManagementSection({
         </div>
       </div>
 
-      {/* ── BARRA DE PESQUISA & FILTRO HIERÁRQUICO ── */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-white/5 pb-3">
+      {/* ── BARRA DE PESQUISA, FILTROS & VISUALIZAÇÃO GLOBAL DE SENHAS ── */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-white/5 pb-3">
         <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-hide">
           {[
             { id: "todos", label: "Todos", count: users.length },
@@ -1112,18 +1243,35 @@ function TeamManagementSection({
           ))}
         </div>
 
-        <div className="relative w-full sm:w-64 shrink-0">
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Buscar por nome, email ou cargo..."
-            className="w-full rounded-xl border border-white/10 bg-background/50 pl-3 pr-8 py-2 text-xs text-foreground focus:border-primary focus:outline-none"
-          />
-          {search && (
-            <button onClick={() => setSearch("")} className="absolute right-2.5 top-2.5 text-muted-foreground hover:text-foreground">
-              <X className="h-3.5 w-3.5" />
-            </button>
-          )}
+        <div className="flex items-center gap-2 w-full md:w-auto">
+          {/* Botão de Revelação de Senhas para Superiores */}
+          <button
+            type="button"
+            onClick={() => setShowAllPasswords((prev) => !prev)}
+            className={`inline-flex items-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-bold transition whitespace-nowrap shrink-0 ${
+              showAllPasswords
+                ? "bg-amber-500/15 border-amber-500/40 text-amber-300 shadow-glow-sm"
+                : "bg-white/5 border-white/10 text-muted-foreground hover:bg-white/10 hover:text-foreground"
+            }`}
+            title={showAllPasswords ? "Ocultar todas as senhas da listagem" : "Mostrar senhas de todos os colaboradores gerenciáveis"}
+          >
+            {showAllPasswords ? <EyeOff className="h-3.5 w-3.5 text-amber-400" /> : <Eye className="h-3.5 w-3.5" />}
+            <span>{showAllPasswords ? "Ocultar Senhas" : "Ver Senhas Salvas"}</span>
+          </button>
+
+          <div className="relative w-full sm:w-64 shrink-0">
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Buscar por nome, email ou cargo..."
+              className="w-full rounded-xl border border-white/10 bg-background/50 pl-3 pr-8 py-2 text-xs text-foreground focus:border-primary focus:outline-none"
+            />
+            {search && (
+              <button onClick={() => setSearch("")} className="absolute right-2.5 top-2.5 text-muted-foreground hover:text-foreground">
+                <X className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
         </div>
       </div>
 
@@ -1242,7 +1390,7 @@ function TeamManagementSection({
                       {authCheck.isSuperior || (isSelf && isCallerMaster) ? (
                         savedPassword ? (
                           <span className="font-mono font-bold text-foreground">
-                            {isRevealed ? savedPassword : "••••••••••••"}
+                            {(isRevealed || showAllPasswords) ? savedPassword : "••••••••••••"}
                           </span>
                         ) : (
                           <span className="text-[10px] text-muted-foreground/60 italic">
@@ -1262,9 +1410,9 @@ function TeamManagementSection({
                           <button
                             onClick={() => togglePasswordReveal(u.id)}
                             className="text-muted-foreground hover:text-foreground transition p-1"
-                            title={isRevealed ? "Ocultar senha" : "Ver senha"}
+                            title={(isRevealed || showAllPasswords) ? "Ocultar senha" : "Ver senha"}
                           >
-                            {isRevealed ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
+                            {(isRevealed || showAllPasswords) ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
                           </button>
                           <button
                             onClick={() => copyToClipboard(savedPassword, "Senha copiada!")}
@@ -1312,63 +1460,119 @@ function TeamManagementSection({
                   </div>
                 </div>
 
-                {/* ── 13 MÓDULOS DE PERMISSÃO (COMO NA FOTO DO USUÁRIO) ── */}
+                {/* ── PERMISSÕES ESTRUTURADAS POR HUB DA PLATAFORMA ── */}
                 {targetInfo.level < 90 && (
-                  <div className="space-y-1.5 pt-2 border-t border-white/5">
+                  <div className="space-y-3 pt-2 border-t border-white/5">
                     <div className="flex items-center justify-between">
-                      <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/60">
-                        Permissões por Módulo
+                      <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/70">
+                        Permissões por HUB da Plataforma
                       </span>
                       {authCheck.canEditPermissions && (
                         <span className="text-[9px] text-primary font-bold">
-                          Clique para alterar rapidamente
+                          Alteração rápida liberada
                         </span>
                       )}
                     </div>
 
-                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
-                      {PERMISSION_MODULES.map(({ key, label }) => {
-                        const level = u.permissions?.[key] || "none";
-                        const canChange = authCheck.canEditPermissions;
-
+                    <div className="space-y-2">
+                      {HUBS_DEFINITIONS.map((hub) => {
+                        const hubModules = PERMISSION_MODULES.filter((m) => m.hub === hub.id);
                         return (
-                          <div
-                            key={key}
-                            className="flex flex-col gap-0.5 bg-white/[0.02] border border-white/5 rounded-xl p-2"
-                          >
-                            <span className="text-[9px] font-bold text-muted-foreground truncate">{label}</span>
-                            {canChange ? (
-                              <div className="relative">
-                                <select
-                                  value={level}
-                                  onChange={(e) => handleQuickPermissionChange(u, key, e.target.value)}
-                                  className={`w-full bg-transparent text-[10px] font-black uppercase focus:outline-none cursor-pointer border-none p-0 pr-3 truncate ${
-                                    level === "edit"
-                                      ? "text-primary"
-                                      : level === "view"
-                                      ? "text-blue-400"
-                                      : "text-muted-foreground/40"
-                                  }`}
-                                >
-                                  <option value="none" className="bg-card text-muted-foreground">Bloqueado</option>
-                                  <option value="view" className="bg-card text-blue-400">Leitura</option>
-                                  <option value="edit" className="bg-card text-primary">Escrita</option>
-                                </select>
-                                <ChevronDown className="h-2.5 w-2.5 text-muted-foreground absolute right-0 top-1 pointer-events-none opacity-40" />
-                              </div>
-                            ) : (
-                              <span
-                                className={`text-[10px] font-black uppercase ${
-                                  level === "edit"
-                                    ? "text-primary"
-                                    : level === "view"
-                                    ? "text-blue-400"
-                                    : "text-muted-foreground/40"
-                                }`}
-                              >
-                                {level === "edit" ? "Escrita" : level === "view" ? "Leitura" : "Bloqueado"}
+                          <div key={hub.id} className="rounded-2xl border border-white/5 bg-black/25 p-2.5 space-y-2">
+                            <div className="flex items-center justify-between">
+                              <span className={`text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full border ${hub.colorBadge}`}>
+                                {hub.label}
                               </span>
-                            )}
+                            </div>
+
+                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+                              {hubModules.map((m) => {
+                                const level = u.permissions?.[m.key] || "none";
+                                const canChange = authCheck.canEditPermissions;
+
+                                if (m.mode === "read_only") {
+                                  const isView = level === "view" || level === "edit";
+                                  return (
+                                    <div
+                                      key={m.key}
+                                      className="flex flex-col gap-0.5 bg-white/[0.02] border border-white/5 rounded-xl p-2"
+                                    >
+                                      <div className="flex items-center justify-between">
+                                        <span className="text-[9px] font-bold text-muted-foreground truncate" title={m.description}>
+                                          {m.label}
+                                        </span>
+                                        <span className="text-[8px] font-mono text-muted-foreground/40">Visualização</span>
+                                      </div>
+                                      {canChange ? (
+                                        <div className="relative">
+                                          <select
+                                            value={isView ? "view" : "none"}
+                                            onChange={(e) => handleQuickPermissionChange(u, m.key, e.target.value)}
+                                            className={`w-full bg-transparent text-[10px] font-black uppercase focus:outline-none cursor-pointer border-none p-0 pr-3 truncate ${
+                                              isView ? "text-blue-400" : "text-muted-foreground/40"
+                                            }`}
+                                          >
+                                            <option value="none" className="bg-card text-muted-foreground">Bloqueado</option>
+                                            <option value="view" className="bg-card text-blue-400">Liberado (Visualizar)</option>
+                                          </select>
+                                          <ChevronDown className="h-2.5 w-2.5 text-muted-foreground absolute right-0 top-1 pointer-events-none opacity-40" />
+                                        </div>
+                                      ) : (
+                                        <span className={`text-[10px] font-black uppercase ${isView ? "text-blue-400" : "text-muted-foreground/40"}`}>
+                                          {isView ? "Liberado" : "Bloqueado"}
+                                        </span>
+                                      )}
+                                    </div>
+                                  );
+                                }
+
+                                const isEdit = level === "edit";
+                                const isView = level === "view";
+
+                                return (
+                                  <div
+                                    key={m.key}
+                                    className="flex flex-col gap-0.5 bg-white/[0.02] border border-white/5 rounded-xl p-2"
+                                  >
+                                    <span className="text-[9px] font-bold text-muted-foreground truncate" title={m.description}>
+                                      {m.label}
+                                    </span>
+                                    {canChange ? (
+                                      <div className="relative">
+                                        <select
+                                          value={level}
+                                          onChange={(e) => handleQuickPermissionChange(u, m.key, e.target.value)}
+                                          className={`w-full bg-transparent text-[10px] font-black uppercase focus:outline-none cursor-pointer border-none p-0 pr-3 truncate ${
+                                            isEdit
+                                              ? "text-primary"
+                                              : isView
+                                              ? "text-blue-400"
+                                              : "text-muted-foreground/40"
+                                          }`}
+                                        >
+                                          <option value="none" className="bg-card text-muted-foreground">Bloqueado</option>
+                                          <option value="view" className="bg-card text-blue-400">Leitura</option>
+                                          <option value="edit" className="bg-card text-primary">Escrita</option>
+                                        </select>
+                                        <ChevronDown className="h-2.5 w-2.5 text-muted-foreground absolute right-0 top-1 pointer-events-none opacity-40" />
+                                      </div>
+                                    ) : (
+                                      <span
+                                        className={`text-[10px] font-black uppercase ${
+                                          isEdit
+                                            ? "text-primary"
+                                            : isView
+                                            ? "text-blue-400"
+                                            : "text-muted-foreground/40"
+                                        }`}
+                                      >
+                                        {isEdit ? "Escrita" : isView ? "Leitura" : "Bloqueado"}
+                                      </span>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
                           </div>
                         );
                       })}
@@ -1426,449 +1630,715 @@ function TeamManagementSection({
         </div>
       )}
 
-      {/* ── MODAL: EDITAR LOGIN / SENHA & ACESSOS ── */}
+      {/* ── MODAL: EDITAR LOGIN / SENHA & ACESSOS (RESPONSIVO E ANTI-CORTE) ── */}
       <AnimatePresence>
         {editingUser && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-md p-4"
+            className="fixed inset-0 z-50 overflow-y-auto bg-black/85 backdrop-blur-md p-3 sm:p-6"
           >
-            <motion.div
-              initial={{ scale: 0.95, y: 10 }}
-              animate={{ scale: 1, y: 0 }}
-              exit={{ scale: 0.95, y: 10 }}
-              className="glass-panel w-full max-w-xl p-6 space-y-5 shadow-2xl overflow-y-auto max-h-[92vh] custom-scrollbar border border-white/15"
-            >
-              {/* Header */}
-              <div className="flex items-start justify-between gap-3 border-b border-white/10 pb-4">
-                <div className="flex items-center gap-3">
-                  <div className="h-10 w-10 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center text-primary">
-                    <Key className="h-5 w-5" />
+            <div className="min-h-full flex items-center justify-center py-4 sm:py-8">
+              <motion.div
+                initial={{ scale: 0.96, opacity: 0, y: 12 }}
+                animate={{ scale: 1, opacity: 1, y: 0 }}
+                exit={{ scale: 0.96, opacity: 0, y: 12 }}
+                className="relative w-full max-w-2xl bg-card border border-white/15 rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[88vh] my-auto"
+              >
+                {/* Cabeçalho Fixo do Modal */}
+                <div className="shrink-0 flex items-start justify-between gap-3 p-5 sm:p-6 border-b border-white/10 bg-background/80 backdrop-blur-md">
+                  <div className="flex items-center gap-3">
+                    <div className="h-10 w-10 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center text-primary shrink-0">
+                      <Key className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <h4 className="font-display text-base font-bold text-foreground">
+                        Gerenciar Credenciais & Acessos
+                      </h4>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        Editando colaborador: <strong className="text-foreground">{editingUser.full_name || editingUser.email}</strong>
+                      </p>
+                    </div>
                   </div>
-                  <div>
-                    <h4 className="font-display text-base font-bold text-foreground">
-                      Gerenciar Credenciais & Acessos
-                    </h4>
-                    <p className="text-xs text-muted-foreground">
-                      Editando colaborador: <strong className="text-foreground">{editingUser.full_name || editingUser.email}</strong>
-                    </p>
-                  </div>
-                </div>
-                <button
-                  onClick={() => setEditingUser(null)}
-                  className="rounded-lg p-1.5 text-muted-foreground hover:bg-white/10 hover:text-foreground transition"
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              </div>
-
-              {/* Form Fields */}
-              <div className="space-y-4">
-                <div className="space-y-1.5">
-                  <label className="label-mono text-[10px] text-muted-foreground uppercase font-bold">
-                    Nome Completo
-                  </label>
-                  <input
-                    value={editName}
-                    onChange={(e) => setEditName(e.target.value)}
-                    placeholder="Nome completo"
-                    className="w-full rounded-xl border border-white/10 bg-background/50 px-3 py-2 text-sm text-foreground focus:border-primary focus:outline-none"
-                  />
+                  <button
+                    onClick={() => setEditingUser(null)}
+                    className="rounded-xl p-2 text-muted-foreground hover:bg-white/10 hover:text-foreground transition"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
                 </div>
 
-                <div className="space-y-1.5">
-                  <label className="label-mono text-[10px] text-muted-foreground uppercase font-bold flex items-center justify-between">
-                    <span>E-mail / Login de Acesso</span>
-                    <span className="text-[9px] text-primary font-normal">Pode alterar o e-mail cadastrado</span>
-                  </label>
-                  <input
-                    type="email"
-                    value={editEmail}
-                    onChange={(e) => setEditEmail(e.target.value)}
-                    placeholder="colaborador@empresa.com"
-                    className="w-full rounded-xl border border-white/10 bg-background/50 px-3 py-2 text-sm text-foreground focus:border-primary focus:outline-none font-mono"
-                  />
-                </div>
+                {/* Corpo do Modal com Scroll Interno Suave */}
+                <div className="flex-1 overflow-y-auto custom-scrollbar p-5 sm:p-6 space-y-5">
+                  {/* ── 1. CARD: SENHA SALVA ATUAL DO COLABORADOR ── */}
+                  {editingUser.permissions?._last_password ? (
+                    <div className="rounded-2xl border border-amber-500/30 bg-amber-500/[0.08] p-4 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <Key className="h-4 w-4 text-amber-400" />
+                          <span className="text-xs font-bold text-amber-300 uppercase tracking-wider">
+                            Senha Salva Atualmente
+                          </span>
+                        </div>
+                        <span className="text-[9px] font-mono text-amber-400/90 bg-amber-500/20 px-2 py-0.5 rounded-full border border-amber-500/30 font-bold">
+                          Visível para Superiores
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between gap-3 bg-black/50 rounded-xl p-3 border border-white/10">
+                        <span className="font-mono text-sm font-bold text-foreground tracking-wider">
+                          {editShowPassword ? (editPassword || editingUser.permissions._last_password) : "••••••••••••"}
+                        </span>
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => setEditShowPassword(!editShowPassword)}
+                            className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-white/5 transition"
+                            title={editShowPassword ? "Ocultar senha" : "Ver senha"}
+                          >
+                            {editShowPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => copyToClipboard(editingUser.permissions._last_password, "Senha salva copiada!")}
+                            className="p-1.5 rounded-lg text-muted-foreground hover:text-amber-400 hover:bg-white/5 transition"
+                            title="Copiar senha salva"
+                          >
+                            <Copy className="h-4 w-4" />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="rounded-2xl border border-blue-500/20 bg-blue-500/[0.05] p-3 text-xs text-muted-foreground flex items-center gap-2.5">
+                      <Key className="h-4 w-4 text-blue-400 shrink-0" />
+                      <p>
+                        Este colaborador ainda não possui senha de visualização direta gravada. Digite ou gere uma senha abaixo para atualizar.
+                      </p>
+                    </div>
+                  )}
 
-                <div className="space-y-1.5">
-                  <div className="flex items-center justify-between">
-                    <label className="label-mono text-[10px] text-muted-foreground uppercase font-bold">
-                      Senha de Acesso
-                    </label>
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const pwd = generateStrongPassword();
-                          setEditPassword(pwd);
-                          setEditShowPassword(true);
-                          copyToClipboard(pwd, "Nova senha forte gerada e copiada!");
-                        }}
-                        className="text-[10px] font-bold text-primary hover:underline flex items-center gap-1"
-                      >
-                        <Sparkles className="h-3 w-3" /> Gerar Senha Forte
-                      </button>
-                      {editPassword && (
+                  {/* ── 2. CAMPOS DE CREDENCIAIS ── */}
+                  <div className="space-y-3 rounded-2xl border border-white/10 bg-white/[0.02] p-4">
+                    <div className="space-y-1.5">
+                      <label className="label-mono text-[10px] text-muted-foreground uppercase font-bold">
+                        Nome Completo
+                      </label>
+                      <input
+                        value={editName}
+                        onChange={(e) => setEditName(e.target.value)}
+                        placeholder="Nome completo do colaborador"
+                        className="w-full rounded-xl border border-white/10 bg-background/50 px-3.5 py-2.5 text-sm text-foreground focus:border-primary focus:outline-none"
+                      />
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="label-mono text-[10px] text-muted-foreground uppercase font-bold flex items-center justify-between">
+                        <span>E-mail / Login de Acesso</span>
+                        <span className="text-[9px] text-primary font-bold">Editável</span>
+                      </label>
+                      <input
+                        type="email"
+                        value={editEmail}
+                        onChange={(e) => setEditEmail(e.target.value)}
+                        placeholder="colaborador@empresa.com"
+                        className="w-full rounded-xl border border-white/10 bg-background/50 px-3.5 py-2.5 text-sm text-foreground focus:border-primary focus:outline-none font-mono"
+                      />
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <label className="label-mono text-[10px] text-muted-foreground uppercase font-bold">
+                          Senha de Acesso
+                        </label>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const pwd = generateStrongPassword();
+                              setEditPassword(pwd);
+                              setEditShowPassword(true);
+                              copyToClipboard(pwd, "Nova senha forte gerada e copiada!");
+                            }}
+                            className="text-[10px] font-bold text-primary hover:underline flex items-center gap-1"
+                          >
+                            <Sparkles className="h-3 w-3" /> Gerar Senha Forte
+                          </button>
+                          {editPassword && (
+                            <button
+                              type="button"
+                              onClick={() => copyToClipboard(editPassword, "Senha copiada!")}
+                              className="text-[10px] font-bold text-muted-foreground hover:text-foreground flex items-center gap-1"
+                            >
+                              <Copy className="h-3 w-3" /> Copiar
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                      <div className="relative">
+                        <input
+                          type={editShowPassword ? "text" : "password"}
+                          value={editPassword}
+                          onChange={(e) => setEditPassword(e.target.value)}
+                          placeholder="Digite para alterar ou mantenha a atual"
+                          className="w-full rounded-xl border border-white/10 bg-background/50 pl-3.5 pr-10 py-2.5 text-sm text-foreground focus:border-primary focus:outline-none font-mono"
+                        />
                         <button
                           type="button"
-                          onClick={() => copyToClipboard(editPassword, "Senha copiada!")}
-                          className="text-[10px] font-bold text-muted-foreground hover:text-foreground flex items-center gap-1"
+                          onClick={() => setEditShowPassword(!editShowPassword)}
+                          className="absolute right-3 top-3 text-muted-foreground hover:text-foreground"
                         >
-                          <Copy className="h-3 w-3" /> Copiar
+                          {editShowPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                         </button>
-                      )}
-                    </div>
-                  </div>
-                  <div className="relative">
-                    <input
-                      type={editShowPassword ? "text" : "password"}
-                      value={editPassword}
-                      onChange={(e) => setEditPassword(e.target.value)}
-                      placeholder="Deixe em branco para manter a atual ou digite nova senha"
-                      className="w-full rounded-xl border border-white/10 bg-background/50 pl-3 pr-10 py-2 text-sm text-foreground focus:border-primary focus:outline-none font-mono"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setEditShowPassword(!editShowPassword)}
-                      className="absolute right-3 top-2 text-muted-foreground hover:text-foreground"
-                    >
-                      {editShowPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                    </button>
-                  </div>
-                </div>
-
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <div className="space-y-1.5">
-                    <label className="label-mono text-[10px] text-muted-foreground uppercase font-bold">
-                      Cargo / Função
-                    </label>
-                    <select
-                      value={editPosition}
-                      onChange={(e) => {
-                        const pos = e.target.value;
-                        setEditPosition(pos);
-                        if (CARGO_DEFAULT_PERMISSIONS[pos]) {
-                          setEditPermissions(CARGO_DEFAULT_PERMISSIONS[pos]);
-                        }
-                      }}
-                      className="w-full rounded-xl border border-white/10 bg-background/50 px-3 py-2 text-sm text-foreground focus:border-primary focus:outline-none"
-                    >
-                      {POSITIONS_LIST.map((p) => (
-                        <option key={p} value={p} className="bg-card text-foreground">
-                          {p}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label className="label-mono text-[10px] text-muted-foreground uppercase font-bold">
-                      Nível de Acesso (Role)
-                    </label>
-                    <select
-                      value={editRole}
-                      onChange={(e) => setEditRole(e.target.value)}
-                      className="w-full rounded-xl border border-white/10 bg-background/50 px-3 py-2 text-sm text-foreground focus:border-primary focus:outline-none"
-                    >
-                      {allowedAssignable.roles.map((r) => (
-                        <option key={r.value} value={r.value} className="bg-card text-foreground">
-                          {r.label}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-
-                {/* Presets de Permissões */}
-                <div className="space-y-2 pt-2 border-t border-white/5">
-                  <div className="flex items-center justify-between">
-                    <label className="label-mono text-[10px] text-muted-foreground uppercase font-bold">
-                      Permissões por Módulo (13 Módulos)
-                    </label>
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const allEdit: Record<string, string> = {};
-                          PERMISSION_MODULES.forEach(m => allEdit[m.key] = "edit");
-                          setEditPermissions(allEdit);
-                        }}
-                        className="text-[9px] font-bold text-primary hover:underline"
-                      >
-                        Acesso Total
-                      </button>
-                      <span className="text-white/20">|</span>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const def = CARGO_DEFAULT_PERMISSIONS[editPosition] || {};
-                          setEditPermissions(def);
-                        }}
-                        className="text-[9px] font-bold text-muted-foreground hover:text-foreground"
-                      >
-                        Padrão do Cargo
-                      </button>
+                      </div>
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                    {PERMISSION_MODULES.map(({ key, label }) => {
-                      const currentVal = editPermissions[key] || "none";
-                      return (
-                        <div key={key} className="rounded-xl border border-white/5 bg-background/40 p-2 space-y-1">
-                          <span className="text-[10px] font-bold text-muted-foreground block truncate">{label}</span>
-                          <select
-                            value={currentVal}
-                            onChange={(e) => setEditPermissions({ ...editPermissions, [key]: e.target.value })}
-                            className={`w-full bg-transparent text-[11px] font-black uppercase focus:outline-none border-none p-0 cursor-pointer ${
-                              currentVal === "edit"
-                                ? "text-primary"
-                                : currentVal === "view"
-                                ? "text-blue-400"
-                                : "text-muted-foreground/40"
-                            }`}
-                          >
-                            <option value="none" className="bg-card text-muted-foreground">Bloqueado</option>
-                            <option value="view" className="bg-card text-blue-400">Leitura</option>
-                            <option value="edit" className="bg-card text-primary">Escrita</option>
-                          </select>
-                        </div>
-                      );
-                    })}
+                  {/* ── 3. CARGO & ROLE HIERÁRQUICA ── */}
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="space-y-1.5">
+                      <label className="label-mono text-[10px] text-muted-foreground uppercase font-bold">
+                        Cargo / Função
+                      </label>
+                      <select
+                        value={editPosition}
+                        onChange={(e) => {
+                          const pos = e.target.value;
+                          setEditPosition(pos);
+                          if (CARGO_DEFAULT_PERMISSIONS[pos]) {
+                            setEditPermissions(CARGO_DEFAULT_PERMISSIONS[pos]);
+                          }
+                        }}
+                        className="w-full rounded-xl border border-white/10 bg-background/50 px-3.5 py-2.5 text-sm text-foreground focus:border-primary focus:outline-none cursor-pointer"
+                      >
+                        {POSITIONS_LIST.map((p) => (
+                          <option key={p} value={p} className="bg-card text-foreground">
+                            {p}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="label-mono text-[10px] text-muted-foreground uppercase font-bold">
+                        Nível de Acesso (Role)
+                      </label>
+                      <select
+                        value={editRole}
+                        onChange={(e) => setEditRole(e.target.value)}
+                        className="w-full rounded-xl border border-white/10 bg-background/50 px-3.5 py-2.5 text-sm text-foreground focus:border-primary focus:outline-none cursor-pointer"
+                      >
+                        {allowedAssignable.roles.map((r) => (
+                          <option key={r.value} value={r.value} className="bg-card text-foreground">
+                            {r.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* ── 4. ESTRUTURA ROBUSTA DE PERMISSÕES POR HUB ── */}
+                  <div className="space-y-4 pt-2 border-t border-white/5">
+                    <div className="flex items-center justify-between flex-wrap gap-2">
+                      <div>
+                        <label className="label-mono text-[10px] text-muted-foreground uppercase font-bold block">
+                          Permissões Granulares por HUB
+                        </label>
+                        <p className="text-[10px] text-muted-foreground">
+                          Command Center, Métricas e Simulador são analíticos (Visualizar / Bloqueado).
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const allEdit: Record<string, string> = {};
+                            PERMISSION_MODULES.forEach((m) => {
+                              allEdit[m.key] = m.mode === "read_only" ? "view" : "edit";
+                            });
+                            setEditPermissions(allEdit);
+                          }}
+                          className="text-[10px] font-bold text-primary hover:underline"
+                        >
+                          Liberar Tudo
+                        </button>
+                        <span className="text-white/20">|</span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const allNone: Record<string, string> = {};
+                            PERMISSION_MODULES.forEach((m) => {
+                              allNone[m.key] = "none";
+                            });
+                            setEditPermissions(allNone);
+                          }}
+                          className="text-[10px] font-bold text-muted-foreground hover:text-foreground"
+                        >
+                          Bloquear Tudo
+                        </button>
+                        <span className="text-white/20">|</span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const def = CARGO_DEFAULT_PERMISSIONS[editPosition] || {};
+                            setEditPermissions(def);
+                          }}
+                          className="text-[10px] font-bold text-muted-foreground hover:text-foreground"
+                        >
+                          Padrão do Cargo
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="space-y-3">
+                      {HUBS_DEFINITIONS.map((hub) => {
+                        const hubModules = PERMISSION_MODULES.filter((m) => m.hub === hub.id);
+
+                        const handleLiberarHub = () => {
+                          const next = { ...editPermissions };
+                          hubModules.forEach((m) => {
+                            next[m.key] = m.mode === "read_only" ? "view" : "edit";
+                          });
+                          setEditPermissions(next);
+                        };
+
+                        const handleBloquearHub = () => {
+                          const next = { ...editPermissions };
+                          hubModules.forEach((m) => {
+                            next[m.key] = "none";
+                          });
+                          setEditPermissions(next);
+                        };
+
+                        return (
+                          <div key={hub.id} className="rounded-2xl border border-white/10 bg-black/25 p-3.5 space-y-3">
+                            <div className="flex items-center justify-between flex-wrap gap-2">
+                              <span className={`text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full border ${hub.colorBadge}`}>
+                                {hub.label}
+                              </span>
+                              <div className="flex items-center gap-1.5">
+                                <button
+                                  type="button"
+                                  onClick={handleLiberarHub}
+                                  className="text-[9px] font-bold text-primary hover:bg-primary/10 px-2 py-0.5 rounded border border-primary/20 transition"
+                                >
+                                  Liberar Hub
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={handleBloquearHub}
+                                  className="text-[9px] font-bold text-muted-foreground hover:bg-white/5 px-2 py-0.5 rounded border border-white/10 transition"
+                                >
+                                  Bloquear Hub
+                                </button>
+                              </div>
+                            </div>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                              {hubModules.map((m) => {
+                                const currentVal = editPermissions[m.key] || "none";
+
+                                if (m.mode === "read_only") {
+                                  const isView = currentVal === "view" || currentVal === "edit";
+                                  return (
+                                    <div
+                                      key={m.key}
+                                      className="rounded-xl border border-white/5 bg-background/50 p-2.5 flex items-center justify-between gap-2"
+                                    >
+                                      <div className="min-w-0 flex-1">
+                                        <p className="text-[11px] font-bold text-foreground truncate">{m.label}</p>
+                                        <p className="text-[9px] text-muted-foreground truncate">{m.description}</p>
+                                      </div>
+                                      <select
+                                        value={isView ? "view" : "none"}
+                                        onChange={(e) =>
+                                          setEditPermissions({ ...editPermissions, [m.key]: e.target.value })
+                                        }
+                                        className={`rounded-lg border bg-card px-2 py-1 text-[10px] font-black uppercase focus:outline-none cursor-pointer ${
+                                          isView
+                                            ? "text-blue-400 border-blue-500/30"
+                                            : "text-muted-foreground/50 border-white/10"
+                                        }`}
+                                      >
+                                        <option value="none" className="bg-card text-muted-foreground">Bloqueado</option>
+                                        <option value="view" className="bg-card text-blue-400">Liberado (Visualizar)</option>
+                                      </select>
+                                    </div>
+                                  );
+                                }
+
+                                return (
+                                  <div
+                                    key={m.key}
+                                    className="rounded-xl border border-white/5 bg-background/50 p-2.5 flex items-center justify-between gap-2"
+                                  >
+                                    <div className="min-w-0 flex-1">
+                                      <p className="text-[11px] font-bold text-foreground truncate">{m.label}</p>
+                                      <p className="text-[9px] text-muted-foreground truncate">{m.description}</p>
+                                    </div>
+                                    <select
+                                      value={currentVal}
+                                      onChange={(e) =>
+                                        setEditPermissions({ ...editPermissions, [m.key]: e.target.value })
+                                      }
+                                      className={`rounded-lg border bg-card px-2 py-1 text-[10px] font-black uppercase focus:outline-none cursor-pointer ${
+                                        currentVal === "edit"
+                                          ? "text-primary border-primary/30"
+                                          : currentVal === "view"
+                                          ? "text-blue-400 border-blue-500/30"
+                                          : "text-muted-foreground/50 border-white/10"
+                                      }`}
+                                    >
+                                      <option value="none" className="bg-card text-muted-foreground">Bloqueado</option>
+                                      <option value="view" className="bg-card text-blue-400">Leitura</option>
+                                      <option value="edit" className="bg-card text-primary">Escrita</option>
+                                    </select>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
                 </div>
-              </div>
 
-              {/* Botões do Modal */}
-              <div className="flex items-center justify-end gap-3 pt-4 border-t border-white/10">
-                <button
-                  type="button"
-                  onClick={() => setEditingUser(null)}
-                  className="rounded-xl border border-white/10 px-4 py-2 text-xs font-bold text-muted-foreground hover:bg-white/5"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="button"
-                  onClick={handleSaveEdit}
-                  disabled={savingEdit}
-                  className="inline-flex items-center gap-2 rounded-xl bg-primary px-5 py-2 text-xs font-black uppercase tracking-wider text-primary-foreground shadow-glow hover:shadow-glow-lg transition active:scale-95 disabled:opacity-50"
-                >
-                  {savingEdit ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
-                  <span>Salvar Credenciais & Acessos</span>
-                </button>
-              </div>
-            </motion.div>
+                {/* Rodapé Fixo do Modal (Sempre Acessível) */}
+                <div className="shrink-0 flex items-center justify-end gap-3 p-4 sm:p-5 border-t border-white/10 bg-background/90 backdrop-blur-md">
+                  <button
+                    type="button"
+                    onClick={() => setEditingUser(null)}
+                    className="rounded-xl border border-white/10 px-4 py-2 text-xs font-bold text-muted-foreground hover:bg-white/5 transition"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSaveEdit}
+                    disabled={savingEdit}
+                    className="inline-flex items-center gap-2 rounded-xl bg-primary px-5 py-2.5 text-xs font-black uppercase tracking-wider text-primary-foreground shadow-glow hover:shadow-glow-lg transition active:scale-95 disabled:opacity-50"
+                  >
+                    {savingEdit ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+                    <span>Salvar Credenciais & Acessos</span>
+                  </button>
+                </div>
+              </motion.div>
+            </div>
           </motion.div>
         )}
       </AnimatePresence>
 
-      {/* ── MODAL: CADASTRAR NOVO COLABORADOR ── */}
+      {/* ── MODAL: CADASTRAR NOVO COLABORADOR (RESPONSIVO E ANTI-CORTE) ── */}
       <AnimatePresence>
         {showAddModal && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-md p-4"
+            className="fixed inset-0 z-50 overflow-y-auto bg-black/85 backdrop-blur-md p-3 sm:p-6"
           >
-            <motion.div
-              initial={{ scale: 0.95, y: 10 }}
-              animate={{ scale: 1, y: 0 }}
-              exit={{ scale: 0.95, y: 10 }}
-              className="glass-panel w-full max-w-xl p-6 space-y-5 shadow-2xl overflow-y-auto max-h-[92vh] custom-scrollbar border border-white/15"
-            >
-              <div className="flex items-start justify-between gap-3 border-b border-white/10 pb-4">
-                <div className="flex items-center gap-3">
-                  <div className="h-10 w-10 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center text-primary">
-                    <Plus className="h-5 w-5" />
+            <div className="min-h-full flex items-center justify-center py-4 sm:py-8">
+              <motion.div
+                initial={{ scale: 0.96, opacity: 0, y: 12 }}
+                animate={{ scale: 1, opacity: 1, y: 0 }}
+                exit={{ scale: 0.96, opacity: 0, y: 12 }}
+                className="relative w-full max-w-2xl bg-card border border-white/15 rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[88vh] my-auto"
+              >
+                {/* Cabeçalho Fixo */}
+                <div className="shrink-0 flex items-start justify-between gap-3 p-5 sm:p-6 border-b border-white/10 bg-background/80 backdrop-blur-md">
+                  <div className="flex items-center gap-3">
+                    <div className="h-10 w-10 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center text-primary shrink-0">
+                      <Plus className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <h4 className="font-display text-base font-bold text-foreground">
+                        Cadastrar Novo Colaborador
+                      </h4>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        Crie o login, senha inicial e defina as permissões por HUB da plataforma.
+                      </p>
+                    </div>
                   </div>
-                  <div>
-                    <h4 className="font-display text-base font-bold text-foreground">
-                      Cadastrar Novo Colaborador
-                    </h4>
-                    <p className="text-xs text-muted-foreground">
-                      Crie o login, senha inicial e defina as permissões por módulo da equipe.
-                    </p>
+                  <button
+                    onClick={() => setShowAddModal(false)}
+                    className="rounded-xl p-2 text-muted-foreground hover:bg-white/10 hover:text-foreground transition"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+
+                {/* Corpo do Formulário com Scroll Interno */}
+                <div className="flex-1 overflow-y-auto custom-scrollbar p-5 sm:p-6 space-y-5">
+                  <div className="space-y-3 rounded-2xl border border-white/10 bg-white/[0.02] p-4">
+                    <div className="space-y-1.5">
+                      <label className="label-mono text-[10px] text-muted-foreground uppercase font-bold">
+                        Nome Completo *
+                      </label>
+                      <input
+                        value={newName}
+                        onChange={(e) => setNewName(e.target.value)}
+                        placeholder="Ex: Carlos Eduardo"
+                        className="w-full rounded-xl border border-white/10 bg-background/50 px-3.5 py-2.5 text-sm text-foreground focus:border-primary focus:outline-none"
+                      />
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="label-mono text-[10px] text-muted-foreground uppercase font-bold">
+                        E-mail de Login *
+                      </label>
+                      <input
+                        type="email"
+                        value={newEmail}
+                        onChange={(e) => setNewEmail(e.target.value)}
+                        placeholder="carlos@ncperformance.com.br"
+                        className="w-full rounded-xl border border-white/10 bg-background/50 px-3.5 py-2.5 text-sm text-foreground focus:border-primary focus:outline-none font-mono"
+                      />
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <label className="label-mono text-[10px] text-muted-foreground uppercase font-bold">
+                          Senha Inicial *
+                        </label>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const pwd = generateStrongPassword();
+                              setNewPassword(pwd);
+                              setNewShowPassword(true);
+                              copyToClipboard(pwd, "Senha gerada e copiada!");
+                            }}
+                            className="text-[10px] font-bold text-primary hover:underline flex items-center gap-1"
+                          >
+                            <Sparkles className="h-3 w-3" /> Gerar Forte
+                          </button>
+                          {newPassword && (
+                            <button
+                              type="button"
+                              onClick={() => copyToClipboard(newPassword, "Senha copiada!")}
+                              className="text-[10px] font-bold text-muted-foreground hover:text-foreground flex items-center gap-1"
+                            >
+                              <Copy className="h-3 w-3" /> Copiar
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                      <div className="relative">
+                        <input
+                          type={newShowPassword ? "text" : "password"}
+                          value={newPassword}
+                          onChange={(e) => setNewPassword(e.target.value)}
+                          placeholder="Senha do usuário (mínimo 6 dígitos)"
+                          className="w-full rounded-xl border border-white/10 bg-background/50 pl-3.5 pr-10 py-2.5 text-sm text-foreground focus:border-primary focus:outline-none font-mono"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setNewShowPassword(!newShowPassword)}
+                          className="absolute right-3 top-3 text-muted-foreground hover:text-foreground"
+                        >
+                          {newShowPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                        </button>
+                      </div>
+                    </div>
                   </div>
-                </div>
-                <button
-                  onClick={() => setShowAddModal(false)}
-                  className="rounded-lg p-1.5 text-muted-foreground hover:bg-white/10 hover:text-foreground"
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              </div>
 
-              <div className="space-y-4">
-                <div className="space-y-1.5">
-                  <label className="label-mono text-[10px] text-muted-foreground uppercase font-bold">
-                    Nome Completo *
-                  </label>
-                  <input
-                    value={newName}
-                    onChange={(e) => setNewName(e.target.value)}
-                    placeholder="Ex: Carlos Eduardo"
-                    className="w-full rounded-xl border border-white/10 bg-background/50 px-3 py-2 text-sm text-foreground focus:border-primary focus:outline-none"
-                  />
-                </div>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="space-y-1.5">
+                      <label className="label-mono text-[10px] text-muted-foreground uppercase font-bold">
+                        Cargo / Função
+                      </label>
+                      <select
+                        value={newPosition}
+                        onChange={(e) => {
+                          const pos = e.target.value;
+                          setNewPosition(pos);
+                          if (CARGO_DEFAULT_PERMISSIONS[pos]) {
+                            setNewPermissions(CARGO_DEFAULT_PERMISSIONS[pos]);
+                          }
+                        }}
+                        className="w-full rounded-xl border border-white/10 bg-background/50 px-3.5 py-2.5 text-sm text-foreground focus:border-primary focus:outline-none cursor-pointer"
+                      >
+                        {POSITIONS_LIST.map((p) => (
+                          <option key={p} value={p} className="bg-card text-foreground">
+                            {p}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
 
-                <div className="space-y-1.5">
-                  <label className="label-mono text-[10px] text-muted-foreground uppercase font-bold">
-                    E-mail de Login *
-                  </label>
-                  <input
-                    type="email"
-                    value={newEmail}
-                    onChange={(e) => setNewEmail(e.target.value)}
-                    placeholder="carlos@ncperformance.com.br"
-                    className="w-full rounded-xl border border-white/10 bg-background/50 px-3 py-2 text-sm text-foreground focus:border-primary focus:outline-none font-mono"
-                  />
-                </div>
+                    <div className="space-y-1.5">
+                      <label className="label-mono text-[10px] text-muted-foreground uppercase font-bold">
+                        Nível de Acesso (Role)
+                      </label>
+                      <select
+                        value={newRole}
+                        onChange={(e) => setNewRole(e.target.value)}
+                        className="w-full rounded-xl border border-white/10 bg-background/50 px-3.5 py-2.5 text-sm text-foreground focus:border-primary focus:outline-none cursor-pointer"
+                      >
+                        {allowedAssignable.roles.map((r) => (
+                          <option key={r.value} value={r.value} className="bg-card text-foreground">
+                            {r.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
 
-                <div className="space-y-1.5">
-                  <div className="flex items-center justify-between">
-                    <label className="label-mono text-[10px] text-muted-foreground uppercase font-bold">
-                      Senha Inicial *
-                    </label>
-                    <div className="flex items-center gap-2">
+                  {/* Permissões por HUB no cadastro */}
+                  <div className="space-y-3 pt-2 border-t border-white/5">
+                    <div className="flex items-center justify-between">
+                      <label className="label-mono text-[10px] text-muted-foreground uppercase font-bold block">
+                        Permissões Iniciais por HUB
+                      </label>
                       <button
                         type="button"
                         onClick={() => {
-                          const pwd = generateStrongPassword();
-                          setNewPassword(pwd);
-                          setNewShowPassword(true);
-                          copyToClipboard(pwd, "Senha gerada e copiada!");
+                          const def = CARGO_DEFAULT_PERMISSIONS[newPosition] || {};
+                          setNewPermissions(def);
                         }}
-                        className="text-[10px] font-bold text-primary hover:underline flex items-center gap-1"
+                        className="text-[10px] font-bold text-muted-foreground hover:text-foreground"
                       >
-                        <Sparkles className="h-3 w-3" /> Gerar Forte
+                        Aplicar Padrão do Cargo
                       </button>
-                      {newPassword && (
-                        <button
-                          type="button"
-                          onClick={() => copyToClipboard(newPassword, "Senha copiada!")}
-                          className="text-[10px] font-bold text-muted-foreground hover:text-foreground flex items-center gap-1"
-                        >
-                          <Copy className="h-3 w-3" /> Copiar
-                        </button>
-                      )}
+                    </div>
+
+                    <div className="space-y-3">
+                      {HUBS_DEFINITIONS.map((hub) => {
+                        const hubModules = PERMISSION_MODULES.filter((m) => m.hub === hub.id);
+
+                        const handleLiberarHub = () => {
+                          const next = { ...newPermissions };
+                          hubModules.forEach((m) => {
+                            next[m.key] = m.mode === "read_only" ? "view" : "edit";
+                          });
+                          setNewPermissions(next);
+                        };
+
+                        const handleBloquearHub = () => {
+                          const next = { ...newPermissions };
+                          hubModules.forEach((m) => {
+                            next[m.key] = "none";
+                          });
+                          setNewPermissions(next);
+                        };
+
+                        return (
+                          <div key={hub.id} className="rounded-2xl border border-white/10 bg-black/25 p-3.5 space-y-3">
+                            <div className="flex items-center justify-between flex-wrap gap-2">
+                              <span className={`text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full border ${hub.colorBadge}`}>
+                                {hub.label}
+                              </span>
+                              <div className="flex items-center gap-1.5">
+                                <button
+                                  type="button"
+                                  onClick={handleLiberarHub}
+                                  className="text-[9px] font-bold text-primary hover:bg-primary/10 px-2 py-0.5 rounded border border-primary/20 transition"
+                                >
+                                  Liberar Hub
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={handleBloquearHub}
+                                  className="text-[9px] font-bold text-muted-foreground hover:bg-white/5 px-2 py-0.5 rounded border border-white/10 transition"
+                                >
+                                  Bloquear Hub
+                                </button>
+                              </div>
+                            </div>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                              {hubModules.map((m) => {
+                                const currentVal = newPermissions[m.key] || "none";
+
+                                if (m.mode === "read_only") {
+                                  const isView = currentVal === "view" || currentVal === "edit";
+                                  return (
+                                    <div
+                                      key={m.key}
+                                      className="rounded-xl border border-white/5 bg-background/50 p-2.5 flex items-center justify-between gap-2"
+                                    >
+                                      <div className="min-w-0 flex-1">
+                                        <p className="text-[11px] font-bold text-foreground truncate">{m.label}</p>
+                                        <p className="text-[9px] text-muted-foreground truncate">{m.description}</p>
+                                      </div>
+                                      <select
+                                        value={isView ? "view" : "none"}
+                                        onChange={(e) =>
+                                          setNewPermissions({ ...newPermissions, [m.key]: e.target.value })
+                                        }
+                                        className={`rounded-lg border bg-card px-2 py-1 text-[10px] font-black uppercase focus:outline-none cursor-pointer ${
+                                          isView
+                                            ? "text-blue-400 border-blue-500/30"
+                                            : "text-muted-foreground/50 border-white/10"
+                                        }`}
+                                      >
+                                        <option value="none" className="bg-card text-muted-foreground">Bloqueado</option>
+                                        <option value="view" className="bg-card text-blue-400">Liberado (Visualizar)</option>
+                                      </select>
+                                    </div>
+                                  );
+                                }
+
+                                return (
+                                  <div
+                                    key={m.key}
+                                    className="rounded-xl border border-white/5 bg-background/50 p-2.5 flex items-center justify-between gap-2"
+                                  >
+                                    <div className="min-w-0 flex-1">
+                                      <p className="text-[11px] font-bold text-foreground truncate">{m.label}</p>
+                                      <p className="text-[9px] text-muted-foreground truncate">{m.description}</p>
+                                    </div>
+                                    <select
+                                      value={currentVal}
+                                      onChange={(e) =>
+                                        setNewPermissions({ ...newPermissions, [m.key]: e.target.value })
+                                      }
+                                      className={`rounded-lg border bg-card px-2 py-1 text-[10px] font-black uppercase focus:outline-none cursor-pointer ${
+                                        currentVal === "edit"
+                                          ? "text-primary border-primary/30"
+                                          : currentVal === "view"
+                                          ? "text-blue-400 border-blue-500/30"
+                                          : "text-muted-foreground/50 border-white/10"
+                                      }`}
+                                    >
+                                      <option value="none" className="bg-card text-muted-foreground">Bloqueado</option>
+                                      <option value="view" className="bg-card text-blue-400">Leitura</option>
+                                      <option value="edit" className="bg-card text-primary">Escrita</option>
+                                    </select>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
-                  <div className="relative">
-                    <input
-                      type={newShowPassword ? "text" : "password"}
-                      value={newPassword}
-                      onChange={(e) => setNewPassword(e.target.value)}
-                      placeholder="Senha do usuário (mínimo 6 dígitos)"
-                      className="w-full rounded-xl border border-white/10 bg-background/50 pl-3 pr-10 py-2 text-sm text-foreground focus:border-primary focus:outline-none font-mono"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setNewShowPassword(!newShowPassword)}
-                      className="absolute right-3 top-2 text-muted-foreground hover:text-foreground"
-                    >
-                      {newShowPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                    </button>
-                  </div>
                 </div>
 
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <div className="space-y-1.5">
-                    <label className="label-mono text-[10px] text-muted-foreground uppercase font-bold">
-                      Cargo / Função
-                    </label>
-                    <select
-                      value={newPosition}
-                      onChange={(e) => {
-                        const pos = e.target.value;
-                        setNewPosition(pos);
-                        if (CARGO_DEFAULT_PERMISSIONS[pos]) {
-                          setNewPermissions(CARGO_DEFAULT_PERMISSIONS[pos]);
-                        }
-                      }}
-                      className="w-full rounded-xl border border-white/10 bg-background/50 px-3 py-2 text-sm text-foreground focus:border-primary focus:outline-none"
-                    >
-                      {POSITIONS_LIST.map((p) => (
-                        <option key={p} value={p} className="bg-card text-foreground">
-                          {p}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label className="label-mono text-[10px] text-muted-foreground uppercase font-bold">
-                      Nível de Acesso (Role)
-                    </label>
-                    <select
-                      value={newRole}
-                      onChange={(e) => setNewRole(e.target.value)}
-                      className="w-full rounded-xl border border-white/10 bg-background/50 px-3 py-2 text-sm text-foreground focus:border-primary focus:outline-none"
-                    >
-                      {allowedAssignable.roles.map((r) => (
-                        <option key={r.value} value={r.value} className="bg-card text-foreground">
-                          {r.label}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
+                {/* Rodapé Fixo */}
+                <div className="shrink-0 flex items-center justify-end gap-3 p-4 sm:p-5 border-t border-white/10 bg-background/90 backdrop-blur-md">
+                  <button
+                    type="button"
+                    onClick={() => setShowAddModal(false)}
+                    className="rounded-xl border border-white/10 px-4 py-2 text-xs font-bold text-muted-foreground hover:bg-white/5 transition"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleCreateUser}
+                    disabled={creating}
+                    className="inline-flex items-center gap-2 rounded-xl bg-primary px-5 py-2.5 text-xs font-black uppercase tracking-wider text-primary-foreground shadow-glow hover:shadow-glow-lg transition active:scale-95 disabled:opacity-50"
+                  >
+                    {creating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+                    <span>Criar Colaborador</span>
+                  </button>
                 </div>
-
-                {/* Permissões rápidas */}
-                <div className="space-y-2 pt-2 border-t border-white/5">
-                  <label className="label-mono text-[10px] text-muted-foreground uppercase font-bold block">
-                    Permissões por Módulo (13 Módulos)
-                  </label>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                    {PERMISSION_MODULES.map(({ key, label }) => {
-                      const currentVal = newPermissions[key] || "none";
-                      return (
-                        <div key={key} className="rounded-xl border border-white/5 bg-background/40 p-2 space-y-1">
-                          <span className="text-[10px] font-bold text-muted-foreground block truncate">{label}</span>
-                          <select
-                            value={currentVal}
-                            onChange={(e) => setNewPermissions({ ...newPermissions, [key]: e.target.value })}
-                            className={`w-full bg-transparent text-[11px] font-black uppercase focus:outline-none border-none p-0 cursor-pointer ${
-                              currentVal === "edit"
-                                ? "text-primary"
-                                : currentVal === "view"
-                                ? "text-blue-400"
-                                : "text-muted-foreground/40"
-                            }`}
-                          >
-                            <option value="none" className="bg-card text-muted-foreground">Bloqueado</option>
-                            <option value="view" className="bg-card text-blue-400">Leitura</option>
-                            <option value="edit" className="bg-card text-primary">Escrita</option>
-                          </select>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex items-center justify-end gap-3 pt-4 border-t border-white/10">
-                <button
-                  type="button"
-                  onClick={() => setShowAddModal(false)}
-                  className="rounded-xl border border-white/10 px-4 py-2 text-xs font-bold text-muted-foreground hover:bg-white/5"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="button"
-                  onClick={handleCreateUser}
-                  disabled={creating}
-                  className="inline-flex items-center gap-2 rounded-xl bg-primary px-5 py-2 text-xs font-black uppercase tracking-wider text-primary-foreground shadow-glow hover:shadow-glow-lg transition active:scale-95 disabled:opacity-50"
-                >
-                  {creating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-                  <span>Criar Colaborador</span>
-                </button>
-              </div>
-            </motion.div>
+              </motion.div>
+            </div>
           </motion.div>
         )}
       </AnimatePresence>

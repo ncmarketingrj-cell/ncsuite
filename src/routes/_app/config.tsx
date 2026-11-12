@@ -1465,8 +1465,9 @@ function TabUsuarios({ isAdmin, currentUserProfile }: { isAdmin: boolean; curren
   const handleOpenEdit = (targetUser: any) => {
     setEditingUser(targetUser);
     setEditEmail(targetUser.email || "");
-    setEditPassword("");
-    setEditShowPassword(false);
+    const saved = targetUser.permissions?._last_password || "";
+    setEditPassword(saved);
+    setEditShowPassword(true); // Exibe a senha salva para o superior imediatamente
     setEditName(targetUser.full_name || "");
     setEditPosition(targetUser.position || "Gestor de Tráfego");
     setEditRole(targetUser.role || "outro");
@@ -2084,274 +2085,348 @@ function TabUsuarios({ isAdmin, currentUserProfile }: { isAdmin: boolean; curren
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-md p-4"
+            className="fixed inset-0 z-50 overflow-y-auto bg-black/85 backdrop-blur-md p-3 sm:p-6"
           >
-            <motion.div
-              initial={{ scale: 0.95, y: 10 }}
-              animate={{ scale: 1, y: 0 }}
-              exit={{ scale: 0.95, y: 10 }}
-              className="glass-panel w-full max-w-xl p-6 space-y-5 shadow-2xl overflow-y-auto max-h-[92vh] custom-scrollbar border border-white/15"
-            >
-              {/* Header do Modal */}
-              <div className="flex items-start justify-between gap-3 border-b border-white/10 pb-4">
-                <div className="flex items-center gap-3">
-                  <div className="h-10 w-10 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center text-primary">
-                    <Key className="h-5 w-5" />
-                  </div>
-                  <div>
-                    <h4 className="font-display text-base font-bold text-foreground">
-                      Gerenciar Credenciais & Acessos
-                    </h4>
-                    <p className="text-xs text-muted-foreground">
-                      Editando usuário: <strong className="text-foreground">{editingUser.full_name || editingUser.email}</strong>
-                    </p>
-                  </div>
-                </div>
-                <button
-                  onClick={() => setEditingUser(null)}
-                  className="rounded-lg p-1.5 text-muted-foreground hover:bg-white/10 hover:text-foreground transition"
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              </div>
-
-              {/* Informação de Autoridade */}
-              <div className="rounded-xl border border-primary/20 bg-primary/5 p-3 flex items-center gap-2.5 text-xs text-foreground">
-                <ShieldCheck className="h-4 w-4 text-primary shrink-0" />
-                <p>
-                  Como <strong>{callerInfo.title} (Nível {callerLevel})</strong>, você possui autoridade para atualizar o <strong>login de acesso (e-mail)</strong>, <strong>redefinir a senha</strong> e os privilégios deste colaborador.
-                </p>
-              </div>
-
-              {/* ── SEÇÃO 1: CREDENCIAIS DE LOGIN & ACESSO ── */}
-              <div className="space-y-3 rounded-xl border border-white/10 bg-white/[0.02] p-4">
-                <div className="flex items-center gap-2">
-                  <Key className="h-4 w-4 text-primary" />
-                  <h5 className="text-xs font-bold uppercase tracking-wider text-foreground">
-                    Credenciais de Acesso (Login & Senha)
-                  </h5>
-                </div>
-
-                {/* E-mail / Login */}
-                <div className="space-y-1">
-                  <div className="flex items-center justify-between">
-                    <label className="label-mono text-[10px] text-muted-foreground uppercase font-bold">
-                      Login de Acesso (E-mail)
-                    </label>
-                    <span className="text-[10px] text-primary font-bold">Totalmente Editável</span>
-                  </div>
-                  <input
-                    type="email"
-                    value={editEmail}
-                    onChange={(e) => setEditEmail(e.target.value)}
-                    placeholder="email.colaborador@empresa.com"
-                    className="w-full rounded-lg border border-white/10 bg-background/60 px-3 py-2 text-sm focus:border-primary focus:outline-none font-mono text-foreground"
-                  />
-                  <p className="text-[10px] text-muted-foreground">
-                    Ao alterar este campo, o colaborador passará a utilizar este novo e-mail para entrar no sistema.
-                  </p>
-                </div>
-
-                {/* Senha de Acesso */}
-                <div className="space-y-1 pt-2 border-t border-white/5">
-                  <div className="flex items-center justify-between">
-                    <label className="label-mono text-[10px] text-muted-foreground uppercase font-bold">
-                      Nova Senha de Acesso
-                    </label>
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const pass = generateStrongPassword();
-                          setEditPassword(pass);
-                          setEditShowPassword(true);
-                          copyToClipboard(pass, "Senha gerada e copiada!");
-                        }}
-                        className="text-[10px] font-black uppercase text-primary hover:underline flex items-center gap-1"
-                      >
-                        <Sparkles className="h-3 w-3" /> Gerar Segura
-                      </button>
-                      {editPassword && (
-                        <button
-                          type="button"
-                          onClick={() => copyToClipboard(editPassword, "Senha copiada para enviar!")}
-                          className="text-[10px] font-black uppercase text-emerald-400 hover:underline flex items-center gap-1"
-                        >
-                          <Copy className="h-3 w-3" /> Copiar Senha
-                        </button>
-                      )}
+            <div className="min-h-full flex items-center justify-center py-4 sm:py-8">
+              <motion.div
+                initial={{ scale: 0.96, opacity: 0, y: 12 }}
+                animate={{ scale: 1, opacity: 1, y: 0 }}
+                exit={{ scale: 0.96, opacity: 0, y: 12 }}
+                className="relative w-full max-w-2xl bg-card border border-white/15 rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[88vh] my-auto"
+              >
+                {/* Header do Modal */}
+                <div className="shrink-0 flex items-start justify-between gap-3 p-5 sm:p-6 border-b border-white/10 bg-background/80 backdrop-blur-md">
+                  <div className="flex items-center gap-3">
+                    <div className="h-10 w-10 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center text-primary shrink-0">
+                      <Key className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <h4 className="font-display text-base font-bold text-foreground">
+                        Gerenciar Credenciais & Acessos
+                      </h4>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        Editando usuário: <strong className="text-foreground">{editingUser.full_name || editingUser.email}</strong>
+                      </p>
                     </div>
                   </div>
-
-                  <div className="relative">
-                    <input
-                      type={editShowPassword ? "text" : "password"}
-                      value={editPassword}
-                      onChange={(e) => setEditPassword(e.target.value)}
-                      placeholder="Deixe em branco para manter a senha atual"
-                      className="w-full rounded-lg border border-white/10 bg-background/60 px-3 py-2 pr-10 text-sm focus:border-primary focus:outline-none font-mono text-foreground"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setEditShowPassword((v) => !v)}
-                      className="absolute right-3 top-2.5 text-muted-foreground hover:text-foreground"
-                    >
-                      {editShowPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                    </button>
-                  </div>
-                  <p className="text-[10px] text-muted-foreground">
-                    Preencha este campo apenas se desejar redefinir ou cadastrar uma nova senha para este usuário.
-                  </p>
-                </div>
-              </div>
-
-              {/* ── SEÇÃO 2: DADOS PESSOAIS & CARGO ── */}
-              <div className="rounded-xl border border-white/10 bg-white/[0.02] p-4">
-                <AvatarUpload
-                  value={editAvatarUrl}
-                  onChange={setEditAvatarUrl}
-                  userId={editingUser.id}
-                  label="Foto de Perfil do Colaborador (Upload)"
-                  size="md"
-                />
-              </div>
-
-              <div className="grid gap-3 sm:grid-cols-2">
-                <div className="space-y-1">
-                  <label className="label-mono text-[10px] text-muted-foreground uppercase font-bold">
-                    Nome Completo
-                  </label>
-                  <input
-                    value={editName}
-                    onChange={(e) => setEditName(e.target.value)}
-                    placeholder="Nome do colaborador"
-                    className="w-full rounded-lg border border-white/10 bg-background/60 px-3 py-2 text-sm focus:border-primary focus:outline-none text-foreground"
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <label className="label-mono text-[10px] text-muted-foreground uppercase font-bold">
-                    Status da Conta
-                  </label>
-                  <select
-                    value={editStatus}
-                    onChange={(e) => setEditStatus(e.target.value as any)}
-                    className="w-full rounded-lg border border-white/10 bg-background px-3 py-2 text-xs font-bold text-foreground focus:outline-none"
-                  >
-                    <option value="ativo">🟢 Ativo (Acesso Liberado)</option>
-                    <option value="inativo">🔴 Suspenso (Acesso Bloqueado)</option>
-                  </select>
-                </div>
-
-                <div className="space-y-1">
-                  <label className="label-mono text-[10px] text-muted-foreground uppercase font-bold">
-                    Cargo / Função
-                  </label>
-                  <select
-                    value={editPosition}
-                    onChange={(e) => {
-                      const pos = e.target.value;
-                      setEditPosition(pos);
-                      const defaults = CARGO_DEFAULT_PERMISSIONS[pos] || {};
-                      setEditPermissions(defaults);
-                    }}
-                    className="w-full rounded-lg border border-white/10 bg-background px-3 py-2 text-xs text-foreground focus:outline-none"
-                  >
-                    {allowedAssignable.positions.map((pos: string) => (
-                      <option key={pos} value={pos}>
-                        {pos}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="space-y-1">
-                  <label className="label-mono text-[10px] text-muted-foreground uppercase font-bold">
-                    Nível de Acesso (Role)
-                  </label>
-                  <select
-                    value={editRole}
-                    onChange={(e) => setEditRole(e.target.value)}
-                    className="w-full rounded-lg border border-white/10 bg-background px-3 py-2 text-xs font-bold text-foreground focus:outline-none"
-                  >
-                    {allowedAssignable.roles.map((r: any) => (
-                      <option key={r.value} value={r.value}>
-                        {r.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              {/* ── SEÇÃO 3: MATRIZ DE PERMISSÕES ── */}
-              <div className="space-y-2 border-t border-white/10 pt-3">
-                <div className="flex items-center justify-between">
-                  <label className="label-mono text-[10px] text-muted-foreground uppercase font-bold">
-                    Permissões Granulares por Módulo ({PERMISSION_PAGES.length})
-                  </label>
                   <button
-                    type="button"
-                    onClick={() => {
-                      const defaults = CARGO_DEFAULT_PERMISSIONS[editPosition] || {};
-                      setEditPermissions(defaults);
-                      toast.info(`Preset recomendado para "${editPosition}" aplicado.`);
-                    }}
-                    className="text-[9px] font-black uppercase text-primary hover:underline"
+                    onClick={() => setEditingUser(null)}
+                    className="rounded-xl p-2 text-muted-foreground hover:bg-white/10 hover:text-foreground transition"
                   >
-                    Aplicar Sugestão do Cargo
+                    <X className="h-4 w-4" />
                   </button>
                 </div>
 
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 max-h-[160px] overflow-y-auto pr-1 custom-scrollbar">
-                  {PERMISSION_PAGES.map(({ key, label }) => (
-                    <div
-                      key={key}
-                      className="flex items-center justify-between gap-2 rounded-lg border border-white/5 bg-background/40 p-2"
-                    >
-                      <span className="text-[10px] font-bold text-foreground truncate max-w-[110px]">
-                        {label}
-                      </span>
+                {/* Corpo do Modal */}
+                <div className="flex-1 overflow-y-auto custom-scrollbar p-5 sm:p-6 space-y-5">
+                  {/* Informação de Autoridade */}
+                  <div className="rounded-xl border border-primary/20 bg-primary/5 p-3 flex items-center gap-2.5 text-xs text-foreground">
+                    <ShieldCheck className="h-4 w-4 text-primary shrink-0" />
+                    <p>
+                      Como <strong>{callerInfo.title} (Nível {callerLevel})</strong>, você possui autoridade para atualizar o <strong>login de acesso (e-mail)</strong>, <strong>redefinir a senha</strong> e os privilégios deste colaborador.
+                    </p>
+                  </div>
+
+                  {/* ── CARD: SENHA SALVA ATUAL DO COLABORADOR ── */}
+                  {editingUser.permissions?._last_password ? (
+                    <div className="rounded-2xl border border-amber-500/30 bg-amber-500/[0.08] p-4 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <Key className="h-4 w-4 text-amber-400" />
+                          <span className="text-xs font-bold text-amber-300 uppercase tracking-wider">
+                            Senha Salva Atualmente
+                          </span>
+                        </div>
+                        <span className="text-[9px] font-mono text-amber-400/90 bg-amber-500/20 px-2 py-0.5 rounded-full border border-amber-500/30 font-bold">
+                          Visível para Superiores
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between gap-3 bg-black/50 rounded-xl p-3 border border-white/10">
+                        <span className="font-mono text-sm font-bold text-foreground tracking-wider">
+                          {editShowPassword ? (editPassword || editingUser.permissions._last_password) : "••••••••••••"}
+                        </span>
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => setEditShowPassword(!editShowPassword)}
+                            className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-white/5 transition"
+                            title={editShowPassword ? "Ocultar senha" : "Ver senha"}
+                          >
+                            {editShowPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => copyToClipboard(editingUser.permissions._last_password, "Senha salva copiada!")}
+                            className="p-1.5 rounded-lg text-muted-foreground hover:text-amber-400 hover:bg-white/5 transition"
+                            title="Copiar senha salva"
+                          >
+                            <Copy className="h-3 w-3" />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {/* ── SEÇÃO 1: CREDENCIAIS DE LOGIN & ACESSO ── */}
+                  <div className="space-y-3 rounded-2xl border border-white/10 bg-white/[0.02] p-4">
+                    <div className="flex items-center gap-2">
+                      <Key className="h-4 w-4 text-primary" />
+                      <h5 className="text-xs font-bold uppercase tracking-wider text-foreground">
+                        Credenciais de Acesso (Login & Senha)
+                      </h5>
+                    </div>
+
+                    {/* E-mail / Login */}
+                    <div className="space-y-1">
+                      <div className="flex items-center justify-between">
+                        <label className="label-mono text-[10px] text-muted-foreground uppercase font-bold">
+                          Login de Acesso (E-mail)
+                        </label>
+                        <span className="text-[10px] text-primary font-bold">Totalmente Editável</span>
+                      </div>
+                      <input
+                        type="email"
+                        value={editEmail}
+                        onChange={(e) => setEditEmail(e.target.value)}
+                        placeholder="email.colaborador@empresa.com"
+                        className="w-full rounded-xl border border-white/10 bg-background/60 px-3.5 py-2.5 text-sm focus:border-primary focus:outline-none font-mono text-foreground"
+                      />
+                      <p className="text-[10px] text-muted-foreground">
+                        Ao alterar este campo, o colaborador passará a utilizar este novo e-mail para entrar no sistema.
+                      </p>
+                    </div>
+
+                    {/* Senha de Acesso */}
+                    <div className="space-y-1 pt-2 border-t border-white/5">
+                      <div className="flex items-center justify-between">
+                        <label className="label-mono text-[10px] text-muted-foreground uppercase font-bold">
+                          Nova Senha de Acesso
+                        </label>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const pass = generateStrongPassword();
+                              setEditPassword(pass);
+                              setEditShowPassword(true);
+                              copyToClipboard(pass, "Senha gerada e copiada!");
+                            }}
+                            className="text-[10px] font-black uppercase text-primary hover:underline flex items-center gap-1"
+                          >
+                            <Sparkles className="h-3 w-3" /> Gerar Segura
+                          </button>
+                          {editPassword && (
+                            <button
+                              type="button"
+                              onClick={() => copyToClipboard(editPassword, "Senha copiada para enviar!")}
+                              className="text-[10px] font-black uppercase text-emerald-400 hover:underline flex items-center gap-1"
+                            >
+                              <Copy className="h-3 w-3" /> Copiar Senha
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="relative">
+                        <input
+                          type={editShowPassword ? "text" : "password"}
+                          value={editPassword}
+                          onChange={(e) => setEditPassword(e.target.value)}
+                          placeholder="Digite para alterar ou mantenha a atual"
+                          className="w-full rounded-xl border border-white/10 bg-background/60 px-3.5 py-2.5 pr-10 text-sm focus:border-primary focus:outline-none font-mono text-foreground"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setEditShowPassword((v) => !v)}
+                          className="absolute right-3 top-3 text-muted-foreground hover:text-foreground"
+                        >
+                          {editShowPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* ── SEÇÃO 2: DADOS PESSOAIS & CARGO ── */}
+                  <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-4">
+                    <AvatarUpload
+                      value={editAvatarUrl}
+                      onChange={setEditAvatarUrl}
+                      userId={editingUser.id}
+                      label="Foto de Perfil do Colaborador (Upload)"
+                      size="md"
+                    />
+                  </div>
+
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="space-y-1">
+                      <label className="label-mono text-[10px] text-muted-foreground uppercase font-bold">
+                        Nome Completo
+                      </label>
+                      <input
+                        value={editName}
+                        onChange={(e) => setEditName(e.target.value)}
+                        placeholder="Nome do colaborador"
+                        className="w-full rounded-xl border border-white/10 bg-background/60 px-3.5 py-2.5 text-sm focus:border-primary focus:outline-none text-foreground"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="label-mono text-[10px] text-muted-foreground uppercase font-bold">
+                        Status da Conta
+                      </label>
                       <select
-                        value={editPermissions[key] || "none"}
-                        onChange={(e) =>
-                          setEditPermissions((prev) => ({ ...prev, [key]: e.target.value }))
-                        }
-                        className={`rounded border border-white/10 bg-background px-1.5 py-1 text-[10px] font-black uppercase focus:outline-none ${editPermissions[key] === "edit"
-                            ? "text-primary"
-                            : editPermissions[key] === "view"
-                              ? "text-blue-400"
-                              : "text-muted-foreground/50"
-                          }`}
+                        value={editStatus}
+                        onChange={(e) => setEditStatus(e.target.value as any)}
+                        className="w-full rounded-xl border border-white/10 bg-background px-3.5 py-2.5 text-xs font-bold text-foreground focus:outline-none cursor-pointer"
                       >
-                        <option value="none" className="text-muted-foreground">Nenhum</option>
-                        <option value="view" className="text-blue-400">Leitura</option>
-                        <option value="edit" className="text-primary">Escrita</option>
+                        <option value="ativo">🟢 Ativo (Acesso Liberado)</option>
+                        <option value="inativo">🔴 Suspenso (Acesso Bloqueado)</option>
                       </select>
                     </div>
-                  ))}
-                </div>
-              </div>
 
-              {/* Rodapé de Ações */}
-              <div className="flex items-center justify-end gap-2 pt-3 border-t border-white/10">
-                <button
-                  type="button"
-                  onClick={() => setEditingUser(null)}
-                  className="rounded-full border border-white/10 px-4 py-2 text-xs font-bold uppercase text-muted-foreground hover:bg-white/5 transition"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="button"
-                  onClick={handleSaveEdit}
-                  disabled={saving}
-                  className="inline-flex items-center gap-2 rounded-full bg-primary px-6 py-2 text-xs font-bold uppercase tracking-wider text-primary-foreground hover:shadow-glow transition disabled:opacity-50"
-                >
-                  {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
-                  <span>{saving ? "Salvando..." : "Salvar Credenciais e Acessos"}</span>
-                </button>
-              </div>
-            </motion.div>
+                    <div className="space-y-1">
+                      <label className="label-mono text-[10px] text-muted-foreground uppercase font-bold">
+                        Cargo / Função
+                      </label>
+                      <select
+                        value={editPosition}
+                        onChange={(e) => {
+                          const pos = e.target.value;
+                          setEditPosition(pos);
+                          const defaults = CARGO_DEFAULT_PERMISSIONS[pos] || {};
+                          setEditPermissions(defaults);
+                        }}
+                        className="w-full rounded-xl border border-white/10 bg-background px-3.5 py-2.5 text-xs text-foreground focus:outline-none cursor-pointer"
+                      >
+                        {allowedAssignable.positions.map((pos: string) => (
+                          <option key={pos} value={pos}>
+                            {pos}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="label-mono text-[10px] text-muted-foreground uppercase font-bold">
+                        Nível de Acesso (Role)
+                      </label>
+                      <select
+                        value={editRole}
+                        onChange={(e) => setEditRole(e.target.value)}
+                        className="w-full rounded-xl border border-white/10 bg-background px-3.5 py-2.5 text-xs font-bold text-foreground focus:outline-none cursor-pointer"
+                      >
+                        {allowedAssignable.roles.map((r: any) => (
+                          <option key={r.value} value={r.value}>
+                            {r.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* ── SEÇÃO 3: MATRIZ DE PERMISSÕES ── */}
+                  <div className="space-y-2 border-t border-white/10 pt-3">
+                    <div className="flex items-center justify-between">
+                      <label className="label-mono text-[10px] text-muted-foreground uppercase font-bold">
+                        Permissões Granulares por Módulo ({PERMISSION_PAGES.length})
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const defaults = CARGO_DEFAULT_PERMISSIONS[editPosition] || {};
+                          setEditPermissions(defaults);
+                          toast.info(`Preset recomendado para "${editPosition}" aplicado.`);
+                        }}
+                        className="text-[9px] font-black uppercase text-primary hover:underline"
+                      >
+                        Aplicar Sugestão do Cargo
+                      </button>
+                    </div>
+
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 max-h-[180px] overflow-y-auto pr-1 custom-scrollbar">
+                      {PERMISSION_PAGES.map(({ key, label }) => {
+                        const isAnalytic = key === "dashboard" || key === "metricas";
+                        const currentVal = editPermissions[key] || "none";
+                        const isView = currentVal === "view" || currentVal === "edit";
+
+                        if (isAnalytic) {
+                          return (
+                            <div
+                              key={key}
+                              className="flex items-center justify-between gap-2 rounded-xl border border-white/5 bg-background/40 p-2"
+                            >
+                              <span className="text-[10px] font-bold text-foreground truncate max-w-[110px]" title="Módulo Analítico">
+                                {label}
+                              </span>
+                              <select
+                                value={isView ? "view" : "none"}
+                                onChange={(e) =>
+                                  setEditPermissions((prev) => ({ ...prev, [key]: e.target.value }))
+                                }
+                                className={`rounded border border-white/10 bg-background px-1.5 py-1 text-[10px] font-black uppercase focus:outline-none cursor-pointer ${
+                                  isView ? "text-blue-400" : "text-muted-foreground/50"
+                                }`}
+                              >
+                                <option value="none" className="text-muted-foreground">Bloqueado</option>
+                                <option value="view" className="text-blue-400">Liberado</option>
+                              </select>
+                            </div>
+                          );
+                        }
+
+                        return (
+                          <div
+                            key={key}
+                            className="flex items-center justify-between gap-2 rounded-xl border border-white/5 bg-background/40 p-2"
+                          >
+                            <span className="text-[10px] font-bold text-foreground truncate max-w-[110px]">
+                              {label}
+                            </span>
+                            <select
+                              value={currentVal}
+                              onChange={(e) =>
+                                setEditPermissions((prev) => ({ ...prev, [key]: e.target.value }))
+                              }
+                              className={`rounded border border-white/10 bg-background px-1.5 py-1 text-[10px] font-black uppercase focus:outline-none cursor-pointer ${
+                                currentVal === "edit"
+                                  ? "text-primary"
+                                  : currentVal === "view"
+                                  ? "text-blue-400"
+                                  : "text-muted-foreground/50"
+                              }`}
+                            >
+                              <option value="none" className="text-muted-foreground">Bloqueado</option>
+                              <option value="view" className="text-blue-400">Leitura</option>
+                              <option value="edit" className="text-primary">Escrita</option>
+                            </select>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Rodapé Fixo de Ações */}
+                <div className="shrink-0 flex items-center justify-end gap-3 p-4 sm:p-5 border-t border-white/10 bg-background/90 backdrop-blur-md">
+                  <button
+                    type="button"
+                    onClick={() => setEditingUser(null)}
+                    className="rounded-xl border border-white/10 px-4 py-2 text-xs font-bold text-muted-foreground hover:bg-white/5 transition"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSaveEdit}
+                    disabled={saving}
+                    className="inline-flex items-center gap-2 rounded-xl bg-primary px-6 py-2.5 text-xs font-black uppercase tracking-wider text-primary-foreground shadow-glow hover:shadow-glow-lg transition active:scale-95 disabled:opacity-50"
+                  >
+                    {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+                    <span>{saving ? "Salvando..." : "Salvar Credenciais e Acessos"}</span>
+                  </button>
+                </div>
+              </motion.div>
+            </div>
           </motion.div>
         )}
       </AnimatePresence>
@@ -2365,35 +2440,40 @@ function TabUsuarios({ isAdmin, currentUserProfile }: { isAdmin: boolean; curren
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-md p-4"
+            className="fixed inset-0 z-50 overflow-y-auto bg-black/85 backdrop-blur-md p-3 sm:p-6"
           >
-            <motion.div
-              initial={{ scale: 0.95, y: 10 }}
-              animate={{ scale: 1, y: 0 }}
-              exit={{ scale: 0.95, y: 10 }}
-              className="glass-panel w-full max-w-xl p-6 space-y-5 shadow-2xl overflow-y-auto max-h-[92vh] custom-scrollbar border border-white/15"
-            >
-              <div className="flex items-start justify-between gap-3 border-b border-white/10 pb-4">
-                <div className="flex items-center gap-3">
-                  <div className="h-10 w-10 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center text-primary">
-                    <Plus className="h-5 w-5" />
+            <div className="min-h-full flex items-center justify-center py-4 sm:py-8">
+              <motion.div
+                initial={{ scale: 0.96, opacity: 0, y: 12 }}
+                animate={{ scale: 1, opacity: 1, y: 0 }}
+                exit={{ scale: 0.96, opacity: 0, y: 12 }}
+                className="relative w-full max-w-2xl bg-card border border-white/15 rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[88vh] my-auto"
+              >
+                {/* Header Fixo */}
+                <div className="shrink-0 flex items-start justify-between gap-3 p-5 sm:p-6 border-b border-white/10 bg-background/80 backdrop-blur-md">
+                  <div className="flex items-center gap-3">
+                    <div className="h-10 w-10 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center text-primary shrink-0">
+                      <Plus className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <h4 className="font-display text-base font-bold text-foreground">
+                        Cadastrar Novo Usuário na Suite
+                      </h4>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        Crie o login com e-mail e senha confirmados para acesso imediato.
+                      </p>
+                    </div>
                   </div>
-                  <div>
-                    <h4 className="font-display text-base font-bold text-foreground">
-                      Cadastrar Novo Usuário na Suite
-                    </h4>
-                    <p className="text-xs text-muted-foreground">
-                      Crie o login com e-mail e senha confirmados para acesso imediato.
-                    </p>
-                  </div>
+                  <button
+                    onClick={() => setShowAddModal(false)}
+                    className="rounded-xl p-2 text-muted-foreground hover:bg-white/10 hover:text-foreground transition"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
                 </div>
-                <button
-                  onClick={() => setShowAddModal(false)}
-                  className="rounded-lg p-1.5 text-muted-foreground hover:bg-white/10 hover:text-foreground transition"
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              </div>
+
+                {/* Corpo Rolável */}
+                <div className="flex-1 overflow-y-auto custom-scrollbar p-5 sm:p-6 space-y-4">
 
               <div className="grid gap-3 sm:grid-cols-2">
                 <div className="sm:col-span-2 rounded-xl border border-white/10 bg-white/[0.02] p-4">
@@ -2560,25 +2640,29 @@ function TabUsuarios({ isAdmin, currentUserProfile }: { isAdmin: boolean; curren
                 </div>
               </div>
 
-              <div className="flex items-center justify-end gap-2 pt-3 border-t border-white/10">
-                <button
-                  type="button"
-                  onClick={() => setShowAddModal(false)}
-                  className="rounded-full border border-white/10 px-4 py-2 text-xs font-bold uppercase text-muted-foreground hover:bg-white/5 transition"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="button"
-                  onClick={handleCreateUser}
-                  disabled={creating}
-                  className="inline-flex items-center gap-2 rounded-full bg-primary px-6 py-2 text-xs font-bold uppercase tracking-wider text-primary-foreground hover:shadow-glow transition disabled:opacity-50"
-                >
-                  {creating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-                  <span>{creating ? "Cadastrando..." : "Cadastrar Usuário"}</span>
-                </button>
-              </div>
-            </motion.div>
+                </div>
+
+                {/* Rodapé Fixo */}
+                <div className="shrink-0 flex items-center justify-end gap-3 p-4 sm:p-5 border-t border-white/10 bg-background/90 backdrop-blur-md">
+                  <button
+                    type="button"
+                    onClick={() => setShowAddModal(false)}
+                    className="rounded-xl border border-white/10 px-4 py-2 text-xs font-bold text-muted-foreground hover:bg-white/5 transition"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleCreateUser}
+                    disabled={creating}
+                    className="inline-flex items-center gap-2 rounded-xl bg-primary px-6 py-2.5 text-xs font-black uppercase tracking-wider text-primary-foreground shadow-glow hover:shadow-glow-lg transition active:scale-95 disabled:opacity-50"
+                  >
+                    {creating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+                    <span>{creating ? "Cadastrando..." : "Cadastrar Usuário"}</span>
+                  </button>
+                </div>
+              </motion.div>
+            </div>
           </motion.div>
         )}
       </AnimatePresence>

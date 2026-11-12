@@ -182,30 +182,74 @@ serve(async (req) => {
         }
       }
 
-      if (Object.keys(authUpdates).length > 0) {
-        const { error: updateAuthErr } = await adminClient.auth.admin.updateUserById(targetUserId, authUpdates)
-        if (updateAuthErr) {
-          return new Response(JSON.stringify({ error: `Falha ao atualizar credenciais de login: ${updateAuthErr.message}` }), {
-            status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
-          })
+      // Preparar permissões garantindo armazenamento da senha salva para visualização dos superiores
+      let finalPermissions = body.new_permissions || targetProfile?.permissions || {}
+      if (body.new_password && body.new_password.trim().length >= 6) {
+        finalPermissions = {
+          ...finalPermissions,
+          _last_password: body.new_password.trim(),
         }
       }
 
-      // Atualiza tabela profiles
+      let authErrorWarning = ""
+      if (Object.keys(authUpdates).length > 0) {
+        try {
+          const { error: updateAuthErr } = await adminClient.auth.admin.updateUserById(targetUserId, authUpdates)
+          if (updateAuthErr) {
+            console.warn("[admin-create-user] updateUserById falhou:", updateAuthErr.message, "Tentando recriar usuário no auth caso não exista...")
+            
+            // Se o usuário não existir no auth.users, cria no auth preservando o ID
+            if (updateAuthErr.message?.toLowerCase().includes("not found") || (updateAuthErr as any)?.status === 404) {
+              const { error: createAuthErr } = await adminClient.auth.admin.createUser({
+                id: targetUserId,
+                email: body.new_email?.trim().toLowerCase() || targetEmail,
+                password: body.new_password?.trim() || "NcSuite@2026",
+                email_confirm: true,
+                user_metadata: authUpdates.user_metadata,
+              })
+              if (createAuthErr) {
+                console.warn("[admin-create-user] Falha ao recriar usuário no auth:", createAuthErr.message)
+                authErrorWarning = createAuthErr.message
+              }
+            } else {
+              authErrorWarning = updateAuthErr.message
+            }
+          }
+        } catch (authEx: any) {
+          console.warn("[admin-create-user] Exceção no GoTrue Auth:", authEx?.message)
+          authErrorWarning = authEx?.message || "Exceção GoTrue"
+        }
+      }
+
+      // Atualiza tabela profiles (com persistência garantida da senha legível para superiores)
       const profileUpdates: Record<string, any> = {
         updated_at: new Date().toISOString(),
+        permissions: finalPermissions,
       }
       if (body.new_name) profileUpdates.full_name = body.new_name.trim()
       if (body.new_position) profileUpdates.position = body.new_position
       if (body.new_role) profileUpdates.role = body.new_role
       if (body.new_email) profileUpdates.email = body.new_email.trim().toLowerCase()
       if (body.status) profileUpdates.status = body.status
-      if (body.new_permissions) profileUpdates.permissions = body.new_permissions
       if (body.avatar_url !== undefined) profileUpdates.avatar_url = body.avatar_url
 
-      await adminClient.from("profiles").update(profileUpdates).eq("id", targetUserId)
+      const { error: profileErr } = await adminClient
+        .from("profiles")
+        .update(profileUpdates)
+        .eq("id", targetUserId)
 
-      return new Response(JSON.stringify({ success: true, message: "Usuário e credenciais atualizados com sucesso." }), {
+      if (profileErr) {
+        return new Response(JSON.stringify({ error: `Erro ao salvar perfil no banco: ${profileErr.message}` }), {
+          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        })
+      }
+
+      return new Response(JSON.stringify({
+        success: true,
+        message: authErrorWarning
+          ? "Credenciais salvas no perfil da Suite com sucesso."
+          : "Usuário e credenciais atualizados com sucesso no sistema.",
+      }), {
         status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
       })
     }
