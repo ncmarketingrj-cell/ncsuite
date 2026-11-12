@@ -71,7 +71,7 @@ export const PERMISSION_MODULES: PermissionModuleDef[] = [
     description: "Painel executivo com métricas consolidadas e gráficos",
     hub: "trafego",
     hubLabel: "Hub Tráfego & Performance",
-    mode: "read_only", // Analítico: Visualizar ou Bloqueado
+    mode: "full",
   },
   {
     key: "metricas",
@@ -79,7 +79,7 @@ export const PERMISSION_MODULES: PermissionModuleDef[] = [
     description: "Tabelas analíticas de campanhas, conjuntos e anúncios",
     hub: "trafego",
     hubLabel: "Hub Tráfego & Performance",
-    mode: "read_only", // Analítico: Visualizar ou Bloqueado
+    mode: "full",
   },
   {
     key: "simulador",
@@ -87,7 +87,7 @@ export const PERMISSION_MODULES: PermissionModuleDef[] = [
     description: "Simulador de cenários de CPL, investimento e leads",
     hub: "trafego",
     hubLabel: "Hub Tráfego & Performance",
-    mode: "read_only", // Analítico: Simular ou Bloqueado
+    mode: "full",
   },
   {
     key: "cockpit",

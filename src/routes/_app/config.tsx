@@ -1245,10 +1245,13 @@ function TabConta() {
 
 const PERMISSION_PAGES = [
   { key: "dashboard", label: "Command Center" },
-  { key: "metricas", label: "Métricas" },
-  { key: "clientes", label: "Clientes" },
+  { key: "cockpit", label: "Cockpit" },
+  { key: "simulador", label: "Simulador" },
+  { key: "metricas", label: "Métricas & KPIs" },
   { key: "relatorios", label: "Relatórios" },
   { key: "criativos", label: "Criativos" },
+  { key: "auditoria", label: "Auditoria Hub" },
+  { key: "clientes", label: "Clientes" },
   { key: "social", label: "Social Media" },
   { key: "automacoes", label: "Automações" },
   { key: "reunioes", label: "Reuniões" },
@@ -1256,7 +1259,6 @@ const PERMISSION_PAGES = [
   { key: "strategy_map", label: "Mapa Estratégico" },
   { key: "agente", label: "Agente IA" },
   { key: "gestao_victoria", label: "Mente da Victoria AI" },
-  { key: "auditoria", label: "Auditoria Hub" },
   { key: "criar_usuarios", label: "Gestão Usuários" },
 ] as const;
 

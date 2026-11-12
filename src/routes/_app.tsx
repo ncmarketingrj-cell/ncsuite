@@ -819,16 +819,16 @@ function Shell() {
             )}
           </div>
 
-          {/* CENTER: Navigation Links (Desktop) — todos inline, sem botão Mais */}
-          <nav className="hidden lg:flex flex-1 min-w-0 items-center justify-center gap-0 px-1">
-            <div className="flex min-w-0 items-center overflow-x-auto scrollbar-none">
+          {/* CENTER: Navigation Links (Desktop) — todos inline, sem barra de rolagem */}
+          <nav className="hidden lg:flex flex-1 min-w-0 items-center justify-center px-0.5">
+            <div className="flex items-center justify-center gap-0.5 xl:gap-1">
               {filteredNavItems.map((item) => {
                 const isActive = path === item.to || (item.to !== "/dashboard" && path.startsWith(item.to));
                 return (
                   <Link
                     key={item.to}
                     to={item.to}
-                    className={`group relative flex items-center gap-1.5 rounded-xl px-2.5 py-1.5 text-[12px] font-semibold whitespace-nowrap transition-all duration-200 ${
+                    className={`group relative flex items-center gap-1 xl:gap-1.5 rounded-xl px-1.5 xl:px-2.5 py-1.5 text-[11px] xl:text-[12px] font-semibold whitespace-nowrap transition-all duration-200 ${
                       isActive
                         ? "text-primary bg-primary/10"
                         : "text-muted-foreground hover:text-foreground hover:bg-muted/50"

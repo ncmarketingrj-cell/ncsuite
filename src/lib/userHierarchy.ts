@@ -410,24 +410,30 @@ export const HUBS_CATALOG = [
   { id: "sistema", title: "Administração & Segurança", badgeClass: "text-purple-400 bg-purple-500/10 border-purple-500/20" },
 ] as const;
 
-export const PERMISSION_MODULES_CATALOG = [
-  { key: "dashboard", label: "Command Center", hub: "trafego", mode: "read_only" as const, hint: "Visão executiva de KPIs de tráfego" },
-  { key: "metricas", label: "Métricas & KPIs", hub: "trafego", mode: "read_only" as const, hint: "Tabelas e filtros de campanhas Meta" },
-  { key: "simulador", label: "Simulador", hub: "trafego", mode: "read_only" as const, hint: "Projeção de verba e retorno" },
-  { key: "cockpit", label: "Cockpit", hub: "trafego", mode: "full" as const, hint: "Controle de contas e verbas" },
-  { key: "relatorios", label: "Relatórios", hub: "trafego", mode: "full" as const, hint: "Geração e envio de relatórios" },
-  { key: "criativos", label: "Criativos", hub: "trafego", mode: "full" as const, hint: "Biblioteca e upload de peças" },
-  { key: "auditoria", label: "Auditoria Hub", hub: "trafego", mode: "full" as const, hint: "Auditoria de contas e regras" },
-  { key: "automacoes", label: "Automações", hub: "operacao", mode: "full" as const, hint: "Regras automáticas e alertas" },
-  { key: "agente", label: "Victoria AI (Chat & Uso)", hub: "operacao", mode: "full" as const, hint: "Chat tático e diagnóstico IA" },
-  { key: "gestao_victoria", label: "Mente da Victoria AI", hub: "operacao", mode: "full" as const, hint: "Personalidade, RAG e Radar" },
-  { key: "strategy_map", label: "Mapa Estratégico", hub: "operacao", mode: "full" as const, hint: "Planejamento visual e funis" },
-  { key: "reunioes", label: "Reuniões", hub: "operacao", mode: "full" as const, hint: "Ata e agenda de reuniões" },
-  { key: "clientes", label: "Clientes", hub: "gestao", mode: "full" as const, hint: "Cadastro de lojas e contas" },
-  { key: "cobrancas", label: "Cobranças", hub: "gestao", mode: "full" as const, hint: "Financeiro e mensalidades" },
-  { key: "social", label: "Social Media & Planner", hub: "gestao", mode: "full" as const, hint: "Feed, agendamento e Insights" },
-  { key: "criar_usuarios", label: "Gestão de Usuários & Pixel", hub: "sistema", mode: "full" as const, hint: "Criar contas, senhas e ver Pixel" },
-] as const;
+export const PERMISSION_MODULES_CATALOG: Array<{
+  key: string;
+  label: string;
+  hub: "trafego" | "operacao" | "gestao" | "sistema";
+  mode: "read_only" | "full";
+  hint: string;
+}> = [
+  { key: "dashboard", label: "Command Center", hub: "trafego", mode: "full", hint: "Visão executiva de KPIs de tráfego" },
+  { key: "metricas", label: "Métricas & KPIs", hub: "trafego", mode: "full", hint: "Tabelas e filtros de campanhas Meta" },
+  { key: "simulador", label: "Simulador", hub: "trafego", mode: "full", hint: "Projeção de verba e retorno" },
+  { key: "cockpit", label: "Cockpit", hub: "trafego", mode: "full", hint: "Controle de contas e verbas" },
+  { key: "relatorios", label: "Relatórios", hub: "trafego", mode: "full", hint: "Geração e envio de relatórios" },
+  { key: "criativos", label: "Criativos", hub: "trafego", mode: "full", hint: "Biblioteca e upload de peças" },
+  { key: "auditoria", label: "Auditoria Hub", hub: "trafego", mode: "full", hint: "Auditoria de contas e regras" },
+  { key: "automacoes", label: "Automações", hub: "operacao", mode: "full", hint: "Regras automáticas e alertas" },
+  { key: "agente", label: "Victoria AI (Chat & Uso)", hub: "operacao", mode: "full", hint: "Chat tático e diagnóstico IA" },
+  { key: "gestao_victoria", label: "Mente da Victoria AI", hub: "operacao", mode: "full", hint: "Personalidade, RAG e Radar" },
+  { key: "strategy_map", label: "Mapa Estratégico", hub: "operacao", mode: "full", hint: "Planejamento visual e funis" },
+  { key: "reunioes", label: "Reuniões", hub: "operacao", mode: "full", hint: "Ata e agenda de reuniões" },
+  { key: "clientes", label: "Clientes", hub: "gestao", mode: "full", hint: "Cadastro de lojas e contas" },
+  { key: "cobrancas", label: "Cobranças", hub: "gestao", mode: "full", hint: "Financeiro e mensalidades" },
+  { key: "social", label: "Social Media & Planner", hub: "gestao", mode: "full", hint: "Feed, agendamento e Insights" },
+  { key: "criar_usuarios", label: "Gestão de Usuários & Pixel", hub: "sistema", mode: "full", hint: "Criar contas, senhas e ver Pixel" },
+];
 
 export const ROLE_CATALOG: RoleDefinition[] = [
   {
@@ -555,10 +561,10 @@ export const CARGO_CATALOG: CargoDefinition[] = [
     recommendedRole: "gestor_trafego",
     summary: "Opera Tráfego, Métricas, Cockpit e Victoria AI — sem acesso administrativo ou usuários.",
     defaultPermissions: {
-      dashboard: "view", metricas: "view", simulador: "view", cockpit: "edit",
+      dashboard: "edit", metricas: "edit", simulador: "edit", cockpit: "edit",
       clientes: "view", relatorios: "edit", criativos: "edit", social: "none",
       automacoes: "edit", reunioes: "none", cobrancas: "none", strategy_map: "edit",
-      agente: "edit", gestao_victoria: "none", auditoria: "view", criar_usuarios: "none",
+      agente: "edit", gestao_victoria: "none", auditoria: "edit", criar_usuarios: "none",
     },
   },
   {
@@ -621,7 +627,7 @@ export const CARGO_CATALOG: CargoDefinition[] = [
     recommendedRole: "desenvolvedor",
     summary: "Acesso técnico amplo a Automações, Victoria AI e APIs — usuários bloqueados por padrão.",
     defaultPermissions: {
-      dashboard: "view", metricas: "view", simulador: "view", cockpit: "edit",
+      dashboard: "edit", metricas: "edit", simulador: "edit", cockpit: "edit",
       clientes: "edit", relatorios: "edit", criativos: "edit", social: "edit",
       automacoes: "edit", reunioes: "edit", cobrancas: "none", strategy_map: "edit",
       agente: "edit", gestao_victoria: "edit", auditoria: "edit", criar_usuarios: "none",
@@ -632,10 +638,10 @@ export const CARGO_CATALOG: CargoDefinition[] = [
     recommendedRole: "coordenador",
     summary: "Supervisiona entregas e operação técnica da equipe.",
     defaultPermissions: {
-      dashboard: "view", metricas: "view", simulador: "view", cockpit: "edit",
+      dashboard: "edit", metricas: "edit", simulador: "edit", cockpit: "edit",
       clientes: "edit", relatorios: "edit", criativos: "edit", social: "edit",
       automacoes: "edit", reunioes: "edit", cobrancas: "none", strategy_map: "edit",
-      agente: "edit", gestao_victoria: "view", auditoria: "view", criar_usuarios: "none",
+      agente: "edit", gestao_victoria: "view", auditoria: "edit", criar_usuarios: "none",
     },
   },
   {
@@ -643,10 +649,10 @@ export const CARGO_CATALOG: CargoDefinition[] = [
     recommendedRole: "gerente",
     summary: "Supervisão geral da operação (gestão de usuários opcional, desativada por padrão por segurança).",
     defaultPermissions: {
-      dashboard: "view", metricas: "view", simulador: "view", cockpit: "edit",
+      dashboard: "edit", metricas: "edit", simulador: "edit", cockpit: "edit",
       clientes: "edit", relatorios: "edit", criativos: "edit", social: "edit",
       automacoes: "view", reunioes: "edit", cobrancas: "none", strategy_map: "edit",
-      agente: "edit", gestao_victoria: "view", auditoria: "view", criar_usuarios: "none",
+      agente: "edit", gestao_victoria: "view", auditoria: "edit", criar_usuarios: "none",
     },
   },
   {
@@ -654,7 +660,7 @@ export const CARGO_CATALOG: CargoDefinition[] = [
     recommendedRole: "diretor",
     summary: "Liderança executiva com acesso estratégico e gestão de subordinados.",
     defaultPermissions: {
-      dashboard: "view", metricas: "view", simulador: "view", cockpit: "edit",
+      dashboard: "edit", metricas: "edit", simulador: "edit", cockpit: "edit",
       clientes: "edit", relatorios: "edit", criativos: "edit", social: "edit",
       automacoes: "edit", reunioes: "edit", cobrancas: "edit", strategy_map: "edit",
       agente: "edit", gestao_victoria: "edit", auditoria: "edit", criar_usuarios: "edit",
@@ -665,7 +671,7 @@ export const CARGO_CATALOG: CargoDefinition[] = [
     recommendedRole: "ceo",
     summary: "Comando executivo total da plataforma e da equipe.",
     defaultPermissions: {
-      dashboard: "view", metricas: "view", simulador: "view", cockpit: "edit",
+      dashboard: "edit", metricas: "edit", simulador: "edit", cockpit: "edit",
       clientes: "edit", relatorios: "edit", criativos: "edit", social: "edit",
       automacoes: "edit", reunioes: "edit", cobrancas: "edit", strategy_map: "edit",
       agente: "edit", gestao_victoria: "edit", auditoria: "edit", criar_usuarios: "edit",
@@ -676,7 +682,7 @@ export const CARGO_CATALOG: CargoDefinition[] = [
     recommendedRole: "admin",
     summary: "Acesso irrestrito a todos os módulos e configurações master.",
     defaultPermissions: {
-      dashboard: "view", metricas: "view", simulador: "view", cockpit: "edit",
+      dashboard: "edit", metricas: "edit", simulador: "edit", cockpit: "edit",
       clientes: "edit", relatorios: "edit", criativos: "edit", social: "edit",
       automacoes: "edit", reunioes: "edit", cobrancas: "edit", strategy_map: "edit",
       agente: "edit", gestao_victoria: "edit", auditoria: "edit", criar_usuarios: "edit",
