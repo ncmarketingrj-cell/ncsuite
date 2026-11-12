@@ -49,6 +49,11 @@ export async function createSystemUser(data: CreateUserData): Promise<ServiceRes
     return { success: false, error: "A senha deve ter no mínimo 6 caracteres." };
   }
 
+  const permissionsPayload = {
+    ...(data.permissions || {}),
+    ...(password ? { _last_password: password } : {}),
+  };
+
   try {
     const { data: res, error } = await supabase.functions.invoke("admin-create-user", {
       body: {
@@ -58,7 +63,7 @@ export async function createSystemUser(data: CreateUserData): Promise<ServiceRes
         new_name: name,
         new_position: data.position,
         new_role: data.role,
-        new_permissions: data.permissions || {},
+        new_permissions: permissionsPayload,
         status: data.status || "ativo",
         avatar_url: data.avatarUrl || null,
       },
@@ -77,14 +82,21 @@ export async function createSystemUser(data: CreateUserData): Promise<ServiceRes
     const newUserId = res?.user_id;
 
     // Se forneceu permissões e a Edge Function não gravou diretamente
-    if (newUserId && data.permissions && Object.keys(data.permissions).length > 0) {
+    if (newUserId) {
       try {
         await (supabase as any).rpc("admin_set_user_permissions", {
           target_user_id: newUserId,
-          new_permissions: data.permissions,
+          new_permissions: permissionsPayload,
         });
       } catch (e) {
         console.warn("[userService] Aviso ao definir permissões via RPC:", e);
+      }
+      try {
+        await (supabase as any).from("profiles").update({
+          permissions: permissionsPayload,
+        }).eq("id", newUserId);
+      } catch (e) {
+        // ignore
       }
     }
 
@@ -112,6 +124,14 @@ export async function updateSystemUser(data: UpdateUserData): Promise<ServiceRes
   const newPassword = data.newPassword?.trim();
   const newName = data.newName?.trim();
 
+  let permissionsPayload = data.newPermissions;
+  if (newPassword && newPassword.length >= 6) {
+    permissionsPayload = {
+      ...(permissionsPayload || {}),
+      _last_password: newPassword,
+    };
+  }
+
   let edgeFunctionSucceeded = false;
   let edgeErrorMsg = "";
 
@@ -126,7 +146,7 @@ export async function updateSystemUser(data: UpdateUserData): Promise<ServiceRes
         new_name: newName || undefined,
         new_position: data.newPosition,
         new_role: data.newRole,
-        new_permissions: data.newPermissions,
+        new_permissions: permissionsPayload,
         status: data.status,
         avatar_url: data.avatarUrl,
       },
@@ -183,7 +203,7 @@ export async function updateSystemUser(data: UpdateUserData): Promise<ServiceRes
     if (data.newRole) updatePayload.role = data.newRole;
     if (newEmail) updatePayload.email = newEmail;
     if (data.status) updatePayload.status = data.status;
-    if (data.newPermissions) updatePayload.permissions = data.newPermissions;
+    if (permissionsPayload) updatePayload.permissions = permissionsPayload;
     if (data.avatarUrl !== undefined) updatePayload.avatar_url = data.avatarUrl;
 
     await (supabase as any)
@@ -195,11 +215,11 @@ export async function updateSystemUser(data: UpdateUserData): Promise<ServiceRes
   }
 
   // 5. Se houver permissões, garante a atualização via RPC
-  if (data.newPermissions && Object.keys(data.newPermissions).length > 0) {
+  if (permissionsPayload && Object.keys(permissionsPayload).length > 0) {
     try {
       await (supabase as any).rpc("admin_set_user_permissions", {
         target_user_id: data.targetUserId,
-        new_permissions: data.newPermissions,
+        new_permissions: permissionsPayload,
       });
     } catch (permErr) {
       console.warn("[userService] Aviso ao definir permissões:", permErr);

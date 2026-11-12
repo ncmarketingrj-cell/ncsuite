@@ -33,6 +33,7 @@ import {
   deleteNotification,
 } from "@/lib/notificationService";
 import { playAlertTone } from "@/lib/alertSounds";
+import { getUserLevel, isMasterAdmin } from "@/lib/userHierarchy";
 
 function AppErrorFallback({ error, reset }: { error: Error; reset: () => void }) {
   return (
@@ -138,7 +139,14 @@ function Shell() {
 
   const { profile, isAdmin, isLoading: profileLoading, perms, hasAccess } = usePagePermission();
 
+  const userLevel = getUserLevel({ email: user?.email, role: profile?.role, position: profile?.position });
+  const isMaster = isMasterAdmin({ email: user?.email, id: user?.id });
+  const isStaff = isAdmin || profile?.role === "staff" || /gestor|director|diretor|staff|sócio|socio|dono|ceo/i.test(profile?.position || "");
+  const canAccessConfig = isMaster || isAdmin || isStaff || userLevel >= 70;
+
   const hasPageAccess = (pathname: string) => {
+    if (pathname.startsWith("/perfil")) return true;
+    if (pathname.startsWith("/config")) return canAccessConfig;
     if (profileLoading || isAdmin) return true;
     
     if (pathname.startsWith("/metricas")) return hasAccess("metricas");
@@ -563,11 +571,22 @@ function Shell() {
             </button>
             <div className="h-3 w-px bg-border" />
             <Link
-              to="/config"
+              to="/perfil"
               className="text-[10px] font-bold text-muted-foreground hover:text-foreground uppercase tracking-wider flex items-center gap-1.5 transition-colors"
             >
-              <Settings className="h-3.5 w-3.5" /> Configurações
+              <User className="h-3.5 w-3.5" /> Meu Perfil
             </Link>
+            {canAccessConfig && (
+              <>
+                <div className="h-3 w-px bg-border" />
+                <Link
+                  to="/config"
+                  className="text-[10px] font-bold text-muted-foreground hover:text-foreground uppercase tracking-wider flex items-center gap-1.5 transition-colors"
+                >
+                  <Settings className="h-3.5 w-3.5" /> Configurações
+                </Link>
+              </>
+            )}
             <div className="h-3 w-px bg-border" />
             <button
               onClick={handleSignOut}
@@ -1056,11 +1075,10 @@ function Shell() {
                     >
                       {/* Identity */}
                       <Link
-                        to="/config"
-                        search={{ tab: "conta" } as any}
+                        to="/perfil"
                         onClick={() => setShowUserMenu(false)}
                         className="flex items-center gap-3 px-3 py-2.5 border-b border-border mb-1.5 hover:bg-muted/40 transition-colors rounded-xl"
-                        title="Ir para Meu Perfil em Configurações"
+                        title="Ir para Meu Perfil & Membros"
                       >
                         <div className="h-8 w-8 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center overflow-hidden shrink-0">
                           {profile?.avatar_url
@@ -1074,11 +1092,10 @@ function Shell() {
                       </Link>
                       {/* Actions */}
                       <Link
-                        to="/config"
-                        search={{ tab: "conta" } as any}
+                        to="/perfil"
                         onClick={() => setShowUserMenu(false)}
                         className={`w-full flex items-center gap-2.5 rounded-xl px-3 py-2 text-[12px] font-medium transition-all ${
-                          path.startsWith("/config")
+                          path.startsWith("/perfil")
                             ? "bg-primary/10 text-primary font-bold"
                             : "text-foreground hover:bg-muted/50"
                         }`}
@@ -1096,17 +1113,19 @@ function Shell() {
                       >
                         <Zap className="h-3.5 w-3.5 text-amber-400" /> Automações
                       </Link>
-                      <Link
-                        to="/config"
-                        onClick={() => setShowUserMenu(false)}
-                        className={`w-full flex items-center gap-2.5 rounded-xl px-3 py-2 text-[12px] font-medium transition-all ${
-                          path.startsWith("/config")
-                            ? "bg-primary/10 text-primary font-bold"
-                            : "text-foreground hover:bg-muted/50"
-                        }`}
-                      >
-                        <Settings className="h-3.5 w-3.5 text-muted-foreground" /> Configurações
-                      </Link>
+                      {canAccessConfig && (
+                        <Link
+                          to="/config"
+                          onClick={() => setShowUserMenu(false)}
+                          className={`w-full flex items-center gap-2.5 rounded-xl px-3 py-2 text-[12px] font-medium transition-all ${
+                            path.startsWith("/config")
+                              ? "bg-primary/10 text-primary font-bold"
+                              : "text-foreground hover:bg-muted/50"
+                          }`}
+                        >
+                          <Settings className="h-3.5 w-3.5 text-muted-foreground" /> Configurações
+                        </Link>
+                      )}
 
                       {/* Mobile extra tools inside User Popup */}
                       <div className="sm:hidden border-t border-border/50 my-1 pt-1 space-y-0.5">
@@ -1246,20 +1265,37 @@ function Shell() {
                   <ChevronRight className="h-4 w-4 ml-auto opacity-30" />
                 </Link>
                 <Link
-                  to="/config"
+                  to="/perfil"
                   onClick={() => setMobileMenuOpen(false)}
                   className={`flex items-center gap-3.5 rounded-2xl px-4 py-3.5 text-[13px] font-bold transition-all ${
-                    path.startsWith("/config")
+                    path.startsWith("/perfil")
                       ? "bg-primary/10 text-primary border border-primary/20"
                       : "bg-transparent text-foreground hover:bg-white/[0.03] border border-transparent"
                   }`}
                 >
-                  <div className={`h-8 w-8 rounded-full flex items-center justify-center shrink-0 ${path.startsWith("/config") ? 'bg-primary/20' : 'bg-muted/30'}`}>
-                    <Settings className="h-4 w-4 text-muted-foreground" />
+                  <div className={`h-8 w-8 rounded-full flex items-center justify-center shrink-0 ${path.startsWith("/perfil") ? 'bg-primary/20' : 'bg-muted/30'}`}>
+                    <User className="h-4 w-4 text-primary" />
                   </div>
-                  Configurações
+                  Meu Perfil
                   <ChevronRight className="h-4 w-4 ml-auto opacity-30" />
                 </Link>
+                {canAccessConfig && (
+                  <Link
+                    to="/config"
+                    onClick={() => setMobileMenuOpen(false)}
+                    className={`flex items-center gap-3.5 rounded-2xl px-4 py-3.5 text-[13px] font-bold transition-all ${
+                      path.startsWith("/config")
+                        ? "bg-primary/10 text-primary border border-primary/20"
+                        : "bg-transparent text-foreground hover:bg-white/[0.03] border border-transparent"
+                    }`}
+                  >
+                    <div className={`h-8 w-8 rounded-full flex items-center justify-center shrink-0 ${path.startsWith("/config") ? 'bg-primary/20' : 'bg-muted/30'}`}>
+                      <Settings className="h-4 w-4 text-muted-foreground" />
+                    </div>
+                    Configurações
+                    <ChevronRight className="h-4 w-4 ml-auto opacity-30" />
+                  </Link>
+                )}
               </nav>
               {/* Perfil + Sair */}
               <div className="px-4 pb-6 pt-1 border-t border-border/50 flex items-center justify-between">
@@ -1327,13 +1363,13 @@ function Shell() {
               </Link>
             );
           })()}
-          {/* Config */}
+          {/* Perfil */}
           {(() => {
-            const isActive = path.startsWith("/config");
+            const isActive = path.startsWith("/perfil");
             return (
-              <Link to="/config" className={`relative flex flex-col items-center gap-1 px-3 py-3 text-[10px] font-bold transition-colors ${isActive ? "text-primary" : "text-muted-foreground"}`}>
-                <Settings className={`h-5 w-5 ${isActive ? "text-primary" : ""}`} />
-                Config
+              <Link to="/perfil" className={`relative flex flex-col items-center gap-1 px-3 py-3 text-[10px] font-bold transition-colors ${isActive ? "text-primary" : "text-muted-foreground"}`}>
+                <User className={`h-5 w-5 ${isActive ? "text-primary" : ""}`} />
+                Perfil
                 {isActive && <span className="absolute bottom-0 h-[2px] w-6 rounded-full bg-primary" />}
               </Link>
             );

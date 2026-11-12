@@ -29,6 +29,7 @@ import { Route as AppReunioesRouteImport } from './routes/_app/reunioes'
 import { Route as AppRelatoriosRouteImport } from './routes/_app/relatorios'
 import { Route as AppRegrasRouteImport } from './routes/_app/regras'
 import { Route as AppQuizRouteImport } from './routes/_app/quiz'
+import { Route as AppPerfilRouteImport } from './routes/_app/perfil'
 import { Route as AppOrganizadorRouteImport } from './routes/_app/organizador'
 import { Route as AppMetricasRouteImport } from './routes/_app/metricas'
 import { Route as AppLinkBioRouteImport } from './routes/_app/link-bio'
@@ -146,6 +147,11 @@ const AppRegrasRoute = AppRegrasRouteImport.update({
 const AppQuizRoute = AppQuizRouteImport.update({
   id: '/quiz',
   path: '/quiz',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppPerfilRoute = AppPerfilRouteImport.update({
+  id: '/perfil',
+  path: '/perfil',
   getParentRoute: () => AppRoute,
 } as any)
 const AppOrganizadorRoute = AppOrganizadorRouteImport.update({
@@ -266,6 +272,7 @@ export interface FileRoutesByFullPath {
   '/link-bio': typeof AppLinkBioRoute
   '/metricas': typeof AppMetricasRouteWithChildren
   '/organizador': typeof AppOrganizadorRoute
+  '/perfil': typeof AppPerfilRoute
   '/quiz': typeof AppQuizRoute
   '/regras': typeof AppRegrasRoute
   '/relatorios': typeof AppRelatoriosRoute
@@ -306,6 +313,7 @@ export interface FileRoutesByTo {
   '/link-bio': typeof AppLinkBioRoute
   '/metricas': typeof AppMetricasRouteWithChildren
   '/organizador': typeof AppOrganizadorRoute
+  '/perfil': typeof AppPerfilRoute
   '/quiz': typeof AppQuizRoute
   '/regras': typeof AppRegrasRoute
   '/relatorios': typeof AppRelatoriosRoute
@@ -348,6 +356,7 @@ export interface FileRoutesById {
   '/_app/link-bio': typeof AppLinkBioRoute
   '/_app/metricas': typeof AppMetricasRouteWithChildren
   '/_app/organizador': typeof AppOrganizadorRoute
+  '/_app/perfil': typeof AppPerfilRoute
   '/_app/quiz': typeof AppQuizRoute
   '/_app/regras': typeof AppRegrasRoute
   '/_app/relatorios': typeof AppRelatoriosRoute
@@ -390,6 +399,7 @@ export interface FileRouteTypes {
     | '/link-bio'
     | '/metricas'
     | '/organizador'
+    | '/perfil'
     | '/quiz'
     | '/regras'
     | '/relatorios'
@@ -430,6 +440,7 @@ export interface FileRouteTypes {
     | '/link-bio'
     | '/metricas'
     | '/organizador'
+    | '/perfil'
     | '/quiz'
     | '/regras'
     | '/relatorios'
@@ -471,6 +482,7 @@ export interface FileRouteTypes {
     | '/_app/link-bio'
     | '/_app/metricas'
     | '/_app/organizador'
+    | '/_app/perfil'
     | '/_app/quiz'
     | '/_app/regras'
     | '/_app/relatorios'
@@ -641,6 +653,13 @@ declare module '@tanstack/react-router' {
       path: '/quiz'
       fullPath: '/quiz'
       preLoaderRoute: typeof AppQuizRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/perfil': {
+      id: '/_app/perfil'
+      path: '/perfil'
+      fullPath: '/perfil'
+      preLoaderRoute: typeof AppPerfilRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/organizador': {
@@ -832,6 +851,7 @@ interface AppRouteChildren {
   AppLinkBioRoute: typeof AppLinkBioRoute
   AppMetricasRoute: typeof AppMetricasRouteWithChildren
   AppOrganizadorRoute: typeof AppOrganizadorRoute
+  AppPerfilRoute: typeof AppPerfilRoute
   AppQuizRoute: typeof AppQuizRoute
   AppRegrasRoute: typeof AppRegrasRoute
   AppRelatoriosRoute: typeof AppRelatoriosRoute
@@ -863,6 +883,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppLinkBioRoute: AppLinkBioRoute,
   AppMetricasRoute: AppMetricasRouteWithChildren,
   AppOrganizadorRoute: AppOrganizadorRoute,
+  AppPerfilRoute: AppPerfilRoute,
   AppQuizRoute: AppQuizRoute,
   AppRegrasRoute: AppRegrasRoute,
   AppRelatoriosRoute: AppRelatoriosRoute,

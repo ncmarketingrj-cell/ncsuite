@@ -1,4 +1,4 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { useState, useEffect, useMemo, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Settings, User, Building2, Plug, BookOpen, Cpu, Plus, Trash2, Globe, Check, X, Loader2, Wifi, WifiOff, ChevronDown, Zap, Brain, LayoutDashboard, FileText, Target, Upload, Send, Users, Database, Lock, MessageSquareWarning, Bug, Lightbulb, Frown, HelpCircle, StickyNote, Filter, Eye, Clock, Megaphone, Share2, RefreshCw, Instagram, Sparkles, Crown, Shield, ShieldCheck, Key, EyeOff, Copy, UserCheck, UserX, Award, Briefcase, Phone, Palette, ArrowUpDown, ChevronRight, AlertTriangle } from "lucide-react";
@@ -103,6 +103,32 @@ function ConfigPage() {
     /gestor|director|diretor|staff|sócio|socio|dono/i.test(profile?.position || "");
   const perms = (profile as any)?.permissions ?? {};
   const canManageUsers = isAdmin || !!perms.criar_usuarios;
+  const userLevel = getUserLevel({ email: user?.email, role: profile?.role, position: profile?.position });
+  const isCallerMaster = isMasterAdmin({ email: user?.email, id: user?.id });
+  const canAccessConfig = isCallerMaster || isAdmin || isStaff || userLevel >= 70;
+
+  if (!canAccessConfig) {
+    return (
+      <div className="mx-auto max-w-lg text-center py-20 space-y-5">
+        <div className="h-16 w-16 mx-auto rounded-3xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-500 shadow-lg">
+          <Lock className="h-8 w-8" />
+        </div>
+        <div className="space-y-2">
+          <h2 className="text-xl font-black text-foreground">Acesso Exclusivo para Superiores</h2>
+          <p className="text-xs text-muted-foreground leading-relaxed">
+            O painel de configurações do sistema é reservado para Administradores, Gerentes e Diretores.
+            Você pode visualizar e editar seus dados e credenciais na página de perfil.
+          </p>
+        </div>
+        <Link
+          to="/perfil"
+          className="inline-flex items-center gap-2 rounded-xl bg-primary px-6 py-3 text-xs font-black uppercase tracking-wider text-primary-foreground shadow-glow hover:shadow-glow-lg transition active:scale-95"
+        >
+          <User className="h-4 w-4" /> Acessar Meu Perfil
+        </Link>
+      </div>
+    );
+  }
 
   const visibleTabs = TABS.filter(t => {
     if (!t.adminOnly) return true;
@@ -113,7 +139,15 @@ function ConfigPage() {
 
   return (
     <div className="mx-auto max-w-5xl space-y-8">
-      <PageHeader eyebrow="Sistema" title="Configurações" description="Gerencie sua experiência e aprenda a usar a NC Suite." />
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-border/50 pb-5">
+        <PageHeader eyebrow="Sistema" title="Configurações Gerais" description="Gerencie integrações, IA e módulos administrativos da NC Suite." />
+        <Link
+          to="/perfil"
+          className="inline-flex items-center gap-2 rounded-xl border border-border/60 bg-card hover:bg-muted/40 px-4 py-2 text-xs font-bold text-foreground transition active:scale-95 self-start sm:self-auto shrink-0"
+        >
+          <User className="h-3.5 w-3.5 text-primary" /> Meu Perfil & Equipe
+        </Link>
+      </div>
 
       <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
         {visibleTabs.map((t) => (
