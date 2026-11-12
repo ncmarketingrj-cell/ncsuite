@@ -3,6 +3,11 @@
 // ──────────────────────────────────────────────────────────────────────────────
 
 import { supabase } from "@/integrations/supabase-external/client";
+import { normalizeRoleForDbConstraint } from "@/lib/userHierarchy";
+
+function isRoleConstraintError(msg?: string): boolean {
+  return /profiles_role_check|violates check constraint.*role/i.test(msg || "");
+}
 
 export interface CreateUserData {
   email: string;
@@ -96,15 +101,16 @@ export async function createSystemUser(data: CreateUserData): Promise<ServiceRes
   let edgeErrorMsg = "";
 
   // 1. Tenta Edge Function admin-create-user (cria com email_confirm: true, zero e-mail enviado)
+  let effectiveRole = data.role || "outro";
   try {
-    const { data: res, error } = await supabase.functions.invoke("admin-create-user", {
+    let { data: res, error } = await supabase.functions.invoke("admin-create-user", {
       body: {
         action: "create",
         new_email: email,
         new_password: password,
         new_name: name,
         new_position: data.position,
-        new_role: data.role,
+        new_role: effectiveRole,
         new_permissions: permissionsPayload,
         status: data.status || "ativo",
         avatar_url: data.avatarUrl || null,
@@ -115,6 +121,28 @@ export async function createSystemUser(data: CreateUserData): Promise<ServiceRes
       newUserId = res?.user_id;
     } else {
       edgeErrorMsg = await extractEdgeError(error, res);
+      if (isRoleConstraintError(edgeErrorMsg)) {
+        effectiveRole = normalizeRoleForDbConstraint(effectiveRole);
+        const retryEdge = await supabase.functions.invoke("admin-create-user", {
+          body: {
+            action: "create",
+            new_email: email,
+            new_password: password,
+            new_name: name,
+            new_position: data.position,
+            new_role: effectiveRole,
+            new_permissions: permissionsPayload,
+            status: data.status || "ativo",
+            avatar_url: data.avatarUrl || null,
+          },
+        });
+        if (!retryEdge.error && !retryEdge.data?.error) {
+          newUserId = retryEdge.data?.user_id;
+          edgeErrorMsg = "";
+        } else {
+          edgeErrorMsg = await extractEdgeError(retryEdge.error, retryEdge.data);
+        }
+      }
     }
   } catch (err: any) {
     edgeErrorMsg = err?.message || "";
@@ -128,13 +156,25 @@ export async function createSystemUser(data: CreateUserData): Promise<ServiceRes
   // 2. Fallback seguro via RPC admin_create_user (também cria já confirmado em auth.users + auth.identities, SEM envio de e-mail)
   if (!newUserId) {
     try {
-      const { data: rpcUserId, error: rpcErr } = await (supabase as any).rpc("admin_create_user", {
+      let { data: rpcUserId, error: rpcErr } = await (supabase as any).rpc("admin_create_user", {
         new_email: email,
         new_password: password,
         new_name: name,
         new_position: data.position || "Gestor de Tráfego",
-        new_role: data.role || "outro",
+        new_role: effectiveRole,
       });
+      if (rpcErr && isRoleConstraintError(rpcErr.message)) {
+        effectiveRole = normalizeRoleForDbConstraint(effectiveRole);
+        const retryRpc = await (supabase as any).rpc("admin_create_user", {
+          new_email: email,
+          new_password: password,
+          new_name: name,
+          new_position: data.position || "Gestor de Tráfego",
+          new_role: effectiveRole,
+        });
+        rpcUserId = retryRpc.data;
+        rpcErr = retryRpc.error;
+      }
       if (rpcErr) {
         return {
           success: false,
@@ -204,28 +244,42 @@ export async function updateSystemUser(data: UpdateUserData): Promise<ServiceRes
 
   let edgeFunctionSucceeded = false;
   let edgeErrorMsg = "";
+  let effectiveRole = data.newRole;
 
   // 1. Tenta a Edge Function administrativa (GoTrue Admin API com email_confirm: true)
   try {
-    const { data: edgeRes, error: edgeErr } = await supabase.functions.invoke("admin-create-user", {
-      body: {
-        action: "update",
-        target_user_id: data.targetUserId,
-        new_email: newEmail || undefined,
-        new_password: hasPasswordChange ? newPassword : undefined,
-        new_name: newName || undefined,
-        new_position: data.newPosition,
-        new_role: data.newRole,
-        new_permissions: permissionsPayload,
-        status: data.status,
-        avatar_url: data.avatarUrl,
-      },
-    });
+    const invokeUpdate = async (roleToUse?: string) =>
+      supabase.functions.invoke("admin-create-user", {
+        body: {
+          action: "update",
+          target_user_id: data.targetUserId,
+          new_email: newEmail || undefined,
+          new_password: hasPasswordChange ? newPassword : undefined,
+          new_name: newName || undefined,
+          new_position: data.newPosition,
+          new_role: roleToUse,
+          new_permissions: permissionsPayload,
+          status: data.status,
+          avatar_url: data.avatarUrl,
+        },
+      });
+
+    const { data: edgeRes, error: edgeErr } = await invokeUpdate(effectiveRole);
 
     if (!edgeErr && !edgeRes?.error) {
       edgeFunctionSucceeded = true;
     } else {
       edgeErrorMsg = await extractEdgeError(edgeErr, edgeRes);
+      if (effectiveRole && isRoleConstraintError(edgeErrorMsg)) {
+        effectiveRole = normalizeRoleForDbConstraint(effectiveRole);
+        const retryEdge = await invokeUpdate(effectiveRole);
+        if (!retryEdge.error && !retryEdge.data?.error) {
+          edgeFunctionSucceeded = true;
+          edgeErrorMsg = "";
+        } else {
+          edgeErrorMsg = await extractEdgeError(retryEdge.error, retryEdge.data);
+        }
+      }
     }
   } catch (err: any) {
     edgeErrorMsg = err?.message || "";
@@ -245,43 +299,47 @@ export async function updateSystemUser(data: UpdateUserData): Promise<ServiceRes
     return { success: false, error: translateAuthError(edgeErrorMsg) };
   }
 
-  // 3. Fallback via RPC admin_update_user no banco (tenta 7 parâmetros e faz fallback automático para 5 parâmetros)
+  // 3. Fallback via RPC admin_update_user no banco (tenta 7 parâmetros e faz fallback automático para 5 parâmetros + role constraint)
   let rpcSucceeded = false;
   let rpcErrorMsg = "";
   try {
-    const rpc7Payload: any = {
-      target_user_id: data.targetUserId,
-      new_role: data.newRole || "outro",
-      new_position: data.newPosition || "Gestor de Tráfego",
-      new_name: newName || "",
-      new_password: hasPasswordChange ? newPassword : null,
-      new_email: newEmail || null,
-      new_status: data.status || null,
-    };
-
-    const { error: rpc7Err } = await (supabase as any).rpc("admin_update_user", rpc7Payload);
-    if (!rpc7Err) {
-      rpcSucceeded = true;
-    } else if (
-      rpc7Err.message?.includes("schema cache") ||
-      rpc7Err.code === "PGRST202"
-    ) {
-      // Banco ainda com assinatura antiga de 5 parâmetros
-      const { error: rpc5Err } = await (supabase as any).rpc("admin_update_user", {
+    const runRpcUpdate = async (roleToUse: string) => {
+      const rpc7Payload: any = {
         target_user_id: data.targetUserId,
-        new_role: data.newRole || "outro",
+        new_role: roleToUse,
         new_position: data.newPosition || "Gestor de Tráfego",
         new_name: newName || "",
         new_password: hasPasswordChange ? newPassword : null,
-      });
-      if (!rpc5Err) {
-        rpcSucceeded = true;
-      } else {
-        rpcErrorMsg = rpc5Err.message || "";
+        new_email: newEmail || null,
+        new_status: data.status || null,
+      };
+
+      const { error: rpc7Err } = await (supabase as any).rpc("admin_update_user", rpc7Payload);
+      if (!rpc7Err) return { ok: true, errorMsg: "" };
+
+      if (rpc7Err.message?.includes("schema cache") || rpc7Err.code === "PGRST202") {
+        const { error: rpc5Err } = await (supabase as any).rpc("admin_update_user", {
+          target_user_id: data.targetUserId,
+          new_role: roleToUse,
+          new_position: data.newPosition || "Gestor de Tráfego",
+          new_name: newName || "",
+          new_password: hasPasswordChange ? newPassword : null,
+        });
+        if (!rpc5Err) return { ok: true, errorMsg: "" };
+        return { ok: false, errorMsg: rpc5Err.message || "" };
       }
-    } else {
-      rpcErrorMsg = rpc7Err.message || "";
+
+      return { ok: false, errorMsg: rpc7Err.message || "" };
+    };
+
+    let attempt = await runRpcUpdate(effectiveRole || "outro");
+    if (!attempt.ok && isRoleConstraintError(attempt.errorMsg)) {
+      effectiveRole = normalizeRoleForDbConstraint(effectiveRole || "outro");
+      attempt = await runRpcUpdate(effectiveRole);
     }
+
+    rpcSucceeded = attempt.ok;
+    rpcErrorMsg = attempt.errorMsg;
   } catch (rpcErr: any) {
     rpcErrorMsg = rpcErr?.message || "";
   }
@@ -303,7 +361,7 @@ export async function updateSystemUser(data: UpdateUserData): Promise<ServiceRes
     };
     if (newName) updatePayload.full_name = newName;
     if (data.newPosition) updatePayload.position = data.newPosition;
-    if (data.newRole) updatePayload.role = data.newRole;
+    if (effectiveRole) updatePayload.role = effectiveRole;
     if (newEmail) updatePayload.email = newEmail;
     if (data.status) updatePayload.status = data.status;
     if (permissionsPayload) updatePayload.permissions = permissionsPayload;
@@ -313,6 +371,15 @@ export async function updateSystemUser(data: UpdateUserData): Promise<ServiceRes
       .from("profiles")
       .update(updatePayload)
       .eq("id", data.targetUserId);
+
+    if (profErr && isRoleConstraintError(profErr.message) && updatePayload.role) {
+      updatePayload.role = normalizeRoleForDbConstraint(updatePayload.role);
+      const retryRole = await (supabase as any)
+        .from("profiles")
+        .update(updatePayload)
+        .eq("id", data.targetUserId);
+      profErr = retryRole.error;
+    }
 
     if (profErr && profErr.message?.toLowerCase().includes("status")) {
       delete updatePayload.status;

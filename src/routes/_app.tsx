@@ -33,7 +33,10 @@ import {
   deleteNotification,
 } from "@/lib/notificationService";
 import { playAlertTone } from "@/lib/alertSounds";
-import { getUserLevel, isMasterAdmin } from "@/lib/userHierarchy";
+import { canUserAccessConfig, canUserManageUsers, getUserLevel, isMasterAdmin } from "@/lib/userHierarchy";
+import { UserAvatar } from "@/components/UserAvatar";
+import { TeamPresenceTopBar } from "@/components/TeamPresenceTopBar";
+import { useWorkflowPixel } from "@/hooks/useWorkflowPixel";
 
 function AppErrorFallback({ error, reset }: { error: Error; reset: () => void }) {
   return (
@@ -141,8 +144,23 @@ function Shell() {
 
   const userLevel = getUserLevel({ email: user?.email, role: profile?.role, position: profile?.position });
   const isMaster = isMasterAdmin({ email: user?.email, id: user?.id });
-  const isStaff = isAdmin || profile?.role === "staff" || /gestor|director|diretor|staff|sócio|socio|dono|ceo/i.test(profile?.position || "");
-  const canAccessConfig = isMaster || isAdmin || isStaff || userLevel >= 70;
+  const canAccessConfig = canUserAccessConfig({
+    id: user?.id,
+    email: user?.email,
+    role: profile?.role,
+    position: profile?.position,
+    permissions: perms,
+  });
+  const canManageTeam = canUserManageUsers({
+    id: user?.id,
+    email: user?.email,
+    role: profile?.role,
+    position: profile?.position,
+    permissions: perms,
+  });
+
+  const path = useRouterState({ select: (s) => s.location.pathname });
+  useWorkflowPixel(user?.id, path);
 
   const hasPageAccess = (pathname: string) => {
     if (pathname.startsWith("/perfil")) return true;
@@ -165,7 +183,6 @@ function Shell() {
     }
     if (pathname.startsWith("/victoria")) return hasAccess("agente");
     if (pathname.startsWith("/auditoria")) return hasAccess("auditoria");
-    if (pathname.startsWith("/config")) return true;
     return true;
   };
   const [activeModule, setActiveModule] = useState<"hub" | "trafego" | "social" | "gestao" | "funil" | "victoria" | "crm" | "regras">(() => {
@@ -175,8 +192,6 @@ function Shell() {
     }
     return "hub";
   });
-
-  const path = useRouterState({ select: (s) => s.location.pathname });
 
   const prevModuleRef = useRef(activeModule);
 
@@ -769,15 +784,19 @@ function Shell() {
                           <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
                           Victoria AI
                         </button>
-                        <div className="my-1 border-t border-border" />
-                        <Link
-                          to="/config"
-                          onClick={() => setShowModuleMenu(false)}
-                          className="flex w-full items-center gap-2 rounded-xl px-2.5 py-2 text-xs font-bold text-muted-foreground hover:bg-muted hover:text-foreground transition-all"
-                        >
-                          <Settings className="h-3.5 w-3.5" />
-                          Configurações
-                        </Link>
+                        {canAccessConfig && (
+                          <>
+                            <div className="my-1 border-t border-border" />
+                            <Link
+                              to="/config"
+                              onClick={() => setShowModuleMenu(false)}
+                              className="flex w-full items-center gap-2 rounded-xl px-2.5 py-2 text-xs font-bold text-muted-foreground hover:bg-muted hover:text-foreground transition-all"
+                            >
+                              <Settings className="h-3.5 w-3.5" />
+                              Configurações
+                            </Link>
+                          </>
+                        )}
                       </motion.div>
                     </>
                   )}
@@ -1049,18 +1068,32 @@ function Shell() {
               </AnimatePresence>
             </div>
 
-            {/* User Menu — dropdown profissional, avatar sempre visível */}
+            {/* Team Avatars Bar (desktop xl+) */}
+            <TeamPresenceTopBar canManageUsers={canManageTeam} />
+
+            {/* User Menu — avatar + nome e status online sempre visíveis na barra superior */}
             <div className="relative pl-2 ml-1 border-l border-border">
               <button
                 onClick={() => setShowUserMenu(v => !v)}
-                className="h-8 w-8 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center overflow-hidden shrink-0 hover:border-primary/50 transition-all active:scale-95"
+                className="flex items-center gap-2 rounded-full border border-border/80 bg-card/60 hover:border-primary/50 hover:bg-card p-1 sm:pr-3 transition-all active:scale-95"
                 title={profile?.full_name || user?.email?.split('@')[0]}
               >
-                {profile?.avatar_url ? (
-                  <img src={profile.avatar_url} alt="Profile" className="h-full w-full object-cover" />
-                ) : (
-                  <User className="h-4 w-4 text-primary" />
-                )}
+                <UserAvatar
+                  src={profile?.avatar_url}
+                  name={profile?.full_name}
+                  email={user?.email}
+                  size="sm"
+                  onlineStatus="online"
+                />
+                <div className="hidden md:flex flex-col items-start text-left max-w-[115px]">
+                  <span className="text-[11px] font-bold text-foreground leading-tight truncate w-full">
+                    {(profile?.full_name || user?.email?.split("@")[0] || "Usuário").split(" ")[0]}
+                  </span>
+                  <span className="text-[9px] text-muted-foreground leading-tight truncate w-full">
+                    {profile?.position || "Equipe"}
+                  </span>
+                </div>
+                <ChevronDown className="hidden md:block h-3 w-3 text-muted-foreground shrink-0" />
               </button>
 
               <AnimatePresence>
@@ -1071,7 +1104,7 @@ function Shell() {
                       initial={{ opacity: 0, y: 8, scale: 0.96 }}
                       animate={{ opacity: 1, y: 0, scale: 1 }}
                       exit={{ opacity: 0, y: 8, scale: 0.96 }}
-                      className="absolute right-0 top-full z-50 mt-2 w-56 rounded-2xl border border-border bg-card p-2 shadow-2xl"
+                      className="absolute right-0 top-full z-50 mt-2 w-60 rounded-2xl border border-border bg-card p-2 shadow-2xl"
                     >
                       {/* Identity */}
                       <Link
@@ -1080,14 +1113,17 @@ function Shell() {
                         className="flex items-center gap-3 px-3 py-2.5 border-b border-border mb-1.5 hover:bg-muted/40 transition-colors rounded-xl"
                         title="Ir para Meu Perfil & Membros"
                       >
-                        <div className="h-8 w-8 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center overflow-hidden shrink-0">
-                          {profile?.avatar_url
-                            ? <img src={profile.avatar_url} alt="Avatar" className="h-full w-full object-cover" />
-                            : <User className="h-4 w-4 text-primary" />}
-                        </div>
+                        <UserAvatar
+                          src={profile?.avatar_url}
+                          name={profile?.full_name}
+                          email={user?.email}
+                          size="md"
+                          onlineStatus="online"
+                        />
                         <div className="min-w-0">
                           <p className="text-xs font-bold truncate">{profile?.full_name || "Usuário"}</p>
-                          <p className="text-[10px] text-muted-foreground truncate">{user?.email}</p>
+                          <p className="text-[10px] text-primary font-bold truncate">{profile?.position || "NC Performance"}</p>
+                          <p className="text-[9px] text-muted-foreground truncate">{user?.email}</p>
                         </div>
                       </Link>
                       {/* Actions */}
@@ -1300,11 +1336,13 @@ function Shell() {
               {/* Perfil + Sair */}
               <div className="px-4 pb-6 pt-1 border-t border-border/50 flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                  <div className="h-9 w-9 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center overflow-hidden">
-                    {profile?.avatar_url
-                      ? <img src={profile.avatar_url} alt="Avatar" className="h-full w-full object-cover" />
-                      : <User className="h-4 w-4 text-primary" />}
-                  </div>
+                  <UserAvatar
+                    src={profile?.avatar_url}
+                    name={profile?.full_name}
+                    email={user?.email}
+                    size="md"
+                    onlineStatus="online"
+                  />
                   <div>
                     <p className="text-sm font-bold leading-none">{profile?.full_name || user?.email?.split('@')[0]}</p>
                     <p className="text-[10px] text-muted-foreground mt-0.5">{profile?.position || "NC Performance"}</p>

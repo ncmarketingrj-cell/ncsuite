@@ -12,6 +12,7 @@ import { PageHeader } from "@/components/PageHeader";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase-external/client";
 import { useAuth } from "@/lib/auth";
+import { hasPermissionAccess, isMasterAdmin } from "@/lib/userHierarchy";
 import { toast } from "sonner";
 import { DiagnosisModal } from "@/components/victoria/DiagnosisModal";
 import { ThresholdModal } from "@/components/automacoes/ThresholdModal";
@@ -69,9 +70,11 @@ function AutomationsPage() {
     enabled: !!user?.id,
   });
 
-  const hasAccess = (user?.email ? ADMIN_EMAILS.includes(user.email) : false)
-    || profileData?.role === "admin"
-    || !!profileData?.permissions?.automacoes;
+  const hasAccess =
+    isMasterAdmin({ email: user?.email, id: user?.id }) ||
+    profileData?.role === "admin" ||
+    profileData?.role === "master_admin" ||
+    hasPermissionAccess(profileData?.permissions as any, "automacoes");
 
   const syncStatus = getSyncStatus();
   const { runSync } = useAutoSync();

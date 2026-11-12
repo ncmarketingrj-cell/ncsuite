@@ -22,6 +22,7 @@ import { listMindMapsByAccount } from "@/components/mindmap/mindMapService";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase-external/client";
 import { useAuth } from "@/lib/auth";
+import { hasPermissionAccess, isMasterAdmin } from "@/lib/userHierarchy";
 import { DateRangePicker } from "@/components/DateRangePicker";
 import { useGlobalDate } from "@/contexts/DateContext";
 import { PageHeader } from "@/components/PageHeader";
@@ -583,8 +584,13 @@ function MetricasCampanhasPage() {
     },
     enabled: !!user?.id,
   });
-  const isAdmin = (user?.email ? ADMIN_EMAILS.includes(user.email) : false) || profileData?.role === "admin";
-  const hasAccess = isAdmin || !!profileData?.permissions?.metricas;
+  const isAdmin =
+    isMasterAdmin({ email: user?.email, id: user?.id }) ||
+    profileData?.role === "admin" ||
+    profileData?.role === "master_admin";
+  const hasAccess =
+    isAdmin ||
+    hasPermissionAccess(profileData?.permissions as any, "metricas");
 
   // â"€â"€ Estado global compartilhado â"€â"€
   const [view,          setView]          = useState<ViewMode>("gestao");

@@ -49,62 +49,89 @@ export function isMasterAdmin(userOrEmail?: string | { email?: string; id?: stri
 }
 
 /**
- * Calcula a pontuação numérica de hierarquia de um usuário (10 a 100)
+ * Calcula a pontuação numérica de hierarquia de um usuário (10 a 100).
+ * A patente (`role`) define a autoridade no sistema; `position` é usada apenas como fallback legado.
  */
 export function getUserLevel(profile?: { email?: string; role?: string; position?: string } | null): number {
   if (!profile) return 0;
   if (isMasterAdmin(profile)) return 100;
 
-  const role = (profile.role || "").toLowerCase();
-  const pos = (profile.position || "").toLowerCase();
+  const role = (profile.role || "").toLowerCase().trim();
+  const pos = (profile.position || "").toLowerCase().trim();
 
-  // Nível 90: Admin / CEO / Sócios
-  if (role === "admin" || role === "ceo" || /ceo|sócio|socio|proprietário|proprietario|dono|administrador master/i.test(pos)) {
-    return 90;
-  }
+  // 1. Prioriza a Patente (`role`) explícita no sistema
+  if (role === "master_admin") return 100;
+  if (role === "admin" || role === "ceo") return 90;
+  if (role === "diretor") return 80;
+  if (role === "gerente") return 70;
+  if (role === "coordenador") return 60;
+  if (role === "gestor_trafego" || role === "gestor_projetos" || role === "desenvolvedor") return 50;
+  if (role === "social_media" || role === "designer" || role === "videomaker") return 20;
+  if (role === "sdr" || role === "agency_sdr") return 15;
+  if (role === "client_store") return 10;
 
-  // Nível 80: Diretores
-  if (role === "diretor" || /diretor|diretora/i.test(pos)) {
-    return 80;
-  }
+  // 2. Fallback por Cargo (`position`) quando role é "outro" / legado / indefinido
+  if (/administrador master|ceo|sócio|socio|proprietário|proprietario|dono/i.test(pos)) return 90;
+  if (/diretor|diretora/i.test(pos)) return 80;
+  if (/gerente|head/i.test(pos)) return 70;
+  if (/coordenador|coordenadora|líder|lider|team lead/i.test(pos)) return 60;
+  if (/gestor de tráfego|gestor de trafego|media buyer|tráfego pago|desenvolvedor|programador|gestor de projetos/i.test(pos)) return 50;
+  if (/social media|designer|videomaker|filmmaker|criativos|audiovisual/i.test(pos)) return 20;
+  if (/sdr|bdr|comercial|vendas|closer/i.test(pos)) return 15;
 
-  // Nível 70: Gerentes
-  if (role === "gerente" || /gerente|head|gestor geral/i.test(pos)) {
-    return 70;
-  }
-
-  // Nível 60: Coordenadores / Líderes
-  if (role === "coordenador" || /coordenador|coordenadora|líder|lider|team lead/i.test(pos)) {
-    return 60;
-  }
-
-  // Nível 50: Gestores e Especialistas Sênior
-  if (
-    role === "gestor_trafego" ||
-    role === "gestor_projetos" ||
-    role === "desenvolvedor" ||
-    /gestor de tráfego|gestor de trafego|media buyer|tráfego pago|desenvolvedor|programador|gestor de projetos/i.test(pos)
-  ) {
-    return 50;
-  }
-
-  // Nível 20: Criação & Conteúdo
-  if (
-    role === "social_media" ||
-    role === "designer" ||
-    role === "videomaker" ||
-    /social media|designer|videomaker|filmmaker|criativos|audiovisual/i.test(pos)
-  ) {
-    return 20;
-  }
-
-  // Nível 15: SDR & Comercial
-  if (role === "sdr" || role === "agency_sdr" || /sdr|bdr|comercial|vendas|closer/i.test(pos)) {
-    return 15;
-  }
-
-  // Nível 10: Operação / Lojista / Membro Base
   return 10;
+}
+
+/**
+ * Verifica se uma chave no JSON `permissions` concede acesso real (bloqueia "none", false, null, undefined).
+ */
+export function hasPermissionAccess(
+  perms: Record<string, any> | null | undefined,
+  key: string
+): boolean {
+  if (!perms || typeof perms !== "object") return false;
+  const val = perms[key];
+  return val === "view" || val === "edit" || val === true;
+}
+
+/**
+ * Verifica se uma chave no JSON `permissions` concede edição real.
+ */
+export function hasPermissionEdit(
+  perms: Record<string, any> | null | undefined,
+  key: string
+): boolean {
+  if (!perms || typeof perms !== "object") return false;
+  const val = perms[key];
+  return val === "edit" || val === true;
+}
+
+/**
+ * Define quem pode abrir e operar a Gestão de Usuários & Pixel de Equipe.
+ * Respeita estritamente `criar_usuarios === "none"`: um Gerente ou Gestor bloqueado NÃO vê a gestão.
+ */
+export function canUserManageUsers(
+  profile?: { id?: string; email?: string; role?: string; position?: string; permissions?: Record<string, any> } | null
+): boolean {
+  if (!profile) return false;
+  if (isMasterAdmin(profile)) return true;
+  const role = (profile.role || "").toLowerCase().trim();
+  if (role === "admin" || role === "ceo" || role === "master_admin") return true;
+  return hasPermissionAccess(profile.permissions, "criar_usuarios");
+}
+
+/**
+ * Define quem pode acessar a rota administrativa `/config`.
+ * Remove falso-positivo com "Gestor de Tráfego" e respeita o bloqueio de `criar_usuarios`.
+ */
+export function canUserAccessConfig(
+  profile?: { id?: string; email?: string; role?: string; position?: string; permissions?: Record<string, any> } | null
+): boolean {
+  if (!profile) return false;
+  if (isMasterAdmin(profile)) return true;
+  const role = (profile.role || "").toLowerCase().trim();
+  if (role === "admin" || role === "ceo" || role === "diretor" || role === "master_admin") return true;
+  return hasPermissionAccess(profile.permissions, "criar_usuarios");
 }
 
 /**
@@ -320,17 +347,17 @@ export function checkHierarchyAuthority(
   const callerLevel = getUserLevel(caller);
   const targetLevel = getUserLevel(target);
 
-  // Verificação de permissão 'criar_usuarios'
-  const hasUserManagementPerm = caller.role === "admin" || !!caller.permissions?.criar_usuarios;
+  // Verificação estrita da permissão 'criar_usuarios' (bloqueia "none" e falsos positivos)
+  const hasUserManagementPerm = canUserManageUsers(caller);
 
-  if (!hasUserManagementPerm && callerLevel < 70) {
+  if (!hasUserManagementPerm) {
     return {
       isSuperior: false,
       canEditLogin: false,
       canEditPassword: false,
       canEditPermissions: false,
       canDelete: false,
-      reason: "Você não possui a permissão de Gestão de Usuários.",
+      reason: "Você não possui a permissão de Gestão de Usuários liberada.",
     };
   }
 
@@ -359,62 +386,381 @@ export function checkHierarchyAuthority(
   };
 }
 
+export interface RoleDefinition {
+  value: HierarchyRole;
+  label: string;
+  shortLabel: string;
+  minLevel: number;
+  authorityTitle: string;
+  authoritySummary: string;
+  canManageTeamByDefault: boolean;
+}
+
+export interface CargoDefinition {
+  name: string;
+  recommendedRole: HierarchyRole;
+  summary: string;
+  defaultPermissions: Record<string, "none" | "view" | "edit">;
+}
+
+export const HUBS_CATALOG = [
+  { id: "trafego", title: "Hub Tráfego & Performance", badgeClass: "text-red-400 bg-red-500/10 border-red-500/20" },
+  { id: "operacao", title: "Hub Operação & Inteligência", badgeClass: "text-amber-400 bg-amber-500/10 border-amber-500/20" },
+  { id: "gestao", title: "Hub Gestão & Clientes", badgeClass: "text-blue-400 bg-blue-500/10 border-blue-500/20" },
+  { id: "sistema", title: "Administração & Segurança", badgeClass: "text-purple-400 bg-purple-500/10 border-purple-500/20" },
+] as const;
+
+export const PERMISSION_MODULES_CATALOG = [
+  { key: "dashboard", label: "Command Center", hub: "trafego", mode: "read_only" as const, hint: "Visão executiva de KPIs de tráfego" },
+  { key: "metricas", label: "Métricas & KPIs", hub: "trafego", mode: "read_only" as const, hint: "Tabelas e filtros de campanhas Meta" },
+  { key: "simulador", label: "Simulador", hub: "trafego", mode: "read_only" as const, hint: "Projeção de verba e retorno" },
+  { key: "cockpit", label: "Cockpit", hub: "trafego", mode: "full" as const, hint: "Controle de contas e verbas" },
+  { key: "relatorios", label: "Relatórios", hub: "trafego", mode: "full" as const, hint: "Geração e envio de relatórios" },
+  { key: "criativos", label: "Criativos", hub: "trafego", mode: "full" as const, hint: "Biblioteca e upload de peças" },
+  { key: "auditoria", label: "Auditoria Hub", hub: "trafego", mode: "full" as const, hint: "Auditoria de contas e regras" },
+  { key: "automacoes", label: "Automações", hub: "operacao", mode: "full" as const, hint: "Regras automáticas e alertas" },
+  { key: "agente", label: "Victoria AI (Chat & Uso)", hub: "operacao", mode: "full" as const, hint: "Chat tático e diagnóstico IA" },
+  { key: "gestao_victoria", label: "Mente da Victoria AI", hub: "operacao", mode: "full" as const, hint: "Personalidade, RAG e Radar" },
+  { key: "strategy_map", label: "Mapa Estratégico", hub: "operacao", mode: "full" as const, hint: "Planejamento visual e funis" },
+  { key: "reunioes", label: "Reuniões", hub: "operacao", mode: "full" as const, hint: "Ata e agenda de reuniões" },
+  { key: "clientes", label: "Clientes", hub: "gestao", mode: "full" as const, hint: "Cadastro de lojas e contas" },
+  { key: "cobrancas", label: "Cobranças", hub: "gestao", mode: "full" as const, hint: "Financeiro e mensalidades" },
+  { key: "social", label: "Social Media & Planner", hub: "gestao", mode: "full" as const, hint: "Feed, agendamento e Insights" },
+  { key: "criar_usuarios", label: "Gestão de Usuários & Pixel", hub: "sistema", mode: "full" as const, hint: "Criar contas, senhas e ver Pixel" },
+] as const;
+
+export const ROLE_CATALOG: RoleDefinition[] = [
+  {
+    value: "admin",
+    label: "Nível 90 — Administrador Total",
+    shortLabel: "Administrador",
+    minLevel: 90,
+    authorityTitle: "Poder Administrativo Total",
+    authoritySummary: "Acessa Configurações Master e gerencia qualquer usuário abaixo do Administrador Master.",
+    canManageTeamByDefault: true,
+  },
+  {
+    value: "ceo",
+    label: "Nível 90 — CEO / Sócio Diretor",
+    shortLabel: "CEO / Sócio",
+    minLevel: 90,
+    authorityTitle: "Diretoria Executiva",
+    authoritySummary: "Autoridade máxima operacional, visão financeira completa e gestão de toda a equipe.",
+    canManageTeamByDefault: true,
+  },
+  {
+    value: "diretor",
+    label: "Nível 80 — Direção (Líder de Área)",
+    shortLabel: "Diretor",
+    minLevel: 80,
+    authorityTitle: "Diretoria Setorial",
+    authoritySummary: "Acessa Configurações e gerencia Gerentes e equipe se 'Gestão de Usuários' estiver liberada.",
+    canManageTeamByDefault: true,
+  },
+  {
+    value: "gerente",
+    label: "Nível 70 — Gerência (Supervisão)",
+    shortLabel: "Gerente",
+    minLevel: 70,
+    authorityTitle: "Supervisão de Equipe",
+    authoritySummary: "Fica acima de Coordenadores e Gestores. Só acessa 'Gestão de Usuários' se você liberar o módulo abaixo.",
+    canManageTeamByDefault: false,
+  },
+  {
+    value: "coordenador",
+    label: "Nível 60 — Coordenação Técnica",
+    shortLabel: "Coordenador",
+    minLevel: 60,
+    authorityTitle: "Coordenação Operacional",
+    authoritySummary: "Coordena Gestores e Operação. Gestão de Usuários fica bloqueada salvo se você liberar abaixo.",
+    canManageTeamByDefault: false,
+  },
+  {
+    value: "gestor_trafego",
+    label: "Nível 50 — Especialista / Gestor",
+    shortLabel: "Gestor / Especialista",
+    minLevel: 50,
+    authorityTitle: "Execução Sênior (Sem Gestão de Equipe)",
+    authoritySummary: "Usa normalmente os Hubs de Tráfego/Operação liberados abaixo, sem acesso ao painel administrativo.",
+    canManageTeamByDefault: false,
+  },
+  {
+    value: "gestor_projetos",
+    label: "Nível 50 — Gestor de Projetos",
+    shortLabel: "Gestor de Projetos",
+    minLevel: 50,
+    authorityTitle: "Operação de Projetos",
+    authoritySummary: "Organiza entregas, clientes e mapas nos módulos liberados, sem acesso administrativo salvo liberação.",
+    canManageTeamByDefault: false,
+  },
+  {
+    value: "desenvolvedor",
+    label: "Nível 50 — Desenvolvedor / Técnico",
+    shortLabel: "Desenvolvedor",
+    minLevel: 50,
+    authorityTitle: "Desenvolvimento & Automações",
+    authoritySummary: "Atuação técnica em sistemas e automações. Acessa Gestão de Usuários somente se liberado abaixo.",
+    canManageTeamByDefault: false,
+  },
+  {
+    value: "social_media",
+    label: "Nível 20 — Criação / Social Media",
+    shortLabel: "Social Media",
+    minLevel: 20,
+    authorityTitle: "Execução de Conteúdo",
+    authoritySummary: "Acessa apenas Social Media, Criativos e os módulos explicitamente liberados abaixo.",
+    canManageTeamByDefault: false,
+  },
+  {
+    value: "designer",
+    label: "Nível 20 — Criação / Designer",
+    shortLabel: "Designer",
+    minLevel: 20,
+    authorityTitle: "Produção Criativa",
+    authoritySummary: "Focado em Criativos, Mapa Estratégico e entregas visuais conforme permissões abaixo.",
+    canManageTeamByDefault: false,
+  },
+  {
+    value: "videomaker",
+    label: "Nível 20 — Audiovisual / Videomaker",
+    shortLabel: "Videomaker",
+    minLevel: 20,
+    authorityTitle: "Produção Audiovisual",
+    authoritySummary: "Focado em Criativos e Social Media conforme módulos liberados abaixo.",
+    canManageTeamByDefault: false,
+  },
+  {
+    value: "sdr",
+    label: "Nível 15 — Comercial / SDR",
+    shortLabel: "SDR / Comercial",
+    minLevel: 15,
+    authorityTitle: "Pré-vendas & Atendimento",
+    authoritySummary: "Acesso restrito aos módulos comerciais/clientes liberados abaixo.",
+    canManageTeamByDefault: false,
+  },
+  {
+    value: "outro",
+    label: "Nível 10 — Operação Básica",
+    shortLabel: "Operação Básica",
+    minLevel: 10,
+    authorityTitle: "Acesso Somente ao Liberado",
+    authoritySummary: "Nenhuma permissão administrativa. Enxerga exclusivamente o que estiver liberado abaixo.",
+    canManageTeamByDefault: false,
+  },
+];
+
+export const CARGO_CATALOG: CargoDefinition[] = [
+  {
+    name: "Gestor de Tráfego",
+    recommendedRole: "gestor_trafego",
+    summary: "Opera Tráfego, Métricas, Cockpit e Victoria AI — sem acesso administrativo ou usuários.",
+    defaultPermissions: {
+      dashboard: "view", metricas: "view", simulador: "view", cockpit: "edit",
+      clientes: "view", relatorios: "edit", criativos: "edit", social: "none",
+      automacoes: "edit", reunioes: "none", cobrancas: "none", strategy_map: "edit",
+      agente: "edit", gestao_victoria: "none", auditoria: "view", criar_usuarios: "none",
+    },
+  },
+  {
+    name: "Social Media",
+    recommendedRole: "social_media",
+    summary: "Opera Social Media, Criativos, Relatórios e Mapa Estratégico — tráfego e admin bloqueados.",
+    defaultPermissions: {
+      dashboard: "none", metricas: "none", simulador: "none", cockpit: "none",
+      clientes: "view", relatorios: "edit", criativos: "edit", social: "edit",
+      automacoes: "none", reunioes: "none", cobrancas: "none", strategy_map: "edit",
+      agente: "view", gestao_victoria: "none", auditoria: "none", criar_usuarios: "none",
+    },
+  },
+  {
+    name: "Designer",
+    recommendedRole: "designer",
+    summary: "Foco em Criativos, Mapa Estratégico e apoio a Social Media.",
+    defaultPermissions: {
+      dashboard: "none", metricas: "none", simulador: "none", cockpit: "none",
+      clientes: "view", relatorios: "none", criativos: "edit", social: "view",
+      automacoes: "none", reunioes: "none", cobrancas: "none", strategy_map: "edit",
+      agente: "view", gestao_victoria: "none", auditoria: "none", criar_usuarios: "none",
+    },
+  },
+  {
+    name: "Videomaker",
+    recommendedRole: "videomaker",
+    summary: "Foco em Criativos e entrega de mídia no Hub Social.",
+    defaultPermissions: {
+      dashboard: "none", metricas: "none", simulador: "none", cockpit: "none",
+      clientes: "view", relatorios: "none", criativos: "edit", social: "view",
+      automacoes: "none", reunioes: "none", cobrancas: "none", strategy_map: "none",
+      agente: "view", gestao_victoria: "none", auditoria: "none", criar_usuarios: "none",
+    },
+  },
+  {
+    name: "SDR",
+    recommendedRole: "sdr",
+    summary: "Foco em Reuniões e acompanhamento de Clientes.",
+    defaultPermissions: {
+      dashboard: "none", metricas: "none", simulador: "none", cockpit: "none",
+      clientes: "view", relatorios: "none", criativos: "none", social: "none",
+      automacoes: "none", reunioes: "edit", cobrancas: "none", strategy_map: "none",
+      agente: "view", gestao_victoria: "none", auditoria: "none", criar_usuarios: "none",
+    },
+  },
+  {
+    name: "Gestor de Projetos",
+    recommendedRole: "gestor_projetos",
+    summary: "Acompanha entregas, clientes, reuniões, relatórios e Social Media.",
+    defaultPermissions: {
+      dashboard: "view", metricas: "view", simulador: "none", cockpit: "none",
+      clientes: "edit", relatorios: "edit", criativos: "view", social: "edit",
+      automacoes: "none", reunioes: "edit", cobrancas: "none", strategy_map: "edit",
+      agente: "edit", gestao_victoria: "none", auditoria: "view", criar_usuarios: "none",
+    },
+  },
+  {
+    name: "Desenvolvedor",
+    recommendedRole: "desenvolvedor",
+    summary: "Acesso técnico amplo a Automações, Victoria AI e APIs — usuários bloqueados por padrão.",
+    defaultPermissions: {
+      dashboard: "view", metricas: "view", simulador: "view", cockpit: "edit",
+      clientes: "edit", relatorios: "edit", criativos: "edit", social: "edit",
+      automacoes: "edit", reunioes: "edit", cobrancas: "none", strategy_map: "edit",
+      agente: "edit", gestao_victoria: "edit", auditoria: "edit", criar_usuarios: "none",
+    },
+  },
+  {
+    name: "Coordenador",
+    recommendedRole: "coordenador",
+    summary: "Supervisiona entregas e operação técnica da equipe.",
+    defaultPermissions: {
+      dashboard: "view", metricas: "view", simulador: "view", cockpit: "edit",
+      clientes: "edit", relatorios: "edit", criativos: "edit", social: "edit",
+      automacoes: "edit", reunioes: "edit", cobrancas: "none", strategy_map: "edit",
+      agente: "edit", gestao_victoria: "view", auditoria: "view", criar_usuarios: "none",
+    },
+  },
+  {
+    name: "Gerente",
+    recommendedRole: "gerente",
+    summary: "Supervisão geral da operação (gestão de usuários opcional, desativada por padrão por segurança).",
+    defaultPermissions: {
+      dashboard: "view", metricas: "view", simulador: "view", cockpit: "edit",
+      clientes: "edit", relatorios: "edit", criativos: "edit", social: "edit",
+      automacoes: "view", reunioes: "edit", cobrancas: "none", strategy_map: "edit",
+      agente: "edit", gestao_victoria: "view", auditoria: "view", criar_usuarios: "none",
+    },
+  },
+  {
+    name: "Diretor",
+    recommendedRole: "diretor",
+    summary: "Liderança executiva com acesso estratégico e gestão de subordinados.",
+    defaultPermissions: {
+      dashboard: "view", metricas: "view", simulador: "view", cockpit: "edit",
+      clientes: "edit", relatorios: "edit", criativos: "edit", social: "edit",
+      automacoes: "edit", reunioes: "edit", cobrancas: "edit", strategy_map: "edit",
+      agente: "edit", gestao_victoria: "edit", auditoria: "edit", criar_usuarios: "edit",
+    },
+  },
+  {
+    name: "CEO",
+    recommendedRole: "ceo",
+    summary: "Comando executivo total da plataforma e da equipe.",
+    defaultPermissions: {
+      dashboard: "view", metricas: "view", simulador: "view", cockpit: "edit",
+      clientes: "edit", relatorios: "edit", criativos: "edit", social: "edit",
+      automacoes: "edit", reunioes: "edit", cobrancas: "edit", strategy_map: "edit",
+      agente: "edit", gestao_victoria: "edit", auditoria: "edit", criar_usuarios: "edit",
+    },
+  },
+  {
+    name: "Administrador",
+    recommendedRole: "admin",
+    summary: "Acesso irrestrito a todos os módulos e configurações master.",
+    defaultPermissions: {
+      dashboard: "view", metricas: "view", simulador: "view", cockpit: "edit",
+      clientes: "edit", relatorios: "edit", criativos: "edit", social: "edit",
+      automacoes: "edit", reunioes: "edit", cobrancas: "edit", strategy_map: "edit",
+      agente: "edit", gestao_victoria: "edit", auditoria: "edit", criar_usuarios: "edit",
+    },
+  },
+  {
+    name: "Outros",
+    recommendedRole: "outro",
+    summary: "Acesso mínimo inicial — libere manualmente apenas o necessário.",
+    defaultPermissions: {
+      dashboard: "view", metricas: "none", simulador: "none", cockpit: "none",
+      clientes: "none", relatorios: "none", criativos: "none", social: "none",
+      automacoes: "none", reunioes: "none", cobrancas: "none", strategy_map: "none",
+      agente: "none", gestao_victoria: "none", auditoria: "none", criar_usuarios: "none",
+    },
+  },
+];
+
+export function getRoleDefinition(role?: string | null): RoleDefinition {
+  const key = (role || "outro").toLowerCase().trim();
+  return ROLE_CATALOG.find((r) => r.value === key) || ROLE_CATALOG[ROLE_CATALOG.length - 1];
+}
+
+export function getCargoDefinition(position?: string | null): CargoDefinition | undefined {
+  const key = (position || "").toLowerCase().trim();
+  return CARGO_CATALOG.find((c) => c.name.toLowerCase() === key);
+}
+
+/**
+ * Fallback de compatibilidade: caso o banco remoto ainda esteja com a constraint
+ * antiga `profiles_role_check`, mapeia roles novos para os aceitos sem elevar privilégio indevido.
+ */
+export const LEGACY_ALLOWED_DB_ROLES = new Set([
+  "admin",
+  "ceo",
+  "gerente",
+  "gestor_trafego",
+  "social_media",
+  "videomaker",
+  "agency_sdr",
+  "client_store",
+  "outro",
+]);
+
+export function normalizeRoleForDbConstraint(role?: string | null): string {
+  const key = (role || "outro").toLowerCase().trim();
+  if (LEGACY_ALLOWED_DB_ROLES.has(key)) return key;
+  const fallbackMap: Record<string, string> = {
+    master_admin: "admin",
+    diretor: "gerente",
+    coordenador: "gerente",
+    gestor_projetos: "gestor_trafego",
+    desenvolvedor: "gestor_trafego",
+    designer: "social_media",
+    sdr: "agency_sdr",
+  };
+  return fallbackMap[key] || "outro";
+}
+
 /**
  * Retorna os cargos e roles que o chamador tem autoridade para atribuir a terceiros
  */
 export function getAllowedAssignableRoles(caller?: { email?: string; role?: string; position?: string } | null): {
-  roles: { value: string; label: string; minLevel: number }[];
+  roles: RoleDefinition[];
   positions: string[];
 } {
   const callerLevel = getUserLevel(caller);
   const isMaster = isMasterAdmin(caller);
 
-  const ALL_ROLES = [
-    { value: "admin", label: "Administrador (Admin)", minLevel: 90 },
-    { value: "ceo", label: "CEO / Diretoria Executiva", minLevel: 90 },
-    { value: "diretor", label: "Diretor", minLevel: 80 },
-    { value: "gerente", label: "Gerente", minLevel: 70 },
-    { value: "coordenador", label: "Coordenador", minLevel: 60 },
-    { value: "gestor_trafego", label: "Gestor de Tráfego", minLevel: 50 },
-    { value: "gestor_projetos", label: "Gestor de Projetos", minLevel: 50 },
-    { value: "desenvolvedor", label: "Desenvolvedor", minLevel: 50 },
-    { value: "social_media", label: "Social Media / Conteúdo", minLevel: 20 },
-    { value: "designer", label: "Designer", minLevel: 20 },
-    { value: "videomaker", label: "Videomaker / Filmmaker", minLevel: 20 },
-    { value: "sdr", label: "SDR / Comercial", minLevel: 15 },
-    { value: "outro", label: "Operação / Membro", minLevel: 10 },
-  ];
-
-  const ALL_POSITIONS = [
-    { name: "Administrador", minLevel: 90 },
-    { name: "CEO", minLevel: 90 },
-    { name: "Diretor", minLevel: 80 },
-    { name: "Gerente", minLevel: 70 },
-    { name: "Coordenador de Tráfego", minLevel: 60 },
-    { name: "Gestor de Tráfego", minLevel: 50 },
-    { name: "Gestor de Projetos", minLevel: 50 },
-    { name: "Desenvolvedor", minLevel: 50 },
-    { name: "Social Media", minLevel: 20 },
-    { name: "Designer", minLevel: 20 },
-    { name: "Videomaker", minLevel: 20 },
-    { name: "SDR", minLevel: 15 },
-    { name: "Outros", minLevel: 10 },
-  ];
-
-  // Master Admin pode atribuir qualquer nível
   if (isMaster) {
     return {
-      roles: ALL_ROLES,
-      positions: ALL_POSITIONS.map(p => p.name),
+      roles: ROLE_CATALOG,
+      positions: CARGO_CATALOG.map((c) => c.name),
     };
   }
 
-  // Outros só podem atribuir níveis estritamente inferiores ao seu
-  const allowedRoles = ALL_ROLES.filter(r => r.minLevel < callerLevel);
-  const allowedPositions = ALL_POSITIONS.filter(p => p.minLevel < callerLevel).map(p => p.name);
+  const allowedRoles = ROLE_CATALOG.filter((r) => r.minLevel < callerLevel);
+  const allowedPositions = CARGO_CATALOG.filter((c) => {
+    const r = getRoleDefinition(c.recommendedRole);
+    return r.minLevel < callerLevel;
+  }).map((c) => c.name);
 
   return {
-    roles: allowedRoles,
+    roles: allowedRoles.length > 0 ? allowedRoles : [ROLE_CATALOG[ROLE_CATALOG.length - 1]],
     positions: allowedPositions.length > 0 ? allowedPositions : ["Outros"],
   };
 }

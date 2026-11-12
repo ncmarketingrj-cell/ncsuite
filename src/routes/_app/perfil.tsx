@@ -9,6 +9,10 @@ import {
 } from "lucide-react";
 import { PageHeader } from "@/components/PageHeader";
 import { AvatarUpload } from "@/components/AvatarUpload";
+import { UserAvatar } from "@/components/UserAvatar";
+import { DidacticUserAccessEditor } from "@/components/DidacticUserAccessEditor";
+import { TeamActivityMonitor } from "@/components/TeamActivityMonitor";
+import { isUserOnlineNow } from "@/lib/activityPixelService";
 import { supabase } from "@/integrations/supabase-external/client";
 import { useAuth } from "@/lib/auth";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -20,6 +24,9 @@ import {
   getAllowedAssignableRoles,
   generateStrongPassword,
   isMasterAdmin,
+  canUserManageUsers,
+  canUserAccessConfig,
+  getCargoDefinition,
   MASTER_ADMIN_EMAILS,
 } from "@/lib/userHierarchy";
 import {
@@ -32,8 +39,9 @@ import {
 
 export const Route = createFileRoute("/_app/perfil")({
   head: () => ({ meta: [{ title: "Meu Perfil & Membros — NC Suite" }] }),
-  validateSearch: (search: Record<string, unknown>): { tab?: string } => ({
+  validateSearch: (search: Record<string, unknown>): { tab?: string; view?: string } => ({
     tab: typeof search.tab === "string" ? search.tab : undefined,
+    view: typeof search.view === "string" ? search.view : undefined,
   }),
   component: ProfileRoutePage,
 });
@@ -289,7 +297,7 @@ function renderRankIcon(iconName: string, className = "h-4 w-4") {
 // Página Principal de Perfil
 // ──────────────────────────────────────────────────────────────────────────────
 function ProfileRoutePage() {
-  const search = Route.useSearch() as { tab?: string };
+  const search = Route.useSearch() as { tab?: string; view?: string };
   const navigate = useNavigate();
   const { user } = useAuth();
   const qc = useQueryClient();
@@ -315,10 +323,8 @@ function ProfileRoutePage() {
   const callerLevel = useMemo(() => getUserLevel(effectiveCaller), [effectiveCaller]);
   const callerInfo = useMemo(() => getHierarchyInfo(effectiveCaller), [effectiveCaller]);
   const isCallerMaster = useMemo(() => isMasterAdmin(effectiveCaller), [effectiveCaller]);
-  const isAdmin = profile?.role === "admin" || (user?.email ? MASTER_ADMIN_EMAILS.includes(user.email) : false);
-  const isStaff = isAdmin || profile?.role === "staff" || /gestor|director|diretor|staff|sócio|socio|dono|ceo/i.test(profile?.position || "");
-  const canManageUsers = isCallerMaster || callerLevel >= 70 || isAdmin || !!profile?.permissions?.criar_usuarios;
-  const canAccessConfig = isCallerMaster || callerLevel >= 70 || isAdmin || isStaff;
+  const canManageUsers = canUserManageUsers(effectiveCaller);
+  const canAccessConfig = canUserAccessConfig(effectiveCaller);
 
   const [activeTab, setActiveTab] = useState<"meu_perfil" | "equipe">(() => {
     if (search.tab === "equipe" && canManageUsers) return "equipe";
@@ -427,6 +433,7 @@ function ProfileRoutePage() {
               callerUser={user}
               callerProfile={profile}
               effectiveCaller={effectiveCaller}
+              initialView={search.view === "pixel" ? "pixel" : "colaboradores"}
             />
           </motion.div>
         )}
@@ -479,22 +486,26 @@ function MyProfileSection({
     setSavingProfile(true);
     try {
       const cleanPhones = whatsappNumbers.map(p => p.trim()).filter(Boolean);
-      const { error } = await supabase.from("profiles").upsert({
-        id: user.id,
-        full_name: fullName.trim(),
-        position,
-        avatar_url: avatarUrl,
-        whatsapp_numbers: cleanPhones,
-        updated_at: new Date().toISOString(),
-      });
+      const { error } = await supabase
+        .from("profiles")
+        .update({
+          full_name: fullName.trim(),
+          position,
+          avatar_url: avatarUrl || null,
+          whatsapp_numbers: cleanPhones,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", user.id);
       if (error) throw error;
 
       await supabase.auth.updateUser({
-        data: { full_name: fullName.trim(), position, avatar_url: avatarUrl }
+        data: { full_name: fullName.trim(), position, avatar_url: avatarUrl || null }
       });
 
       qc.invalidateQueries({ queryKey: ["profiles"] });
       qc.invalidateQueries({ queryKey: ["current_user_profile"] });
+      qc.invalidateQueries({ queryKey: ["team_avatars_directory"] });
+      qc.invalidateQueries({ queryKey: ["admin_users_list"] });
       toast.success("Perfil profissional salvo com sucesso!");
     } catch (err: any) {
       toast.error(err?.message || "Erro ao salvar dados do perfil");
@@ -864,12 +875,20 @@ function TeamManagementSection({
   callerUser,
   callerProfile,
   effectiveCaller,
+  initialView = "colaboradores",
 }: {
   callerUser: any;
   callerProfile: any;
   effectiveCaller: any;
+  initialView?: "colaboradores" | "pixel";
 }) {
   const qc = useQueryClient();
+  const [subView, setSubView] = useState<"colaboradores" | "pixel">(initialView);
+
+  useEffect(() => {
+    setSubView(initialView);
+  }, [initialView]);
+
   const [search, setSearch] = useState("");
   const [filterTab, setFilterTab] = useState<"todos" | "subordinados" | "diretoria" | "gerencia" | "gestores" | "operacao" | "inativos">("todos");
 
@@ -954,15 +973,19 @@ function TeamManagementSection({
 
   // Abrir Modal de Cadastro
   const handleOpenAdd = () => {
-    const defaultRole = allowedAssignable.roles[0]?.value || "gestor_trafego";
     const defaultPosition = allowedAssignable.positions[0] || "Gestor de Tráfego";
+    const cargoDef = getCargoDefinition(defaultPosition);
+    const defaultRole =
+      (cargoDef && allowedAssignable.roles.some((r) => r.value === cargoDef.recommendedRole)
+        ? cargoDef.recommendedRole
+        : allowedAssignable.roles[0]?.value) || "outro";
     setNewName("");
     setNewEmail("");
     setNewPassword(generateStrongPassword());
     setNewShowPassword(true);
     setNewPosition(defaultPosition);
     setNewRole(defaultRole);
-    setNewPermissions(CARGO_DEFAULT_PERMISSIONS[defaultPosition] || {});
+    setNewPermissions(cargoDef?.defaultPermissions || CARGO_DEFAULT_PERMISSIONS[defaultPosition] || {});
     setNewAvatarUrl("");
     setShowAddModal(true);
   };
@@ -1001,6 +1024,7 @@ function TeamManagementSection({
       setEditingUser(null);
       qc.invalidateQueries({ queryKey: ["admin_users_list"] });
       qc.invalidateQueries({ queryKey: ["current_user_profile"] });
+      qc.invalidateQueries({ queryKey: ["team_avatars_directory"] });
     } catch (err: any) {
       toast.error(err?.message || "Falha ao salvar alterações");
     } finally {
@@ -1039,6 +1063,7 @@ function TeamManagementSection({
       toast.success("Colaborador criado com sucesso!");
       setShowAddModal(false);
       qc.invalidateQueries({ queryKey: ["admin_users_list"] });
+      qc.invalidateQueries({ queryKey: ["team_avatars_directory"] });
     } catch (err: any) {
       toast.error(err?.message || "Falha ao cadastrar usuário");
     } finally {
@@ -1156,6 +1181,39 @@ function TeamManagementSection({
 
   return (
     <div className="space-y-6">
+      {/* ── SUB-NAVEGAÇÃO: COLABORADORES vs PIXEL DE MONITORAMENTO ── */}
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div className="inline-flex rounded-2xl border border-white/10 bg-black/30 p-1 gap-1">
+          <button
+            type="button"
+            onClick={() => setSubView("colaboradores")}
+            className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-black uppercase tracking-wider transition ${
+              subView === "colaboradores"
+                ? "bg-primary text-primary-foreground shadow-glow-sm"
+                : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            <ShieldCheck className="h-3.5 w-3.5" /> Colaboradores & Acessos
+          </button>
+          <button
+            type="button"
+            onClick={() => setSubView("pixel")}
+            className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-black uppercase tracking-wider transition ${
+              subView === "pixel"
+                ? "bg-emerald-500 text-slate-950 shadow-glow-sm"
+                : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            <span className="h-2 w-2 rounded-full bg-current animate-pulse" />
+            Pixel de Presença & Fluxo
+          </button>
+        </div>
+      </div>
+
+      {subView === "pixel" ? (
+        <TeamActivityMonitor />
+      ) : (
+        <>
       {/* ── CARD DE AUTORIDADE SUPERIOR ── */}
       <div className="glass-panel p-6 space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -1312,19 +1370,20 @@ function TeamManagementSection({
                 {/* Cabeçalho do Card */}
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex items-start gap-3 min-w-0">
-                    <div className="relative shrink-0">
-                      <div className={`h-12 w-12 rounded-2xl border flex items-center justify-center overflow-hidden shadow-md ${targetInfo.badgeBg} ${targetInfo.badgeBorder}`}>
-                        {u.avatar_url ? (
-                          <img src={u.avatar_url} alt={u.full_name} className="h-full w-full object-cover" />
-                        ) : (
-                          renderRankIcon(targetInfo.iconName, `h-6 w-6 ${targetInfo.badgeText}`)
-                        )}
-                      </div>
-                      <span
-                        className={`absolute -bottom-1 -right-1 h-3.5 w-3.5 rounded-full border-2 border-background ${isInactive ? "bg-red-500" : "bg-emerald-500"}`}
-                        title={isInactive ? "Suspenso" : "Ativo"}
-                      />
-                    </div>
+                    <UserAvatar
+                      src={u.avatar_url}
+                      name={u.full_name}
+                      email={u.email}
+                      size="lg"
+                      rounded="2xl"
+                      onlineStatus={
+                        isInactive
+                          ? "inactive"
+                          : isUserOnlineNow(u.last_seen_at, u.status)
+                          ? "online"
+                          : null
+                      }
+                    />
 
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2 flex-wrap">
@@ -1631,6 +1690,8 @@ function TeamManagementSection({
           })}
         </div>
       )}
+        </>
+      )}
 
       {/* ── MODAL: EDITAR LOGIN / SENHA & ACESSOS (RESPONSIVO E ANTI-CORTE) ── */}
       <AnimatePresence>
@@ -1723,8 +1784,16 @@ function TeamManagementSection({
                     </div>
                   )}
 
-                  {/* ── 2. CAMPOS DE CREDENCIAIS ── */}
+                  {/* ── 2. FOTO & CREDENCIAIS ── */}
                   <div className="space-y-3 rounded-2xl border border-white/10 bg-white/[0.02] p-4">
+                    <AvatarUpload
+                      value={editAvatarUrl}
+                      onChange={setEditAvatarUrl}
+                      userId={editingUser?.id}
+                      label="Foto de Perfil do Colaborador (Visível para toda a equipe)"
+                      size="md"
+                    />
+
                     <div className="space-y-1.5">
                       <label className="label-mono text-[10px] text-muted-foreground uppercase font-bold">
                         Nome Completo
@@ -1799,214 +1868,18 @@ function TeamManagementSection({
                     </div>
                   </div>
 
-                  {/* ── 3. CARGO & ROLE HIERÁRQUICA ── */}
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <div className="space-y-1.5">
-                      <label className="label-mono text-[10px] text-muted-foreground uppercase font-bold">
-                        Cargo / Função
-                      </label>
-                      <select
-                        value={editPosition}
-                        onChange={(e) => {
-                          const pos = e.target.value;
-                          setEditPosition(pos);
-                          if (CARGO_DEFAULT_PERMISSIONS[pos]) {
-                            setEditPermissions(CARGO_DEFAULT_PERMISSIONS[pos]);
-                          }
-                        }}
-                        className="w-full rounded-xl border border-white/10 bg-background/50 px-3.5 py-2.5 text-sm text-foreground focus:border-primary focus:outline-none cursor-pointer"
-                      >
-                        {POSITIONS_LIST.map((p) => (
-                          <option key={p} value={p} className="bg-card text-foreground">
-                            {p}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div className="space-y-1.5">
-                      <label className="label-mono text-[10px] text-muted-foreground uppercase font-bold">
-                        Nível de Acesso (Role)
-                      </label>
-                      <select
-                        value={editRole}
-                        onChange={(e) => setEditRole(e.target.value)}
-                        className="w-full rounded-xl border border-white/10 bg-background/50 px-3.5 py-2.5 text-sm text-foreground focus:border-primary focus:outline-none cursor-pointer"
-                      >
-                        {allowedAssignable.roles.map((r) => (
-                          <option key={r.value} value={r.value} className="bg-card text-foreground">
-                            {r.label}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
-
-                  {/* ── 4. ESTRUTURA ROBUSTA DE PERMISSÕES POR HUB ── */}
-                  <div className="space-y-4 pt-2 border-t border-white/5">
-                    <div className="flex items-center justify-between flex-wrap gap-2">
-                      <div>
-                        <label className="label-mono text-[10px] text-muted-foreground uppercase font-bold block">
-                          Permissões Granulares por HUB
-                        </label>
-                        <p className="text-[10px] text-muted-foreground">
-                          Command Center, Métricas e Simulador são analíticos (Visualizar / Bloqueado).
-                        </p>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const allEdit: Record<string, string> = {};
-                            PERMISSION_MODULES.forEach((m) => {
-                              allEdit[m.key] = m.mode === "read_only" ? "view" : "edit";
-                            });
-                            setEditPermissions(allEdit);
-                          }}
-                          className="text-[10px] font-bold text-primary hover:underline"
-                        >
-                          Liberar Tudo
-                        </button>
-                        <span className="text-white/20">|</span>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const allNone: Record<string, string> = {};
-                            PERMISSION_MODULES.forEach((m) => {
-                              allNone[m.key] = "none";
-                            });
-                            setEditPermissions(allNone);
-                          }}
-                          className="text-[10px] font-bold text-muted-foreground hover:text-foreground"
-                        >
-                          Bloquear Tudo
-                        </button>
-                        <span className="text-white/20">|</span>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const def = CARGO_DEFAULT_PERMISSIONS[editPosition] || {};
-                            setEditPermissions(def);
-                          }}
-                          className="text-[10px] font-bold text-muted-foreground hover:text-foreground"
-                        >
-                          Padrão do Cargo
-                        </button>
-                      </div>
-                    </div>
-
-                    <div className="space-y-3">
-                      {HUBS_DEFINITIONS.map((hub) => {
-                        const hubModules = PERMISSION_MODULES.filter((m) => m.hub === hub.id);
-
-                        const handleLiberarHub = () => {
-                          const next = { ...editPermissions };
-                          hubModules.forEach((m) => {
-                            next[m.key] = m.mode === "read_only" ? "view" : "edit";
-                          });
-                          setEditPermissions(next);
-                        };
-
-                        const handleBloquearHub = () => {
-                          const next = { ...editPermissions };
-                          hubModules.forEach((m) => {
-                            next[m.key] = "none";
-                          });
-                          setEditPermissions(next);
-                        };
-
-                        return (
-                          <div key={hub.id} className="rounded-2xl border border-white/10 bg-black/25 p-3.5 space-y-3">
-                            <div className="flex items-center justify-between flex-wrap gap-2">
-                              <span className={`text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full border ${hub.colorBadge}`}>
-                                {hub.label}
-                              </span>
-                              <div className="flex items-center gap-1.5">
-                                <button
-                                  type="button"
-                                  onClick={handleLiberarHub}
-                                  className="text-[9px] font-bold text-primary hover:bg-primary/10 px-2 py-0.5 rounded border border-primary/20 transition"
-                                >
-                                  Liberar Hub
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={handleBloquearHub}
-                                  className="text-[9px] font-bold text-muted-foreground hover:bg-white/5 px-2 py-0.5 rounded border border-white/10 transition"
-                                >
-                                  Bloquear Hub
-                                </button>
-                              </div>
-                            </div>
-
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                              {hubModules.map((m) => {
-                                const currentVal = editPermissions[m.key] || "none";
-
-                                if (m.mode === "read_only") {
-                                  const isView = currentVal === "view" || currentVal === "edit";
-                                  return (
-                                    <div
-                                      key={m.key}
-                                      className="rounded-xl border border-white/5 bg-background/50 p-2.5 flex items-center justify-between gap-2"
-                                    >
-                                      <div className="min-w-0 flex-1">
-                                        <p className="text-[11px] font-bold text-foreground truncate">{m.label}</p>
-                                        <p className="text-[9px] text-muted-foreground truncate">{m.description}</p>
-                                      </div>
-                                      <select
-                                        value={isView ? "view" : "none"}
-                                        onChange={(e) =>
-                                          setEditPermissions({ ...editPermissions, [m.key]: e.target.value })
-                                        }
-                                        className={`rounded-lg border bg-card px-2 py-1 text-[10px] font-black uppercase focus:outline-none cursor-pointer ${
-                                          isView
-                                            ? "text-blue-400 border-blue-500/30"
-                                            : "text-muted-foreground/50 border-white/10"
-                                        }`}
-                                      >
-                                        <option value="none" className="bg-card text-muted-foreground">Bloqueado</option>
-                                        <option value="view" className="bg-card text-blue-400">Liberado (Visualizar)</option>
-                                      </select>
-                                    </div>
-                                  );
-                                }
-
-                                return (
-                                  <div
-                                    key={m.key}
-                                    className="rounded-xl border border-white/5 bg-background/50 p-2.5 flex items-center justify-between gap-2"
-                                  >
-                                    <div className="min-w-0 flex-1">
-                                      <p className="text-[11px] font-bold text-foreground truncate">{m.label}</p>
-                                      <p className="text-[9px] text-muted-foreground truncate">{m.description}</p>
-                                    </div>
-                                    <select
-                                      value={currentVal}
-                                      onChange={(e) =>
-                                        setEditPermissions({ ...editPermissions, [m.key]: e.target.value })
-                                      }
-                                      className={`rounded-lg border bg-card px-2 py-1 text-[10px] font-black uppercase focus:outline-none cursor-pointer ${
-                                        currentVal === "edit"
-                                          ? "text-primary border-primary/30"
-                                          : currentVal === "view"
-                                          ? "text-blue-400 border-blue-500/30"
-                                          : "text-muted-foreground/50 border-white/10"
-                                      }`}
-                                    >
-                                      <option value="none" className="bg-card text-muted-foreground">Bloqueado</option>
-                                      <option value="view" className="bg-card text-blue-400">Leitura</option>
-                                      <option value="edit" className="bg-card text-primary">Escrita</option>
-                                    </select>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
+                  {/* ── 3 & 4. CARGO vs PATENTE HIERÁRQUICA + PERMISSÕES DIDÁTICAS ── */}
+                  <DidacticUserAccessEditor
+                    position={editPosition}
+                    onPositionChange={setEditPosition}
+                    role={editRole}
+                    onRoleChange={setEditRole}
+                    permissions={editPermissions}
+                    onPermissionsChange={setEditPermissions}
+                    allowedRoles={allowedAssignable.roles}
+                    allowedPositions={allowedAssignable.positions}
+                    autoApplyCargoDefaults={false}
+                  />
                 </div>
 
                 {/* Rodapé Fixo do Modal (Sempre Acessível) */}
@@ -2152,178 +2025,17 @@ function TeamManagementSection({
                     </div>
                   </div>
 
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <div className="space-y-1.5">
-                      <label className="label-mono text-[10px] text-muted-foreground uppercase font-bold">
-                        Cargo / Função
-                      </label>
-                      <select
-                        value={newPosition}
-                        onChange={(e) => {
-                          const pos = e.target.value;
-                          setNewPosition(pos);
-                          if (CARGO_DEFAULT_PERMISSIONS[pos]) {
-                            setNewPermissions(CARGO_DEFAULT_PERMISSIONS[pos]);
-                          }
-                        }}
-                        className="w-full rounded-xl border border-white/10 bg-background/50 px-3.5 py-2.5 text-sm text-foreground focus:border-primary focus:outline-none cursor-pointer"
-                      >
-                        {POSITIONS_LIST.map((p) => (
-                          <option key={p} value={p} className="bg-card text-foreground">
-                            {p}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div className="space-y-1.5">
-                      <label className="label-mono text-[10px] text-muted-foreground uppercase font-bold">
-                        Nível de Acesso (Role)
-                      </label>
-                      <select
-                        value={newRole}
-                        onChange={(e) => setNewRole(e.target.value)}
-                        className="w-full rounded-xl border border-white/10 bg-background/50 px-3.5 py-2.5 text-sm text-foreground focus:border-primary focus:outline-none cursor-pointer"
-                      >
-                        {allowedAssignable.roles.map((r) => (
-                          <option key={r.value} value={r.value} className="bg-card text-foreground">
-                            {r.label}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
-
-                  {/* Permissões por HUB no cadastro */}
-                  <div className="space-y-3 pt-2 border-t border-white/5">
-                    <div className="flex items-center justify-between">
-                      <label className="label-mono text-[10px] text-muted-foreground uppercase font-bold block">
-                        Permissões Iniciais por HUB
-                      </label>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const def = CARGO_DEFAULT_PERMISSIONS[newPosition] || {};
-                          setNewPermissions(def);
-                        }}
-                        className="text-[10px] font-bold text-muted-foreground hover:text-foreground"
-                      >
-                        Aplicar Padrão do Cargo
-                      </button>
-                    </div>
-
-                    <div className="space-y-3">
-                      {HUBS_DEFINITIONS.map((hub) => {
-                        const hubModules = PERMISSION_MODULES.filter((m) => m.hub === hub.id);
-
-                        const handleLiberarHub = () => {
-                          const next = { ...newPermissions };
-                          hubModules.forEach((m) => {
-                            next[m.key] = m.mode === "read_only" ? "view" : "edit";
-                          });
-                          setNewPermissions(next);
-                        };
-
-                        const handleBloquearHub = () => {
-                          const next = { ...newPermissions };
-                          hubModules.forEach((m) => {
-                            next[m.key] = "none";
-                          });
-                          setNewPermissions(next);
-                        };
-
-                        return (
-                          <div key={hub.id} className="rounded-2xl border border-white/10 bg-black/25 p-3.5 space-y-3">
-                            <div className="flex items-center justify-between flex-wrap gap-2">
-                              <span className={`text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full border ${hub.colorBadge}`}>
-                                {hub.label}
-                              </span>
-                              <div className="flex items-center gap-1.5">
-                                <button
-                                  type="button"
-                                  onClick={handleLiberarHub}
-                                  className="text-[9px] font-bold text-primary hover:bg-primary/10 px-2 py-0.5 rounded border border-primary/20 transition"
-                                >
-                                  Liberar Hub
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={handleBloquearHub}
-                                  className="text-[9px] font-bold text-muted-foreground hover:bg-white/5 px-2 py-0.5 rounded border border-white/10 transition"
-                                >
-                                  Bloquear Hub
-                                </button>
-                              </div>
-                            </div>
-
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                              {hubModules.map((m) => {
-                                const currentVal = newPermissions[m.key] || "none";
-
-                                if (m.mode === "read_only") {
-                                  const isView = currentVal === "view" || currentVal === "edit";
-                                  return (
-                                    <div
-                                      key={m.key}
-                                      className="rounded-xl border border-white/5 bg-background/50 p-2.5 flex items-center justify-between gap-2"
-                                    >
-                                      <div className="min-w-0 flex-1">
-                                        <p className="text-[11px] font-bold text-foreground truncate">{m.label}</p>
-                                        <p className="text-[9px] text-muted-foreground truncate">{m.description}</p>
-                                      </div>
-                                      <select
-                                        value={isView ? "view" : "none"}
-                                        onChange={(e) =>
-                                          setNewPermissions({ ...newPermissions, [m.key]: e.target.value })
-                                        }
-                                        className={`rounded-lg border bg-card px-2 py-1 text-[10px] font-black uppercase focus:outline-none cursor-pointer ${
-                                          isView
-                                            ? "text-blue-400 border-blue-500/30"
-                                            : "text-muted-foreground/50 border-white/10"
-                                        }`}
-                                      >
-                                        <option value="none" className="bg-card text-muted-foreground">Bloqueado</option>
-                                        <option value="view" className="bg-card text-blue-400">Liberado (Visualizar)</option>
-                                      </select>
-                                    </div>
-                                  );
-                                }
-
-                                return (
-                                  <div
-                                    key={m.key}
-                                    className="rounded-xl border border-white/5 bg-background/50 p-2.5 flex items-center justify-between gap-2"
-                                  >
-                                    <div className="min-w-0 flex-1">
-                                      <p className="text-[11px] font-bold text-foreground truncate">{m.label}</p>
-                                      <p className="text-[9px] text-muted-foreground truncate">{m.description}</p>
-                                    </div>
-                                    <select
-                                      value={currentVal}
-                                      onChange={(e) =>
-                                        setNewPermissions({ ...newPermissions, [m.key]: e.target.value })
-                                      }
-                                      className={`rounded-lg border bg-card px-2 py-1 text-[10px] font-black uppercase focus:outline-none cursor-pointer ${
-                                        currentVal === "edit"
-                                          ? "text-primary border-primary/30"
-                                          : currentVal === "view"
-                                          ? "text-blue-400 border-blue-500/30"
-                                          : "text-muted-foreground/50 border-white/10"
-                                      }`}
-                                    >
-                                      <option value="none" className="bg-card text-muted-foreground">Bloqueado</option>
-                                      <option value="view" className="bg-card text-blue-400">Leitura</option>
-                                      <option value="edit" className="bg-card text-primary">Escrita</option>
-                                    </select>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
+                  <DidacticUserAccessEditor
+                    position={newPosition}
+                    onPositionChange={setNewPosition}
+                    role={newRole}
+                    onRoleChange={setNewRole}
+                    permissions={newPermissions}
+                    onPermissionsChange={setNewPermissions}
+                    allowedRoles={allowedAssignable.roles}
+                    allowedPositions={allowedAssignable.positions}
+                    autoApplyCargoDefaults={true}
+                  />
                 </div>
 
                 {/* Rodapé Fixo */}

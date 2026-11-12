@@ -44,6 +44,8 @@ export function ProfileSettingsModal({ isOpen, onClose, profile, userId }: Profi
 
       qc.invalidateQueries({ queryKey: ["current_user_profile"] });
       qc.invalidateQueries({ queryKey: ["profiles"] });
+      qc.invalidateQueries({ queryKey: ["team_avatars_directory"] });
+      qc.invalidateQueries({ queryKey: ["admin_users_list"] });
     } catch (err: any) {
       toast.error(`Falha ao atualizar foto: ${err?.message || "Erro desconhecido"}`);
     }
@@ -80,6 +82,8 @@ export function ProfileSettingsModal({ isOpen, onClose, profile, userId }: Profi
 
       qc.invalidateQueries({ queryKey: ["current_user_profile"] });
       qc.invalidateQueries({ queryKey: ["profiles"] });
+      qc.invalidateQueries({ queryKey: ["team_avatars_directory"] });
+      qc.invalidateQueries({ queryKey: ["admin_users_list"] });
       onClose();
     } catch (err: any) {
       toast.error(`Erro ao salvar perfil: ${err.message}`);

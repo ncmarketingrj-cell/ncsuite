@@ -17,6 +17,9 @@ import {
   getAllowedAssignableRoles,
   generateStrongPassword,
   isMasterAdmin,
+  canUserManageUsers,
+  canUserAccessConfig,
+  getCargoDefinition,
 } from "@/lib/userHierarchy";
 import {
   createSystemUser,
@@ -25,6 +28,10 @@ import {
   toggleUserStatus,
 } from "@/lib/userService";
 import { AvatarUpload } from "@/components/AvatarUpload";
+import { UserAvatar } from "@/components/UserAvatar";
+import { DidacticUserAccessEditor } from "@/components/DidacticUserAccessEditor";
+import { TeamActivityMonitor } from "@/components/TeamActivityMonitor";
+import { isUserOnlineNow } from "@/lib/activityPixelService";
 
 export const Route = createFileRoute("/_app/config")({
   head: () => ({ meta: [{ title: "Configurações — NC Suite" }] }),
@@ -97,14 +104,23 @@ function ConfigPage() {
   });
 
   const ADMIN_EMAILS = ["nc.marketingrj@gmail.com", "hc.marketing.dgt@gmail.com"];
-  const isAdmin = profile?.role === "admin" || (user?.email ? ADMIN_EMAILS.includes(user.email) : false);
-  const isStaff = isAdmin || profile?.role === "staff" ||
-    /gestor|director|diretor|staff|sócio|socio|dono/i.test(profile?.position || "");
-  const perms = (profile as any)?.permissions ?? {};
-  const canManageUsers = isAdmin || !!perms.criar_usuarios;
-  const userLevel = getUserLevel({ email: user?.email, role: profile?.role, position: profile?.position });
   const isCallerMaster = isMasterAdmin({ email: user?.email, id: user?.id });
-  const canAccessConfig = isCallerMaster || isAdmin || isStaff || userLevel >= 70;
+  const isAdmin =
+    isCallerMaster ||
+    profile?.role === "admin" ||
+    profile?.role === "master_admin" ||
+    (user?.email ? ADMIN_EMAILS.includes(user.email) : false);
+  const userLevel = getUserLevel({ email: user?.email, role: profile?.role, position: profile?.position });
+  const isStaff = isAdmin || userLevel >= 80;
+  const callerProfileCheck = {
+    id: user?.id,
+    email: user?.email,
+    role: profile?.role,
+    position: profile?.position,
+    permissions: (profile as any)?.permissions ?? {},
+  };
+  const canManageUsers = canUserManageUsers(callerProfileCheck);
+  const canAccessConfig = canUserAccessConfig(callerProfileCheck);
 
   if (!canAccessConfig) {
     return (
@@ -1118,6 +1134,8 @@ function TabConta() {
 
       qc.invalidateQueries({ queryKey: ["profiles"] });
       qc.invalidateQueries({ queryKey: ["current_user_profile"] });
+      qc.invalidateQueries({ queryKey: ["team_avatars_directory"] });
+      qc.invalidateQueries({ queryKey: ["admin_users_list"] });
       toast.success("Perfil atualizado com sucesso!");
     } catch (err: any) {
       toast.error(err.message || "Erro ao salvar perfil");
@@ -1444,6 +1462,8 @@ function TabUsuarios({ isAdmin, currentUserProfile }: { isAdmin: boolean; curren
   const isCallerMaster = useMemo(() => isMasterAdmin(effectiveCaller), [effectiveCaller]);
   const allowedAssignable = useMemo(() => getAllowedAssignableRoles(effectiveCaller), [effectiveCaller]);
 
+  const [subView, setSubView] = useState<"colaboradores" | "pixel">("colaboradores");
+
   // Edição
   const [editingUser, setEditingUser] = useState<any | null>(null);
   const [editEmail, setEditEmail] = useState("");
@@ -1506,15 +1526,19 @@ function TabUsuarios({ isAdmin, currentUserProfile }: { isAdmin: boolean; curren
 
   // Abrir modal de cadastro
   const handleOpenAdd = () => {
-    const defaultRole = allowedAssignable.roles[0]?.value || "outro";
     const defaultPosition = allowedAssignable.positions[0] || "Gestor de Tráfego";
+    const cargoDef = getCargoDefinition(defaultPosition);
+    const defaultRole =
+      (cargoDef && allowedAssignable.roles.some((r) => r.value === cargoDef.recommendedRole)
+        ? cargoDef.recommendedRole
+        : allowedAssignable.roles[0]?.value) || "outro";
     setNewEmail("");
     setNewPassword(generateStrongPassword());
     setNewShowPassword(true);
     setNewName("");
     setNewRole(defaultRole);
     setNewPosition(defaultPosition);
-    setNewPermissions(CARGO_DEFAULT_PERMISSIONS[defaultPosition] || {});
+    setNewPermissions(cargoDef?.defaultPermissions || CARGO_DEFAULT_PERMISSIONS[defaultPosition] || {});
     setNewAvatarUrl("");
     setShowAddModal(true);
   };
@@ -1553,6 +1577,7 @@ function TabUsuarios({ isAdmin, currentUserProfile }: { isAdmin: boolean; curren
       setEditingUser(null);
       qc.invalidateQueries({ queryKey: ["admin_users_list"] });
       qc.invalidateQueries({ queryKey: ["current_user_profile"] });
+      qc.invalidateQueries({ queryKey: ["team_avatars_directory"] });
     } catch (err: any) {
       toast.error(err?.message || "Falha ao salvar alterações");
     } finally {
@@ -1591,6 +1616,7 @@ function TabUsuarios({ isAdmin, currentUserProfile }: { isAdmin: boolean; curren
       toast.success(res.message || "Novo usuário cadastrado e pronto para login!");
       setShowAddModal(false);
       qc.invalidateQueries({ queryKey: ["admin_users_list"] });
+      qc.invalidateQueries({ queryKey: ["team_avatars_directory"] });
     } catch (err: any) {
       toast.error(err?.message || "Falha ao criar usuário");
     } finally {
@@ -1737,6 +1763,39 @@ function TabUsuarios({ isAdmin, currentUserProfile }: { isAdmin: boolean; curren
 
   return (
     <div className="space-y-6">
+      {/* ══════════ SUB-NAVEGAÇÃO: COLABORADORES vs PIXEL DE MONITORAMENTO ══════════ */}
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div className="inline-flex rounded-2xl border border-white/10 bg-black/30 p-1 gap-1">
+          <button
+            type="button"
+            onClick={() => setSubView("colaboradores")}
+            className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-black uppercase tracking-wider transition ${
+              subView === "colaboradores"
+                ? "bg-primary text-primary-foreground shadow-glow-sm"
+                : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            <Users className="h-3.5 w-3.5" /> Colaboradores & Acessos
+          </button>
+          <button
+            type="button"
+            onClick={() => setSubView("pixel")}
+            className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-black uppercase tracking-wider transition ${
+              subView === "pixel"
+                ? "bg-emerald-500 text-slate-950 shadow-glow-sm"
+                : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            <span className="h-2 w-2 rounded-full bg-current animate-pulse" />
+            Pixel de Presença & Fluxo
+          </button>
+        </div>
+      </div>
+
+      {subView === "pixel" ? (
+        <TeamActivityMonitor />
+      ) : (
+        <>
       {/* ══════════ BANNER DE AUTORIDADE HIERÁRQUICA DO USUÁRIO CONECTADO ══════════ */}
       <div className="relative overflow-hidden rounded-2xl border border-white/10 bg-gradient-to-r from-background via-white/[0.02] to-background p-5 shadow-2xl">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -1888,22 +1947,20 @@ function TabUsuarios({ isAdmin, currentUserProfile }: { isAdmin: boolean; curren
                 {/* Cabeçalho do Card: Avatar + Informações Básicas + Badge Hierárquica */}
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex items-start gap-3 min-w-0">
-                    <div className="relative shrink-0">
-                      <div
-                        className={`h-12 w-12 rounded-2xl border flex items-center justify-center overflow-hidden shadow-md ${targetInfo.badgeBg} ${targetInfo.badgeBorder}`}
-                      >
-                        {u.avatar_url ? (
-                          <img src={u.avatar_url} alt={u.full_name || "Avatar"} className="h-full w-full object-cover" />
-                        ) : (
-                          renderRankIcon(targetInfo.iconName, `h-6 w-6 ${targetInfo.badgeText}`)
-                        )}
-                      </div>
-                      <span
-                        className={`absolute -bottom-1 -right-1 h-3.5 w-3.5 rounded-full border-2 border-background ${isInactive ? "bg-red-500" : "bg-emerald-500"
-                          }`}
-                        title={isInactive ? "Usuário Suspenso" : "Usuário Ativo"}
-                      />
-                    </div>
+                    <UserAvatar
+                      src={u.avatar_url}
+                      name={u.full_name}
+                      email={u.email}
+                      size="lg"
+                      rounded="2xl"
+                      onlineStatus={
+                        isInactive
+                          ? "inactive"
+                          : isUserOnlineNow(u.last_seen_at, u.status)
+                          ? "online"
+                          : null
+                      }
+                    />
 
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2 flex-wrap">
@@ -2102,6 +2159,8 @@ function TabUsuarios({ isAdmin, currentUserProfile }: { isAdmin: boolean; curren
             );
           })}
         </div>
+      )}
+        </>
       )}
 
       {/* ══════════════════════════════════════════════════════════════════════════════ */}
@@ -2311,127 +2370,20 @@ function TabUsuarios({ isAdmin, currentUserProfile }: { isAdmin: boolean; curren
                         <option value="inativo">🔴 Suspenso (Acesso Bloqueado)</option>
                       </select>
                     </div>
-
-                    <div className="space-y-1">
-                      <label className="label-mono text-[10px] text-muted-foreground uppercase font-bold">
-                        Cargo / Função
-                      </label>
-                      <select
-                        value={editPosition}
-                        onChange={(e) => {
-                          const pos = e.target.value;
-                          setEditPosition(pos);
-                          const defaults = CARGO_DEFAULT_PERMISSIONS[pos] || {};
-                          setEditPermissions(defaults);
-                        }}
-                        className="w-full rounded-xl border border-white/10 bg-background px-3.5 py-2.5 text-xs text-foreground focus:outline-none cursor-pointer"
-                      >
-                        {allowedAssignable.positions.map((pos: string) => (
-                          <option key={pos} value={pos}>
-                            {pos}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div className="space-y-1">
-                      <label className="label-mono text-[10px] text-muted-foreground uppercase font-bold">
-                        Nível de Acesso (Role)
-                      </label>
-                      <select
-                        value={editRole}
-                        onChange={(e) => setEditRole(e.target.value)}
-                        className="w-full rounded-xl border border-white/10 bg-background px-3.5 py-2.5 text-xs font-bold text-foreground focus:outline-none cursor-pointer"
-                      >
-                        {allowedAssignable.roles.map((r: any) => (
-                          <option key={r.value} value={r.value}>
-                            {r.label}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
                   </div>
 
-                  {/* ── SEÇÃO 3: MATRIZ DE PERMISSÕES ── */}
-                  <div className="space-y-2 border-t border-white/10 pt-3">
-                    <div className="flex items-center justify-between">
-                      <label className="label-mono text-[10px] text-muted-foreground uppercase font-bold">
-                        Permissões Granulares por Módulo ({PERMISSION_PAGES.length})
-                      </label>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const defaults = CARGO_DEFAULT_PERMISSIONS[editPosition] || {};
-                          setEditPermissions(defaults);
-                          toast.info(`Preset recomendado para "${editPosition}" aplicado.`);
-                        }}
-                        className="text-[9px] font-black uppercase text-primary hover:underline"
-                      >
-                        Aplicar Sugestão do Cargo
-                      </button>
-                    </div>
-
-                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 max-h-[180px] overflow-y-auto pr-1 custom-scrollbar">
-                      {PERMISSION_PAGES.map(({ key, label }) => {
-                        const isAnalytic = key === "dashboard" || key === "metricas";
-                        const currentVal = editPermissions[key] || "none";
-                        const isView = currentVal === "view" || currentVal === "edit";
-
-                        if (isAnalytic) {
-                          return (
-                            <div
-                              key={key}
-                              className="flex items-center justify-between gap-2 rounded-xl border border-white/5 bg-background/40 p-2"
-                            >
-                              <span className="text-[10px] font-bold text-foreground truncate max-w-[110px]" title="Módulo Analítico">
-                                {label}
-                              </span>
-                              <select
-                                value={isView ? "view" : "none"}
-                                onChange={(e) =>
-                                  setEditPermissions((prev) => ({ ...prev, [key]: e.target.value }))
-                                }
-                                className={`rounded border border-white/10 bg-background px-1.5 py-1 text-[10px] font-black uppercase focus:outline-none cursor-pointer ${
-                                  isView ? "text-blue-400" : "text-muted-foreground/50"
-                                }`}
-                              >
-                                <option value="none" className="text-muted-foreground">Bloqueado</option>
-                                <option value="view" className="text-blue-400">Liberado</option>
-                              </select>
-                            </div>
-                          );
-                        }
-
-                        return (
-                          <div
-                            key={key}
-                            className="flex items-center justify-between gap-2 rounded-xl border border-white/5 bg-background/40 p-2"
-                          >
-                            <span className="text-[10px] font-bold text-foreground truncate max-w-[110px]">
-                              {label}
-                            </span>
-                            <select
-                              value={currentVal}
-                              onChange={(e) =>
-                                setEditPermissions((prev) => ({ ...prev, [key]: e.target.value }))
-                              }
-                              className={`rounded border border-white/10 bg-background px-1.5 py-1 text-[10px] font-black uppercase focus:outline-none cursor-pointer ${
-                                currentVal === "edit"
-                                  ? "text-primary"
-                                  : currentVal === "view"
-                                  ? "text-blue-400"
-                                  : "text-muted-foreground/50"
-                              }`}
-                            >
-                              <option value="none" className="text-muted-foreground">Bloqueado</option>
-                              <option value="view" className="text-blue-400">Leitura</option>
-                              <option value="edit" className="text-primary">Escrita</option>
-                            </select>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
+                  {/* ── SEÇÃO 3: CARGO vs PATENTE & PERMISSÕES DIDÁTICAS POR HUB ── */}
+                  <DidacticUserAccessEditor
+                    position={editPosition}
+                    onPositionChange={setEditPosition}
+                    role={editRole}
+                    onRoleChange={setEditRole}
+                    permissions={editPermissions}
+                    onPermissionsChange={setEditPermissions}
+                    allowedRoles={allowedAssignable.roles}
+                    allowedPositions={allowedAssignable.positions}
+                    autoApplyCargoDefaults={false}
+                  />
                 </div>
 
                 {/* Rodapé Fixo de Ações */}
@@ -2586,87 +2538,19 @@ function TabUsuarios({ isAdmin, currentUserProfile }: { isAdmin: boolean; curren
                     </button>
                   </div>
                 </div>
-
-                <div className="space-y-1">
-                  <label className="label-mono text-[10px] text-muted-foreground uppercase font-bold">
-                    Cargo / Função
-                  </label>
-                  <select
-                    value={newPosition}
-                    onChange={(e) => {
-                      const pos = e.target.value;
-                      setNewPosition(pos);
-                      const defaults = CARGO_DEFAULT_PERMISSIONS[pos] || {};
-                      setNewPermissions(defaults);
-                    }}
-                    className="w-full rounded-lg border border-white/10 bg-background px-3 py-2 text-xs text-foreground focus:outline-none"
-                  >
-                    {allowedAssignable.positions.map((pos: string) => (
-                      <option key={pos} value={pos}>
-                        {pos}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="space-y-1">
-                  <label className="label-mono text-[10px] text-muted-foreground uppercase font-bold">
-                    Nível de Acesso (Role)
-                  </label>
-                  <select
-                    value={newRole}
-                    onChange={(e) => setNewRole(e.target.value)}
-                    className="w-full rounded-lg border border-white/10 bg-background px-3 py-2 text-xs font-bold text-foreground focus:outline-none"
-                  >
-                    {allowedAssignable.roles.map((r: any) => (
-                      <option key={r.value} value={r.value}>
-                        {r.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
               </div>
 
-              {/* Matriz de Permissões Sugeridas */}
-              <div className="space-y-2 border-t border-white/10 pt-3">
-                <div className="flex items-center justify-between">
-                  <label className="label-mono text-[10px] text-muted-foreground uppercase font-bold">
-                    Permissões por Módulo
-                  </label>
-                  <span className="text-[9px] font-black uppercase text-primary/80">
-                    Preset de "{newPosition}" Ativo
-                  </span>
-                </div>
-
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 max-h-[160px] overflow-y-auto pr-1 custom-scrollbar">
-                  {PERMISSION_PAGES.map(({ key, label }) => (
-                    <div
-                      key={key}
-                      className="flex items-center justify-between gap-2 rounded-lg border border-white/5 bg-background/40 p-2"
-                    >
-                      <span className="text-[10px] font-bold text-foreground truncate max-w-[110px]">
-                        {label}
-                      </span>
-                      <select
-                        value={newPermissions[key] || "none"}
-                        onChange={(e) =>
-                          setNewPermissions((prev) => ({ ...prev, [key]: e.target.value }))
-                        }
-                        className={`rounded border border-white/10 bg-background px-1.5 py-1 text-[10px] font-black uppercase focus:outline-none ${newPermissions[key] === "edit"
-                            ? "text-primary"
-                            : newPermissions[key] === "view"
-                              ? "text-blue-400"
-                              : "text-muted-foreground/50"
-                          }`}
-                      >
-                        <option value="none" className="text-muted-foreground">Nenhum</option>
-                        <option value="view" className="text-blue-400">Leitura</option>
-                        <option value="edit" className="text-primary">Escrita</option>
-                      </select>
-                    </div>
-                  ))}
-                </div>
-              </div>
+              <DidacticUserAccessEditor
+                position={newPosition}
+                onPositionChange={setNewPosition}
+                role={newRole}
+                onRoleChange={setNewRole}
+                permissions={newPermissions}
+                onPermissionsChange={setNewPermissions}
+                allowedRoles={allowedAssignable.roles}
+                allowedPositions={allowedAssignable.positions}
+                autoApplyCargoDefaults={true}
+              />
 
                 </div>
 

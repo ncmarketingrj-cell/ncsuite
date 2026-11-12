@@ -1,8 +1,9 @@
 import { useAuth } from "@/lib/auth";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase-external/client";
+import { hasPermissionAccess, hasPermissionEdit, isMasterAdmin } from "@/lib/userHierarchy";
 
-const ADMIN_EMAILS = ["nc.marketingrj@gmail.com", "hc.marketing.dgt@gmail.com"];
+const RESTRICTED_BY_DEFAULT = new Set(["criar_usuarios", "gestao_victoria"]);
 
 export function usePagePermission() {
   const { user } = useAuth();
@@ -22,31 +23,32 @@ export function usePagePermission() {
     enabled: !!user?.id,
   });
 
-  const isAdmin = profile?.role === "admin" || (user?.email ? ADMIN_EMAILS.includes(user.email) : false);
+  const isAdmin =
+    isMasterAdmin({ email: user?.email, id: user?.id }) ||
+    profile?.role === "admin" ||
+    profile?.role === "master_admin";
   const perms = (profile as any)?.permissions ?? {};
 
   const hasAccess = (key: string): boolean => {
-    if (isLoading) return true; // Otimista durante o carregamento
+    if (isLoading) return true; // Otimista durante o carregamento inicial
     if (isAdmin) return true;
-    
+
     const value = perms[key];
-    // Block only if explicitly set to "none" or false
-    if (value === "none" || value === false) return false;
-    
-    // Default allow if undefined or view/edit
-    return true;
+    if (value === undefined || value === null) {
+      return !RESTRICTED_BY_DEFAULT.has(key);
+    }
+    return hasPermissionAccess(perms, key);
   };
 
   const canEdit = (key: string): boolean => {
     if (isLoading) return true;
     if (isAdmin) return true;
-    
+
     const value = perms[key];
-    // Allow edit only if explicitly 'edit', or if undefined fallback to true (or false depending on strictness)
-    // We'll require explicit 'edit' for destructive actions, or true if the module defaults to open
-    if (value === "none" || value === "view" || value === false) return false;
-    
-    return true;
+    if (value === undefined || value === null) {
+      return !RESTRICTED_BY_DEFAULT.has(key);
+    }
+    return hasPermissionEdit(perms, key);
   };
 
   return {
