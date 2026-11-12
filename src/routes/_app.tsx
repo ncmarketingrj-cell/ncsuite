@@ -8,7 +8,8 @@ import {
   Sun, Moon, Menu, X, BarChart3, LineChart, Palette, Link2,
   ChevronDown, RefreshCw, Users, Store,
   Volume2, VolumeX, LogOut, CreditCard, Share2, ArrowRight, GitBranch, Brain, ChevronRight,
-  Lock, GaugeCircle, FlaskConical, TrendingUp, Trash2, CheckCheck, Calendar, HelpCircle
+  Lock, GaugeCircle, FlaskConical, TrendingUp, Trash2, CheckCheck, Calendar, HelpCircle,
+  ShieldAlert
 } from "lucide-react";
 import { AuthProvider, useAuth } from "@/lib/auth";
 import { supabase } from "@/integrations/supabase-external/client";
@@ -84,10 +85,18 @@ const TRAFEGO_NAV_ITEMS: NavItem[] = [
   { to: "/cockpit", icon: GaugeCircle, label: "Cockpit" },
   { to: "/simulador", icon: FlaskConical, label: "Simulador" },
   { to: "/metricas", icon: LineChart, label: "Métricas" },
+  { to: "/regras", icon: ShieldAlert, label: "Regras & Notas" },
   { to: "/relatorios", icon: FileText, label: "Relatórios" },
   { to: "/criativos", icon: Palette, label: "Criativos" },
   { to: "/automacoes", icon: Zap, label: "Automações" },
   { to: "/auditoria", icon: Activity, label: "Auditoria Hub" },
+];
+
+const REGRAS_NAV_ITEMS: NavItem[] = [
+  { to: "/regras", icon: ShieldAlert, label: "Regras & Diretrizes" },
+  { to: "/strategy-map", icon: Brain, label: "Strategy Map" },
+  { to: "/metricas", icon: LineChart, label: "Métricas de Tráfego" },
+  { to: "/dashboard", icon: LayoutDashboard, label: "Command Center" },
 ];
 
 const SOCIAL_NAV_ITEMS: NavItem[] = [
@@ -153,10 +162,10 @@ function Shell() {
     if (pathname.startsWith("/config")) return true;
     return true;
   };
-  const [activeModule, setActiveModule] = useState<"hub" | "trafego" | "social" | "gestao" | "funil" | "victoria" | "crm">(() => {
+  const [activeModule, setActiveModule] = useState<"hub" | "trafego" | "social" | "gestao" | "funil" | "victoria" | "crm" | "regras">(() => {
     if (typeof window !== "undefined") {
       const stored = localStorage.getItem("nc_active_module");
-      return (["hub", "trafego", "social", "gestao", "funil", "victoria", "crm"].includes(stored as any) ? stored : "hub") as any;
+      return (["hub", "trafego", "social", "gestao", "funil", "victoria", "crm", "regras"].includes(stored as any) ? stored : "hub") as any;
     }
     return "hub";
   });
@@ -167,7 +176,9 @@ function Shell() {
 
   useEffect(() => {
     let nextModule = activeModule;
-    if (path.startsWith("/victoria")) {
+    if (path.startsWith("/regras")) {
+      nextModule = "regras";
+    } else if (path.startsWith("/victoria")) {
       nextModule = "victoria";
     } else if (path.startsWith("/social") || path.startsWith("/organizador") || path.startsWith("/link-bio") || path.startsWith("/quiz") || path.startsWith("/formulario")) {
       nextModule = "social";
@@ -191,6 +202,7 @@ function Shell() {
         let moduleName = "";
         if (nextModule === "social") moduleName = "Módulo Social";
         else if (nextModule === "trafego") moduleName = "Núcleo de Performance";
+        else if (nextModule === "regras") moduleName = "Estratégia & Regras Operacionais";
         else if (nextModule === "gestao") moduleName = "Gestão";
         else if (nextModule === "funil") moduleName = "Estratégia de Funil";
         
@@ -206,7 +218,9 @@ function Shell() {
 
   let currentNavItems = TRAFEGO_NAV_ITEMS;
 
-  if (activeModule === "social") {
+  if (activeModule === "regras") {
+    currentNavItems = REGRAS_NAV_ITEMS;
+  } else if (activeModule === "social") {
     currentNavItems = SOCIAL_NAV_ITEMS;
   } else if (activeModule === "gestao") {
     currentNavItems = GESTAO_NAV_ITEMS;
@@ -414,6 +428,31 @@ function Shell() {
               </div>
             </motion.div>
 
+            {/* Card 2: Estratégia & Regras Operacionais */}
+            <motion.div
+              whileHover={{ y: -8, scale: 1.02 }}
+              onClick={() => {
+                setActiveModule("regras");
+                localStorage.setItem("nc_active_module", "regras");
+                nav({ to: "/regras" as any });
+              }}
+              className="group relative rounded-2xl border border-border bg-card p-6 text-left cursor-pointer transition-all duration-300 hover:border-rose-500/40 hover:shadow-lg shadow-sm"
+            >
+              <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-rose-500 to-amber-500 rounded-t-2xl" />
+              <div className="h-10 w-10 rounded-xl bg-rose-500/10 border border-rose-500/20 flex items-center justify-center mb-4">
+                <ShieldAlert className="h-5 w-5 text-rose-500" />
+              </div>
+              <h3 className="text-base font-black text-foreground group-hover:text-rose-500 transition-colors flex items-center gap-1.5">
+                Estratégia & Regras <span className="rounded-full bg-rose-500/20 px-2 py-0.5 text-[8px] font-black uppercase text-rose-500 tracking-wider">Novo Hub</span>
+              </h3>
+              <p className="text-xs text-muted-foreground mt-2 leading-relaxed">
+                Regras operacionais inegociáveis por conta, timeline diária de campanhas, alinhamentos diários e conexão direta com mapas mentais.
+              </p>
+              <div className="mt-6 flex items-center gap-1.5 text-[10px] font-black uppercase text-rose-500 tracking-wider">
+                Acessar Regras <ArrowRight className="h-3 w-3 transition-transform group-hover:translate-x-1" />
+              </div>
+            </motion.div>
+
             {/* Card 2: Social Media */}
             <motion.div
               whileHover={{ y: -8, scale: 1.02 }}
@@ -470,7 +509,7 @@ function Shell() {
               onClick={() => {
                 setActiveModule("funil");
                 localStorage.setItem("nc_active_module", "funil");
-                nav({ to: "/strategy-map" });
+                nav({ to: "/strategy-map" as any });
               }}
               className="group relative rounded-2xl border border-border bg-card p-6 text-left cursor-pointer transition-all duration-300 hover:border-purple-500/40 hover:shadow-lg shadow-sm"
             >
@@ -589,6 +628,7 @@ function Shell() {
                 >
                   <span className={`h-1.5 w-1.5 rounded-full ${
                     activeModule === "trafego" ? "bg-red-500" :
+                    activeModule === "regras" ? "bg-rose-500" :
                     activeModule === "social" ? "bg-pink-500" :
                     activeModule === "funil" ? "bg-purple-500" :
                     activeModule === "gestao" ? "bg-cyan-500" :
@@ -597,6 +637,7 @@ function Shell() {
                   }`} />
                   <span>
                     {activeModule === "trafego" ? "Tráfego" :
+                     activeModule === "regras" ? "Estratégia & Regras" :
                      activeModule === "social" ? "Social" :
                      activeModule === "funil" ? "Funis" :
                      activeModule === "gestao" ? "Gestão" :
@@ -644,6 +685,20 @@ function Shell() {
                         </button>
                         <button
                           onClick={() => {
+                            setActiveModule("regras");
+                            localStorage.setItem("nc_active_module", "regras");
+                            setShowModuleMenu(false);
+                            nav({ to: "/regras" as any });
+                          }}
+                          className={`flex w-full items-center gap-2 rounded-xl px-2.5 py-2 text-xs font-bold transition-all ${
+                            activeModule === "regras" ? "bg-rose-500/10 text-rose-500" : "text-foreground/80 hover:bg-muted"
+                          }`}
+                        >
+                          <span className="h-1.5 w-1.5 rounded-full bg-rose-500" />
+                          Estratégia & Regras
+                        </button>
+                        <button
+                          onClick={() => {
                             setActiveModule("social");
                             localStorage.setItem("nc_active_module", "social");
                             setShowModuleMenu(false);
@@ -674,7 +729,7 @@ function Shell() {
                             setActiveModule("funil");
                             localStorage.setItem("nc_active_module", "funil");
                             setShowModuleMenu(false);
-                            nav({ to: "/strategy-map" });
+                            nav({ to: "/strategy-map" as any });
                           }}
                           className={`flex w-full items-center gap-2 rounded-xl px-2.5 py-2 text-xs font-bold transition-all ${
                             activeModule === "funil" ? "bg-purple-500/10 text-purple-500" : "text-foreground/80 hover:bg-muted"

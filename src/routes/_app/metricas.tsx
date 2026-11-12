@@ -1,7 +1,7 @@
 // src/routes/_app/metricas.tsx
 // NC Performance Suite — Métricas & Campanhas (Página Unificada)
 
-import { createFileRoute, redirect, useSearch, useNavigate, useLocation } from "@tanstack/react-router";
+import { createFileRoute, redirect, useSearch, useNavigate, useLocation, Link } from "@tanstack/react-router";
 import { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -13,7 +13,10 @@ import {
   AlertTriangle, XCircle, CheckCircle2, Info, Settings2,
   ChevronRight, Megaphone, FlaskConical, Pencil,
   BarChart2, PieChart as PieIcon, SlidersHorizontal,
+  ShieldAlert, ExternalLink, ArrowRight, Brain
 } from "lucide-react";
+import { useAccountRules, type AccountRule } from "@/hooks/useAccountRulesAndNotes";
+import { listMindMapsByAccount } from "@/components/mindmap/mindMapService";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase-external/client";
 import { useAuth } from "@/lib/auth";
@@ -528,6 +531,27 @@ function MetricasCampanhasPage() {
     setSelectedAdSets(new Set());
     setSelectedAds(new Set());
   }, [accountFilter]);
+
+  // ── Regras e Mapas Mentais da Conta Selecionada ──
+  const { rules: activeAccountRules = [] } = useAccountRules(accountFilter !== "all" ? accountFilter : null);
+
+  const { data: accountMindMaps = [] } = useQuery({
+    queryKey: ["metricas_mind_maps", accountFilter],
+    queryFn: () => listMindMapsByAccount(accountFilter),
+    enabled: accountFilter !== "all",
+  });
+
+  const campaignRulesMap = useMemo(() => {
+    const map = new Map<string, AccountRule[]>();
+    activeAccountRules.forEach((rule) => {
+      if (rule.campaign_id) {
+        const list = map.get(rule.campaign_id) || [];
+        list.push(rule);
+        map.set(rule.campaign_id, list);
+      }
+    });
+    return map;
+  }, [activeAccountRules]);
 
   // â"€â"€ Estado de análise (charts) â"€â"€
   const [modo,            setModo]            = useState<ModoId>("geral");
@@ -1594,6 +1618,20 @@ function MetricasCampanhasPage() {
                                     <div className="flex items-center gap-1.5 flex-wrap">
                                       {isLearning && <LearningBadge/>}
                                       {c.ad_account && <span className="text-[9px] text-muted-foreground/40 font-mono leading-none">{(c.ad_account as any).name}</span>}
+                                      {/* Regras da Campanha */}
+                                      {(() => {
+                                        const campRules = campaignRulesMap.get(c.id) || (c.external_id ? campaignRulesMap.get(c.external_id) : []) || [];
+                                        if (campRules.length === 0) return null;
+                                        return (
+                                          <span
+                                            className="inline-flex items-center gap-1 rounded-full bg-red-500/10 border border-red-500/25 px-1.5 py-0.5 text-[8px] font-black text-red-400"
+                                            title={`Regra: ${campRules[0].title} — ${campRules[0].description}`}
+                                          >
+                                            <ShieldAlert className="h-2.5 w-2.5" />
+                                            {campRules.length} {campRules.length === 1 ? "Regra" : "Regras"}
+                                          </span>
+                                        );
+                                      })()}
                                     </div>
                                   </div>
                                 </td>
@@ -1734,6 +1772,17 @@ function MetricasCampanhasPage() {
                                     </button>
                                     {isLearning && <LearningBadge/>}
                                     {level === "campanhas" && <ObjectiveBadge objective={c.objective} name={c.name}/>}
+                                    {/* Regras vinculadas Mobile */}
+                                    {(() => {
+                                      const campRules = campaignRulesMap.get(c.id) || (c.external_id ? campaignRulesMap.get(c.external_id) : []) || [];
+                                      if (campRules.length === 0) return null;
+                                      return (
+                                        <span className="inline-flex items-center gap-1 rounded-full bg-red-500/10 border border-red-500/25 px-1.5 py-0.5 text-[8px] font-black text-red-400">
+                                          <ShieldAlert className="h-2.5 w-2.5" />
+                                          {campRules.length} Regra{campRules.length > 1 ? "s" : ""}
+                                        </span>
+                                      );
+                                    })()}
                                   </div>
                                   {c.ad_account && <span className="text-[9px] text-muted-foreground/50 font-mono mt-1.5">{(c.ad_account as any).name}</span>}
                                 </div>
@@ -1812,6 +1861,116 @@ function MetricasCampanhasPage() {
                   </div>
                   )}
                 </div>
+              )}
+
+              {/* ═══════════════════════════════════════════════════════════════════════
+                  SEÇÃO: REGRAS & DIRETRIZES OPERACIONAIS DA CONTA SELECIONADA
+                  ═══════════════════════════════════════════════════════════════════════ */}
+              {accountFilter !== "all" && (
+                <motion.div
+                  initial={{ opacity: 0, y: 12 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="rounded-2xl border border-rose-500/25 bg-gradient-to-br from-card via-card to-rose-950/10 p-5 shadow-lg space-y-4"
+                >
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-border/50 pb-3">
+                    <div className="flex items-center gap-3">
+                      <div className="h-10 w-10 rounded-xl bg-rose-500/10 border border-rose-500/25 flex items-center justify-center text-rose-500 shrink-0 shadow-glow-sm">
+                        <ShieldAlert className="h-5 w-5" />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <h3 className="text-sm font-black tracking-tight text-foreground">
+                            Regras & Diretrizes Operacionais Desta Conta
+                          </h3>
+                          <span className="rounded-full bg-rose-500/15 border border-rose-500/30 px-2 py-0.5 text-[9px] font-black uppercase text-rose-500">
+                            {activeAccountRules.filter((r) => r.is_active).length} Ativas
+                          </span>
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          Políticas inegociáveis, limites operacionais e anotações ativas para guiar o time de tráfego.
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {accountMindMaps.length > 0 && (
+                        <Link
+                          to={"/strategy-map" as any}
+                          search={{ account: accountFilter } as any}
+                          className="flex items-center gap-1.5 rounded-xl border border-purple-500/30 bg-purple-500/10 px-3 py-1.5 text-xs font-bold text-purple-300 hover:bg-purple-600 hover:text-white transition-all shadow-sm"
+                        >
+                          <Brain className="h-3.5 w-3.5 text-purple-400" />
+                          <span>Ver Mapa Mental ({accountMindMaps.length})</span>
+                        </Link>
+                      )}
+
+                      <Link
+                        to={"/regras" as any}
+                        search={{ account: accountFilter } as any}
+                        className="flex items-center gap-1.5 rounded-xl bg-primary px-3.5 py-1.5 text-xs font-black text-primary-foreground hover:opacity-90 shadow-glow-sm transition-all"
+                      >
+                        <span>Gerenciar Regras no Hub</span>
+                        <ArrowRight className="h-3.5 w-3.5" />
+                      </Link>
+                    </div>
+                  </div>
+
+                  {/* Lista das Regras da Conta */}
+                  {activeAccountRules.length === 0 ? (
+                    <div className="rounded-xl border border-dashed border-border/60 bg-background/30 p-6 text-center space-y-2">
+                      <p className="text-xs font-bold text-muted-foreground">
+                        Nenhuma regra operacional cadastrada para esta conta ainda.
+                      </p>
+                      <p className="text-[11px] text-muted-foreground/70 max-w-md mx-auto">
+                        Crie regras de escala, limites de CPL e alertas operacionais para garantir a consistência dos resultados.
+                      </p>
+                      <Link
+                        to={"/regras" as any}
+                        search={{ account: accountFilter } as any}
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-primary/30 bg-primary/10 px-3.5 py-1.5 text-xs font-bold text-primary hover:bg-primary hover:text-primary-foreground transition-all mt-1"
+                      >
+                        Adicionar Regra no Hub <ArrowRight className="h-3 w-3" />
+                      </Link>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                      {activeAccountRules.map((rule) => {
+                        return (
+                          <div
+                            key={rule.id}
+                            className={`rounded-xl border p-3.5 bg-card/70 transition-all ${
+                              rule.is_active ? "border-rose-500/25 shadow-sm" : "border-border/60 opacity-60"
+                            }`}
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <span className="rounded-full bg-muted/60 border border-border px-2 py-0.5 text-[8px] font-black uppercase text-foreground">
+                                {rule.type || "Geral"}
+                              </span>
+
+                              <span className={`text-[9px] font-bold ${rule.is_active ? "text-emerald-400" : "text-muted-foreground italic"}`}>
+                                {rule.is_active ? "Ativa" : "Pausada"}
+                              </span>
+                            </div>
+
+                            {rule.campaign_name && (
+                              <div className="mt-1 text-[9px] font-semibold text-blue-400 truncate">
+                                Campanha: {rule.campaign_name}
+                              </div>
+                            )}
+
+                            <h4 className="text-xs font-black text-foreground mt-1.5 leading-tight">
+                              {rule.title}
+                            </h4>
+
+                            <p className="text-[11px] text-muted-foreground font-mono mt-1 leading-relaxed bg-background/50 rounded-lg p-2 border border-border/40">
+                              {rule.description}
+                            </p>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </motion.div>
               )}
 
               {/* Diagnóstico */}

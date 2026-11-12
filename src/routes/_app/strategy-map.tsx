@@ -1,7 +1,7 @@
 import {
   useCallback, useEffect, useRef, useState, useMemo,
 } from "react";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useSearch, Link, useNavigate } from "@tanstack/react-router";
 import {
   ReactFlow, MiniMap, Controls, Background, BackgroundVariant,
   ReactFlowProvider, useReactFlow, useViewport, addEdge, Panel,
@@ -17,6 +17,7 @@ import {
   Maximize2, ChevronDown, Save, LayoutGrid, Layers, Search, ExternalLink,
   Link2, HelpCircle, CheckCircle2, AlertCircle, Clock, Circle, Undo2,
   Redo2, Pencil, Palette, Folder, Copy, Cloud, CloudCheck, Check,
+  ShieldAlert, LineChart, Store, ArrowRight
 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase-external/client";
@@ -32,6 +33,7 @@ import {
   createNewMindMap,
   loadMindMapContent,
   saveMindMapContent,
+  updateMindMapAccount,
   type MindMapRecord,
 } from "@/components/mindmap/mindMapService";
 import { type MindMapTemplate } from "@/components/mindmap/mindMapTemplates";
@@ -171,6 +173,19 @@ function StrategyMapPage() {
   const rf = useReactFlow();
   const { theme } = useTheme();
   const isLight = theme === "light";
+  const searchParams = useSearch({ strict: false }) as { account?: string; mapId?: string; accountId?: string };
+  const navigate = useNavigate();
+
+  // Contas de anúncio disponíveis para vincular
+  const [adAccounts, setAdAccounts] = useState<any[]>([]);
+  useEffect(() => {
+    (async () => {
+      try {
+        const { data } = await (supabase as any).from("ad_accounts").select("id, name");
+        if (data) setAdAccounts(data);
+      } catch {}
+    })();
+  }, []);
 
   // Estados dos mapas e gerenciador
   const [maps, setMaps] = useState<MindMapRecord[]>([]);
@@ -179,6 +194,21 @@ function StrategyMapPage() {
   const [layout, setLayout] = useState<"radial" | "tree" | "list" | "free">("radial");
   const [themeId, setThemeId] = useState("mindmeister");
   const [isManagerOpen, setIsManagerOpen] = useState(false);
+
+  const activeMap = useMemo(() => {
+    return maps.find((m) => m.id === activeMapId) || null;
+  }, [maps, activeMapId]);
+
+  const handleAssignAccount = async (adAccountId: string | null) => {
+    if (!activeMapId) return;
+    const ok = await updateMindMapAccount(activeMapId, adAccountId || null);
+    if (ok) {
+      setMaps((prev) =>
+        prev.map((m) => (m.id === activeMapId ? { ...m, ad_account_id: adAccountId || null } : m))
+      );
+      toast.success(adAccountId ? "Mapa vinculado à conta com sucesso!" : "Vínculo de conta removido.");
+    }
+  };
 
   // Nós e Arestas
   const [nodes, setNodes] = useState<Node[]>([]);
@@ -355,14 +385,23 @@ function StrategyMapPage() {
   // Inicialização ao carregar
   useEffect(() => {
     loadMapsList().then((list) => {
-      if (list.length > 0) {
+      if (searchParams.mapId) {
+        handleSelectMap(searchParams.mapId);
+      } else if (searchParams.account) {
+        const forAcc = list.find((m) => m.ad_account_id === searchParams.account);
+        if (forAcc) {
+          handleSelectMap(forAcc.id);
+        } else if (list.length > 0) {
+          handleSelectMap(list[0].id);
+        }
+      } else if (list.length > 0) {
         handleSelectMap(list[0].id);
       } else {
         // Inicializa com um mapa em branco pronto
         handleCreateNewMap("Meu Primeiro Mapa Mental", null);
       }
     });
-  }, []);
+  }, [searchParams.mapId, searchParams.account]);
 
   // ── Adicionar Filho (MindMeister TAB) ──
   const addChildNode = useCallback(
@@ -906,6 +945,45 @@ function StrategyMapPage() {
                 <span className="inline-flex items-center gap-1 text-muted-foreground bg-muted px-2 py-0.5 rounded-full border border-border">
                   <span className="h-1.5 w-1.5 rounded-full bg-amber-400 animate-pulse" /> Pendente
                 </span>
+              )}
+            </div>
+
+            {/* Vínculo com Conta de Anúncios */}
+            <div className="hidden xl:flex items-center gap-1.5 ml-2 pl-2 border-l border-border">
+              <Store className="h-3 w-3 text-muted-foreground" />
+              <select
+                value={activeMap?.ad_account_id || ""}
+                onChange={(e) => handleAssignAccount(e.target.value || null)}
+                className="rounded-lg bg-muted/60 border border-border px-2 py-1 text-[10px] font-bold text-foreground focus:outline-none focus:border-primary/50 max-w-[130px] truncate"
+                title="Vincular este mapa a uma Conta de Anúncio"
+              >
+                <option value="">Sem conta vinculada</option>
+                {adAccounts.map((a: any) => (
+                  <option key={a.id} value={a.id}>
+                    {a.name}
+                  </option>
+                ))}
+              </select>
+
+              {activeMap?.ad_account_id && (
+                <div className="flex items-center gap-1">
+                  <Link
+                    to={"/regras" as any}
+                    search={{ account: activeMap.ad_account_id } as any}
+                    className="p-1 rounded-lg border border-rose-500/30 bg-rose-500/10 text-rose-400 hover:bg-rose-500 hover:text-white transition"
+                    title="Ver Regras & Diretrizes desta Conta"
+                  >
+                    <ShieldAlert className="h-3 w-3" />
+                  </Link>
+                  <Link
+                    to={"/metricas" as any}
+                    search={{ account: activeMap.ad_account_id } as any}
+                    className="p-1 rounded-lg border border-border bg-muted/60 text-muted-foreground hover:text-primary transition"
+                    title="Ver Métricas desta Conta"
+                  >
+                    <LineChart className="h-3 w-3" />
+                  </Link>
+                </div>
               )}
             </div>
           </div>

@@ -17,6 +17,7 @@ export interface MindMapRecord {
   created_at: string;
   updated_at: string;
   node_count?: number;
+  ad_account_id?: string | null;
 }
 
 const LOCAL_STORAGE_KEY_PREFIX = "nc_mind_map_backup_";
@@ -65,7 +66,8 @@ export async function listUserMindMaps(): Promise<MindMapRecord[]> {
 export async function createNewMindMap(
   title = "Novo Mapa Mental",
   template?: MindMapTemplate | null,
-  layout: "radial" | "tree" | "list" | "free" = "radial"
+  layout: "radial" | "tree" | "list" | "free" = "radial",
+  adAccountId?: string | null
 ): Promise<{ map: MindMapRecord; nodes: Node[]; edges: Edge[] }> {
   const { data: { user } } = await supabase.auth.getUser();
   const userId = user?.id || "anonymous";
@@ -77,6 +79,7 @@ export async function createNewMindMap(
     layout,
     theme: "mindmeister_dark",
     updated_at: now,
+    ad_account_id: adAccountId || null,
   };
 
   let createdId = `map_${Date.now()}`;
@@ -91,6 +94,7 @@ export async function createNewMindMap(
           description: template?.description,
           layout,
           theme: "mindmeister_dark",
+          ad_account_id: adAccountId || null,
         })
         .select()
         .single();
@@ -421,4 +425,43 @@ export async function deleteMindMap(mapId: string): Promise<boolean> {
     return false;
   }
 }
+
+/**
+ * Lista mapas mentais vinculados a uma conta de anúncio
+ */
+export async function listMindMapsByAccount(adAccountId: string): Promise<MindMapRecord[]> {
+  try {
+    const { data, error } = await (supabase as any)
+      .from("mind_maps")
+      .select("*, mind_map_nodes(id)")
+      .eq("ad_account_id", adAccountId)
+      .order("updated_at", { ascending: false });
+
+    if (!error && Array.isArray(data)) {
+      return data.map((m: any) => ({
+        ...m,
+        node_count: Array.isArray(m.mind_map_nodes) ? m.mind_map_nodes.length : 0,
+      }));
+    }
+  } catch (err) {
+    console.warn("[mindMapService] Erro ao buscar mapas por conta:", err);
+  }
+  return [];
+}
+
+/**
+ * Vincula ou desvincula um mapa mental a uma conta de anúncio
+ */
+export async function updateMindMapAccount(mapId: string, adAccountId: string | null): Promise<boolean> {
+  try {
+    const { error } = await (supabase as any)
+      .from("mind_maps")
+      .update({ ad_account_id: adAccountId, updated_at: new Date().toISOString() })
+      .eq("id", mapId);
+    return !error;
+  } catch {
+    return false;
+  }
+}
+
 

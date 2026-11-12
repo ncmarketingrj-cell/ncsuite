@@ -229,10 +229,17 @@ export function MindMapManagerModal({
                       >
                         <div className="space-y-2">
                           <div className="flex items-center justify-between">
-                            <span className="inline-flex items-center gap-1 rounded px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider bg-muted border border-border text-muted-foreground">
-                              {map.layout === "radial" ? <Layers className="h-2.5 w-2.5" /> : <GitBranch className="h-2.5 w-2.5" />}
-                              {map.layout || "radial"}
-                            </span>
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="inline-flex items-center gap-1 rounded px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider bg-muted border border-border text-muted-foreground">
+                                {map.layout === "radial" ? <Layers className="h-2.5 w-2.5" /> : <GitBranch className="h-2.5 w-2.5" />}
+                                {map.layout || "radial"}
+                              </span>
+                              {map.ad_account_id && (
+                                <span className="rounded px-1.5 py-0.5 text-[8px] font-bold bg-purple-500/10 border border-purple-500/20 text-purple-400">
+                                  Conta Vinculada
+                                </span>
+                              )}
+                            </div>
 
                             {isActive && (
                               <span className="rounded-full bg-primary/20 text-primary border border-primary/30 px-2 py-0.5 text-[9px] font-black uppercase">

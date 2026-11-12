@@ -7,8 +7,10 @@ import {
   Package, Users, Zap, FileText, Settings, Plus, Trash2, Edit3,
   Loader2, Save, CheckCircle2, AlertCircle, ExternalLink,
   DollarSign, BarChart3, ShoppingCart, MousePointer, Eye,
-  Phone, Globe, Clock, ChevronDown, ChevronUp, X, Calendar
+  Phone, Globe, Clock, ChevronDown, ChevronUp, X, Calendar,
+  ShieldAlert, Copy, Pin, ArrowRight
 } from "lucide-react";
+import { useAccountRules, useAccountNotes, type AccountRule, type AccountNote, type RuleSeverity } from "@/hooks/useAccountRulesAndNotes";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase-external/client";
 import { subDays, format } from "date-fns";
@@ -714,520 +716,316 @@ const NOTE_CAT_STYLE: Record<string, { bg: string; text: string; icon: any }> = 
   "Financeiro": { bg: "bg-rose-500/10 border-rose-500/20", text: "text-rose-400", icon: DollarSign },
 };
 
-function TabNotes({ client, notes = [], notesLoading = false }: {
+const CLIENT_SEVERITY_BADGE: Record<string, { label: string; bg: string; text: string; border: string }> = {
+  critica:     { label: "Crítica", bg: "bg-red-500/10", text: "text-red-400", border: "border-red-500/30" },
+  alerta:      { label: "Atenção", bg: "bg-amber-500/10", text: "text-amber-400", border: "border-amber-500/30" },
+  diretriz:    { label: "Diretriz", bg: "bg-blue-500/10", text: "text-blue-400", border: "border-blue-500/30" },
+  boa_pratica: { label: "Boa Prática", bg: "bg-emerald-500/10", text: "text-emerald-400", border: "border-emerald-500/30" },
+};
+
+const RULE_TYPES = ["Todas", "Escala", "Pausamento", "Criativos", "Atendimento", "Orçamento", "Geral"];
+
+function TabNotes({ client }: {
   client: ClientFull;
   notes?: NoteItem[];
   notesLoading?: boolean;
 }) {
-  const qc = useQueryClient();
-  const [rules, setRules] = useState<RuleItem[]>(client.rules ?? []);
-  const [showRuleForm, setShowRuleForm] = useState(false);
-  const [editingRule, setEditingRule] = useState<RuleItem | null>(null);
-  const [ruleForm, setRuleForm] = useState({ title: "", category: "Outros", content: "" });
+  const navigate = useNavigate();
+  const adAccountId = client.meta_ad_account_id;
 
-  // Estados do histórico de notas
-  const [showNoteForm, setShowNoteForm] = useState(false);
-  const [noteForm, setNoteForm] = useState({ title: "", content: "", category: "Geral", tagsStr: "" });
+  // Busca regras e notas centralizadas do Hub
+  const { rules: hubRules = [], isLoading: isLoadingHubRules } = useAccountRules(adAccountId);
+  const { notes: hubNotes = [], isLoading: isLoadingHubNotes } = useAccountNotes(adAccountId);
+
   const [searchNote, setSearchNote] = useState("");
   const [filterNoteCategory, setFilterNoteCategory] = useState("todos");
+  const [filterRuleType, setFilterRuleType] = useState("Todas");
 
-  const saveNoteMutation = useMutation({
-    mutationFn: async (newNote: { title: string; content: string; category: string; tags: string[] }) => {
-      const { data: u } = await supabase.auth.getUser();
-      
-      // 1. Tenta inserir na tabela client_notes
-      const { error: insertError } = await (supabase as any).from("client_notes").insert({
-        client_id: client.id,
-        title: newNote.title,
-        content: newNote.content,
-        category: newNote.category,
-        tags: newNote.tags,
-        created_by: u.user?.id
-      });
+  const filteredNotes = useMemo(() => {
+    return hubNotes.filter((n) => {
+      const matchSearch =
+        !searchNote ||
+        n.title.toLowerCase().includes(searchNote.toLowerCase()) ||
+        n.content.toLowerCase().includes(searchNote.toLowerCase()) ||
+        n.tags?.some((t) => t.toLowerCase().includes(searchNote.toLowerCase()));
 
-      // 2. Fallback: Se falhar (tabela não criada), grava serializado no clients.notes
-      if (insertError) {
-        console.warn("Inserção em client_notes falhou, utilizando JSON no clients.notes:", insertError);
-        
-        let currentNotes: any[] = [];
-        if (client.notes) {
-          try {
-            const parsed = JSON.parse(client.notes);
-            if (Array.isArray(parsed)) currentNotes = parsed;
-          } catch {
-            currentNotes = [{
-              id: "legacy",
-              title: "Nota Geral (Legada)",
-              content: client.notes,
-              category: "Geral",
-              tags: ["Histórico"],
-              created_at: client.created_at || new Date().toISOString()
-            }];
-          }
-        }
-
-        const noteObj = {
-          id: crypto.randomUUID(),
-          title: newNote.title,
-          content: newNote.content,
-          category: newNote.category,
-          tags: newNote.tags,
-          created_at: new Date().toISOString()
-        };
-
-        const merged = [noteObj, ...currentNotes];
-        const { error: updateError } = await (supabase as any)
-          .from("clients")
-          .update({ notes: JSON.stringify(merged) })
-          .eq("id", client.id);
-
-        if (updateError) throw updateError;
-      }
-    },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["client_notes", client.id] });
-      qc.invalidateQueries({ queryKey: ["client_detail", client.id] });
-      toast.success("Nota adicionada ao histórico!");
-      setNoteForm({ title: "", content: "", category: "Geral", tagsStr: "" });
-      setShowNoteForm(false);
-    },
-    onError: (e: Error) => toast.error("Erro ao salvar nota: " + e.message)
-  });
-
-  const deleteNoteMutation = useMutation({
-    mutationFn: async (noteId: string) => {
-      // 1. Tenta deletar de client_notes
-      const { error: deleteError } = await (supabase as any).from("client_notes").delete().eq("id", noteId);
-
-      // 2. Fallback: deleta do JSON no clients.notes
-      if (deleteError) {
-        if (client.notes) {
-          try {
-            const parsed = JSON.parse(client.notes);
-            if (Array.isArray(parsed)) {
-              const filtered = parsed.filter((n: any) => n.id !== noteId);
-              const { error: updateError } = await (supabase as any)
-                .from("clients")
-                .update({ notes: JSON.stringify(filtered) })
-                .eq("id", client.id);
-              if (updateError) throw updateError;
-            }
-          } catch {
-            const { error: updateError } = await (supabase as any)
-              .from("clients")
-              .update({ notes: null })
-              .eq("id", client.id);
-            if (updateError) throw updateError;
-          }
-        }
-      }
-    },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["client_notes", client.id] });
-      qc.invalidateQueries({ queryKey: ["client_detail", client.id] });
-      toast.success("Nota removida com sucesso");
-    },
-    onError: (e: Error) => toast.error("Erro ao remover nota: " + e.message)
-  });
-
-  const saveRules = useMutation({
-    mutationFn: async (newRules: RuleItem[]) => {
-      const { error } = await (supabase as any).from("clients").update({ rules: newRules }).eq("id", client.id);
-      if (error) throw error;
-    },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["client_detail", client.id] });
-      toast.success("Regras salvas");
-    },
-    onError: (e: Error) => toast.error(e.message),
-  });
-
-  function openNewRule() {
-    setEditingRule(null);
-    setRuleForm({ title: "", category: "Outros", content: "" });
-    setShowRuleForm(true);
-  }
-
-  function openEditRule(rule: RuleItem) {
-    setEditingRule(rule);
-    setRuleForm({ title: rule.title, category: rule.category, content: rule.content });
-    setShowRuleForm(true);
-  }
-
-  function submitRule() {
-    if (!ruleForm.title.trim() || !ruleForm.content.trim()) return;
-    let newRules: RuleItem[];
-    if (editingRule) {
-      newRules = rules.map(r => r.id === editingRule.id ? { ...r, ...ruleForm } : r);
-    } else {
-      newRules = [...rules, { id: crypto.randomUUID(), ...ruleForm }];
-    }
-    setRules(newRules);
-    saveRules.mutate(newRules);
-    setShowRuleForm(false);
-  }
-
-  function deleteRule(id: string) {
-    const newRules = rules.filter(r => r.id !== id);
-    setRules(newRules);
-    saveRules.mutate(newRules);
-  }
-
-  function handleAddNote() {
-    if (!noteForm.title.trim() || !noteForm.content.trim()) {
-      toast.error("Por favor preencha o título e o conteúdo da nota.");
-      return;
-    }
-    const tags = noteForm.tagsStr
-      ? noteForm.tagsStr.split(",").map(t => t.trim()).filter(t => t !== "")
-      : [];
-    saveNoteMutation.mutate({
-      title: noteForm.title,
-      content: noteForm.content,
-      category: noteForm.category,
-      tags
+      const matchCategory = filterNoteCategory === "todos" || n.category?.toLowerCase() === filterNoteCategory.toLowerCase();
+      return matchSearch && matchCategory;
     });
-  }
+  }, [hubNotes, searchNote, filterNoteCategory]);
 
-  // Filtrar notas
-  const filteredNotes = notes.filter(n => {
-    const matchSearch = !searchNote || 
-      n.title.toLowerCase().includes(searchNote.toLowerCase()) ||
-      n.content.toLowerCase().includes(searchNote.toLowerCase()) ||
-      n.tags.some(t => t.toLowerCase().includes(searchNote.toLowerCase()));
-    
-    const matchCategory = filterNoteCategory === "todos" || n.category === filterNoteCategory;
-    return matchSearch && matchCategory;
-  });
+  const filteredRules = useMemo(() => {
+    return hubRules.filter((r) => {
+      if (filterRuleType === "Todas") return true;
+      return r.type?.toLowerCase() === filterRuleType.toLowerCase();
+    });
+  }, [hubRules, filterRuleType]);
 
-  const grouped = RULE_CATEGORIES.reduce<Record<string, RuleItem[]>>((acc, cat) => {
-    const items = rules.filter(r => r.category === cat);
-    if (items.length > 0) acc[cat] = items;
-    return acc;
-  }, {});
+  const handleOpenHub = () => {
+    if (adAccountId) {
+      navigate({ to: "/regras" as any, search: { account: adAccountId } as any });
+    } else {
+      navigate({ to: "/regras" as any });
+    }
+  };
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-      {/* Coluna Esquerda: Timeline e Histórico de Notas */}
-      <div className="lg:col-span-2 space-y-6">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-border/40 pb-3">
+    <div className="space-y-6">
+      {/* Banner Informativo & Acesso Rápido ao Hub */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 rounded-2xl border border-rose-500/20 bg-rose-500/5 p-4 sm:p-5">
+        <div className="flex items-start sm:items-center gap-3">
+          <div className="h-10 w-10 rounded-xl bg-rose-500/10 border border-rose-500/20 flex items-center justify-center shrink-0">
+            <ShieldAlert className="h-5 w-5 text-rose-500" />
+          </div>
           <div>
-            <h3 className="text-sm font-black tracking-tight flex items-center gap-2">
-              <FileText className="h-4 w-4 text-primary" /> Histórico de Notas
+            <h3 className="text-sm font-black text-foreground flex items-center gap-2">
+              Regras & Timeline de Notas Integradas ao Hub
+              <span className="rounded-full bg-rose-500/20 px-2 py-0.5 text-[8px] font-black uppercase text-rose-500">
+                Visualização Centralizada
+              </span>
             </h3>
-            <p className="text-[10px] text-muted-foreground mt-0.5">Timeline e registros de reuniões, briefings e alterações estratégicas.</p>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              {adAccountId
+                ? "As diretrizes operacionais e anotações desta conta são gerenciadas no Hub de Estratégia & Regras."
+                : "Vincule uma conta Meta Ads em 'Cadastro' para conectar as regras e notas operacionais automaticamente."}
+            </p>
           </div>
-          
-          <button
-            onClick={() => setShowNoteForm(!showNoteForm)}
-            className="flex items-center gap-1.5 rounded-xl bg-primary px-3 py-2 text-xs font-black text-primary-foreground hover:opacity-90 transition-opacity whitespace-nowrap self-start sm:self-auto"
-          >
-            {showNoteForm ? <X className="h-3.5 w-3.5" /> : <Plus className="h-3.5 w-3.5" />}
-            {showNoteForm ? "Cancelar" : "Nova Nota"}
-          </button>
         </div>
 
-        {/* Form para adicionar nova nota */}
-        <AnimatePresence>
-          {showNoteForm && (
-            <motion.div
-              initial={{ opacity: 0, y: -10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-              className="rounded-xl border border-primary/20 bg-card p-4 space-y-4 shadow-lg relative overflow-hidden"
+        <button
+          onClick={handleOpenHub}
+          className="flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-xs font-black text-primary-foreground hover:opacity-90 shadow-glow-sm transition-all whitespace-nowrap self-start sm:self-auto"
+        >
+          <span>Gerenciar no Hub de Regras</span>
+          <ArrowRight className="h-3.5 w-3.5" />
+        </button>
+      </div>
+
+      {/* Grid Principal */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Coluna Esquerda: Timeline e Histórico de Notas (2 cols) */}
+        <div className="lg:col-span-2 space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-border/40 pb-3">
+            <div>
+              <h3 className="text-sm font-black tracking-tight flex items-center gap-2">
+                <FileText className="h-4 w-4 text-primary" /> Histórico de Notas & Timeline
+              </h3>
+              <p className="text-[10px] text-muted-foreground mt-0.5">
+                Timeline de reuniões, briefings e alterações registradas para a conta.
+              </p>
+            </div>
+
+            <button
+              onClick={handleOpenHub}
+              className="flex items-center gap-1.5 rounded-xl border border-primary/30 bg-primary/10 px-3 py-1.5 text-xs font-black text-primary hover:bg-primary hover:text-primary-foreground transition-all self-start sm:self-auto"
             >
-              <div className="absolute top-0 inset-x-0 h-[2px] bg-gradient-to-r from-primary/20 via-primary to-primary/20" />
-              
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1 block">Título da Nota *</label>
-                  <input
-                    value={noteForm.title}
-                    onChange={e => setNoteForm(p => ({ ...p, title: e.target.value }))}
-                    placeholder="Ex: Alinhamento de Verba Q3"
-                    className="w-full rounded-xl border border-border bg-background px-3 py-2 text-xs font-medium focus:outline-none focus:border-primary/50"
-                  />
-                </div>
-                <div>
-                  <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1 block">Categoria</label>
-                  <select
-                    value={noteForm.category}
-                    onChange={e => setNoteForm(p => ({ ...p, category: e.target.value }))}
-                    className="w-full rounded-xl border border-border bg-background px-3 py-2 text-xs font-medium text-foreground focus:outline-none focus:border-primary/50"
+              <Plus className="h-3.5 w-3.5" /> Nova Nota no Hub
+            </button>
+          </div>
+
+          {/* Busca e filtros rápidos */}
+          <div className="flex flex-col sm:flex-row gap-3 sm:items-center">
+            <input
+              value={searchNote}
+              onChange={(e) => setSearchNote(e.target.value)}
+              placeholder="Pesquisar nas notas e tags..."
+              className="rounded-xl border border-border bg-card px-3 py-2 text-xs placeholder:text-muted-foreground/50 focus:outline-none focus:border-primary/50 flex-1"
+            />
+            <div className="flex gap-1.5 overflow-x-auto pb-1 sm:pb-0 shrink-0">
+              {["todos", ...NOTE_CATEGORIES].map((cat) => (
+                <button
+                  key={cat}
+                  onClick={() => setFilterNoteCategory(cat)}
+                  className={`rounded-full border px-2.5 py-0.5 text-[10px] font-bold transition-all ${
+                    filterNoteCategory.toLowerCase() === cat.toLowerCase()
+                      ? "bg-primary text-primary-foreground border-primary"
+                      : "border-border text-muted-foreground hover:border-primary/20 hover:text-foreground"
+                  }`}
+                >
+                  {cat === "todos" ? "Todos" : cat}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Timeline de notas */}
+          {isLoadingHubNotes ? (
+            <div className="flex justify-center py-12">
+              <Loader2 className="h-5 w-5 animate-spin text-primary" />
+            </div>
+          ) : filteredNotes.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-12 text-center border border-dashed border-border rounded-xl">
+              <FileText className="h-8 w-8 text-muted-foreground/30 mb-2" />
+              <p className="text-xs font-bold text-muted-foreground">Nenhuma nota encontrada</p>
+              <p className="text-[10px] text-muted-foreground/60 mt-0.5">
+                Clique no botão acima para adicionar a primeira nota diretamente no Hub de Regras.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {filteredNotes.map((note) => {
+                const style = NOTE_CAT_STYLE[note.category] ?? NOTE_CAT_STYLE.Geral;
+                return (
+                  <motion.div
+                    key={note.id}
+                    initial={{ opacity: 0, y: 6 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className={`rounded-xl border bg-card p-4 transition-all hover:border-primary/30 ${
+                      note.is_pinned ? "border-primary/40 bg-primary/[0.02]" : "border-border"
+                    }`}
                   >
-                    {NOTE_CATEGORIES.map(cat => <option key={cat} value={cat}>{cat}</option>)}
-                  </select>
-                </div>
-              </div>
-
-              <div>
-                <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1 block">Tags (separadas por vírgula)</label>
-                <input
-                  value={noteForm.tagsStr}
-                  onChange={e => setNoteForm(p => ({ ...p, tagsStr: e.target.value }))}
-                  placeholder="Ex: criativos, escala, urgência"
-                  className="w-full rounded-xl border border-border bg-background px-3 py-2 text-xs font-medium focus:outline-none focus:border-primary/50"
-                />
-              </div>
-
-              <div>
-                <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1 block">Conteúdo / Descrição *</label>
-                <textarea
-                  value={noteForm.content}
-                  onChange={e => setNoteForm(p => ({ ...p, content: e.target.value }))}
-                  placeholder="Descreva detalhadamente o ocorrido, as mudanças ou o briefing da reunião..."
-                  rows={4}
-                  className="w-full rounded-xl border border-border bg-background px-3 py-2 text-xs font-medium focus:outline-none focus:border-primary/50 resize-none custom-scrollbar"
-                />
-              </div>
-
-              <div className="flex justify-end gap-2">
-                <button
-                  onClick={() => setShowNoteForm(false)}
-                  className="rounded-xl border border-border px-4 py-2 text-xs font-bold text-muted-foreground hover:bg-muted/40"
-                >
-                  Cancelar
-                </button>
-                <button
-                  onClick={handleAddNote}
-                  disabled={saveNoteMutation.isPending}
-                  className="flex items-center gap-1.5 rounded-xl bg-primary px-5 py-2 text-xs font-black text-primary-foreground hover:opacity-90 disabled:opacity-50"
-                >
-                  {saveNoteMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
-                  Salvar Nota
-                </button>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        {/* Busca e filtros rápidos */}
-        <div className="flex flex-col sm:flex-row gap-3 sm:items-center">
-          <input
-            value={searchNote}
-            onChange={e => setSearchNote(e.target.value)}
-            placeholder="Pesquisar nas notas..."
-            className="rounded-xl border border-border bg-card px-3 py-2 text-xs placeholder:text-muted-foreground/50 focus:outline-none focus:border-primary/50 flex-1"
-          />
-          <div className="flex gap-1.5 overflow-x-auto pb-1 sm:pb-0 shrink-0">
-            {["todos", ...NOTE_CATEGORIES].map(cat => (
-              <button
-                key={cat}
-                onClick={() => setFilterNoteCategory(cat)}
-                className={`rounded-full border px-2.5 py-0.5 text-[10px] font-bold transition-all ${
-                  filterNoteCategory === cat
-                    ? "bg-primary/10 text-primary border-primary/20"
-                    : "border-border text-muted-foreground hover:border-primary/20 hover:text-foreground"
-                }`}
-              >
-                {cat === "todos" ? "Todos" : cat}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Timeline de notas */}
-        {notesLoading ? (
-          <div className="flex justify-center py-12">
-            <Loader2 className="h-5 w-5 animate-spin text-primary" />
-          </div>
-        ) : filteredNotes.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-12 text-center border border-dashed border-border rounded-xl">
-            <FileText className="h-8 w-8 text-muted-foreground/30 mb-2" />
-            <p className="text-xs font-bold text-muted-foreground">Nenhuma nota encontrada</p>
-            <p className="text-[10px] text-muted-foreground/60 mt-0.5">Adicione sua primeira nota do histórico usando o botão acima.</p>
-          </div>
-        ) : (
-          <div className="relative pl-6 border-l border-border/60 ml-3 space-y-6 py-2">
-            {filteredNotes.map((note) => {
-              const style = NOTE_CAT_STYLE[note.category] ?? NOTE_CAT_STYLE.Geral;
-              const Icon = style.icon;
-              return (
-                <motion.div
-                  key={note.id}
-                  initial={{ opacity: 0, x: -8 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  className="relative group bg-card/40 hover:bg-card border border-border rounded-xl p-4 transition-all duration-200"
-                >
-                  {/* Ponto na timeline com ícone */}
-                  <div className={`absolute -left-[35px] top-4 h-6.5 w-6.5 rounded-full border ${style.bg} flex items-center justify-center shadow-md z-10 bg-background`}>
-                    <Icon className={`h-3 w-3 ${style.text}`} />
-                  </div>
-
-                  <div className="flex items-start justify-between gap-3 mb-1.5">
-                    <div>
+                    <div className="flex items-start justify-between gap-3 mb-1.5">
                       <div className="flex items-center gap-2 flex-wrap">
+                        {note.is_pinned && (
+                          <span className="flex items-center gap-1 rounded-full bg-primary/15 border border-primary/30 px-2 py-0.5 text-[9px] font-black text-primary uppercase">
+                            <Pin className="h-2.5 w-2.5 fill-primary" /> Fixada
+                          </span>
+                        )}
                         <h4 className="text-xs font-black text-foreground">{note.title}</h4>
-                        <span className={`rounded border px-1.5 py-0.5 text-[8px] font-black uppercase tracking-wider ${style.bg} ${style.text}`}>
+                        <span className={`rounded-full border px-2 py-0.5 text-[8px] font-black uppercase tracking-wider ${style.bg} ${style.text}`}>
                           {note.category}
                         </span>
+                        {note.campaign_name && (
+                          <span className="rounded-full bg-blue-500/10 border border-blue-500/20 px-2 py-0.5 text-[9px] font-semibold text-blue-400">
+                            {note.campaign_name}
+                          </span>
+                        )}
                       </div>
-                      <span className="text-[9px] text-muted-foreground font-mono">
-                        {format(new Date(note.created_at), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
+
+                      <span className="text-[10px] text-muted-foreground font-mono shrink-0">
+                        {note.note_date || (note.created_at ? format(new Date(note.created_at), "dd/MM/yyyy") : "")}
                       </span>
                     </div>
 
-                    <button
-                      onClick={() => {
-                        if (confirm("Tem certeza que deseja excluir esta nota?")) {
-                          deleteNoteMutation.mutate(note.id);
-                        }
-                      }}
-                      className="opacity-0 group-hover:opacity-100 transition-opacity h-6 w-6 rounded-lg bg-destructive/10 flex items-center justify-center hover:bg-destructive/20"
-                      title="Deletar nota"
-                    >
-                      <Trash2 className="h-3 w-3 text-destructive" />
-                    </button>
-                  </div>
+                    <p className="text-xs text-foreground/80 whitespace-pre-wrap leading-relaxed mt-2 bg-background/50 rounded-xl p-3 border border-border/40 font-sans">
+                      {note.content}
+                    </p>
 
-                  <p className="text-xs text-muted-foreground whitespace-pre-wrap leading-relaxed">
-                    {note.content}
-                  </p>
-
-                  {note.tags && note.tags.length > 0 && (
-                    <div className="flex items-center gap-1.5 mt-3 flex-wrap">
-                      {note.tags.map(tag => (
-                        <span key={tag} className="rounded-full bg-white/[0.04] border border-border px-2 py-0.5 text-[8px] font-bold text-muted-foreground">
-                          #{tag}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                </motion.div>
-              );
-            })}
-          </div>
-        )}
-      </div>
-
-      {/* Coluna Direita: Regras & Particularidades */}
-      <div className="space-y-6 border-t lg:border-t-0 lg:border-l border-border/40 pt-6 lg:pt-0 lg:pl-6">
-        <div className="flex items-center justify-between mb-3">
-          <div>
-            <h3 className="text-sm font-black tracking-tight">Regras do Cliente</h3>
-            <p className="text-[10px] text-muted-foreground mt-0.5">Políticas específicas para o time operacional.</p>
-          </div>
-          <button
-            onClick={openNewRule}
-            className="flex items-center gap-1.5 rounded-lg border border-primary/30 bg-primary/10 px-2.5 py-1.5 text-[10px] font-black text-primary hover:bg-primary/20 transition-colors"
-          >
-            <Plus className="h-3 w-3" /> Nova Regra
-          </button>
+                    {note.tags && note.tags.length > 0 && (
+                      <div className="flex items-center gap-1.5 mt-2.5 flex-wrap">
+                        {note.tags.map((tag) => (
+                          <span key={tag} className="rounded-md bg-muted/60 border border-border px-2 py-0.5 text-[9px] font-mono text-muted-foreground">
+                            #{tag}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </motion.div>
+                );
+              })}
+            </div>
+          )}
         </div>
 
-        {rules.length === 0 && !showRuleForm && (
-          <div className="flex flex-col items-center justify-center py-8 text-center gap-2.5 border border-dashed border-border rounded-xl">
-            <FileText className="h-7 w-7 text-muted-foreground/30" />
+        {/* Coluna Direita: Regras da Conta (1 col) */}
+        <div className="space-y-4 border-t lg:border-t-0 lg:border-l border-border/40 pt-6 lg:pt-0 lg:pl-6">
+          <div className="flex items-center justify-between border-b border-border/40 pb-3">
             <div>
-              <p className="text-xs font-bold text-muted-foreground">Nenhuma regra cadastrada</p>
-              <p className="text-[10px] text-muted-foreground/60 mt-0.5">Adicione regras de escala, pausamento, criativos, etc.</p>
+              <h3 className="text-sm font-black tracking-tight flex items-center gap-2">
+                <ShieldAlert className="h-4 w-4 text-red-500" /> Regras da Conta
+              </h3>
+              <p className="text-[10px] text-muted-foreground mt-0.5">Políticas inegociáveis para o time.</p>
             </div>
-          </div>
-        )}
 
-        {/* Rule Form */}
-        <AnimatePresence>
-          {showRuleForm && (
-            <motion.div
-              initial={{ opacity: 0, y: -8, scale: 0.98 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: -8, scale: 0.98 }}
-              className="rounded-xl border border-primary/20 bg-primary/5 p-4 space-y-3"
+            <button
+              onClick={handleOpenHub}
+              className="flex items-center gap-1 rounded-xl border border-red-500/30 bg-red-500/10 px-2.5 py-1.5 text-[10px] font-black text-red-500 hover:bg-red-500 hover:text-white transition-all"
             >
-              <div className="flex items-center justify-between">
-                <p className="text-xs font-black text-primary">{editingRule ? "Editar Regra" : "Nova Regra"}</p>
-                <button onClick={() => setShowRuleForm(false)} className="h-6 w-6 rounded-lg bg-muted/40 flex items-center justify-center">
-                  <X className="h-3.5 w-3.5" />
-                </button>
-              </div>
-              <div className="space-y-3">
-                <div>
-                  <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1 block">Título *</label>
-                  <input
-                    value={ruleForm.title}
-                    onChange={e => setRuleForm(p => ({ ...p, title: e.target.value }))}
-                    placeholder="Ex: Nunca pausar no final de semana"
-                    className="w-full rounded-xl border border-border bg-background px-3 py-2 text-xs font-medium focus:outline-none focus:border-primary/50"
-                  />
-                </div>
-                <div>
-                  <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1 block">Categoria</label>
-                  <select
-                    value={ruleForm.category}
-                    onChange={e => setRuleForm(p => ({ ...p, category: e.target.value }))}
-                    className="w-full rounded-xl border border-border bg-background px-3 py-2 text-xs font-medium text-foreground focus:outline-none focus:border-primary/50"
-                  >
-                    {RULE_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1 block">Descrição *</label>
-                  <textarea
-                    value={ruleForm.content}
-                    onChange={e => setRuleForm(p => ({ ...p, content: e.target.value }))}
-                    placeholder="Descreva a regra com detalhes e o motivo..."
-                    rows={3}
-                    className="w-full rounded-xl border border-border bg-background px-3 py-2 text-xs font-medium focus:outline-none focus:border-primary/50 resize-none"
-                  />
-                </div>
-              </div>
-              <div className="flex gap-2 justify-end">
-                <button onClick={() => setShowRuleForm(false)} className="rounded-xl border border-border px-3 py-1.5 text-xs font-bold text-muted-foreground hover:bg-muted/40">
-                  Cancelar
-                </button>
-                <button
-                  onClick={submitRule}
-                  disabled={!ruleForm.title.trim() || !ruleForm.content.trim() || saveRules.isPending}
-                  className="flex items-center gap-1.5 rounded-xl bg-primary px-4 py-1.5 text-xs font-black text-primary-foreground hover:opacity-90 disabled:opacity-50"
-                >
-                  {saveRules.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}
-                  {editingRule ? "Salvar" : "Adicionar"}
-                </button>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
+              <Plus className="h-3 w-3" /> Nova no Hub
+            </button>
+          </div>
 
-        {/* Rules by category */}
-        <div className="space-y-4">
-          {Object.entries(grouped).map(([cat, items]) => (
-            <div key={cat} className="space-y-2">
-              <div className="flex items-center gap-2">
-                <span className={`rounded border px-2 py-0.5 text-[8px] font-black uppercase tracking-wider ${RULE_CAT_COLOR[cat]}`}>
-                  {cat}
-                </span>
-                <span className="text-[9px] text-muted-foreground font-mono">{items.length}</span>
+          {/* Filtros de Tipo */}
+          <div className="flex gap-1 overflow-x-auto pb-1 scrollbar-none">
+            {RULE_TYPES.map((t) => (
+              <button
+                key={t}
+                onClick={() => setFilterRuleType(t)}
+                className={`rounded-full border px-2 py-0.5 text-[9px] font-bold transition-all ${
+                  filterRuleType.toLowerCase() === t.toLowerCase()
+                    ? "bg-red-600 text-white border-red-600"
+                    : "border-border text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                {t}
+              </button>
+            ))}
+          </div>
+
+          {isLoadingHubRules ? (
+            <div className="flex justify-center py-8">
+              <Loader2 className="h-4 w-4 animate-spin text-primary" />
+            </div>
+          ) : filteredRules.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-8 text-center gap-2 border border-dashed border-border rounded-xl">
+              <ShieldAlert className="h-7 w-7 text-muted-foreground/30" />
+              <div>
+                <p className="text-xs font-bold text-muted-foreground">Nenhuma regra cadastrada</p>
+                <p className="text-[10px] text-muted-foreground/60 mt-0.5">
+                  Adicione regras de escala e pausamento diretamente no Hub.
+                </p>
               </div>
-              <div className="space-y-2">
-                {items.map(rule => (
-                  <motion.div
+              <button
+                onClick={handleOpenHub}
+                className="mt-1 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-1 text-[10px] font-bold text-red-400 hover:bg-red-500 hover:text-white transition-all"
+              >
+                Criar Regra no Hub
+              </button>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {filteredRules.map((rule) => {
+                const sev = CLIENT_SEVERITY_BADGE[rule.severity] || CLIENT_SEVERITY_BADGE.alerta;
+                return (
+                  <div
                     key={rule.id}
-                    layout
-                    className="group rounded-xl border border-border bg-card/65 p-3 hover:border-primary/20 transition-colors relative"
+                    className={`rounded-xl border p-3 bg-card/60 transition-all ${
+                      rule.is_active ? sev.border : "border-border opacity-70"
+                    }`}
                   >
                     <div className="flex items-start justify-between gap-2">
-                      <p className="text-xs font-black text-foreground">{rule.title}</p>
-                      <div className="flex items-center gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <button
-                          onClick={() => openEditRule(rule)}
-                          className="h-5 w-5 rounded bg-muted/40 flex items-center justify-center hover:bg-muted/70 transition-colors"
-                        >
-                          <Edit3 className="h-2.5 w-2.5" />
-                        </button>
-                        <button
-                          onClick={() => deleteRule(rule.id)}
-                          className="h-5 w-5 rounded bg-destructive/10 flex items-center justify-center hover:bg-destructive/20 transition-colors"
-                        >
-                          <Trash2 className="h-2.5 w-2.5 text-destructive" />
-                        </button>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className={`rounded-full border px-2 py-0.5 text-[8px] font-black uppercase ${sev.bg} ${sev.text} ${sev.border}`}>
+                          {sev.label}
+                        </span>
+                        <span className="rounded-full bg-muted/60 border border-border px-2 py-0.5 text-[8px] font-bold text-foreground">
+                          {rule.type || "Geral"}
+                        </span>
                       </div>
+
+                      <span className={`text-[9px] font-bold ${rule.is_active ? "text-emerald-400" : "text-muted-foreground italic"}`}>
+                        {rule.is_active ? "Ativa" : "Pausada"}
+                      </span>
                     </div>
-                    <p className="text-xs text-muted-foreground mt-1 leading-relaxed">{rule.content}</p>
-                  </motion.div>
-                ))}
-              </div>
+
+                    <p className="text-xs font-black text-foreground mt-1.5 leading-tight">{rule.title}</p>
+                    <p className="text-[11px] text-muted-foreground mt-1 font-mono leading-relaxed bg-background/50 rounded-lg p-2 border border-border/40">
+                      {rule.description}
+                    </p>
+
+                    <div className="flex items-center justify-between mt-2 pt-2 border-t border-border/40 text-[10px]">
+                      <button
+                        onClick={() => {
+                          navigator.clipboard.writeText(`${rule.title}: ${rule.description}`);
+                          toast.success("Regra copiada!");
+                        }}
+                        className="text-muted-foreground hover:text-foreground flex items-center gap-1 transition-colors"
+                      >
+                        <Copy className="h-3 w-3" /> Copiar
+                      </button>
+
+                      <button
+                        onClick={handleOpenHub}
+                        className="text-primary hover:underline font-bold flex items-center gap-1 transition-colors"
+                      >
+                        Editar no Hub <ArrowRight className="h-2.5 w-2.5" />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
-          ))}
+          )}
         </div>
       </div>
     </div>

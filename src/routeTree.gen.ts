@@ -27,6 +27,7 @@ import { Route as AppSocialRouteImport } from './routes/_app/social'
 import { Route as AppSimuladorRouteImport } from './routes/_app/simulador'
 import { Route as AppReunioesRouteImport } from './routes/_app/reunioes'
 import { Route as AppRelatoriosRouteImport } from './routes/_app/relatorios'
+import { Route as AppRegrasRouteImport } from './routes/_app/regras'
 import { Route as AppQuizRouteImport } from './routes/_app/quiz'
 import { Route as AppOrganizadorRouteImport } from './routes/_app/organizador'
 import { Route as AppMetricasRouteImport } from './routes/_app/metricas'
@@ -135,6 +136,11 @@ const AppReunioesRoute = AppReunioesRouteImport.update({
 const AppRelatoriosRoute = AppRelatoriosRouteImport.update({
   id: '/relatorios',
   path: '/relatorios',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppRegrasRoute = AppRegrasRouteImport.update({
+  id: '/regras',
+  path: '/regras',
   getParentRoute: () => AppRoute,
 } as any)
 const AppQuizRoute = AppQuizRouteImport.update({
@@ -261,6 +267,7 @@ export interface FileRoutesByFullPath {
   '/metricas': typeof AppMetricasRouteWithChildren
   '/organizador': typeof AppOrganizadorRoute
   '/quiz': typeof AppQuizRoute
+  '/regras': typeof AppRegrasRoute
   '/relatorios': typeof AppRelatoriosRoute
   '/reunioes': typeof AppReunioesRoute
   '/simulador': typeof AppSimuladorRoute
@@ -300,6 +307,7 @@ export interface FileRoutesByTo {
   '/metricas': typeof AppMetricasRouteWithChildren
   '/organizador': typeof AppOrganizadorRoute
   '/quiz': typeof AppQuizRoute
+  '/regras': typeof AppRegrasRoute
   '/relatorios': typeof AppRelatoriosRoute
   '/reunioes': typeof AppReunioesRoute
   '/simulador': typeof AppSimuladorRoute
@@ -341,6 +349,7 @@ export interface FileRoutesById {
   '/_app/metricas': typeof AppMetricasRouteWithChildren
   '/_app/organizador': typeof AppOrganizadorRoute
   '/_app/quiz': typeof AppQuizRoute
+  '/_app/regras': typeof AppRegrasRoute
   '/_app/relatorios': typeof AppRelatoriosRoute
   '/_app/reunioes': typeof AppReunioesRoute
   '/_app/simulador': typeof AppSimuladorRoute
@@ -382,6 +391,7 @@ export interface FileRouteTypes {
     | '/metricas'
     | '/organizador'
     | '/quiz'
+    | '/regras'
     | '/relatorios'
     | '/reunioes'
     | '/simulador'
@@ -421,6 +431,7 @@ export interface FileRouteTypes {
     | '/metricas'
     | '/organizador'
     | '/quiz'
+    | '/regras'
     | '/relatorios'
     | '/reunioes'
     | '/simulador'
@@ -461,6 +472,7 @@ export interface FileRouteTypes {
     | '/_app/metricas'
     | '/_app/organizador'
     | '/_app/quiz'
+    | '/_app/regras'
     | '/_app/relatorios'
     | '/_app/reunioes'
     | '/_app/simulador'
@@ -615,6 +627,13 @@ declare module '@tanstack/react-router' {
       path: '/relatorios'
       fullPath: '/relatorios'
       preLoaderRoute: typeof AppRelatoriosRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/regras': {
+      id: '/_app/regras'
+      path: '/regras'
+      fullPath: '/regras'
+      preLoaderRoute: typeof AppRegrasRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/quiz': {
@@ -814,6 +833,7 @@ interface AppRouteChildren {
   AppMetricasRoute: typeof AppMetricasRouteWithChildren
   AppOrganizadorRoute: typeof AppOrganizadorRoute
   AppQuizRoute: typeof AppQuizRoute
+  AppRegrasRoute: typeof AppRegrasRoute
   AppRelatoriosRoute: typeof AppRelatoriosRoute
   AppReunioesRoute: typeof AppReunioesRoute
   AppSimuladorRoute: typeof AppSimuladorRoute
@@ -844,6 +864,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppMetricasRoute: AppMetricasRouteWithChildren,
   AppOrganizadorRoute: AppOrganizadorRoute,
   AppQuizRoute: AppQuizRoute,
+  AppRegrasRoute: AppRegrasRoute,
   AppRelatoriosRoute: AppRelatoriosRoute,
   AppReunioesRoute: AppReunioesRoute,
   AppSimuladorRoute: AppSimuladorRoute,
