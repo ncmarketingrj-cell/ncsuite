@@ -1,9 +1,10 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { X, User, Camera, Loader2, Save } from "lucide-react";
+import { X, Loader2, Save } from "lucide-react";
 import { supabase } from "@/integrations/supabase-external/client";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
+import { AvatarUpload } from "@/components/AvatarUpload";
 
 interface ProfileSettingsModalProps {
   isOpen: boolean;
@@ -13,71 +14,38 @@ interface ProfileSettingsModalProps {
 }
 
 export function ProfileSettingsModal({ isOpen, onClose, profile, userId }: ProfileSettingsModalProps) {
-  const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [fullName, setFullName] = useState("");
   const [position, setPosition] = useState("");
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [avatarUrl, setAvatarUrl] = useState("");
   const qc = useQueryClient();
 
   useEffect(() => {
     if (profile) {
       setFullName(profile.full_name || "");
       setPosition(profile.position || profile.role || "");
+      setAvatarUrl(profile.avatar_url || "");
     }
   }, [profile, isOpen]);
 
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    // Validate size (max 5MB)
-    if (file.size > 5 * 1024 * 1024) {
-      toast.error("A imagem deve ter no máximo 5MB.");
-      return;
-    }
-
-    setLoading(true);
+  const handleAvatarChange = async (publicUrl: string) => {
+    setAvatarUrl(publicUrl);
     try {
-      // Create a unique file name
-      const fileExt = file.name.split('.').pop();
-      const fileName = `${userId}-${Date.now()}.${fileExt}`;
-      const filePath = `avatars/${fileName}`;
-
-      // Upload to 'media' bucket
-      const { error: uploadError } = await supabase.storage
-        .from("media")
-        .upload(filePath, file, { cacheControl: "3600", upsert: true });
-
-      if (uploadError) throw uploadError;
-
-      // Get Public URL
-      const { data: { publicUrl } } = supabase.storage
-        .from("media")
-        .getPublicUrl(filePath);
-
-      // Update Profile table
       const { error: updateError } = await supabase
         .from("profiles")
-        .update({ avatar_url: publicUrl })
+        .update({ avatar_url: publicUrl || null, updated_at: new Date().toISOString() })
         .eq("id", userId);
 
       if (updateError) throw updateError;
 
-      // Update Supabase Auth user metadata
       await supabase.auth.updateUser({
-        data: { avatar_url: publicUrl }
+        data: { avatar_url: publicUrl || null },
       });
 
-      toast.success("Foto de perfil atualizada com sucesso!");
-      
-      qc.invalidateQueries({ queryKey: ["current_user_profile", userId] });
+      qc.invalidateQueries({ queryKey: ["current_user_profile"] });
       qc.invalidateQueries({ queryKey: ["profiles"] });
-
     } catch (err: any) {
-      toast.error(`Falha no upload: ${err.message}`);
-    } finally {
-      setLoading(false);
+      toast.error(`Falha ao atualizar foto: ${err?.message || "Erro desconhecido"}`);
     }
   };
 
@@ -94,9 +62,10 @@ export function ProfileSettingsModal({ isOpen, onClose, profile, userId }: Profi
       const { error } = await supabase
         .from("profiles")
         .update({
-          full_name: fullName,
-          position: position,
-          updated_at: new Date().toISOString()
+          full_name: fullName.trim(),
+          position: position.trim(),
+          avatar_url: avatarUrl || null,
+          updated_at: new Date().toISOString(),
         })
         .eq("id", userId);
 
@@ -104,12 +73,12 @@ export function ProfileSettingsModal({ isOpen, onClose, profile, userId }: Profi
 
       // Update Auth Metadata
       await supabase.auth.updateUser({
-        data: { full_name: fullName, position: position }
+        data: { full_name: fullName.trim(), position: position.trim(), avatar_url: avatarUrl || null },
       });
 
       toast.success("Perfil atualizado com sucesso!");
-      
-      qc.invalidateQueries({ queryKey: ["current_user_profile", userId] });
+
+      qc.invalidateQueries({ queryKey: ["current_user_profile"] });
       qc.invalidateQueries({ queryKey: ["profiles"] });
       onClose();
     } catch (err: any) {
@@ -135,62 +104,40 @@ export function ProfileSettingsModal({ isOpen, onClose, profile, userId }: Profi
           {/* Modal */}
           <motion.div
             initial={{ opacity: 0, scale: 0.95, y: 20 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.95, y: 20 }}
+            animate={{ scale: 1, y: 0 }}
+            exit={{ scale: 0.95, y: 20 }}
             transition={{ type: "spring", duration: 0.5, bounce: 0.3 }}
-            className="relative w-full max-w-sm overflow-hidden rounded-3xl border border-white/10 bg-card p-6 shadow-2xl z-10"
+            className="relative z-10 w-full max-w-md rounded-2xl border border-white/10 bg-card/95 p-6 shadow-2xl backdrop-blur-xl"
           >
-            <div className="flex items-center justify-between mb-6">
+            {/* Header */}
+            <div className="flex items-center justify-between border-b border-white/10 pb-4 mb-5">
               <h2 className="text-sm font-black uppercase tracking-widest text-foreground">Perfil da Conta</h2>
               <button
                 onClick={onClose}
-                className="rounded-full bg-white/5 p-1.5 text-muted-foreground transition hover:bg-white/10 hover:text-foreground"
-                type="button"
+                className="h-8 w-8 rounded-full border border-white/10 flex items-center justify-center text-muted-foreground hover:text-foreground transition-all"
               >
                 <X className="h-4 w-4" />
               </button>
             </div>
 
-            <form onSubmit={handleSaveProfile} className="flex flex-col items-center gap-5">
-              {/* Avatar Upload Area */}
-              <div 
-                className="relative group cursor-pointer" 
-                onClick={() => !loading && fileInputRef.current?.click()}
-                title="Clique para alterar a foto"
-              >
-                <input
-                  type="file"
-                  ref={fileInputRef}
-                  onChange={handleFileChange}
-                  accept="image/png, image/jpeg, image/webp"
-                  className="hidden"
+            <form onSubmit={handleSaveProfile} className="space-y-5">
+              {/* Avatar Upload Area com suporte direto a arquivo */}
+              <div className="rounded-xl border border-white/10 bg-white/[0.02] p-4">
+                <AvatarUpload
+                  value={avatarUrl}
+                  onChange={handleAvatarChange}
+                  userId={userId}
+                  label="Foto de Perfil (Upload)"
+                  size="lg"
                 />
-                
-                <div className={`h-24 w-24 rounded-full border-4 border-background bg-muted/30 overflow-hidden shadow-xl transition-all duration-300 group-hover:border-primary/50 relative flex items-center justify-center ${loading ? 'opacity-50' : ''}`}>
-                  {profile?.avatar_url ? (
-                    <img src={profile.avatar_url} alt="Avatar" className="h-full w-full object-cover" />
-                  ) : (
-                    <User className="h-10 w-10 text-primary/50" />
-                  )}
-                  
-                  {/* Overlay Hover */}
-                  <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                    <Camera className="h-6 w-6 text-white" />
-                  </div>
-                </div>
-
-                {/* Loading Indicator */}
-                {loading && (
-                  <div className="absolute inset-0 flex items-center justify-center bg-background/50 rounded-full">
-                    <Loader2 className="h-6 w-6 animate-spin text-primary" />
-                  </div>
-                )}
               </div>
 
               {/* Form Fields */}
               <div className="w-full space-y-4">
                 <div className="space-y-1">
-                  <label className="text-[10px] uppercase tracking-wider font-black text-muted-foreground/60">Nome de Usuário</label>
+                  <label className="text-[10px] uppercase tracking-wider font-black text-muted-foreground/60">
+                    Nome de Usuário
+                  </label>
                   <input
                     type="text"
                     value={fullName}
@@ -202,7 +149,9 @@ export function ProfileSettingsModal({ isOpen, onClose, profile, userId }: Profi
                 </div>
 
                 <div className="space-y-1">
-                  <label className="text-[10px] uppercase tracking-wider font-black text-muted-foreground/60">Cargo / Função</label>
+                  <label className="text-[10px] uppercase tracking-wider font-black text-muted-foreground/60">
+                    Cargo / Função
+                  </label>
                   <input
                     type="text"
                     value={position}
@@ -218,33 +167,24 @@ export function ProfileSettingsModal({ isOpen, onClose, profile, userId }: Profi
                 </div>
               </div>
 
-              {/* Action Buttons */}
-              <div className="flex gap-3 w-full mt-2">
-                <button
-                  type="button"
-                  onClick={onClose}
-                  className="flex-1 rounded-xl border border-white/10 bg-white/5 py-2.5 text-xs font-bold text-muted-foreground hover:bg-white/10 transition"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  disabled={saving}
-                  className="flex-1 rounded-xl bg-primary py-2.5 text-xs font-black uppercase tracking-wider text-primary-foreground shadow-glow-sm hover:opacity-90 transition flex items-center justify-center gap-1.5 disabled:opacity-50"
-                >
-                  {saving ? (
-                    <>
-                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                      <span>Salvando...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Save className="h-3.5 w-3.5" />
-                      <span>Salvar</span>
-                    </>
-                  )}
-                </button>
-              </div>
+              {/* Submit Button */}
+              <button
+                type="submit"
+                disabled={saving}
+                className="w-full rounded-xl bg-primary py-3 text-xs font-black uppercase tracking-wider text-primary-foreground shadow-glow hover:shadow-glow-lg transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+              >
+                {saving ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    <span>Salvando...</span>
+                  </>
+                ) : (
+                  <>
+                    <Save className="h-4 w-4" />
+                    <span>Salvar Alterações</span>
+                  </>
+                )}
+              </button>
             </form>
           </motion.div>
         </div>

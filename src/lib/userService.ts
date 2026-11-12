@@ -12,6 +12,7 @@ export interface CreateUserData {
   role: string;
   permissions?: Record<string, string>;
   status?: "ativo" | "inativo";
+  avatarUrl?: string | null;
 }
 
 export interface UpdateUserData {
@@ -23,6 +24,7 @@ export interface UpdateUserData {
   newRole?: string;
   newPermissions?: Record<string, string>;
   status?: "ativo" | "inativo";
+  avatarUrl?: string | null;
 }
 
 export interface ServiceResult {
@@ -58,6 +60,7 @@ export async function createSystemUser(data: CreateUserData): Promise<ServiceRes
         new_role: data.role,
         new_permissions: data.permissions || {},
         status: data.status || "ativo",
+        avatar_url: data.avatarUrl || null,
       },
     });
 
@@ -125,6 +128,7 @@ export async function updateSystemUser(data: UpdateUserData): Promise<ServiceRes
         new_role: data.newRole,
         new_permissions: data.newPermissions,
         status: data.status,
+        avatar_url: data.avatarUrl,
       },
     });
 
@@ -180,6 +184,7 @@ export async function updateSystemUser(data: UpdateUserData): Promise<ServiceRes
     if (newEmail) updatePayload.email = newEmail;
     if (data.status) updatePayload.status = data.status;
     if (data.newPermissions) updatePayload.permissions = data.newPermissions;
+    if (data.avatarUrl !== undefined) updatePayload.avatar_url = data.avatarUrl;
 
     await (supabase as any)
       .from("profiles")

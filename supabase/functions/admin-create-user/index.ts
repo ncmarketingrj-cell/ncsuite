@@ -173,11 +173,12 @@ serve(async (req) => {
       if (body.new_password && body.new_password.trim().length >= 6) {
         authUpdates.password = body.new_password.trim()
       }
-      if (body.new_name || body.new_position || body.new_role) {
+      if (body.new_name || body.new_position || body.new_role || body.avatar_url) {
         authUpdates.user_metadata = {
           full_name: body.new_name?.trim(),
           position: body.new_position,
           role: body.new_role,
+          avatar_url: body.avatar_url,
         }
       }
 
@@ -200,6 +201,7 @@ serve(async (req) => {
       if (body.new_email) profileUpdates.email = body.new_email.trim().toLowerCase()
       if (body.status) profileUpdates.status = body.status
       if (body.new_permissions) profileUpdates.permissions = body.new_permissions
+      if (body.avatar_url !== undefined) profileUpdates.avatar_url = body.avatar_url
 
       await adminClient.from("profiles").update(profileUpdates).eq("id", targetUserId)
 
@@ -238,7 +240,12 @@ serve(async (req) => {
       email: new_email.trim().toLowerCase(),
       password: new_password.trim(),
       email_confirm: true,
-      user_metadata: { full_name: new_name.trim(), position: new_position, role: assignedRole },
+      user_metadata: {
+        full_name: new_name.trim(),
+        position: new_position,
+        role: assignedRole,
+        avatar_url: body.avatar_url || null,
+      },
     })
 
     if (createErr) {
@@ -259,6 +266,7 @@ serve(async (req) => {
         email: new_email.trim().toLowerCase(),
         status: status || "ativo",
         permissions: new_permissions || {},
+        avatar_url: body.avatar_url || null,
         updated_at: new Date().toISOString(),
       }, { onConflict: "id" })
     }

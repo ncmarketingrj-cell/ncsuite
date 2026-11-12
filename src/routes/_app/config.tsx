@@ -24,6 +24,7 @@ import {
   deleteSystemUser,
   toggleUserStatus,
 } from "@/lib/userService";
+import { AvatarUpload } from "@/components/AvatarUpload";
 
 export const Route = createFileRoute("/_app/config")({
   head: () => ({ meta: [{ title: "Configurações — NC Suite" }] }),
@@ -1063,39 +1064,33 @@ function TabConta() {
         <p className="text-xs text-muted-foreground mt-1">Gerencie suas informações profissionais, cargo e foto de perfil na NC Suite.</p>
       </div>
 
-      <div className="flex flex-col md:flex-row gap-6 items-start">
-        {/* Avatar Live Preview */}
-        <div className="flex flex-col items-center gap-3 shrink-0">
-          <div className="h-24 w-24 rounded-full bg-primary/10 border-2 border-primary/20 flex items-center justify-center overflow-hidden shadow-2xl">
-            {avatarUrl ? (
-              <img src={avatarUrl} alt="Avatar Preview" className="h-full w-full object-cover" />
-            ) : (
-              <User className="h-10 w-10 text-primary" />
-            )}
-          </div>
-          <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Foto do Perfil</span>
-        </div>
+      <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-6 space-y-6">
+        {/* Upload da Foto de Perfil Direto por Arquivo */}
+        <AvatarUpload
+          value={avatarUrl}
+          onChange={(newUrl) => setAvatarUrl(newUrl)}
+          userId={user?.id}
+          label="Sua Foto de Perfil (Upload)"
+          size="xl"
+        />
+
+        <div className="h-px bg-white/5" />
 
         {/* Inputs */}
-        <div className="flex-1 grid gap-4 sm:grid-cols-2 w-full">
+        <div className="grid gap-4 sm:grid-cols-2 w-full">
           <div className="space-y-1.5">
-            <label className="label-mono text-[10px] text-muted-foreground uppercase">Nome Completo</label>
+            <label className="label-mono text-[10px] text-muted-foreground uppercase font-bold">Nome Completo</label>
             <input value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="Seu nome" className="w-full rounded-lg border border-white/10 bg-background/50 px-3 py-2 text-sm focus:border-primary focus:outline-none" />
           </div>
 
           <div className="space-y-1.5">
-            <label className="label-mono text-[10px] text-muted-foreground uppercase">Cargo / Função</label>
+            <label className="label-mono text-[10px] text-muted-foreground uppercase font-bold">Cargo / Função</label>
             <select value={position} onChange={(e) => setPosition(e.target.value)} className="w-full rounded-lg border border-white/10 bg-background/50 px-3 py-2 text-sm focus:border-primary focus:outline-none text-foreground">
               {POSITIONS_LIST.map(pos => <option key={pos} value={pos} className="bg-card text-foreground">{pos}</option>)}
             </select>
           </div>
-
-          <div className="space-y-1.5 sm:col-span-2">
-            <label className="label-mono text-[10px] text-muted-foreground uppercase">URL da Foto de Perfil</label>
-            <input value={avatarUrl} onChange={(e) => setAvatarUrl(e.target.value)} placeholder="https://exemplo.com/sua-foto.jpg" className="w-full rounded-lg border border-white/10 bg-background/50 px-3 py-2 text-sm focus:border-primary focus:outline-none font-mono" />
-          </div>
-          </div>
         </div>
+      </div>
 
       {/* Meus Dispositivos de Alerta */}
       <div className="rounded-xl border border-white/10 bg-white/[0.02] p-5 space-y-4">
@@ -1376,6 +1371,7 @@ function TabUsuarios({ isAdmin, currentUserProfile }: { isAdmin: boolean; curren
   const [editRole, setEditRole] = useState("outro");
   const [editStatus, setEditStatus] = useState<"ativo" | "inativo">("ativo");
   const [editPermissions, setEditPermissions] = useState<Record<string, string>>({});
+  const [editAvatarUrl, setEditAvatarUrl] = useState("");
   const [saving, setSaving] = useState(false);
 
   // Cadastro
@@ -1387,6 +1383,7 @@ function TabUsuarios({ isAdmin, currentUserProfile }: { isAdmin: boolean; curren
   const [newPosition, setNewPosition] = useState("Gestor de Tráfego");
   const [newRole, setNewRole] = useState("gestor_trafego");
   const [newPermissions, setNewPermissions] = useState<Record<string, string>>({});
+  const [newAvatarUrl, setNewAvatarUrl] = useState("");
   const [creating, setCreating] = useState(false);
 
   // Carrega todos os perfis cadastrados no banco
@@ -1420,6 +1417,7 @@ function TabUsuarios({ isAdmin, currentUserProfile }: { isAdmin: boolean; curren
     setEditRole(targetUser.role || "outro");
     setEditStatus(targetUser.status === "inativo" ? "inativo" : "ativo");
     setEditPermissions(targetUser.permissions || CARGO_DEFAULT_PERMISSIONS[targetUser.position] || {});
+    setEditAvatarUrl(targetUser.avatar_url || "");
   };
 
   // Abrir modal de cadastro
@@ -1433,6 +1431,7 @@ function TabUsuarios({ isAdmin, currentUserProfile }: { isAdmin: boolean; curren
     setNewRole(defaultRole);
     setNewPosition(defaultPosition);
     setNewPermissions(CARGO_DEFAULT_PERMISSIONS[defaultPosition] || {});
+    setNewAvatarUrl("");
     setShowAddModal(true);
   };
 
@@ -1459,6 +1458,7 @@ function TabUsuarios({ isAdmin, currentUserProfile }: { isAdmin: boolean; curren
         newRole: editRole,
         newPermissions: editPermissions,
         status: editStatus,
+        avatarUrl: editAvatarUrl || null,
       });
 
       if (!res.success) {
@@ -1497,6 +1497,7 @@ function TabUsuarios({ isAdmin, currentUserProfile }: { isAdmin: boolean; curren
         role: newRole,
         permissions: newPermissions,
         status: "ativo",
+        avatarUrl: newAvatarUrl || undefined,
       });
 
       if (!res.success) {
@@ -2157,6 +2158,16 @@ function TabUsuarios({ isAdmin, currentUserProfile }: { isAdmin: boolean; curren
               </div>
 
               {/* ── SEÇÃO 2: DADOS PESSOAIS & CARGO ── */}
+              <div className="rounded-xl border border-white/10 bg-white/[0.02] p-4">
+                <AvatarUpload
+                  value={editAvatarUrl}
+                  onChange={setEditAvatarUrl}
+                  userId={editingUser.id}
+                  label="Foto de Perfil do Colaborador (Upload)"
+                  size="md"
+                />
+              </div>
+
               <div className="grid gap-3 sm:grid-cols-2">
                 <div className="space-y-1">
                   <label className="label-mono text-[10px] text-muted-foreground uppercase font-bold">
@@ -2338,6 +2349,15 @@ function TabUsuarios({ isAdmin, currentUserProfile }: { isAdmin: boolean; curren
               </div>
 
               <div className="grid gap-3 sm:grid-cols-2">
+                <div className="sm:col-span-2 rounded-xl border border-white/10 bg-white/[0.02] p-4">
+                  <AvatarUpload
+                    value={newAvatarUrl}
+                    onChange={setNewAvatarUrl}
+                    label="Foto de Perfil do Novo Colaborador (Upload Opcional)"
+                    size="md"
+                  />
+                </div>
+
                 <div className="space-y-1 sm:col-span-2">
                   <label className="label-mono text-[10px] text-muted-foreground uppercase font-bold">
                     Nome Completo
