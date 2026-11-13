@@ -687,7 +687,7 @@ function Shell() {
                 alt="NC Performance"
                 className="h-6 sm:h-7 md:h-8 w-auto object-contain transition-all duration-300 group-hover:scale-105 drop-shadow-[0_0_12px_rgba(220,38,38,0.4)]"
               />
-              <div className="hidden md:flex flex-col leading-none gap-[4px]">
+              <div className="hidden min-[1360px]:flex flex-col leading-none gap-[4px]">
                 <span className="font-display text-[12px] font-black tracking-normal leading-none">NC Performance</span>
                 <div className="flex items-center gap-[4px]">
                   <div className="h-px w-2.5 bg-primary/65 rounded-full" />
@@ -851,22 +851,22 @@ function Shell() {
           </div>
 
           {/* CENTER: Navigation Links (Desktop) — todos inline, sem barra de rolagem */}
-          <nav className="hidden lg:flex flex-1 min-w-0 items-center justify-center px-0.5">
+          <nav className="hidden lg:flex flex-1 min-w-0 items-center justify-center overflow-hidden px-1">
             <div className="flex items-center justify-center gap-0.5 xl:gap-1">
               {filteredNavItems.map((item) => {
                 const isActive = path === item.to || (item.to !== "/dashboard" && path.startsWith(item.to));
                 return (
                   <Link
-                    key={item.to}
+                    key={item.to} title={item.label}
                     to={item.to}
-                    className={`group relative flex items-center gap-1 xl:gap-1.5 rounded-xl px-1.5 xl:px-2.5 py-1.5 text-[11px] xl:text-[12px] font-semibold whitespace-nowrap transition-all duration-200 ${
+                    className={`group relative flex items-center gap-1.5 rounded-xl px-2 min-[1500px]:px-2.5 py-1.5 text-[12px] font-semibold whitespace-nowrap shrink-0 transition-all duration-200 ${
                       isActive
                         ? "text-primary bg-primary/10"
                         : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
                     }`}
                   >
                     <item.icon className={`h-3.5 w-3.5 shrink-0 transition-transform group-hover:scale-110 ${isActive ? 'text-primary' : ''}`} />
-                    <span>{item.label}</span>
+                    <span className="hidden min-[1500px]:inline">{item.label}</span>
                     {isActive && (
                       <motion.div
                         layoutId="nav-indicator"
@@ -1345,7 +1345,7 @@ function Shell() {
               const isActive = path === item.to || (item.to !== "/dashboard" && path.startsWith(item.to));
               return (
                 <Link
-                  key={item.to}
+                  key={item.to} title={item.label}
                   to={item.to}
                   className={`relative flex flex-col items-center justify-center gap-1 min-w-[70px] flex-1 px-2.5 py-2 rounded-xl text-[10px] font-bold whitespace-nowrap shrink-0 transition-all active:scale-95 ${
                     isActive
