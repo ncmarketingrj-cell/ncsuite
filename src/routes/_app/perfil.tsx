@@ -1369,7 +1369,7 @@ function TeamManagementSection({
           <p className="text-xs text-muted-foreground">Ajuste o termo de busca ou alterne a aba do filtro.</p>
         </div>
       ) : (
-        <div className="grid gap-5 md:grid-cols-2">
+        <div className="grid gap-5 md:grid-cols-2 min-w-0">
           {filteredUsers.map((u: any) => {
             const targetInfo = getHierarchyInfo(u);
             const authCheck = checkHierarchyAuthority(effectiveCaller, u);
@@ -1381,7 +1381,7 @@ function TeamManagementSection({
             return (
               <div
                 key={u.id}
-                className={`relative rounded-3xl border p-5 transition-all duration-300 space-y-4 ${
+                className={`relative min-w-0 max-w-full overflow-hidden rounded-3xl border p-4 sm:p-5 transition-all duration-300 space-y-4 ${
                   targetInfo.level === 100
                     ? "border-amber-500/35 bg-gradient-to-b from-amber-500/[0.04] to-background shadow-lg shadow-amber-500/5"
                     : authCheck.isSuperior
@@ -1447,12 +1447,12 @@ function TeamManagementSection({
                 </div>
 
                 {/* ── SEÇÃO DE CREDENCIAIS (LOGIN & SENHA) ── */}
-                <div className="rounded-2xl border border-border dark:border-white/5 bg-muted/40 dark:bg-black/30 p-3 space-y-2">
-                  <div className="flex items-center justify-between text-[11px]">
-                    <div className="flex items-center gap-1.5 text-muted-foreground min-w-0">
+                <div className="rounded-2xl border border-border dark:border-white/5 bg-muted/40 dark:bg-black/30 p-3 space-y-2 min-w-0 overflow-hidden">
+                  <div className="flex items-center justify-between gap-2 text-[11px] min-w-0">
+                    <div className="flex items-center gap-1.5 text-muted-foreground min-w-0 flex-1">
                       <Mail className="h-3.5 w-3.5 text-primary shrink-0" />
-                      <span className="font-bold uppercase tracking-wider text-[9px] shrink-0">Login / E-mail:</span>
-                      <span className="font-mono text-foreground truncate">{u.email || "Sem e-mail"}</span>
+                      <span className="hidden sm:inline font-bold uppercase tracking-wider text-[9px] shrink-0">Login / E-mail:</span>
+                      <span className="font-mono text-foreground truncate min-w-0">{u.email || "Sem e-mail"}</span>
                     </div>
                     {u.email && (
                       <button
@@ -1466,8 +1466,8 @@ function TeamManagementSection({
                   </div>
 
                   {/* Senha Criada / Atual visível para superiores */}
-                  <div className="flex items-center justify-between text-[11px] border-t border-border dark:border-white/5 pt-2">
-                    <div className="flex items-center gap-1.5 text-muted-foreground min-w-0">
+                  <div className="flex flex-wrap sm:flex-nowrap items-center justify-between gap-2 text-[11px] border-t border-border dark:border-white/5 pt-2 min-w-0">
+                    <div className="flex items-center gap-1.5 text-muted-foreground min-w-0 flex-1">
                       <Key className="h-3.5 w-3.5 text-amber-500 dark:text-amber-400 shrink-0" />
                       <span className="font-bold uppercase tracking-wider text-[9px] shrink-0">Senha:</span>
                       {authCheck.isSuperior || (isSelf && isCallerMaster) ? (
@@ -1547,7 +1547,7 @@ function TeamManagementSection({
                 {/* ── PERMISSÕES ESTRUTURADAS POR HUB DA PLATAFORMA ── */}
                 {targetInfo.level < 90 && (
                   <div className="space-y-3 pt-2 border-t border-white/5">
-                    <div className="flex items-center justify-between">
+                    <div className="flex flex-wrap items-center justify-between gap-1">
                       <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/70">
                         Permissões por HUB da Plataforma
                       </span>

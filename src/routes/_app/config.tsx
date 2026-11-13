@@ -156,7 +156,7 @@ function ConfigPage() {
   });
 
   return (
-    <div className="mx-auto max-w-5xl space-y-8">
+    <div className="mx-auto max-w-5xl space-y-6 sm:space-y-8 min-w-0 overflow-x-hidden">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-border/50 pb-5">
         <PageHeader eyebrow="Sistema" title="Configurações Gerais" description="Gerencie integrações, IA e módulos administrativos da NC Suite." />
         <Link
@@ -183,7 +183,7 @@ function ConfigPage() {
         key={tab}
         initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
-        className="glass-panel p-8"
+        className="glass-panel p-4 sm:p-8 min-w-0 overflow-hidden"
       >
         {tab === "conta" && <TabConta />}
         {(tab as any) === "agente" && (
@@ -1836,13 +1836,13 @@ function TabUsuarios({ isAdmin, currentUserProfile }: { isAdmin: boolean; curren
       ) : (
         <>
       {/* ══════════ BANNER DE AUTORIDADE HIERÁRQUICA DO USUÁRIO CONECTADO ══════════ */}
-      <div className="relative overflow-hidden rounded-2xl border border-border dark:border-white/10 bg-gradient-to-r from-card via-muted/20 to-card dark:from-background dark:via-white/[0.02] dark:to-background p-5 shadow-xl">
+      <div className="relative overflow-hidden rounded-2xl border border-border dark:border-white/10 bg-gradient-to-r from-card via-muted/20 to-card dark:from-background dark:via-white/[0.02] dark:to-background p-4 sm:p-5 shadow-xl min-w-0">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div className="flex items-start gap-4">
+          <div className="flex items-start gap-3 sm:gap-4 min-w-0">
             <div className={`h-12 w-12 rounded-2xl border flex items-center justify-center shadow-lg shrink-0 ${callerInfo.badgeBg} ${callerInfo.badgeBorder} ${callerInfo.badgeText}`}>
               {renderRankIcon(callerInfo.iconName, "h-6 w-6")}
             </div>
-            <div>
+            <div className="min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
                 <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider border ${callerInfo.badgeBg} ${callerInfo.badgeBorder} ${callerInfo.badgeText}`}>
                   {renderRankIcon(callerInfo.iconName, "h-3 w-3")} NÍVEL {callerInfo.level} • {callerInfo.shortLabel}
@@ -1978,7 +1978,7 @@ function TabUsuarios({ isAdmin, currentUserProfile }: { isAdmin: boolean; curren
           <p className="text-xs text-muted-foreground">Tente alterar os termos da busca ou mudar a aba de filtro.</p>
         </div>
       ) : (
-        <div className="grid gap-4 md:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 min-w-0">
           {filteredUsers.map((u: any) => {
             const targetInfo = getHierarchyInfo(u);
             const authCheck = checkHierarchyAuthority(effectiveCaller, u);
@@ -1992,7 +1992,7 @@ function TabUsuarios({ isAdmin, currentUserProfile }: { isAdmin: boolean; curren
             return (
               <div
                 key={u.id}
-                className={`relative rounded-2xl border p-5 transition-all duration-300 space-y-4 ${targetInfo.level === 100
+                className={`relative min-w-0 max-w-full overflow-hidden rounded-2xl border p-4 sm:p-5 transition-all duration-300 space-y-4 ${targetInfo.level === 100
                     ? "border-amber-500/35 bg-gradient-to-b from-amber-500/[0.04] to-background shadow-lg shadow-amber-500/5"
                     : authCheck.isSuperior
                       ? "border-white/10 bg-background/60 hover:border-primary/40 shadow-sm hover:shadow-glow/5"
@@ -2063,7 +2063,7 @@ function TabUsuarios({ isAdmin, currentUserProfile }: { isAdmin: boolean; curren
                   <div className="flex items-center justify-between gap-2 text-xs">
                     <div className="flex items-center gap-2 min-w-0">
                       <Mail className="h-3.5 w-3.5 text-primary shrink-0" />
-                      <span className="text-[10px] font-bold uppercase text-muted-foreground shrink-0">Login / E-mail:</span>
+                      <span className="hidden sm:inline text-[10px] font-bold uppercase text-muted-foreground shrink-0">Login / E-mail:</span>
                       <span className="font-mono font-bold text-foreground truncate">
                         {u.email || "Sem e-mail cadastrado"}
                       </span>
@@ -2082,7 +2082,7 @@ function TabUsuarios({ isAdmin, currentUserProfile }: { isAdmin: boolean; curren
 
                   {/* Linha 2: Senha de Acesso (Visível para Superiores ou Próprio Usuário) */}
                   {(authCheck.isSuperior || isSelf) && (
-                    <div className="flex items-center justify-between gap-2 pt-2 border-t border-border dark:border-white/5 text-xs">
+                    <div className="flex flex-wrap sm:flex-nowrap items-center justify-between gap-2 pt-2 border-t border-border dark:border-white/5 text-xs">
                       <div className="flex items-center gap-2 min-w-0">
                         <Key className="h-3.5 w-3.5 text-amber-500 dark:text-amber-400 shrink-0" />
                         <span className="text-[10px] font-bold uppercase text-muted-foreground shrink-0">Senha:</span>
@@ -2139,7 +2139,7 @@ function TabUsuarios({ isAdmin, currentUserProfile }: { isAdmin: boolean; curren
                 </div>
 
                 {/* Linha de Relação Hierárquica com o Usuário Logado */}
-                <div className="rounded-xl border border-border dark:border-white/5 bg-muted/30 dark:bg-black/20 p-2.5 flex items-center justify-between text-[11px]">
+                <div className="rounded-xl border border-border dark:border-white/5 bg-muted/30 dark:bg-black/20 p-2.5 flex flex-wrap sm:flex-nowrap items-center justify-between gap-x-2 gap-y-1 text-[11px]">
                   <div className="flex items-center gap-2 min-w-0">
                     {targetInfo.level === 100 ? (
                       <span className="flex items-center gap-1.5 font-bold text-amber-700 dark:text-amber-300">
@@ -2152,9 +2152,9 @@ function TabUsuarios({ isAdmin, currentUserProfile }: { isAdmin: boolean; curren
                         Seu próprio usuário autenticado
                       </span>
                     ) : authCheck.isSuperior ? (
-                      <span className="flex items-center gap-1.5 font-bold text-emerald-600 dark:text-emerald-400 truncate">
+                      <span className="flex items-center gap-1.5 font-bold text-emerald-600 dark:text-emerald-400 min-w-0">
                         <Check className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
-                        Seu Subordinado (Você pode editar login, senha e acessos)
+                        <span className="sm:truncate">Seu Subordinado (Você pode editar login, senha e acessos)</span>
                       </span>
                     ) : (
                       <span className="flex items-center gap-1.5 text-muted-foreground/60 font-medium truncate">
@@ -2174,13 +2174,13 @@ function TabUsuarios({ isAdmin, currentUserProfile }: { isAdmin: boolean; curren
                 {/* Seletor / Matriz de Permissões Rápidas (visível se tiver permissões customizáveis) */}
                 {targetInfo.level < 90 && (
                   <div className="space-y-1.5 pt-1 border-t border-white/5">
-                    <div className="flex items-center justify-between">
+                    <div className="flex flex-wrap items-center justify-between gap-1">
                       <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/50">
                         Permissões por Módulo
                       </span>
                       {authCheck.canEditPermissions && (
                         <span className="text-[9px] text-primary/80 font-bold">
-                          Clique para alterar rapidamente
+                          Clique para alterar
                         </span>
                       )}
                     </div>
@@ -2193,7 +2193,7 @@ function TabUsuarios({ isAdmin, currentUserProfile }: { isAdmin: boolean; curren
                         return (
                           <div
                             key={key}
-                            className="flex flex-col gap-0.5 bg-white/[0.02] border border-white/5 rounded-lg p-1.5"
+                            className="flex min-w-0 flex-col gap-0.5 bg-white/[0.02] border border-white/5 rounded-lg p-1.5"
                           >
                             <span className="text-[9px] font-bold text-muted-foreground truncate">{label}</span>
                             {canChange ? (
@@ -2231,7 +2231,7 @@ function TabUsuarios({ isAdmin, currentUserProfile }: { isAdmin: boolean; curren
                 )}
 
                 {/* ══════════ BOTÕES DE AÇÃO HIERÁRQUICOS ══════════ */}
-                <div className="flex items-center justify-between gap-2 pt-2 border-t border-white/5">
+                <div className="flex flex-wrap sm:flex-nowrap items-center justify-between gap-2 pt-2 border-t border-white/5">
                   <div className="flex items-center gap-1.5">
                     {/* Botão de Ativar / Suspender */}
                     {authCheck.isSuperior && (
@@ -2249,15 +2249,15 @@ function TabUsuarios({ isAdmin, currentUserProfile }: { isAdmin: boolean; curren
                     )}
                   </div>
 
-                  <div className="flex items-center gap-1.5">
+                  <div className="flex flex-wrap items-center gap-1.5 min-w-0">
                     {/* Botão de Edição (Login / Senha / Cargo) */}
                     {authCheck.isSuperior || (isSelf && isCallerMaster) ? (
                       <button
                         onClick={() => handleOpenEdit(u)}
-                        className="inline-flex items-center gap-1.5 rounded-lg bg-white/5 border border-white/10 px-3 py-1.5 text-xs font-bold uppercase tracking-wider text-foreground hover:bg-primary hover:border-primary hover:text-primary-foreground transition shadow-sm"
+                        className="inline-flex items-center gap-1.5 rounded-lg bg-white/5 border border-white/10 px-2.5 sm:px-3 py-1.5 text-[11px] sm:text-xs font-bold uppercase tracking-wider text-foreground hover:bg-primary hover:border-primary hover:text-primary-foreground transition shadow-sm max-w-full"
                       >
-                        <Key className="h-3.5 w-3.5" />
-                        <span>Editar Login / Senha</span>
+                        <Key className="h-3.5 w-3.5 shrink-0" />
+                        <span className="truncate">Editar Login / Senha</span>
                       </button>
                     ) : (
                       <span className="inline-flex items-center gap-1 text-[10px] font-bold text-muted-foreground/40 uppercase tracking-wider px-2 py-1">
