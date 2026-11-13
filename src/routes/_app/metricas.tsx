@@ -172,7 +172,10 @@ function processMetrics(item: any, rawData: any[], startStr: string, endStr: str
   const cpc  = clicks > 0 ? cost / clicks : 0;
   const roas = cost > 0 ? (conversions * 150) / cost : 0;
   const detectedCategory = detectConversionCategory(item.name, item.objective);
-  const result_type = m.find((x: any) => x.result_type)?.result_type || item.result_type || detectedCategory;
+  const storedType = m.find((x: any) => x.result_type)?.result_type || item.result_type || detectedCategory;
+  const nameU = String(item.name || "").toUpperCase();
+  const isStrongMessaging = String(item.objective || "").toUpperCase() === "MESSAGES" || /(^|[^A-Z])MSG([^A-Z]|$)/.test(nameU) || nameU.includes("MENSAGEM") || nameU.includes("WHATSAPP") || nameU.includes("WPP");
+  const result_type = isStrongMessaging && storedType !== "PURCHASES" && storedType !== "INSTAGRAM_PROFILE" ? "MESSAGES" : storedType;
   return { ...item, result_type, t: { cost, conversions, clicks, impressions, reach, freq, cpl, ctr, cpm, cpc, roas }, _metrics: m };
 }
 

@@ -93,6 +93,23 @@ export function detectConversionCategory(
   const obj = (objective || "").toUpperCase();
   const opt = (optGoal || "").toUpperCase();
 
+  // 0. Mensagens têm prioridade absoluta (ações de landing_page_view existem em qualquer anúncio com link)
+  if (
+    !indicator.includes("purchase") &&
+    !indicator.includes("profile") &&
+    (indicator.includes("messaging") ||
+      opt === "REPLIES" ||
+      opt === "CONVERSATIONS" ||
+      obj === "MESSAGES" ||
+      /(^|[^A-Z])MSG([^A-Z]|$)/.test(n) ||
+      n.includes("MENSAGEM") ||
+      n.includes("MENSAGENS") ||
+      n.includes("WHATSAPP") ||
+      n.includes("WPP"))
+  ) {
+    return "MESSAGES";
+  }
+
   // 1. Visitas ao Perfil do Instagram (Tráfego pro perfil IG — ex: Trafego NC)
   if (
     indicator.includes("profile_visit") ||
