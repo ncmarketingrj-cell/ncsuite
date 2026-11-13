@@ -521,21 +521,9 @@ export function extractMetaConversions(
 
 // ─── Calibração Determinística Instantânea em Memória (0ms Latency) ───────────
 
-export function calibrateCampaignMetricsArray(campaignName: string, metrics: any[] = []): any[] {
-  if (!Array.isArray(metrics)) return [];
-  const n = (campaignName || "").toUpperCase();
-  return metrics.map((m: any) => {
-    if (n.includes("TAYNA") && m.date?.startsWith("2026-11-12")) {
-      return { ...m, conversions: 6 };
-    }
-    if (n.includes("RUTH") && m.date?.startsWith("2026-11-12")) {
-      return { ...m, conversions: 7 };
-    }
-    if ((n.includes("VICTOR") || n.includes("6720")) && m.date?.startsWith("2026-11-12")) {
-      return { ...m, conversions: 0 };
-    }
-    return m;
-  });
+export function calibrateCampaignMetricsArray(_campaignName: string, metrics: any[] = []): any[] {
+  // Sem valores fixos: os dados reais vêm da Meta (sync).
+  return Array.isArray(metrics) ? metrics : [];
 }
 
 export function calibrateAdSetMetricsArray(adSetName: string, assetMetrics: any[] = []): any[] {
@@ -547,65 +535,20 @@ export function getCalibratedAdConversion20261111(adName: string, cost: number, 
   return null;
 }
 
-export function calibrateAdMetricsArray(adName: string, assetMetrics: any[] = []): any[] {
-  if (!Array.isArray(assetMetrics)) return [];
-  const n = (adName || "").toUpperCase();
-  return assetMetrics.map((m: any) => {
-    if (n.includes("FASTBACK") && m.date?.startsWith("2026-11-12")) {
-      return { ...m, conversions: 0 };
-    }
-    return m;
-  });
+export function calibrateAdMetricsArray(_adName: string, assetMetrics: any[] = []): any[] {
+  return Array.isArray(assetMetrics) ? assetMetrics : [];
 }
 
 export function calibratePeriodStatsInMemory(
   periodStats: any[] = [],
-  campaigns: any[] = [],
-  ads: any[] = [],
-  adSets: any[] = [],
-  startStr?: string,
-  endStr?: string
+  _campaigns: any[] = [],
+  _ads: any[] = [],
+  _adSets: any[] = [],
+  _startStr?: string,
+  _endStr?: string
 ): any[] {
-  if (!Array.isArray(periodStats)) return [];
-
-  const campMap = new Map((campaigns || []).map((c: any) => [c.id, c]));
-  const adMap = new Map((ads || []).map((a: any) => [a.id, a]));
-
-  return periodStats.map((ps: any) => {
-    const is20261112 = ps.start_date === "2026-11-12" || startStr === "2026-11-12";
-
-    if (ps.entity_type === "campaign") {
-      const camp = campMap.get(ps.entity_id);
-      const name = (camp?.name || "").toUpperCase();
-
-      if (name.includes("TAYNA") && is20261112) {
-        if (ps.conversions === 27 || ps.conversions !== 6) {
-          return { ...ps, conversions: 6 };
-        }
-      }
-
-      if (name.includes("RUTH") && is20261112) {
-        if (ps.conversions === 1 || ps.conversions < 7) {
-          return { ...ps, conversions: 7 };
-        }
-      }
-
-      if ((name.includes("VICTOR") || name.includes("6720")) && is20261112) {
-        return { ...ps, conversions: 0 };
-      }
-    }
-
-    if (ps.entity_type === "ad") {
-      const ad = adMap.get(ps.entity_id);
-      const name = (ad?.name || "").toUpperCase();
-
-      if (name.includes("FASTBACK") && is20261112) {
-        return { ...ps, conversions: 0 };
-      }
-    }
-
-    return ps;
-  });
+  // Sem valores fixos: exibe exatamente o que foi sincronizado da Meta.
+  return Array.isArray(periodStats) ? periodStats : [];
 }
 
 // ─── Persistência Direta no Supabase via Cliente Autenticado ──────────────────
@@ -631,36 +574,6 @@ export async function ensureDatabaseCalibrated(supabase: any, force = false): Pr
       }
     }
 
-    // Corrigir anomalias em meta_period_stats para 2026-11-12
-    const { data: psRows } = await supabase
-      .from("meta_period_stats")
-      .select("id, entity_type, entity_id, conversions, clicks, start_date")
-      .eq("start_date", "2026-11-12");
-
-    if (psRows && psRows.length > 0) {
-      for (const row of psRows) {
-        if (row.entity_type === "campaign") {
-          const camp = camps?.find((c: any) => c.id === row.entity_id);
-          const name = (camp?.name || "").toUpperCase();
-          if (name.includes("TAYNA") && row.conversions === 27) {
-            await supabase.from("meta_period_stats").update({ conversions: 6 }).eq("id", row.id);
-            await supabase.from("metrics").update({ conversions: 6 }).eq("campaign_id", camp.id).eq("date", "2026-11-12");
-          } else if (name.includes("RUTH") && row.conversions === 1) {
-            await supabase.from("meta_period_stats").update({ conversions: 7 }).eq("id", row.id);
-            await supabase.from("metrics").update({ conversions: 7 }).eq("campaign_id", camp.id).eq("date", "2026-11-12");
-          } else if ((name.includes("VICTOR") || name.includes("6720")) && row.conversions > 0) {
-            await supabase.from("meta_period_stats").update({ conversions: 0 }).eq("id", row.id);
-            await supabase.from("metrics").update({ conversions: 0 }).eq("campaign_id", camp.id).eq("date", "2026-11-12");
-          }
-        } else if (row.entity_type === "ad") {
-          const { data: adRow } = await supabase.from("ads").select("name").eq("id", row.entity_id).maybeSingle();
-          if (adRow?.name && adRow.name.toUpperCase().includes("FASTBACK") && row.conversions > 0) {
-            await supabase.from("meta_period_stats").update({ conversions: 0 }).eq("id", row.id);
-            await supabase.from("asset_metrics").update({ conversions: 0 }).eq("ad_id", row.entity_id).eq("date", "2026-11-12");
-          }
-        }
-      }
-    }
   } catch (err) {
     console.warn("[Calibrator] Verificação silenciosa de campanhas:", err);
   }
