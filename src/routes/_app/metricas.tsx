@@ -1080,7 +1080,7 @@ function MetricasCampanhasPage() {
   );
 
   // Injeta alcance e frequência reais (period stats) nas campanhas — torna todas as métricas exatas
-  const enrichedCampaigns = useMemo(() => {
+  const enrichedCampaignsBase = useMemo(() => {
     let base = campaigns;
     const campaignStats = calibratedPeriodStats.filter((p: any) => p.entity_type === 'campaign');
     if (campaignStats.length > 0) {
@@ -1164,6 +1164,21 @@ function MetricasCampanhasPage() {
     }
     return base.filter((c: any) => (c.t?.reach || 0) >= 1 || (c.t?.impressions || 0) >= 1 || (c.t?.cost || 0) > 0);
   }, [ads, calibratedPeriodStats]);
+
+  // Reconciliação: o resultado da campanha = soma dos resultados dos seus anúncios (fonte confiável, igual ao Gerenciador)
+  const enrichedCampaigns = useMemo(() => {
+    const sumByCamp = new Map<string, number>();
+    for (const ad of enrichedAds as any[]) {
+      if (!ad.campaign_id) continue;
+      sumByCamp.set(ad.campaign_id, (sumByCamp.get(ad.campaign_id) || 0) + Number(ad.t?.conversions || 0));
+    }
+    return (enrichedCampaignsBase as any[]).map((c: any) => {
+      const adSum = sumByCamp.get(c.id) || 0;
+      if (adSum <= 0 || adSum === Number(c.t?.conversions || 0)) return c;
+      const cost = Number(c.t?.cost || 0);
+      return { ...c, t: { ...c.t, conversions: adSum, cpl: cost / adSum, roas: cost > 0 ? (adSum * 150) / cost : 0 } };
+    });
+  }, [enrichedCampaignsBase, enrichedAds]);
 
   const listData = useMemo(() => {
     if (level === "campanhas") return enrichedCampaigns;
