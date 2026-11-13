@@ -851,7 +851,7 @@ function Shell() {
           </div>
 
           {/* CENTER: Navigation Links (Desktop) — todos inline, sem barra de rolagem */}
-          <nav className="hidden lg:flex flex-1 min-w-0 items-center justify-center overflow-hidden px-1">
+          <nav className="@container hidden lg:flex flex-1 min-w-0 items-center justify-center overflow-hidden px-1">
             <div className="flex items-center justify-center gap-0.5 xl:gap-1">
               {filteredNavItems.map((item) => {
                 const isActive = path === item.to || (item.to !== "/dashboard" && path.startsWith(item.to));
@@ -859,14 +859,14 @@ function Shell() {
                   <Link
                     key={item.to} title={item.label}
                     to={item.to}
-                    className={`group relative flex items-center gap-1.5 rounded-xl px-2 min-[1500px]:px-2.5 py-1.5 text-[12px] font-semibold whitespace-nowrap shrink-0 transition-all duration-200 ${
+                    className={`group relative flex items-center gap-1.5 rounded-xl px-2 @[1020px]:px-2.5 py-1.5 text-[12px] font-semibold whitespace-nowrap shrink-0 transition-all duration-200 ${
                       isActive
                         ? "text-primary bg-primary/10"
                         : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
                     }`}
                   >
                     <item.icon className={`h-3.5 w-3.5 shrink-0 transition-transform group-hover:scale-110 ${isActive ? 'text-primary' : ''}`} />
-                    <span className="hidden min-[1500px]:inline">{item.label}</span>
+                    <span className="hidden @[1020px]:inline">{item.label}</span>
                     {isActive && (
                       <motion.div
                         layoutId="nav-indicator"
