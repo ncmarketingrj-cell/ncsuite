@@ -773,9 +773,16 @@ function MetricasCampanhasPage() {
       else if (selectedCampaignId) q = q.eq("campaign_id", selectedCampaignId);
       else if (selectedCamps.size > 0) q = q.in("campaign_id", Array.from(selectedCamps));
       if (statusFilter !== "all") q = q.ilike("status", statusFilter === "active" ? "ACTIVE" : "PAUSED");
-      const { data, error } = await q.order("name");
-      if (error) throw error;
-      return (data || []).map((c: any) =>
+      // Paginação: sem filtro de campanha a lista de anúncios passa de 1000 linhas (limite do PostgREST),
+      // o que truncava a soma por campanha e mostrava resultados menores até selecionar a campanha.
+      const all: any[] = [];
+      for (let from = 0; from < 20000; from += 1000) {
+        const { data, error } = await q.order("name").order("id").range(from, from + 999);
+        if (error) throw error;
+        all.push(...(data || []));
+        if (!data || data.length < 1000) break;
+      }
+      return all.map((c: any) =>
         processMetrics(c, calibrateAdMetricsArray(c.name, c.asset_metrics), startStr, endStr)
       );
     },
