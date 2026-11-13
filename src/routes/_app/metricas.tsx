@@ -766,13 +766,12 @@ function MetricasCampanhasPage() {
 
   const { data: ads = [], isLoading: isLoadingAds } = useQuery({
     queryKey: ["mc-ads", Array.from(selectedAdSets).join(","), selectedCampaignId || Array.from(selectedCamps).join(","), statusFilter, startStr, endStr],
-    enabled: level === "anuncios" || !!selectedCampaignId,
+    enabled: true, // sempre carrega: a reconciliação por campanha depende da soma dos anúncios,
     queryFn: async () => {
       let q = (supabase as any).from("ads").select(`id, name, status, external_id, campaign_id, ad_set_id, creative_url, campaigns(id, name, objective), asset_metrics(cost, conversions, impressions, clicks, reach, date)`);
       if (selectedAdSets.size > 0) q = q.in("ad_set_id", Array.from(selectedAdSets));
       else if (selectedCampaignId) q = q.eq("campaign_id", selectedCampaignId);
       else if (selectedCamps.size > 0) q = q.in("campaign_id", Array.from(selectedCamps));
-      else return [];
       if (statusFilter !== "all") q = q.ilike("status", statusFilter === "active" ? "ACTIVE" : "PAUSED");
       const { data, error } = await q.order("name");
       if (error) throw error;
