@@ -78,7 +78,8 @@ const DEFAULT_CAMPANHAS_CHARTS = (userId: string | null): Omit<ChartConfig, "id"
 
 export function useChartConfig(context: "metricas" | "campanhas") {
   const { user } = useAuth();
-  const { isAdmin } = usePagePermission();
+  const { isAdmin, canEdit } = usePagePermission();
+  const canManageMetricasCharts = isAdmin || canEdit("metricas");
   const queryClient = useQueryClient();
 
   const queryKey = ["chart_configs", context, user?.id];
@@ -126,8 +127,8 @@ export function useChartConfig(context: "metricas" | "campanhas") {
   // 2. Salvar/Criar ou Atualizar Gráfico
   const saveMutation = useMutation({
     mutationFn: async (chart: Omit<ChartConfig, "id"> & { id?: string }) => {
-      if (context === "metricas" && !isAdmin) {
-        throw new Error("Apenas administradores podem gerenciar gráficos de métricas.");
+      if (context === "metricas" && !canManageMetricasCharts) {
+        throw new Error("Você não possui permissão de edição para gerenciar gráficos de métricas.");
       }
 
       const payload = {
@@ -180,8 +181,8 @@ export function useChartConfig(context: "metricas" | "campanhas") {
   // 3. Deletar Gráfico
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
-      if (context === "metricas" && !isAdmin) {
-        throw new Error("Apenas administradores podem remover gráficos de métricas.");
+      if (context === "metricas" && !canManageMetricasCharts) {
+        throw new Error("Você não possui permissão de edição para remover gráficos de métricas.");
       }
 
       if (id.startsWith("default-")) {
@@ -209,8 +210,8 @@ export function useChartConfig(context: "metricas" | "campanhas") {
   // 4. Reordenar Gráficos (Drag and Drop)
   const reorderMutation = useMutation({
     mutationFn: async (orderedIds: string[]) => {
-      if (context === "metricas" && !isAdmin) {
-        throw new Error("Apenas administradores podem ordenar gráficos de métricas.");
+      if (context === "metricas" && !canManageMetricasCharts) {
+        throw new Error("Você não possui permissão de edição para ordenar gráficos de métricas.");
       }
 
       // Para cada ID, atualizamos sua posição
@@ -242,6 +243,6 @@ export function useChartConfig(context: "metricas" | "campanhas") {
     deleteChart: deleteMutation.mutate,
     isDeleting: deleteMutation.isPending,
     reorderCharts: reorderMutation.mutate,
-    canEdit: context === "metricas" ? isAdmin : true // O admin pode editar métricas, campanhas é livre
+    canEdit: context === "metricas" ? canManageMetricasCharts : true
   };
 }

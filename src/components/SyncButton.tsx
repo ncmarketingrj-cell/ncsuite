@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { formatDistanceToNow, format, subDays, subMonths, startOfMonth, endOfMonth } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { useAuth } from "@/lib/auth";
+import { usePagePermission } from "@/hooks/usePagePermission";
 import { calibrateMetaConversionsFromGraph } from "@/lib/metaConversionCalibrator";
 
 interface SyncButtonProps {
@@ -34,19 +35,14 @@ export function SyncButton({ mode = "quick" }: SyncButtonProps) {
   const [syncing, setSyncing] = useState(false);
   const [lastStatus, setLastStatus] = useState<"idle" | "success" | "error">("idle");
   const { user } = useAuth();
-
-  const { data: profile } = useQuery({
-    queryKey: ["sync-button-profile", user?.id],
-    queryFn: async () => {
-      if (!user) return null;
-      const { data } = await supabase.from("profiles").select("role").eq("id", user.id).maybeSingle();
-      return data;
-    },
-    enabled: !!user
-  });
-
-  const ADMIN_EMAILS = ["nc.marketingrj@gmail.com", "hc.marketing.dgt@gmail.com"];
-  const isAdmin = profile?.role === "admin" || (user?.email && ADMIN_EMAILS.includes(user.email));
+  const { isAdmin, hasAccess, canEdit } = usePagePermission();
+  const canSyncTraffic =
+    isAdmin ||
+    canEdit("metricas") ||
+    canEdit("cockpit") ||
+    canEdit("dashboard") ||
+    hasAccess("metricas") ||
+    hasAccess("cockpit");
 
   const { data: lastSyncData, refetch: refetchSyncDate } = useQuery({
     queryKey: ["last-sync-date"],
@@ -193,7 +189,7 @@ export function SyncButton({ mode = "quick" }: SyncButtonProps) {
     ? `Busca todos os dados de ${monthRange!.label} (${monthRange!.since} a ${monthRange!.until}). Ideal para preencher lacunas de meses anteriores.`
     : "Busca 60 dias de histórico. Use na carga inicial ou ao começar um novo mês.";
 
-  if (!isAdmin) {
+  if (!canSyncTraffic) {
     return null;
   }
 

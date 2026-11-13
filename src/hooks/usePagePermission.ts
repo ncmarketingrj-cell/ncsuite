@@ -1,7 +1,7 @@
 import { useAuth } from "@/lib/auth";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase-external/client";
-import { hasPermissionAccess, hasPermissionEdit, isMasterAdmin } from "@/lib/userHierarchy";
+import { getCargoDefinition, hasPermissionAccess, hasPermissionEdit, isMasterAdmin } from "@/lib/userHierarchy";
 import { resolveUserAvatar } from "@/lib/userService";
 
 const RESTRICTED_BY_DEFAULT = new Set(["criar_usuarios", "gestao_victoria"]);
@@ -13,20 +13,58 @@ export function usePagePermission() {
     queryKey: ["current_user_profile", user?.id],
     queryFn: async () => {
       if (!user?.id) return null;
-      const { data, error } = await supabase
+
+      let { data, error } = await supabase
         .from("profiles")
         .select("*")
         .eq("id", user.id)
         .maybeSingle();
-      if (error || !data) return null;
+
+      // Se o perfil não foi encontrado por ID (ex: login novo ou ID desalinhado), tenta auto-reparar via RPC ou e-mail
+      if (!data) {
+        try {
+          const { data: repaired } = await (supabase as any).rpc("ensure_user_session_ready");
+          if (repaired && typeof repaired === "object") {
+            data = repaired;
+          }
+        } catch {
+          // ignore if RPC not yet available
+        }
+      }
+
+      if (!data && user.email) {
+        const byEmail = await supabase
+          .from("profiles")
+          .select("*")
+          .ilike("email", user.email.trim())
+          .maybeSingle();
+        if (byEmail.data) {
+          data = byEmail.data;
+        }
+      }
+
+      if (error && !data) return null;
+      if (!data) return null;
+
+      const cargoDefaults = getCargoDefinition((data as any).position)?.defaultPermissions || {};
+      const mergedPermissions = {
+        ...cargoDefaults,
+        ...((data as any).permissions && typeof (data as any).permissions === "object"
+          ? (data as any).permissions
+          : {}),
+      };
+
       const resolvedAvatar = resolveUserAvatar({
         ...data,
+        permissions: mergedPermissions,
         email: (data as any).email || user.email,
         user_metadata: user.user_metadata,
       });
+
       return {
         ...data,
-        avatar_url: resolvedAvatar || data.avatar_url || null,
+        permissions: mergedPermissions,
+        avatar_url: resolvedAvatar || (data as any).avatar_url || null,
       };
     },
     enabled: !!user?.id,
