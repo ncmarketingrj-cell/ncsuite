@@ -260,21 +260,7 @@ function Shell() {
   }
 
   const filteredNavItems = currentNavItems.filter(item => hasPageAccess(item.to));
-  // Barra superior: mostra rótulos só se couberem no espaço real disponível
-  const navBoxRef = useRef<HTMLElement | null>(null);
-  const navMeasureRef = useRef<HTMLDivElement | null>(null);
-  const [navCompact, setNavCompact] = useState(false);
-  useEffect(() => {
-    const box = navBoxRef.current;
-    const meas = navMeasureRef.current;
-    if (!box || !meas) return;
-    const check = () => setNavCompact(meas.scrollWidth > box.clientWidth - 8);
-    check();
-    const ro = new ResizeObserver(check);
-    ro.observe(box);
-    ro.observe(meas);
-    return () => ro.disconnect();
-  }, [filteredNavItems.length]);
+
 
   const [isAgentOpen, setIsAgentOpen] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
@@ -866,17 +852,8 @@ function Shell() {
           </div>
 
           {/* CENTER: Navigation Links (Desktop) — rótulos aparecem só se couberem; senão só ícones */}
-          <nav ref={navBoxRef} className="relative hidden lg:flex flex-1 min-w-0 items-center justify-center overflow-hidden px-1">
-            {/* cópia invisível com rótulos, só para medir a largura necessária */}
-            <div ref={navMeasureRef} aria-hidden="true" className="pointer-events-none invisible absolute left-0 top-0 flex items-center gap-1 whitespace-nowrap">
-              {filteredNavItems.map((item) => (
-                <span key={item.to} className="flex items-center gap-1.5 px-2.5 py-1.5 text-[12px] font-semibold">
-                  <item.icon className="h-3.5 w-3.5 shrink-0" />
-                  <span>{item.label}</span>
-                </span>
-              ))}
-            </div>
-            <div className="flex items-center justify-center gap-1">
+          <nav className="hidden lg:flex flex-1 min-w-0 items-center overflow-x-auto overflow-y-hidden px-1 [scrollbar-width:thin] [scrollbar-color:hsl(var(--primary)/0.4)_transparent]">
+            <div className="mx-auto flex items-center gap-1">
               {filteredNavItems.map((item) => {
                 const isActive = path === item.to || (item.to !== "/dashboard" && path.startsWith(item.to));
                 return (
@@ -884,14 +861,14 @@ function Shell() {
                     key={item.to}
                     to={item.to}
                     title={item.label}
-                    className={`group relative flex shrink-0 items-center gap-1.5 rounded-xl py-1.5 text-[12px] font-semibold whitespace-nowrap transition-all duration-200 ${navCompact ? "px-2.5" : "px-2.5"} ${
+                    className={`group relative flex shrink-0 items-center gap-1.5 rounded-xl py-1.5 text-[12px] font-semibold whitespace-nowrap transition-all duration-200 px-2.5 ${
                       isActive
                         ? "text-primary bg-primary/10"
                         : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
                     }`}
                   >
                     <item.icon className={`h-3.5 w-3.5 shrink-0 transition-transform group-hover:scale-110 ${isActive ? 'text-primary' : ''}`} />
-                    {!navCompact && <span>{item.label}</span>}
+                    <span>{item.label}</span>
                     {isActive && (
                       <motion.div
                         layoutId="nav-indicator"
