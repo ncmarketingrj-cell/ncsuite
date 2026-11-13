@@ -901,10 +901,10 @@ function Shell() {
               )}
             </button>
 
-            {/* Theme Toggle */}
+            {/* Theme Toggle — visível tanto no desktop quanto no mobile */}
             <button
               onClick={toggleTheme}
-              className="hidden sm:flex relative h-8 w-8 items-center justify-center rounded-xl border border-border bg-card text-muted-foreground transition-all hover:text-foreground hover:border-primary/30 hover:shadow-glow-sm active:scale-95"
+              className="flex relative h-8 w-8 items-center justify-center rounded-xl border border-border bg-card text-muted-foreground transition-all hover:text-foreground hover:border-primary/30 hover:shadow-glow-sm active:scale-95"
               title={theme === "dark" ? "Modo Claro" : "Modo Escuro"}
             >
               <AnimatePresence mode="wait">
@@ -920,7 +920,7 @@ function Shell() {
               </AnimatePresence>
             </button>
 
-            {/* Victoria AI Badge — sempre visível no desktop */}
+            {/* Victoria AI Badge — sempre visível no desktop e compacto no mobile na mesma posição */}
             <button
               onClick={() => {
                 setActiveModule("victoria");
@@ -932,6 +932,18 @@ function Shell() {
               <Bot className="h-3.5 w-3.5" />
               Victoria
               <span className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" />
+            </button>
+            <button
+              onClick={() => {
+                setActiveModule("victoria");
+                localStorage.setItem("nc_active_module", "victoria");
+                nav({ to: "/victoria" });
+              }}
+              title="Victoria AI"
+              className="flex lg:hidden relative h-8 w-8 items-center justify-center rounded-xl border border-primary/25 bg-primary/10 text-primary transition-all active:scale-95"
+            >
+              <Bot className="h-3.5 w-3.5" />
+              <span className="absolute top-1 right-1 h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" />
             </button>
 
             {/* Notifications */}
@@ -1317,238 +1329,84 @@ function Shell() {
                 )}
               </AnimatePresence>
             </div>
-
-            {/* Mobile: Victoria compacto */}
-            <button
-              onClick={() => {
-                setActiveModule("victoria");
-                localStorage.setItem("nc_active_module", "victoria");
-                nav({ to: "/victoria" });
-              }}
-              className="flex lg:hidden h-8 w-8 items-center justify-center rounded-xl border border-primary/20 bg-primary/10 text-primary"
-            >
-              <Bot className="h-4 w-4" />
-            </button>
-
-            {/* Mobile Menu Button */}
-            <button
-              onClick={() => setMobileMenuOpen(true)}
-              className="flex lg:hidden h-8 w-8 items-center justify-center rounded-xl border border-border bg-card text-muted-foreground transition-all hover:border-primary/30 hover:text-foreground active:scale-95 ml-1"
-            >
-              <Menu className="h-4 w-4" />
-            </button>
           </div>
         </div>
 
       </header>
 
       {/* ═══════════════════════════════════════
-          MOBILE BOTTOM SHEET — Menu completo
-          Só aparece em mobile (lg:hidden no overlay)
+          BARRA INFERIOR FIXA MOBILE (Espelho fiel das páginas do módulo no Desktop, sem repetições)
+          Sempre acompanhando no mobile (lg:hidden)
           ═══════════════════════════════════════ */}
-      <AnimatePresence>
-        {mobileMenuOpen && (
-          <>
-            {/* Overlay escuro */}
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setMobileMenuOpen(false)}
-              className="lg:hidden fixed inset-0 z-40 bg-background/80 backdrop-blur-sm"
-            />
-            {/* Bottom sheet */}
-            <motion.div
-              initial={{ y: "100%" }}
-              animate={{ y: 0 }}
-              exit={{ y: "100%" }}
-              transition={{ type: "spring", damping: 30, stiffness: 300 }}
-              className="lg:hidden fixed bottom-0 inset-x-0 z-50 rounded-t-3xl border-t border-border bg-card shadow-2xl overflow-hidden"
-            >
-              {/* Handle bar */}
-              <div className="flex justify-center pt-3 pb-1">
-                <div className="h-1 w-10 rounded-full bg-muted-foreground/30" />
-              </div>
-              {/* Header do sheet */}
-              <div className="flex items-center justify-between px-5 py-3 border-b border-border/50">
-                <div className="flex items-center gap-2">
-                  <img
-                    src="/assets/nc-logo.png"
-                    alt="NC"
-                    className="h-6 w-auto object-contain"
-                  />
-                  <span className="text-sm font-black tracking-tight">Navegação</span>
-                </div>
-                <button onClick={() => setMobileMenuOpen(false)} className="h-8 w-8 rounded-full bg-muted/50 flex items-center justify-center">
-                  <X className="h-4 w-4" />
-                </button>
-              </div>
-              {/* Lista Vertical de Nav (Melhor Legibilidade e Scroll Fluído) */}
-              <nav className="p-4 flex flex-col gap-1.5 max-h-[60vh] overflow-y-auto scrollbar-thin">
-                {filteredNavItems.map((item) => {
-                  const isActive = path === item.to || (item.to !== "/dashboard" && path.startsWith(item.to));
-                  return (
-                    <Link
-                      key={item.to}
-                      to={item.to}
-                      onClick={() => setMobileMenuOpen(false)}
-                      className={`flex items-center gap-3.5 rounded-2xl px-4 py-3.5 text-[13px] font-bold transition-all ${
-                        isActive ? "bg-primary/10 text-primary border border-primary/20" : "bg-transparent text-foreground hover:bg-white/[0.03] border border-transparent"
-                      }`}
-                    >
-                      <div className={`h-8 w-8 rounded-full flex items-center justify-center shrink-0 ${isActive ? 'bg-primary/20' : 'bg-muted/30'}`}>
-                        <item.icon className="h-4 w-4" />
-                      </div>
-                      {item.label}
-                      <ChevronRight className={`h-4 w-4 ml-auto transition-transform ${isActive ? 'opacity-100 translate-x-1' : 'opacity-30'}`} />
-                    </Link>
-                  );
-                })}
-
-                {/* Acesso rápido a Automações e Configurações */}
-                <div className="my-2 border-t border-border/50" />
-                <Link
-                  to={"/automacoes" as any}
-                  onClick={() => setMobileMenuOpen(false)}
-                  className={`flex items-center gap-3.5 rounded-2xl px-4 py-3.5 text-[13px] font-bold transition-all ${
-                    path.startsWith("/automacoes")
-                      ? "bg-amber-500/10 text-amber-400 border border-amber-500/20"
-                      : "bg-transparent text-foreground hover:bg-white/[0.03] border border-transparent"
-                  }`}
-                >
-                  <div className={`h-8 w-8 rounded-full flex items-center justify-center shrink-0 ${path.startsWith("/automacoes") ? 'bg-amber-500/20' : 'bg-muted/30'}`}>
-                    <Zap className="h-4 w-4 text-amber-400" />
-                  </div>
-                  Automações
-                  <ChevronRight className="h-4 w-4 ml-auto opacity-30" />
-                </Link>
-                <Link
-                  to="/perfil"
-                  onClick={() => setMobileMenuOpen(false)}
-                  className={`flex items-center gap-3.5 rounded-2xl px-4 py-3.5 text-[13px] font-bold transition-all ${
-                    path.startsWith("/perfil")
-                      ? "bg-primary/10 text-primary border border-primary/20"
-                      : "bg-transparent text-foreground hover:bg-white/[0.03] border border-transparent"
-                  }`}
-                >
-                  <div className={`h-8 w-8 rounded-full flex items-center justify-center shrink-0 ${path.startsWith("/perfil") ? 'bg-primary/20' : 'bg-muted/30'}`}>
-                    <User className="h-4 w-4 text-primary" />
-                  </div>
-                  Meu Perfil
-                  <ChevronRight className="h-4 w-4 ml-auto opacity-30" />
-                </Link>
-                {canAccessConfig && (
-                  <Link
-                    to="/config"
-                    onClick={() => setMobileMenuOpen(false)}
-                    className={`flex items-center gap-3.5 rounded-2xl px-4 py-3.5 text-[13px] font-bold transition-all ${
-                      path.startsWith("/config")
-                        ? "bg-primary/10 text-primary border border-primary/20"
-                        : "bg-transparent text-foreground hover:bg-white/[0.03] border border-transparent"
-                    }`}
-                  >
-                    <div className={`h-8 w-8 rounded-full flex items-center justify-center shrink-0 ${path.startsWith("/config") ? 'bg-primary/20' : 'bg-muted/30'}`}>
-                      <Settings className="h-4 w-4 text-muted-foreground" />
-                    </div>
-                    Configurações
-                    <ChevronRight className="h-4 w-4 ml-auto opacity-30" />
-                  </Link>
-                )}
-              </nav>
-              {/* Perfil + Sair */}
-              <div className="px-4 pb-6 pt-1 border-t border-border/50 flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <UserAvatar
-                    src={profile?.avatar_url}
-                    name={profile?.full_name}
-                    email={user?.email}
-                    size="md"
-                    onlineStatus="online"
-                  />
-                  <div>
-                    <p className="text-sm font-bold leading-none">{profile?.full_name || user?.email?.split('@')[0]}</p>
-                    <p className="text-[10px] text-muted-foreground mt-0.5">{profile?.position || "NC Performance"}</p>
-                  </div>
-                </div>
-                <button onClick={handleSignOut} className="rounded-xl border border-border px-3 py-2 text-xs font-bold text-muted-foreground hover:text-destructive transition-colors">
-                  Sair
-                </button>
-              </div>
-            </motion.div>
-          </>
-        )}
-      </AnimatePresence>
-
-      {/* ═══════════════════════════════════════
-          MOBILE BOTTOM NAVIGATION BAR
-          5 ítens: Dashboard · Métricas · Alertas · Config · Mais
-          ═══════════════════════════════════════ */}
-      <nav className="lg:hidden fixed bottom-0 inset-x-0 z-40 border-t border-border bg-background/96 backdrop-blur-xl pb-safe-nav">
-        <div className="flex items-stretch justify-around px-1 pb-safe">
-          {(() => {
-            let mobileItems = [
-              { to: "/dashboard", icon: LayoutDashboard, label: "Home" },
-              { to: "/metricas", icon: LineChart, label: "Métricas" },
-            ];
-            if (activeModule === "social") {
-              mobileItems = [
-                { to: "/social", icon: Share2, label: "Social" },
-                { to: "/social-insights", icon: BarChart3, label: "Insights" },
-              ];
-            } else if (activeModule === "gestao") {
-              mobileItems = [
-                { to: "/clientes", icon: Store, label: "Clientes" },
-                { to: "/reunioes", icon: Users, label: "Reuniões" },
-              ];
-            }
-            return mobileItems.map((item) => {
+      <nav className="lg:hidden fixed bottom-0 inset-x-0 z-40 border-t border-border/80 bg-background/95 backdrop-blur-2xl pb-safe-nav shadow-[0_-8px_30px_rgba(0,0,0,0.22)]">
+        <div className="flex items-center justify-start sm:justify-around overflow-x-auto no-scrollbar px-2 py-1.5 gap-1 pb-safe">
+          {filteredNavItems.length > 1 ? (
+            filteredNavItems.map((item) => {
               const isActive = path === item.to || (item.to !== "/dashboard" && path.startsWith(item.to));
               return (
-                <Link key={item.to} to={item.to} className={`flex flex-col items-center gap-1 px-3 py-3 text-[10px] font-bold transition-colors ${isActive ? "text-primary" : "text-muted-foreground"}`}>
-                  <item.icon className={`h-5 w-5 ${isActive ? "text-primary" : ""}`} />
-                  {item.label}
-                  {isActive && <span className="absolute bottom-0 h-[2px] w-6 rounded-full bg-primary" />}
+                <Link
+                  key={item.to}
+                  to={item.to}
+                  className={`relative flex flex-col items-center justify-center gap-1 min-w-[70px] flex-1 px-2.5 py-2 rounded-xl text-[10px] font-bold whitespace-nowrap shrink-0 transition-all active:scale-95 ${
+                    isActive
+                      ? "bg-primary/12 text-primary border border-primary/25 shadow-glow-sm"
+                      : "text-muted-foreground hover:text-foreground hover:bg-muted/40 border border-transparent"
+                  }`}
+                >
+                  <item.icon className={`h-4 w-4 shrink-0 ${isActive ? "text-primary" : ""}`} />
+                  <span className="tracking-tight leading-none">{item.label}</span>
                 </Link>
               );
-            });
-          })()}
-          {/* Automações */}
-          {(() => {
-            const isActive = path.startsWith("/automacoes");
-            return (
-              <Link to={"/automacoes" as any} className={`relative flex flex-col items-center gap-1 px-3 py-3 text-[10px] font-bold transition-colors ${isActive ? "text-amber-400" : "text-muted-foreground"}`}>
-                <Zap className={`h-5 w-5 ${isActive ? "text-amber-400" : ""}`} />
-                Automações
-                {isActive && <span className="absolute bottom-0 h-[2px] w-6 rounded-full bg-amber-400" />}
-              </Link>
-            );
-          })()}
-          {/* Perfil */}
-          {(() => {
-            const isActive = path.startsWith("/perfil");
-            return (
-              <Link to="/perfil" className={`relative flex flex-col items-center gap-1 px-3 py-3 text-[10px] font-bold transition-colors ${isActive ? "text-primary" : "text-muted-foreground"}`}>
-                <User className={`h-5 w-5 ${isActive ? "text-primary" : ""}`} />
-                Perfil
-                {isActive && <span className="absolute bottom-0 h-[2px] w-6 rounded-full bg-primary" />}
-              </Link>
-            );
-          })()}
-          {/* Mais — abre menu completo */}
-          <button
-            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-            className="flex flex-col items-center gap-1 px-3 py-3 text-[10px] font-bold text-muted-foreground hover:text-foreground transition-colors"
-          >
-            <Menu className="h-5 w-5" />
-            Menu
-          </button>
+            })
+          ) : (
+            [
+              { key: "hub", label: "Hub Central", to: "/hub", icon: LayoutDashboard, show: true },
+              { key: "trafego", label: "Tráfego", to: "/dashboard", icon: LineChart, show: hasPageAccess("/dashboard") },
+              { key: "regras", label: "Regras", to: "/regras", icon: ShieldAlert, show: hasPageAccess("/regras") },
+              { key: "social", label: "Social", to: "/social", icon: Share2, show: hasPageAccess("/social") },
+              { key: "gestao", label: "Clientes", to: "/clientes", icon: Store, show: hasPageAccess("/clientes") },
+              { key: "funil", label: "Strategy Map", to: "/strategy-map", icon: Brain, show: hasPageAccess("/strategy-map") },
+              { key: "victoria", label: "Victoria AI", to: "/victoria", icon: Bot, show: hasPageAccess("/victoria") },
+            ]
+              .filter((m) => m.show)
+              .map((mod) => {
+                const isActive =
+                  (mod.key !== "hub" && activeModule === mod.key) ||
+                  path === mod.to ||
+                  (mod.to !== "/dashboard" && path.startsWith(mod.to));
+                return (
+                  <button
+                    key={mod.key}
+                    type="button"
+                    onClick={() => {
+                      if (mod.key === "hub") {
+                        setActiveModule("hub");
+                        localStorage.setItem("nc_active_module", "hub");
+                        return;
+                      }
+                      setActiveModule(mod.key as any);
+                      localStorage.setItem("nc_active_module", mod.key);
+                      nav({ to: mod.to as any });
+                    }}
+                    className={`relative flex flex-col items-center justify-center gap-1 min-w-[68px] flex-1 px-2.5 py-2 rounded-xl text-[10px] font-bold whitespace-nowrap shrink-0 transition-all active:scale-95 ${
+                      isActive
+                        ? "bg-primary/12 text-primary border border-primary/25 shadow-glow-sm"
+                        : "text-muted-foreground hover:text-foreground hover:bg-muted/40 border border-transparent"
+                    }`}
+                  >
+                    <mod.icon className={`h-4 w-4 shrink-0 ${isActive ? "text-primary" : ""}`} />
+                    <span className="tracking-tight leading-none">{mod.label}</span>
+                  </button>
+                );
+              })
+          )}
         </div>
       </nav>
 
       {/* ═══════════════════════════════════════
           MAIN CONTENT
           ═══════════════════════════════════════ */}
-      <main className="relative z-[1] flex flex-1 flex-col overflow-y-auto overscroll-none custom-scrollbar" style={{ WebkitOverflowScrolling: 'touch' }}>
+      <main className="relative z-[1] flex flex-1 flex-col overflow-y-auto overflow-x-hidden max-w-full overscroll-none custom-scrollbar" style={{ WebkitOverflowScrolling: 'touch' }}>
         {(() => {
           const isAuthorized = hasPageAccess(path);
           if (!isAuthorized) {
@@ -1580,8 +1438,17 @@ function Shell() {
           }
 
           const isFullScreenApp = path.startsWith('/strategy-map') || path.startsWith('/reunioes');
+          const isVictoriaPage = path.startsWith('/victoria');
           return (
-            <div className={isFullScreenApp ? "flex flex-1 flex-col w-full" : "mx-auto w-full px-2 py-4 pb-28 sm:p-4 md:pb-8 md:p-6 lg:p-8"}>
+            <div
+              className={
+                isFullScreenApp
+                  ? "flex flex-1 flex-col w-full max-w-full overflow-x-hidden"
+                  : isVictoriaPage
+                  ? "mx-auto w-full max-w-full px-0 py-0 pb-16 lg:pb-8 sm:p-0 md:p-6 lg:p-8 overflow-x-hidden"
+                  : "mx-auto w-full max-w-full px-2.5 py-3 pb-24 sm:p-4 md:pb-8 md:p-6 lg:p-8 overflow-x-hidden"
+              }
+            >
               <Outlet />
             </div>
           );

@@ -1102,13 +1102,24 @@ html.light {
   }
 
   /* ──────────────────────────────────────────
-     SAFE AREA iOS — bottom nav não cortado pela home bar
+     SAFE AREA iOS & PROTEÇÃO MOBILE (<= 1023px)
+     Zero impacto no Desktop (>= 1024px)
   ────────────────────────────────────────── */
   .pb-safe {
     padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
   }
   .pb-safe-nav {
     padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+}
+
+@media (max-width: 1023px) {
+  html,
+  body,
+  #root {
+    max-width: 100vw !important;
+    overflow-x: hidden !important;
+    overscroll-behavior-x: none;
   }
 }
 

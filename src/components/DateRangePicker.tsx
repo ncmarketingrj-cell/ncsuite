@@ -65,7 +65,18 @@ export function DateRangePicker({ startDate, endDate, onChange, className = "" }
   const getDropdownStyles = (): React.CSSProperties => {
     if (!containerRef.current) return { position: "fixed", top: 0, left: 0, visibility: "hidden" };
     const rect = containerRef.current.getBoundingClientRect();
-    const dropdownWidth = window.innerWidth < 768 ? 300 : 550;
+    if (window.innerWidth < 768) {
+      return {
+        position: "fixed",
+        top: `${Math.min(rect.bottom + 8, Math.max(68, window.innerHeight - 440))}px`,
+        left: "12px",
+        right: "12px",
+        width: "auto",
+        maxHeight: "calc(100dvh - 96px)",
+        overflowY: "auto",
+      };
+    }
+    const dropdownWidth = 550;
     const spaceOnRight = window.innerWidth - rect.left;
     const alignLeft = spaceOnRight >= dropdownWidth;
     return {
@@ -147,15 +158,15 @@ export function DateRangePicker({ startDate, endDate, onChange, className = "" }
             className="z-[9999] flex flex-col md:flex-row rounded-2xl border border-white/10 bg-background/95 p-4 shadow-2xl backdrop-blur-2xl gap-4 w-[300px] sm:w-[350px] md:w-[550px] max-w-[calc(100vw-2rem)]"
           >
             {/* Atalhos Rápidos */}
-            <div className="flex flex-col gap-1.5 border-b md:border-b-0 md:border-r border-white/5 pb-3 md:pb-0 md:pr-4 min-w-[130px]">
-              <p className="text-[9px] font-black text-muted-foreground uppercase tracking-widest mb-2 flex items-center gap-1">
+            <div className="flex flex-row md:flex-col gap-1.5 overflow-x-auto md:overflow-visible no-scrollbar border-b md:border-b-0 md:border-r border-white/5 pb-3 md:pb-0 md:pr-4 md:min-w-[130px]">
+              <p className="hidden md:flex text-[9px] font-black text-muted-foreground uppercase tracking-widest mb-2 items-center gap-1">
                 <Sparkles className="h-2.5 w-2.5 text-primary" /> Atalhos Rápidos
               </p>
               {PRESETS.map((preset) => (
                 <button
                   key={preset.label}
                   onClick={() => handlePresetClick(preset)}
-                  className="w-full text-left px-3 py-2 rounded-lg text-[10px] font-bold uppercase tracking-wider text-muted-foreground hover:bg-white/5 hover:text-primary transition-all duration-200"
+                  className="shrink-0 md:w-full text-left px-3 py-2 rounded-lg text-[10px] font-bold uppercase tracking-wider text-muted-foreground bg-white/[0.03] md:bg-transparent hover:bg-white/5 hover:text-primary transition-all duration-200 whitespace-nowrap"
                 >
                   {preset.label}
                 </button>

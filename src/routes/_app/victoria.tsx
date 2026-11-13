@@ -46,7 +46,9 @@ function VictoriaHubPage() {
   const [selectedImage, setSelectedImage] = useState<{ base64: string; mimeType: string } | null>(null);
   const [editingConversationId, setEditingConversationId] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState("");
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState<boolean>(() =>
+    typeof window !== "undefined" ? window.innerWidth >= 1024 : true
+  );
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
   const [editingMessageText, setEditingMessageText] = useState("");
 
@@ -608,58 +610,84 @@ function VictoriaHubPage() {
   ];
 
   return (
-    <div className="flex h-[calc(100vh-64px)] w-full overflow-hidden bg-background">
-      {/* 1. SIDEBAR DE CONVERSAS */}
+    <div className="relative flex h-[calc(100dvh-124px)] lg:h-[calc(100vh-64px)] w-full max-w-full overflow-hidden bg-background">
+      {/* 1. SIDEBAR DE CONVERSAS (Drawer no Mobile, Estático no Desktop lg+) */}
       <AnimatePresence initial={false}>
         {sidebarOpen && (
-          <motion.aside
-            initial={{ width: 0, opacity: 0 }}
-            animate={{ width: 280, opacity: 1 }}
-            exit={{ width: 0, opacity: 0 }}
-            className="flex flex-col h-full bg-card/40 border-r border-border/60 shrink-0 z-20 backdrop-blur-md"
-          >
-            {/* Cabeçalho do Sidebar */}
-            <div className="p-4 flex flex-col gap-3">
-              <button
-                onClick={() => {
-                  setIsVictoriaMindOpen(false);
-                  chat.setActiveConversationId(null);
-                }}
-                className="flex items-center justify-center gap-2 w-full py-2.5 px-4 rounded-xl bg-primary/10 border border-primary/20 text-primary hover:bg-primary/15 transition-all font-bold text-xs uppercase tracking-wider active:scale-[0.98]"
-              >
-                <Plus className="h-4 w-4" />
-                Nova Conversa
-              </button>
-
-              {/* Botão Unificado: Central Neural / Mente da Victoria AI */}
-              {canManageVictoriaMind && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setSidebarOpen(false)}
+              className="lg:hidden fixed inset-0 z-30 bg-black/60 backdrop-blur-xs"
+            />
+            <motion.aside
+              initial={{ width: 0, opacity: 0 }}
+              animate={{ width: 280, opacity: 1 }}
+              exit={{ width: 0, opacity: 0 }}
+              className="fixed inset-y-0 left-0 z-40 lg:static lg:z-20 flex flex-col h-full bg-card lg:bg-card/40 border-r border-border/60 shrink-0 shadow-2xl lg:shadow-none backdrop-blur-md"
+            >
+              {/* Cabeçalho do Sidebar */}
+              <div className="p-4 flex flex-col gap-3">
+                <div className="flex items-center justify-between lg:hidden pb-1 border-b border-border/40">
+                  <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">
+                    Histórico & Mente IA
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setSidebarOpen(false)}
+                    className="p-1 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/50"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
                 <button
-                  type="button"
                   onClick={() => {
-                    setIsVictoriaMindOpen(true);
+                    setIsVictoriaMindOpen(false);
                     chat.setActiveConversationId(null);
-                    if (chat.marketArticles.length === 0) {
-                      chat.fetchMarketIntel(false);
+                    if (typeof window !== "undefined" && window.innerWidth < 1024) {
+                      setSidebarOpen(false);
                     }
                   }}
-                  className={`flex items-center justify-between gap-2.5 w-full py-2.5 px-3 rounded-xl border transition-all font-bold text-xs uppercase tracking-wider active:scale-[0.98] ${
-                    isVictoriaMindOpen 
-                      ? "bg-gradient-to-r from-primary/20 via-primary/10 to-transparent border-primary/50 text-foreground shadow-glow-sm" 
-                      : "bg-input/20 border-border/50 text-muted-foreground hover:bg-white/[0.04] hover:text-foreground hover:border-primary/30"
-                  }`}
+                  className="flex items-center justify-center gap-2 w-full py-2.5 px-4 rounded-xl bg-primary/10 border border-primary/20 text-primary hover:bg-primary/15 transition-all font-bold text-xs uppercase tracking-wider active:scale-[0.98]"
                 >
-                  <div className="flex items-center gap-2 min-w-0">
-                    <Brain className="h-4 w-4 text-primary shrink-0 animate-pulse" />
-                    <span className="truncate">Mente da Victoria AI</span>
-                  </div>
-                  <div className="flex items-center gap-1.5 shrink-0">
-                    <span className="flex h-2 w-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.8)] animate-pulse" />
-                    <span className="text-[8px] font-black px-1.5 py-0.5 rounded bg-primary/20 text-primary border border-primary/30">
-                      GESTAO
-                    </span>
-                  </div>
+                  <Plus className="h-4 w-4" />
+                  Nova Conversa
                 </button>
-              )}
+
+                {/* Botão Unificado: Central Neural / Mente da Victoria AI */}
+                {canManageVictoriaMind && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsVictoriaMindOpen(true);
+                      chat.setActiveConversationId(null);
+                      if (chat.marketArticles.length === 0) {
+                        chat.fetchMarketIntel(false);
+                      }
+                      if (typeof window !== "undefined" && window.innerWidth < 1024) {
+                        setSidebarOpen(false);
+                      }
+                    }}
+                    className={`flex items-center justify-between gap-2.5 w-full py-2.5 px-3 rounded-xl border transition-all font-bold text-xs uppercase tracking-wider active:scale-[0.98] ${
+                      isVictoriaMindOpen 
+                        ? "bg-gradient-to-r from-primary/20 via-primary/10 to-transparent border-primary/50 text-foreground shadow-glow-sm" 
+                        : "bg-input/20 border-border/50 text-muted-foreground hover:bg-white/[0.04] hover:text-foreground hover:border-primary/30"
+                    }`}
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      <Brain className="h-4 w-4 text-primary shrink-0 animate-pulse" />
+                      <span className="truncate">Mente da Victoria AI</span>
+                    </div>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <span className="flex h-2 w-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.8)] animate-pulse" />
+                      <span className="text-[8px] font-black px-1.5 py-0.5 rounded bg-primary/20 text-primary border border-primary/30">
+                        GESTAO
+                      </span>
+                    </div>
+                  </button>
+                )}
 
               {/* Input de Busca */}
               <div className="relative flex items-center mt-1">
@@ -699,6 +727,9 @@ function VictoriaHubPage() {
                             if (!isEditing) {
                               setIsVictoriaMindOpen(false);
                               chat.setActiveConversationId(c.id);
+                              if (typeof window !== "undefined" && window.innerWidth < 1024) {
+                                setSidebarOpen(false);
+                              }
                             }
                           }}
                           onDoubleClick={() => startEditing(c)}
@@ -767,48 +798,51 @@ function VictoriaHubPage() {
               <span>NC Performance</span>
             </div>
           </motion.aside>
+        </>
         )}
       </AnimatePresence>
 
       {/* 2. ÁREA CENTRAL DO CONTEÚDO */}
-      <div className="flex-1 flex flex-col h-full bg-background relative z-10">
+      <div className="flex-1 min-w-0 flex flex-col h-full bg-background relative z-10 overflow-x-hidden">
         {/* Topo do Painel */}
-        <header className="px-6 py-3 border-b border-border/60 flex items-center justify-between shrink-0 bg-background/50 backdrop-blur-md">
-          <div className="flex items-center gap-3">
+        <header className="px-3 lg:px-6 py-2.5 lg:py-3 border-b border-border/60 flex items-center justify-between gap-2 shrink-0 bg-background/50 backdrop-blur-md">
+          <div className="flex items-center gap-2 lg:gap-3 min-w-0">
             <button
               onClick={() => setSidebarOpen(!sidebarOpen)}
-              className="p-2 -ml-2 rounded-xl hover:bg-white/5 active:scale-95 transition-all text-muted-foreground hover:text-foreground"
+              className="p-2 -ml-1 lg:-ml-2 rounded-xl hover:bg-white/5 active:scale-95 transition-all text-muted-foreground hover:text-foreground shrink-0"
               title={sidebarOpen ? "Ocultar painel" : "Mostrar painel"}
             >
               <ArrowLeft className={`h-4 w-4 transition-transform duration-300 ${sidebarOpen ? "" : "rotate-180"}`} />
             </button>
-            <div className="flex items-center gap-2.5">
-              <div className="h-8 w-8 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center shadow-glow-sm">
+            <div className="flex items-center gap-2 lg:gap-2.5 min-w-0">
+              <div className="h-8 w-8 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center shadow-glow-sm shrink-0">
                 <Bot className="h-4.5 w-4.5 text-primary" />
               </div>
-              <div>
-                <h2 className="text-xs font-black text-foreground uppercase tracking-tight">
+              <div className="min-w-0">
+                <h2 className="text-[11px] sm:text-xs font-black text-foreground uppercase tracking-tight truncate">
                   {isVictoriaMindOpen
                     ? "Central Neural — Mente & Conhecimento IA"
                     : "Victoria AI"}
                 </h2>
-                <p className="text-[9px] font-bold text-muted-foreground flex items-center gap-1 mt-0.5">
-                  <span className="h-1 w-1 rounded-full bg-green-500 animate-pulse" />
-                  {isVictoriaMindOpen
-                    ? "Inteligência Contínua, RAG e Parâmetros Neurais"
-                    : "Estrategista Digital e Mentora Sênior"}
+                <p className="text-[9px] font-bold text-muted-foreground flex items-center gap-1 mt-0.5 truncate">
+                  <span className="h-1 w-1 rounded-full bg-green-500 animate-pulse shrink-0" />
+                  <span className="truncate">
+                    {isVictoriaMindOpen
+                      ? "Inteligência Contínua, RAG e Parâmetros Neurais"
+                      : "Estrategista Digital e Mentora Sênior"}
+                  </span>
                 </p>
               </div>
             </div>
           </div>
 
           {/* Seletor de Conta de Anúncios */}
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 shrink-0">
             <label className="text-[9px] font-black uppercase tracking-wider text-muted-foreground hidden sm:inline">Foco da IA:</label>
             <select
               value={selectedAccountId}
               onChange={(e) => handleSelectAccount(e.target.value)}
-              className="bg-card border border-border/80 rounded-xl px-3 py-1.5 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary/30 focus:border-primary/30 transition-all font-medium min-w-[150px] max-w-[220px]"
+              className="bg-card border border-border/80 rounded-xl px-2.5 sm:px-3 py-1.5 text-[11px] sm:text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary/30 focus:border-primary/30 transition-all font-medium max-w-[145px] sm:min-w-[150px] sm:max-w-[220px]"
             >
               <option value="">-- Nenhuma Conta Focada --</option>
               {accounts.map(acc => (
@@ -929,22 +963,22 @@ function VictoriaHubPage() {
                   {/* CARDS DE DESTAQUE: Benchmark Regional & Custo Zero */}
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     {/* Card 1: Benchmark Regional RJ Ativo */}
-                    <div className="md:col-span-2 rounded-2xl border border-primary/25 bg-card/60 backdrop-blur-md p-5 shadow-lg relative overflow-hidden">
+                    <div className="md:col-span-2 rounded-2xl border border-primary/25 bg-card/60 backdrop-blur-md p-4 sm:p-5 shadow-lg relative overflow-hidden">
                       <div className="absolute top-0 right-0 w-32 h-32 bg-primary/10 rounded-full blur-2xl pointer-events-none" />
-                      <div className="flex items-start justify-between">
-                        <div>
+                      <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
+                        <div className="min-w-0">
                           <span className="text-[9px] font-black uppercase tracking-widest text-primary flex items-center gap-1.5">
-                            <Target className="h-3.5 w-3.5" /> Benchmark Regional Calibrado
+                            <Target className="h-3.5 w-3.5 shrink-0" /> Benchmark Regional Calibrado
                           </span>
-                          <h3 className="text-base font-black text-foreground mt-1">
+                          <h3 className="text-sm sm:text-base font-black text-foreground mt-1">
                             {chat.regionalBenchmark.region} — Meta de CPL WhatsApp: R$ {chat.regionalBenchmark.targetCpl.toFixed(2)}
                           </h3>
                           <p className="text-[11px] text-muted-foreground mt-1 max-w-xl">
                             Victoria analisa 100% das campanhas, Cockpit e Auditoria comparando os custos reais contra este teto de <strong className="text-foreground">R$ {chat.regionalBenchmark.targetCpl.toFixed(2)}</strong>.
                           </p>
                         </div>
-                        <div className="text-right shrink-0">
-                          <span className="text-2xl font-black text-primary">R$ {chat.regionalBenchmark.targetCpl.toFixed(2)}</span>
+                        <div className="text-left sm:text-right shrink-0 flex sm:block items-baseline gap-2 border-t sm:border-t-0 border-border/30 pt-2 sm:pt-0">
+                          <span className="text-xl sm:text-2xl font-black text-primary">R$ {chat.regionalBenchmark.targetCpl.toFixed(2)}</span>
                           <p className="text-[9px] font-bold text-muted-foreground uppercase">CPL Alvo WhatsApp</p>
                         </div>
                       </div>
@@ -1813,7 +1847,7 @@ function VictoriaHubPage() {
             <div
               ref={chatContainerRef}
               onScroll={handleChatScroll}
-              className="relative flex-1 overflow-y-auto px-6 py-6 flex flex-col gap-6 custom-scrollbar"
+              className="relative flex-1 overflow-y-auto overflow-x-hidden px-3 sm:px-6 py-4 sm:py-6 flex flex-col gap-5 sm:gap-6 custom-scrollbar"
             >
               {chat.messages.length === 0 ? (
                 /* TELA DE BOAS VINDAS (WELCOME SCREEN) */
@@ -2082,8 +2116,8 @@ function VictoriaHubPage() {
             </AnimatePresence>
 
             {/* Rodapé / Input de Chat */}
-            <footer className="p-4 border-t border-border/60 bg-background/50 backdrop-blur-md">
-              <div className="max-w-3xl mx-auto flex flex-col gap-3">
+            <footer className="p-2.5 sm:p-4 border-t border-border/60 bg-background/80 lg:bg-background/50 backdrop-blur-md shrink-0">
+              <div className="max-w-3xl mx-auto flex flex-col gap-2 sm:gap-3">
                 {/* Visualização de Imagem Selecionada */}
                 {selectedImage && (
                   <div className="relative inline-block self-start p-1.5 bg-card border border-border/80 rounded-2xl shadow-md">

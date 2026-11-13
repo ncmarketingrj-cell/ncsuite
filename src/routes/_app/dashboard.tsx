@@ -576,25 +576,27 @@ function Dashboard() {
   const selectedAccount = accounts.find(a => a.id === selectedAccountId);
 
   return (
-    <div className="w-full p-1 pb-20">
+    <div className="w-full max-w-full overflow-x-hidden lg:overflow-x-visible p-1 pb-20">
       
-      {/* â”€â”€â”€ STICKY HEADER AREA â”€â”€â”€ */}
-      <div className="sticky top-0 z-40 -mx-1 px-1 bg-background/95 backdrop-blur-xl border-b border-white/5 pb-3 pt-2 space-y-3 sm:space-y-5">
+      {/* ─── STICKY HEADER AREA ─── */}
+      <div className="sticky top-0 z-40 lg:-mx-1 lg:px-1 bg-background/95 backdrop-blur-xl border-b border-white/5 pb-3 pt-2 space-y-3 sm:space-y-5">
         
         {/* PageHeader Corporativo Padronizado com Health Score */}
-        <div className="flex items-start justify-between gap-2">
-          <PageHeader
-            eyebrow="Painel Geral"
-            title="Command Center"
-            description="Visão analítica de performance, tráfego e inteligência artificial da NC Suite."
-            compact
-          />
+        <div className="flex items-start justify-between gap-2 min-w-0">
+          <div className="min-w-0 flex-1">
+            <PageHeader
+              eyebrow="Painel Geral"
+              title="Command Center"
+              description="Visão analítica de performance, tráfego e inteligência artificial da NC Suite."
+              compact
+            />
+          </div>
           
           {/* Health Score Badge → Cockpit */}
           {performanceData && (
-            <div className="flex flex-col items-end pt-1 gap-1.5">
-              <Link to="/cockpit" className="group flex items-center gap-3 bg-card/40 border border-border/50 rounded-2xl p-2.5 pr-4 backdrop-blur-md transition-all hover:bg-card hover:border-primary/30 hover:shadow-[0_0_16px_rgba(var(--primary-rgb),0.08)]">
-                <div className="relative h-10 w-10 flex items-center justify-center">
+            <div className="flex flex-col items-end pt-0.5 sm:pt-1 gap-1 sm:gap-1.5 shrink-0">
+              <Link to="/cockpit" className="group flex items-center gap-2 sm:gap-3 bg-card/40 border border-border/50 rounded-2xl p-2 pr-2.5 sm:p-2.5 sm:pr-4 backdrop-blur-md transition-all hover:bg-card hover:border-primary/30 hover:shadow-[0_0_16px_rgba(var(--primary-rgb),0.08)]">
+                <div className="relative h-9 w-9 sm:h-10 sm:w-10 flex items-center justify-center shrink-0">
                   <svg className="w-full h-full -rotate-90 transform" viewBox="0 0 36 36">
                     <path
                       className="text-muted/20"
@@ -613,27 +615,27 @@ function Dashboard() {
                       d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
                     />
                   </svg>
-                  <span className="absolute text-[11px] font-black">{performanceData.healthScore}</span>
+                  <span className="absolute text-[10px] sm:text-[11px] font-black">{performanceData.healthScore}</span>
                 </div>
-                <div>
-                  <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Health Score</p>
-                  <p className={`text-xs font-bold mt-0.5 ${performanceData.healthScore >= 80 ? "text-success" : performanceData.healthScore >= 50 ? "text-primary" : "text-destructive"}`}>
+                <div className="min-w-0">
+                  <p className="text-[8px] sm:text-[9px] font-black uppercase tracking-wider sm:tracking-widest text-muted-foreground whitespace-nowrap">Health Score</p>
+                  <p className={`text-[11px] sm:text-xs font-bold mt-0.5 ${performanceData.healthScore >= 80 ? "text-success" : performanceData.healthScore >= 50 ? "text-primary" : "text-destructive"}`}>
                     {performanceData.healthScore >= 80 ? "Excelente" : performanceData.healthScore >= 50 ? "Atenção" : "Crítico"}
                   </p>
                 </div>
-                <GaugeCircle className="h-3.5 w-3.5 text-muted-foreground/40 group-hover:text-primary transition-colors ml-1" />
+                <GaugeCircle className="h-3.5 w-3.5 text-muted-foreground/40 group-hover:text-primary transition-colors ml-0.5 sm:ml-1 shrink-0" />
               </Link>
-              <span className="text-[8px] font-black uppercase tracking-[0.18em] text-muted-foreground/30 group-hover:text-primary/60 transition-colors pr-1">
+              <span className="text-[8px] font-black uppercase tracking-widest sm:tracking-[0.18em] text-muted-foreground/50 group-hover:text-primary/60 transition-colors pr-1 whitespace-nowrap">
                 → Cockpit
               </span>
             </div>
           )}
         </div>
 
-        {/* â”€â”€â”€ FILTER BAR ESTRUTURADA (UI PREMIUM) â”€â”€â”€ */}
+        {/* ─── FILTER BAR ESTRUTURADA (UI PREMIUM) ─── */}
         <div className="relative z-50 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between w-full bg-card/45 border border-border/60 rounded-2xl p-3 backdrop-blur-md">
           {/* Filtros à esquerda */}
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap lg:flex-nowrap items-center gap-2 min-w-0">
 
             {/* Dropdown fora do overflow para o menu absoluto não ser clippado */}
             <div ref={dropdownRef} className="relative shrink-0">
