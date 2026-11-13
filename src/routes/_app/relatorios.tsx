@@ -17,6 +17,11 @@ import { DateRangePicker } from "@/components/DateRangePicker";
 import { TemplateModal } from "@/components/TemplateModal";
 import { WhatsAppSendModal } from "@/components/WhatsAppSendModal";
 import { calibrateCampaignMetricsArray, calibrateAdMetricsArray, ensureDatabaseCalibrated } from "@/lib/metaConversionCalibrator";
+import {
+  fetchAllCustomReportTemplates,
+  renderReportTemplateText,
+  type ReportTemplateRecord,
+} from "@/lib/reportTemplateEngine";
 
 interface CampaignData {
   id: string;
@@ -323,11 +328,10 @@ function RelatoriosPage() {
     },
   });
 
-  const { data: templatesData, refetch: refetchTemplates } = useQuery<any[]>({
+  const { data: templatesData, refetch: refetchTemplates } = useQuery<ReportTemplateRecord[]>({
     queryKey: ["report-templates"],
     queryFn: async () => {
-      const { data } = await supabase.from("report_templates").select("*").order("created_at", { ascending: false });
-      return (data as any[]) ?? [];
+      return await fetchAllCustomReportTemplates();
     },
   });
 
@@ -804,77 +808,24 @@ function RelatoriosPage() {
 
     if (customTemplate) {
       setActivePdfLayout(customTemplate.pdf_layout || "classic");
-      let text = customTemplate.message_template;
+      const storeNameForCustom =
+        clientName && clientName !== "Consolidado"
+          ? clientName
+          : accounts.find(a => a.id === selectedAccountId)?.name || clientName || "Cliente";
 
-      // Substituições Globais
-      text = text.replace(/\{\{NOME_CLIENTE\}\}/g, clientName);
-      text = text.replace(/\{\{PERIODO\}\}/g, displayPeriod);
-      text = text.replace(/\{\{TOTAL_CAMPANHAS\}\}/g, selected.length.toString());
-      text = text.replace(/\{\{INVESTIMENTO\}\}/g, `R$ ${totalCost.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`);
-      text = text.replace(/\{\{TOTAL_RESULTADOS\}\}/g, totalResults.toLocaleString("pt-BR"));
-      text = text.replace(/\{\{CPA_MEDIO\}\}/g, `R$ ${avgCpa.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`);
-      text = text.replace(/\{\{AGENCIA\}\}/g, agencyName.toUpperCase());
-      
-      // Nova Tag de Plataforma Suportada
-      text = text.replace(/\{\{PLATAFORMAS\}\}/g, platformString);
+      const rendered = renderReportTemplateText({
+        templateText: customTemplate.message_template,
+        campaigns: selected,
+        clientName: storeNameForCustom,
+        periodText: displayPeriod,
+        agencyName,
+        reportLevel,
+        isVehicleContext,
+        salesRevenue,
+        salesOrders,
+      });
 
-      // Substituição de Lista de Campanhas/Conjuntos/Anúncios
-      if (text.includes("{{LISTA_CAMPANHAS}}")) {
-        let listText = "";
-        selected.forEach(c => {
-          const isClick = c.objective.includes("Cliques");
-          const isReach = c.objective.includes("Alcance") || c.objective.includes("Visualizações") || c.objective.includes("Engajamento");
-          
-          let resultValue = c.conversions;
-          if (isClick) resultValue = c.clicks;
-          if (isReach) resultValue = c.impressions;
-          
-          const costPerRes = resultValue > 0 ? (isReach ? (c.cost / resultValue) * 1000 : c.cost / resultValue) : 0;
-          const costLabel = isReach ? "CPM" : "Custo/Resultado";
-          const platIcon = c.platform === 'google' ? '🌐' : '🎯';
-          
-          listText += `${platIcon} *${c.name.toUpperCase()}*\n`;
-          if (reportLevel === "adset" && c.campaignName) {
-            listText += `   📁 Campanha: ${c.campaignName}\n`;
-          } else if (reportLevel === "ad") {
-            if (c.adSetName) listText += `   📦 Conjunto: ${c.adSetName}\n`;
-            if (c.campaignName) listText += `   📁 Campanha: ${c.campaignName}\n`;
-          }
-          listText += `   💵 Investimento: R$ ${c.cost.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n`;
-          listText += `   📈 Resultados: ${resultValue.toLocaleString("pt-BR")} ${isReach ? 'impr.' : ''}\n`;
-          listText += `   💲 ${costLabel}: R$ ${costPerRes.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n`;
-          if (c.reach > 0) listText += `   👥 Alcance: ${c.reach.toLocaleString("pt-BR")}\n`;
-          listText += `\n`;
-        });
-        text = text.replace(/\{\{LISTA_CAMPANHAS\}\}/g, listText);
-      }
-
-      // Substituição de Resultados por Tipo
-      if (text.includes("{{RESULTADOS_POR_TIPO}}")) {
-        let typeText = "";
-        groupedTypes.forEach((data, type) => {
-          const isClick = type.includes("Cliques");
-          const isReach = type.includes("Alcance") || type.includes("Visualizações") || type.includes("Engajamento");
-          
-          const cpl = data.results > 0 ? (isReach ? (data.cost / data.results) * 1000 : data.cost / data.results) : 0;
-          
-          let resultLabel = "Resultados";
-          if (isClick) resultLabel = "Visitas";
-          if (isReach) resultLabel = "Impressões";
-          
-          let costLabel = "CPL/CPA";
-          if (isClick) costLabel = "Custo por Visita";
-          if (isReach) costLabel = "CPM";
-
-          typeText += `*${type}*\n`;
-          typeText += `   💵 Investimento: R$ ${data.cost.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n`;
-          typeText += `   📈 ${resultLabel}: ${data.results.toLocaleString("pt-BR")}\n`;
-          typeText += `   💲 ${costLabel}: R$ ${cpl.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n\n`;
-        });
-        text = text.replace(/\{\{RESULTADOS_POR_TIPO\}\}/g, typeText.trim());
-      }
-
-      setGeneratedText(text);
+      setGeneratedText(rendered);
       return;
     }
 
@@ -2076,7 +2027,19 @@ function RelatoriosPage() {
                                 </h4>
                               </div>
                               <p className="text-[10px] text-muted-foreground font-mono">
-                                {report.periodText} • {report.reportMode === 'standard_auto' ? 'Padrão (Veículos)' : report.reportMode === 'ecommerce_sales' ? 'Vendas / Site' : report.reportMode === 'complete' ? 'Completo' : report.reportMode === 'objective' ? 'Por Objetivo' : 'Por Campanhas'}
+                                {report.periodText} • {
+                                  report.reportMode === 'standard_auto'
+                                    ? 'Padrão (Veículos)'
+                                    : report.reportMode === 'ecommerce_sales'
+                                    ? 'Vendas / Site'
+                                    : report.reportMode === 'complete'
+                                    ? 'Completo'
+                                    : report.reportMode === 'objective'
+                                    ? 'Por Objetivo'
+                                    : report.reportMode === 'campaigns'
+                                    ? 'Por Campanhas'
+                                    : (templatesData?.find(t => t.id === report.reportMode)?.name || 'Template Personalizado')
+                                }
                               </p>
                               <p className="text-[10px] text-muted-foreground font-mono mt-0.5">
                                 {report.campaigns.filter(c => c.selected).length} campanha(s) selecionada(s)
@@ -2113,6 +2076,15 @@ function RelatoriosPage() {
         onClose={() => setIsTemplateModalOpen(false)} 
         onSuccess={() => refetchTemplates()} 
         templates={templatesData || []}
+        activeReportMode={reportMode}
+        onSelectReportMode={(modeId) => setReportMode(modeId)}
+        liveCampaigns={campaignList}
+        liveClientName={clientName && clientName !== "Consolidado" ? clientName : (accounts.find(a => a.id === selectedAccountId)?.name || clientName || "")}
+        livePeriodText={source === "upload" ? periodText : `${format(dateRange.startDate, "dd/MM/yyyy")} a ${format(dateRange.endDate, "dd/MM/yyyy")}`}
+        liveReportLevel={reportLevel}
+        liveIsVehicleContext={isVehicleContext}
+        liveSalesRevenue={salesRevenue}
+        liveSalesOrders={salesOrders}
       />
 
       <WhatsAppSendModal
