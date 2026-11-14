@@ -9,7 +9,8 @@ import { supabase } from "@/integrations/supabase-external/client";
 import { ensureDatabaseCalibrated } from "@/lib/metaConversionCalibrator";
 import { fetchLatestCommittedSnapshot, invalidateMetaSnapshotConsumers } from "@/lib/metaSnapshotCache";
 
-const REALTIME_SYNC_INTERVAL_MS = 3 * 60 * 1000; // 3 minutos rigorosos em tempo real
+const REALTIME_SYNC_INTERVAL_MS = 5 * 60 * 1000; // 5 minutos alinhado ao pg_cron para evitar rate limit na Meta API
+const DB_FRESH_COOLDOWN_MS = 180 * 1000; // Se o backend/outra aba ja sincronizou ha < 3min, evita tempestade de chamadas Meta
 const STALE_SYNC_LOCK_MS = 120 * 1000; // Libera lock preso em localStorage após 120s
 const INVOKE_TIMEOUT_MS = 90 * 1000; // Timeout defensivo por Edge Function
 const STORAGE_REALTIME_KEY = "nc_last_realtime_sync";
@@ -91,7 +92,7 @@ export function useAutoSync() {
     dispatchSyncStatus({ isSyncing: true, startedAt: new Date().toISOString() });
 
     try {
-      // ── SYNC DE 3 MINUTOS: Ontem + Hoje (D-1 e D0), TODOS os níveis ─────
+      // ── SYNC INCREMENTAL D-1 + D0 COM TRAVA DE COOLDOWN NO BANCO ─────
       const today = new Date();
       const yesterday = new Date(today.getTime() - 24 * 60 * 60 * 1000);
       const timeRange = {
@@ -99,17 +100,66 @@ export function useAutoSync() {
         until: getLocalDateString(today)
       };
 
-      console.log(`[AUTO-SYNC] ⚡ Iniciando Sync Unificado 3min [${triggeredBy}]: ${timeRange.since} → ${timeRange.until}`);
+      if (triggeredBy === "auto") {
+        const { data: recentSync } = await (supabase as any)
+          .from("sync_history")
+          .select("id, status, started_at, completed_at")
+          .in("status", ["running", "success", "partial_success"])
+          .order("started_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
 
-      // Executa todos os sincronizadores oficiais em paralelo com timeout defensivo
+        if (recentSync) {
+          const startedMs = recentSync.started_at ? new Date(recentSync.started_at).getTime() : 0;
+          const completedMs = recentSync.completed_at ? new Date(recentSync.completed_at).getTime() : 0;
+          const nowMs = Date.now();
+          const isRunningFresh = recentSync.status === "running" && startedMs > 0 && nowMs - startedMs < 4 * 60 * 1000;
+          const isCompletedFresh =
+            (recentSync.status === "success" || recentSync.status === "partial_success") &&
+            completedMs > 0 &&
+            nowMs - completedMs < DB_FRESH_COOLDOWN_MS;
+
+          if (isRunningFresh || isCompletedFresh) {
+            const confirmedSnapshot = await fetchLatestCommittedSnapshot({ fallbackSnapshotId: recentSync.id });
+            const ts = confirmedSnapshot.committedAt || recentSync.completed_at || recentSync.started_at || new Date().toISOString();
+            localStorage.setItem(STORAGE_REALTIME_KEY, ts);
+            dispatchSyncStatus({
+              isSyncing: false,
+              startedAt: null,
+              lastSync: ts,
+              nextSync: new Date(nowMs + REALTIME_SYNC_INTERVAL_MS).toISOString(),
+              lastResult: recentSync.status === "partial_success" ? "partial" : "success",
+            });
+            await invalidateMetaSnapshotConsumers({
+              queryClient: qc,
+              accountId: "all",
+              dateFrom: timeRange.since,
+              dateTo: timeRange.until,
+              snapshotId: confirmedSnapshot.snapshotId,
+              committedAt: confirmedSnapshot.committedAt,
+            });
+            return;
+          }
+        }
+      }
+
+      console.log(`[AUTO-SYNC] ⚡ Iniciando Sync Unificado [${triggeredBy}]: ${timeRange.since} → ${timeRange.until}`);
+
+      // Executa sincronizadores oficiais em modo incremental para evitar sobrecarga de rate limit Meta
       const syncResults = await Promise.allSettled([
         withTimeout(
-          supabase.functions.invoke("sync-meta-ads", { body: { triggered_by: "auto", time_range: timeRange } }),
+          supabase.functions.invoke("sync-meta-ads", {
+            body: {
+              triggered_by: triggeredBy,
+              sync_mode: triggeredBy === "manual" ? "full" : "incremental",
+              time_range: timeRange,
+            },
+          }),
           INVOKE_TIMEOUT_MS,
           "sync-meta-ads"
         ),
         withTimeout(
-          supabase.functions.invoke("sync-google-ads", { body: { triggered_by: "auto", time_range: timeRange } }),
+          supabase.functions.invoke("sync-google-ads", { body: { triggered_by: triggeredBy, time_range: timeRange } }),
           INVOKE_TIMEOUT_MS,
           "sync-google-ads"
         ),
@@ -118,11 +168,15 @@ export function useAutoSync() {
           INVOKE_TIMEOUT_MS,
           "get-meta-billing"
         ),
-        withTimeout(
-          supabase.functions.invoke("sync-social-media", { body: { action: "sync-metrics" } }),
-          INVOKE_TIMEOUT_MS,
-          "sync-social-media"
-        )
+        ...(triggeredBy === "manual"
+          ? [
+              withTimeout(
+                supabase.functions.invoke("sync-social-media", { body: { action: "sync-metrics" } }),
+                INVOKE_TIMEOUT_MS,
+                "sync-social-media"
+              ),
+            ]
+          : []),
       ]);
 
       // Evita sobrescrever estado mais novo em caso de resposta atrasada

@@ -11,7 +11,7 @@ import {
   type MetaPaginatedResult,
 } from "../_shared/metaCore.ts"
 
-const SYNC_VERSION = "2026-11-14-integral-v2"
+const SYNC_VERSION = "2026-11-14-integral-v3"
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -63,13 +63,14 @@ async function safePaginatedFetch(
 ): Promise<MetaPaginatedResult<any>> {
   try {
     const res = await metaFetchPaginatedWithStatus<any>(path, token, params, {
-      maxRetries: 4,
-      baseDelayMs: 600,
-      maxDelayMs: 10000,
+      maxRetries: 2,
+      baseDelayMs: 500,
+      maxDelayMs: 5000,
+      timeoutMs: 18000,
       maxPages,
     })
     if (!res.ok || res.truncated) {
-      console.warn(`[SYNC] Fetch parcial/erro em ${label} (${path}): ok=${res.ok}, truncated=${res.truncated}, error=${res.error}`)
+      console.warn(`[SYNC] Fetch parcial/erro em ${label} (${path}): ok=${res.ok}, truncated=${res.truncated}, kind=${res.errorKind}, error=${res.error}`)
     }
     return res
   } catch (e: any) {
@@ -354,6 +355,8 @@ serve(async (req) => {
     }
     let targetAccountId: string | null = null;
     let triggeredBy = "auto"
+    let syncMode: "auto" | "incremental" | "full" = "auto"
+    let includeBreakdownsOverride: boolean | null = null
     let action = "sync"
     let togglePayload: { external_id: string; status: string } | null = null
     let budgetPayload: { external_id: string; budget: number } | null = null
@@ -383,10 +386,18 @@ serve(async (req) => {
         targetAccountId = body.account_id;
       }
       if (body.triggered_by) triggeredBy = body.triggered_by
+      if (body.sync_mode === "incremental" || body.sync_mode === "full") syncMode = body.sync_mode
+      if (typeof body.include_breakdowns === "boolean") includeBreakdownsOverride = body.include_breakdowns
       if (body.action === "audit") action = "audit"
     } catch (_) {
       console.log(`[SYNC ${syncId}] Body vazio — usando janela padrão D0+D-1 (${yesterdayStr} → ${todayStr})`)
     }
+
+    const utcMinute = new Date().getUTCMinutes()
+    const shouldFetchBreakdowns =
+      includeBreakdownsOverride !== null
+        ? includeBreakdownsOverride
+        : (syncMode === "full" || triggeredBy === "manual" || Boolean(targetAccountId) || utcMinute < 6)
 
     // 2. Buscar TODAS as configurações com token
     const { data: allConfigs, error: configErr } = await supabase
@@ -550,19 +561,59 @@ serve(async (req) => {
       })
     }
 
-    // 3. Registrar início do sync no histórico (limpa eventuais locks zumbis >5m)
+    // 3. Registrar início do sync no histórico com trava de concorrência/cooldown (limpa locks zumbis >4m)
     try {
-      const staleCutoffIso = new Date(Date.now() - 5 * 60 * 1000).toISOString()
+      const staleCutoffIso = new Date(Date.now() - 4 * 60 * 1000).toISOString()
       await supabase
         .from("sync_history")
         .update({
           status: "error",
           completed_at: new Date().toISOString(),
-          error_message: "Execução anterior interrompida por timeout (>5m)",
+          error_message: "Execução anterior interrompida por timeout (>4m)",
         })
         .eq("status", "running")
         .lt("started_at", staleCutoffIso)
     } catch (_) {}
+
+    if (triggeredBy !== "manual" && !targetAccountId) {
+      const { data: activeOrRecent } = await supabase
+        .from("sync_history")
+        .select("id, status, started_at, completed_at, triggered_by")
+        .in("status", ["running", "success", "partial_success"])
+        .order("started_at", { ascending: false })
+        .limit(1)
+        .maybeSingle()
+
+      if (activeOrRecent) {
+        const startedMs = activeOrRecent.started_at ? new Date(activeOrRecent.started_at).getTime() : 0
+        const completedMs = activeOrRecent.completed_at ? new Date(activeOrRecent.completed_at).getTime() : 0
+        const nowMs = Date.now()
+        if (activeOrRecent.status === "running" && startedMs > 0 && nowMs - startedMs < 4 * 60 * 1000) {
+          console.log(`[SYNC ${syncId}] Pulando (${triggeredBy}): já existe sync em andamento (${activeOrRecent.id})`)
+          return new Response(JSON.stringify({
+            sync_id: syncId,
+            sync_version: SYNC_VERSION,
+            status: "skipped_active_sync",
+            skipped: true,
+            active_sync_id: activeOrRecent.id,
+          }), { headers: { ...corsHeaders, "Content-Type": "application/json" } })
+        }
+        if (
+          (activeOrRecent.status === "success" || activeOrRecent.status === "partial_success") &&
+          completedMs > 0 &&
+          nowMs - completedMs < 90 * 1000
+        ) {
+          console.log(`[SYNC ${syncId}] Pulando (${triggeredBy}): sync recente concluído há ${Math.round((nowMs - completedMs) / 1000)}s`)
+          return new Response(JSON.stringify({
+            sync_id: syncId,
+            sync_version: SYNC_VERSION,
+            status: "skipped_recent_cooldown",
+            skipped: true,
+            recent_sync_id: activeOrRecent.id,
+          }), { headers: { ...corsHeaders, "Content-Type": "application/json" } })
+        }
+      }
+    }
 
     const { data: syncRecord } = await supabase.from("sync_history").insert({
       user_id: userId,
@@ -572,14 +623,29 @@ serve(async (req) => {
 
     syncHistoryId = syncRecord?.id || null
 
-    // 4. Listar contas autorizadas com controle explícito de completude (nunca purgar se parcial!)
+    // Carregar clientes ativos para vínculo de client_id e descoberta direta de contas compartilhadas
+    const { data: activeClientsData } = await supabase
+      .from("clients")
+      .select("id, name, meta_ad_account_id, status, user_id")
+    const clientByAccountId = new Map<string, string>()
+    const activeClientAccountIds = new Set<string>()
+    for (const cl of activeClientsData || []) {
+      if (cl.meta_ad_account_id && String(cl.meta_ad_account_id).startsWith("act_")) {
+        clientByAccountId.set(String(cl.meta_ad_account_id), String(cl.id))
+        if (String(cl.status || "ativo").toLowerCase() === "ativo") {
+          activeClientAccountIds.add(String(cl.meta_ad_account_id))
+        }
+      }
+    }
+
+    // 4. Listar contas autorizadas com controle explícito de completude (nunca purgar se parcial ou vinculada a cliente ativo!)
     const configByUser = new Map(orderedConfigs.map((c: any) => [c.user_id, c.access_token]))
     const accountEntries: { acc: any; token: string; userId: string }[] = []
     const seenAccounts = new Set<string>()
     const partialFailures: any[] = []
     let allAccountListingsComplete = true
 
-    console.log(`[SYNC ${syncId}] Buscando lista oficial de contas na Meta API...`)
+    console.log(`[SYNC ${syncId}] Buscando lista oficial de contas na Meta API (shouldFetchBreakdowns=${shouldFetchBreakdowns})...`)
     for (const cfg of orderedConfigs) {
       const accountsRes = await fetchAdAccountsWithStatus(cfg.access_token)
       if (!accountsRes.ok || accountsRes.truncated) {
@@ -598,11 +664,36 @@ serve(async (req) => {
       }
     }
 
-    // Somente purga contas órfãs quando TODAS as listagens de token foram 100% íntegras (sem erros ou truncamentos)
+    // Verificar contas de clientes ativos que não apareceram em /me/adaccounts (lookup direto na Meta API)
+    for (const cl of activeClientsData || []) {
+      const actId = cl.meta_ad_account_id
+      if (!actId || !String(actId).startsWith("act_") || seenAccounts.has(actId)) continue
+      if (String(cl.status || "ativo").toLowerCase() !== "ativo") continue
+      const probeToken = configByUser.get(cl.user_id) || token
+      if (!probeToken) continue
+      const probeUrl = `${META_API_BASE}/${actId}?fields=id,name,currency,account_status,disable_reason,timezone_name&access_token=${encodeURIComponent(probeToken)}`
+      const probeRes = await metaFetchJsonWithRetry(probeUrl, { maxRetries: 1, timeoutMs: 10000 })
+      if (probeRes.ok && probeRes.data?.id) {
+        seenAccounts.add(probeRes.data.id)
+        accountEntries.push({ acc: probeRes.data, token: probeToken, userId: cl.user_id || userId })
+      } else {
+        partialFailures.push({
+          scope: "client_account_access",
+          account_id: actId,
+          account_name: cl.name,
+          error: probeRes.error || "Conta ativa de cliente não visível no token atual",
+          errorKind: probeRes.errorKind || "permission_denied",
+        })
+      }
+    }
+
+    // Somente purga contas órfãs quando TODAS as listagens de token foram 100% íntegras E nunca remove conta vinculada a cliente ativo
     if (allAccountListingsComplete && accountEntries.length > 0 && !targetAccountId) {
       const activeIds = new Set(accountEntries.map(e => e.acc.id))
       const { data: dbAccounts } = await supabase.from("ad_accounts").select("id")
-      const obsoleteIds = (dbAccounts || []).map((a: any) => a.id).filter((id: string) => !activeIds.has(id))
+      const obsoleteIds = (dbAccounts || [])
+        .map((a: any) => a.id)
+        .filter((id: string) => !activeIds.has(id) && !activeClientAccountIds.has(id))
 
       if (obsoleteIds.length > 0) {
         console.log(`[SYNC ${syncId}] Purgando ${obsoleteIds.length} conta(s) órfã(s): ${obsoleteIds.join(", ")}`)
@@ -690,36 +781,76 @@ serve(async (req) => {
     let totalMetrics = 0
     let totalDemographics = 0
     let totalCampaigns = 0
+    let consecutiveRateLimitAccounts = 0
 
-    for (const { acc, token: accToken, userId: accUserId } of entriesToSync) {
+    for (let idx = 0; idx < entriesToSync.length; idx++) {
+      const { acc, token: accToken, userId: accUserId } = entriesToSync[idx]
+      if (consecutiveRateLimitAccounts >= 3) {
+        for (let rIdx = idx; rIdx < entriesToSync.length; rIdx++) {
+          const rem = entriesToSync[rIdx].acc
+          partialFailures.push({
+            account_id: rem.id,
+            step: "circuit_breaker",
+            errorKind: "rate_limit",
+            error: "Sincronização pausada pelo circuit breaker após múltiplos rate limits seguidos da Meta",
+          })
+          coverageByAccount[rem.id] = {
+            skipped_by_rate_limit: true,
+            partial_errors: ["rate_limit_circuit_breaker"],
+          }
+        }
+        break
+      }
       try {
-        console.log(`[SYNC] Coletando conta ${acc.id} (${acc.name})...`)
+        console.log(`[SYNC] Coletando conta ${acc.id} (${acc.name}) [breakdowns=${shouldFetchBreakdowns}]...`)
 
-        const [
-          campaignsRes,
-          insightsRes,
-          breakDownsData,
-          adsetInsightsRes,
-          adInsightsRes,
-          adsetsRes,
-          adsRes,
-          placementRes,
-          deviceRes,
-          accountDailyRes,
-          accountPeriodRes,
-        ] = await Promise.all([
+        // Wave 1: metadados principais + insights diarios de campanha
+        const [campaignsRes, insightsRes, adsetsRes, adsRes] = await Promise.all([
           fetchCampaignsWithBudgets(acc.id, accToken),
           fetchCampaignInsights(acc.id, accToken, timeParams),
-          fetchDemographicBreakdowns(acc.id, accToken, timeParams),
-          fetchAdSetInsights(acc.id, accToken, timeParams),
-          fetchAdInsights(acc.id, accToken, timeParams),
           fetchAdSetsWithStatus(acc.id, accToken),
           fetchAdsWithStatus(acc.id, accToken),
-          fetchPlacementBreakdowns(acc.id, accToken, timeParams),
-          fetchDeviceBreakdowns(acc.id, accToken, timeParams),
-          fetchAccountInsightsDaily(acc.id, accToken, timeParams),
-          fetchAccountInsightsPeriod(acc.id, accToken, timeParams),
         ])
+
+        const wave1RateLimited = [campaignsRes, insightsRes, adsetsRes, adsRes].every(
+          (r) => !r.ok && r.errorKind === "rate_limit"
+        )
+
+        const emptyOk = <T = any>(): MetaPaginatedResult<T> => ({
+          ok: true, data: [], pagesFetched: 0, truncated: false, statusCode: 200,
+          attempts: 0, error: null, errorCode: null, errorKind: "none", rateLimitUsagePct: null,
+        })
+
+        let adsetInsightsRes: MetaPaginatedResult<any> = emptyOk()
+        let adInsightsRes: MetaPaginatedResult<any> = emptyOk()
+        let accountDailyRes: MetaPaginatedResult<any> = emptyOk()
+        let accountPeriodRes: MetaPaginatedResult<any> = emptyOk()
+        let breakDownsData: { demographics: any[]; hourly: any[]; region: any[]; failures: string[] } = {
+          demographics: [], hourly: [], region: [], failures: [],
+        }
+        let placementRes: MetaPaginatedResult<any> = emptyOk()
+        let deviceRes: MetaPaginatedResult<any> = emptyOk()
+
+        if (wave1RateLimited) {
+          consecutiveRateLimitAccounts++
+        } else {
+          consecutiveRateLimitAccounts = 0
+          // Wave 2: adset/ad insights + metricas de conta (alcance deduplicado)
+          ;[adsetInsightsRes, adInsightsRes, accountDailyRes, accountPeriodRes] = await Promise.all([
+            fetchAdSetInsights(acc.id, accToken, timeParams),
+            fetchAdInsights(acc.id, accToken, timeParams),
+            fetchAccountInsightsDaily(acc.id, accToken, timeParams),
+            fetchAccountInsightsPeriod(acc.id, accToken, timeParams),
+          ])
+
+          if (shouldFetchBreakdowns) {
+            ;[breakDownsData, placementRes, deviceRes] = await Promise.all([
+              fetchDemographicBreakdowns(acc.id, accToken, timeParams),
+              fetchPlacementBreakdowns(acc.id, accToken, timeParams),
+              fetchDeviceBreakdowns(acc.id, accToken, timeParams),
+            ])
+          }
+        }
 
         const stepFailures: string[] = []
         const trackRes = (name: string, r: MetaPaginatedResult<any>) => {
@@ -741,11 +872,13 @@ serve(async (req) => {
         trackRes("ad_insights", adInsightsRes)
         trackRes("adsets", adsetsRes)
         trackRes("ads", adsRes)
-        trackRes("placement_breakdowns", placementRes)
-        trackRes("device_breakdowns", deviceRes)
+        if (shouldFetchBreakdowns) {
+          trackRes("placement_breakdowns", placementRes)
+          trackRes("device_breakdowns", deviceRes)
+        }
         trackRes("account_daily_insights", accountDailyRes)
         trackRes("account_period_insights", accountPeriodRes)
-        if (breakDownsData.failures.length > 0) {
+        if (shouldFetchBreakdowns && breakDownsData.failures.length > 0) {
           stepFailures.push(`breakdowns: ${breakDownsData.failures.join(", ")}`)
           partialFailures.push({ account_id: acc.id, step: "breakdowns", errors: breakDownsData.failures })
         }
@@ -939,11 +1072,15 @@ serve(async (req) => {
 
       let syncedCamps: any[] = []
       if (campaignMap.size > 0) {
+        const linkedClientId = clientByAccountId.get(accountId) || null
+        const campPayload = Array.from(campaignMap.values()).map((c: any) =>
+          linkedClientId && !c.client_id ? { ...c, client_id: linkedClientId } : c
+        )
         const campUpsert = await safeUpsertWithExtendedColumns(
           "campaigns",
-          Array.from(campaignMap.values()),
+          campPayload,
           "external_id",
-          ["configured_status", "buying_type", "bid_strategy", "budget_remaining", "spend_cap", "start_time", "stop_time", "special_ad_categories", "meta_synced_at"],
+          ["client_id", "configured_status", "buying_type", "bid_strategy", "budget_remaining", "spend_cap", "start_time", "stop_time", "special_ad_categories", "meta_synced_at"],
           "id, external_id"
         )
         if (campUpsert.error) {

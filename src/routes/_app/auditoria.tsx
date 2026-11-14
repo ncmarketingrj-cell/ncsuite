@@ -22,6 +22,7 @@ import {
   computeUnitCost,
   evaluateCampaignHealth,
   formatCivilDateBR,
+  hasEntityDelivery,
   normalizeCampaignItem,
   resolveTargetPrecedence,
 } from "@/lib/metricsDomain";
@@ -213,20 +214,25 @@ function AuditoriaHub() {
       totalSpend += Number(m.cost || 0);
       totalImpressions += Number(m.impressions || 0);
       totalReach += Number(m.reach || 0);
-      totalClicks += Number(m.clicks || 0);
+      const linkClk = Number(m.inline_link_clicks !== undefined && m.inline_link_clicks !== null ? m.inline_link_clicks : m.clicks || 0);
+      totalClicks += linkClk;
 
       const camp = campMap.get(m.campaign_id);
+      const adSetOptGoal = Array.isArray(camp?.ad_sets)
+        ? camp.ad_sets.find((s: any) => s?.optimization_goal)?.optimization_goal
+        : undefined;
       const cls = classifyMetaEvent({
         campaignName: camp?.name || "",
         resultType: m.result_type || "",
+        optimizationGoal: m.optimization_goal || adSetOptGoal,
+        resultsIndicator: m.result_indicator || undefined,
         rawObjective: camp?.objective || "",
         isVehicleContext: true,
       });
 
       if (cls.isConversionGoal) {
         const rawConv = Number(m.conversions || 0);
-        const clicks = Number(m.clicks || 0);
-        const validConv = rawConv > 1000 && rawConv > clicks * 2 ? Math.min(rawConv, clicks) : rawConv;
+        const validConv = rawConv > 1000 && rawConv > linkClk * 2 ? Math.min(rawConv, linkClk) : rawConv;
         totalConversions += validConv;
       }
     });
@@ -278,14 +284,22 @@ function AuditoriaHub() {
 
       const spends = campMetrics.map(m => Number(m.cost || 0));
       const imps = campMetrics.map(m => Number(m.impressions || 0));
-      const clicks = campMetrics.map(m => Number(m.clicks || 0));
+      const clicks = campMetrics.map(m => Number(m.inline_link_clicks !== undefined && m.inline_link_clicks !== null ? m.inline_link_clicks : m.clicks || 0));
       const reaches = campMetrics.map(m => Number(m.reach || 0));
+      const purchaseVals = campMetrics.map(m => Number(m.purchase_value || 0));
       const firstRt = campMetrics.find(m => m.result_type)?.result_type || "";
+      const adSetOptGoal = Array.isArray(c.ad_sets)
+        ? c.ad_sets.find((s: any) => s?.optimization_goal)?.optimization_goal
+        : undefined;
+      const firstOptGoal = campMetrics.find(m => m.optimization_goal)?.optimization_goal || adSetOptGoal || "";
+      const firstResInd = campMetrics.find(m => m.result_indicator)?.result_indicator || "";
 
       const classification = classifyCampaignType(c.name || "", firstRt, c.objective || "");
       const metaCls = classifyMetaEvent({
         campaignName: c.name || "",
         resultType: firstRt,
+        optimizationGoal: firstOptGoal,
+        resultsIndicator: firstResInd,
         rawObjective: c.objective || "",
         isVehicleContext: true,
       });
@@ -293,8 +307,8 @@ function AuditoriaHub() {
       const convs = campMetrics.map(m => {
         const rawConv = Number(m.conversions || 0);
         if (metaCls.category === "REACH") return rawConv;
-        if (!classification.isLead) return 0;
-        const clk = Number(m.clicks || 0);
+        if (!metaCls.isConversionGoal && !classification.isLead) return 0;
+        const clk = Number(m.inline_link_clicks !== undefined && m.inline_link_clicks !== null ? m.inline_link_clicks : m.clicks || 0);
         return rawConv > 1000 && rawConv > clk * 2 ? Math.min(rawConv, clk) : rawConv;
       });
 
@@ -303,12 +317,13 @@ function AuditoriaHub() {
       const tClicks = clicks.reduce((a, b) => a + b, 0);
       const tReach = reaches.reduce((a, b) => a + b, 0);
       const tConvs = convs.reduce((a, b) => a + b, 0);
+      const tPurchaseVal = purchaseVals.reduce((a, b) => a + b, 0);
 
-      if (tSpend === 0 && tClicks === 0) return;
+      if (!hasEntityDelivery({ cost: tSpend, impressions: tImps, reach: tReach, conversions: tConvs, purchaseValue: tPurchaseVal }) && tClicks === 0) return;
 
       const avgCpm = tImps > 0 ? (tSpend / tImps) * 1000 : 0;
       const avgCtr = tImps > 0 ? (tClicks / tImps) * 100 : 0;
-      const avgCvr = classification.isLead && tClicks > 0 ? (tConvs / tClicks) * 100 : 0;
+      const avgCvr = (metaCls.isConversionGoal || classification.isLead) && tClicks > 0 ? (tConvs / tClicks) * 100 : 0;
       const cpa = computeUnitCost(tSpend, metaCls.category === "REACH" ? (tReach > 0 ? tReach : tConvs) : tConvs, metaCls.category) ?? 0;
 
       const normalized = normalizeCampaignItem({
@@ -316,11 +331,14 @@ function AuditoriaHub() {
         name: c.name,
         cost: tSpend,
         conversions: tConvs,
+        purchaseValue: tPurchaseVal,
         clicks: tClicks,
         impressions: tImps,
         reach: tReach,
         rawObjective: c.objective || "",
+        optimizationGoal: firstOptGoal || undefined,
         resultType: firstRt,
+        resultsIndicator: firstResInd || undefined,
         isVehicleContext: true,
       });
       const diag = evaluateCampaignHealth({
@@ -538,37 +556,48 @@ function AuditoriaHub() {
     const reqToken = loadGuardRef.current.next();
     setLoading(true);
     try {
-      // 1. Carregar campanhas com base na conta selecionada incluindo objective
-      let campQ = (supabase as any).from("campaigns").select("id, name, status, budget, platform, ad_account_id, objective");
+      // 1. Carregar campanhas com base na conta selecionada incluindo objective e optimization_goal dos conjuntos
+      let campQ = (supabase as any).from("campaigns").select("id, name, status, budget, platform, ad_account_id, objective, ad_sets(optimization_goal)");
       if (selectedAccountId !== "all") {
         campQ = campQ.eq("ad_account_id", selectedAccountId);
       }
-      const { data: campaignsList } = await campQ;
+      let { data: campaignsList, error: campErr } = await campQ;
+      if (campErr) {
+        let fbCampQ = (supabase as any).from("campaigns").select("id, name, status, budget, platform, ad_account_id, objective");
+        if (selectedAccountId !== "all") fbCampQ = fbCampQ.eq("ad_account_id", selectedAccountId);
+        ({ data: campaignsList } = await fbCampQ);
+      }
       if (!loadGuardRef.current.isCurrent(reqToken)) return;
       setCampaigns(campaignsList || []);
 
-      // 2. Carregar métricas diárias no período (incluindo result_type para classificação exata)
-      let metricsQ = (supabase as any).from("metrics").select("campaign_id, date, cost, conversions, clicks, impressions, reach, result_type");
-      
-      if (selectedCampaignId !== "all") {
-        metricsQ = metricsQ.eq("campaign_id", selectedCampaignId);
-      } else if (selectedAccountId !== "all") {
-        const campIds = (campaignsList || []).map((c: any) => c.id);
-        if (campIds.length > 0) {
-          metricsQ = metricsQ.in("campaign_id", campIds);
-        } else {
-          setIsSimulated(false);
-          setKpis({ spend: 0, impressions: 0, reach: 0, clicks: 0, conversions: 0, cpl: 0, cpm: 0, ctr: 0, sales: 0 });
-          setCorrelationData([]);
-          setTrendMetrics([]);
-          setDropoffData([]);
-          setAuctionPressure(0);
-          setLoading(false);
-          return;
-        }
+      // 2. Carregar métricas diárias no período (incluindo colunas estendidas com fallback)
+      if (selectedCampaignId === "all" && selectedAccountId !== "all" && !(campaignsList || []).length) {
+        setIsSimulated(false);
+        setKpis({ spend: 0, impressions: 0, reach: 0, clicks: 0, conversions: 0, cpl: 0, cpm: 0, ctr: 0, sales: 0 });
+        setCorrelationData([]);
+        setTrendMetrics([]);
+        setDropoffData([]);
+        setAuctionPressure(0);
+        setLoading(false);
+        return;
       }
 
-      metricsQ = metricsQ.gte("date", startDate).lte("date", endDate).order("date", { ascending: true });
+      const buildAuditMetricsQ = (extended: boolean) => {
+        const cols = extended
+          ? "campaign_id, date, cost, conversions, clicks, inline_link_clicks, all_clicks, impressions, reach, result_type, optimization_goal, result_indicator, purchase_value"
+          : "campaign_id, date, cost, conversions, clicks, impressions, reach, result_type";
+        let q = (supabase as any).from("metrics").select(cols);
+        if (selectedCampaignId !== "all") {
+          q = q.eq("campaign_id", selectedCampaignId);
+        } else if (selectedAccountId !== "all") {
+          const campIds = (campaignsList || []).map((c: any) => c.id);
+          if (campIds.length > 0) {
+            q = q.in("campaign_id", campIds);
+          }
+        }
+        return q.gte("date", startDate).lte("date", endDate).order("date", { ascending: true });
+      };
+
       let thresholdQ = (supabase as any)
         .from("alert_thresholds")
         .select("ad_account_id, max_cpl")
@@ -576,7 +605,10 @@ function AuditoriaHub() {
       if (selectedAccountId !== "all") {
         thresholdQ = thresholdQ.eq("ad_account_id", selectedAccountId);
       }
-      const [{ data: dbMetrics }, { data: thresholds }] = await Promise.all([metricsQ, thresholdQ]);
+      let [{ data: dbMetrics, error: metricsErr }, { data: thresholds }] = await Promise.all([buildAuditMetricsQ(true), thresholdQ]);
+      if (metricsErr) {
+        ({ data: dbMetrics } = await buildAuditMetricsQ(false));
+      }
       if (!loadGuardRef.current.isCurrent(reqToken)) return;
       const accountThresholdCpl =
         selectedAccountId !== "all"

@@ -1088,7 +1088,7 @@ Escreva em formato altamente profissional, com dados baseados na série de métr
         const chunkIds = campaignIds.slice(i, i + 200);
         for (let from = 0; from < 20000; from += 1000) {
           const selectCols = useExtendedCols
-            ? "cost, conversions, clicks, inline_link_clicks, all_clicks, impressions, reach, date, campaign_id, result_type, result_indicator, optimization_goal"
+            ? "cost, conversions, purchase_value, clicks, inline_link_clicks, all_clicks, impressions, reach, date, campaign_id, result_type, result_indicator, optimization_goal"
             : "cost, conversions, clicks, impressions, reach, date, campaign_id, result_type";
           let { data, error: queryError } = await supabase
             .from("metrics")
@@ -1177,7 +1177,7 @@ Escreva em formato altamente profissional, com dados baseados na série de métr
       clientName: string; adAccountName: string; rawObjective: string;
       resultType: string; resultIndicator: string; optimizationGoal: string;
       classification: ReturnType<typeof classifyEventForVictoria>;
-      cost: number; conversions: number; clicks: number; allClicks: number; impressions: number; reach: number;
+      cost: number; conversions: number; purchaseValue: number; clicks: number; allClicks: number; impressions: number; reach: number;
     }>();
 
     (dbMetrics || []).forEach((m: any) => {
@@ -1201,7 +1201,7 @@ Escreva em formato altamente profissional, com dados baseados na série de métr
         resultIndicator: ri,
         optimizationGoal: og,
         classification: classifyEventForVictoria(camp.name || "", camp.objective || "", rt, ri, og),
-        cost: 0, conversions: 0, clicks: 0, allClicks: 0, impressions: 0, reach: 0
+        cost: 0, conversions: 0, purchaseValue: 0, clicks: 0, allClicks: 0, impressions: 0, reach: 0
       };
       if ((!existing.resultType && rt) || (!existing.resultIndicator && ri) || (!existing.optimizationGoal && og)) {
         existing.resultType = existing.resultType || rt;
@@ -1217,6 +1217,7 @@ Escreva em formato altamente profissional, com dados baseados na série de métr
       }
       existing.cost += Number(m.cost || 0);
       existing.conversions += Number(m.conversions || 0);
+      existing.purchaseValue += Number(m.purchase_value || 0);
       existing.clicks += Number(m.inline_link_clicks ?? m.clicks ?? 0);
       existing.allClicks += Number(m.all_clicks ?? m.clicks ?? 0);
       existing.impressions += Number(m.impressions || 0);
@@ -1236,13 +1237,14 @@ Escreva em formato altamente profissional, com dados baseados na série de métr
       const resultLabel = c.classification.unitPlural;
       const costLabel = c.classification.costLabel;
       const ctr = c.impressions > 0 ? (c.clicks / c.impressions) * 100 : 0;
+      const roas = c.cost > 0 && c.purchaseValue > 0 ? c.purchaseValue / c.cost : null;
       return {
         id, name: c.name, status: c.status, budget: c.budget,
         platform: c.platform, clientName: c.clientName, adAccountName: c.adAccountName,
         objective: c.classification.badge,
         category: c.classification.category,
         totals: {
-          cost: c.cost, conversions: c.conversions, clicks: c.clicks, allClicks: c.allClicks,
+          cost: c.cost, conversions: c.conversions, purchaseValue: c.purchaseValue, roas, clicks: c.clicks, allClicks: c.allClicks,
           impressions: c.impressions, reach: c.reach,
           resultValue, costPerRes, costPerResFormatted, resultLabel, costLabel, ctr
         }
@@ -1286,7 +1288,7 @@ Escreva em formato altamente profissional, com dados baseados na série de métr
     // Contexto detalhado por campanha com evento real e custo formatado sem 0 artificial
     const contextData = campaigns.length > 0
       ? campaigns.map(c =>
-          `- [${c.clientName}] ${c.name} | ${c.objective} | ${c.status} | Invest: R$${c.totals.cost.toFixed(2)} | ${c.totals.resultLabel}: ${c.totals.resultValue} | ${c.totals.costLabel}: ${c.totals.costPerResFormatted} | Alcance: ${c.totals.reach} | Impressões: ${c.totals.impressions} | CTR: ${c.totals.ctr.toFixed(2)}%`
+          `- [${c.clientName}] ${c.name} | ${c.objective} | ${c.status} | Invest: R$${c.totals.cost.toFixed(2)} | ${c.totals.resultLabel}: ${c.totals.resultValue} | ${c.totals.costLabel}: ${c.totals.costPerResFormatted}${c.totals.purchaseValue > 0 ? ` | Receita (Compras): R$${c.totals.purchaseValue.toFixed(2)}${c.totals.roas ? ` | ROAS: ${c.totals.roas.toFixed(2)}x` : ""}` : ""} | Alcance: ${c.totals.reach} | Impressões: ${c.totals.impressions} | CTR: ${c.totals.ctr.toFixed(2)}%`
         ).join("\n")
       : "Nenhuma campanha com dados no período selecionado.";
 
@@ -1331,6 +1333,9 @@ Escreva em formato altamente profissional, com dados baseados na série de métr
         tpl += `   💵 Invest: R$ ${fmt(c.totals.cost)}\n`;
         tpl += `   📈 ${c.totals.resultLabel}: ${fmtN(c.totals.resultValue)}${isReach ? " alc." : ""}\n`;
         tpl += `   💲 ${c.totals.costLabel}: ${c.totals.costPerRes !== null ? `R$ ${fmt(c.totals.costPerRes)}` : "Não calculável"}\n`;
+        if (c.totals.purchaseValue > 0) {
+          tpl += `   🛍️ Receita (Compras): R$ ${fmt(c.totals.purchaseValue)}${c.totals.roas ? ` (ROAS: ${c.totals.roas.toFixed(2).replace(".", ",")}x)` : ""}\n`;
+        }
         if (c.totals.reach > 0) tpl += `   👥 Alcance (soma diária): ${fmtN(c.totals.reach)}\n`;
         tpl += `\n`;
       });

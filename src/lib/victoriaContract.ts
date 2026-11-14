@@ -254,7 +254,7 @@ export const CANONICAL_METRIC_REGISTRY: Record<MetaConversionCategory, Canonical
   LANDING_PAGE_VIEWS: {
     category: "LANDING_PAGE_VIEWS",
     code: "landing_page_view",
-    odax_objectives: ["OUTCOME_TRAFFIC", "LINK_CLICKS"],
+    odax_objectives: ["OUTCOME_TRAFFIC", "LINK_CLICKS", "OUTCOME_ENGAGEMENT"],
     optimization_goals: ["LANDING_PAGE_VIEWS"],
     official_event: "actions:landing_page_view",
     label_singular: "visualização da página de destino",
@@ -446,6 +446,8 @@ export interface VictoriaAnalysisContext {
     result_value: number;
     cost_per_result: number | null;
     cost_per_result_formatted: string;
+    purchase_value?: number | null;
+    roas?: number | null;
     actions: Record<string, number>;
   };
 
@@ -669,6 +671,7 @@ export interface BuildVictoriaContextInput {
   link_clicks: number;
   all_clicks?: number | null;
   conversions: number;
+  purchase_value?: number | null;
   actions?: Record<string, number>;
   metric_vector?: MetricVector;
   has_creative_data?: boolean;
@@ -746,6 +749,12 @@ export function buildVictoriaAnalysisContext(input: BuildVictoriaContextInput): 
         ? conversions
         : linkClicks
       : conversions;
+
+  const purchaseValue =
+    input.purchase_value !== undefined && input.purchase_value !== null && Number.isFinite(Number(input.purchase_value))
+      ? Math.max(0, Number(input.purchase_value))
+      : null;
+  const roas = spend > 0 && purchaseValue !== null && purchaseValue > 0 ? purchaseValue / spend : null;
 
   const costPerResult = computeUnitCost(spend, resultValue, cls.category);
   const costPerResultFormatted =
@@ -942,6 +951,8 @@ export function buildVictoriaAnalysisContext(input: BuildVictoriaContextInput): 
       result_value: resultValue,
       cost_per_result: costPerResult,
       cost_per_result_formatted: costPerResultFormatted,
+      purchase_value: purchaseValue,
+      roas,
       actions: input.actions || { [spec.code]: resultValue },
     },
 
@@ -1723,7 +1734,7 @@ export function generateSeniorStructuredAnalysis(ctx: VictoriaAnalysisContext): 
     "",
     `#### 3. Leitura factual`,
     `- **[FATO OBSERVADO]** **Investimento (Spend):** ${fmtBRL(f.spend)} | **Orçamento configurado:** ${budgetText}`,
-    `- **[FATO OBSERVADO]** **Resultado oficial (${ind.label_plural}):** **${fmtNum(m.result_value)}** | **${ind.cost_label}:** **${m.cost_per_result_formatted}**`,
+    `- **[FATO OBSERVADO]** **Resultado oficial (${ind.label_plural}):** **${fmtNum(m.result_value)}** | **${ind.cost_label}:** **${m.cost_per_result_formatted}**${m.purchase_value && Number(m.purchase_value) > 0 ? ` | **Valor de Compra:** **${fmtBRL(Number(m.purchase_value))}**${m.roas && Number(m.roas) > 0 ? ` (**ROAS:** **${Number(m.roas).toFixed(2).replace(".", ",")}x**)` : ""}` : ""}`,
     `- **[FATO OBSERVADO]** **Exposição:** **${fmtNum(m.impressions)}** impressões | **${fmtNum(m.reach)}** pessoas alcançadas (\`${m.reach_scope}\`) | **Frequência:** **${freqStr}x** | **CPM:** **${fmtBRL(m.cpm)}**`,
     `- **[FATO OBSERVADO]** **Cliques separados por tipo:** **${fmtNum(m.link_clicks)}** cliques no link (\`CTR Link: ${fmtPct(m.ctr_link)}\` · \`CPC Link: ${cpcLinkStr}\`) | **${fmtNum(m.all_clicks)}** cliques totais (\`CTR Todos: ${fmtPct(m.ctr_all)}\` · \`CPC Todos: ${cpcAllStr}\`)`,
     "",

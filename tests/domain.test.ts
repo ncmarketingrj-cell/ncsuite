@@ -15,6 +15,7 @@ import {
   normalizeCampaignItem,
   computeCampaignBudgetDistribution,
   computeHomogeneousBenchmark,
+  hasEntityDelivery,
 } from "../src/lib/metricsDomain.ts";
 import {
   buildSocialSourceTelemetry,
@@ -619,5 +620,82 @@ describe("NC Metrics Domain — Benchmark Homogêneo & CPC Link vs CPC Todos", (
     ]);
     assert.equal(multiPeerRes.peerCount, 2);
     assert.equal(multiPeerRes.avg, 10); // (100+200)/(10+20) = 10.00 (sem contaminar com 150.6/19 = 7.93)
+  });
+
+  it("BM Bonne21: detecta atribuição tardia de compras (cost=0, conv=3, receita=267.80), ROAS e OUTCOME_ENGAGEMENT + LANDING_PAGE_VIEWS", () => {
+    // 1. Atribuição tardia (janela 7d) após saldo zero não pode ser ocultada em 'Sem entrega'
+    assert.equal(
+      hasEntityDelivery({
+        cost: 0,
+        impressions: 0,
+        reach: 0,
+        conversions: 3,
+        purchaseValue: 267.8,
+      }),
+      true
+    );
+    assert.equal(
+      hasEntityDelivery({
+        cost: 0,
+        impressions: 0,
+        reach: 0,
+        conversions: 0,
+        purchaseValue: 0,
+      }),
+      false
+    );
+
+    // 2. CMP - NC - SITE (OUTCOME_ENGAGEMENT + optimizationGoal LANDING_PAGE_VIEWS)
+    const siteEv = classifyMetaEvent({
+      campaignName: "CMP - NC - SITE — Cópia",
+      rawObjective: "OUTCOME_ENGAGEMENT",
+      optimizationGoal: "LANDING_PAGE_VIEWS",
+      isVehicleContext: false,
+    });
+    assert.equal(siteEv.category, "LANDING_PAGE_VIEWS");
+
+    // 3. OUTCOME_SALES com receita/ROAS no domínio e no snapshot de relatório
+    const salesNorm = normalizeCampaignItem({
+      id: "120253223224110659",
+      name: "NC | CMP de Vendas (05/08) - HC — Cópia x6",
+      rawObjective: "OUTCOME_SALES",
+      optimizationGoal: "OFFSITE_CONVERSIONS",
+      resultType: "PURCHASES",
+      cost: 120.48,
+      conversions: 28,
+      purchaseValue: 267.8,
+      impressions: 7629,
+      reach: 5200,
+      clicks: 82,
+    });
+    assert.equal(salesNorm.purchaseValue, 267.8);
+    assert.equal(salesNorm.roas, 2.22);
+
+    const snap = buildReportSnapshot({
+      clientName: "BM Bonne21",
+      accountName: "BM Bonne21",
+      dateFrom: "2026-11-05",
+      dateTo: "2026-11-13",
+      source: "api",
+      campaigns: [
+        {
+          id: "120253223224110659",
+          name: "NC | CMP de Vendas (05/08) - HC — Cópia x6",
+          rawObjective: "OUTCOME_SALES",
+          optimizationGoal: "OFFSITE_CONVERSIONS",
+          resultType: "PURCHASES",
+          cost: 120.48,
+          conversions: 28,
+          purchaseValue: 267.8,
+          impressions: 7629,
+          reach: 5200,
+          clicks: 82,
+        },
+      ],
+    });
+    assert.equal(snap.summary.totalPurchaseValue, 267.8);
+    assert.equal(snap.summary.roasPurchases, 2.22);
+    assert.ok(snap.whatsappText.includes("Receita (Valor de Compra)"));
+    assert.ok(snap.whatsappText.includes("ROAS"));
   });
 });

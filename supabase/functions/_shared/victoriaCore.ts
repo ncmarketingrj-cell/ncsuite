@@ -297,7 +297,7 @@ export function generateDeterministic10SectionAnalysis(
     `- **O que esta campanha foi configurada para otimizar?** ${ind.label_plural || "resultados"} (evento \`${ind.code || "unknown"}\`, unidade oficial **${ind.cost_label || "Custo por resultado"}**).`,
     "",
     `#### 3. Leitura factual`,
-    `- **[FATO OBSERVADO]** Investimento: **${fmtBRL(spendVal)}** | Resultado oficial (**${ind.label_plural || "resultados"}**): **${fmtNum(resultVal)}** | **${ind.cost_label || "Custo por resultado"}**: **${costFormatted}**`,
+    `- **[FATO OBSERVADO]** Investimento: **${fmtBRL(spendVal)}** | Resultado oficial (**${ind.label_plural || "resultados"}**): **${fmtNum(resultVal)}** | **${ind.cost_label || "Custo por resultado"}**: **${costFormatted}**${m.purchase_value && Number(m.purchase_value) > 0 ? ` | Receita (Compras): **${fmtBRL(Number(m.purchase_value))}**${m.roas && Number(m.roas) > 0 ? ` (**ROAS:** **${Number(m.roas).toFixed(2).replace(".", ",")}x**)` : ""}` : ""}`,
     `- **[FATO OBSERVADO]** Impressões: **${fmtNum(m.impressions)}** | Alcance: **${fmtNum(m.reach)}** | Frequência: **${freqStr}x** | CPM: **${fmtBRL(m.cpm)}**`,
     `- **[FATO OBSERVADO]** Cliques no link: **${fmtNum(linkClicks)}** (\`CTR Link: ${fmtPct(m.ctr_link)}\` · \`CPC Link: ${cpcLinkStr}\`) | Cliques totais: **${fmtNum(allClicks)}** (\`CTR Todos: ${fmtPct(m.ctr_all)}\` · \`CPC Todos: ${cpcAllStr}\`)`,
     "",

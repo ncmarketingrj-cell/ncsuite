@@ -217,7 +217,7 @@ function Dashboard() {
           avgDailyCost: 0,
           healthScore: 100,
           metricVector: emptyMetricVector(),
-          totals: { cost: 0, conversionSpend: 0, conversions: 0, trueConversions: 0, results: 0, clicks: 0, inlineLinkClicks: 0, allClicks: 0, impressions: 0, reach: 0, accountReach: 0 },
+          totals: { cost: 0, conversionSpend: 0, purchaseSpend: 0, purchaseValue: 0, roasPurchases: null as number | null, conversions: 0, trueConversions: 0, results: 0, clicks: 0, inlineLinkClicks: 0, allClicks: 0, impressions: 0, reach: 0, accountReach: 0 },
           trends: { cost: "0%", costPositive: true, conversions: "0%", conversionsPositive: true, clicks: "0%", clicksPositive: true, cpl: "0%", cplPositive: true },
           cpl: 0
         };
@@ -249,7 +249,7 @@ function Dashboard() {
 
       ensureDatabaseCalibrated(supabase).catch(() => {});
       let metricsRes = await fetchMetricsPaged(`
-        campaign_id, cost, conversions, impressions, clicks, inline_link_clicks, all_clicks, reach, date, result_type, optimization_goal, result_indicator,
+        campaign_id, cost, conversions, impressions, clicks, inline_link_clicks, all_clicks, reach, date, result_type, optimization_goal, result_indicator, purchase_value,
         campaigns(ad_account_id, client_id, name, objective)
       `);
       if (metricsRes.error) {
@@ -284,6 +284,8 @@ function Dashboard() {
       let currentPeriod = {
         cost: 0,
         conversionSpend: 0,
+        purchaseSpend: 0,
+        purchaseValue: 0,
         results: 0,
         trueConversions: 0,
         clicks: 0,
@@ -330,6 +332,7 @@ function Dashboard() {
         const linkClk = Number(m.inline_link_clicks !== undefined && m.inline_link_clicks !== null ? m.inline_link_clicks : m.clicks || 0);
         const totalClk = Number(m.all_clicks !== undefined && m.all_clicks !== null ? m.all_clicks : m.clicks || 0);
         const rowConv = Number(m.conversions || 0);
+        const rowPurchaseVal = Number(m.purchase_value || 0);
 
         if (isCurrent) {
           const date = m.date;
@@ -356,6 +359,7 @@ function Dashboard() {
             resultIndicator: m.result_indicator || "",
             classification: evClass,
             cost: 0,
+            purchaseValue: 0,
             results: 0,
             trueConversions: 0,
             reach: 0,
@@ -366,6 +370,7 @@ function Dashboard() {
           if (!camp.optimizationGoal && m.optimization_goal) camp.optimizationGoal = m.optimization_goal;
           if (evClass.confidence === "high" && camp.classification?.confidence !== "high") camp.classification = evClass;
           camp.cost += Number(m.cost || 0);
+          camp.purchaseValue += rowPurchaseVal;
           camp.results += evClass.category === "REACH" ? Math.max(Number(m.reach || 0), rowConv) : rowConv;
           if (!isVanity) camp.trueConversions += rowConv;
           camp.reach = (camp.reach || 0) + Number(m.reach || 0);
@@ -375,6 +380,8 @@ function Dashboard() {
 
           currentPeriod.cost += Number(m.cost || 0);
           if (!isVanity) currentPeriod.conversionSpend += Number(m.cost || 0);
+          if (evClass.category === "PURCHASES") currentPeriod.purchaseSpend += Number(m.cost || 0);
+          currentPeriod.purchaseValue += rowPurchaseVal;
           currentPeriod.results += rowConv;
           if (!isVanity) currentPeriod.trueConversions += rowConv;
           currentPeriod.clicks += linkClk;
@@ -489,6 +496,13 @@ function Dashboard() {
 
       healthScore = Math.max(0, Math.min(100, Math.round(healthScore)));
 
+      const roasPurchases =
+        currentPeriod.purchaseSpend > 0 && currentPeriod.purchaseValue > 0
+          ? currentPeriod.purchaseValue / currentPeriod.purchaseSpend
+          : currentPeriod.cost > 0 && currentPeriod.purchaseValue > 0
+            ? currentPeriod.purchaseValue / currentPeriod.cost
+            : null;
+
       return {
         chartData,
         barData,
@@ -500,7 +514,7 @@ function Dashboard() {
         healthScore,
         metricVector,
         metricVectorSummary: formatMetricVectorSummary(metricVector),
-        totals: { ...currentPeriod, conversions: currentPeriod.trueConversions, accountReach },
+        totals: { ...currentPeriod, conversions: currentPeriod.trueConversions, accountReach, roasPurchases },
         trends: {
           cost: calcTrend(currentPeriod.cost, previousPeriod.cost),
           costPositive: currentPeriod.cost > previousPeriod.cost,
@@ -537,7 +551,7 @@ function Dashboard() {
 
       const { data: activeCamps } = await (supabase as any)
         .from("campaigns")
-        .select("ad_account_id, name, objective")
+        .select("ad_account_id, name, objective, ad_sets(optimization_goal)")
         .eq("status", "active");
 
       const activeCounts: Record<string, number> = {};
@@ -545,8 +559,9 @@ function Dashboard() {
 
       for (const c of (activeCamps || [])) {
         activeCounts[c.ad_account_id] = (activeCounts[c.ad_account_id] || 0) + 1;
-        // Apenas objetivo oficial da Meta (nunca heurística por nome da campanha)
-        if ((c.objective || "").toUpperCase() === "MESSAGES") {
+        const rawObj = (c.objective || "").toUpperCase();
+        const optGoals = Array.isArray(c.ad_sets) ? c.ad_sets.map((s: any) => String(s?.optimization_goal || "").toUpperCase()) : [];
+        if (rawObj === "MESSAGES" || optGoals.some((g: string) => g === "CONVERSATIONS" || g === "MESSAGING_PURCHASE_CONVERSION")) {
           messagingAccountsSet.add(c.ad_account_id);
         }
       }
@@ -568,18 +583,40 @@ function Dashboard() {
       // 1. Busca paginada em `metrics` com join em `campaigns` (classificação oficial via result_indicator)
       try {
         const allRawMetrics: any[] = [];
+        let useExtendedCols = true;
         for (let from = 0; from < 10000; from += 1000) {
-          const { data: pageRows, error: pageErr } = await (supabase as any)
-            .from("metrics")
-            .select(`
+          const selectCols = useExtendedCols
+            ? `
               cost, conversions, reach, impressions, clicks, inline_link_clicks, all_clicks,
-              result_type, optimization_goal, result_indicator, date,
+              result_type, optimization_goal, result_indicator, purchase_value, date,
               campaigns!inner(id, ad_account_id, name, objective)
-            `)
+            `
+            : `
+              cost, conversions, reach, impressions, clicks,
+              result_type, date,
+              campaigns!inner(id, ad_account_id, name, objective)
+            `;
+          let { data: pageRows, error: pageErr } = await (supabase as any)
+            .from("metrics")
+            .select(selectCols)
             .gte("date", dateFrom)
             .lte("date", dateTo)
             .order("id")
             .range(from, from + 999);
+          if (pageErr && useExtendedCols && (pageErr.code === "42703" || pageErr.code === "PGRST204" || String(pageErr.message || "").includes("column"))) {
+            useExtendedCols = false;
+            ({ data: pageRows, error: pageErr } = await (supabase as any)
+              .from("metrics")
+              .select(`
+                cost, conversions, reach, impressions, clicks,
+                result_type, date,
+                campaigns!inner(id, ad_account_id, name, objective)
+              `)
+              .gte("date", dateFrom)
+              .lte("date", dateTo)
+              .order("id")
+              .range(from, from + 999));
+          }
           if (pageErr) throw pageErr;
           if (!pageRows || pageRows.length === 0) break;
           allRawMetrics.push(...pageRows);
@@ -620,6 +657,7 @@ function Dashboard() {
               resultsIndicator: rawM.result_indicator || undefined,
               cost,
               conversions,
+              purchaseValue: Number(rawM.purchase_value || 0),
               clicks,
               inlineLinkClicks: clicks,
               allClicks: Number(rawM.all_clicks ?? rawM.clicks ?? 0),
@@ -761,6 +799,23 @@ function Dashboard() {
       return b.metrics.spend - a.metrics.spend;
     });
   }, [filteredAccounts]);
+
+  const { data: latestSyncRun } = useQuery({
+    queryKey: ["dashboard-latest-sync-run"],
+    queryFn: async () => {
+      try {
+        const { data } = await (supabase as any)
+          .from("sync_history")
+          .select("id, status, started_at, finished_at, accounts_synced, accounts_total, partial_failures, error_message")
+          .order("started_at", { ascending: false })
+          .limit(1);
+        return data?.[0] || null;
+      } catch {
+        return null;
+      }
+    },
+    refetchInterval: 60 * 1000,
+  });
 
   const selectedAccount = accounts.find(a => a.id === selectedAccountId);
 
@@ -935,6 +990,20 @@ function Dashboard() {
             isUpdating={isLoadingTable || isLoadingPerf || isFetchingPerf || isFetchingTable || isAutoSyncing}
           />
         </div>
+        {(() => {
+          const partialFailures: any[] = Array.isArray(latestSyncRun?.partial_failures) ? latestSyncRun.partial_failures : [];
+          const hasFailure = latestSyncRun?.status === "error" || partialFailures.length > 0;
+          if (!hasFailure) return null;
+          return (
+            <div className="flex items-center gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-200">
+              <AlertCircle className="h-3.5 w-3.5 text-amber-400 shrink-0" />
+              <span className="truncate">
+                Último sync Meta com alerta ({latestSyncRun?.accounts_synced ?? "?"}/{latestSyncRun?.accounts_total ?? "?"} contas):{" "}
+                {partialFailures[0]?.error || partialFailures[0]?.reason || latestSyncRun?.error_message || `${partialFailures.length} falha(s) parcial(is)`}
+              </span>
+            </div>
+          );
+        })()}
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard
           label="Investimento"
@@ -980,6 +1049,11 @@ function Dashboard() {
               }
               const vec = performanceData?.metricVector;
               const secondary: string[] = [];
+              if ((performanceData?.totals?.purchaseValue ?? 0) > 0) {
+                const pv = Number(performanceData!.totals!.purchaseValue || 0);
+                const roasTxt = performanceData?.totals?.roasPurchases ? ` (${Number(performanceData.totals.roasPurchases).toFixed(2)}x ROAS)` : "";
+                secondary.push(`R$ ${pv.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} receita${roasTxt}`);
+              }
               if ((vec?.reach ?? 0) > 0) secondary.push(`${vec!.reach.toLocaleString('pt-BR')} alcance`);
               if ((vec?.profileVisits ?? 0) > 0) secondary.push(`${vec!.profileVisits.toLocaleString('pt-BR')} perfil`);
               if ((vec?.landingPageViews ?? 0) > 0) secondary.push(`${vec!.landingPageViews.toLocaleString('pt-BR')} LPV`);

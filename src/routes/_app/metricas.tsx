@@ -35,7 +35,7 @@ import { useAuth } from "@/lib/auth";
 import { hasPermissionAccess, isMasterAdmin } from "@/lib/userHierarchy";
 import { DateRangePicker } from "@/components/DateRangePicker";
 import { useGlobalDate } from "@/contexts/DateContext";
-import { EVENT_MODEL_VERSION, computeHomogeneousBenchmark } from "@/lib/metricsDomain";
+import { EVENT_MODEL_VERSION, computeHomogeneousBenchmark, hasEntityDelivery } from "@/lib/metricsDomain";
 import {
   buildMetaSnapshotKey,
   DEFAULT_META_TIMEZONE,
@@ -206,7 +206,10 @@ function processMetrics(item: any, rawData: any[], startStr: string, endStr: str
 
   const storedType = m.find((x: any) => x.result_type)?.result_type || item.result_type;
   const resultIndicator = m.find((x: any) => x.result_indicator)?.result_indicator || item.result_indicator || null;
-  const optimizationGoal = m.find((x: any) => x.optimization_goal)?.optimization_goal || item.optimization_goal || null;
+  const adSetGoal = Array.isArray(item.ad_sets)
+    ? item.ad_sets.find((s: any) => s?.optimization_goal)?.optimization_goal
+    : item.ad_sets?.optimization_goal;
+  const optimizationGoal = m.find((x: any) => x.optimization_goal)?.optimization_goal || item.optimization_goal || adSetGoal || null;
   const classification = classifyMetaEvent({
     campaignName: item.name + (item.campaigns?.name ? ` ${item.campaigns.name}` : ""),
     rawObjective: item.objective || item.campaigns?.objective,
@@ -227,6 +230,67 @@ function processMetrics(item: any, rawData: any[], startStr: string, endStr: str
     optimization_goal: optimizationGoal,
     t: { cost, conversions, clicks, allClicks, impressions, reach, freq, cpl, ctr, ctrAll, cpm, cpc, cpcAll, roas, purchaseValue: purchaseVal },
     _metrics: m,
+  };
+}
+
+/** Aplica periodStats (Meta sem time_increment) sobre entidades processadas preservando purchaseValue/ROAS e classificação exata. */
+function applyPeriodStatsToEntity(c: any, statsMap: Map<string, any>, withParentCampaignName: boolean): any {
+  const ps = statsMap.get(c.id);
+  if (!ps) return c;
+  const cost = Number(ps.spend || 0);
+  const conversions = Number(ps.conversions || 0);
+  const clicks = Number(ps.inline_link_clicks ?? ps.clicks ?? 0);
+  const allClicks = Number(ps.all_clicks ?? ps.clicks ?? 0);
+  const impressions = Number(ps.impressions || 0);
+  const reach = Number(ps.reach || 0);
+
+  const freq = reach > 0 ? impressions / reach : 0;
+  const resIndicator = ps.result_indicator || c.result_indicator || null;
+  const optGoal = ps.optimization_goal || c.optimization_goal || null;
+  const cat = classifyMetaEvent({
+    campaignName: withParentCampaignName ? `${c.name} ${c.campaigns?.name || ""}` : c.name,
+    rawObjective: c.objective || c.campaigns?.objective,
+    resultType: ps.result_type || c.result_type,
+    resultsIndicator: resIndicator || undefined,
+    optimizationGoal: optGoal || undefined,
+    isVehicleContext: false,
+  }).category;
+  const effectiveRes = cat === "REACH" ? (reach > 0 ? reach : conversions) : conversions;
+  const cpl = computeUnitCost(cost, effectiveRes, cat) ?? 0;
+  const ctr = impressions > 0 ? (clicks / impressions) * 100 : 0;
+  const ctrAll = impressions > 0 ? (allClicks / impressions) * 100 : 0;
+  const cpm = impressions > 0 ? (cost / impressions) * 1000 : 0;
+  const cpc = clicks > 0 ? cost / clicks : 0;
+  const cpcAll = allClicks > 0 ? cost / allClicks : 0;
+  const purchaseVal =
+    ps.purchase_value !== undefined && ps.purchase_value !== null
+      ? Number(ps.purchase_value)
+      : Number(c.t?.purchaseValue || 0);
+  const roas = cost > 0 && purchaseVal > 0 ? purchaseVal / cost : null;
+
+  return {
+    ...c,
+    result_type: cat,
+    result_indicator: resIndicator,
+    optimization_goal: optGoal,
+    t: {
+      ...c.t,
+      cost,
+      conversions,
+      clicks,
+      allClicks,
+      impressions,
+      reach,
+      freq,
+      cpl,
+      ctr,
+      ctrAll,
+      cpm,
+      cpc,
+      cpcAll,
+      roas,
+      purchaseValue: purchaseVal,
+    },
   };
 }
 
@@ -638,6 +702,8 @@ interface KPIBarProps {
   totReach: number;
   totClicks: number;
   totAllClicks?: number;
+  totPurchaseValue?: number;
+  avgRoas?: number | null;
   avgCtr: number;
   avgCtrAll?: number;
   avgCpm: number;
@@ -654,6 +720,8 @@ function KPIBar({
   totReach,
   totClicks,
   totAllClicks,
+  totPurchaseValue = 0,
+  avgRoas = null,
   avgCtr,
   avgCtrAll,
   avgCpm,
@@ -692,6 +760,13 @@ function KPIBar({
     { label: "Gasto",          value: isLoading ? "—" : `R$ ${fmtBRL(totCost)}`,                         color: "text-primary",          icon: DollarSign,    sub: undefined },
     { label: isMixed ? "Resultados (Tipo)" : "Resultados", value: isLoading ? "—" : resultsDisplay,      color: "text-violet-400",       icon: Target,        sub: isMixed && !isLoading ? "Sem soma mista" : undefined },
     { label: cplLabel,         value: isLoading ? "—" : avgCpl > 0 ? `R$ ${avgCpl.toFixed(2)}` : "—",    color: "text-primary",          icon: Zap,           sub: undefined },
+    ...(totPurchaseValue > 0 ? [{
+      label: "Receita (Compras)",
+      value: isLoading ? "—" : `R$ ${fmtBRL(totPurchaseValue)}`,
+      color: "text-emerald-400",
+      icon: DollarSign,
+      sub: avgRoas !== null ? `ROAS ${avgRoas.toFixed(2)}x` : undefined,
+    }] : []),
     { label: "Impressões",     value: isLoading ? "—" : fmtN(totImpr),                                   color: "text-muted-foreground", icon: Eye,           sub: undefined },
     { label: reachLabel,       value: isLoading ? "—" : totReach > 0 ? fmtN(totReach) : "—",             color: "text-muted-foreground", icon: Users,         sub: undefined },
     { label: "Cliques (Link)", value: isLoading ? "—" : fmtN(totClicks),                                 color: "text-muted-foreground", icon: MousePointer2, sub: isLoading ? undefined : clicksSub },
@@ -938,9 +1013,12 @@ function MetricasCampanhasPage() {
         const metricsCols = withExtended
           ? "cost, conversions, impressions, clicks, inline_link_clicks, all_clicks, optimization_goal, result_indicator, purchase_value, reach, frequency, date, result_type"
           : "cost, conversions, impressions, clicks, reach, frequency, date, result_type";
+        const selectExpr = withExtended
+          ? `id, name, status, delivery_status, objective, daily_budget, lifetime_budget, budget_currency, external_id, ad_account_id, ad_account:ad_accounts(name), ad_sets(optimization_goal), metrics(${metricsCols})`
+          : `id, name, status, delivery_status, objective, daily_budget, lifetime_budget, budget_currency, external_id, ad_account_id, ad_account:ad_accounts(name), metrics(${metricsCols})`;
         let q = (supabase as any)
           .from("campaigns")
-          .select(`id, name, status, delivery_status, objective, daily_budget, lifetime_budget, budget_currency, external_id, ad_account_id, ad_account:ad_accounts(name), metrics(${metricsCols})`);
+          .select(selectExpr);
         if (accountFilter !== "all") q = q.eq("ad_account_id", accountFilter);
         if (statusFilter !== "all") q = q.ilike("status", statusFilter === "active" ? "ACTIVE" : "PAUSED");
         return q;
@@ -1123,7 +1201,7 @@ function MetricasCampanhasPage() {
     queryFn: async () => {
       const buildQ = (withExtended: boolean, from: number) => {
         const cols = withExtended
-          ? "entity_type, entity_id, reach, impressions, frequency, spend, conversions, clicks, inline_link_clicks, all_clicks, result_type, result_indicator, optimization_goal, quality_ranking, engagement_rate_ranking, conversion_rate_ranking"
+          ? "entity_type, entity_id, reach, impressions, frequency, spend, conversions, clicks, inline_link_clicks, all_clicks, purchase_value, result_type, result_indicator, optimization_goal, quality_ranking, engagement_rate_ranking, conversion_rate_ranking"
           : "entity_type, entity_id, reach, impressions, frequency, spend, conversions, clicks, quality_ranking, engagement_rate_ranking, conversion_rate_ranking";
         let q = (supabase as any)
           .from("meta_period_stats")
@@ -1191,6 +1269,44 @@ function MetricasCampanhasPage() {
       return data?.[0] || null;
     },
     refetchInterval: 30 * 1000,
+  });
+
+  // Saldo / status financeiro recente da conta selecionada (para diagnóstico de entrega pausada / saldo R$ 0)
+  const { data: accountBillingSnapshot } = useQuery({
+    queryKey: ["mc-billing-snapshot", accountFilter],
+    enabled: accountFilter !== "all",
+    queryFn: async () => {
+      try {
+        const { data } = await (supabase as any)
+          .from("billing_snapshots")
+          .select("ad_account_id, account_name, balance, delta_spent, account_status, funding_source_type, is_prepay, snapshot_date, currency")
+          .eq("ad_account_id", accountFilter)
+          .order("snapshot_date", { ascending: false })
+          .limit(1);
+        return data?.[0] || null;
+      } catch {
+        return null;
+      }
+    },
+    refetchInterval: 120 * 1000,
+  });
+
+  // Último histórico de sincronização (exibe diagnósticos explícitos de rate limit ou falha parcial)
+  const { data: latestSyncRun } = useQuery({
+    queryKey: ["mc-latest-sync-run"],
+    queryFn: async () => {
+      try {
+        const { data } = await (supabase as any)
+          .from("sync_history")
+          .select("id, status, started_at, finished_at, accounts_synced, accounts_total, partial_failures, error_message, sync_coverage")
+          .order("started_at", { ascending: false })
+          .limit(1);
+        return data?.[0] || null;
+      } catch {
+        return null;
+      }
+    },
+    refetchInterval: 60 * 1000,
   });
 
   const { data: placementData = [] } = useQuery({
@@ -1406,52 +1522,9 @@ function MetricasCampanhasPage() {
     const campaignStats = calibratedPeriodStats.filter((p: any) => p.entity_type === 'campaign');
     if (campaignStats.length > 0) {
       const statsMap = new Map(campaignStats.map((ps: any) => [ps.entity_id, ps]));
-      base = campaigns.map((c: any) => {
-        const ps = statsMap.get(c.id) as any;
-        if (!ps) return c;
-        const cost = Number(ps.spend || 0);
-        const conversions = Number(ps.conversions || 0);
-        const clicks = Number(ps.inline_link_clicks ?? ps.clicks ?? 0);
-        const allClicks = Number(ps.all_clicks ?? ps.clicks ?? 0);
-        const impressions = Number(ps.impressions || 0);
-        const reach = Number(ps.reach || 0);
-
-        const freq = reach > 0 ? impressions / reach : 0;
-        const resIndicator = ps.result_indicator || c.result_indicator || null;
-        const optGoal = ps.optimization_goal || c.optimization_goal || null;
-        const cat = c.result_type || classifyMetaEvent({
-          campaignName: c.name,
-          rawObjective: c.objective,
-          resultType: ps.result_type,
-          resultsIndicator: resIndicator || undefined,
-          optimizationGoal: optGoal || undefined,
-          isVehicleContext: false,
-        }).category;
-        const effectiveRes = cat === "REACH" ? (reach > 0 ? reach : conversions) : conversions;
-        const cpl = computeUnitCost(cost, effectiveRes, cat) ?? 0;
-        const ctr = impressions > 0 ? (clicks / impressions) * 100 : 0;
-        const ctrAll = impressions > 0 ? (allClicks / impressions) * 100 : 0;
-        const cpm = impressions > 0 ? (cost / impressions) * 1000 : 0;
-        const cpc = clicks > 0 ? cost / clicks : 0;
-        const cpcAll = allClicks > 0 ? cost / allClicks : 0;
-        const purchaseVal = Number(c.t?.purchaseValue || 0);
-        const roas = cost > 0 && purchaseVal > 0 ? purchaseVal / cost : null;
-        
-        return { 
-          ...c, 
-          result_type: cat,
-          result_indicator: resIndicator,
-          optimization_goal: optGoal,
-          t: { 
-            ...c.t, 
-            cost, conversions, clicks, allClicks, impressions, reach, freq, cpl, ctr, ctrAll, cpm, cpc, cpcAll, roas 
-          } 
-        };
-      });
+      base = campaigns.map((c: any) => applyPeriodStatsToEntity(c, statsMap, false));
     }
-    return includeNoDelivery
-      ? base
-      : base.filter((c: any) => (c.t?.reach || 0) >= 1 || (c.t?.impressions || 0) >= 1 || (c.t?.cost || 0) > 0);
+    return includeNoDelivery ? base : base.filter((c: any) => hasEntityDelivery(c.t || {}));
   }, [campaigns, calibratedPeriodStats, includeNoDelivery]);
 
   const enrichedAdSets = useMemo(() => {
@@ -1459,42 +1532,9 @@ function MetricasCampanhasPage() {
     const adsetStats = calibratedPeriodStats.filter((p: any) => p.entity_type === 'adset');
     if (adsetStats.length > 0) {
       const statsMap = new Map(adsetStats.map((ps: any) => [ps.entity_id, ps]));
-      base = adSets.map((c: any) => {
-        const ps = statsMap.get(c.id) as any;
-        if (!ps) return c;
-        const cost = Number(ps.spend || 0);
-        const conversions = Number(ps.conversions || 0);
-        const clicks = Number(ps.inline_link_clicks ?? ps.clicks ?? 0);
-        const allClicks = Number(ps.all_clicks ?? ps.clicks ?? 0);
-        const impressions = Number(ps.impressions || 0);
-        const reach = Number(ps.reach || 0);
-
-        const freq = reach > 0 ? impressions / reach : 0;
-        const resIndicator = ps.result_indicator || c.result_indicator || null;
-        const optGoal = ps.optimization_goal || c.optimization_goal || null;
-        const cat = c.result_type || classifyMetaEvent({
-          campaignName: c.name + " " + (c.campaigns?.name || ""),
-          rawObjective: c.objective || c.campaigns?.objective,
-          resultType: ps.result_type,
-          resultsIndicator: resIndicator || undefined,
-          optimizationGoal: optGoal || undefined,
-          isVehicleContext: false,
-        }).category;
-        const effectiveRes = cat === "REACH" ? (reach > 0 ? reach : conversions) : conversions;
-        const cpl = computeUnitCost(cost, effectiveRes, cat) ?? 0;
-        const ctr = impressions > 0 ? (clicks / impressions) * 100 : 0;
-        const ctrAll = impressions > 0 ? (allClicks / impressions) * 100 : 0;
-        const cpm = impressions > 0 ? (cost / impressions) * 1000 : 0;
-        const cpc = clicks > 0 ? cost / clicks : 0;
-        const cpcAll = allClicks > 0 ? cost / allClicks : 0;
-        const purchaseVal = Number(c.t?.purchaseValue || 0);
-        const roas = cost > 0 && purchaseVal > 0 ? purchaseVal / cost : null;
-        return { ...c, result_type: cat, result_indicator: resIndicator, optimization_goal: optGoal, t: { ...c.t, cost, conversions, clicks, allClicks, impressions, reach, freq, cpl, ctr, ctrAll, cpm, cpc, cpcAll, roas } };
-      });
+      base = adSets.map((c: any) => applyPeriodStatsToEntity(c, statsMap, true));
     }
-    return includeNoDelivery
-      ? base
-      : base.filter((c: any) => (c.t?.reach || 0) >= 1 || (c.t?.impressions || 0) >= 1 || (c.t?.cost || 0) > 0);
+    return includeNoDelivery ? base : base.filter((c: any) => hasEntityDelivery(c.t || {}));
   }, [adSets, calibratedPeriodStats, includeNoDelivery]);
 
   const enrichedAds = useMemo(() => {
@@ -1502,42 +1542,9 @@ function MetricasCampanhasPage() {
     const adStats = calibratedPeriodStats.filter((p: any) => p.entity_type === 'ad');
     if (adStats.length > 0) {
       const statsMap = new Map(adStats.map((ps: any) => [ps.entity_id, ps]));
-      base = ads.map((c: any) => {
-        const ps = statsMap.get(c.id) as any;
-        if (!ps) return c;
-        const cost = Number(ps.spend || 0);
-        const conversions = Number(ps.conversions || 0);
-        const clicks = Number(ps.inline_link_clicks ?? ps.clicks ?? 0);
-        const allClicks = Number(ps.all_clicks ?? ps.clicks ?? 0);
-        const impressions = Number(ps.impressions || 0);
-        const reach = Number(ps.reach || 0);
-
-        const freq = reach > 0 ? impressions / reach : 0;
-        const resIndicator = ps.result_indicator || c.result_indicator || null;
-        const optGoal = ps.optimization_goal || c.optimization_goal || null;
-        const cat = c.result_type || classifyMetaEvent({
-          campaignName: c.name + " " + (c.campaigns?.name || ""),
-          rawObjective: c.objective || c.campaigns?.objective,
-          resultType: ps.result_type,
-          resultsIndicator: resIndicator || undefined,
-          optimizationGoal: optGoal || undefined,
-          isVehicleContext: false,
-        }).category;
-        const effectiveRes = cat === "REACH" ? (reach > 0 ? reach : conversions) : conversions;
-        const cpl = computeUnitCost(cost, effectiveRes, cat) ?? 0;
-        const ctr = impressions > 0 ? (clicks / impressions) * 100 : 0;
-        const ctrAll = impressions > 0 ? (allClicks / impressions) * 100 : 0;
-        const cpm = impressions > 0 ? (cost / impressions) * 1000 : 0;
-        const cpc = clicks > 0 ? cost / clicks : 0;
-        const cpcAll = allClicks > 0 ? cost / allClicks : 0;
-        const purchaseVal = Number(c.t?.purchaseValue || 0);
-        const roas = cost > 0 && purchaseVal > 0 ? purchaseVal / cost : null;
-        return { ...c, result_type: cat, result_indicator: resIndicator, optimization_goal: optGoal, t: { ...c.t, cost, conversions, clicks, allClicks, impressions, reach, freq, cpl, ctr, ctrAll, cpm, cpc, cpcAll, roas } };
-      });
+      base = ads.map((c: any) => applyPeriodStatsToEntity(c, statsMap, true));
     }
-    return includeNoDelivery
-      ? base
-      : base.filter((c: any) => (c.t?.reach || 0) >= 1 || (c.t?.impressions || 0) >= 1 || (c.t?.cost || 0) > 0);
+    return includeNoDelivery ? base : base.filter((c: any) => hasEntityDelivery(c.t || {}));
   }, [ads, calibratedPeriodStats, includeNoDelivery]);
 
   // Preserva números oficiais do Meta no nível campanha e anexa soma dos anúncios para diagnóstico sem sobrescrita destrutiva
@@ -1561,7 +1568,7 @@ function MetricasCampanhasPage() {
 
   const hiddenNoDeliveryCount = useMemo(() => {
     const src = level === "campanhas" ? campaigns : level === "conjuntos" ? adSets : ads;
-    return src.filter((c: any) => (c.t?.reach || 0) < 1 && (c.t?.impressions || 0) < 1 && (c.t?.cost || 0) <= 0).length;
+    return src.filter((c: any) => !hasEntityDelivery(c.t || {})).length;
   }, [level, campaigns, adSets, ads]);
 
   const listData = useMemo(() => {
@@ -1648,7 +1655,9 @@ function MetricasCampanhasPage() {
         target.t?.conversions ?? 0,
         target.name + " " + (target.campaigns?.name || ""),
         target.objective || target.campaigns?.objective,
-        target.result_type
+        target.result_type,
+        [],
+        target.optimization_goal
       );
       const matchedAcc = adAccounts.find((a: any) => a.id === (target.ad_account_id || accountFilter));
       const activeAccName = matchedAcc?.name || "Conta Meta Ads";
@@ -1704,7 +1713,7 @@ function MetricasCampanhasPage() {
   const toggleAll = useCallback(() => allSelected ? setSelSet(new Set()) : setSelSet(new Set(filtered.map((c: any) => c.id))), [allSelected, filtered, setSelSet]);
   const toggleOne = useCallback((id: string) => { const s = new Set(selSet); s.has(id) ? s.delete(id) : s.add(id); setSelSet(s); }, [selSet, setSelSet]);
 
-  const { sel, totCost, totConv, totImpr, totReach, reachLabel, totClicks, totAllClicks, avgCpl, avgCtr, avgCtrAll, avgCpm, metricVector } = useMemo(() => {
+  const { sel, totCost, totConv, totImpr, totReach, reachLabel, totClicks, totAllClicks, totPurchaseValue, avgRoas, avgCpl, avgCtr, avgCtrAll, avgCpm, metricVector } = useMemo(() => {
     const s = selSet.size > 0 ? filtered.filter((c: any) => selSet.has(c.id)) : filtered;
     const cost = s.reduce((sum: number, c: any) => sum + c.t.cost, 0);
     const conv = s.reduce((sum: number, c: any) => sum + c.t.conversions, 0);
@@ -1712,6 +1721,7 @@ function MetricasCampanhasPage() {
     const summedReach = s.reduce((sum: number, c: any) => sum + c.t.reach, 0);
     const clicks = s.reduce((sum: number, c: any) => sum + c.t.clicks, 0);
     const allClicks = s.reduce((sum: number, c: any) => sum + (c.t.allClicks ?? c.t.clicks ?? 0), 0);
+    const purchaseVal = s.reduce((sum: number, c: any) => sum + Number(c.t?.purchaseValue || 0), 0);
 
     const canUseAccountReach =
       level === "campanhas" &&
@@ -1741,6 +1751,7 @@ function MetricasCampanhasPage() {
         resultType: c.result_type,
         resultIndicator: c.result_indicator,
         optimizationGoal: c.optimization_goal,
+        purchaseValue: c.t?.purchaseValue ?? 0,
         isVehicleContext: false,
       })),
       { deduplicatedAccountReach }
@@ -1770,6 +1781,8 @@ function MetricasCampanhasPage() {
       reachLabel: deduplicatedAccountReach !== null ? "Alcance (Conta)" : "Alcance (Soma)",
       totClicks: clicks,
       totAllClicks: allClicks,
+      totPurchaseValue: purchaseVal,
+      avgRoas: summary.roasPurchases ?? (cost > 0 && purchaseVal > 0 ? purchaseVal / cost : null),
       avgCpl: computedAvgCpl,
       avgCtr: impr > 0 ? (clicks / impr) * 100 : 0,
       avgCtrAll: impr > 0 ? (allClicks / impr) * 100 : 0,
@@ -2083,6 +2096,8 @@ function MetricasCampanhasPage() {
           reachLabel={reachLabel}
           totClicks={totClicks}
           totAllClicks={totAllClicks}
+          totPurchaseValue={totPurchaseValue}
+          avgRoas={avgRoas}
           avgCtr={avgCtr}
           avgCtrAll={avgCtrAll}
           avgCpm={avgCpm}
@@ -2297,9 +2312,42 @@ function MetricasCampanhasPage() {
       <div className="pt-4 space-y-5">
         <AnimatePresence mode="wait">
 
-          {/* â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€ GESTÃO â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€ */}
+          {/* ──────────────────────────── GESTÃO ────────────────────────────── */}
           {view === "gestao" && (
             <motion.div key="gestao" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-5">
+
+              {/* Diagnóstico explícito de saldo zero ou falha parcial de sincronização */}
+              {(() => {
+                const isZeroPrepay =
+                  accountFilter !== "all" &&
+                  accountBillingSnapshot &&
+                  Number(accountBillingSnapshot.balance ?? 999) <= 1;
+                const partialFailures: any[] = Array.isArray(latestSyncRun?.partial_failures) ? latestSyncRun.partial_failures : [];
+                const matchedFailure =
+                  accountFilter !== "all"
+                    ? partialFailures.find((f: any) => f?.ad_account_id === accountFilter || f?.account_id === accountFilter)
+                    : null;
+                if (!isZeroPrepay && !matchedFailure && latestSyncRun?.status !== "error") return null;
+                return (
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-2.5 text-xs text-amber-200">
+                    <div className="flex items-start gap-2 min-w-0">
+                      <AlertTriangle className="h-4 w-4 text-amber-400 shrink-0 mt-0.5" />
+                      <div className="space-y-0.5">
+                        {isZeroPrepay && (
+                          <p className="font-semibold">
+                            Saldo Meta esgotado (R$ {fmtBRL(Number(accountBillingSnapshot.balance || 0))}) — entrega pausada; conversões de janela de atribuição (7d) ainda podem aparecer sem novo gasto.
+                          </p>
+                        )}
+                        {(matchedFailure || latestSyncRun?.status === "error") && (
+                          <p className="text-[11px] text-amber-300/90">
+                            Sync Meta: {matchedFailure?.error || matchedFailure?.reason || latestSyncRun?.error_message || "Falha parcial registrada na última execução."}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
 
               {/* Aviso de escopo direto quando não há campanha/conjunto marcado */}
               {((level === "conjuntos" && selectedCamps.size === 0 && !selectedCampaignId) || (level === "anuncios" && selectedCamps.size === 0 && selectedAdSets.size === 0 && !selectedCampaignId)) && (
@@ -2441,7 +2489,41 @@ function MetricasCampanhasPage() {
                   {isLoadingCamps || isLoadingAdSets || isLoadingAds ? (
                     <div className="flex justify-center py-24"><Loader2 className="h-8 w-8 animate-spin text-primary"/></div>
                   ) : filtered.length === 0 ? (
-                    <div className="py-24 text-center text-sm text-muted-foreground">Nenhum dado encontrado.</div>
+                    <div className="py-16 px-4 text-center space-y-3">
+                      <p className="text-sm font-semibold text-foreground">
+                        {accountFilter !== "all" && accountBillingSnapshot && Number(accountBillingSnapshot.balance ?? 999) <= 1
+                          ? `Conta sem saldo ativo para veiculação (saldo registrado: R$ ${fmtBRL(Number(accountBillingSnapshot.balance || 0))}).`
+                          : "Nenhum dado com entrega registrado neste período."}
+                      </p>
+                      <p className="text-xs text-muted-foreground max-w-lg mx-auto">
+                        {hiddenNoDeliveryCount > 0
+                          ? `Existem ${hiddenNoDeliveryCount} ${level} sincronizados sem impressões ou gasto no recorte selecionado.`
+                          : latestSyncRun?.status === "error" || (Array.isArray(latestSyncRun?.partial_failures) && latestSyncRun.partial_failures.length > 0)
+                            ? "O último ciclo de sincronização registrou alertas parciais na API Meta. Verifique ou dispare uma nova sincronização."
+                            : "Ajuste o período no seletor acima ou execute Sync para consultar a Graph API da Meta."}
+                      </p>
+                      <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
+                        {hiddenNoDeliveryCount > 0 && !includeNoDelivery && (
+                          <button
+                            type="button"
+                            onClick={() => setIncludeNoDelivery(true)}
+                            className="inline-flex items-center gap-1.5 rounded-xl border border-primary/40 bg-primary/10 px-3 py-1.5 text-xs font-bold text-primary hover:bg-primary/20 transition"
+                          >
+                            <Eye className="h-3.5 w-3.5" />
+                            Exibir {hiddenNoDeliveryCount} sem entrega
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => syncMutation.mutate()}
+                          disabled={syncMutation.isPending}
+                          className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-white/5 px-3 py-1.5 text-xs font-bold text-foreground hover:bg-white/10 transition disabled:opacity-50"
+                        >
+                          <RefreshCw className={`h-3.5 w-3.5 ${syncMutation.isPending ? "animate-spin" : ""}`} />
+                          Sincronizar Período
+                        </button>
+                      </div>
+                    </div>
                   ) : (
                     <div className="w-full">
                       {/* --- DESKTOP TABLE --- */}
@@ -2482,7 +2564,9 @@ function MetricasCampanhasPage() {
                               c.t.conversions,
                               c.name + " " + (c.campaigns?.name || ""),
                               c.objective || c.campaigns?.objective,
-                              c.result_type
+                              c.result_type,
+                              [],
+                              c.optimization_goal
                             );
                             return (
                               <tr 
@@ -2577,6 +2661,12 @@ function MetricasCampanhasPage() {
                                     <span className="text-[8.5px] text-muted-foreground/70 font-medium leading-tight max-w-[170px] truncate" title={resultDetail.resultLabel}>
                                       {resultDetail.resultLabel}
                                     </span>
+                                    {c.t.purchaseValue > 0 && (
+                                      <span className="text-[9px] font-mono font-bold text-emerald-400 leading-tight">
+                                        Receita: R$ {fmtBRL(c.t.purchaseValue)}
+                                        {c.t.roas !== null && c.t.roas !== undefined ? ` • ${c.t.roas.toFixed(2)}x` : ""}
+                                      </span>
+                                    )}
                                   </div>
                                 </td>
                                 {/* custo por resultado / cpl */}
@@ -2738,7 +2828,9 @@ function MetricasCampanhasPage() {
                           c.t.conversions,
                           c.name + " " + (c.campaigns?.name || ""),
                           c.objective || c.campaigns?.objective,
-                          c.result_type
+                          c.result_type,
+                          [],
+                          c.optimization_goal
                         );
 
                         return (
@@ -2831,6 +2923,11 @@ function MetricasCampanhasPage() {
                                 <span className="text-[8.5px] text-muted-foreground/70 font-medium leading-tight truncate mt-0.5" title={resultDetail.resultLabel}>
                                   {resultDetail.resultLabel}
                                 </span>
+                                {c.t.purchaseValue > 0 && (
+                                  <span className="text-[9px] font-mono font-bold text-emerald-400 leading-tight mt-0.5">
+                                    R$ {fmtBRL(c.t.purchaseValue)}{c.t.roas !== null && c.t.roas !== undefined ? ` • ${c.t.roas.toFixed(2)}x` : ""}
+                                  </span>
+                                )}
                               </div>
                               <div className="bg-black/20 rounded-xl p-2.5 flex flex-col justify-between border border-white/5">
                                 <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/60">Custo por Res.</span>
@@ -3831,7 +3928,9 @@ function MetricasCampanhasPage() {
                       selectedFocusItem.t.conversions,
                       selectedFocusItem.name + " " + (selectedFocusItem.campaigns?.name || ""),
                       selectedFocusItem.objective || selectedFocusItem.campaigns?.objective,
-                      selectedFocusItem.result_type
+                      selectedFocusItem.result_type,
+                      [],
+                      selectedFocusItem.optimization_goal
                     );
                     return (
                       <>

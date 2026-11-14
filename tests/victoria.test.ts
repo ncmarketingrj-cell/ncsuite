@@ -1169,3 +1169,68 @@ test("Auditoria Gap 1: executeGovernedVictoriaDiagnostic distingue Resposta Gene
     globalThis.fetch = originalFetch;
   }
 });
+
+test("BM Bonne21 (OUTCOME_SALES com purchaseValue/ROAS & OUTCOME_ENGAGEMENT com LANDING_PAGE_VIEWS) no contrato Victoria", () => {
+  const salesCtx = buildContextFromMetricasItem({
+    item: {
+      id: "120253223224110659",
+      external_id: "120253223224110659",
+      name: "NC | CMP de Vendas (05/08) - HC — Cópia x6",
+      status: "ACTIVE",
+      ad_account_id: "act_904927503704788",
+      adAccountName: "BM Bonne21",
+      rawObjective: "OUTCOME_SALES",
+      optimizationGoal: "OFFSITE_CONVERSIONS",
+      resultType: "PURCHASES",
+      resultIndicator: "actions:offsite_conversion.fb_pixel_purchase",
+      cost: 120.48,
+      conversions: 28,
+      purchaseValue: 267.8,
+      impressions: 7629,
+      reach: 5200,
+      clicks: 82,
+      allClicks: 104,
+    },
+    surface: "metricas",
+    route: "/metricas",
+    accountId: "act_904927503704788",
+    accountName: "BM Bonne21",
+    dateFrom: "2026-11-05",
+    dateTo: "2026-11-13",
+    operationalMode: "READ_ONLY_ANALYSIS",
+  });
+
+  assert.equal(salesCtx.optimization.category, "PURCHASES");
+  assert.equal(salesCtx.raw_metrics.purchase_value, 267.8);
+  assert.ok(Math.abs((salesCtx.raw_metrics.roas ?? 0) - 267.8 / 120.48) < 0.01);
+
+  const salesAnalysis = generateSeniorStructuredAnalysis(salesCtx);
+  assert.equal(hasAllMandatory10Sections(salesAnalysis), true);
+  assert.ok(salesAnalysis.includes("Valor de Compra"));
+  assert.ok(salesAnalysis.includes("ROAS"));
+
+  const lpvCtx = buildContextFromMetricasItem({
+    item: {
+      id: "camp_bonne_site",
+      name: "CMP - NC - SITE — Cópia",
+      status: "ACTIVE",
+      ad_account_id: "act_904927503704788",
+      adAccountName: "BM Bonne21",
+      rawObjective: "OUTCOME_ENGAGEMENT",
+      optimizationGoal: "LANDING_PAGE_VIEWS",
+      cost: 42.1,
+      conversions: 95,
+      impressions: 3400,
+      reach: 2800,
+      clicks: 112,
+    },
+    surface: "metricas",
+    route: "/metricas",
+    accountId: "act_904927503704788",
+    accountName: "BM Bonne21",
+    dateFrom: "2026-11-05",
+    dateTo: "2026-11-11",
+    operationalMode: "READ_ONLY_ANALYSIS",
+  });
+  assert.equal(lpvCtx.optimization.category, "LANDING_PAGE_VIEWS");
+});

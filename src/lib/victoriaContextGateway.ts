@@ -145,6 +145,7 @@ export function buildContextFromMetricasItem(
     link_clicks: linkClicks,
     all_clicks: allClicks,
     conversions,
+    purchase_value: Number(t.purchaseValue ?? raw.purchase_value ?? raw.purchaseValue ?? 0) || null,
     has_creative_data: Boolean(raw.creative_url || raw.thumbnail_url),
     has_copy_data: Boolean(raw.body || raw.headline),
     has_audience_targeting: Boolean(raw.targeting),
@@ -221,6 +222,9 @@ export function buildContextFromAccountSummary(
   let totalAllClicks = 0;
   let messageResults = 0;
   let messageSpend = 0;
+  let purchaseResults = 0;
+  let purchaseSpend = 0;
+  let totalPurchaseValue = 0;
 
   for (const c of input.campaigns || []) {
     const cost = Number(c.cost || 0);
@@ -229,6 +233,7 @@ export function buildContextFromAccountSummary(
     const clicks = Number(c.clicks || 0);
     const allClicks = Number(c.allClicks ?? c.clicks ?? 0);
     const conv = Number(c.conversions || 0);
+    const purchaseVal = Number((c as any).purchase_value ?? (c as any).purchaseValue ?? 0);
 
     const cls = classifyMetaEvent({
       campaignName: c.name || "",
@@ -247,10 +252,14 @@ export function buildContextFromAccountSummary(
     summedReach += reach;
     totalLinkClicks += clicks;
     totalAllClicks += allClicks;
+    totalPurchaseValue += purchaseVal;
 
     if (cls.category === "MESSAGES") {
       messageResults += conv;
       messageSpend += cost;
+    } else if (cls.category === "PURCHASES") {
+      purchaseResults += conv;
+      purchaseSpend += cost;
     }
   }
 
@@ -258,6 +267,8 @@ export function buildContextFromAccountSummary(
     input.deduplicatedAccountReach && input.deduplicatedAccountReach > 0
       ? Number(input.deduplicatedAccountReach)
       : summedReach;
+  const roas = totalSpend > 0 && totalPurchaseValue > 0 ? totalPurchaseValue / totalSpend : null;
+  const primaryIsPurchases = messageResults === 0 && (purchaseResults > 0 || totalPurchaseValue > 0);
 
   return buildVictoriaAnalysisContext({
     source_surface: input.surface,
@@ -273,10 +284,12 @@ export function buildContextFromAccountSummary(
     date_from: input.dateFrom,
     date_to: input.dateTo,
     last_sync_at: input.lastSyncAt ?? null,
-    odax_objective: "OUTCOME_ENGAGEMENT",
-    optimization_goal: "CONVERSATIONS",
-    result_type: "MESSAGES",
-    result_indicator: "actions:onsite_conversion.messaging_conversation_started_7d",
+    odax_objective: primaryIsPurchases ? "OUTCOME_SALES" : "OUTCOME_ENGAGEMENT",
+    optimization_goal: primaryIsPurchases ? "OFFSITE_CONVERSIONS" : "CONVERSATIONS",
+    result_type: primaryIsPurchases ? "PURCHASES" : "MESSAGES",
+    result_indicator: primaryIsPurchases
+      ? "actions:offsite_conversion.fb_pixel_purchase"
+      : "actions:onsite_conversion.messaging_conversation_started_7d",
     spend: totalSpend,
     impressions: totalImpressions,
     reach: finalReach,
@@ -286,11 +299,13 @@ export function buildContextFromAccountSummary(
         : "daily_sum_non_deduplicated",
     link_clicks: totalLinkClicks,
     all_clicks: totalAllClicks,
-    conversions: messageResults,
+    conversions: primaryIsPurchases ? purchaseResults : messageResults,
+    purchase_value: totalPurchaseValue,
     metric_vector: vector,
     account_max_cpl_target: input.accountMaxCplTarget ?? null,
-    comparable_same_objective_avg:
-      messageResults > 0 ? messageSpend / messageResults : null,
+    comparable_same_objective_avg: primaryIsPurchases
+      ? (purchaseResults > 0 ? purchaseSpend / purchaseResults : null)
+      : (messageResults > 0 ? messageSpend / messageResults : null),
     rag_documents: input.ragDocuments || [],
   });
 }

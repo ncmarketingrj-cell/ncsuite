@@ -73,34 +73,49 @@ async function sendWhatsAppMessages(
   }
 }
 
-// Classifica o objetivo da campanha em label legível + sigla de custo
-function getResultInfo(resultType: string | null | undefined): {
-  label: string        // ex: "Lead", "Compra", "Clique"
-  metricLabel: string  // ex: "CPL", "CPA", "CPC"
+// Classifica o objetivo/evento da campanha em label legível + sigla de custo (alinhado ao metaCore)
+function getResultInfo(
+  resultType: string | null | undefined,
+  optimizationGoal?: string | null,
+  resultIndicator?: string | null
+): {
+  label: string        // ex: "Lead", "Compra", "Clique", "Conversa", "Visualização de Página"
+  metricLabel: string  // ex: "CPL", "CPA", "CPC", "Custo/Conversa", "Custo/Visualização"
   emoji: string
 } {
   const t = (resultType || "").toUpperCase()
+  const opt = (optimizationGoal || "").toUpperCase()
+  const ind = (resultIndicator || "").toLowerCase()
 
-  if (["OUTCOME_LEADS", "LEAD_GENERATION"].includes(t))
-    return { label: "Lead", metricLabel: "CPL", emoji: "👤" }
+  if (["PURCHASES", "CONVERSIONS", "OUTCOME_SALES"].includes(t) || ind.includes("purchase"))
+    return { label: "Compra", metricLabel: "CPA (Compra)", emoji: "🛒" }
 
-  if (["MESSAGES", "OUTCOME_ENGAGEMENT", "MESSAGING_CONVERSATION_STARTED_BY_PERSON", "MESSAGING_FIRST_REPLY"].includes(t))
+  if (t === "LANDING_PAGE_VIEWS" || opt === "LANDING_PAGE_VIEWS" || ind.includes("landing_page_view"))
+    return { label: "Visualização de Página", metricLabel: "Custo/Visualização", emoji: "🌐" }
+
+  if (t === "INSTAGRAM_PROFILE" || opt === "PROFILE_AND_PAGE_ENGAGEMENT" || ind.includes("profile_visit"))
+    return { label: "Visita ao Perfil", metricLabel: "Custo/Visita", emoji: "👤" }
+
+  if (["OUTCOME_LEADS", "LEAD_GENERATION", "LEADS"].includes(t) || opt === "LEAD_GENERATION" || ind.includes("lead"))
+    return { label: "Lead", metricLabel: "CPL", emoji: "🎯" }
+
+  if (["MESSAGES", "MESSAGING_CONVERSATION_STARTED_BY_PERSON", "MESSAGING_FIRST_REPLY"].includes(t) || opt === "REPLIES" || ind.includes("messaging_conversation"))
     return { label: "Conversa", metricLabel: "Custo/Conversa", emoji: "💬" }
 
-  if (["CONVERSIONS", "OUTCOME_SALES"].includes(t))
-    return { label: "Compra", metricLabel: "CPA", emoji: "🛒" }
+  if (t === "OUTCOME_ENGAGEMENT")
+    return { label: "Engajamento", metricLabel: "Custo/Engajamento", emoji: "💬" }
 
-  if (["OUTCOME_TRAFFIC", "LINK_CLICKS"].includes(t))
-    return { label: "Clique no Link", metricLabel: "CPC", emoji: "🖱️" }
+  if (["OUTCOME_TRAFFIC", "LINK_CLICKS"].includes(t) || opt === "LINK_CLICKS")
+    return { label: "Clique no Link", metricLabel: "CPC Link", emoji: "🖱️" }
 
-  if (["VIDEO_VIEWS", "OUTCOME_VIDEO_VIEWS", "THRUPLAY"].includes(t))
-    return { label: "Visualização", metricLabel: "CPV", emoji: "🎬" }
+  if (["VIDEO_VIEWS", "OUTCOME_VIDEO_VIEWS", "THRUPLAY"].includes(t) || opt === "THRUPLAY")
+    return { label: "Visualização de Vídeo", metricLabel: "CPV", emoji: "🎬" }
 
-  if (["OUTCOME_AWARENESS", "REACH", "POST_REACH", "BRAND_AWARENESS"].includes(t))
-    return { label: "Alcance", metricLabel: "CPM", emoji: "👁️" }
+  if (["OUTCOME_AWARENESS", "REACH", "POST_REACH", "BRAND_AWARENESS"].includes(t) || opt === "REACH" || ind === "reach")
+    return { label: "Pessoas Alcançadas", metricLabel: "Custo/1k Alc.", emoji: "👁️" }
 
-  if (["POST_ENGAGEMENT", "PAGE_LIKES", "ENGAGED_USERS"].includes(t))
-    return { label: "Engajamento", metricLabel: "CPE", emoji: "❤️" }
+  if (["POST_ENGAGEMENT", "PAGE_LIKES", "ENGAGED_USERS", "ENGAGEMENT"].includes(t))
+    return { label: "Engajamento", metricLabel: "Custo/Engajamento", emoji: "❤️" }
 
   if (["APP_INSTALLS", "OUTCOME_APP_PROMOTION"].includes(t))
     return { label: "Instalação", metricLabel: "CPI", emoji: "📱" }
@@ -177,21 +192,35 @@ serve(async (req) => {
 
     let totalAlerts = 0
 
-    // Buscar todas as campanhas ativas + nomes das contas
-    const [{ data: campaigns, error: campErr }, { data: allAdAccounts }] = await Promise.all([
+    // Buscar todas as campanhas ativas + nomes das contas + último saldo conhecido
+    const [{ data: campaigns, error: campErr }, { data: allAdAccounts }, { data: recentBillingSnaps }] = await Promise.all([
       supabase
         .from("campaigns")
         .select("id, name, status, external_id, daily_budget, budget_currency, ad_account_id, objective")
         .in("status", ["active", "ACTIVE"]),
       supabase
         .from("ad_accounts")
-        .select("id, external_id, name"),
+        .select("id, name"),
+      supabase
+        .from("billing_snapshots")
+        .select("ad_account_id, balance, account_status")
+        .order("fetched_at", { ascending: false })
+        .limit(200),
     ])
 
     const accountNameById = new Map<string, string>()
     for (const acc of allAdAccounts || []) {
       if (acc.id) accountNameById.set(String(acc.id), String(acc.name || "Conta Meta Ads"))
-      if (acc.external_id) accountNameById.set(String(acc.external_id), String(acc.name || "Conta Meta Ads"))
+    }
+    const latestBillingByAccount = new Map<string, { balance: number | null; account_status: number | null }>()
+    for (const snap of recentBillingSnaps || []) {
+      const k = String(snap.ad_account_id || "")
+      if (k && !latestBillingByAccount.has(k)) {
+        latestBillingByAccount.set(k, {
+          balance: snap.balance !== null && snap.balance !== undefined ? Number(snap.balance) : null,
+          account_status: snap.account_status !== null && snap.account_status !== undefined ? Number(snap.account_status) : null,
+        })
+      }
     }
 
     if (campErr) {
@@ -257,10 +286,10 @@ serve(async (req) => {
         const ruleType = specificRule ? "Campanha" : (accountRule ? "Conta" : "Global")
         const accountName = accountNameById.get(String(campaign.ad_account_id || "")) || (activeRule.ad_accounts as any)?.name || "Conta Meta Ads"
 
-        // Métricas de hoje da tabela metrics (tem result_type e frequency)
+        // Métricas de hoje da tabela metrics (tem result_type, result_indicator, optimization_goal e frequency)
         const { data: metricsRows } = await supabase
           .from("metrics")
-          .select("cost, conversions, impressions, reach, clicks, result_type, frequency")
+          .select("cost, conversions, impressions, reach, clicks, result_type, optimization_goal, result_indicator, frequency")
           .eq("campaign_id", campaign.id)
           .eq("date", today)
 
@@ -273,18 +302,24 @@ serve(async (req) => {
         const dailyBudget   = campaign.daily_budget || 0
         const budgetUsedPct = dailyBudget > 0 ? (spend / dailyBudget) * 100 : 0
         const rawType       = metricsRows[0]?.result_type || campaign.objective || null
-        const result        = getResultInfo(rawType)
+        const optGoalRow    = metricsRows.find((m: any) => m.optimization_goal)?.optimization_goal || null
+        const resIndRow     = metricsRows.find((m: any) => m.result_indicator)?.result_indicator || null
+        const result        = getResultInfo(rawType, optGoalRow, resIndRow)
         const targetAccId   = campaign.ad_account_id || activeRule.ad_account_id || ""
+        const accBilling    = latestBillingByAccount.get(String(targetAccId))
         const link          = `/metricas?account=${targetAccId}&campaign=${campaign.external_id}`
         const alertsToInsert: any[] = []
 
         if (spend === 0) {
           // SMART TRIGGER: Zero Delivery (Falta de Entrega)
           if (zeroDeliveryEnabled && currentHourBrt >= zeroDeliveryHour && dailyBudget > 0) {
+            const balanceNote = accBilling && accBilling.balance !== null && accBilling.balance <= 1
+              ? ` Saldo atual na conta: R$ ${accBilling.balance.toFixed(2)} (saldo esgotado/insuficiente).`
+              : " Verifique o saldo, pagamentos ou rejeições de anúncios urgentes."
             alertsToInsert.push({
               user_id:     userId,
               title:       `⚠️ Sem Entrega (Zero Delivery) — ${campaign.name}`,
-              message:     `A campanha está ATIVA mas gastou R$ 0,00 até agora (${currentHourBrt}h). Verifique o saldo, pagamentos ou rejeições de anúncios urgentes.`,
+              message:     `A campanha está ATIVA mas gastou R$ 0,00 até agora (${currentHourBrt}h).${balanceNote}`,
               type:        "alert",
               is_critical: true,
               link,
@@ -398,6 +433,7 @@ serve(async (req) => {
         }
         } // Fim do else de minSpend
 
+        const hist7d = avg7dMap.get(campaign.id);
         if (perfDropEnabled && hist7d && hist7d.days.size > 0 && currentHourBrt >= 14) {
           const avgDailyConv = hist7d.conv / 7;
           // Se a campanha costuma dar > 1 conversão/dia, já gastou mais de perfDropSpendPct hoje, e tem 0 conversões.

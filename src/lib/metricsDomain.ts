@@ -723,6 +723,7 @@ export interface RawCampaignMetricRow {
   resultsIndicator?: string;
   cost: number;
   conversions: number; // Somente conversões/resultados reais do evento (NUNCA cliques fallback)
+  purchaseValue?: number; // Receita atribuída a compras (action_values: purchase)
   clicks: number;
   inlineLinkClicks?: number;
   allClicks?: number;
@@ -734,6 +735,8 @@ export interface RawCampaignMetricRow {
 
 export interface NormalizedCampaignItem extends RawCampaignMetricRow {
   classification: EventClassification;
+  purchaseValue: number;
+  roas: number | null;
   unitCost: number | null;
   ctr: number | null;
   ctrAll: number | null;
@@ -747,6 +750,7 @@ export interface NormalizedCampaignItem extends RawCampaignMetricRow {
 export function normalizeCampaignItem(row: RawCampaignMetricRow): NormalizedCampaignItem {
   const cost = Number.isFinite(row.cost) ? Math.max(0, row.cost) : 0;
   const conversions = Number.isFinite(row.conversions) ? Math.max(0, row.conversions) : 0;
+  const purchaseValue = Number.isFinite(Number(row.purchaseValue ?? 0)) ? Math.max(0, Number(row.purchaseValue ?? 0)) : 0;
   const clicks = Number.isFinite(row.inlineLinkClicks ?? row.clicks) ? Math.max(0, Number(row.inlineLinkClicks ?? row.clicks ?? 0)) : 0;
   const allClicks = Number.isFinite(row.allClicks ?? row.clicks) ? Math.max(0, Number(row.allClicks ?? row.clicks ?? 0)) : 0;
   const impressions = Number.isFinite(row.impressions) ? Math.max(0, row.impressions) : 0;
@@ -763,11 +767,14 @@ export function normalizeCampaignItem(row: RawCampaignMetricRow): NormalizedCamp
 
   // Para REACH, o denominador da unidade "Por 1.000 pessoas alcançadas" é o alcance (ou conversions se já espelha alcance)
   const effectiveResults = classification.category === "REACH" ? (reach > 0 ? reach : conversions) : conversions;
+  const roas = cost > 0 && purchaseValue > 0 ? roundCurrency(purchaseValue / cost) : null;
 
   return {
     ...row,
     cost,
     conversions: effectiveResults,
+    purchaseValue,
+    roas,
     clicks,
     allClicks,
     impressions,
@@ -792,6 +799,8 @@ export interface EventGroupAggregate {
   campaignCount: number;
   spend: number;
   results: number;
+  purchaseValue: number;
+  roas: number | null;
   clicks: number;
   allClicks: number;
   impressions: number;
@@ -807,6 +816,9 @@ export interface EventGroupAggregate {
 
 export interface WeightedAggregateSummary {
   totalMediaSpend: number;
+  totalPurchaseValue: number;
+  purchaseSpend: number;
+  roasPurchases: number | null;
   totalClicks: number;
   inlineLinkClicks: number;
   allClicks: number;
@@ -842,6 +854,8 @@ export function computeWeightedAggregates(
   const metricVector = emptyMetricVector();
 
   let totalMediaSpend = 0;
+  let totalPurchaseValue = 0;
+  let purchaseSpend = 0;
   let totalClicks = 0;
   let totalAllClicks = 0;
   let totalImpressions = 0;
@@ -857,6 +871,10 @@ export function computeWeightedAggregates(
     const linkClk = item.inlineLinkClicks ?? item.clicks;
     const allClk = item.allClicks ?? item.clicks;
     totalMediaSpend += item.cost;
+    totalPurchaseValue += item.purchaseValue;
+    if (item.classification.category === "PURCHASES" || item.purchaseValue > 0) {
+      purchaseSpend += item.cost;
+    }
     totalClicks += linkClk;
     totalAllClicks += allClk;
     totalImpressions += item.impressions;
@@ -886,6 +904,7 @@ export function computeWeightedAggregates(
   const groupsByCategory: EventGroupAggregate[] = Array.from(groupMap.entries()).map(([category, items]) => {
     const spend = items.reduce((s, x) => s + x.cost, 0);
     const results = items.reduce((s, x) => s + x.conversions, 0);
+    const grpPurchaseValue = items.reduce((s, x) => s + x.purchaseValue, 0);
     const clicks = items.reduce((s, x) => s + (x.inlineLinkClicks ?? x.clicks), 0);
     const groupAllClicks = items.reduce((s, x) => s + (x.allClicks ?? x.clicks), 0);
     const impressions = items.reduce((s, x) => s + x.impressions, 0);
@@ -899,6 +918,8 @@ export function computeWeightedAggregates(
       campaignCount: items.length,
       spend,
       results,
+      purchaseValue: grpPurchaseValue,
+      roas: spend > 0 && grpPurchaseValue > 0 ? roundCurrency(grpPurchaseValue / spend) : null,
       clicks,
       allClicks: groupAllClicks,
       impressions,
@@ -913,7 +934,7 @@ export function computeWeightedAggregates(
     };
   });
 
-  const nonZeroGroups = groupsByCategory.filter((g) => g.spend > 0 || g.results > 0);
+  const nonZeroGroups = groupsByCategory.filter((g) => g.spend > 0 || g.results > 0 || g.purchaseValue > 0);
   const hasMixedObjectives = nonZeroGroups.length > 1;
 
   const dedupReach =
@@ -933,6 +954,9 @@ export function computeWeightedAggregates(
 
   return {
     totalMediaSpend,
+    totalPurchaseValue,
+    purchaseSpend,
+    roasPurchases: purchaseSpend > 0 && totalPurchaseValue > 0 ? roundCurrency(totalPurchaseValue / purchaseSpend) : null,
     totalClicks,
     inlineLinkClicks: totalClicks,
     allClicks: totalAllClicks,
@@ -957,6 +981,29 @@ export function computeWeightedAggregates(
     groupsByCategory,
     metricVector,
   };
+}
+
+/**
+ * Determina se uma entidade (campanha, conjunto ou anúncio) possui atividade mensurável
+ * no período — incluindo conversões/receita atribuídas por janela de 7d/1d mesmo quando
+ * o saldo acabou e cost/impressions do dia são 0.
+ */
+export function hasEntityDelivery(m: {
+  reach?: number | null;
+  impressions?: number | null;
+  cost?: number | null;
+  spend?: number | null;
+  conversions?: number | null;
+  purchaseValue?: number | null;
+  purchase_value?: number | null;
+}): boolean {
+  return (
+    Number(m.reach || 0) >= 1 ||
+    Number(m.impressions || 0) >= 1 ||
+    Number(m.cost ?? m.spend ?? 0) > 0 ||
+    Number(m.conversions || 0) > 0 ||
+    Number(m.purchaseValue ?? m.purchase_value ?? 0) > 0
+  );
 }
 
 export interface AccountMessageSummary {
@@ -1141,6 +1188,9 @@ export function buildReportSnapshot(params: {
         lines.push(`Investimento: R$ ${fmtBRL(grp.spend)}`);
         lines.push(`Total de compras: ${fmtInt(grp.results)}`);
         lines.push(`CPA: ${grp.unitCost !== null ? `R$ ${fmtBRL(grp.unitCost)}` : "Não calculável"}`);
+        if (grp.purchaseValue > 0) {
+          lines.push(`Receita (Valor de Compra): R$ ${fmtBRL(grp.purchaseValue)}${grp.roas !== null ? ` | ROAS: ${grp.roas.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}x` : ""}`);
+        }
         lines.push("");
       } else if (grp.category === "INSTAGRAM_PROFILE") {
         lines.push("*Campanha de Visitas ao Perfil:*");
