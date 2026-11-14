@@ -5,6 +5,7 @@ import {
   EVENT_MODEL_VERSION,
   classifyMetaEvent,
   computeAccountMessageSummary,
+  computeCampaignBudgetDistribution,
   computeUnitCost,
   emptyMetricVector,
   accumulateMetricVector,
@@ -50,8 +51,8 @@ function CustomPieTooltip({ active, payload }: any) {
     const data = payload[0]?.payload;
     if (!data) return null;
     return (
-      <div className="rounded-xl border border-white/10 bg-popover/95 backdrop-blur-md px-3.5 py-2.5 shadow-2xl z-50 pointer-events-none text-left">
-        <p className="text-xs font-bold text-popover-foreground max-w-[220px] truncate">{data.name}</p>
+      <div className="rounded-xl border border-white/10 bg-popover/95 backdrop-blur-md px-3.5 py-2.5 shadow-2xl z-50 pointer-events-none text-left max-w-[260px]">
+        <p className="text-xs font-bold text-popover-foreground truncate">{data.name}</p>
         <div className="flex items-center gap-2 mt-1">
           <span className="text-xs font-mono font-black text-primary">
             R$ {Number(data.value || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
@@ -60,9 +61,19 @@ function CustomPieTooltip({ active, payload }: any) {
             • {(data.percentage ?? 0).toFixed(1)}%
           </span>
         </div>
+        {data.isOtherSlice && (
+          <div className="mt-1.5 pt-1.5 border-t border-white/10 space-y-0.5 text-[10px] text-muted-foreground">
+            <p className="font-mono font-bold text-foreground">
+              {data.groupedCampaignsCount} {data.groupedCampaignsCount === 1 ? "campanha agrupada" : "campanhas agrupadas"}
+            </p>
+            <p className="leading-snug text-muted-foreground/90">
+              Critério: {data.groupingCriteria || "Campanhas com gasto > 0 no período fora do Top 7"}
+            </p>
+          </div>
+        )}
         {data.conversions > 0 && (
           <p className="text-[10px] text-emerald-400 font-mono mt-0.5">
-            {data.conversions} {data.conversions === 1 ? 'conversão' : 'conversões'}
+            {data.conversions} {data.conversions === 1 ? 'resultado' : 'resultados'}
           </p>
         )}
       </div>
@@ -168,7 +179,7 @@ function Dashboard() {
       const prevStartStr = getLocalDateStr(subDays(start, diffDays));
 
       // 1. Obter campanhas da conta ou do cliente com filtro nativo
-      let campQ = (supabase as any).from("campaigns").select("id, name, objective, ad_account_id, client_id");
+      let campQ = (supabase as any).from("campaigns").select("id, name, objective, status, ad_account_id, client_id");
       if (selectedAccountId !== "all") {
         campQ = campQ.eq("ad_account_id", selectedAccountId);
       }
@@ -178,7 +189,19 @@ function Dashboard() {
       const { data: campsList } = await campQ;
       const campaignsMap = new Map();
       const campIds = (campsList || []).map((c: any) => {
-        campaignsMap.set(c.id, { id: c.id, name: c.name || "Desconhecida", objective: c.objective, cost: 0, results: 0, trueConversions: 0 });
+        campaignsMap.set(c.id, {
+          id: c.id,
+          name: c.name || "Desconhecida",
+          objective: c.objective,
+          status: c.status,
+          adAccountId: c.ad_account_id,
+          cost: 0,
+          results: 0,
+          trueConversions: 0,
+          reach: 0,
+          impressions: 0,
+          clicks: 0,
+        });
         return c.id;
       });
 
@@ -188,6 +211,7 @@ function Dashboard() {
           chartData: [],
           barData: [],
           pieData: [],
+          budgetDistribution: computeCampaignBudgetDistribution([], 7),
           campaignsRanked: [],
           bestDay: null,
           avgDailyCost: 0,
@@ -336,6 +360,7 @@ function Dashboard() {
             trueConversions: 0,
             reach: 0,
             impressions: 0,
+            clicks: 0,
           };
           if (!camp.resultIndicator && m.result_indicator) camp.resultIndicator = m.result_indicator;
           if (!camp.optimizationGoal && m.optimization_goal) camp.optimizationGoal = m.optimization_goal;
@@ -343,8 +368,9 @@ function Dashboard() {
           camp.cost += Number(m.cost || 0);
           camp.results += evClass.category === "REACH" ? Math.max(Number(m.reach || 0), rowConv) : rowConv;
           if (!isVanity) camp.trueConversions += rowConv;
-          camp.reach += Number(m.reach || 0);
-          camp.impressions += Number(m.impressions || 0);
+          camp.reach = (camp.reach || 0) + Number(m.reach || 0);
+          camp.impressions = (camp.impressions || 0) + Number(m.impressions || 0);
+          camp.clicks = (camp.clicks || 0) + linkClk;
           campaignsMap.set(campId, camp);
 
           currentPeriod.cost += Number(m.cost || 0);
@@ -406,30 +432,9 @@ function Dashboard() {
       });
 
       const barData = campaignsRanked.slice(0, 8).map(c => ({ name: c.name.toUpperCase(), Gasto: c.cost, Resultados: c.conversions }));
-      
-      const activeCampaigns = campaignsRanked.filter((c: any) => c.cost > 0);
-      const topForPie = activeCampaigns.slice(0, 7);
-      const othersForPie = activeCampaigns.slice(7);
-      const otherCost = othersForPie.reduce((acc: number, c: any) => acc + c.cost, 0);
-      const otherPercentage = othersForPie.reduce((acc: number, c: any) => acc + c.percentage, 0);
 
-      const pieData = topForPie.map((c: any) => ({
-        id: c.id,
-        name: c.name,
-        value: c.cost,
-        percentage: c.percentage,
-        conversions: c.conversions || 0,
-      }));
-
-      if (otherCost > 0) {
-        pieData.push({
-          id: undefined,
-          name: `Outras (${othersForPie.length})`,
-          value: otherCost,
-          percentage: otherPercentage,
-          conversions: othersForPie.reduce((acc: number, c: any) => acc + (c.conversions || 0), 0),
-        });
-      }
+      const budgetDistribution = computeCampaignBudgetDistribution(campaignsRanked, 7);
+      const pieData = budgetDistribution.slices;
 
       // Estatísticas executivas do período
       let bestDay = chartData.length > 0 ? chartData[0] : null;
@@ -488,6 +493,7 @@ function Dashboard() {
         chartData,
         barData,
         pieData,
+        budgetDistribution,
         campaignsRanked,
         bestDay,
         avgDailyCost,
@@ -1217,33 +1223,74 @@ function Dashboard() {
 
         {/* DISTRIBUIÇÃO DA VERBA PUBLICITÁRIA */}
         {(() => {
-          const pieList = performanceData?.pieData || [];
-          const totalSpend = performanceData?.totals?.cost || 0;
-          const topLeader = pieList[0];
-          const top2Spend = (pieList[0]?.value || 0) + (pieList[1]?.value || 0);
-          const top2Share = totalSpend > 0 ? (top2Spend / totalSpend) * 100 : 0;
-          const totalCampaignsCount = performanceData?.campaignsRanked?.length || pieList.length || 1;
-          const avgSpendPerCamp = totalSpend / Math.max(1, totalCampaignsCount);
+          const budgetDist =
+            performanceData?.budgetDistribution ??
+            computeCampaignBudgetDistribution(performanceData?.campaignsRanked || [], 7);
+          const pieList = budgetDist.slices;
+          const totalSpend = budgetDist.totalSpend;
+          const topLeader = budgetDist.leader;
+          const top2Share = budgetDist.top2ConcentrationPct;
+          const spendingCampaignsCount = budgetDist.spendingCampaigns;
+          const deliveringCampaignsCount = budgetDist.deliveringCampaigns;
+          const totalConfiguredCampaigns = budgetDist.totalConfiguredCampaigns;
+          const avgSpendPerSpendingCamp = budgetDist.averageSpendPerSpendingCampaign;
 
           return (
             <motion.div
               initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}
               className="glass-panel p-4 sm:p-6 lg:p-8 min-w-0 flex flex-col justify-between"
+              data-testid="budget-distribution-panel"
             >
               <div>
-                <div className="mb-4 flex items-center justify-between">
+                <div className="mb-4 flex items-center justify-between gap-2 flex-wrap">
                   <div>
                     <h3 className="header-sport text-xs sm:text-sm font-black tracking-widest uppercase flex items-center gap-2">
                       <PieChartIcon className="h-4 w-4 text-primary" />
                       Distribuição da Verba Publicitária
                     </h3>
                     <p className="text-[10px] text-muted-foreground uppercase mt-1 tracking-widest">
-                      Divisão percentual e financeira do orçamento entre as campanhas
+                      Divisão percentual e financeira do orçamento entre as campanhas com gasto no período
                     </p>
                   </div>
-                  <span className="text-[9px] font-black uppercase tracking-wider text-muted-foreground bg-white/5 border border-white/10 px-2 py-1 rounded-lg">
-                    {pieList.length} {pieList.length === 1 ? 'Fatia' : 'Fatias'}
-                  </span>
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span
+                      data-testid="budget-slices-badge"
+                      className="text-[9px] font-black uppercase tracking-wider text-muted-foreground bg-white/5 border border-white/10 px-2 py-1 rounded-lg"
+                    >
+                      {budgetDist.slicesCount} {budgetDist.slicesCount === 1 ? 'Fatia' : 'Fatias'}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Resumo Explícito de Contagens de Campanhas (Sem ambiguidade) */}
+                <div
+                  data-testid="budget-campaign-counts-strip"
+                  className="mb-4 grid grid-cols-3 gap-2 rounded-xl bg-white/[0.02] border border-white/5 p-2.5 text-[10px]"
+                >
+                  <div className="flex flex-col">
+                    <span className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground">
+                      Campanhas com gasto no período
+                    </span>
+                    <strong data-testid="spending-campaigns-count" className="text-xs sm:text-sm font-black font-mono text-emerald-400 mt-0.5">
+                      {spendingCampaignsCount}
+                    </strong>
+                  </div>
+                  <div className="flex flex-col border-l border-white/5 pl-2.5">
+                    <span className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground">
+                      Campanhas com entrega no período
+                    </span>
+                    <strong data-testid="delivering-campaigns-count" className="text-xs sm:text-sm font-black font-mono text-blue-400 mt-0.5">
+                      {deliveringCampaignsCount}
+                    </strong>
+                  </div>
+                  <div className="flex flex-col border-l border-white/5 pl-2.5">
+                    <span className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground">
+                      Campanhas cadastradas
+                    </span>
+                    <strong data-testid="configured-campaigns-count" className="text-xs sm:text-sm font-black font-mono text-foreground mt-0.5">
+                      {totalConfiguredCampaigns}
+                    </strong>
+                  </div>
                 </div>
 
                 {/* Layout Duplo: Donut na Esquerda + Legenda Detalhada na Direita */}
@@ -1269,13 +1316,16 @@ function Dashboard() {
                         <Tooltip content={<CustomPieTooltip />} />
                       </PieChart>
                     </ResponsiveContainer>
-                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none flex-col z-0">
-                      <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Total</span>
+                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none flex-col z-0 text-center px-2">
+                      <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Total investido</span>
                       <span className="text-base sm:text-lg font-black font-mono mt-0.5 text-foreground">
                         R$ {totalSpend.toLocaleString('pt-BR', { maximumFractionDigits: 0 })}
                       </span>
-                      <span className="text-[9px] font-mono text-muted-foreground/70 mt-0.5">
-                        {totalCampaignsCount} {totalCampaignsCount === 1 ? 'campanha' : 'campanhas'}
+                      <span className="text-[9px] font-mono text-emerald-400/90 mt-0.5 font-bold">
+                        {spendingCampaignsCount} com gasto no período
+                      </span>
+                      <span className="text-[8px] font-mono text-muted-foreground/70">
+                        de {totalConfiguredCampaigns} cadastradas
                       </span>
                     </div>
                   </div>
@@ -1283,11 +1333,12 @@ function Dashboard() {
                   {/* Lista Detalhada com Nome, % e R$ com barras de progresso */}
                   <div className="md:col-span-7 space-y-2 max-h-[250px] overflow-y-auto custom-scrollbar pr-1">
                     {pieList.map((item: any, idx: number) => {
-                      const pct = item.percentage ? item.percentage : ((item.value / (totalSpend || 1)) * 100);
+                      const pct = item.percentage !== undefined ? item.percentage : ((item.value / (totalSpend || 1)) * 100);
                       const color = COLORS[idx % COLORS.length];
                       return (
                         <div
                           key={idx}
+                          data-testid={item.isOtherSlice ? "budget-slice-other" : `budget-slice-${idx}`}
                           onClick={() => {
                             if (item.id) {
                               navigate({ to: "/metricas", search: { campaign: item.id } });
@@ -1301,9 +1352,16 @@ function Dashboard() {
                                 className="h-2.5 w-2.5 rounded-full shrink-0 shadow-sm"
                                 style={{ backgroundColor: color }}
                               />
-                              <span className="text-xs font-bold text-foreground truncate max-w-[130px] sm:max-w-[170px] group-hover:text-primary transition-colors">
-                                {item.name}
-                              </span>
+                              <div className="min-w-0">
+                                <span className="text-xs font-bold text-foreground truncate block max-w-[130px] sm:max-w-[175px] group-hover:text-primary transition-colors">
+                                  {item.name}
+                                </span>
+                                {item.isOtherSlice && (
+                                  <span className="text-[9px] text-muted-foreground block leading-tight">
+                                    Agrupa {item.groupedCampaignsCount} {item.groupedCampaignsCount === 1 ? "campanha com gasto > 0" : "campanhas com gasto > 0"} fora do Top 7
+                                  </span>
+                                )}
+                              </div>
                             </div>
                             <div className="text-right shrink-0 flex items-center gap-2">
                               <span className="text-xs font-black font-mono text-foreground">
@@ -1342,31 +1400,35 @@ function Dashboard() {
                   {/* Card 1: Campanha Líder */}
                   <div className="p-3 rounded-xl bg-white/[0.02] border border-white/5 flex flex-col justify-between">
                     <div className="flex items-center justify-between">
-                      <span className="text-[9px] font-black uppercase tracking-wider text-muted-foreground">Líder de Verba</span>
+                      <span className="text-[9px] font-black uppercase tracking-wider text-muted-foreground">Líder de verba</span>
                       <Trophy className="h-3.5 w-3.5 text-amber-400" />
                     </div>
                     <div className="mt-2">
-                      <div className="text-sm font-black font-mono text-foreground truncate">
-                        {topLeader ? `${(topLeader.percentage ?? ((topLeader.value / (totalSpend || 1)) * 100)).toFixed(1)}%` : "0%"}
+                      <div data-testid="budget-leader-pct" className="text-sm font-black font-mono text-foreground truncate">
+                        {topLeader ? `${topLeader.percentage.toFixed(1)}%` : "—"}
                       </div>
                       <p className="text-[10px] text-muted-foreground truncate mt-0.5" title={topLeader?.name || "Nenhuma"}>
-                        {topLeader?.name || "Nenhuma"}
+                        {topLeader?.name || "Nenhuma campanha com gasto"}
                       </p>
                     </div>
                   </div>
 
-                  {/* Card 2: Média por Campanha */}
+                  {/* Card 2: Média por Campanha com Gasto */}
                   <div className="p-3 rounded-xl bg-white/[0.02] border border-white/5 flex flex-col justify-between">
                     <div className="flex items-center justify-between">
-                      <span className="text-[9px] font-black uppercase tracking-wider text-muted-foreground">Média / Campanha</span>
+                      <span className="text-[9px] font-black uppercase tracking-wider text-muted-foreground">Média por campanha com gasto</span>
                       <Coins className="h-3.5 w-3.5 text-emerald-400" />
                     </div>
                     <div className="mt-2">
-                      <div className="text-sm font-black font-mono text-foreground truncate">
-                        R$ {avgSpendPerCamp.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      <div data-testid="budget-avg-per-spending" className="text-sm font-black font-mono text-foreground truncate">
+                        {avgSpendPerSpendingCamp !== null
+                          ? `R$ ${avgSpendPerSpendingCamp.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                          : "—"}
                       </div>
                       <p className="text-[10px] text-muted-foreground truncate mt-0.5">
-                        Em {totalCampaignsCount} {totalCampaignsCount === 1 ? 'campanha' : 'campanhas'}
+                        {spendingCampaignsCount > 0
+                          ? `Em ${spendingCampaignsCount} ${spendingCampaignsCount === 1 ? 'campanha com gasto' : 'campanhas com gasto'}`
+                          : "0 campanhas com gasto no período"}
                       </p>
                     </div>
                   </div>
@@ -1378,11 +1440,13 @@ function Dashboard() {
                       <Zap className="h-3.5 w-3.5 text-primary" />
                     </div>
                     <div className="mt-2">
-                      <div className="text-sm font-black font-mono text-foreground truncate">
-                        {top2Share.toFixed(0)}%
+                      <div data-testid="budget-top2-pct" className="text-sm font-black font-mono text-foreground truncate">
+                        {spendingCampaignsCount > 0 ? `${top2Share.toFixed(1)}%` : "—"}
                       </div>
                       <p className="text-[10px] font-semibold truncate mt-0.5">
-                        {top2Share >= 75 ? (
+                        {spendingCampaignsCount === 0 ? (
+                          <span className="text-muted-foreground">Sem gasto no período</span>
+                        ) : top2Share >= 75 ? (
                           <span className="text-amber-400">Alta concentração</span>
                         ) : top2Share >= 45 ? (
                           <span className="text-blue-400">Moderada</span>
@@ -1393,18 +1457,18 @@ function Dashboard() {
                     </div>
                   </div>
 
-                  {/* Card 4: Total Alocado */}
+                  {/* Card 4: Total Investido */}
                   <div className="p-3 rounded-xl bg-white/[0.02] border border-white/5 flex flex-col justify-between">
                     <div className="flex items-center justify-between">
-                      <span className="text-[9px] font-black uppercase tracking-wider text-muted-foreground">Total Alocado</span>
+                      <span className="text-[9px] font-black uppercase tracking-wider text-muted-foreground">Total investido</span>
                       <DollarSign className="h-3.5 w-3.5 text-primary" />
                     </div>
                     <div className="mt-2">
-                      <div className="text-sm font-black font-mono text-foreground truncate">
+                      <div data-testid="budget-total-spend" className="text-sm font-black font-mono text-foreground truncate">
                         R$ {totalSpend.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </div>
                       <p className="text-[10px] text-muted-foreground truncate mt-0.5">
-                        100% monitorado
+                        {deliveringCampaignsCount} com entrega • {totalConfiguredCampaigns} cadastradas
                       </p>
                     </div>
                   </div>
@@ -1418,7 +1482,7 @@ function Dashboard() {
                   <span className="truncate">
                     {topLeader ? (
                       <>
-                        A campanha líder concentra <strong className="text-foreground font-mono">{(topLeader.percentage ?? ((topLeader.value / (totalSpend || 1)) * 100)).toFixed(0)}%</strong> da verba. {top2Share >= 70 ? "Alocação altamente focada nas frentes prioritárias." : "Orçamento distribuído entre múltiplas iniciativas."}
+                        A campanha líder concentra <strong className="text-foreground font-mono">{topLeader.percentage.toFixed(0)}%</strong> da verba entre <strong className="text-foreground font-mono">{spendingCampaignsCount}</strong> campanhas com gasto ({deliveringCampaignsCount} com entrega de {totalConfiguredCampaigns} cadastradas).
                       </>
                     ) : (
                       "Nenhum investimento registrado no período."

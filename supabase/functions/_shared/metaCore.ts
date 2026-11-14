@@ -42,6 +42,8 @@ export interface MetaRetryOptions {
   baseDelayMs?: number;
   maxDelayMs?: number;
   maxPages?: number;
+  timeoutMs?: number;
+  signal?: AbortSignal;
   fetchFn?: typeof fetch;
   sleepFn?: (ms: number) => Promise<void>;
 }
@@ -139,9 +141,47 @@ export async function metaFetchJsonWithRetry(
   let lastUsagePct: number | null = null;
 
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    if (options.signal?.aborted) {
+      return {
+        ok: false,
+        data: null,
+        statusCode: lastStatus,
+        attempts,
+        error: "Requisição cancelada (aborted)",
+        errorCode: null,
+        errorKind: "network",
+        rateLimitUsagePct: lastUsagePct,
+      };
+    }
     attempts = attempt + 1;
+    let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
+    let controller: AbortController | null = null;
+    let onParentAbort: (() => void) | null = null;
     try {
-      const res = await fetchFn(url);
+      if (options.timeoutMs || options.signal) {
+        controller = new AbortController();
+        if (options.signal) {
+          if (options.signal.aborted) {
+            controller.abort();
+          } else {
+            onParentAbort = () => controller?.abort();
+            options.signal.addEventListener("abort", onParentAbort, { once: true });
+          }
+        }
+        if (options.timeoutMs && options.timeoutMs > 0) {
+          timeoutHandle = setTimeout(() => {
+            controller?.abort();
+          }, options.timeoutMs);
+        }
+      }
+
+      const res = controller
+        ? await fetchFn(url, { signal: controller.signal })
+        : await fetchFn(url);
+      if (timeoutHandle) clearTimeout(timeoutHandle);
+      if (onParentAbort && options.signal) {
+        options.signal.removeEventListener("abort", onParentAbort);
+      }
       lastStatus = res.status;
       lastUsagePct = parseUsagePct(res.headers) ?? lastUsagePct;
 
@@ -192,9 +232,21 @@ export async function metaFetchJsonWithRetry(
       const delayMs = retryAfterSec > 0 ? Math.min(maxDelayMs, retryAfterSec * 1000) : expDelay;
       await sleepFn(delayMs);
     } catch (err: any) {
+      if (timeoutHandle) clearTimeout(timeoutHandle);
+      if (onParentAbort && options.signal) {
+        options.signal.removeEventListener("abort", onParentAbort);
+      }
+      const isAborted =
+        options.signal?.aborted ||
+        err?.name === "AbortError" ||
+        String(err?.message || "").toLowerCase().includes("abort");
       lastKind = "network";
-      lastError = err?.message || "Network error";
-      if (attempt >= maxRetries) {
+      lastError = isAborted
+        ? options.timeoutMs
+          ? `Timeout (${options.timeoutMs}ms) ao consultar a API da Meta`
+          : "Requisição cancelada"
+        : err?.message || "Network error";
+      if (attempt >= maxRetries || options.signal?.aborted) {
         return {
           ok: false,
           data: null,

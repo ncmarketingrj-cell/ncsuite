@@ -1674,3 +1674,172 @@ export function evaluateCampaignHealth(params: {
     evaluatedAt,
   };
 }
+
+// ─── 11. Distribuição de Verba Publicitária (Command Center) ──────────────────
+
+export interface CampaignBudgetCandidate {
+  id?: string;
+  name: string;
+  status?: string;
+  adAccountId?: string;
+  cost: number;
+  impressions?: number;
+  reach?: number;
+  clicks?: number;
+  conversions?: number;
+  results?: number;
+}
+
+export interface CampaignBudgetSlice {
+  id?: string;
+  name: string;
+  value: number;
+  percentage: number;
+  conversions: number;
+  isOtherSlice: boolean;
+  groupedCampaignsCount: number;
+  groupingCriteria: string | null;
+}
+
+export interface CampaignBudgetDistributionResult {
+  totalConfiguredCampaigns: number;
+  deliveringCampaigns: number;
+  spendingCampaigns: number;
+  totalSpend: number;
+  averageSpendPerSpendingCampaign: number | null;
+  top2Spend: number;
+  top2ConcentrationPct: number;
+  leader: CampaignBudgetSlice | null;
+  slicesCount: number;
+  slices: CampaignBudgetSlice[];
+  sumSliceSpend: number;
+  sumSlicePercentage: number;
+}
+
+/**
+ * Calcula a distribuição de verba publicitária separando estritamente:
+ * - `totalConfiguredCampaigns`: todas as campanhas sincronizadas/cadastradas no filtro;
+ * - `deliveringCampaigns`: campanhas com entrega no período (cost > 0 || impressions > 0 || reach > 0 || conversions > 0 || results > 0 || clicks > 0);
+ * - `spendingCampaigns`: campanhas com gasto no período (cost > 0);
+ * - `averageSpendPerSpendingCampaign`: totalSpend / spendingCampaigns (ou null quando spendingCampaigns === 0).
+ *
+ * Campanhas com cost === 0 nunca entram nas fatias nem no grupo `Outras`.
+ */
+export function computeCampaignBudgetDistribution(
+  campaigns: CampaignBudgetCandidate[],
+  maxTopSlices = 7
+): CampaignBudgetDistributionResult {
+  const safeList = Array.isArray(campaigns) ? campaigns : [];
+  const totalConfiguredCampaigns = safeList.length;
+
+  const normalized = safeList.map((c) => {
+    const cost = Math.max(0, Number(c.cost || 0));
+    const impressions = Math.max(0, Number(c.impressions || 0));
+    const reach = Math.max(0, Number(c.reach || 0));
+    const clicks = Math.max(0, Number(c.clicks || 0));
+    const conversions = Math.max(0, Number(c.conversions ?? c.results ?? 0));
+    const results = Math.max(0, Number(c.results ?? c.conversions ?? 0));
+    const isSpending = cost > 0;
+    const isDelivering =
+      isSpending || impressions > 0 || reach > 0 || conversions > 0 || results > 0 || clicks > 0;
+
+    return {
+      id: c.id,
+      name: String(c.name || "Campanha sem nome"),
+      status: c.status,
+      adAccountId: c.adAccountId,
+      cost,
+      impressions,
+      reach,
+      clicks,
+      conversions,
+      results,
+      isSpending,
+      isDelivering,
+    };
+  });
+
+  const deliveringCampaigns = normalized.filter((c) => c.isDelivering).length;
+  const spendingList = normalized
+    .filter((c) => c.isSpending)
+    .sort((a, b) => b.cost - a.cost || a.name.localeCompare(b.name));
+
+  const spendingCampaigns = spendingList.length;
+  const rawTotalSpend = spendingList.reduce((acc, c) => acc + c.cost, 0);
+  const totalSpend = Math.round((rawTotalSpend + Number.EPSILON) * 100) / 100;
+
+  const averageSpendPerSpendingCampaign =
+    spendingCampaigns > 0
+      ? Math.round((totalSpend / spendingCampaigns + Number.EPSILON) * 100) / 100
+      : null;
+
+  const topLimit = Math.max(1, Math.floor(maxTopSlices));
+  const topCampaigns = spendingList.slice(0, topLimit);
+  const otherCampaigns = spendingList.slice(topLimit);
+
+  const slices: CampaignBudgetSlice[] = topCampaigns.map((c) => ({
+    id: c.id,
+    name: c.name,
+    value: Number(c.cost.toFixed(2)),
+    percentage: rawTotalSpend > 0 ? (c.cost / rawTotalSpend) * 100 : 0,
+    conversions: c.conversions,
+    isOtherSlice: false,
+    groupedCampaignsCount: 1,
+    groupingCriteria: null,
+  }));
+
+  if (otherCampaigns.length > 0) {
+    const otherSpendRaw = otherCampaigns.reduce((acc, c) => acc + c.cost, 0);
+    const otherConversions = otherCampaigns.reduce((acc, c) => acc + c.conversions, 0);
+    slices.push({
+      id: undefined,
+      name: `Outras (${otherCampaigns.length})`,
+      value: Number(otherSpendRaw.toFixed(2)),
+      percentage: rawTotalSpend > 0 ? (otherSpendRaw / rawTotalSpend) * 100 : 0,
+      conversions: otherConversions,
+      isOtherSlice: true,
+      groupedCampaignsCount: otherCampaigns.length,
+      groupingCriteria: `Campanhas com gasto > 0 no período fora do Top ${topLimit}`,
+    });
+  }
+
+  // Ajuste de precisão centesimal na última fatia para garantir sum(sliceSpend) === totalSpend e sum(slicePercentage) === 100%
+  if (slices.length > 0 && totalSpend > 0) {
+    const priorSpend = slices.slice(0, -1).reduce((acc, s) => acc + s.value, 0);
+    const priorPct = slices.slice(0, -1).reduce((acc, s) => acc + s.percentage, 0);
+    const lastIdx = slices.length - 1;
+    slices[lastIdx] = {
+      ...slices[lastIdx],
+      value: Number(Math.max(0, totalSpend - priorSpend).toFixed(2)),
+      percentage: Math.max(0, 100 - priorPct),
+    };
+  }
+
+  const sumSliceSpend = Number(slices.reduce((acc, s) => acc + s.value, 0).toFixed(2));
+  const sumSlicePercentage =
+    slices.length > 0 && totalSpend > 0
+      ? Number(slices.reduce((acc, s) => acc + s.percentage, 0).toFixed(4))
+      : 0;
+
+  const top2Spend = Number(
+    ((spendingList[0]?.cost || 0) + (spendingList[1]?.cost || 0)).toFixed(2)
+  );
+  const top2ConcentrationPct =
+    rawTotalSpend > 0 ? Number(((top2Spend / rawTotalSpend) * 100).toFixed(2)) : 0;
+
+  return {
+    totalConfiguredCampaigns,
+    deliveringCampaigns,
+    spendingCampaigns,
+    totalSpend,
+    averageSpendPerSpendingCampaign,
+    top2Spend,
+    top2ConcentrationPct,
+    leader: slices[0] ?? null,
+    slicesCount: slices.length,
+    slices,
+    sumSliceSpend,
+    sumSlicePercentage,
+  };
+}
+

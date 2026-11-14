@@ -297,72 +297,50 @@ serve(async (req) => {
       // Limpar páginas inventadas (mock_*) que possam ter sido salvas anteriormente
       await supabase.from("social_pages").delete().eq("user_id", configUserId).like("page_id", "mock_%")
 
-      // Buscar páginas reais do Meta com paginação completa
+      // Buscar páginas reais do Meta com paginação completa em uma única chamada Graph API
       try {
-        const pagesRes = await metaFetchPaginatedWithStatus("/me/accounts", tokenToUse, { limit: "100" }, { maxPages: 25 })
+        const pagesRes = await metaFetchPaginatedWithStatus(
+          "/me/accounts",
+          tokenToUse,
+          {
+            fields: "id,name,access_token,fan_count,followers_count,instagram_business_account{id,username,followers_count,profile_picture_url}",
+            limit: "100",
+          },
+          { maxRetries: 1, baseDelayMs: 350, maxPages: 10, timeoutMs: 12000 }
+        )
         if (!pagesRes.ok && pagesRes.data.length === 0) throw new Error(pagesRes.error || "Falha ao listar páginas")
 
         const fbPages = pagesRes.data || []
-        const pagesList: any[] = []
-
-        for (const p of fbPages) {
-          let igAccount = null
-          let igFollowers = 0
-          let fbFollowers = 0
-
-          try {
-            const fbFieldsRes = await fetch(`${META_API_BASE}/${p.id}?fields=fan_count,followers_count&access_token=${p.access_token}`, { signal: AbortSignal.timeout(8000) })
-            const fbFieldsData = await fbFieldsRes.json()
-            if (!fbFieldsData.error) {
-              fbFollowers = fbFieldsData.followers_count || fbFieldsData.fan_count || 0
-            }
-          } catch (e: any) {
-            console.error(`Erro seguidores FB página ${p.id}:`, e.message)
-          }
-
-          try {
-            const igRes = await fetch(`${META_API_BASE}/${p.id}?fields=instagram_business_account{id,username}&access_token=${p.access_token}`, { signal: AbortSignal.timeout(8000) })
-            const igData = await igRes.json()
-            if (igData.instagram_business_account) {
-              igAccount = { id: igData.instagram_business_account.id, username: igData.instagram_business_account.username }
-              try {
-                const igFieldsRes = await fetch(`${META_API_BASE}/${igAccount.id}?fields=followers_count&access_token=${p.access_token}`, { signal: AbortSignal.timeout(8000) })
-                const igFieldsData = await igFieldsRes.json()
-                if (!igFieldsData.error) igFollowers = igFieldsData.followers_count || 0
-              } catch (e: any) {
-                console.error(`Erro seguidores IG ${igAccount.id}:`, e.message)
-              }
-            }
-          } catch (e: any) {
-            console.error(`Erro IG da página ${p.id}:`, e.message)
-          }
-
-          pagesList.push({
+        const pagesList: any[] = fbPages.map((p: any) => {
+          const ig = p.instagram_business_account
+          return {
             page_id: p.id,
             page_name: p.name,
-            access_token: p.access_token,
-            facebook_followers: fbFollowers,
-            instagram_followers: igFollowers,
-            instagram: igAccount
-          })
-        }
+            access_token: p.access_token || tokenToUse,
+            facebook_followers: Number(p.followers_count ?? p.fan_count ?? 0),
+            instagram_followers: Number(ig?.followers_count ?? 0),
+            instagram: ig ? { id: ig.id, username: ig.username } : null,
+          }
+        })
 
-        // Persistir apenas páginas reais
-        for (const p of pagesList) {
+        // Persistir apenas páginas reais em lote único
+        if (pagesList.length > 0) {
+          const nowIso = new Date().toISOString()
+          const upsertRows = pagesList.map((p) => ({
+            user_id: configUserId,
+            page_id: p.page_id,
+            page_name: p.page_name,
+            instagram_account_id: p.instagram?.id || null,
+            instagram_handle: p.instagram?.username || null,
+            access_token: p.access_token || null,
+            facebook_followers: p.facebook_followers || 0,
+            instagram_followers: p.instagram_followers || 0,
+            updated_at: nowIso,
+          }))
           const { error: upsertErr } = await supabase
             .from("social_pages")
-            .upsert({
-              user_id: configUserId,
-              page_id: p.page_id,
-              page_name: p.page_name,
-              instagram_account_id: p.instagram?.id || null,
-              instagram_handle: p.instagram?.username || null,
-              access_token: p.access_token || null,
-              facebook_followers: p.facebook_followers || 0,
-              instagram_followers: p.instagram_followers || 0,
-              updated_at: new Date().toISOString()
-            }, { onConflict: "page_id" })
-          if (upsertErr) console.error(`Erro ao salvar página ${p.page_id}:`, upsertErr.message)
+            .upsert(upsertRows, { onConflict: "page_id" })
+          if (upsertErr) console.error("Erro ao salvar páginas em lote:", upsertErr.message)
         }
 
         return new Response(JSON.stringify({ pages: pagesList, mock: false }), {
@@ -796,23 +774,30 @@ serve(async (req) => {
       }))
       accounts.sort((a: any, b: any) => (b.instagram_followers + b.facebook_followers) - (a.instagram_followers + a.facebook_followers))
 
-      if (syncToDb && accounts.length > 0) {
+      if (accounts.length > 0) {
         const ownerUserId = validRow?.user_id || user.id
-        for (const acc of accounts) {
-          await supabase.from("social_pages").upsert(
-            {
-              user_id: ownerUserId,
-              page_id: acc.page_id,
-              page_name: acc.page_name,
-              instagram_account_id: acc.instagram_account_id,
-              instagram_handle: acc.instagram_handle,
-              access_token: acc.access_token,
-              facebook_followers: acc.facebook_followers,
-              instagram_followers: acc.instagram_followers,
-              updated_at: new Date().toISOString(),
-            },
-            { onConflict: "page_id" }
-          )
+        const nowIso = new Date().toISOString()
+        const upsertRows = accounts.map((acc: any) => ({
+          user_id: ownerUserId,
+          page_id: acc.page_id,
+          page_name: acc.page_name,
+          instagram_account_id: acc.instagram_account_id,
+          instagram_handle: acc.instagram_handle,
+          access_token: acc.access_token,
+          facebook_followers: acc.facebook_followers,
+          instagram_followers: acc.instagram_followers,
+          updated_at: nowIso,
+        }))
+        await supabase.from("social_pages").upsert(upsertRows, { onConflict: "page_id" })
+        if (syncToDb) {
+          const validPageIds = accounts.map((acc: any) => String(acc.page_id)).filter(Boolean)
+          if (validPageIds.length > 0) {
+            await supabase
+              .from("social_pages")
+              .delete()
+              .eq("user_id", ownerUserId)
+              .not("page_id", "in", `(${validPageIds.map((id: string) => `"${id}"`).join(",")})`)
+          }
         }
       }
 

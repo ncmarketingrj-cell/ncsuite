@@ -13,7 +13,14 @@ import {
   resolveTargetPrecedence,
   evaluateCampaignHealth,
   normalizeCampaignItem,
+  computeCampaignBudgetDistribution,
 } from "../src/lib/metricsDomain.ts";
+import {
+  buildSocialSourceTelemetry,
+  deriveOverallSocialState,
+  isVictoriaSocialContextUsable,
+  classifySocialErrorState,
+} from "../src/lib/metaSocialErrors.ts";
 
 describe("NC Metrics Domain — Datas Civis & Timezone", () => {
   it("mantém a data civil 2026-11-12 idêntica em UTC e America/Sao_Paulo (ID 22)", () => {
@@ -216,5 +223,268 @@ describe("NC Metrics Domain — Modelo de Eventos & Diagnóstico", () => {
     });
     assert.equal(ev.status, "OTIMIZAR");
     assert.equal(ev.eligibility.canScale, false);
+  });
+});
+
+describe("Command Center — Distribuição da Verba Publicitária (10 Cenários Obrigatórios)", () => {
+  it("1. 0 campanhas -> retorna contagens zero, média null e fatias vazias", () => {
+    const res = computeCampaignBudgetDistribution([]);
+    assert.equal(res.totalConfiguredCampaigns, 0);
+    assert.equal(res.deliveringCampaigns, 0);
+    assert.equal(res.spendingCampaigns, 0);
+    assert.equal(res.totalSpend, 0);
+    assert.equal(res.averageSpendPerSpendingCampaign, null);
+    assert.equal(res.slicesCount, 0);
+    assert.equal(res.sumSliceSpend, 0);
+    assert.equal(res.sumSlicePercentage, 0);
+  });
+
+  it("2. 1 campanha com gasto -> 1 fatia (100%), média igual ao gasto da campanha", () => {
+    const res = computeCampaignBudgetDistribution([
+      { id: "c1", name: "Campanha Única", cost: 184.08, conversions: 28, impressions: 4500 },
+    ]);
+    assert.equal(res.totalConfiguredCampaigns, 1);
+    assert.equal(res.deliveringCampaigns, 1);
+    assert.equal(res.spendingCampaigns, 1);
+    assert.equal(res.totalSpend, 184.08);
+    assert.equal(res.averageSpendPerSpendingCampaign, 184.08);
+    assert.equal(res.slicesCount, 1);
+    assert.equal(res.sumSliceSpend, 184.08);
+    assert.equal(res.sumSlicePercentage, 100);
+    assert.equal(res.slices[0].isOtherSlice, false);
+  });
+
+  it("3. 5 campanhas com gasto -> 5 fatias sem grupo Outras, sum(sliceSpend)=totalSpend e sum(slicePct)=100%", () => {
+    const camps = [
+      { id: "1", name: "C1", cost: 100 },
+      { id: "2", name: "C2", cost: 80 },
+      { id: "3", name: "C3", cost: 60 },
+      { id: "4", name: "C4", cost: 40 },
+      { id: "5", name: "C5", cost: 20 },
+    ];
+    const res = computeCampaignBudgetDistribution(camps, 7);
+    assert.equal(res.spendingCampaigns, 5);
+    assert.equal(res.totalSpend, 300);
+    assert.equal(res.averageSpendPerSpendingCampaign, 60);
+    assert.equal(res.slicesCount, 5);
+    assert.equal(res.sumSliceSpend, 300);
+    assert.equal(res.sumSlicePercentage, 100);
+    assert.equal(res.slices.some((s) => s.isOtherSlice), false);
+  });
+
+  it("4. 7 campanhas com gasto -> exatamente 7 fatias Top 7 sem grupo Outras", () => {
+    const camps = Array.from({ length: 7 }, (_, i) => ({
+      id: `c${i + 1}`,
+      name: `Campanha ${i + 1}`,
+      cost: (7 - i) * 15.25,
+    }));
+    const res = computeCampaignBudgetDistribution(camps, 7);
+    assert.equal(res.spendingCampaigns, 7);
+    assert.equal(res.slicesCount, 7);
+    assert.equal(res.sumSliceSpend, res.totalSpend);
+    assert.equal(res.sumSlicePercentage, 100);
+    assert.equal(res.slices.some((s) => s.isOtherSlice), false);
+  });
+
+  it("5. 8 campanhas com gasto -> 8 fatias (Top 7 + Outras (1)) com sum(sliceSpend)=totalSpend", () => {
+    const camps = Array.from({ length: 8 }, (_, i) => ({
+      id: `c${i + 1}`,
+      name: `Campanha ${i + 1}`,
+      cost: (8 - i) * 10,
+    }));
+    const res = computeCampaignBudgetDistribution(camps, 7);
+    assert.equal(res.spendingCampaigns, 8);
+    assert.equal(res.totalSpend, 360);
+    assert.equal(res.averageSpendPerSpendingCampaign, 45);
+    assert.equal(res.slicesCount, 8);
+    assert.equal(res.slices[7].name, "Outras (1)");
+    assert.equal(res.slices[7].isOtherSlice, true);
+    assert.equal(res.slices[7].groupedCampaignsCount, 1);
+    assert.equal(res.slices[7].value, 10);
+    assert.equal(res.sumSliceSpend, 360);
+    assert.equal(res.sumSlicePercentage, 100);
+  });
+
+  it("6. Caso Real 13/11/2026: 23 campanhas com gasto e 293 cadastradas (Total R$ 1.257,69 -> Média R$ 54,68, nunca R$ 4,29)", () => {
+    const top7Spends = [318.23, 242.59, 63.56, 50.43, 43.34, 34.48, 33.6]; // = 786.23
+    const other16Spends = [
+      33.58, 33.54, 33.54, 33.48, 33.42, 33.4, 33.36, 33.34,
+      33.24, 33.22, 33.18, 25.0, 23.08, 22.42, 20.78, 12.88,
+    ]; // = 471.46
+    const spendingCamps = [...top7Spends, ...other16Spends].map((cost, idx) => ({
+      id: `spend_${idx + 1}`,
+      name: `Campanha Gasto ${idx + 1}`,
+      cost,
+      impressions: 1200,
+    }));
+    const deliveringZeroSpendCamp = {
+      id: "deliv_24",
+      name: "Campanha Entrega Sem Gasto",
+      cost: 0,
+      conversions: 3,
+      impressions: 0,
+    };
+    const zeroCamps = Array.from({ length: 269 }, (_, idx) => ({
+      id: `zero_${idx + 1}`,
+      name: `Campanha Pausada ${idx + 1}`,
+      status: "paused",
+      cost: 0,
+      impressions: 0,
+      reach: 0,
+      conversions: 0,
+    }));
+
+    const res = computeCampaignBudgetDistribution([
+      ...spendingCamps,
+      deliveringZeroSpendCamp,
+      ...zeroCamps,
+    ]);
+
+    assert.equal(res.totalConfiguredCampaigns, 293);
+    assert.equal(res.deliveringCampaigns, 24);
+    assert.equal(res.spendingCampaigns, 23);
+    assert.equal(res.totalSpend, 1257.69);
+    assert.equal(res.averageSpendPerSpendingCampaign, 54.68);
+    assert.notEqual(res.averageSpendPerSpendingCampaign, 4.29);
+    assert.equal(res.slicesCount, 8);
+    assert.equal(res.slices[7].name, "Outras (16)");
+    assert.equal(res.slices[7].groupedCampaignsCount, 16);
+    assert.equal(res.slices[7].value, 471.46);
+    assert.equal(Number(res.slices[7].percentage.toFixed(1)), 37.5);
+    assert.equal(res.sumSliceSpend, 1257.69);
+    assert.equal(res.sumSlicePercentage, 100);
+  });
+
+  it("7. Campanhas com entrega e gasto zero -> contam em deliveringCampaigns mas nunca em spendingCampaigns nem em Outras", () => {
+    const res = computeCampaignBudgetDistribution([
+      { id: "c1", name: "Com Gasto", cost: 90, impressions: 1000 },
+      { id: "c2", name: "Orgânica / Residual", cost: 0, impressions: 450, reach: 400 },
+      { id: "c3", name: "Conversão Tardia", cost: 0, conversions: 2 },
+    ]);
+    assert.equal(res.totalConfiguredCampaigns, 3);
+    assert.equal(res.deliveringCampaigns, 3);
+    assert.equal(res.spendingCampaigns, 1);
+    assert.equal(res.averageSpendPerSpendingCampaign, 90);
+    assert.equal(res.slicesCount, 1);
+    assert.equal(res.slices.some((s) => s.isOtherSlice), false);
+  });
+
+  it("8. Campanhas pausadas com gasto histórico no período -> entram normalmente em spendingCampaigns e na média", () => {
+    const res = computeCampaignBudgetDistribution([
+      { id: "p1", name: "Ativa", status: "active", cost: 120 },
+      { id: "p2", name: "Pausada com Gasto no Período", status: "paused", cost: 80 },
+    ]);
+    assert.equal(res.totalConfiguredCampaigns, 2);
+    assert.equal(res.deliveringCampaigns, 2);
+    assert.equal(res.spendingCampaigns, 2);
+    assert.equal(res.totalSpend, 200);
+    assert.equal(res.averageSpendPerSpendingCampaign, 100);
+    assert.equal(res.sumSliceSpend, 200);
+    assert.equal(res.sumSlicePercentage, 100);
+  });
+
+  it("9. Campanhas pausadas sem gasto no período -> contam apenas em totalConfiguredCampaigns, sem diluir a média", () => {
+    const res = computeCampaignBudgetDistribution([
+      { id: "a1", name: "Ativa 1", status: "active", cost: 150 },
+      { id: "p1", name: "Pausada 1", status: "paused", cost: 0 },
+      { id: "p2", name: "Pausada 2", status: "paused", cost: 0 },
+      { id: "p3", name: "Pausada 3", status: "paused", cost: 0 },
+    ]);
+    assert.equal(res.totalConfiguredCampaigns, 4);
+    assert.equal(res.deliveringCampaigns, 1);
+    assert.equal(res.spendingCampaigns, 1);
+    assert.equal(res.averageSpendPerSpendingCampaign, 150);
+    assert.equal(res.slicesCount, 1);
+  });
+
+  it("10. Múltiplas contas consolidadas -> agrega corretamente fatias, Top 2 e soma 100%", () => {
+    const res = computeCampaignBudgetDistribution([
+      { id: "fg1", adAccountId: "act_3177396632405159", name: "Fly Garage MSG", cost: 150.58 },
+      { id: "fg2", adAccountId: "act_3177396632405159", name: "Fly Garage Reach", cost: 63.56 },
+      { id: "r1", adAccountId: "act_243135681723027", name: "Rio2 MSG", cost: 184.08 },
+      { id: "r2", adAccountId: "act_243135681723027", name: "Rio2 IG Profile", cost: 50.43 },
+      { id: "a1", adAccountId: "act_2196562711259476", name: "AlfaCar MSG", cost: 43.34 },
+      { id: "a2", adAccountId: "act_2196562711259476", name: "AlfaCar Reach", cost: 12.88 },
+      { id: "z1", adAccountId: "act_2196562711259476", name: "AlfaCar Pausada", cost: 0 },
+    ]);
+    assert.equal(res.totalConfiguredCampaigns, 7);
+    assert.equal(res.deliveringCampaigns, 6);
+    assert.equal(res.spendingCampaigns, 6);
+    assert.equal(res.totalSpend, 504.87);
+    assert.equal(res.averageSpendPerSpendingCampaign, 84.15);
+    assert.equal(res.sumSliceSpend, 504.87);
+    assert.equal(res.sumSlicePercentage, 100);
+    assert.equal(res.leader?.name, "Rio2 MSG");
+  });
+});
+
+describe("Social Insights — Máquina de Estados & Governança Victoria AI", () => {
+  it("classifica erros OAuth 190, 200, 4/17/32/613 e Timeout deterministicamente", () => {
+    assert.equal(classifySocialErrorState({ code: 190, message: "Error validating access token" }).state, "token_expired");
+    assert.equal(classifySocialErrorState({ code: 200, message: "Permissions error" }).state, "permission_denied");
+    assert.equal(classifySocialErrorState({ code: 17, message: "User request limit reached" }).state, "rate_limited");
+    assert.equal(classifySocialErrorState(new Error("AbortError: The operation was aborted due to timeout")).state, "error");
+  });
+
+  it("deriva estado geral e habilita Victoria AI somente quando há contexto utilizável", () => {
+    const accOk = buildSocialSourceTelemetry({
+      source: "accounts",
+      state: "success",
+      startedAt: "2026-11-14T10:00:00.000Z",
+      finishedAt: "2026-11-14T10:00:00.450Z",
+      timeoutMs: 15000,
+      itemCount: 22,
+      dataSource: "meta_graph_v21",
+    });
+    const ovOk = buildSocialSourceTelemetry({
+      source: "overview",
+      state: "success",
+      startedAt: "2026-11-14T10:00:00.000Z",
+      finishedAt: "2026-11-14T10:00:02.100Z",
+      timeoutMs: 18000,
+      itemCount: 1,
+      dataSource: "meta_graph_v21",
+    });
+    const postsErr = buildSocialSourceTelemetry({
+      source: "posts",
+      state: "error",
+      startedAt: "2026-11-14T10:00:00.000Z",
+      finishedAt: "2026-11-14T10:00:02.500Z",
+      timeoutMs: 18000,
+      itemCount: 0,
+      dataSource: "none",
+      error: "Simulated posts failure",
+    });
+
+    // Overview ok + posts error -> estado parcial, mas Victoria pode rodar com contexto parcial sinalizado
+    assert.equal(
+      deriveOverallSocialState({
+        accounts: accOk.state,
+        overview: ovOk.state,
+        dailySeries: "success",
+        posts: postsErr.state,
+      }),
+      "partial"
+    );
+    assert.equal(
+      isVictoriaSocialContextUsable({
+        accountsState: accOk.state,
+        overviewState: ovOk.state,
+        postsState: postsErr.state,
+        accountsCount: 22,
+      }),
+      true
+    );
+
+    // Durante loading de overview e posts -> Victoria desabilitada
+    assert.equal(
+      isVictoriaSocialContextUsable({
+        accountsState: "success",
+        overviewState: "loading",
+        postsState: "loading",
+        accountsCount: 22,
+      }),
+      false
+    );
   });
 });

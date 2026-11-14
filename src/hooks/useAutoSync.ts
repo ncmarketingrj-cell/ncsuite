@@ -6,7 +6,7 @@
 import { useEffect, useRef, useCallback, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase-external/client";
-import { ensureDatabaseCalibrated, calibrateMetaConversionsFromGraph } from "@/lib/metaConversionCalibrator";
+import { ensureDatabaseCalibrated } from "@/lib/metaConversionCalibrator";
 import { fetchLatestCommittedSnapshot, invalidateMetaSnapshotConsumers } from "@/lib/metaSnapshotCache";
 
 const REALTIME_SYNC_INTERVAL_MS = 3 * 60 * 1000; // 3 minutos rigorosos em tempo real
@@ -134,18 +134,13 @@ export function useAutoSync() {
         throw new Error("Todos os serviços de sincronização falharam.");
       }
 
-      // Calibração em tempo real direta com Meta Graph API para D-1 e D0
-      try {
-        await withTimeout(calibrateMetaConversionsFromGraph(supabase, timeRange.since, timeRange.until, "all"), 30_000, "calibrate-graph");
-      } catch (calibGraphErr) {
-        console.warn("[AUTO-SYNC] Calibração Graph ignorada:", calibGraphErr);
-      }
-
-      // Calibração rápida de segurança no banco
-      try {
-        await withTimeout(ensureDatabaseCalibrated(supabase, false), 20_000, "calibrate-db");
-      } catch (calibErr) {
-        console.warn("[AUTO-SYNC] Calibração de segurança ignorada:", calibErr);
+      // Calibração rápida de segurança no banco (apenas fora do carregamento de Social Insights)
+      if (typeof window === "undefined" || !window.location.pathname.includes("/social-insights")) {
+        try {
+          await withTimeout(ensureDatabaseCalibrated(supabase, false), 15_000, "calibrate-db");
+        } catch (calibErr) {
+          console.warn("[AUTO-SYNC] Calibração de segurança ignorada:", calibErr);
+        }
       }
 
       // Executar motor de alertas após sync
@@ -195,6 +190,15 @@ export function useAutoSync() {
 
   useEffect(() => {
     const checkAndSync = () => {
+      // Não bloquear a montagem e o carregamento interativo de /social-insights com sync global de Ads
+      if (
+        typeof window !== "undefined" &&
+        window.location.pathname.includes("/social-insights") &&
+        (window as any).__ncSocialInsightsLoading === true
+      ) {
+        return;
+      }
+
       const lastRealtimeSyncStr = localStorage.getItem(STORAGE_REALTIME_KEY);
       const lastRealtimeSync = lastRealtimeSyncStr ? new Date(lastRealtimeSyncStr).getTime() : 0;
       const elapsed = Date.now() - lastRealtimeSync;
@@ -213,8 +217,22 @@ export function useAutoSync() {
       }
     };
 
-    // Verificar imediatamente ao montar
-    checkAndSync();
+    // Inicializa o status visual imediatamente sem bloquear os sockets da rota ativa no t=0
+    const lastRealtimeSyncStr = localStorage.getItem(STORAGE_REALTIME_KEY);
+    if (lastRealtimeSyncStr) {
+      const elapsed = Date.now() - new Date(lastRealtimeSyncStr).getTime();
+      const remaining = Math.max(5_000, REALTIME_SYNC_INTERVAL_MS - elapsed);
+      dispatchSyncStatus({
+        lastSync: lastRealtimeSyncStr,
+        nextSync: new Date(Date.now() + remaining).toISOString(),
+        isSyncing: isSyncingRef.current,
+        lastResult: getSyncStatus().lastResult,
+      });
+    }
+
+    const isSocialRoute =
+      typeof window !== "undefined" && window.location.pathname.includes("/social-insights");
+    const initialTimer = setTimeout(checkAndSync, isSocialRoute ? 25_000 : 8_000);
 
     // Checar a cada 15 segundos se já passaram os 3 minutos
     intervalRef.current = setInterval(checkAndSync, 15 * 1000);
@@ -229,6 +247,7 @@ export function useAutoSync() {
     document.addEventListener("visibilitychange", onVisibilityOrFocus);
 
     return () => {
+      clearTimeout(initialTimer);
       if (intervalRef.current) clearInterval(intervalRef.current);
       window.removeEventListener("focus", onVisibilityOrFocus);
       document.removeEventListener("visibilitychange", onVisibilityOrFocus);
