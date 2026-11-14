@@ -47,6 +47,13 @@ import {
   getMetaResultDetail,
   detectConversionCategory,
 } from "@/lib/metaConversionCalibrator";
+import {
+  classifyMetaEvent,
+  computeUnitCost,
+  computeWeightedAggregates,
+  evaluateCampaignHealth,
+  normalizeCampaignItem,
+} from "@/lib/metricsDomain";
 
 // â"€â"€â"€ ROTA â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 
@@ -166,48 +173,64 @@ function processMetrics(item: any, rawData: any[], startStr: string, endStr: str
   const impressions = m.reduce((s: number, x: any) => s + Number(x.impressions || 0), 0);
   const reach       = m.reduce((s: number, x: any) => s + Number(x.reach       || 0), 0);
   const freq        = reach > 0 ? impressions / reach : 0;
-  const cpl  = conversions > 0 ? cost / conversions : 0;
   const ctr  = impressions > 0 ? (clicks / impressions) * 100 : 0;
   const cpm  = impressions > 0 ? (cost / impressions) * 1000 : 0;
   const cpc  = clicks > 0 ? cost / clicks : 0;
   const roas = cost > 0 ? (conversions * 150) / cost : 0;
-  const detectedCategory = detectConversionCategory(item.name, item.objective);
-  const storedType = m.find((x: any) => x.result_type)?.result_type || item.result_type || detectedCategory;
-  const nameU = String(item.name || "").toUpperCase();
-  const isStrongMessaging = String(item.objective || "").toUpperCase() === "MESSAGES" || /(^|[^A-Z])MSG([^A-Z]|$)/.test(nameU) || nameU.includes("MENSAGEM") || nameU.includes("WHATSAPP") || nameU.includes("WPP");
-  const result_type = isStrongMessaging && storedType !== "PURCHASES" && storedType !== "INSTAGRAM_PROFILE" ? "MESSAGES" : storedType;
-  return { ...item, result_type, t: { cost, conversions, clicks, impressions, reach, freq, cpl, ctr, cpm, cpc, roas }, _metrics: m };
+
+  const storedType = m.find((x: any) => x.result_type)?.result_type || item.result_type;
+  const classification = classifyMetaEvent({
+    campaignName: item.name + (item.campaigns?.name ? ` ${item.campaigns.name}` : ""),
+    rawObjective: item.objective || item.campaigns?.objective,
+    resultType: storedType,
+    isVehicleContext: true,
+  });
+  const effectiveResults = classification.category === "REACH" ? (reach > 0 ? reach : conversions) : conversions;
+  const unitCost = computeUnitCost(cost, effectiveResults, classification.category);
+  const cpl = unitCost ?? 0;
+  const result_type = classification.category;
+
+  return {
+    ...item,
+    result_type,
+    t: { cost, conversions, clicks, impressions, reach, freq, cpl, ctr, cpm, cpc, roas },
+    _metrics: m,
+  };
 }
 
 function gerarInsights(camps: any[], totCost: number, totConv: number, avgCpl: number, avgCtr: number, avgCpm: number): Insight[] {
   const ins: Insight[] = [];
   if (!camps.length) return ins;
-  const zeroConv = camps.filter(c => c.t.conversions === 0 && c.t.cost > totCost * 0.03 && c.t.cost > 50);
+  const convEligible = camps.filter(c => ["MESSAGES", "LEADS", "PURCHASES"].includes(c.result_type));
+  const zeroConv = convEligible.filter(c => c.t.conversions === 0 && c.t.cost > totCost * 0.03 && c.t.cost > 50);
   if (zeroConv.length) ins.push({ level: "danger", title: `${zeroConv.length} campanha${zeroConv.length>1?"s":""} gastando sem conversão`, detail: `Desperdiçado: R$ ${fmtBRL(zeroConv.reduce((s,c) => s+c.t.cost,0))}`, acao: "Pausar e revisar criativo e segmentação", camps: zeroConv.map(c=>c.name) });
-  const highCpl = camps.filter(c => c.t.cpl > 0 && c.t.cpl > avgCpl * 1.8 && c.t.cost > 30);
+  const highCpl = convEligible.filter(c => c.t.cpl > 0 && avgCpl > 0 && c.t.cpl > avgCpl * 1.8 && c.t.cost > 30);
   if (highCpl.length) ins.push({ level: "warning", title: `${highCpl.length} campanha${highCpl.length>1?"s":""} com CPL acima de 80% da média`, detail: `Média: R$ ${avgCpl.toFixed(2)} — ${highCpl.slice(0,2).map(c=>`${c.name.substring(0,18)}: R$ ${c.t.cpl.toFixed(2)}`).join(", ")}`, acao: "Reduzir budget, testar criativos ou ajustar público", camps: highCpl.map(c=>c.name) });
   const highFreq = camps.filter(c => c.t.freq > 3 && c.t.impressions > 500);
   if (highFreq.length) ins.push({ level: "warning", title: `${highFreq.length} campanha${highFreq.length>1?"s":""} com frequência > 3x (saturação)`, detail: "Audiência vendo o mesmo anúncio repetidamente — CTR tende a cair", acao: "Expandir audiência, renovar criativos ou excluir convertidos", camps: highFreq.map(c=>c.name) });
   const lowCtr = camps.filter(c => c.t.impressions > 1000 && c.t.ctr < 0.5 && c.t.cost > 20);
   if (lowCtr.length) ins.push({ level: "warning", title: `${lowCtr.length} campanha${lowCtr.length>1?"s":""} com CTR abaixo de 0,5%`, detail: "Benchmark Meta Ads: 1—2%. Criativo ou segmentação fraco", acao: "Testar novos hooks, thumbnails e textos", camps: lowCtr.map(c=>c.name) });
-  const topEff = camps.filter(c => c.t.cpl > 0 && c.t.cpl < avgCpl * 0.7 && c.t.conversions >= 3);
+  const topEff = convEligible.filter(c => c.t.cpl > 0 && avgCpl > 0 && c.t.cpl < avgCpl * 0.7 && c.t.conversions >= 3 && c.t.cost > 0);
   if (topEff.length) ins.push({ level: "success", title: `${topEff.length} campanha${topEff.length>1?"s":""} com CPL ${Math.round((1-topEff[0].t.cpl/avgCpl)*100)}% abaixo da média — prontas para escalar`, detail: `"${topEff[0].name.substring(0,35)}" — CPL R$ ${topEff[0].t.cpl.toFixed(2)} com ${topEff[0].t.conversions} conversões`, acao: "Aumentar budget 10—20% por dia e monitorar CPL", camps: topEff.map(c=>c.name) });
   const goodCtr = camps.filter(c => c.t.ctr >= 2 && c.t.impressions > 500);
-  if (goodCtr.length && !topEff.some(c=>goodCtr.find(g=>g.id===c.id))) ins.push({ level: "success", title: `${goodCtr.length} campanha${goodCtr.length>1?"s":""} com CTR â‰¥ 2% — acima do benchmark`, detail: `Meta Ads benchmark: 1—1,5%. Campanhas: ${goodCtr.slice(0,2).map(c=>c.name.substring(0,18)).join(", ")}`, acao: "Escalar budget e testar variações do criativo", camps: goodCtr.map(c=>c.name) });
+  if (goodCtr.length && !topEff.some(c=>goodCtr.find(g=>g.id===c.id))) ins.push({ level: "success", title: `${goodCtr.length} campanha${goodCtr.length>1?"s":""} com CTR ≥ 2% — acima do benchmark`, detail: `Meta Ads benchmark: 1—1,5%. Campanhas: ${goodCtr.slice(0,2).map(c=>c.name.substring(0,18)).join(", ")}`, acao: "Escalar budget e testar variações do criativo", camps: goodCtr.map(c=>c.name) });
   if (avgCpm > 25) ins.push({ level: "info", title: `CPM médio R$ ${avgCpm.toFixed(2)} — leilão competitivo`, detail: "CPM alto pode indicar público muito disputado ou segmentação restrita", acao: "Testar públicos mais amplos ou similares" });
-  if (ins.length === 0 && totConv > 0) ins.push({ level: "info", title: "Conta saudável no período", detail: `${camps.length} campanhas, CPL médio R$ ${avgCpl.toFixed(2)}, CTR ${avgCtr.toFixed(2)}%`, acao: "Continue monitorando — considere testes A/B" });
+  if (ins.length === 0 && totConv > 0) ins.push({ level: "info", title: "Conta saudável no período", detail: `${camps.length} campanhas, ${avgCpl > 0 ? `CPL médio R$ ${avgCpl.toFixed(2)}, ` : ""}CTR ${avgCtr.toFixed(2)}%`, acao: "Continue monitorando — considere testes A/B" });
   return ins;
 }
 
 function calcHealthScore(c: any, avgCpl: number): number {
   if (c.t.cost === 0 && c.t.impressions === 0) return 50;
+  const isConv = ["MESSAGES", "LEADS", "PURCHASES"].includes(c.result_type);
   let score = 100;
-  if (c.t.conversions === 0 && c.t.cost > 50) score -= 40;
-  else if (c.t.conversions === 0 && c.t.cost > 20) score -= 25;
-  if (c.t.cpl > 0 && avgCpl > 0) {
-    if (c.t.cpl > avgCpl * 2.5) score -= 25;
-    else if (c.t.cpl > avgCpl * 1.8) score -= 15;
-    else if (c.t.cpl < avgCpl * 0.7) score += 10;
+  if (isConv) {
+    if (c.t.conversions === 0 && c.t.cost > 50) score -= 40;
+    else if (c.t.conversions === 0 && c.t.cost > 20) score -= 25;
+    if (c.t.cpl > 0 && avgCpl > 0) {
+      if (c.t.cpl > avgCpl * 2.5) score -= 25;
+      else if (c.t.cpl > avgCpl * 1.8) score -= 15;
+      else if (c.t.cpl < avgCpl * 0.7) score += 10;
+    }
   }
   if (c.t.impressions > 1000) {
     if (c.t.ctr < 0.5) score -= 25;
@@ -220,20 +243,47 @@ function calcHealthScore(c: any, avgCpl: number): number {
   return Math.max(0, Math.min(100, score));
 }
 
-function getDecision(c: any, avgCpl: number): { label: string; tier: string; reason: string; action: string } {
-  if (c.t.conversions === 0 && c.t.cost > 50)
-    return { label: "PAUSAR", tier: "red", reason: `R$ ${fmtBRL(c.t.cost)} gastos — zero leads`, action: "Pausar e revisar público + criativo" };
-  if (c.t.freq > 4.5 && c.t.impressions > 500)
-    return { label: "RENOVAR CRIATIVO", tier: "orange", reason: `Frequência ${c.t.freq.toFixed(1)}x — público saturado`, action: "Trocar criativo e expandir audiência" };
-  if (c.t.ctr < 0.5 && c.t.impressions > 2000)
-    return { label: "TROCAR CRIATIVO", tier: "orange", reason: `CTR ${c.t.ctr.toFixed(2)}% — anúncio não atrai`, action: "Testar novo visual, headline e oferta" };
-  if (c.t.cpl > 0 && avgCpl > 0 && c.t.cpl < avgCpl * 0.7 && c.t.conversions >= 3)
-    return { label: "ESCALAR", tier: "green", reason: `CPL ${Math.round((1 - c.t.cpl / avgCpl) * 100)}% abaixo da média`, action: "Aumentar budget 20-30%/dia e monitorar" };
-  if (c.t.cpl > 0 && avgCpl > 0 && c.t.cpl > avgCpl * 1.8 && c.t.cost > 30)
-    return { label: "REDUZIR BUDGET", tier: "yellow", reason: `CPL ${Math.round((c.t.cpl / avgCpl - 1) * 100)}% acima da média`, action: "Reduzir budget e testar segmentações" };
-  if (c.t.conversions === 0 && c.t.cost > 0 && c.t.cost <= 50)
-    return { label: "MONITORAR", tier: "yellow", reason: "Sem conversão ainda — pode estar aprendendo", action: "Aguardar 3-5 dias antes de decidir" };
-  return { label: "MANTER", tier: "blue", reason: "Performance estável no período", action: "Continuar monitorando CPL e frequência" };
+function getDecision(c: any, avgCpl: number, accountTargetCpl?: number | null): { label: string; tier: string; reason: string; action: string } {
+  const normalized = normalizeCampaignItem({
+    id: c.id,
+    name: c.name,
+    cost: Number(c.t?.cost || 0),
+    conversions: Number(c.t?.conversions || 0),
+    clicks: Number(c.t?.clicks || 0),
+    impressions: Number(c.t?.impressions || 0),
+    reach: Number(c.t?.reach || 0),
+    rawObjective: c.objective || c.campaigns?.objective,
+    resultType: c.result_type,
+    isVehicleContext: true,
+  });
+
+  const diag = evaluateCampaignHealth({
+    item: normalized,
+    targetCandidates: {
+      accountThresholdMaxCpl: accountTargetCpl && accountTargetCpl > 0 ? accountTargetCpl : null,
+      regionalBenchmarkCpl: avgCpl > 0 ? avgCpl : null,
+    },
+    minSpendForPauseDecision: 50,
+    minResultsForScale: 3,
+  });
+
+  const tier =
+    diag.status === "PAUSAR"
+      ? "red"
+      : diag.status === "OTIMIZAR"
+      ? "orange"
+      : diag.status === "ESCALAR"
+      ? "green"
+      : diag.status === "AGUARDAR_AMOSTRA"
+      ? "yellow"
+      : "blue";
+
+  return {
+    label: diag.status === "AGUARDAR_AMOSTRA" ? "MONITORAR" : diag.status,
+    tier,
+    reason: diag.headline,
+    action: diag.recommendation,
+  };
 }
 
 export function getCampaignTemperature(c: any, avgCpl: number): {
@@ -248,12 +298,44 @@ export function getCampaignTemperature(c: any, avgCpl: number): {
   const cpl = c.t?.cpl || 0;
   const ctr = c.t?.ctr || 0;
   const freq = c.t?.freq || 1;
+  const cat = c.result_type || "";
+  const isAwareness = cat === "REACH" || cat === "VIDEO_VIEWS" || cat === "ENGAGEMENT";
+  const isConvGoal = cat === "MESSAGES" || cat === "LEADS" || cat === "PURCHASES";
 
-  // 1. Fria / Congelada (Alerta de Vazamento / Sem Conversão / CPL Alto / Audiência Esgotada)
+  if (cost <= 0 && convs <= 0) {
+    return {
+      temp: "warm",
+      label: "Morna",
+      badgeClass: "border-amber-500/30 bg-amber-500/10 text-amber-300",
+      icon: Zap,
+      reason: "Sem gasto registrado no período para diagnóstico térmico"
+    };
+  }
+
+  if (isAwareness) {
+    if (freq > 4.2) {
+      return {
+        temp: "cold",
+        label: "Fria",
+        badgeClass: "border-cyan-500/40 bg-cyan-500/10 text-cyan-300 shadow-[0_0_10px_rgba(6,182,212,0.2)]",
+        icon: Snowflake,
+        reason: `Alcance/Frequência ${freq.toFixed(1)}x saturando a audiência`
+      };
+    }
+    return {
+      temp: "warm",
+      label: "Morna",
+      badgeClass: "border-amber-500/30 bg-amber-500/10 text-amber-300",
+      icon: Zap,
+      reason: `Campanha de ${cat === "REACH" ? "alcance" : "topo de funil"} — avaliada por CPM/alcance (não por WhatsApp)`
+    };
+  }
+
+  // 1. Fria / Congelada
   if (
-    (convs === 0 && cost > 25) ||
-    (cpl > 0 && avgCpl > 0 && cpl > avgCpl * 1.5) ||
-    (ctr < 0.8 && cost > 20) ||
+    (isConvGoal && convs === 0 && cost > 25) ||
+    (isConvGoal && cpl > 0 && avgCpl > 0 && cpl > avgCpl * 1.5) ||
+    (ctr < 0.8 && cost > 20 && !isAwareness) ||
     freq > 3.8
   ) {
     return {
@@ -269,10 +351,11 @@ export function getCampaignTemperature(c: any, avgCpl: number): {
     };
   }
 
-  // 2. Quente / Em Chamas (Alta Eficiência / CPL Excelente / Pronta para Escalar)
+  // 2. Quente / Em Chamas
   if (
-    (cpl > 0 && avgCpl > 0 && cpl <= avgCpl * 0.85 && convs >= 2) ||
-    (convs >= 4 && ctr >= 1.5)
+    isConvGoal &&
+    ((cpl > 0 && avgCpl > 0 && cpl <= avgCpl * 0.85 && convs >= 2) ||
+      (convs >= 4 && ctr >= 1.5))
   ) {
     return {
       temp: "hot",
@@ -283,7 +366,7 @@ export function getCampaignTemperature(c: any, avgCpl: number): {
     };
   }
 
-  // 3. Morna (Performance Equilibrada)
+  // 3. Morna
   return {
     temp: "warm",
     label: "Morna",
@@ -598,13 +681,17 @@ function MetricasCampanhasPage() {
   // â"€â"€ Estado global compartilhado â"€â"€
   const [view,          setView]          = useState<ViewMode>("gestao");
   const [level,         setLevel]         = useState<Level>("campanhas");
-  const targetAccount = searchParams.account || searchParams.accountId || "all";
+  const { dateFrom, dateTo, setDateFrom, setDateTo, accountId: globalAccountId, setAccountId: setGlobalAccountId } = useGlobalDate();
+  const targetAccount = searchParams.account || searchParams.accountId || globalAccountId || "all";
   const targetCampaign = searchParams.campaign || searchParams.campId || null;
-  const [accountFilter, setAccountFilter] = useState(targetAccount);
+  const [accountFilter, setAccountFilterState] = useState(targetAccount);
+  const setAccountFilter = useCallback((acc: string) => {
+    setAccountFilterState(acc);
+    setGlobalAccountId(acc || "all");
+  }, [setGlobalAccountId]);
   const [statusFilter,  setStatusFilter]  = useState<"all"|"active"|"paused">("all");
   const [selectedCampaignId, setSelectedCampaignId] = useState<string | null>(targetCampaign);
   const [search,        setSearch]        = useState("");
-  const { dateFrom, dateTo, setDateFrom, setDateTo } = useGlobalDate();
 
   const dateRange = useMemo(() => ({
     startDate: new Date(dateFrom + "T12:00:00"),
@@ -729,6 +816,7 @@ function MetricasCampanhasPage() {
 
   const { data: campaigns = [], isFetching: isFetchingCamps, isLoading: isLoadingCamps } = useQuery({
     queryKey: ["mc-camps", accountFilter, statusFilter, startStr, endStr],
+    placeholderData: (prev) => prev,
     queryFn: async () => {
       ensureDatabaseCalibrated(supabase).catch(() => {});
       let q = (supabase as any).from("campaigns").select(`id, name, status, delivery_status, objective, daily_budget, lifetime_budget, budget_currency, external_id, ad_account_id, ad_account:ad_accounts(name), metrics(cost, conversions, impressions, clicks, reach, frequency, date, result_type)`);
@@ -752,6 +840,7 @@ function MetricasCampanhasPage() {
   const { data: adSets = [], isLoading: isLoadingAdSets } = useQuery({
     queryKey: ["mc-adsets", selectedCampaignId || Array.from(selectedCamps).join(","), statusFilter, startStr, endStr],
     enabled: level === "conjuntos" || level === "anuncios" || !!selectedCampaignId,
+    placeholderData: (prev) => prev,
     queryFn: async () => {
       if (selectedCamps.size === 0 && !selectedCampaignId) return [];
       let q = (supabase as any).from("ad_sets").select(`id, name, status, budget, external_id, campaign_id, campaigns(id, name, objective), asset_metrics(cost, conversions, impressions, clicks, reach, date)`);
@@ -768,6 +857,7 @@ function MetricasCampanhasPage() {
   const { data: ads = [], isLoading: isLoadingAds } = useQuery({
     queryKey: ["mc-ads", Array.from(selectedAdSets).join(","), selectedCampaignId || Array.from(selectedCamps).join(","), statusFilter, startStr, endStr],
     enabled: true, // sempre carrega: a reconciliação por campanha depende da soma dos anúncios,
+    placeholderData: (prev) => prev,
     queryFn: async () => {
       let q = (supabase as any).from("ads").select(`id, name, status, external_id, campaign_id, ad_set_id, creative_url, campaigns(id, name, objective), asset_metrics(cost, conversions, impressions, clicks, reach, date)`);
       if (selectedAdSets.size > 0) q = q.in("ad_set_id", Array.from(selectedAdSets));
@@ -789,9 +879,10 @@ function MetricasCampanhasPage() {
     },
   });
 
-  // Alcance e frequência reais do período (query sem time_increment â†’ exato como Gerenciador)
+  // Alcance e frequência reais do período (query sem time_increment → exato como Gerenciador)
   const { data: periodStats = [] } = useQuery({
     queryKey: ["mc-period-stats", accountFilter, startStr, endStr],
+    placeholderData: (prev) => prev,
     queryFn: async () => {
       let q = (supabase as any)
         .from("meta_period_stats")
@@ -1105,7 +1196,9 @@ function MetricasCampanhasPage() {
         const reach = Number(ps.reach || 0);
 
         const freq = reach > 0 ? impressions / reach : 0;
-        const cpl = conversions > 0 ? cost / conversions : 0;
+        const cat = c.result_type || classifyMetaEvent({ campaignName: c.name, rawObjective: c.objective, isVehicleContext: true }).category;
+        const effectiveRes = cat === "REACH" ? (reach > 0 ? reach : conversions) : conversions;
+        const cpl = computeUnitCost(cost, effectiveRes, cat) ?? 0;
         const ctr = impressions > 0 ? (clicks / impressions) * 100 : 0;
         const cpm = impressions > 0 ? (cost / impressions) * 1000 : 0;
         const cpc = clicks > 0 ? cost / clicks : 0;
@@ -1138,7 +1231,9 @@ function MetricasCampanhasPage() {
         const reach = Number(ps.reach || 0);
 
         const freq = reach > 0 ? impressions / reach : 0;
-        const cpl = conversions > 0 ? cost / conversions : 0;
+        const cat = c.result_type || classifyMetaEvent({ campaignName: c.name + " " + (c.campaigns?.name || ""), rawObjective: c.objective || c.campaigns?.objective, isVehicleContext: true }).category;
+        const effectiveRes = cat === "REACH" ? (reach > 0 ? reach : conversions) : conversions;
+        const cpl = computeUnitCost(cost, effectiveRes, cat) ?? 0;
         const ctr = impressions > 0 ? (clicks / impressions) * 100 : 0;
         const cpm = impressions > 0 ? (cost / impressions) * 1000 : 0;
         const cpc = clicks > 0 ? cost / clicks : 0;
@@ -1164,7 +1259,9 @@ function MetricasCampanhasPage() {
         const reach = Number(ps.reach || 0);
 
         const freq = reach > 0 ? impressions / reach : 0;
-        const cpl = conversions > 0 ? cost / conversions : 0;
+        const cat = c.result_type || classifyMetaEvent({ campaignName: c.name + " " + (c.campaigns?.name || ""), rawObjective: c.objective || c.campaigns?.objective, isVehicleContext: true }).category;
+        const effectiveRes = cat === "REACH" ? (reach > 0 ? reach : conversions) : conversions;
+        const cpl = computeUnitCost(cost, effectiveRes, cat) ?? 0;
         const ctr = impressions > 0 ? (clicks / impressions) * 100 : 0;
         const cpm = impressions > 0 ? (cost / impressions) * 1000 : 0;
         const cpc = clicks > 0 ? cost / clicks : 0;
@@ -1186,7 +1283,9 @@ function MetricasCampanhasPage() {
       const adSum = sumByCamp.get(c.id) || 0;
       if (adSum <= 0 || adSum === Number(c.t?.conversions || 0)) return c;
       const cost = Number(c.t?.cost || 0);
-      return { ...c, t: { ...c.t, conversions: adSum, cpl: cost / adSum, roas: cost > 0 ? (adSum * 150) / cost : 0 } };
+      const cat = c.result_type || classifyMetaEvent({ campaignName: c.name, rawObjective: c.objective, isVehicleContext: true }).category;
+      const unitCpl = computeUnitCost(cost, adSum, cat) ?? 0;
+      return { ...c, t: { ...c.t, conversions: adSum, cpl: unitCpl, roas: cost > 0 ? (adSum * 150) / cost : 0 } };
     });
   }, [enrichedCampaignsBase, enrichedAds]);
 
@@ -1300,6 +1399,36 @@ function MetricasCampanhasPage() {
     const impr = s.reduce((sum: number, c: any) => sum + c.t.impressions, 0);
     const reach = s.reduce((sum: number, c: any) => sum + c.t.reach, 0);
     const clicks = s.reduce((sum: number, c: any) => sum + c.t.clicks, 0);
+
+    const summary = computeWeightedAggregates(
+      s.map((c: any) => ({
+        id: c.id,
+        name: c.name,
+        cost: c.t.cost,
+        conversions: c.t.conversions,
+        clicks: c.t.clicks,
+        impressions: c.t.impressions,
+        reach: c.t.reach,
+        rawObjective: c.objective || c.campaigns?.objective,
+        resultType: c.result_type,
+        isVehicleContext: true,
+      }))
+    );
+
+    const isPureReach =
+      summary.groupsByCategory.length === 1 &&
+      summary.groupsByCategory[0].category === "REACH";
+
+    let computedAvgCpl = 0;
+    if (isPureReach) {
+      computedAvgCpl = summary.groupsByCategory[0].unitCost ?? 0;
+    } else if (summary.cpaEligible !== null) {
+      computedAvgCpl = summary.cpaEligible;
+    } else if (summary.groupsByCategory.length === 1 && summary.groupsByCategory[0].unitCost !== null) {
+      computedAvgCpl = summary.groupsByCategory[0].unitCost;
+    } else {
+      computedAvgCpl = conv > 0 ? cost / conv : 0;
+    }
     
     return {
       sel: s,
@@ -1308,7 +1437,7 @@ function MetricasCampanhasPage() {
       totImpr: impr,
       totReach: reach,
       totClicks: clicks,
-      avgCpl: conv > 0 ? cost / conv : 0,
+      avgCpl: computedAvgCpl,
       avgCtr: impr > 0 ? (clicks / impr) * 100 : 0,
       avgCpm: impr > 0 ? (cost / impr) * 1000 : 0,
     };
@@ -1516,9 +1645,9 @@ function MetricasCampanhasPage() {
   const campDecisions = useMemo(() =>
     enrichedCampaigns
       .filter((c: any) => c.t.cost > 0 || c.t.impressions > 0)
-      .map((c: any) => ({ ...c, healthScore: calcHealthScore(c, avgCpl), decision: getDecision(c, avgCpl) }))
+      .map((c: any) => ({ ...c, healthScore: calcHealthScore(c, avgCpl), decision: getDecision(c, avgCpl, maxCplThreshold) }))
       .sort((a: any, b: any) => a.healthScore - b.healthScore),
-  [enrichedCampaigns, avgCpl]);
+  [enrichedCampaigns, avgCpl, maxCplThreshold]);
 
   const overallHealthScore = useMemo(() => {
     const withSpend = campDecisions.filter((c: any) => c.t.cost > 0);
@@ -1648,9 +1777,9 @@ function MetricasCampanhasPage() {
                   onChange={e => setStatusFilter(e.target.value as any)}
                   className="appearance-none rounded-xl border border-border bg-background/60 py-1.5 pl-3 pr-7 text-xs font-semibold focus:border-primary/50 focus:outline-none transition-all cursor-pointer"
                 >
-                  <option value="ALL">Todos os status</option>
-                  <option value="ACTIVE">Ativos</option>
-                  <option value="PAUSED">Pausados</option>
+                  <option value="all">Todos os status</option>
+                  <option value="active">Ativos</option>
+                  <option value="paused">Pausados</option>
                 </select>
                 <ChevronDown className="pointer-events-none absolute right-2 top-1/2 h-3 w-3 -translate-y-1/2 text-muted-foreground" />
               </div>
@@ -1919,7 +2048,7 @@ function MetricasCampanhasPage() {
                             const isChanging = changingId === c.id;
                             const isSel      = selSet.has(c.id);
                             const isHighlight= searchParams.campaign === c.id;
-                            const cplOver    = maxCplThreshold && c.t.cpl > 0 && c.t.cpl > maxCplThreshold;
+                            const cplOver    = Boolean(maxCplThreshold && ["MESSAGES", "LEADS", "PURCHASES"].includes(c.result_type) && c.t.cpl > 0 && c.t.cpl > maxCplThreshold);
                             const freqHigh   = c.t.freq >= 3;
                             const ctrGood    = c.t.ctr >= 2;
                             const resultDetail = getMetaResultDetail(
@@ -2131,7 +2260,7 @@ function MetricasCampanhasPage() {
                         const isChanging = changingId === c.id;
                         const isSel      = selSet.has(c.id);
                         const isHighlight= searchParams.campaign === c.id;
-                        const cplOver    = maxCplThreshold && c.t.cpl > 0 && c.t.cpl > maxCplThreshold;
+                        const cplOver    = Boolean(maxCplThreshold && ["MESSAGES", "LEADS", "PURCHASES"].includes(c.result_type) && c.t.cpl > 0 && c.t.cpl > maxCplThreshold);
                         const freqHigh   = c.t.freq >= 3;
                         const ctrGood    = c.t.ctr >= 2;
                         const resultDetail = getMetaResultDetail(
@@ -3346,10 +3475,10 @@ function MetricasCampanhasPage() {
                     <div className="rounded-xl border border-white/5 bg-white/[0.02] p-4 flex items-center justify-between">
                       <div>
                         <span className="text-[9px] text-muted-foreground/60 uppercase">Recomendação Estratégica</span>
-                        <p className="text-xs font-black text-foreground mt-0.5">{getDecision(selectedFocusItem, avgCpl).label}</p>
+                        <p className="text-xs font-black text-foreground mt-0.5">{getDecision(selectedFocusItem, avgCpl, maxCplThreshold).label}</p>
                       </div>
-                      <span className={`text-[10px] font-mono font-bold px-3 py-1 rounded-lg border ${DECISION_COLORS[getDecision(selectedFocusItem, avgCpl).tier] || "text-muted-foreground border-white/10"}`}>
-                        {getDecision(selectedFocusItem, avgCpl).action}
+                      <span className={`text-[10px] font-mono font-bold px-3 py-1 rounded-lg border ${DECISION_COLORS[getDecision(selectedFocusItem, avgCpl, maxCplThreshold).tier] || "text-muted-foreground border-white/10"}`}>
+                        {getDecision(selectedFocusItem, avgCpl, maxCplThreshold).action}
                       </span>
                     </div>
                   )}

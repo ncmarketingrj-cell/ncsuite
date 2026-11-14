@@ -938,6 +938,7 @@ export function renderReportTemplateText(params: {
   campaigns: ReportCampaignItem[];
   clientName?: string;
   periodText?: string;
+  reportTitlePrefix?: string;
   agencyName?: string;
   reportLevel?: "campaign" | "adset" | "ad";
   isVehicleContext?: boolean;
@@ -948,7 +949,8 @@ export function renderReportTemplateText(params: {
     templateText,
     campaigns,
     clientName = "LumaCar Multimarcas",
-    periodText = "NOVEMBRO 2026",
+    periodText = "Período Selecionado",
+    reportTitlePrefix,
     agencyName = "NC AGÊNCIA",
     reportLevel = "campaign",
     isVehicleContext = true,
@@ -1005,6 +1007,11 @@ export function renderReportTemplateText(params: {
 
   let text = templateText;
 
+  // Se o período não for um mês civil completo, corrige cabeçalho hardcoded "Relatório mensal:"
+  if (reportTitlePrefix) {
+    text = text.replace(/^Relat[óo]rio mensal:/im, `${reportTitlePrefix}:`);
+  }
+
   // 1. Substituições de Cabeçalho & Totais
   text = text.replace(/\{\{NOME_CLIENTE\}\}/g, clientName || "Cliente");
   text = text.replace(/\{\{PERIODO\}\}/g, periodText || "Período Atual");
@@ -1051,15 +1058,16 @@ export function renderReportTemplateText(params: {
     const carCamps = selected.filter((c) => isCarMsg(c) && !isConsignado(c) && !isReachOrImpression(c));
     if (carCamps.length > 0) {
       const costMsg = carCamps.reduce((s, c) => s + c.cost, 0);
-      const leadsMsg = carCamps.reduce(
-        (s, c) => s + (c.conversions > 0 ? c.conversions : c.clicks > 0 ? c.clicks : 0),
-        0
-      );
-      const cplMsg = leadsMsg > 0 ? costMsg / leadsMsg : 0;
+      const leadsMsg = carCamps.reduce((s, c) => s + Number(c.conversions || 0), 0);
+      const cplMsg = leadsMsg > 0 ? costMsg / leadsMsg : null;
       const heading = isVehicleContext
         ? `*Campanha de mensagens nos veiculos:*`
         : `*Campanha de Mensagens / WhatsApp:*`;
-      const block = `${heading}\n Investimento: R$ ${costMsg.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n Total de leads: ${leadsMsg.toLocaleString("pt-BR")}\n Custo por lead: R$ ${cplMsg.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+      const metricNoun = isVehicleContext ? "conversas / leads" : "conversas";
+      const costLine = cplMsg !== null
+        ? `R$ ${cplMsg.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+        : "Não calculável (0 resultados)";
+      const block = `${heading}\n Investimento: R$ ${costMsg.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n Total de ${metricNoun}: ${leadsMsg.toLocaleString("pt-BR")}\n Custo por resultado: ${costLine}`;
       text = text.replace(/\{\{BLOCO_VEICULOS\}\}/g, block);
     } else {
       text = text.replace(/\{\{BLOCO_VEICULOS\}\}/g, "");
@@ -1104,12 +1112,9 @@ export function renderReportTemplateText(params: {
     );
     if (profCamps.length > 0) {
       const costProf = profCamps.reduce((s, c) => s + c.cost, 0);
-      const visitsProf = profCamps.reduce(
-        (s, c) => s + (c.conversions > 0 ? c.conversions : c.clicks > 0 ? c.clicks : 0),
-        0
-      );
-      const cpvProf = visitsProf > 0 ? costProf / visitsProf : 0;
-      const block = `*Campanha de Visitas ao Perfil:*\nInvestimento: R$ ${costProf.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\nVisitas ao perfil: ${visitsProf.toLocaleString("pt-BR")}\nCusto por visita: R$ ${cpvProf.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+      const visitsProf = profCamps.reduce((s, c) => s + Number(c.conversions || 0), 0);
+      const cpvProf = visitsProf > 0 ? costProf / visitsProf : null;
+      const block = `*Campanha de Visitas ao Perfil:*\nInvestimento: R$ ${costProf.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\nVisitas ao perfil: ${visitsProf.toLocaleString("pt-BR")}\nCusto por visita: ${cpvProf !== null ? `R$ ${cpvProf.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : "Não calculável"}`;
       text = text.replace(/\{\{BLOCO_PERFIL\}\}/g, block);
     } else {
       text = text.replace(/\{\{BLOCO_PERFIL\}\}/g, "");
@@ -1124,11 +1129,11 @@ export function renderReportTemplateText(params: {
     if (pageCamps.length > 0) {
       const costViews = pageCamps.reduce((s, c) => s + c.cost, 0);
       const visitsViews = pageCamps.reduce(
-        (s, c) => s + (c.conversions > 0 ? c.conversions : c.clicks > 0 ? c.clicks : 0),
+        (s, c) => s + (c.objective.includes("Cliques") ? Number(c.clicks || 0) : Number(c.conversions || 0)),
         0
       );
-      const cpView = visitsViews > 0 ? costViews / visitsViews : 0;
-      const block = `*Visualizações na Página / Cliques:*\nInvestimento: R$ ${costViews.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\nResultados: ${visitsViews.toLocaleString("pt-BR")} visitas\nCusto por visita: R$ ${cpView.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+      const cpView = visitsViews > 0 ? costViews / visitsViews : null;
+      const block = `*Visualizações na Página / Cliques:*\nInvestimento: R$ ${costViews.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\nResultados: ${visitsViews.toLocaleString("pt-BR")} visitas\nCusto por visita: ${cpView !== null ? `R$ ${cpView.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : "Não calculável"}`;
       text = text.replace(/\{\{BLOCO_PAGINA\}\}/g, block);
     } else {
       text = text.replace(/\{\{BLOCO_PAGINA\}\}/g, "");
@@ -1168,7 +1173,7 @@ export function renderReportTemplateText(params: {
           ? isReach
             ? (data.cost / data.results) * 1000
             : data.cost / data.results
-          : 0;
+          : null;
 
       let resultLabel = "Resultados";
       if (isClick) resultLabel = "Visitas";
@@ -1178,10 +1183,15 @@ export function renderReportTemplateText(params: {
       if (isClick) costLabel = "Custo por Visita";
       if (isReach) costLabel = "CPM";
 
+      const cplFormatted =
+        cpl !== null
+          ? `R$ ${cpl.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+          : "Não calculável";
+
       typeText += `*${type}*\n`;
       typeText += `   💵 Investimento: R$ ${data.cost.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n`;
       typeText += `   📈 ${resultLabel}: ${data.results.toLocaleString("pt-BR")}\n`;
-      typeText += `   💲 ${costLabel}: R$ ${cpl.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n\n`;
+      typeText += `   💲 ${costLabel}: ${cplFormatted}\n\n`;
     });
     text = text.replace(/\{\{RESULTADOS_POR_TIPO\}\}/g, typeText.trim());
   }
@@ -1201,10 +1211,14 @@ export function renderReportTemplateText(params: {
       if (isClick) resultValue = c.clicks;
       if (isReach) resultValue = c.impressions;
       const costPerRes =
-        resultValue > 0 ? (isReach ? (c.cost / resultValue) * 1000 : c.cost / resultValue) : 0;
+        resultValue > 0 ? (isReach ? (c.cost / resultValue) * 1000 : c.cost / resultValue) : null;
       const unitLabel = isReach ? "impr." : isClick ? "cliques" : "leads";
       const costUnit = isReach ? "CPM" : "CPA";
-      summaryText += `• *${c.name.toUpperCase()}*\n  💵 R$ ${c.cost.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} | 📈 ${resultValue.toLocaleString("pt-BR")} ${unitLabel} (${costUnit}: R$ ${costPerRes.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })})\n\n`;
+      const costFormatted =
+        costPerRes !== null
+          ? `R$ ${costPerRes.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+          : "Não calculável";
+      summaryText += `• *${c.name.toUpperCase()}*\n  💵 R$ ${c.cost.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} | 📈 ${resultValue.toLocaleString("pt-BR")} ${unitLabel} (${costUnit}: ${costFormatted})\n\n`;
     });
     text = text.replace(/\{\{LISTA_CAMPANHAS_RESUMO\}\}/g, summaryText.trim());
   }
@@ -1226,9 +1240,13 @@ export function renderReportTemplateText(params: {
       if (isReach) resultValue = c.impressions;
 
       const costPerRes =
-        resultValue > 0 ? (isReach ? (c.cost / resultValue) * 1000 : c.cost / resultValue) : 0;
+        resultValue > 0 ? (isReach ? (c.cost / resultValue) * 1000 : c.cost / resultValue) : null;
       const costLabel = isReach ? "CPM" : "Custo/Resultado";
       const platIcon = c.platform === "google" ? "🌐" : "🎯";
+      const costFormatted =
+        costPerRes !== null
+          ? `R$ ${costPerRes.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+          : "Não calculável";
 
       listText += `${platIcon} *${c.name.toUpperCase()}*\n`;
       if (reportLevel === "adset" && c.campaignName) {
@@ -1239,7 +1257,7 @@ export function renderReportTemplateText(params: {
       }
       listText += `   💵 Investimento: R$ ${c.cost.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n`;
       listText += `   📈 Resultados: ${resultValue.toLocaleString("pt-BR")} ${isReach ? "impr." : ""}\n`;
-      listText += `   💲 ${costLabel}: R$ ${costPerRes.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n`;
+      listText += `   💲 ${costLabel}: ${costFormatted}\n`;
       if (c.reach > 0) listText += `   👥 Alcance: ${c.reach.toLocaleString("pt-BR")}\n`;
       listText += `\n`;
     });

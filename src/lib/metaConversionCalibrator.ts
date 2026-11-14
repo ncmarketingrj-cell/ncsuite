@@ -3,6 +3,12 @@
 // Garante paridade de 100% com o Gerenciador de Anúncios da Meta diretamente pelo frontend,
 // corrigindo qualquer divergência gerada por fallbacks de cliques ou visualizações de página.
 
+import {
+  classifyMetaEvent,
+  computeUnitCost as computeDomainUnitCost,
+  type MetaConversionCategory as DomainMetaConversionCategory,
+} from "./metricsDomain";
+
 const META_GRAPH_URL = "https://graph.facebook.com/v21.0";
 
 export function parseMetaActionValue(a: any): number {
@@ -93,12 +99,24 @@ export function detectConversionCategory(
   const obj = (objective || "").toUpperCase();
   const opt = (optGoal || "").toUpperCase();
 
-  // 0. Mensagens têm prioridade absoluta (ações de landing_page_view existem em qualquer anúncio com link)
+  // Delega primeiro ao modelo explícito de eventos (prioriza indicator e optimization_goal sobre heurísticas de nome)
+  const classified = classifyMetaEvent({
+    campaignName: name,
+    rawObjective: objective,
+    optimizationGoal: optGoal,
+    resultsIndicator: indicator,
+    actions,
+  });
+  if (classified.category !== "UNKNOWN") {
+    return classified.category as MetaConversionCategory;
+  }
+
+  // Fallback legado preservado apenas quando metadados oficiais não resolveram
   if (
     !indicator.includes("purchase") &&
     !indicator.includes("profile") &&
-    (indicator.includes("messaging") ||
-      opt === "REPLIES" ||
+    !indicator.includes("landing_page") &&
+    (opt === "REPLIES" ||
       opt === "CONVERSATIONS" ||
       obj === "MESSAGES" ||
       /(^|[^A-Z])MSG([^A-Z]|$)/.test(n) ||
@@ -293,8 +311,26 @@ export function getMetaResultDetail(
   actions: any[] = [],
   optimizationGoal?: string
 ): MetaResultDetail {
-  const cat = detectConversionCategory(name, resultType || objective, actions, optimizationGoal);
+  const cls = classifyMetaEvent({
+    campaignName: name,
+    rawObjective: objective,
+    resultType,
+    optimizationGoal,
+    actions,
+  });
+  const cat = (cls.category !== "UNKNOWN"
+    ? cls.category
+    : detectConversionCategory(name, resultType || objective, actions, optimizationGoal)) as MetaConversionCategory;
   const isSingular = count === 1;
+
+  if ((cat as DomainMetaConversionCategory) === "UNKNOWN") {
+    return {
+      category: "LINK_CLICKS",
+      resultLabel: isSingular ? "Resultado (revisar evento)" : "Resultados (revisar evento)",
+      costLabel: "Por resultado",
+      shortBadge: "REVISAR",
+    };
+  }
 
   switch (cat) {
     case "MESSAGES":

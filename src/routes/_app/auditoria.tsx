@@ -16,6 +16,15 @@ import { format, subDays } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { toast } from "sonner";
 import { classifyCampaignType } from "./cockpit";
+import { useGlobalDate } from "@/contexts/DateContext";
+import {
+  classifyMetaEvent,
+  computeUnitCost,
+  evaluateCampaignHealth,
+  formatCivilDateBR,
+  normalizeCampaignItem,
+  resolveTargetPrecedence,
+} from "@/lib/metricsDomain";
 
 export const Route = createFileRoute("/_app/auditoria")({
   component: AuditoriaHub,
@@ -53,21 +62,18 @@ function AuditoriaHub() {
   const [exporting, setExporting] = useState(false);
   const [isSimulated, setIsSimulated] = useState(false);
 
-  // Seletores de tráfego
+  // Seletores e período sincronizados com o contexto global (sem desvio UTC)
   const [accounts, setAccounts] = useState<any[]>([]);
-  const [selectedAccountId, setSelectedAccountId] = useState<string>("all");
+  const {
+    accountId: selectedAccountId,
+    setAccountId: setSelectedAccountId,
+    dateFrom: startDate,
+    setDateFrom: setStartDate,
+    dateTo: endDate,
+    setDateTo: setEndDate,
+  } = useGlobalDate();
   const [campaigns, setCampaigns] = useState<any[]>([]);
   const [selectedCampaignId, setSelectedCampaignId] = useState<string>("all");
-
-  // Período
-  const [startDate, setStartDate] = useState<string>(() => {
-    const d = new Date();
-    d.setDate(d.getDate() - 30);
-    return d.toISOString().split("T")[0];
-  });
-  const [endDate, setEndDate] = useState<string>(() => {
-    return new Date().toISOString().split("T")[0];
-  });
 
   // KPIs
   const [kpis, setKpis] = useState({
@@ -100,89 +106,95 @@ function AuditoriaHub() {
 
   const dashboardRef = useRef<HTMLDivElement>(null);
 
-  const runProactiveDiagnosis = (corrs: CorrelationData[], rawMetrics: any[]) => {
+  const runProactiveDiagnosis = (
+    corrs: CorrelationData[],
+    _rawMetrics: any[],
+    computedKpis: { spend: number; cpm: number; cpl: number; ctr: number } = kpis,
+    resolvedTargetCpl: number = 30
+  ) => {
     const list: typeof diagnostics = [];
+    const leadCorrs = corrs.filter((c) => c.classification.isLead);
     
-    // 1. Gargalos & Desperdício de Verba
-    const moneyPits = corrs.filter(c => c.totalSpend > 50 && c.totalConversions === 0);
+    // 1. Gargalos & Desperdício de Verba (somente campanhas de conversão)
+    const moneyPits = leadCorrs.filter(c => c.totalSpend >= 40 && c.totalConversions === 0);
     if (moneyPits.length > 0) {
       const pitNames = moneyPits.map(c => c.campaignName).slice(0, 2).join(", ");
       list.push({
         id: "diag-pit",
         type: "fadiga",
         title: "Gargalo Crítico de Conversão",
-        description: `Identificamos que a(s) campanha(s) "${pitNames}" consumiu verba sem gerar nenhum contato de comprador no WhatsApp ou formulário.`,
+        description: `Identificamos que a(s) campanha(s) "${pitNames}" consumiu verba sem gerar nenhum contato registrado no período.`,
         metric: `Ralo: ${moneyPits.length} campanha(s)`,
-        recommendation: "Pause imediatamente esta(s) campanha(s) no gerenciador para estancar o desperdício e transfira o saldo para campanhas de maior tração."
+        recommendation: "Avalie pausar esta(s) campanha(s) no gerenciador para estancar desperdício e realocar em campanhas de maior tração."
       });
     } else {
       list.push({
         id: "diag-1",
         type: "fadiga",
-        title: "Saúde Visual & Criativos de Showroom",
-        description: "Taxa de cliques (CTR) estável no período. Para prevenir saturação do público automotivo regional, planeje a renovação quinzenal de vídeos.",
-        metric: "CTR Médio: " + (kpis.ctr ? kpis.ctr.toFixed(2) + "%" : "1.85%"),
-        recommendation: "Produza novos vídeos dinâmicos no pátio da loja (formato Reels com som real do veículo e condições especiais) para manter o leilão barato."
+        title: "Saúde Visual & Criativos",
+        description: "Taxa de cliques (CTR) estável no período. Planeje a renovação periódica de criativos para evitar saturação.",
+        metric: "CTR Médio: " + (computedKpis.ctr > 0 ? computedKpis.ctr.toFixed(2) + "%" : "Não calculável"),
+        recommendation: "Renove criativos com variações de ângulo/oferta periodicamente para sustentar leilão saudável."
       });
     }
 
-    // 2. Pressão do Leilão
-    const highestCpm = corrs.length > 0 ? Math.max(...corrs.map(c => c.avgCpm)) : 22.5;
+    // 2. Pressão do Leilão (lê o KPI recém-calculado, nunca estado antigo)
+    const highestCpm = corrs.length > 0 ? Math.max(...corrs.map(c => c.avgCpm)) : 0;
     list.push({
       id: "diag-2",
       type: "leilao",
       title: "Competitividade & Custo do Leilão (CPM)",
-      description: `O CPM médio da conta está em R$ ${kpis.cpm.toFixed(2)} (pico de R$ ${highestCpm.toFixed(2)}). O valor reflete a disputa por compradores na sua região.`,
-      metric: "CPM Médio: R$ " + kpis.cpm.toFixed(2),
-      recommendation: "Para aliviar custos em períodos concorridos, utilize públicos amplos (Broad Audiences) deixando o algoritmo encontrar os compradores mais qualificados."
+      description: `O CPM médio da conta está em R$ ${computedKpis.cpm.toFixed(2)} (pico de R$ ${highestCpm.toFixed(2)}). O valor reflete a disputa no leilão regional.`,
+      metric: "CPM Médio: R$ " + computedKpis.cpm.toFixed(2),
+      recommendation: "Para aliviar custos em períodos concorridos, teste segmentações mais amplas e renovação de ganchos visuais."
     });
 
-    // 3. Eficiência de CPL & Oportunidades de Escala com Benchmark Regional
-    let targetCpl = 5.0;
-    let regionName = "Rio de Janeiro (RJ)";
+    // 3. Eficiência de CPL & Oportunidades de Escala com meta por precedência
+    let regionName = "Referência configurada";
     try {
       const savedBench = localStorage.getItem("nc_regional_benchmark");
       if (savedBench) {
         const parsed = JSON.parse(savedBench);
-        if (parsed.targetCpl && Number(parsed.targetCpl) > 0) targetCpl = Number(parsed.targetCpl);
         if (parsed.region) regionName = parsed.region;
       }
     } catch {}
 
-    const champions = corrs.filter(c => c.totalConversions > 0 && c.cpa <= targetCpl);
+    const champions = leadCorrs.filter(c => c.status === "ESCALAR" && c.totalConversions >= 3 && c.totalSpend > 0 && c.cpa > 0 && c.cpa <= resolvedTargetCpl);
     if (champions.length > 0) {
       list.push({
         id: "diag-3",
         type: "sucesso",
         title: "Oportunidade Clara de Escala (+15%)",
-        description: `A campanha "${champions[0].campaignName}" opera com CPL campeão de R$ ${champions[0].cpa.toFixed(2)}, dentro da meta de R$ ${targetCpl.toFixed(2)} (${regionName}), trazendo ${champions[0].totalConversions} contatos com margem muito favorável.`,
+        description: `A campanha "${champions[0].campaignName}" opera com CPL de R$ ${champions[0].cpa.toFixed(2)}, dentro da meta de R$ ${resolvedTargetCpl.toFixed(2)} (${regionName}), com ${champions[0].totalConversions} contatos.`,
         metric: `CPL Campeão: R$ ${champions[0].cpa.toFixed(2)}`,
-        recommendation: "Aumente o orçamento diário desta campanha líder em 15% para acelerar a entrada de contatos no WhatsApp dos vendedores."
+        recommendation: "Considere aumentar o orçamento diário em 15% a 20% e acompanhar estabilidade de CPL."
       });
-    } else if (kpis.cpl > targetCpl * 1.5) {
+    } else if (computedKpis.cpl > resolvedTargetCpl * 1.5) {
       list.push({
         id: "diag-3",
         type: "friccao",
-        title: `CPL Acima do Teto Regional (${regionName})`,
-        description: `O custo por contato atual (R$ ${kpis.cpl.toFixed(2)}) ultrapassou o teto aceitável de R$ ${(targetCpl * 1.5).toFixed(2)} (meta base: R$ ${targetCpl.toFixed(2)}).`,
-        metric: "CPL: R$ " + kpis.cpl.toFixed(2),
-        recommendation: "Ajuste a oferta do anúncio (ex: fotos reais do pátio com celular, bônus na troca ou IPVA grátis) para derrubar o custo por conversa no WhatsApp."
+        title: `CPL Acima do Teto (${regionName})`,
+        description: `O custo por contato atual (R$ ${computedKpis.cpl.toFixed(2)}) ultrapassou o teto de R$ ${(resolvedTargetCpl * 1.5).toFixed(2)} (meta base: R$ ${resolvedTargetCpl.toFixed(2)}).`,
+        metric: "CPL: R$ " + computedKpis.cpl.toFixed(2),
+        recommendation: "Ajuste oferta e criativos antes de qualquer aumento de orçamento."
       });
     } else {
       list.push({
         id: "diag-3",
         type: "sucesso",
         title: "Operação Saudável & Equilíbrio de Mídia",
-        description: `Custo médio por contato estabilizado em R$ ${kpis.cpl.toFixed(2)} (meta: R$ ${targetCpl.toFixed(2)} - ${regionName}). Equilíbrio consistente entre investimento publicitário e atendimento da equipe.`,
-        metric: "CPL Saudável",
-        recommendation: "Mantenha a estratégia atual e garanta que os vendedores estejam respondendo as mensagens em até 5 minutos no WhatsApp."
+        description: computedKpis.cpl > 0
+          ? `Custo médio por contato em R$ ${computedKpis.cpl.toFixed(2)} (meta: R$ ${resolvedTargetCpl.toFixed(2)} - ${regionName}).`
+          : `Sem conversões diretas suficientes para cálculo de CPL no período.`,
+        metric: computedKpis.cpl > 0 ? "CPL Controlado" : "Sem Conversões",
+        recommendation: "Mantenha monitoramento contínuo de entrega e velocidade de atendimento."
       });
     }
 
     setDiagnostics(list);
   };
 
-  const processTrafficMetrics = (camps: any[], metrics: any[]) => {
+  const processTrafficMetrics = (camps: any[], metrics: any[], accountThresholdCpl: number | null = null) => {
     const campMap = new Map<string, any>();
     camps.forEach(c => campMap.set(c.id, c));
 
@@ -191,7 +203,7 @@ function AuditoriaHub() {
     let totalImpressions = 0;
     let totalReach = 0;
     let totalClicks = 0;
-    let totalConversions = 0; // Contatos e Leads Reais de compradores
+    let totalConversions = 0;
 
     metrics.forEach(m => {
       totalSpend += Number(m.cost || 0);
@@ -200,12 +212,16 @@ function AuditoriaHub() {
       totalClicks += Number(m.clicks || 0);
 
       const camp = campMap.get(m.campaign_id);
-      const classification = classifyCampaignType(camp?.name || "", "", camp?.objective || "");
-      
-      if (classification.isLead) {
+      const cls = classifyMetaEvent({
+        campaignName: camp?.name || "",
+        resultType: m.result_type || "",
+        rawObjective: camp?.objective || "",
+        isVehicleContext: true,
+      });
+
+      if (cls.isConversionGoal) {
         const rawConv = Number(m.conversions || 0);
         const clicks = Number(m.clicks || 0);
-        // Sanity check: se conversões vierem com números de impressões (ex: 776.395), ajusta para número de cliques ou real
         const validConv = rawConv > 1000 && rawConv > clicks * 2 ? Math.min(rawConv, clicks) : rawConv;
         totalConversions += validConv;
       }
@@ -214,9 +230,9 @@ function AuditoriaHub() {
     const cpl = totalConversions > 0 ? totalSpend / totalConversions : 0;
     const cpm = totalImpressions > 0 ? (totalSpend / totalImpressions) * 1000 : 0;
     const ctr = totalImpressions > 0 ? (totalClicks / totalImpressions) * 100 : 0;
-    const sales = Math.max(0, Math.round(totalConversions * 0.08)); // Média do mercado automotivo: ~8% dos contatos fecham negócio
+    const sales = Math.max(0, Math.round(totalConversions * 0.08)); // Estimativa de referência (8%) — não constitui dado comercial realizado
 
-    setKpis({
+    const nextKpis = {
       spend: totalSpend,
       impressions: totalImpressions,
       reach: totalReach,
@@ -226,7 +242,8 @@ function AuditoriaHub() {
       cpm,
       ctr,
       sales
-    });
+    };
+    setKpis(nextKpis);
 
     // Calcular auditoria estratégica por campanha
     const campaignMetricsMap = new Map<string, any[]>();
@@ -234,6 +251,20 @@ function AuditoriaHub() {
       const arr = campaignMetricsMap.get(m.campaign_id) || [];
       arr.push(m);
       campaignMetricsMap.set(m.campaign_id, arr);
+    });
+
+    let savedRegionalTarget: number | null = null;
+    try {
+      const savedBench = localStorage.getItem("nc_regional_benchmark");
+      if (savedBench) {
+        const parsed = JSON.parse(savedBench);
+        if (parsed.targetCpl && Number(parsed.targetCpl) > 0) savedRegionalTarget = Number(parsed.targetCpl);
+      }
+    } catch {}
+    const resolvedTarget = resolveTargetPrecedence({
+      accountThresholdMaxCpl: accountThresholdCpl,
+      regionalBenchmarkCpl: savedRegionalTarget,
+      category: "MESSAGES",
     });
 
     const corrs: CorrelationData[] = [];
@@ -244,11 +275,21 @@ function AuditoriaHub() {
       const spends = campMetrics.map(m => Number(m.cost || 0));
       const imps = campMetrics.map(m => Number(m.impressions || 0));
       const clicks = campMetrics.map(m => Number(m.clicks || 0));
+      const reaches = campMetrics.map(m => Number(m.reach || 0));
+      const firstRt = campMetrics.find(m => m.result_type)?.result_type || "";
 
-      const classification = classifyCampaignType(c.name || "", "", c.objective || "");
+      const classification = classifyCampaignType(c.name || "", firstRt, c.objective || "");
+      const metaCls = classifyMetaEvent({
+        campaignName: c.name || "",
+        resultType: firstRt,
+        rawObjective: c.objective || "",
+        isVehicleContext: true,
+      });
+
       const convs = campMetrics.map(m => {
-        if (!classification.isLead) return 0;
         const rawConv = Number(m.conversions || 0);
+        if (metaCls.category === "REACH") return rawConv;
+        if (!classification.isLead) return 0;
         const clk = Number(m.clicks || 0);
         return rawConv > 1000 && rawConv > clk * 2 ? Math.min(rawConv, clk) : rawConv;
       });
@@ -256,57 +297,47 @@ function AuditoriaHub() {
       const tSpend = spends.reduce((a, b) => a + b, 0);
       const tImps = imps.reduce((a, b) => a + b, 0);
       const tClicks = clicks.reduce((a, b) => a + b, 0);
+      const tReach = reaches.reduce((a, b) => a + b, 0);
       const tConvs = convs.reduce((a, b) => a + b, 0);
 
       if (tSpend === 0 && tClicks === 0) return;
 
       const avgCpm = tImps > 0 ? (tSpend / tImps) * 1000 : 0;
       const avgCtr = tImps > 0 ? (tClicks / tImps) * 100 : 0;
-      const avgCvr = tClicks > 0 ? (tConvs / tClicks) * 100 : 0;
-      const cpa = tConvs > 0 ? tSpend / tConvs : 0;
+      const avgCvr = classification.isLead && tClicks > 0 ? (tConvs / tClicks) * 100 : 0;
+      const cpa = computeUnitCost(tSpend, metaCls.category === "REACH" ? (tReach > 0 ? tReach : tConvs) : tConvs, metaCls.category) ?? 0;
 
-      // Benchmark regional ativo (Padrão RJ: R$ 5,00 para WhatsApp Leads)
-      let targetCpl = 5.0;
-      let regionName = "Rio de Janeiro (RJ)";
-      try {
-        const savedBench = localStorage.getItem("nc_regional_benchmark");
-        if (savedBench) {
-          const parsed = JSON.parse(savedBench);
-          if (parsed.targetCpl && Number(parsed.targetCpl) > 0) targetCpl = Number(parsed.targetCpl);
-          if (parsed.region) regionName = parsed.region;
-        }
-      } catch {}
+      const normalized = normalizeCampaignItem({
+        id: c.id,
+        name: c.name,
+        cost: tSpend,
+        conversions: tConvs,
+        clicks: tClicks,
+        impressions: tImps,
+        reach: tReach,
+        rawObjective: c.objective || "",
+        resultType: firstRt,
+        isVehicleContext: true,
+      });
+      const diag = evaluateCampaignHealth({
+        item: normalized,
+        targetCandidates: {
+          accountThresholdMaxCpl: accountThresholdCpl,
+          regionalBenchmarkCpl: savedRegionalTarget,
+        },
+        minSpendForPauseDecision: 40,
+        minResultsForScale: 3,
+      });
 
-      // Diagnóstico executivo e objetivo por campanha
-      let status: "ESCALAR" | "OTIMIZAR" | "PAUSAR" | "ESTAVEL" = "ESTAVEL";
-      let recommendation = "";
-
-      if (classification.isLead) {
-        if (tConvs > 0 && cpa <= targetCpl) {
-          status = "ESCALAR";
-          recommendation = `CPL excelente (R$ ${cpa.toFixed(2)}), dentro da meta de R$ ${targetCpl.toFixed(2)} (${regionName}). Aumentar verba em 15% a 20%.`;
-        } else if (tConvs === 0 && tSpend > 40) {
-          status = "PAUSAR";
-          recommendation = `Consumiu R$ ${tSpend.toFixed(2)} sem nenhum contato gerado. Pausar para evitar desperdício de verba.`;
-        } else if (cpa > targetCpl * 1.5) {
-          status = "PAUSAR";
-          recommendation = `CPL de R$ ${cpa.toFixed(2)} estourou o teto aceitável de R$ ${targetCpl.toFixed(2)} (${regionName}). Pausar ou refazer oferta.`;
-        } else if (cpa > targetCpl) {
-          status = "OTIMIZAR";
-          recommendation = `CPL em R$ ${cpa.toFixed(2)} está acima da meta de R$ ${targetCpl.toFixed(2)}. Substituir criativos por fotos reais no pátio.`;
-        } else {
-          status = "ESTAVEL";
-          recommendation = `Performance regular (CPL R$ ${cpa.toFixed(2)}). Manter monitoramento contínuo de leilão.`;
-        }
-      } else {
-        if (avgCtr > 1.8) {
-          status = "ESCALAR";
-          recommendation = `Alto engajamento (CTR ${avgCtr.toFixed(2)}%). Excelente motor de atração para a loja.`;
-        } else {
-          status = "ESTAVEL";
-          recommendation = "Campanha de suporte para geração de tráfego e visibilidade do perfil.";
-        }
-      }
+      const status: "ESCALAR" | "OTIMIZAR" | "PAUSAR" | "ESTAVEL" =
+        diag.status === "ESCALAR"
+          ? "ESCALAR"
+          : diag.status === "PAUSAR"
+          ? "PAUSAR"
+          : diag.status === "OTIMIZAR"
+          ? "OTIMIZAR"
+          : "ESTAVEL";
+      const recommendation = `${diag.headline}. ${diag.recommendation}`;
 
       corrs.push({
         campaignId: c.id,
@@ -323,20 +354,21 @@ function AuditoriaHub() {
       });
     });
 
-    // Ordenar campanhas por gasto total
+    // Ordenar campanhas por maior gasto total
     corrs.sort((a, b) => b.totalSpend - a.totalSpend);
     setCorrelationData(corrs.slice(0, 5));
 
-    // Calcular Tendência diária (ComposedChart)
+    // Calcular Tendência diária (ordem cronológica civil antes de formatar DD/MM)
     const dateMap = new Map<string, { spend: number; clicks: number; conversions: number; impressions: number }>();
     metrics.forEach(m => {
-      const dStr = m.date;
+      const dStr = (m.date || "").split("T")[0];
+      if (!dStr) return;
       const current = dateMap.get(dStr) || { spend: 0, clicks: 0, conversions: 0, impressions: 0 };
       current.spend += Number(m.cost || 0);
       current.clicks += Number(m.clicks || 0);
 
       const camp = campMap.get(m.campaign_id);
-      const classification = classifyCampaignType(camp?.name || "", "", camp?.objective || "");
+      const classification = classifyCampaignType(camp?.name || "", m.result_type || "", camp?.objective || "");
       if (classification.isLead) {
         const rawConv = Number(m.conversions || 0);
         const clicks = Number(m.clicks || 0);
@@ -346,16 +378,18 @@ function AuditoriaHub() {
       dateMap.set(dStr, current);
     });
 
-    const trend = Array.from(dateMap.entries()).map(([date, d]) => {
-      const cpm = d.impressions > 0 ? (d.spend / d.impressions) * 1000 : 0;
-      const cvr = d.clicks > 0 ? (d.conversions / d.clicks) * 100 : 0;
-      return {
-        date: format(new Date(date + "T12:00:00Z"), "dd/MM", { locale: ptBR }),
-        Spend: Math.round(d.spend),
-        CPM: Number(cpm.toFixed(2)),
-        CVR: Number(cvr.toFixed(2))
-      };
-    }).sort((a, b) => a.date.localeCompare(b.date));
+    const trend = Array.from(dateMap.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([date, d]) => {
+        const cpmDay = d.impressions > 0 ? (d.spend / d.impressions) * 1000 : 0;
+        const cvrDay = d.clicks > 0 ? (d.conversions / d.clicks) * 100 : 0;
+        return {
+          date: formatCivilDateBR(date).slice(0, 5),
+          Spend: Math.round(d.spend),
+          CPM: Number(cpmDay.toFixed(2)),
+          CVR: Number(cvrDay.toFixed(2))
+        };
+      });
 
     setTrendMetrics(trend);
 
@@ -365,7 +399,7 @@ function AuditoriaHub() {
       { stageName: "reach", label: "Alcance", eventCount: totalReach, conversionRate: totalImpressions > 0 ? (totalReach / totalImpressions) * 100 : 0, dropoffRate: totalImpressions > 0 ? ((totalImpressions - totalReach) / totalImpressions) * 100 : 0, logarithmicDropoff: totalImpressions > 0 && totalReach > 0 ? -Math.log(totalReach / totalImpressions) : 0 },
       { stageName: "clicks", label: "Cliques", eventCount: totalClicks, conversionRate: totalReach > 0 ? (totalClicks / totalReach) * 100 : 0, dropoffRate: totalReach > 0 ? ((totalReach - totalClicks) / totalReach) * 100 : 0, logarithmicDropoff: totalReach > 0 && totalClicks > 0 ? -Math.log(totalClicks / totalReach) : 0 },
       { stageName: "conversions", label: "Leads", eventCount: totalConversions, conversionRate: totalClicks > 0 ? (totalConversions / totalClicks) * 100 : 0, dropoffRate: totalClicks > 0 ? ((totalClicks - totalConversions) / totalClicks) * 100 : 0, logarithmicDropoff: totalClicks > 0 && totalConversions > 0 ? -Math.log(totalConversions / totalClicks) : 0 },
-      { stageName: "sales", label: "Vendas Est.", eventCount: sales, conversionRate: totalConversions > 0 ? (sales / totalConversions) * 100 : 0, dropoffRate: totalConversions > 0 ? ((totalConversions - sales) / totalConversions) * 100 : 0, logarithmicDropoff: totalConversions > 0 && sales > 0 ? -Math.log(sales / totalConversions) : 0 }
+      { stageName: "sales", label: "Vendas Est. (ref.)", eventCount: sales, conversionRate: totalConversions > 0 ? (sales / totalConversions) * 100 : 0, dropoffRate: totalConversions > 0 ? ((totalConversions - sales) / totalConversions) * 100 : 0, logarithmicDropoff: totalConversions > 0 && sales > 0 ? -Math.log(sales / totalConversions) : 0 }
     ];
 
     setDropoffData(computedDropoff);
@@ -374,7 +408,7 @@ function AuditoriaHub() {
     const pressure = Math.min(95, Math.max(12, Math.round((cpm / 35) * 100)));
     setAuctionPressure(pressure);
 
-    runProactiveDiagnosis(corrs, metrics);
+    runProactiveDiagnosis(corrs, metrics, nextKpis, resolvedTarget.targetValue);
   };
 
   const generateMockStats = (accId: string, campId: string) => {
@@ -507,8 +541,8 @@ function AuditoriaHub() {
       const { data: campaignsList } = await campQ;
       setCampaigns(campaignsList || []);
 
-      // 2. Carregar métricas diárias no período
-      let metricsQ = (supabase as any).from("metrics").select("campaign_id, date, cost, conversions, clicks, impressions, reach");
+      // 2. Carregar métricas diárias no período (incluindo result_type para classificação exata)
+      let metricsQ = (supabase as any).from("metrics").select("campaign_id, date, cost, conversions, clicks, impressions, reach, result_type");
       
       if (selectedCampaignId !== "all") {
         metricsQ = metricsQ.eq("campaign_id", selectedCampaignId);
@@ -517,7 +551,6 @@ function AuditoriaHub() {
         if (campIds.length > 0) {
           metricsQ = metricsQ.in("campaign_id", campIds);
         } else {
-          // Conta sem campanhas - simula
           setIsSimulated(true);
           generateMockStats(selectedAccountId, selectedCampaignId);
           setLoading(false);
@@ -526,11 +559,22 @@ function AuditoriaHub() {
       }
 
       metricsQ = metricsQ.gte("date", startDate).lte("date", endDate).order("date", { ascending: true });
-      const { data: dbMetrics } = await metricsQ;
+      let thresholdQ = (supabase as any)
+        .from("alert_thresholds")
+        .select("ad_account_id, max_cpl")
+        .eq("is_active", true);
+      if (selectedAccountId !== "all") {
+        thresholdQ = thresholdQ.eq("ad_account_id", selectedAccountId);
+      }
+      const [{ data: dbMetrics }, { data: thresholds }] = await Promise.all([metricsQ, thresholdQ]);
+      const accountThresholdCpl =
+        selectedAccountId !== "all"
+          ? thresholds?.find((t: any) => t.ad_account_id === selectedAccountId)?.max_cpl ?? null
+          : null;
 
       if (dbMetrics && dbMetrics.length > 0 && campaignsList && campaignsList.length > 0) {
         setIsSimulated(false);
-        processTrafficMetrics(campaignsList, dbMetrics);
+        processTrafficMetrics(campaignsList, dbMetrics, accountThresholdCpl);
       } else {
         setIsSimulated(true);
         generateMockStats(selectedAccountId, selectedCampaignId);
@@ -754,7 +798,7 @@ function AuditoriaHub() {
             { label: "Cliques de Mídia", val: kpis.clicks.toLocaleString("pt-BR"), icon: <MousePointer2 className="h-4 w-4 text-indigo-500" /> },
             { label: "Leads Cadastrados", val: kpis.conversions.toLocaleString("pt-BR"), icon: <Users className="h-4 w-4 text-purple-500" /> },
             { label: "CPL Médio", val: kpis.cpl > 0 ? `R$ ${kpis.cpl.toFixed(2)}` : "—", icon: <Activity className="h-4 w-4 text-red-500" />, alert: kpis.cpl > 50 },
-            { label: "Vendas Est. (8%)", val: kpis.sales.toLocaleString("pt-BR"), icon: <ShoppingCart className="h-4 w-4 text-amber-500" /> },
+            { label: "Vendas Est. (ref. 8%)", val: kpis.sales.toLocaleString("pt-BR"), icon: <ShoppingCart className="h-4 w-4 text-amber-500" /> },
           ].map((card, idx) => (
             <div key={idx} className={`bg-card border ${card.alert ? 'border-red-500/30 bg-red-500/[0.02]' : 'border-border'} rounded-2xl p-4.5 space-y-1.5`}>
               <div className="flex items-center justify-between">
@@ -952,10 +996,10 @@ function AuditoriaHub() {
               <div className="flex items-center justify-between border-b border-border pb-3">
                 <div className="flex items-center gap-2">
                   <Activity className="h-4 w-4 text-primary" />
-                  <h3 className="text-xs font-black uppercase tracking-wider text-muted-foreground">Auditoria por Campanha</h3>
+                  <h3 className="text-xs font-black uppercase tracking-wider text-muted-foreground">Top 5 por Gasto — Auditoria por Campanha</h3>
                 </div>
                 <span className="text-[9px] font-bold text-muted-foreground uppercase bg-white/5 px-2 py-0.5 rounded">
-                  Status
+                  Ranking por Gasto
                 </span>
               </div>
 

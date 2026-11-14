@@ -10,6 +10,12 @@ import { DateRangePicker } from "@/components/DateRangePicker";
 import { useGlobalDate, type Period } from "@/contexts/DateContext";
 import { calibrateCampaignMetricsArray, ensureDatabaseCalibrated } from "@/lib/metaConversionCalibrator";
 import {
+  classifyMetaEvent,
+  resolveTargetPrecedence,
+  evaluateCampaignHealth,
+  normalizeCampaignItem,
+} from "@/lib/metricsDomain";
+import {
   AreaChart, Area, XAxis, YAxis, ResponsiveContainer, Tooltip as RTooltip,
 } from "recharts";
 import {
@@ -33,7 +39,7 @@ export const Route = createFileRoute("/_app/cockpit")({
   component: CockpitPage,
 });
 
-// ─── CLASSIFICAÇÃO DE OBJETIVOS (SEPARA COMPRADORES DE CLIQUES) ────────────────
+// ─── CLASSIFICAÇÃO DE OBJETIVOS (MODELO ÚNICO DE EVENTOS) ───────────────────────
 export function classifyCampaignType(
   campName = "",
   resultType = "",
@@ -43,93 +49,47 @@ export function classifyCampaignType(
   typeLabel: string;
   metricType: "MENSAGEM" | "CADASTRO" | "CLIQUES" | "ENGAJAMENTO" | "ALCANCE" | "OUTRO";
 } {
-  const name = (campName || "").toLowerCase();
-  const rt = (resultType || "").toLowerCase();
-  const obj = (metaObjective || "").toUpperCase();
+  const cls = classifyMetaEvent({
+    campaignName: campName,
+    resultType,
+    rawObjective: metaObjective,
+    isVehicleContext: true,
+  });
 
-  // 1. Conversas por Mensagem / WhatsApp / Direct (Compradores Reais da Loja)
-  if (
-    rt.includes("conversa") ||
-    rt.includes("mensagem") ||
-    rt.includes("messaging") ||
-    rt.includes("whatsapp") ||
-    rt.includes("direct") ||
-    obj === "MESSAGES" ||
-    name.includes("mensagem") ||
-    name.includes("mensagens") ||
-    name.includes("whatsapp") ||
-    name.includes("wpp") ||
-    name.includes("msg") ||
-    name.includes("conversa") ||
-    name.includes("vendedores") ||
-    name.includes("atendimento") ||
-    name.includes("grupo de vendedores")
-  ) {
-    return { isLead: true, typeLabel: "Conversas no WhatsApp", metricType: "MENSAGEM" };
+  switch (cls.category) {
+    case "MESSAGES":
+      return {
+        isLead: true,
+        typeLabel: cls.editorialGroup === "MESSAGES_VEHICLES" ? "Mensagens nos Veículos" : "Conversas no WhatsApp",
+        metricType: "MENSAGEM",
+      };
+    case "LEADS":
+      return {
+        isLead: true,
+        typeLabel: cls.editorialGroup === "LEADS_CONSIGNADO" ? "Leads Consignado" : "Cadastros / Formulários",
+        metricType: "CADASTRO",
+      };
+    case "PURCHASES":
+      return {
+        isLead: true,
+        typeLabel: "Compras / Conversões",
+        metricType: "CADASTRO",
+      };
+    case "LINK_CLICKS":
+      return { isLead: false, typeLabel: "Cliques no Link (Tráfego)", metricType: "CLIQUES" };
+    case "LANDING_PAGE_VIEWS":
+      return { isLead: false, typeLabel: "Visualizações na Página", metricType: "CLIQUES" };
+    case "INSTAGRAM_PROFILE":
+      return { isLead: false, typeLabel: "Visitas ao Perfil do IG", metricType: "ENGAJAMENTO" };
+    case "VIDEO_VIEWS":
+      return { isLead: false, typeLabel: "Visualizações de Vídeo", metricType: "ALCANCE" };
+    case "REACH":
+      return { isLead: false, typeLabel: "Alcance / Marca", metricType: "ALCANCE" };
+    case "ENGAGEMENT":
+      return { isLead: false, typeLabel: "Engajamento", metricType: "ENGAJAMENTO" };
+    default:
+      return { isLead: false, typeLabel: "Tráfego Geral", metricType: "OUTRO" };
   }
-
-  // 2. Cadastros / Leads (Formulários Instantâneos)
-  if (
-    rt.includes("cadastro") ||
-    rt.includes("lead") ||
-    name.includes("formulario") ||
-    name.includes("formulário") ||
-    name.includes("cadastro") ||
-    obj === "OUTCOME_LEADS" ||
-    obj === "LEAD_GENERATION"
-  ) {
-    return { isLead: true, typeLabel: "Cadastros / Formulários", metricType: "CADASTRO" };
-  }
-
-  // 3. Consignado / Compra de Veículos
-  if (
-    rt.includes("consignado") ||
-    name.includes("consignado") ||
-    name.includes("compramos seu carro") ||
-    name.includes("avaliacao") ||
-    name.includes("avaliação")
-  ) {
-    return { isLead: true, typeLabel: "Leads Consignado", metricType: "CADASTRO" };
-  }
-
-  // 4. Tráfego / Cliques no link (Visitantes - NÃO são leads nem conversas!)
-  if (
-    rt.includes("clique") ||
-    rt.includes("link_click") ||
-    name.includes("trafego") ||
-    name.includes("tráfego") ||
-    obj === "OUTCOME_TRAFFIC" ||
-    obj === "LINK_CLICKS"
-  ) {
-    return { isLead: false, typeLabel: "Cliques no Link (Tráfego)", metricType: "CLIQUES" };
-  }
-
-  // 5. Visitas ao Perfil / Instagram / Engajamento
-  if (
-    rt.includes("perfil") ||
-    name.includes("visita ao perfil") ||
-    name.includes("post do instagram") ||
-    name.includes("| insta") ||
-    name.endsWith("insta")
-  ) {
-    return { isLead: false, typeLabel: "Visitas ao Perfil do IG", metricType: "ENGAJAMENTO" };
-  }
-
-  // 6. Vídeo / Alcance / Reconhecimento
-  if (rt.includes("thruplay") || rt.includes("video") || obj === "VIDEO_VIEWS") {
-    return { isLead: false, typeLabel: "Visualizações de Vídeo", metricType: "ALCANCE" };
-  }
-
-  if (rt.includes("alcance") || obj === "OUTCOME_AWARENESS") {
-    return { isLead: false, typeLabel: "Alcance / Marca", metricType: "ALCANCE" };
-  }
-
-  // Fallback automotivo: se campanha tem "carro/veiculo/estoque" no nome
-  if (name.includes("veiculo") || name.includes("carro") || name.includes("estoque")) {
-    return { isLead: true, typeLabel: "Mensagens nos Veículos", metricType: "MENSAGEM" };
-  }
-
-  return { isLead: false, typeLabel: "Tráfego Geral", metricType: "OUTRO" };
 }
 
 // ─── SVG GAUGE MATH ─────────────────────────────────────────────────────────────
@@ -1176,12 +1136,12 @@ function CentralDecisaoExecutiva({
   const targetCpl = Number(m.targetCpl || 5.0);
   const isCPLGood = m.CPL > 0 && m.CPL <= targetCpl;
   const isHealthy = score >= 70 && hasRealLeads && isCPLGood;
-  const isCritical = score < 50 || (!hasRealLeads && m.cost > 30) || (hasRealLeads && m.CPL > targetCpl * 1.5);
+  const isCritical = score < 50 || (hasRealLeads && m.CPL > targetCpl * 1.5);
 
   const executiveState = isHealthy
     ? {
-        headline: "OPERAÇÃO LUCRATIVA E EFICIENTE",
-        directiveTitle: "Momento Ideal para Escalar: Compradores chegando com CPL barato no WhatsApp.",
+        headline: "OPERAÇÃO EFICIENTE",
+        directiveTitle: "Momento favorável: contatos chegando com CPL abaixo da meta.",
         color: "#22c55e",
         badgeBg: "rgba(34, 197, 94, 0.12)",
         badgeBorder: "border-emerald-500/30",
@@ -1191,8 +1151,8 @@ function CentralDecisaoExecutiva({
     ? {
         headline: "ATENÇÃO: RISCO DE DESPERDÍCIO",
         directiveTitle: !hasRealLeads
-          ? "Você está gastando verba em cliques de tráfego sem gerar conversas de compradores no WhatsApp."
-          : "Custo por comprador acima da meta da loja. Há vazamento de verba ativo.",
+          ? "Sem conversas/leads elegíveis registrados no período selecionado."
+          : "Custo por conversa/lead acima da meta configurada.",
         color: "#ef4444",
         badgeBg: "rgba(239, 68, 68, 0.12)",
         badgeBorder: "border-red-500/30",
@@ -1254,15 +1214,15 @@ function CentralDecisaoExecutiva({
           </div>
           <div className="px-3 py-2 rounded-xl bg-muted/30 border border-border/60 text-center">
             <span className="text-[8px] font-black uppercase tracking-wider text-emerald-500 block">
-              COMPRADORES (WHATSAPP)
+              CONVERSAS / LEADS (META)
             </span>
             <span className="text-sm font-black font-mono text-emerald-500">
-              {m.realLeads ?? 0} {m.realLeads === 1 ? "conversa" : "conversas"}
+              {m.realLeads ?? 0} {m.realLeads === 1 ? "contato" : "contatos"}
             </span>
           </div>
           <div className="px-3 py-2 rounded-xl bg-muted/30 border border-border/60 text-center">
             <span className="text-[8px] font-black uppercase tracking-wider text-muted-foreground block">
-              CUSTO P/ COMPRADOR
+              CUSTO P/ CONVERSA-LEAD
             </span>
             <span
               className="text-sm font-black font-mono"
@@ -1270,7 +1230,7 @@ function CentralDecisaoExecutiva({
                 color: (m.realLeads ?? 0) > 0 ? (m.CPL <= targetCpl ? "#22c55e" : "#f59e0b") : "#ef4444",
               }}
             >
-              {(m.realLeads ?? 0) > 0 ? BRL(m.CPL) : "Sem Contatos"}
+              {(m.realLeads ?? 0) > 0 ? BRL(m.CPL) : "Não calculável"}
             </span>
           </div>
           <div className="px-3 py-2 rounded-xl bg-muted/30 border border-border/60 text-center">
@@ -1450,7 +1410,7 @@ function RankingTatico({ data }: { data: any[] }) {
       <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/5 p-5 relative overflow-hidden shadow-sm">
         <div className="absolute top-0 left-0 w-1.5 h-full bg-emerald-500" />
         <h3 className="text-xs font-black uppercase tracking-widest text-emerald-500 flex items-center gap-2 mb-3">
-          <TrendingUp className="h-4 w-4" /> Top 3 — Mais Trazem Compradores (Baixo Custo)
+          <TrendingUp className="h-4 w-4" /> Top 3 — Mais Trazem Conversas / Leads (Menor Custo)
         </h3>
         <div className="space-y-2.5">
           {topCamps.length === 0 && (
@@ -1848,11 +1808,23 @@ function useCockpitData() {
   const queryLookbackDays = totalDays <= 3 ? 14 : totalDays * 2;
   const queryDateFrom = format(subDays(parseISO(dateFrom), queryLookbackDays), "yyyy-MM-dd");
 
+  const { data: cockpitThresholds = [] } = useQuery({
+    queryKey: ["cockpit-thresholds", accountId],
+    staleTime: 5 * 60 * 1000,
+    queryFn: async () => {
+      let q = (supabase as any).from("alert_thresholds").select("ad_account_id, max_cpl, is_active").eq("is_active", true);
+      if (accountId !== "all") q = q.eq("ad_account_id", accountId);
+      const { data } = await q;
+      return (data as any[]) || [];
+    },
+  });
+
   const { data: raw, isLoading } = useQuery({
     queryKey: ["cockpit-raw", dateFrom, dateTo, queryDateFrom, accountId, campaignId, adSetId],
     staleTime: 2 * 60 * 1000,
     refetchInterval: 60 * 1000,
     refetchIntervalInBackground: false,
+    placeholderData: (prev) => prev,
     queryFn: async () => {
       let q = (supabase as any)
         .from("campaigns")
@@ -2012,31 +1984,37 @@ function useCockpitData() {
     const R = agg(recent);
     const P = agg(prior);
 
-    // ─── MÉTRICAS RIGOROSAS BASEADAS EM COMPRADORES REAIS ───────────────────────
-    // CPL Real: se há conversas reais, divide o gasto nas campanhas de lead pelo número de conversas reais
-    // (ou custo total / conversas reais se leadCost for zero)
-    const effectiveLeadCost = R.leadCost > 0 ? R.leadCost : R.cost;
-    const CPL = R.realLeads > 0 ? effectiveLeadCost / R.realLeads : 0;
+    // ─── MÉTRICAS RIGOROSAS BASEADAS EM EVENTOS DE CONVERSÃO ELEGÍVEIS ───────────
+    const CPL = R.realLeads > 0 && R.leadCost > 0 ? R.leadCost / R.realLeads : 0;
     const CPC = R.clicks > 0 ? R.cost / R.clicks : 0;
     const CTR = R.impr > 0 ? (R.clicks / R.impr) * 100 : 0;
 
-    // CVR Real: Porcentagem de cliques que se transformaram em conversas no WhatsApp
+    // CVR Real: Porcentagem de cliques que se transformaram em conversas/leads elegíveis
     const CVR = R.clicks > 0 ? (R.realLeads / R.clicks) * 100 : 0;
     const friction = R.clicks > 0 ? Math.max(0, 100 - CVR) : 0;
 
     // Oscilação de Leilão / CPM
     const cpmTrendRatio = P.avgCPM > 0 ? R.avgCPM / P.avgCPM : 1.0;
-    
-    // Benchmark Regional Ativo (Padrão RJ: R$ 5,00)
-    let regionalTarget = 5.0;
+
+    // Meta Unificada via Precedência (Conta configurada -> Benchmark regional -> Default conservador R$ 25)
+    let savedRegionalTarget: number | null = null;
     try {
       const savedBench = localStorage.getItem("nc_regional_benchmark");
       if (savedBench) {
         const parsed = JSON.parse(savedBench);
-        if (parsed.targetCpl && Number(parsed.targetCpl) > 0) regionalTarget = Number(parsed.targetCpl);
+        if (parsed.targetCpl && Number(parsed.targetCpl) > 0) savedRegionalTarget = Number(parsed.targetCpl);
       }
     } catch {}
-    const TARGET_CPL = regionalTarget;
+    const accountThreshold =
+      accountId !== "all"
+        ? cockpitThresholds.find((t: any) => t.ad_account_id === accountId)?.max_cpl ?? null
+        : null;
+    const targetResolution = resolveTargetPrecedence({
+      accountThresholdMaxCpl: accountThreshold,
+      regionalBenchmarkCpl: savedRegionalTarget,
+      category: "MESSAGES",
+    });
+    const TARGET_CPL = targetResolution.targetValue;
 
     // ─── COMPONENTES DO SCORE DE SAÚDE (CALIBRADO PARA VENDAS REAIS) ───────────
     // 1. Eficiência de CPL: se CPL <= 25 (100%), se CPL == 35 (70%), se sem leads mas gastou (20%)
@@ -2131,14 +2109,40 @@ function useCockpitData() {
       hourlyIntensity = Math.min(100, Math.max(0, (spendPacing / currentHourFraction) * 50));
     }
 
-    // Campanhas de destaque para decisão executiva
+    // Campanhas de destaque para decisão executiva (unificadas pelo motor único de diagnóstico)
     const campsWithLeads = camps
-      .filter((c) => c.realLeads > 0)
-      .map((c) => ({ ...c, cpl: c.cost / c.realLeads }))
+      .filter((c) => c.isLeadCamp && c.realLeads >= 3 && c.cost > 0)
+      .map((c) => {
+        const cpl = c.cost / c.realLeads;
+        const normalized = normalizeCampaignItem({
+          id: c.name,
+          name: c.name,
+          cost: c.cost,
+          conversions: c.realLeads,
+          clicks: c.clicks,
+          impressions: c.impr,
+          reach: 0,
+          rawObjective: "",
+          resultType: "MESSAGES",
+          isVehicleContext: true,
+        });
+        const diag = evaluateCampaignHealth({
+          item: normalized,
+          targetCandidates: {
+            accountThresholdMaxCpl: accountThreshold,
+            regionalBenchmarkCpl: savedRegionalTarget,
+          },
+          minSpendForPauseDecision: 40,
+          minResultsForScale: 3,
+        });
+        return { ...c, cpl, diag };
+      })
+      .filter((c) => c.diag.eligibility.canScale)
       .sort((a, b) => a.cpl - b.cpl);
 
+    // Somente campanhas de conversão/lead com gasto >= R$ 40 e 0 leads são ofensoras de funil
     const campsWithoutLeads = camps
-      .filter((c) => c.realLeads === 0 && c.cost > 10)
+      .filter((c) => c.isLeadCamp && c.realLeads === 0 && c.cost >= 40)
       .sort((a, b) => b.cost - a.cost);
 
     const topScaleCampaign = campsWithLeads[0] ?? null;
@@ -2203,13 +2207,13 @@ function useCockpitData() {
     type RecPrio = "CRÍTICO" | "ATENÇÃO" | "OPORTUNIDADE";
     const recs: Array<{ prio: RecPrio; color: string; title: string; desc: string; icon: any }> = [];
 
-    if (R.realLeads === 0 && R.cost > 30) {
+    if (R.realLeads === 0 && R.leadCost > 40) {
       recs.push({
         prio: "CRÍTICO",
         color: "#ef4444",
         icon: AlertOctagon,
-        title: "Investimento Sem Geração de Conversas no WhatsApp",
-        desc: `Foram investidos R$ ${R.cost.toFixed(2)} em cliques/tráfego sem gerar nenhum comprador direto. Ative uma campanha focada em Mensagens de WhatsApp para que a equipe de vendas receba contatos.`,
+        title: "Campanhas de Conversão Sem Registros no Período",
+        desc: `Foram investidos R$ ${R.leadCost.toFixed(2)} em campanhas de conversão sem retorno registrado no período selecionado. Revise oferta, criativo e rastreamento.`,
       });
     }
 
@@ -2219,7 +2223,7 @@ function useCockpitData() {
         color: "#ef4444",
         icon: AlertTriangle,
         title: `Pausar Campanha Ofensora: "${topWasteCampaign.name.slice(0, 30)}"`,
-        desc: `Esta campanha consumiu R$ ${topWasteCampaign.cost.toFixed(2)} sem trazer nenhum comprador. Pause-a para estancar o desperdício e realocar a verba nas campanhas campeãs.`,
+        desc: `Esta campanha de conversão consumiu R$ ${topWasteCampaign.cost.toFixed(2)} sem registrar contatos. Avalie pausa e troca de criativo.`,
       });
     }
 
@@ -2229,27 +2233,27 @@ function useCockpitData() {
         color: "#ef4444",
         icon: Flame,
         title: "Saturação Severa do Público (Frequência Alta)",
-        desc: `Frequência de ${R.avgFreq.toFixed(1)}×. Os mesmos clientes estão vendo os anúncios repetidamente. Pause os criativos antigos e suba 3 novos modelos de veículos com novas fotos do pátio.`,
+        desc: `Frequência de ${R.avgFreq.toFixed(1)}×. Os mesmos usuários estão vendo os anúncios repetidamente. Renove os criativos para conter elevação de CPM/CPL.`,
       });
     }
 
-    if (CVR < 2.0 && R.clicks > 30) {
+    if (CVR < 2.0 && R.clicks > 30 && R.leadCost > 0) {
       recs.push({
         prio: "ATENÇÃO",
         color: "#f59e0b",
         icon: Target,
-        title: "Muitos Cliques, Poucas Mensagens no WhatsApp",
-        desc: `Apenas ${CVR.toFixed(1)}% dos visitantes chamaram a loja. Revise a mensagem inicial do WhatsApp ou garanta que o modelo anunciado tenha o preço visível na arte.`,
+        title: "Baixa Conversão de Cliques em Contatos",
+        desc: `Apenas ${CVR.toFixed(1)}% dos cliques em campanhas com intenção de conversão geraram contatos. Revise destino e chamada do anúncio.`,
       });
     }
 
-    if (topScaleCampaign && topScaleCampaign.cpl <= 35) {
+    if (topScaleCampaign) {
       recs.push({
         prio: "OPORTUNIDADE",
         color: "#22c55e",
         icon: Rocket,
         title: `Aumentar Orçamento na Campeã: "${topScaleCampaign.name.slice(0, 30)}"`,
-        desc: `Esta campanha gerou ${topScaleCampaign.realLeads} conversas a um custo de R$ ${topScaleCampaign.cpl.toFixed(2)} cada. Aumente a verba diária em 20% para abastecer a equipe de vendas.`,
+        desc: `Esta campanha gerou ${topScaleCampaign.realLeads} contatos a R$ ${topScaleCampaign.cpl.toFixed(2)} (dentro da meta de R$ ${TARGET_CPL.toFixed(2)}). Elegível para escala gradual (+15% a +20%).`,
       });
     }
 
@@ -2319,10 +2323,10 @@ function CockpitPage() {
   const gaugeConfig = [
     // 1. Volume de Conversas no WhatsApp (O INDICADOR MAIS IMPORTANTE!)
     {
-      label: "Conversas no WhatsApp",
-      techLabel: "VOLUME DE COMPRADORES",
+      label: "Conversas / Leads",
+      techLabel: "VOLUME DE CONTATOS (META)",
       textValue: String(m.realLeads ?? 0),
-      sub: (m.realLeads ?? 0) > 0 ? `${m.realLeads} clientes iniciaram contato` : "Nenhum comprador hoje",
+      sub: (m.realLeads ?? 0) > 0 ? `${m.realLeads} contatos iniciados` : "Nenhum contato hoje",
       value: Math.min(100, (((m.realLeads ?? 0) / 40) * 100)),
       zones: [
         { from: 0, to: 0.3, color: "#ef4444" },
@@ -2331,12 +2335,12 @@ function CockpitPage() {
       ],
       decisionBadge:
         (m.realLeads ?? 0) > 15
-          ? { label: "🟢 VENDEDORES ABASTECIDOS", color: "#22c55e" }
+          ? { label: "🟢 FLUXO ALTO DE CONTATOS", color: "#22c55e" }
           : (m.realLeads ?? 0) > 0
           ? { label: "🟡 FLUXO REGULAR", color: "#f59e0b" }
-          : { label: "🔴 SEM COMPRADORES", color: "#ef4444" },
+          : { label: "🔴 SEM CONTATOS REGISTRADOS", color: "#ef4444" },
       info: {
-        category: "COMPRADORES REAIS",
+        category: "CONTATOS META ADS",
         icon: MessageCircle,
         what: "Número exato de pessoas que clicaram nos anúncios e iniciaram conversa de compra no WhatsApp ou enviaram formulário.",
         formula: "Soma de Conversas por Mensagem + Cadastros Nativos",

@@ -17,6 +17,14 @@ import { DateRangePicker } from "@/components/DateRangePicker";
 import { TemplateModal } from "@/components/TemplateModal";
 import { WhatsAppSendModal } from "@/components/WhatsAppSendModal";
 import { calibrateCampaignMetricsArray, calibrateAdMetricsArray, ensureDatabaseCalibrated } from "@/lib/metaConversionCalibrator";
+import { useGlobalDate, getLocalDateString } from "@/contexts/DateContext";
+import {
+  buildReportSnapshot,
+  classifyMetaEvent,
+  formatPeriodLabel,
+  parseCivilDate,
+  type ReportSnapshot,
+} from "@/lib/metricsDomain";
 import {
   fetchAllCustomReportTemplates,
   renderReportTemplateText,
@@ -32,6 +40,8 @@ interface CampaignData {
   conversions: number;
   reach: number;
   objective: string;
+  rawObjective?: string;
+  resultType?: string;
   platform: "meta" | "google";
   selected: boolean;
   campaignName?: string;
@@ -251,6 +261,14 @@ export const Route = createFileRoute("/_app/relatorios")({
 function RelatoriosPage() {
   const search = useSearch({ from: "/_app/relatorios" });
   const queryClient = useQueryClient();
+  const {
+    accountId: globalAccountId,
+    setAccountId: setGlobalAccountId,
+    dateFrom: globalDateFrom,
+    dateTo: globalDateTo,
+    setDateFrom: setGlobalDateFrom,
+    setDateTo: setGlobalDateTo,
+  } = useGlobalDate();
   
   // Parâmetros do Relatório
   const [source, setSource] = useState<"api" | "upload">(search.from === "upload" ? "upload" : "api");
@@ -263,11 +281,27 @@ function RelatoriosPage() {
   const [salesRevenue, setSalesRevenue] = useState("");
   const [salesOrders, setSalesOrders] = useState("");
   
-  const [selectedAccountId, setSelectedAccountId] = useState<string>("all");
-  const [dateRange, setDateRange] = useState({
-    startDate: subDays(new Date(), 29),
-    endDate: new Date(),
-  });
+  const selectedAccountId = globalAccountId || "all";
+  const setSelectedAccountId = (id: string) => {
+    setGlobalAccountId(id);
+  };
+
+  const dateRange = useMemo(() => {
+    const parseLocal = (iso: string, fallback: Date) => {
+      const p = parseCivilDate(iso);
+      return p ? new Date(p.year, p.month - 1, p.day, 12, 0, 0) : fallback;
+    };
+    return {
+      startDate: parseLocal(globalDateFrom, subDays(new Date(), 29)),
+      endDate: parseLocal(globalDateTo, new Date()),
+    };
+  }, [globalDateFrom, globalDateTo]);
+
+  const setDateRange = (next: { startDate: Date; endDate: Date }) => {
+    setGlobalDateFrom(getLocalDateString(next.startDate));
+    setGlobalDateTo(getLocalDateString(next.endDate));
+  };
+
   const [targetWhatsapp, setTargetWhatsapp] = useState("");
   const [activeReportId, setActiveReportId] = useState<string | null>(search.activeReportId || null);
   const [campaignList, setCampaignList] = useState<CampaignData[]>([]);
@@ -276,6 +310,8 @@ function RelatoriosPage() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [isSyncingPeriod, setIsSyncingPeriod] = useState(false);
   const [generatedText, setGeneratedText] = useState("");
+  const [isTextManuallyEdited, setIsTextManuallyEdited] = useState(false);
+  const [regenerateNonce, setRegenerateNonce] = useState(0);
   const [previewOpen, setPreviewOpen] = useState(true);
   const [copied, setCopied] = useState(false);
   const [isSavedReportsModalOpen, setIsSavedReportsModalOpen] = useState(false);
@@ -364,11 +400,43 @@ function RelatoriosPage() {
     const totalInvestment = campaignList.filter(c => c.selected).reduce((s, c) => s + c.cost, 0);
     const totalCampaigns = campaignList.filter(c => c.selected).length;
 
+    const selectedSnapshot = buildReportSnapshot({
+      clientName,
+      accountName: clientName,
+      dateFrom: globalDateFrom,
+      dateTo: globalDateTo,
+      source: source || "database",
+      campaigns: campaignList
+        .filter(c => c.selected)
+        .map(c => ({
+          id: c.id,
+          name: c.name,
+          cost: c.cost,
+          impressions: c.impressions,
+          reach: c.reach,
+          clicks: c.clicks,
+          conversions: c.conversions,
+          rawObjective: c.rawObjective,
+          resultType: c.resultType || c.objective,
+          isVehicleContext,
+        })),
+    });
+
     const payload = {
       client_name: clientName,
       period: periodText,
       markdown: generatedText,
-      raw_data: { source, campaigns: campaignList, reportMode, reportLevel, salesRevenue, salesOrders },
+      raw_data: {
+        source,
+        campaigns: campaignList,
+        reportMode,
+        reportLevel,
+        salesRevenue,
+        salesOrders,
+        snapshotId: selectedSnapshot.snapshotId,
+        snapshot: selectedSnapshot,
+        isTextManuallyEdited,
+      },
       total_investment: totalInvestment,
       total_campaigns: totalCampaigns,
     };
@@ -394,6 +462,7 @@ function RelatoriosPage() {
     setPeriodText(rep.periodText);
     setReportMode(rep.reportMode);
     setCampaignList(rep.campaigns);
+    setIsTextManuallyEdited(Boolean((rep as any).raw_data?.isTextManuallyEdited));
     setGeneratedText(rep.generatedText);
     setActiveReportId(rep.id);
     if ((rep as any).raw_data?.salesRevenue) {
@@ -700,6 +769,8 @@ function RelatoriosPage() {
             clicks: c.clicks,
             conversions: c.conversions,
             reach: c.reach,
+            rawObjective: c.metaObjective,
+            resultType: c.resultType,
             objective: detectCampaignObjective(c.name, c.resultType, isVehicleContext, c.metaObjective),
             platform: c.platform as "meta" | "google",
             selected: c.cost > 0
@@ -799,10 +870,9 @@ function RelatoriosPage() {
     const avgCpa = totalResults > 0 ? totalCost / totalResults : 0;
     const platformString = Array.from(platforms).join(" & ");
     
-    // Calcula o período para o relatório
-    const displayPeriod = source === "upload" 
-      ? periodText 
-      : `${format(dateRange.startDate, "dd/MM/yyyy")} a ${format(dateRange.endDate, "dd/MM/yyyy")}`;
+    // Calcula o período civil exato (1 dia -> DD/MM/YYYY; parcial -> início a fim; mês completo -> MÊS ANO)
+    const periodInfo = formatPeriodLabel(globalDateFrom, globalDateTo);
+    const displayPeriod = source === "upload" ? periodText : periodInfo.label;
 
     const customTemplate = templatesData?.find(t => t.id === reportMode);
 
@@ -818,6 +888,7 @@ function RelatoriosPage() {
         campaigns: selected,
         clientName: storeNameForCustom,
         periodText: displayPeriod,
+        reportTitlePrefix: source === "upload" ? undefined : periodInfo.reportTitlePrefix,
         agencyName,
         reportLevel,
         isVehicleContext,
@@ -825,7 +896,9 @@ function RelatoriosPage() {
         salesOrders,
       });
 
-      setGeneratedText(rendered);
+      if (!isTextManuallyEdited) {
+        setGeneratedText(rendered);
+      }
       return;
     }
 
@@ -842,8 +915,8 @@ function RelatoriosPage() {
       let txt = `━━━━━━━━━━━━━━━━━━━━\n*📊 TOTAIS GERAIS*\n━━━━━━━━━━━━━━━━━━━━\n`;
       txt += `💵 *Investimento Total:* R$ ${totalCost.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n`;
       txt += `📈 *Resultados Totais:* ${totalResults.toLocaleString("pt-BR")}\n`;
-      txt += `💲 *CPA Médio Geral:* R$ ${avgCpa > 0 ? avgCpa.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "—"}\n`;
-      if (totalReach > 0) txt += `👥 *Alcance Total:* ${totalReach.toLocaleString("pt-BR")}\n`;
+      txt += `💲 *CPA Médio Geral:* ${avgCpa > 0 ? `R$ ${avgCpa.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : "Não calculável"}\n`;
+      if (totalReach > 0) txt += `👥 *Alcance${selected.length > 1 ? " (soma)" : ""}:* ${totalReach.toLocaleString("pt-BR")}\n`;
       if (totalImps > 0) txt += `👁️ *Impressões Totais:* ${totalImps.toLocaleString("pt-BR")}\n`;
       txt += `📌 *Campanhas no Relatório:* ${selected.length}\n\n`;
       return txt;
@@ -855,7 +928,7 @@ function RelatoriosPage() {
         const isClick = type.includes("Cliques");
         const isReach = type.includes("Alcance") || type.includes("Visualizações") || type.includes("Engajamento") || type.includes("Impressões") || type.includes("Thru-Play");
         
-        const cpl = data.results > 0 ? (isReach ? (data.cost / data.results) * 1000 : data.cost / data.results) : 0;
+        const cpl = data.results > 0 ? (isReach ? (data.cost / data.results) * 1000 : data.cost / data.results) : null;
         
         let resultLabel = "Resultados";
         if (isClick) resultLabel = "Visitas";
@@ -868,8 +941,8 @@ function RelatoriosPage() {
         txt += `${type}\n`;
         txt += `   💵 Investimento: R$ ${data.cost.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n`;
         txt += `   📈 ${resultLabel}: ${data.results.toLocaleString("pt-BR")}\n`;
-        txt += `   💲 ${costLabel}: R$ ${cpl.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n`;
-        if (data.reach > 0 && !isReach) txt += `   👥 Alcance: ${data.reach.toLocaleString("pt-BR")}\n`;
+        txt += `   💲 ${costLabel}: ${cpl !== null ? `R$ ${cpl.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : "Não calculável"}\n`;
+        if (data.reach > 0 && !isReach) txt += `   👥 Alcance${selected.length > 1 ? " (soma)" : ""}: ${data.reach.toLocaleString("pt-BR")}\n`;
         if (!isReach) txt += `   👁️ Impressões: ${data.impressions.toLocaleString("pt-BR")}\n\n`;
         else txt += `\n`;
       });
@@ -891,7 +964,7 @@ function RelatoriosPage() {
           const isClickObj = c.objective.includes("Cliques");
           const isReachObj = c.objective.includes("Alcance") || c.objective.includes("Visualizações") || c.objective.includes("Engajamento") || c.objective.includes("Impressões") || c.objective.includes("Thru-Play");
           const resultValue = isClickObj ? c.clicks : c.conversions;
-          const costPerRes = resultValue > 0 ? (isReachObj ? (c.cost / resultValue) * 1000 : c.cost / resultValue) : 0;
+          const costPerRes = resultValue > 0 ? (isReachObj ? (c.cost / resultValue) * 1000 : c.cost / resultValue) : null;
           const costLabel = isReachObj ? "CPM" : "Custo/Resultado";
           const typeLabel = c.objective.substring(2).trim();
           
@@ -904,7 +977,7 @@ function RelatoriosPage() {
           }
           txt += `   💵 Invest: R$ ${c.cost.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n`;
           txt += `   📈 Result: ${resultValue.toLocaleString("pt-BR")} (${typeLabel})\n`;
-          txt += `   💲 ${costLabel}: R$ ${costPerRes.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n\n`;
+          txt += `   💲 ${costLabel}: ${costPerRes !== null ? `R$ ${costPerRes.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : "Não calculável"}\n\n`;
         });
       });
       return txt;
@@ -976,13 +1049,15 @@ function RelatoriosPage() {
         }
       }
 
-      const months = ["JANEIRO", "FEVEREIRO", "MARÇO", "ABRIL", "MAIO", "JUNHO", "JULHO", "AGOSTO", "SETEMBRO", "OUTUBRO", "NOVEMBRO", "DEZEMBRO"];
-      const activePeriod = periodText.toUpperCase() || `${months[dateRange.startDate.getMonth()]} ${dateRange.startDate.getFullYear()}`;
+      const periodInfoStd = formatPeriodLabel(globalDateFrom, globalDateTo);
+      const activePeriod = source === "upload"
+        ? (periodText.toUpperCase() || periodInfoStd.label)
+        : periodInfoStd.label;
       const storeName = clientName && clientName !== "Consolidado" 
         ? clientName 
         : (accounts.find(a => a.id === selectedAccountId)?.name || clientName || "");
 
-      let txt = `Relatório mensal: \n`;
+      let txt = `${source === "upload" ? "Relatório de performance" : periodInfoStd.reportTitlePrefix}: \n`;
       if (storeName) {
         txt += `Loja: ${storeName}\n`;
       }
@@ -991,23 +1066,23 @@ function RelatoriosPage() {
       // 1. Mensagens nos Veículos
       if (carMsgCampaigns.length > 0) {
         const costMsg = carMsgCampaigns.reduce((s, c) => s + c.cost, 0);
-        const leadsMsg = carMsgCampaigns.reduce((s, c) => s + (c.conversions > 0 ? c.conversions : (c.clicks > 0 ? c.clicks : 0)), 0);
-        const cplMsg = leadsMsg > 0 ? costMsg / leadsMsg : 0;
+        const leadsMsg = carMsgCampaigns.reduce((s, c) => s + Number(c.conversions || 0), 0);
+        const cplMsg = leadsMsg > 0 ? costMsg / leadsMsg : null;
         txt += `*Campanha de mensagens nos veiculos:*\n`;
         txt += ` Investimento: R$ ${costMsg.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n`;
-        txt += ` Total de leads: ${leadsMsg.toLocaleString("pt-BR")}\n`;
-        txt += ` Custo por lead: R$ ${cplMsg.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n\n`;
+        txt += ` Total de conversas / leads: ${leadsMsg.toLocaleString("pt-BR")}\n`;
+        txt += ` Custo por resultado: ${cplMsg !== null ? `R$ ${cplMsg.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : "Não calculável (0 resultados)"}\n\n`;
       }
 
       // 2. Mensagens / WhatsApp Geral (quando não for loja de veículos)
       if (generalMsgCampaigns.length > 0) {
         const costMsg = generalMsgCampaigns.reduce((s, c) => s + c.cost, 0);
-        const leadsMsg = generalMsgCampaigns.reduce((s, c) => s + (c.conversions > 0 ? c.conversions : (c.clicks > 0 ? c.clicks : 0)), 0);
-        const cplMsg = leadsMsg > 0 ? costMsg / leadsMsg : 0;
+        const leadsMsg = generalMsgCampaigns.reduce((s, c) => s + Number(c.conversions || 0), 0);
+        const cplMsg = leadsMsg > 0 ? costMsg / leadsMsg : null;
         txt += `*Campanha de Mensagens / WhatsApp:*\n`;
         txt += ` Investimento: R$ ${costMsg.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n`;
         txt += ` Total de conversas: ${leadsMsg.toLocaleString("pt-BR")}\n`;
-        txt += ` Custo por conversa: R$ ${cplMsg.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n\n`;
+        txt += ` Custo por conversa: ${cplMsg !== null ? `R$ ${cplMsg.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : "Não calculável (0 conversas)"}\n\n`;
       }
 
       // 3. Alcance e Impressões
@@ -1025,33 +1100,33 @@ function RelatoriosPage() {
       if (consignadoCampaigns.length > 0) {
         const costCons = consignadoCampaigns.reduce((s, c) => s + c.cost, 0);
         const leadsCons = consignadoCampaigns.reduce((s, c) => s + (c.conversions > 0 ? c.conversions : 0), 0);
-        const cplCons = leadsCons > 0 ? costCons / leadsCons : 0;
+        const cplCons = leadsCons > 0 ? costCons / leadsCons : null;
         txt += `*Campanha de consignado* \n`;
         txt += `Total de leads: ${leadsCons.toLocaleString("pt-BR")}\n`;
-        txt += `Custo por leads: R$ ${cplCons.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n`;
+        txt += `Custo por leads: ${cplCons !== null ? `R$ ${cplCons.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : "Não calculável"}\n`;
         txt += `Investimento: ${costCons.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n\n`;
       }
 
       // 5. Visitas ao Perfil do Instagram
       if (profileCampaigns.length > 0) {
         const costProf = profileCampaigns.reduce((s, c) => s + c.cost, 0);
-        const visitsProf = profileCampaigns.reduce((s, c) => s + (c.conversions > 0 ? c.conversions : (c.clicks > 0 ? c.clicks : 0)), 0);
-        const cpvProf = visitsProf > 0 ? costProf / visitsProf : 0;
+        const visitsProf = profileCampaigns.reduce((s, c) => s + Number(c.conversions || 0), 0);
+        const cpvProf = visitsProf > 0 ? costProf / visitsProf : null;
         txt += `*Campanha de Visitas ao Perfil:*\n`;
         txt += `Investimento: R$ ${costProf.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n`;
         txt += `Visitas ao perfil: ${visitsProf.toLocaleString("pt-BR")}\n`;
-        txt += `Custo por visita: R$ ${cpvProf.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n\n`;
+        txt += `Custo por visita: ${cpvProf !== null ? `R$ ${cpvProf.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : "Não calculável"}\n\n`;
       }
 
       // 6. Visualizações na Página / Site
       if (pageCampaigns.length > 0) {
         const costViews = pageCampaigns.reduce((s, c) => s + c.cost, 0);
-        const visitsViews = pageCampaigns.reduce((s, c) => s + (c.conversions > 0 ? c.conversions : (c.clicks > 0 ? c.clicks : 0)), 0);
-        const cpView = visitsViews > 0 ? costViews / visitsViews : 0;
+        const visitsViews = pageCampaigns.reduce((s, c) => s + Number(c.conversions || 0), 0);
+        const cpView = visitsViews > 0 ? costViews / visitsViews : null;
         txt += `*Visualizações na Página:*\n`;
         txt += `Investimento: R$ ${costViews.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n`;
         txt += `Resultados: ${visitsViews.toLocaleString("pt-BR")} visitas\n`;
-        txt += `Custo por visualizações: R$ ${cpView.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n\n`;
+        txt += `Custo por visualizações: ${cpView !== null ? `R$ ${cpView.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : "Não calculável"}\n\n`;
       }
 
       // 7. Cliques no Link / Tráfego
@@ -1065,7 +1140,9 @@ function RelatoriosPage() {
         txt += `CPC: R$ ${cpcLink.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n\n`;
       }
 
-      setGeneratedText(txt.trim());
+      if (!isTextManuallyEdited) {
+        setGeneratedText(txt.trim());
+      }
       return;
     }
 
@@ -1092,15 +1169,15 @@ function RelatoriosPage() {
 
       // Visualizações na Página
       const investViews = pageViewCampaigns.reduce((s, c) => s + c.cost, 0);
-      const visitsCount = pageViewCampaigns.reduce((s, c) => s + (c.conversions > 0 ? c.conversions : c.clicks), 0);
-      const costPerView = visitsCount > 0 ? investViews / visitsCount : 0;
+      const visitsCount = pageViewCampaigns.reduce((s, c) => s + (c.objective.includes("Cliques") ? Number(c.clicks || 0) : Number(c.conversions || 0)), 0);
+      const costPerView = visitsCount > 0 ? investViews / visitsCount : null;
       const impsViews = pageViewCampaigns.reduce((s, c) => s + c.impressions, 0);
-      const cpmViews = impsViews > 0 ? (investViews / impsViews) * 1000 : 0;
+      const cpmViews = impsViews > 0 ? (investViews / impsViews) * 1000 : null;
 
       // Conversões / Compras
       const investSales = salesCampaigns.reduce((s, c) => s + c.cost, 0);
       const purchasesMeta = salesCampaigns.reduce((s, c) => s + c.conversions, 0);
-      const cpaSales = purchasesMeta > 0 ? investSales / purchasesMeta : 0;
+      const cpaSales = purchasesMeta > 0 ? investSales / purchasesMeta : null;
       const reachSales = salesCampaigns.reduce((s, c) => s + c.reach, 0);
       const impsSales = salesCampaigns.reduce((s, c) => s + c.impressions, 0);
 
@@ -1115,21 +1192,20 @@ function RelatoriosPage() {
         ? ((numOrders / visitsCount) * 100).toFixed(2).replace(".", ",")
         : "0,00";
 
-      const months = ["JANEIRO", "FEVEREIRO", "MARÇO", "ABRIL", "MAIO", "JUNHO", "JULHO", "AGOSTO", "SETEMBRO", "OUTUBRO", "NOVEMBRO", "DEZEMBRO"];
-      const activePeriod = periodText.toUpperCase() || `${months[dateRange.startDate.getMonth()]} ${dateRange.startDate.getFullYear()}`;
       const storeName = clientName && clientName !== "Consolidado" 
         ? clientName 
-        : (accounts.find(a => a.id === selectedAccountId)?.name || clientName || "Pizza Bonne");
+        : (accounts.find(a => a.id === selectedAccountId)?.name || clientName || "Cliente");
 
-      let txt = `Relatório mensal: \n`;
+      const titlePrefix = source === "upload" ? "Relatório mensal" : periodInfo.reportTitlePrefix;
+      let txt = `${titlePrefix}: \n`;
       if (storeName) {
         txt += `Loja: ${storeName}\n`;
       }
-      txt += ` *Período:* ${activePeriod}\n\n`;
+      txt += ` *Período:* ${displayPeriod}\n\n`;
 
       txt += `*Totais Gerais:*\n`;
       txt += ` Investimento Total: R$ ${totalInvest.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n`;
-      if (totalReach > 0) txt += ` Alcance Total: ${totalReach.toLocaleString("pt-BR")}\n`;
+      if (totalReach > 0) txt += ` Alcance${selected.length > 1 ? " (soma)" : ""}: ${totalReach.toLocaleString("pt-BR")}\n`;
       if (totalImps > 0) txt += ` Impressões Totais: ${totalImps.toLocaleString("pt-BR")}\n`;
       txt += ` Taxa de conversão: ${convRate}%\n`;
       txt += ` Cálculo da taxa: ${numOrders.toLocaleString("pt-BR")} pedidos ÷ ${visitsCount.toLocaleString("pt-BR")} visualizações no site × 100 = ${convRate}%\n\n`;
@@ -1137,14 +1213,14 @@ function RelatoriosPage() {
       txt += `*Visualizações na Página:*\n`;
       txt += ` Investimento: R$ ${investViews.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n`;
       txt += ` Resultados: ${visitsCount.toLocaleString("pt-BR")} visitas\n`;
-      txt += ` Custo por visualizações: R$ ${costPerView.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n`;
+      txt += ` Custo por visualizações: ${costPerView !== null ? `R$ ${costPerView.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : "Não calculável"}\n`;
       txt += ` Impressões / Plays: ${impsViews.toLocaleString("pt-BR")}\n`;
-      txt += ` CPM: R$ ${cpmViews.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n\n`;
+      txt += ` CPM: ${cpmViews !== null ? `R$ ${cpmViews.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : "Não calculável"}\n\n`;
 
       txt += `*Conversões / Compras:*\n`;
       txt += ` Investimento: R$ ${investSales.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n`;
       txt += ` Resultados: ${purchasesMeta.toLocaleString("pt-BR")}\n`;
-      txt += ` CPA: R$ ${cpaSales.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n`;
+      txt += ` CPA: ${cpaSales !== null ? `R$ ${cpaSales.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : "Não calculável"}\n`;
       if (reachSales > 0) txt += ` Alcance: ${reachSales.toLocaleString("pt-BR")}\n`;
       if (impsSales > 0) txt += ` Impressões: ${impsSales.toLocaleString("pt-BR")}\n`;
       txt += `\n`;
@@ -1157,7 +1233,9 @@ function RelatoriosPage() {
         txt += `*OBS:* Temos campanhas de venda com ${purchasesMeta} pedidos, esses ${purchasesMeta} pedidos estão inclusos nos ${numOrders.toLocaleString("pt-BR")} pedidos finalizados.\n`;
       }
 
-      setGeneratedText(txt.trim());
+      if (!isTextManuallyEdited) {
+        setGeneratedText(txt.trim());
+      }
       return;
     }
 
@@ -1180,8 +1258,10 @@ function RelatoriosPage() {
     }
 
     finalText += `━━━━━━━━━━━━━━━━━━━━\n*${agencyName.toUpperCase()}*`;
-    setGeneratedText(finalText);
-  }, [campaignList, reportMode, clientName, periodText, templatesData, reportLevel, salesRevenue, salesOrders, dateRange, selectedAccountId]);
+    if (!isTextManuallyEdited) {
+      setGeneratedText(finalText);
+    }
+  }, [campaignList, reportMode, clientName, periodText, templatesData, reportLevel, salesRevenue, salesOrders, dateRange, selectedAccountId, globalDateFrom, globalDateTo, source, isTextManuallyEdited, regenerateNonce]);
 
   const handleGenerate = () => {
     const selected = campaignList.filter(c => c.selected);
@@ -1680,7 +1760,21 @@ function RelatoriosPage() {
                       <p className="text-[10px] text-muted-foreground mt-0.5">Texto idealizado para envio direto via WhatsApp.</p>
                     </div>
                   </div>
-                  <div className="flex gap-2">
+                  <div className="flex flex-wrap gap-2">
+                    {isTextManuallyEdited && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsTextManuallyEdited(false);
+                          setRegenerateNonce((n) => n + 1);
+                          toast.info("Texto regenerado a partir do snapshot oficial.");
+                        }}
+                        className="flex items-center gap-1.5 rounded-lg bg-warning/15 border border-warning/30 text-warning px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest hover:bg-warning/25 transition"
+                        title="Descartar edição manual e restaurar texto do snapshot"
+                      >
+                        Regenerar do Snapshot
+                      </button>
+                    )}
                     <button 
                       onClick={handleCopyToClipboard}
                       className="flex items-center gap-1.5 rounded-lg bg-white/5 border border-white/10 px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest hover:bg-white/10 transition"
@@ -1705,9 +1799,17 @@ function RelatoriosPage() {
                 </div>
 
                 <div className="mt-4">
+                  {isTextManuallyEdited && (
+                    <p className="text-[10px] text-warning font-bold mb-1.5">
+                      Edição manual ativa — alterações automáticas bloqueadas até clicar em “Regenerar do Snapshot”.
+                    </p>
+                  )}
                   <textarea
                     value={generatedText}
-                    onChange={(e) => setGeneratedText(e.target.value)}
+                    onChange={(e) => {
+                      setIsTextManuallyEdited(true);
+                      setGeneratedText(e.target.value);
+                    }}
                     rows={18}
                     className="w-full rounded-xl border border-border bg-background/80 p-4 text-xs font-mono text-emerald-600 dark:text-emerald-400 focus:outline-none focus:border-primary/50 resize-none whitespace-pre leading-relaxed leading-[1.6]"
                   />
@@ -1755,11 +1857,13 @@ function RelatoriosPage() {
                   </div>
                   <div>
                     <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground print:text-black/50">Janela de Referência</p>
-                    <p className="text-lg font-black mt-0.5 text-white print:text-black">{periodText}</p>
+                    <p className="text-lg font-black mt-0.5 text-white print:text-black">
+                      {source === "upload" ? (periodText || "Período OCR") : formatPeriodLabel(globalDateFrom, globalDateTo).label}
+                    </p>
                   </div>
                 </div>
 
-                {/* Métricas Consolidadas Visualmente Ricas */}
+                {/* Métricas Consolidadas Visualmente Ricas (Snapshot único conciliado) */}
                 {(() => {
                   const selectedCamps = campaignList.filter(c => c.selected);
                   const totalCost = selectedCamps.reduce((sum, c) => sum + c.cost, 0);
@@ -1767,18 +1871,27 @@ function RelatoriosPage() {
                   const totalImpressions = selectedCamps.reduce((sum, c) => sum + c.impressions, 0);
                   const totalClicks = selectedCamps.reduce((sum, c) => sum + c.clicks, 0);
 
-                  // Segmentação inteligente de objetivos (Mensagens vs Audiência/Tráfego)
-                  const messageCamps = selectedCamps.filter(c => {
-                    const name = (c.name || "").toLowerCase();
-                    const obj = (c.objective || "").toLowerCase();
-                    return obj.includes("mensagem") || obj.includes("conversa") || name.includes("msg") || name.includes("mensagem") || name.includes("wpp") || name.includes("whatsapp");
-                  });
-                  const audienceCamps = selectedCamps.filter(c => !messageCamps.includes(c));
+                  // Classificação compartilhada pelo modelo de eventos (elimina divergência Frente 1 vs Frente 2)
+                  const classifiedList = selectedCamps.map(c => ({
+                    raw: c,
+                    cls: classifyMetaEvent({
+                      campaignName: c.name,
+                      rawObjective: c.rawObjective,
+                      resultType: c.resultType || c.objective,
+                      isVehicleContext,
+                    }),
+                  }));
+                  const messageCamps = classifiedList
+                    .filter(x => x.cls.category === "MESSAGES" || x.cls.category === "LEADS")
+                    .map(x => x.raw);
+                  const audienceCamps = classifiedList
+                    .filter(x => x.cls.category !== "MESSAGES" && x.cls.category !== "LEADS")
+                    .map(x => x.raw);
 
                   const totalMessages = messageCamps.reduce((sum, c) => sum + (c.conversions || 0), 0);
                   const costMessages = messageCamps.reduce((sum, c) => sum + c.cost, 0);
                   const costAudience = audienceCamps.reduce((sum, c) => sum + c.cost, 0);
-                  const cplMessages = totalMessages > 0 ? costMessages / totalMessages : 0;
+                  const cplMessages = totalMessages > 0 ? costMessages / totalMessages : null;
                   const hasMultipleObjectives = messageCamps.length > 0 && audienceCamps.length > 0;
 
                   return (
@@ -1804,17 +1917,19 @@ function RelatoriosPage() {
                           </p>
                           <p className="text-[8px] font-bold uppercase tracking-wider text-muted-foreground/80 print:text-black/50 mt-1">
                             {messageCamps.length > 0 
-                              ? (cplMessages > 0 ? `CPA: R$ ${cplMessages.toFixed(2)}` : "WhatsApp Direto")
+                              ? (cplMessages !== null ? `CPA: R$ ${cplMessages.toFixed(2)}` : "CPA não calculável (0 conv.)")
                               : (totalClicks > 0 ? "Cliques no Link" : "Alcance / Marca")}
                           </p>
                         </div>
                         <div className="p-4 rounded-xl bg-white/5 border border-white/10 print:bg-gray-100 print:border-gray-300">
-                          <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground print:text-black/60">Alcance Único</p>
+                          <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground print:text-black/60">
+                            {selectedCamps.length > 1 ? "Alcance (soma)" : "Alcance"}
+                          </p>
                           <p className="text-lg sm:text-xl font-mono font-black mt-1 text-white print:text-black">
                             {totalReach.toLocaleString('pt-BR')}
                           </p>
                           <p className="text-[8px] font-bold uppercase tracking-wider text-muted-foreground/80 print:text-black/50 mt-1">
-                            Pessoas impactadas
+                            {selectedCamps.length > 1 ? "Soma por campanha (não deduplicado)" : "Pessoas impactadas"}
                           </p>
                         </div>
                         <div className="p-4 rounded-xl bg-white/5 border border-white/10 print:bg-gray-100 print:border-gray-300">
@@ -1823,7 +1938,7 @@ function RelatoriosPage() {
                             {totalImpressions.toLocaleString('pt-BR')}
                           </p>
                           <p className="text-[8px] font-bold uppercase tracking-wider text-muted-foreground/80 print:text-black/50 mt-1">
-                            Freq: {totalReach > 0 ? (totalImpressions / totalReach).toFixed(1) : "1.0"}x
+                            Freq: {totalReach > 0 ? (totalImpressions / totalReach).toFixed(1) : "—"}x
                           </p>
                         </div>
                       </div>
@@ -1835,12 +1950,13 @@ function RelatoriosPage() {
                             <div className="flex items-center gap-2">
                               <span className="w-2 h-2 rounded-full bg-emerald-400" />
                               <span className="text-[10px] font-black uppercase tracking-wider text-emerald-400 print:text-emerald-700">
-                                Frente 1: Conversas &amp; Leads no WhatsApp
+                                Frente 1: Conversas &amp; Leads
                               </span>
                             </div>
                             <p className="text-xs text-muted-foreground print:text-gray-700 leading-relaxed">
                               Investido: <strong className="text-foreground print:text-black font-mono">R$ {costMessages.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong> • 
-                              Gerou <strong className="text-foreground print:text-black font-mono">{totalMessages} contatos diretos</strong> de compradores a <strong className="text-foreground print:text-black font-mono">R$ {cplMessages.toFixed(2)}/contato</strong>.
+                              Gerou <strong className="text-foreground print:text-black font-mono">{totalMessages} conversas/leads</strong>{" "}
+                              {cplMessages !== null ? <>a <strong className="text-foreground print:text-black font-mono">R$ {cplMessages.toFixed(2)}/contato</strong></> : "(CPA não calculável)"}.
                             </p>
                           </div>
                           <div className="space-y-1">
@@ -1852,7 +1968,7 @@ function RelatoriosPage() {
                             </div>
                             <p className="text-xs text-muted-foreground print:text-gray-700 leading-relaxed">
                               Investido: <strong className="text-foreground print:text-black font-mono">R$ {costAudience.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong> • 
-                              Alcançou <strong className="text-foreground print:text-black font-mono">{audienceCamps.reduce((s, c) => s + c.reach, 0).toLocaleString('pt-BR')} pessoas</strong> com <strong className="text-foreground print:text-black font-mono">{audienceCamps.reduce((s, c) => s + c.clicks, 0).toLocaleString('pt-BR')} cliques</strong> direcionados ao perfil/estoque.
+                              Somou <strong className="text-foreground print:text-black font-mono">{audienceCamps.reduce((s, c) => s + c.reach, 0).toLocaleString('pt-BR')} alcance</strong> e <strong className="text-foreground print:text-black font-mono">{audienceCamps.reduce((s, c) => s + c.clicks, 0).toLocaleString('pt-BR')} cliques</strong>.
                             </p>
                           </div>
                         </div>
@@ -1864,11 +1980,12 @@ function RelatoriosPage() {
                           <span>Detalhamento das Campanhas Compiladas ({selectedCamps.length})</span>
                           <span className="font-mono text-[9px]">Gasto • Retorno</span>
                         </p>
-                        {selectedCamps.map((c, idx) => {
-                          const isMsg = c.objective?.includes("Mensagens") || c.name?.toLowerCase().includes("msg");
-                          const resultCount = isMsg ? c.conversions : (c.clicks || c.conversions);
-                          const resultUnit = isMsg ? "mensagens" : "ações";
-                          const cpa = resultCount > 0 ? (c.cost / resultCount) : 0;
+                        {classifiedList.map(({ raw: c, cls }, idx) => {
+                          const isMsg = cls.category === "MESSAGES" || cls.category === "LEADS";
+                          const isReach = cls.category === "REACH";
+                          const resultCount = cls.category === "LINK_CLICKS" ? c.clicks : c.conversions;
+                          const resultUnit = cls.unitPlural;
+                          const cpa = resultCount > 0 ? (isReach ? (c.cost / resultCount) * 1000 : c.cost / resultCount) : null;
 
                           return (
                             <div key={idx} className="flex items-center justify-between py-2 border-b border-white/5 print:border-gray-200 text-xs">
@@ -1892,7 +2009,7 @@ function RelatoriosPage() {
                                 <p className="text-[10px] font-mono text-muted-foreground print:text-gray-700">
                                   {resultCount > 0 ? (
                                     <span className="text-emerald-400 print:text-emerald-700 font-bold">
-                                      {resultCount.toLocaleString('pt-BR')} {resultUnit} {cpa > 0 ? `(R$ ${cpa.toFixed(2)})` : ""}
+                                      {resultCount.toLocaleString('pt-BR')} {resultUnit} {cpa !== null && cpa > 0 ? `(R$ ${cpa.toFixed(2)})` : ""}
                                     </span>
                                   ) : (
                                     <span className="text-muted-foreground/60">—</span>

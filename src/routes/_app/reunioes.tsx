@@ -18,6 +18,7 @@ import { DateRangePicker } from "@/components/DateRangePicker";
 import { useAuth } from "@/lib/auth";
 import { subDays, format } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { classifyMetaEvent, computeUnitCost } from "@/lib/metricsDomain";
 
 export const Route = createFileRoute("/_app/reunioes")({
   head: () => ({ meta: [{ title: "Reuniões — NC Suite" }] }),
@@ -107,7 +108,15 @@ function processMetrics(item: any, rawData: any[], startStr: string, endStr: str
   const clicks = m.reduce((s: number, x: any) => s + Number(x.clicks || 0), 0);
   const impressions = m.reduce((s: number, x: any) => s + Number(x.impressions || 0), 0);
   const reach = m.reduce((s: number, x: any) => s + Number(x.reach || 0), 0);
-  const cpl = conversions > 0 ? cost / conversions : 0;
+  const storedRt = m.find((x: any) => x.result_type)?.result_type || item.result_type;
+  const cls = classifyMetaEvent({
+    campaignName: item.name || "",
+    rawObjective: item.objective || "",
+    resultType: storedRt || "",
+    isVehicleContext: true,
+  });
+  const effectiveResults = cls.category === "REACH" ? (reach > 0 ? reach : conversions) : conversions;
+  const cpl = computeUnitCost(cost, effectiveResults, cls.category) ?? 0;
   const ctr = impressions > 0 ? (clicks / impressions) * 100 : 0;
   const cpm = impressions > 0 ? (cost / impressions) * 1000 : 0;
   const cpc = clicks > 0 ? cost / clicks : 0;

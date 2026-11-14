@@ -12,6 +12,7 @@ import {
   ensureDatabaseCalibrated,
   detectConversionCategory,
 } from "@/lib/metaConversionCalibrator";
+import { classifyMetaEvent, computeCvr, computeUnitCost } from "@/lib/metricsDomain";
 import {
   SIM_OBJECTIVES,
   DIDACTIC_SIMULATION_PRESETS,
@@ -354,13 +355,18 @@ function SimuladorPage() {
   const [showSaveInput, setShowSaveInput] = useState(false);
 
   // ── 1. Buscar Contas de Anúncio ──────────────────────────────────────────────
-  const { data: adAccounts = [] } = useQuery({
+  const {
+    data: adAccounts = [],
+    isLoading: isLoadingAccounts,
+    isError: isAccountsError,
+  } = useQuery({
     queryKey: ["simulador-ad-accounts"],
     queryFn: async () => {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from("ad_accounts")
         .select("id, name, external_id, status")
         .order("name");
+      if (error) throw error;
       return data || [];
     },
   });
@@ -470,9 +476,12 @@ function SimuladorPage() {
       "AUTO"
     >;
 
-    // 4A. Tentar somar métricas dentro da janela exata (dateFrom .. dateTo)
+    // 4A. Somar métricas dentro da janela exata (dateFrom .. dateTo) sem misturar eventos incompatíveis na CVR
     let periodCost = 0;
     let periodConv = 0;
+    let periodFunnelConv = 0;
+    let periodFunnelCost = 0;
+    let periodFunnelClicks = 0;
     let periodImpr = 0;
     let periodClicks = 0;
     let periodReach = 0;
@@ -480,8 +489,17 @@ function SimuladorPage() {
     let freqWeight = 0;
     const activeDates = new Set<string>();
     const activeCampIds = new Set<string>();
+    const incompatibleObjectivesExcluded = new Set<string>();
 
     for (const c of targetCamps) {
+      const campCls = classifyMetaEvent({
+        campaignName: c.name,
+        rawObjective: c.objective,
+        isVehicleContext: true,
+      });
+      const isFunnelEvent =
+        campCls.isConversionGoal || campCls.category === "LANDING_PAGE_VIEWS";
+
       for (const m of c.calibratedMetrics || []) {
         if (m.date >= dateFrom && m.date <= dateTo) {
           const cost = Number(m.cost || 0);
@@ -496,6 +514,15 @@ function SimuladorPage() {
           periodImpr += impr;
           periodClicks += clicks;
           periodReach += reach;
+
+          if (isFunnelEvent) {
+            periodFunnelConv += conv;
+            periodFunnelCost += cost;
+            periodFunnelClicks += clicks;
+          } else if (conv > 0 || cost > 0) {
+            incompatibleObjectivesExcluded.add(campCls.category);
+          }
+
           if (freq > 0 && impr > 0) {
             freqWeightedSum += freq * impr;
             freqWeight += impr;
@@ -513,8 +540,27 @@ function SimuladorPage() {
       const dailyCost = periodCost / effectiveDays;
       const cpm = (periodCost / periodImpr) * 1000;
       const ctr = periodClicks / periodImpr;
-      const cvr = periodClicks > 0 ? periodConv / periodClicks : 0.06;
-      const cpl = periodConv > 0 ? periodCost / periodConv : cpm * 0.6;
+
+      const useFunnel = periodFunnelClicks > 0 || periodFunnelConv > 0;
+      const cvrBaseConv = useFunnel ? periodFunnelConv : 0;
+      const cvrBaseClicks = useFunnel ? periodFunnelClicks : 0;
+      const safeCvrRes =
+        dominantObjective === "OUTCOME_AWARENESS"
+          ? null
+          : computeCvr(cvrBaseConv, cvrBaseClicks, useFunnel ? "MESSAGES" : "UNKNOWN");
+      const cvr =
+        safeCvrRes?.value !== null && safeCvrRes?.value !== undefined
+          ? Math.min(0.65, Math.max(0.005, safeCvrRes.value / 100))
+          : 0.06;
+
+      const cpl =
+        dominantObjective === "OUTCOME_AWARENESS"
+          ? computeUnitCost(periodCost, periodReach > 0 ? periodReach : periodConv, "REACH") ?? cpm
+          : useFunnel && periodFunnelConv > 0
+          ? periodFunnelCost / periodFunnelConv
+          : periodConv > 0 && incompatibleObjectivesExcluded.size === 0
+          ? periodCost / periodConv
+          : cpm * 0.6;
       const cpc = periodClicks > 0 ? periodCost / periodClicks : 1.2;
       const freq =
         freqWeight > 0
@@ -523,16 +569,21 @@ function SimuladorPage() {
           ? Math.max(1.1, periodImpr / periodReach)
           : 1.95;
 
+      const exclusionNote =
+        incompatibleObjectivesExcluded.size > 0
+          ? ` (${incompatibleObjectivesExcluded.size} objetivo(s) incompatível(is) isolado(s) da CVR)`
+          : "";
+
       return {
         cost: periodCost,
         dailyCost,
-        conversions: periodConv,
+        conversions: useFunnel ? periodFunnelConv : periodConv,
         impressions: periodImpr,
         reach: periodReach > 0 ? periodReach : Math.round(periodImpr / freq),
         clicks: periodClicks,
         cpl,
         ctr: Math.max(0.002, ctr),
-        cvr: Math.max(0.005, cvr),
+        cvr,
         cpm: Math.max(4, cpm),
         cpc,
         freq: Math.min(8, Math.max(1.05, freq)),
@@ -541,14 +592,16 @@ function SimuladorPage() {
         estimatedAdSetsCount: Math.max(1, Math.min(8, activeCampIds.size * 2)),
         detectedObjective: dominantObjective,
         sourceType: "real_period",
-        sourceLabel: `Dados reais sincronizados (${effectiveDays}d com veiculação no período)`,
+        sourceLabel: `Dados reais sincronizados (${effectiveDays}d com veiculação no período)${exclusionNote}`,
       };
     }
 
-    // 4B. Se o período filtrado não teve gasto (ex: Hoje cedo ou campanha pausada na janela),
-    // usar o histórico acumulado real das campanhas selecionadas (ou da conta)
+    // 4B. Se o período filtrado não teve gasto, usar histórico acumulado mantendo compatibilidade de evento
     let histCost = 0;
     let histConv = 0;
+    let histFunnelConv = 0;
+    let histFunnelCost = 0;
+    let histFunnelClicks = 0;
     let histImpr = 0;
     let histClicks = 0;
     let histReach = 0;
@@ -556,15 +609,30 @@ function SimuladorPage() {
     const sourceCamps = targetCamps.length > 0 ? targetCamps : allCampaigns;
 
     for (const c of sourceCamps) {
+      const campCls = classifyMetaEvent({
+        campaignName: c.name,
+        rawObjective: c.objective,
+        isVehicleContext: true,
+      });
+      const isFunnelEvent =
+        campCls.isConversionGoal || campCls.category === "LANDING_PAGE_VIEWS";
+
       for (const m of c.calibratedMetrics || []) {
         const cost = Number(m.cost || 0);
         const impr = Number(m.impressions || 0);
         if (cost > 0 || impr > 0) {
+          const conv = Number(m.conversions || 0);
+          const clicks = Number(m.clicks || 0);
           histCost += cost;
-          histConv += Number(m.conversions || 0);
+          histConv += conv;
           histImpr += impr;
-          histClicks += Number(m.clicks || 0);
+          histClicks += clicks;
           histReach += Number(m.reach || 0);
+          if (isFunnelEvent) {
+            histFunnelConv += conv;
+            histFunnelCost += cost;
+            histFunnelClicks += clicks;
+          }
           if (m.date) histDates.add(m.date);
         }
       }
@@ -575,21 +643,34 @@ function SimuladorPage() {
       const dailyCost = histCost / effectiveDays;
       const cpm = (histCost / histImpr) * 1000;
       const ctr = histClicks / histImpr;
-      const cvr = histClicks > 0 ? histConv / histClicks : 0.06;
-      const cpl = histConv > 0 ? histCost / histConv : cpm * 0.6;
+      const useFunnel = histFunnelClicks > 0 || histFunnelConv > 0;
+      const safeHistCvrRes =
+        dominantObjective === "OUTCOME_AWARENESS"
+          ? null
+          : computeCvr(useFunnel ? histFunnelConv : 0, useFunnel ? histFunnelClicks : 0, useFunnel ? "MESSAGES" : "UNKNOWN");
+      const cvr =
+        safeHistCvrRes?.value !== null && safeHistCvrRes?.value !== undefined
+          ? Math.min(0.65, Math.max(0.005, safeHistCvrRes.value / 100))
+          : 0.06;
+      const cpl =
+        dominantObjective === "OUTCOME_AWARENESS"
+          ? computeUnitCost(histCost, histReach > 0 ? histReach : histConv, "REACH") ?? cpm
+          : useFunnel && histFunnelConv > 0
+          ? histFunnelCost / histFunnelConv
+          : cpm * 0.6;
       const cpc = histClicks > 0 ? histCost / histClicks : 1.2;
       const freq = histReach > 0 ? Math.min(6, Math.max(1.1, histImpr / histReach)) : 2.05;
 
       return {
         cost: histCost,
         dailyCost,
-        conversions: histConv,
+        conversions: useFunnel ? histFunnelConv : histConv,
         impressions: histImpr,
         reach: histReach > 0 ? histReach : Math.round(histImpr / freq),
         clicks: histClicks,
         cpl,
         ctr: Math.max(0.002, ctr),
-        cvr: Math.max(0.005, cvr),
+        cvr,
         cpm: Math.max(4, cpm),
         cpc,
         freq,
@@ -598,7 +679,7 @@ function SimuladorPage() {
         estimatedAdSetsCount: Math.max(1, Math.min(6, sourceCamps.length)),
         detectedObjective: dominantObjective,
         sourceType: "historical_account",
-        sourceLabel: `Histórico real da conta (${effectiveDays} dias de operação ativa)`,
+        sourceLabel: `Histórico real da conta (${effectiveDays}d acumulados — normalizado para janela simulada)`,
       };
     }
 
@@ -846,9 +927,9 @@ function SimuladorPage() {
             ══════════════════════════════════════════════════════════════════ */}
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           <PageHeader
-            eyebrow="Engenharia de Leilão Meta Ads · Andromeda MoE + GEM + VCG"
+            eyebrow="Modelo Estimativo · Leilão Meta Ads (Parâmetros Ajustáveis)"
             title="Simulador Algorítmico de Impacto & Decisão"
-            description="Simule escala de orçamento, diversidade criativa, lances e telemetria CAPI/EMQ com a matemática real do leilão do Meta Ads antes de aplicar no Gerenciador."
+            description="Simule cenários heurísticos de orçamento, diversidade criativa, lances e premissas CAPI/EMQ (estimativa de apoio — resultados reais permanecem nas abas Métricas e Cockpit)."
             compact
           />
 
@@ -1019,7 +1100,15 @@ function SimuladorPage() {
                 onChange={(e) => setAccountId(e.target.value)}
                 className="w-full h-10 rounded-xl border border-border bg-background px-3 text-xs font-bold text-foreground outline-none focus:border-primary transition-colors"
               >
-                <option value="all">Todas as Contas Conectadas ({adAccounts.length})</option>
+                <option value="all">
+                  {isLoadingAccounts
+                    ? "Carregando contas de anúncios..."
+                    : isAccountsError
+                    ? "Erro ao carregar contas (usando fallback)"
+                    : adAccounts.length === 0
+                    ? "Nenhuma conta sincronizada"
+                    : `Todas as Contas Conectadas (${adAccounts.length})`}
+                </option>
                 {adAccounts.map((acc: any) => (
                   <option key={acc.id} value={acc.id}>
                     {acc.name}
@@ -1476,7 +1565,7 @@ function SimuladorPage() {
                     <div className="rounded-xl border border-border bg-background/50 p-3 space-y-2.5">
                       <div className="flex items-center justify-between">
                         <span className="text-[9px] font-black uppercase tracking-wider text-foreground">
-                          Conversions API (CAPI) + Deduplicação event_id
+                          Premissa CAPI + Deduplicação (Editável)
                         </span>
                         <button
                           onClick={() => updateParam("capiDeduplicated", !params.capiDeduplicated)}
@@ -1526,7 +1615,7 @@ function SimuladorPage() {
                       </div>
                       <div className="space-y-1">
                         <label className="text-[9px] font-black uppercase tracking-wider text-muted-foreground">
-                          Ticket / Margem (R$)
+                          Ticket Médio Est. (R$)
                         </label>
                         <input
                           type="number"
@@ -1719,7 +1808,7 @@ function SimuladorPage() {
               <div className="flex items-center justify-between">
                 <span className="text-[10px] font-black uppercase tracking-wider text-foreground flex items-center gap-1.5">
                   <Cpu className="h-3.5 w-3.5 text-primary" />
-                  Telemetria Interna do Algoritmo (GEM + Pacing λ + Verdade Contábil)
+                  Premissas & Estimativa Financeira (MER / nCAC Projetados)
                 </span>
                 <span
                   className={`rounded-md px-2 py-0.5 text-[9px] font-black uppercase ${

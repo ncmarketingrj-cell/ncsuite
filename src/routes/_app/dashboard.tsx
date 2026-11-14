@@ -228,7 +228,7 @@ function Dashboard() {
           if (!isVanity) currentPeriod.trueConversions += Number(m.conversions || 0);
           currentPeriod.clicks += Number(m.clicks || 0);
           currentPeriod.impressions += Number(m.impressions || 0);
-          currentPeriod.reach += Number(m.reach || m.impressions * 0.8 || 0);
+          currentPeriod.reach += Number(m.reach || 0);
         } else if (isPrevious) {
           previousPeriod.cost += Number(m.cost || 0);
           previousPeriod.results += Number(m.conversions || 0);
@@ -830,7 +830,7 @@ function Dashboard() {
                     <>
                       Investimento de <strong className="text-foreground font-mono">R$ {totals.cost.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong> gerou{" "}
                       <strong className="text-foreground font-mono">{totals.clicks.toLocaleString('pt-BR')} cliques</strong> (CTR de {ctr.toFixed(2)}%) e{" "}
-                      <strong className="text-primary font-mono">{totals.conversions} contatos diretos de compradores</strong>
+                      <strong className="text-primary font-mono">{totals.conversions} conversas / leads (Meta)</strong>
                       {cpa > 0 ? <> com CPA médio de <strong className="text-foreground font-mono">R$ {cpa.toFixed(2)}</strong>.</> : "."}
                     </>
                   ) : (

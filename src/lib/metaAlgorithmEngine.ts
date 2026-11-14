@@ -517,10 +517,10 @@ export function simulateMetaAdsImpact(
     effectiveObjId === "OUTCOME_SALES"
       ? projTotalConversions
       : Math.max(0, Math.round(projTotalConversions * closeRateDec));
-  const projRevenueBRL = projSalesCount * params.avgTicketBRL;
-  const projROAS = projCost > 0 ? projRevenueBRL / projCost : 0;
+  const projRevenueBRL = params.avgTicketBRL > 0 && closeRateDec > 0 ? projSalesCount * params.avgTicketBRL : 0;
+  const projROAS = projCost > 0 && projRevenueBRL > 0 ? projRevenueBRL / projCost : 0;
   const projPureClickROAS = projROAS * (1 - engageShare);
-  const projMER = projCost > 0 ? (projRevenueBRL * 1.15) / projCost : 0; // Receita global estimada / Ad Spend
+  const projMER = projCost > 0 && projRevenueBRL > 0 ? projRevenueBRL / projCost : 0; // Receita estimada / Ad Spend (sem fator artificial)
   const projNCAC = projSalesCount > 0 ? projCost / projSalesCount : 0;
 
   // Baseline financeira para comparação justa
@@ -634,8 +634,8 @@ export function simulateMetaAdsImpact(
     causalDiagnostics.push({
       engine: "CAPI / EMQ",
       status: "positive",
-      title: `Telemetria Server-Side de Alta Precisão (EMQ ${params.emqScore.toFixed(1)}/10)`,
-      explanation: `A transmissão redundante Pixel + CAPI com event_id preserva 100% dos sinais de fundo de funil, maximizando a acurácia preditiva de pCVR e pLTV no modelo GEM.`,
+      title: `Premissa CAPI Ativa (EMQ Simulado ${params.emqScore.toFixed(1)}/10)`,
+      explanation: `Premissa de transmissão redundante Pixel + CAPI com event_id para reduzir perda de sinais client-side no modelo GEM (estimativa configurável pelo usuário).`,
     });
   }
 
