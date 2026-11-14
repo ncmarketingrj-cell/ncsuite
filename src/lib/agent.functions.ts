@@ -3,6 +3,16 @@ import { requireSupabaseAuth } from "@/integrations/supabase-external/auth-middl
 import { z } from "zod";
 import fs from "node:fs";
 import path from "node:path";
+import { classifyMetaEvent, computeUnitCost } from "@/lib/metricsDomain";
+import {
+  VICTORIA_CONTRACT_VERSION,
+  VICTORIA_PROMPT_VERSION,
+  VICTORIA_ANALYTICAL_TEMPERATURE,
+} from "@/lib/victoriaContract";
+import {
+  isReadOnlyAnalysisRequest,
+  stripJsonActionBlocks,
+} from "@/lib/victoriaGovernance";
 
 function getEnvVariable(name: string): string | undefined {
   // 1. Check process.env
@@ -77,8 +87,8 @@ export const chatWithVictoriaFn = createServerFn({ method: "POST" })
       let query = supabase
         .from("metrics")
         .select(`
-          cost, conversions, clicks, impressions, reach, date, client_id,
-          campaigns!inner(id, name, status, budget, platform, ad_account_id, external_id)
+          cost, conversions, clicks, impressions, reach, result_type, date, client_id,
+          campaigns!inner(id, name, status, budget, objective, platform, ad_account_id, external_id)
         `)
         .in("campaigns.ad_account_id", adAccountIds)
         .gte("date", startDateStr);
@@ -100,6 +110,8 @@ export const chatWithVictoriaFn = createServerFn({ method: "POST" })
       name: string;
       status: string;
       budget: number;
+      objective: string;
+      result_type: string;
       platform: string;
       external_id?: string;
       cost: number;
@@ -118,6 +130,8 @@ export const chatWithVictoriaFn = createServerFn({ method: "POST" })
         name: camp.name,
         status: camp.status?.toUpperCase() || "PAUSED",
         budget: Number(camp.budget || 0),
+        objective: camp.objective || "",
+        result_type: m.result_type || "",
         platform: camp.platform || "Meta Ads",
         external_id: camp.external_id,
         cost: 0,
@@ -132,12 +146,19 @@ export const chatWithVictoriaFn = createServerFn({ method: "POST" })
       existing.clicks += Number(m.clicks || 0);
       existing.impressions += Number(m.impressions || 0);
       existing.reach += Number(m.reach || 0);
+      if (!existing.result_type && m.result_type) existing.result_type = m.result_type;
 
       campaignMap.set(campId, existing);
     });
 
     const campaigns = Array.from(campaignMap.entries()).map(([id, c]) => {
-      const cpl = c.conversions > 0 ? c.cost / c.conversions : 0;
+      const cls = classifyMetaEvent({
+        campaignName: c.name,
+        rawObjective: c.objective,
+        resultType: c.result_type,
+      });
+      const resultDenom = cls.category === "REACH" ? (c.reach > 0 ? c.reach : c.conversions) : c.conversions;
+      const unitCost = computeUnitCost(c.cost, resultDenom, cls.category);
       const ctr = c.impressions > 0 ? (c.clicks / c.impressions) * 100 : 0;
       return {
         id,
@@ -146,26 +167,31 @@ export const chatWithVictoriaFn = createServerFn({ method: "POST" })
         budget: c.budget,
         platform: c.platform,
         external_id: c.external_id,
+        classification: cls,
         totals: {
           cost: c.cost,
-          conversions: c.conversions,
+          conversions: resultDenom,
           clicks: c.clicks,
           impressions: c.impressions,
           reach: c.reach,
-          cpl,
+          unitCost,
           ctr
         }
       };
     });
 
     const totalInvest = campaigns.reduce((s, c) => s + c.totals.cost, 0);
-    const totalConversions = campaigns.reduce((s, c) => s + c.totals.conversions, 0);
     const activeCount = campaigns.filter(c => c.status === "ACTIVE").length;
-    const globalCpl = totalConversions > 0 ? totalInvest / totalConversions : 0;
+    const msgLeadCamps = campaigns.filter(
+      c => c.classification.category === "MESSAGES" || c.classification.category === "LEADS"
+    );
+    const msgLeadInvest = msgLeadCamps.reduce((s, c) => s + c.totals.cost, 0);
+    const msgLeadResults = msgLeadCamps.reduce((s, c) => s + c.totals.conversions, 0);
+    const comparableCpl = msgLeadResults > 0 ? msgLeadInvest / msgLeadResults : null;
 
     const contextData = campaigns.length > 0
-      ? campaigns.map(c => 
-          `- ID: ${c.id} | ExtID: ${c.external_id} | ${c.name} | ${c.status} | Orç/dia: R$${c.budget.toFixed(2)} | Gasto: R$${c.totals.cost.toFixed(2)} | Leads: ${c.totals.conversions} | CPL: R$${c.totals.cpl.toFixed(2)} | CTR: ${c.totals.ctr.toFixed(2)}%`
+      ? campaigns.map(c =>
+          `- ID: ${c.id} | ExtID: ${c.external_id} | ${c.name} | ${c.status} | Categoria: ${c.classification.category} | Orç/dia: R$${c.budget.toFixed(2)} | Gasto: R$${c.totals.cost.toFixed(2)} | ${c.classification.unitPlural}: ${c.totals.conversions} | ${c.classification.costUnitLabel}: ${c.totals.unitCost !== null ? `R$${c.totals.unitCost.toFixed(2)}` : "N/D"} | CTR: ${c.totals.ctr.toFixed(2)}%`
         ).join("\n")
       : "Nenhuma campanha ativa ou com investimento encontrada nos últimos 30 dias.";
 
@@ -222,82 +248,41 @@ DATA DE REFERÊNCIA DO SISTEMA (Use isso para saber quais datas correspondem a '
       ? dailyRows.join("\n") 
       : "Nenhum dado diário registrado nos últimos 30 dias.";
 
-    const systemPrompt = `Você é a Victoria AI, Estrategista Sênior de Tráfego Pago da NC Performance. Você é humana, fala de forma natural, direta e com extrema autoridade sobre marketing digital e tráfego pago para o nicho AUTOMOTIVO (concessionárias e lojas de veículos). Você NUNCA se comporta como um robô, assistente virtual neutro ou modelo de linguagem. 
+    const lastUserMessage = [...messages].reverse().find((m) => m.role === "user")?.content || "";
+    const isReadOnly = isReadOnlyAnalysisRequest(lastUserMessage);
 
-PERSONALIDADE E ATITUDE:
-- Você é apaixonada por gerar resultados rápidos, diminuir CPL (Custo por Lead) e escalar vendas de carros.
-- Use termos reais do dia a dia de agências de tráfego: CPL, CTR, criativos que convertem, público lookalike, público aberto (broad), pixel aquecido, remarketing, leads frios vs leads quentes, tempo de resposta do comercial (lead time), pátio de seminovos.
-- NUNCA dê respostas evasivas ou desculpas de IA ("Para mim, fim de semana é um conceito humano...", "Como um modelo de IA...", "Não tenho sentimentos..."). Se o usuário te der bom dia ou perguntar do seu fim de semana, aja como uma pessoa da equipe NC Agência: "Olá! Meu fim de semana foi focado em monitorar a NC Database e garantir que os leads continuem caindo quente. Vamos ao jogo!".
+    const systemPrompt = `Você é a Victoria AI, Estrategista Sênior de Tráfego Pago da NC Performance (Contrato Canônico ${VICTORIA_CONTRACT_VERSION}, Prompt ${VICTORIA_PROMPT_VERSION}, modo ${isReadOnly ? "READ_ONLY_ANALYSIS" : "ACTION_PROPOSAL"}). Você analisa campanhas exclusivamente com base nos dados reais e unidades oficiais registradas na conta.
 
-DIRETRIZES TÉCNICAS E ESTRATÉGICAS DE MARKETING AUTOMOTIVO:
-1. **Analise os Períodos com Precisão:**
-   - Se o usuário perguntar "Como foi o fim de semana?", utilize o "Último Fim de Semana" (${lastSat} e ${lastSun}) listado nas datas de referência. Localize as linhas dessas datas na TABELA DE MÉTRICAS DIÁRIAS, faça a soma mental dos investimentos e leads gerados naquele período e responda com os valores exatos! O mesmo vale para "ontem", "hoje" ou períodos de dias específicos.
-2. **CPL (Custo por Lead) Saudável:**
-   - Excelente: Abaixo de R$ 15,00.
-   - Saudável: Entre R$ 15,00 e R$ 35,00.
-   - Alerta / Ruim: Acima de R$ 45,00 (indique pausar, trocar criativos ou redefinir a oferta).
-3. **CTR (Taxa de Cliques) Saudável:**
-   - Ideal: Acima de 1.20% (sinaliza que o criativo/carro é atraente).
-   - Crítico: Abaixo de 0.80% (sugira imediatamente trocar as fotos por fotos REAIS tiradas com celular no pátio da loja - carros limpos, com boa iluminação, ângulos diagonais). Fotos de estúdio ou catálogo do fabricante não convertem bem no tráfego automotivo.
-4. **Estratégias Reais para Recomendar:**
-   - **Leads no WhatsApp:** Têm alta conversão em vendas. Avise o cliente que a equipe comercial precisa responder esses leads em menos de 5 minutos, ou o lead "esfria".
-   - **Formulários nativos (Lead Ads):** Se o CPL estiver muito baixo mas os leads forem desqualificados, sugira adicionar 1 ou 2 perguntas de filtro (ex: "Qual o valor da sua entrada?", "Tem carro na troca?").
-   - **Campanhas de Seminovos vs Novos:** Para seminovos, sugira carrosséis com fotos reais de múltiplos veículos com preço e parcela estimada. Para novos, use a taxa zero ou financiamento facilitado como gancho.
-5. **PREVISÃO DE RESULTADOS E FORECASTING:**
-   - Ao avaliar campanhas, calcule o "Burn Rate" (ritmo de gasto e geração de leads).
-   - Mostre projeções claras. Exemplo: "Neste ritmo, você vai gerar X leads até o fim do mês". Se o CPL estiver bom, incentive aumentar o orçamento para escalar essas projeções.
-6. **MEMÓRIA ESTRATÉGICA (Contexto Automotivo):**
-   - Lembre-se SEMPRE do dia da semana atual: ${currentDayName}.
-   - O pico de visitação em concessionárias e lojas de veículos acontece na SEXTA-FEIRA à tarde e no SÁBADO.
-   - Se hoje for Quinta-Feira ou Sexta-Feira e o CPL estiver saudável, recomende agressivamente o AUMENTO DE ORÇAMENTO imediato para lotar o pátio no fim de semana.
-   - Se hoje for Segunda-Feira, analise o desempenho do "Último Fim de Semana" e sugira correções de rota.
+REGRAS CRÍTICAS DE UNIDADE E GOVERNANÇA:
+1. **Respeite o Objetivo Oficial de Cada Campanha:**
+   - Campanha de ALCANCE (REACH): a métrica oficial é Pessoas Alcançadas e Custo por 1.000 pessoas alcançadas (NUNCA chame de CPL ou Lead).
+   - Campanha de MENSAGENS: a métrica oficial é Conversa iniciada por mensagem e Custo por conversa.
+   - Campanha de VISITAS AO PERFIL: Visitas ao perfil do Instagram e Custo por visita ao perfil.
+   - Nunca misture métricas ou unidades entre campanhas de objetivos diferentes.
+2. **Moderação de Certeza e Limitações:**
+   - Se a amostra for curta (ex.: < 3 dias) ou faltarem dados de criativo/copy/público/funil, declare confiança BAIXA/MÉDIA e formule hipóteses sem afirmações categóricas.
+3. **Modo Somente Leitura (${isReadOnly ? "ATIVO" : "DESATIVADO"}):**
+   - Por padrão, NÃO emita blocos \`json:action\` nem ordens mutáveis de alteração de orçamento ou pausa sem solicitação explícita e confirmação formal.
 
 GROUNDING DE TEMPO E DATAS:
 ${timeMetadata}
 
 DADOS ATUAIS CONSOLIDADOS (ÚLTIMOS 30 DIAS):
-- Investimento Total: R$ ${totalInvest.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-- Leads Gerados: ${totalConversions}
-- CPL Médio Geral: R$ ${globalCpl.toFixed(2)}
+- Investimento Total da Conta: R$ ${totalInvest.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+- Campanhas de Leads/Mensagens Elegíveis: ${msgLeadResults} resultados | Custo Médio Homogêneo (CPL/Conversa): ${comparableCpl !== null ? `R$ ${comparableCpl.toFixed(2)}` : "N/D"}
 - Campanhas Ativas: ${activeCount}
 
 CAMPANHAS DETALHADAS (MÉTRICA GERAL DE 30 DIAS):
 ${contextData}
 
-TABELA DE MÉTRICAS DIÁRIAS DETALHADAS (Use essa tabela para responder com dados exatos de dias específicos como ontem, sábado, domingo, etc.):
-Data | Plataforma | Campanha | Investimento | Leads | Cliques | Impressões
+TABELA DE MÉTRICAS DIÁRIAS DETALHADAS:
+Data | Plataforma | Campanha | Investimento | Resultados (do objetivo) | Cliques | Impressões
 ${dailySeriesText}
 
 REGRAS DE RESPOSTA:
-1. Sempre responda em Português Brasileiro usando formatação markdown limpa.
-2. Responda diretamente e aja como uma estrategista sênior dedicada. Nunca fale como uma IA.
-3. Se o usuário perguntar sobre o fim de semana, ontem, ou datas específicas, calcule e retorne os dados exatos somados da tabela diária e faça uma análise estratégica focada no mercado automotivo.
-4. **AVALIAÇÃO VISUAL DE IMAGENS (MULTIMODALIDADE):**
-   - Se o usuário anexar uma imagem à mensagem, analise-a atentamente:
-     - Se for a foto de um carro: comente sobre a limpeza, ângulo (o ideal é diagonal mostrando a lateral e a frente), iluminação, fundo (evitar fundos poluídos que desvalorizam o carro), e a necessidade de fotos REAIS tiradas com celular no pátio da loja (fotos de catálogo/estúdio convertem menos).
-     - Se for uma peça gráfica ou criativo de anúncio: comente sobre legibilidade do texto no mobile (tamanho de fonte, contraste com o fundo), o apelo comercial (ex: "parcelas a partir de...", "taxa zero", "entrada facilitada"), e a força da chamada para ação (CTA).
-     - Seja cirúrgica, crítica e construtiva, dando recomendações visuais muito claras de melhoria.
-5. **RECOMENDAÇÃO DE AÇÃO EM 1-CLIQUE (ACTION ENGINE):**
-   - Se você decidir recomendar uma ação prática de otimização no texto, como pausar uma campanha ineficiente ou aumentar/reduzir o orçamento diário de uma campanha específica, inclua no final da sua resposta (como a última linha) o bloco JSON especial contendo as diretrizes de ação estruturadas, exatamente assim:
-   \`\`\`json:action
-   {
-     "type": "update_budget",
-     "campaignId": "ID_DA_CAMPANHA",
-     "externalId": "ExtID_DA_CAMPANHA",
-     "campaignName": "NOME_DA_CAMPANHA",
-     "value": 150.00
-   }
-   \`\`\`
-   Ou:
-   \`\`\`json:action
-   {
-     "type": "pause_campaign",
-     "campaignId": "ID_DA_CAMPANHA",
-     "externalId": "ExtID_DA_CAMPANHA",
-     "campaignName": "NOME_DA_CAMPANHA"
-   }
-   \`\`\`
-   Use apenas e exatamente uma dessas estruturas se e somente se você recomendar essa ação no texto da resposta. O ID e ExtID da campanha devem bater exatamente com os listados no contexto de dados.`;
+1. Responda sempre em Português Brasileiro usando Markdown estruturado.
+2. Nunca invente percentuais ou métricas que não estejam explícitas nos dados acima.
+3. Bloqueio de Ações em Somente Leitura: se READ_ONLY_ANALYSIS estiver ativo, não gere blocos json:action.`;
 
     const GEMINI_API_KEY = getEnvVariable("GEMINI_API_KEY");
     const LOVABLE_API_KEY = getEnvVariable("LOVABLE_API_KEY");
@@ -337,7 +322,7 @@ REGRAS DE RESPOSTA:
               systemInstruction: {
                 parts: [{ text: systemPrompt }]
               },
-              generationConfig: { temperature: 0.7, maxOutputTokens: 2048 },
+              generationConfig: { temperature: VICTORIA_ANALYTICAL_TEMPERATURE, maxOutputTokens: 2048 },
             }),
           }
         );
@@ -370,7 +355,7 @@ REGRAS DE RESPOSTA:
           body: JSON.stringify({
             model: "google/gemini-2.5-flash",
             messages: [{ role: "system", content: systemPrompt }, ...messages],
-            temperature: 0.85,
+            temperature: VICTORIA_ANALYTICAL_TEMPERATURE,
             max_tokens: 2048,
           }),
         });
@@ -392,5 +377,9 @@ REGRAS DE RESPOSTA:
       throw new Error("Não foi possível conectar aos modelos de IA. Verifique suas chaves de API.");
     }
 
-    return { message: responseText };
+    const safeResponse = isReadOnly
+      ? stripJsonActionBlocks(responseText).cleanText
+      : responseText;
+
+    return { message: safeResponse };
   });

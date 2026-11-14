@@ -4,7 +4,9 @@ import {
   X, AlertTriangle, Cpu, TrendingUp, HelpCircle, 
   Loader2, CheckCircle2, Copy, Check 
 } from "lucide-react";
-import { supabase } from "@/integrations/supabase-external/client";
+import { supabase, EXTERNAL_SUPABASE_URL, EXTERNAL_SUPABASE_ANON_KEY } from "@/integrations/supabase-external/client";
+import { stripJsonActionBlocks } from "@/lib/victoriaGovernance";
+import { VICTORIA_CONTRACT_VERSION, VICTORIA_PROMPT_VERSION } from "@/lib/victoriaContract";
 
 interface DiagnosisModalProps {
   isOpen: boolean;
@@ -62,23 +64,29 @@ export const DiagnosisModal: React.FC<DiagnosisModalProps> = ({
       const token = session?.session?.access_token;
 
       const response = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/victoria-agent`,
+        `${EXTERNAL_SUPABASE_URL}/functions/v1/victoria-agent`,
         {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`
+            Authorization: `Bearer ${token || EXTERNAL_SUPABASE_ANON_KEY}`,
+            apikey: EXTERNAL_SUPABASE_ANON_KEY,
           },
           body: JSON.stringify({
             action: "diagnose_alert",
-            campaign_id: campaignId
+            campaign_id: campaignId,
+            readOnly: true,
+            operational_mode: "READ_ONLY_ANALYSIS",
+            contract_version: VICTORIA_CONTRACT_VERSION,
+            prompt_version: VICTORIA_PROMPT_VERSION,
           })
         }
       );
 
       if (!response.ok) throw new Error("Erro na requisição de diagnóstico");
       const resData = await response.json();
-      setDiagnosis(resData.diagnosis || "Não foi possível estruturar o diagnóstico.");
+      const rawDiagnosis = resData.diagnosis || "Não foi possível estruturar o diagnóstico.";
+      setDiagnosis(stripJsonActionBlocks(rawDiagnosis).cleanText);
     } catch (err) {
       console.error("[DIAGNOSIS_ERROR]", err);
       setDiagnosis("Desculpe, tive um problema de comunicação com o servidor de IA ao cruzar as métricas de leilão recentes desta campanha.");

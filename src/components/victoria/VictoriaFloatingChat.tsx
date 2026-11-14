@@ -32,6 +32,8 @@ import {
   buildSuggestedQuestionsForContext,
   sanitizeVictoriaOutputText,
   generateSeniorStructuredAnalysis,
+  matchesCanonicalContextIdentity,
+  VICTORIA_BUILD_TAG,
   VICTORIA_ANALYTICAL_TEMPERATURE,
   type VictoriaAnalysisContext,
 } from "@/lib/victoriaContract";
@@ -103,6 +105,21 @@ interface ChatMsg {
   contextHash?: string;
 }
 
+function toIdentityPayload(ctx: VictoriaAnalysisContext) {
+  return {
+    request_id: ctx.request_id,
+    analysis_context_hash: ctx.analysis_context_hash,
+    ad_account_id: ctx.ad_account_id,
+    entity_level: ctx.entity_level,
+    entity_id: ctx.entity_id,
+    date_from: ctx.period.date_from,
+    date_to: ctx.period.date_to,
+    result_indicator: ctx.result_indicator.code,
+    contract_version: ctx.contract_version,
+    prompt_version: ctx.prompt_version,
+  };
+}
+
 export const VictoriaFloatingChat: React.FC<VictoriaFloatingChatProps> = ({
   isOpen,
   onClose,
@@ -124,8 +141,12 @@ export const VictoriaFloatingChat: React.FC<VictoriaFloatingChatProps> = ({
   const [errorState, setErrorState] = useState<string | null>(null);
   const [showDataUsed, setShowDataUsed] = useState(false);
   const [showWhyRec, setShowWhyRec] = useState(false);
+  const [ragSources, setRagSources] = useState<
+    Array<{ id: string; title: string; version: string; evidence_level: string; approval_status: string }>
+  >([]);
 
   const sessionCtrlRef = useRef<VictoriaSessionController>(new VictoriaSessionController());
+  const activeFlowSeqRef = useRef<number>(0);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -199,21 +220,27 @@ export const VictoriaFloatingChat: React.FC<VictoriaFloatingChatProps> = ({
   // limpa mensagens/atalhos da campanha anterior e inicia um novo diagnóstico isolado.
   useEffect(() => {
     if (!isOpen) {
+      activeFlowSeqRef.current++;
       sessionCtrlRef.current.abortActive();
       return;
     }
 
+    const seq = ++activeFlowSeqRef.current;
+    sessionCtrlRef.current.abortActive();
     setIsMinimized(false);
     setHasUnread(false);
     setErrorState(null);
     setShowDataUsed(false);
     setShowWhyRec(false);
+    setInput("");
     setMessages([]);
+    setRagSources([]);
     setConversationId(null);
 
-    void initiateDiagnosis(activeContext);
+    void initiateDiagnosis(activeContext, seq);
 
     return () => {
+      activeFlowSeqRef.current++;
       sessionCtrlRef.current.abortActive();
     };
   }, [
@@ -226,7 +253,15 @@ export const VictoriaFloatingChat: React.FC<VictoriaFloatingChatProps> = ({
     activeContext.analysis_context_hash,
   ]);
 
-  const initiateDiagnosis = async (ctxSnapshot: VictoriaAnalysisContext) => {
+  const initiateDiagnosis = async (ctxInput: VictoriaAnalysisContext, expectedSeq?: number) => {
+    const seq = expectedSeq ?? ++activeFlowSeqRef.current;
+    const isStale = () => activeFlowSeqRef.current !== seq;
+    const ctxSnapshot: VictoriaAnalysisContext = {
+      ...ctxInput,
+      operational_mode: "READ_ONLY_ANALYSIS",
+      request_id: `vreq_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    };
+
     setIsLoading(true);
     setErrorState(null);
 
@@ -237,9 +272,13 @@ export const VictoriaFloatingChat: React.FC<VictoriaFloatingChatProps> = ({
       const {
         data: { user },
       } = await supabase.auth.getUser();
+      if (isStale()) return;
+
       const {
         data: { session },
       } = await supabase.auth.getSession();
+      if (isStale()) return;
+
       const token = session?.access_token || null;
 
       let convId: string | null = null;
@@ -254,10 +293,12 @@ export const VictoriaFloatingChat: React.FC<VictoriaFloatingChatProps> = ({
             entity_id: ctxSnapshot.entity_id,
             analysis_context_hash: ctxSnapshot.analysis_context_hash,
             contract_version: ctxSnapshot.contract_version,
+            legacy_status: null,
           })
           .select()
           .single();
 
+        if (isStale()) return;
         if (conv?.id) {
           convId = conv.id;
           setConversationId(convId);
@@ -275,11 +316,14 @@ export const VictoriaFloatingChat: React.FC<VictoriaFloatingChatProps> = ({
         authToken: token,
         anonKey: EXTERNAL_SUPABASE_ANON_KEY,
         onToken: (partialText, validatedCtx) => {
+          if (isStale()) return;
+          const idCheck = matchesCanonicalContextIdentity(ctxSnapshot, toIdentityPayload(validatedCtx));
+          if (!idCheck.valid) return;
           setMessages([
             {
               id: `diag_${validatedCtx.request_id}`,
               role: "assistant",
-              content: partialText,
+              content: sanitizeVictoriaOutputText(partialText, validatedCtx),
               created_at: new Date(),
               requestId: validatedCtx.request_id,
               contextHash: validatedCtx.analysis_context_hash,
@@ -288,38 +332,57 @@ export const VictoriaFloatingChat: React.FC<VictoriaFloatingChatProps> = ({
         },
       });
 
-      if (result.aborted) {
+      if (isStale() || result.aborted) {
         return;
+      }
+
+      const idCheck = matchesCanonicalContextIdentity(ctxSnapshot, toIdentityPayload(result.context));
+      const safeFinalText = idCheck.valid
+        ? result.text
+        : generateSeniorStructuredAnalysis(ctxSnapshot);
+
+      if (!idCheck.valid) {
+        console.warn("[VICTORIA_FLOATING_ID_MISMATCH]", idCheck.mismatches);
       }
 
       if (result.timedOut) {
         setErrorState(
           "A conexão com o modelo excedeu 20s; exibindo diagnóstico estruturado determinístico da entidade atual."
         );
+      } else if (result.status === "CONTEXT_MISMATCH_BLOCKED" || !idCheck.valid) {
+        setErrorState(
+          "Divergência de contexto detectada e bloqueada; exibindo diagnóstico determinístico isolado desta entidade."
+        );
       }
 
+      setRagSources(result.ragCitations || []);
       setMessages([
         {
           id: `diag_${ctxSnapshot.request_id}`,
           role: "assistant",
-          content: result.text,
+          content: safeFinalText,
           created_at: new Date(),
           requestId: ctxSnapshot.request_id,
           contextHash: ctxSnapshot.analysis_context_hash,
         },
       ]);
 
-      if (convId && user && result.text) {
+      if (convId && user && safeFinalText && !isStale() && idCheck.valid) {
         await supabase.from("victoria_messages" as any).insert({
           conversation_id: convId,
           role: "assistant",
-          content: result.text,
+          content: safeFinalText,
           request_id: ctxSnapshot.request_id,
           analysis_context_hash: ctxSnapshot.analysis_context_hash,
           context_snapshot: ctxSnapshot,
+          contract_version: ctxSnapshot.contract_version,
+          prompt_version: ctxSnapshot.prompt_version,
+          rag_citations: result.ragCitations ?? [],
+          legacy_status: null,
         });
       }
     } catch (err: any) {
+      if (isStale()) return;
       console.error("[VICTORIA_FLOATING_DIAG_ERR]", err);
       const fallback = generateSeniorStructuredAnalysis(ctxSnapshot);
       setMessages([
@@ -334,7 +397,9 @@ export const VictoriaFloatingChat: React.FC<VictoriaFloatingChatProps> = ({
       ]);
       setErrorState("Modo de contingência estruturado ativado.");
     } finally {
-      setIsLoading(false);
+      if (!isStale()) {
+        setIsLoading(false);
+      }
     }
   };
 
@@ -342,10 +407,15 @@ export const VictoriaFloatingChat: React.FC<VictoriaFloatingChatProps> = ({
     const text = (textToSend || input).trim();
     if (!text || isLoading) return;
 
+    const seq = activeFlowSeqRef.current;
+    const isStale = () => activeFlowSeqRef.current !== seq;
+
     setInput("");
     setErrorState(null);
     const ctxSnapshot: VictoriaAnalysisContext = {
       ...activeContext,
+      operational_mode: "READ_ONLY_ANALYSIS",
+      conversation_id: conversationId,
       request_id: `vreq_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
     };
 
@@ -362,19 +432,18 @@ export const VictoriaFloatingChat: React.FC<VictoriaFloatingChatProps> = ({
     setMessages((prev) => [...prev, newMsg]);
     setIsLoading(true);
 
-    const reqSession = sessionCtrlRef.current.beginRequest({
-      ctx: ctxSnapshot,
-      conversationId,
-    });
-
     try {
       const {
         data: { user },
       } = await supabase.auth.getUser();
+      if (isStale()) return;
+
       const {
         data: { session },
       } = await supabase.auth.getSession();
-      const token = session?.access_token;
+      if (isStale()) return;
+
+      const token = session?.access_token || null;
 
       if (conversationId && user) {
         await supabase.from("victoria_messages" as any).insert({
@@ -384,6 +453,9 @@ export const VictoriaFloatingChat: React.FC<VictoriaFloatingChatProps> = ({
           request_id: ctxSnapshot.request_id,
           analysis_context_hash: ctxSnapshot.analysis_context_hash,
           context_snapshot: ctxSnapshot,
+          contract_version: ctxSnapshot.contract_version,
+          prompt_version: ctxSnapshot.prompt_version,
+          legacy_status: null,
         });
       }
 
@@ -392,117 +464,67 @@ export const VictoriaFloatingChat: React.FC<VictoriaFloatingChatProps> = ({
         content: m.content,
       }));
 
-      const response = await fetch(
-        `${EXTERNAL_SUPABASE_URL}/functions/v1/victoria-agent`,
-        {
-          method: "POST",
-          signal: reqSession.signal,
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token || EXTERNAL_SUPABASE_ANON_KEY}`,
-            apikey: EXTERNAL_SUPABASE_ANON_KEY,
-          },
-          body: JSON.stringify({
-            action: "chat",
-            readOnly: true,
-            temperature: VICTORIA_ANALYTICAL_TEMPERATURE,
-            messages: conversationHistory,
-            selectedAccountId:
-              ctxSnapshot.ad_account_id !== "all"
-                ? ctxSnapshot.ad_account_id
-                : undefined,
-            analysisContext: ctxSnapshot,
-            externalContext: `CONTRATO CANÔNICO VICTORIA (${ctxSnapshot.contract_version}) [HASH: ${ctxSnapshot.analysis_context_hash}]:\n${JSON.stringify(ctxSnapshot, null, 2)}`,
-          }),
-        }
-      );
-
-      let assistantText = "";
       const assistantMsgId = crypto.randomUUID();
+      const result = await executeGovernedVictoriaDiagnostic({
+        ctx: {
+          ...ctxSnapshot,
+          user_id: user?.id ?? null,
+          conversation_id: conversationId,
+        },
+        controller: sessionCtrlRef.current,
+        endpointUrl: `${EXTERNAL_SUPABASE_URL}/functions/v1/victoria-agent`,
+        authToken: token,
+        anonKey: EXTERNAL_SUPABASE_ANON_KEY,
+        userPrompt: text,
+        conversationHistory,
+        requireFull10Sections: false,
+        onToken: (partialText, validatedCtx) => {
+          if (isStale()) return;
+          if (!matchesCanonicalContextIdentity(ctxSnapshot, toIdentityPayload(validatedCtx)).valid) return;
+          const safeText = sanitizeVictoriaOutputText(partialText, validatedCtx);
+          setMessages((prev) => {
+            const existing = prev.find((m) => m.id === assistantMsgId);
+            if (existing) {
+              return prev.map((m) =>
+                m.id === assistantMsgId ? { ...m, content: safeText } : m
+              );
+            }
+            return [
+              ...prev,
+              {
+                id: assistantMsgId,
+                role: "assistant",
+                content: safeText,
+                created_at: new Date(),
+                requestId: validatedCtx.request_id,
+                contextHash: validatedCtx.analysis_context_hash,
+              },
+            ];
+          });
+        },
+      });
 
-      if (response.ok && response.body) {
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = "";
-
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-
-          if (
-            !sessionCtrlRef.current.canRenderToken({
-              requestId: reqSession.requestId,
-              contextHash: reqSession.contextHash,
-              accountId: ctxSnapshot.ad_account_id,
-              entityLevel: ctxSnapshot.entity_level,
-              entityId: ctxSnapshot.entity_id,
-            })
-          ) {
-            try {
-              await reader.cancel();
-            } catch {}
-            return;
-          }
-
-          buffer += decoder.decode(value, { stream: true });
-          const lines = buffer.split("\n");
-          buffer = lines.pop() || "";
-
-          for (const line of lines) {
-            const trimmed = line.trim();
-            if (!trimmed.startsWith("data: ")) continue;
-            const jsonStr = trimmed.slice(6);
-            if (jsonStr === "[DONE]") continue;
-            try {
-              const parsed = JSON.parse(jsonStr);
-              const chunk = parsed.choices?.[0]?.delta?.content || "";
-              if (chunk) {
-                assistantText += chunk;
-                const safeText = sanitizeVictoriaOutputText(
-                  assistantText,
-                  ctxSnapshot
-                );
-                setMessages((prev) => {
-                  const existing = prev.find((m) => m.id === assistantMsgId);
-                  if (existing) {
-                    return prev.map((m) =>
-                      m.id === assistantMsgId ? { ...m, content: safeText } : m
-                    );
-                  }
-                  return [
-                    ...prev,
-                    {
-                      id: assistantMsgId,
-                      role: "assistant",
-                      content: safeText,
-                      created_at: new Date(),
-                      requestId: ctxSnapshot.request_id,
-                      contextHash: ctxSnapshot.analysis_context_hash,
-                    },
-                  ];
-                });
-              }
-            } catch {}
-          }
-        }
-      }
-
-      if (
-        !sessionCtrlRef.current.canRenderToken({
-          requestId: reqSession.requestId,
-          contextHash: reqSession.contextHash,
-          accountId: ctxSnapshot.ad_account_id,
-          entityLevel: ctxSnapshot.entity_level,
-          entityId: ctxSnapshot.entity_id,
-        })
-      ) {
+      if (isStale() || result.aborted) {
         return;
       }
 
+      const idCheck = matchesCanonicalContextIdentity(ctxSnapshot, toIdentityPayload(result.context));
       const finalSafeText = sanitizeVictoriaOutputText(
-        assistantText || generateSeniorStructuredAnalysis(ctxSnapshot),
+        idCheck.valid && result.text
+          ? result.text
+          : generateSeniorStructuredAnalysis(ctxSnapshot),
         ctxSnapshot
       );
+
+      if (result.ragCitations && result.ragCitations.length > 0) {
+        setRagSources(result.ragCitations);
+      }
+
+      if (result.timedOut) {
+        setErrorState(
+          "A resposta excedeu o limite de 20s; exibindo diagnóstico estruturado determinístico."
+        );
+      }
 
       setMessages((prev) => {
         const existing = prev.find((m) => m.id === assistantMsgId);
@@ -524,7 +546,7 @@ export const VictoriaFloatingChat: React.FC<VictoriaFloatingChatProps> = ({
         ];
       });
 
-      if (conversationId && user) {
+      if (conversationId && user && !isStale() && idCheck.valid) {
         await supabase.from("victoria_messages" as any).insert({
           conversation_id: conversationId,
           role: "assistant",
@@ -532,6 +554,10 @@ export const VictoriaFloatingChat: React.FC<VictoriaFloatingChatProps> = ({
           request_id: ctxSnapshot.request_id,
           analysis_context_hash: ctxSnapshot.analysis_context_hash,
           context_snapshot: ctxSnapshot,
+          contract_version: ctxSnapshot.contract_version,
+          prompt_version: ctxSnapshot.prompt_version,
+          rag_citations: result.ragCitations ?? [],
+          legacy_status: null,
         });
       }
 
@@ -539,12 +565,14 @@ export const VictoriaFloatingChat: React.FC<VictoriaFloatingChatProps> = ({
         setHasUnread(true);
       }
     } catch (err: any) {
-      if (reqSession.signal.aborted) return;
+      if (isStale()) return;
       setErrorState("Falha temporária na comunicação com a Victoria AI.");
       toast.error("Erro na comunicação com a Victoria AI.");
     } finally {
-      setIsLoading(false);
-      setTimeout(() => inputRef.current?.focus(), 100);
+      if (!isStale()) {
+        setIsLoading(false);
+        setTimeout(() => inputRef.current?.focus(), 100);
+      }
     }
   };
 
@@ -617,7 +645,10 @@ export const VictoriaFloatingChat: React.FC<VictoriaFloatingChatProps> = ({
                       Victoria AI
                     </h3>
                     <span className="rounded-full bg-primary/10 px-1.5 py-0.2 text-[8px] font-black uppercase text-primary border border-primary/20">
-                      Contrato v{activeContext.contract_version}
+                      Contrato v{activeContext.contract_version} · {VICTORIA_BUILD_TAG}
+                    </span>
+                    <span className="rounded-full bg-sky-500/10 px-1.5 py-0.2 text-[8px] font-black uppercase text-sky-300 border border-sky-500/20">
+                      Somente Leitura
                     </span>
                     <span
                       className={`rounded-full px-1.5 py-0.2 text-[8px] font-black uppercase border ${confidenceBadgeColor}`}
@@ -753,6 +784,12 @@ export const VictoriaFloatingChat: React.FC<VictoriaFloatingChatProps> = ({
                 </p>
                 <p className="text-muted-foreground">
                   Campos ausentes: {activeContext.missing_fields.join(", ") || "Nenhum"}
+                </p>
+                <p className="text-muted-foreground">
+                  Fontes RAG ({ragSources.length}):{" "}
+                  {ragSources.length > 0
+                    ? ragSources.map((r) => `${r.title} [v${r.version} · ${r.evidence_level}]`).join(" | ")
+                    : "Base normativa padrão do contrato"}
                 </p>
               </div>
             )}

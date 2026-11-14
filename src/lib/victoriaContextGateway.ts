@@ -3,13 +3,19 @@ import {
   validateVictoriaAnalysisContext,
   generateSeniorStructuredAnalysis,
   sanitizeVictoriaOutputText,
+  enforceVictoriaPostLlmGuardrails,
+  matchesCanonicalContextIdentity,
   buildSuggestedQuestionsForContext,
   VictoriaSessionController,
   VICTORIA_REQUEST_TIMEOUT_MS,
   VICTORIA_ANALYTICAL_TEMPERATURE,
+  VICTORIA_CONTRACT_VERSION,
+  VICTORIA_PROMPT_VERSION,
+  VICTORIA_DEFAULT_OPERATIONAL_MODE,
   type VictoriaAnalysisContext,
   type VictoriaSurfaceId,
   type VictoriaEntityLevel,
+  type VictoriaOperationalMode,
   type CuratedRagDocument,
 } from "./victoriaContract.ts";
 import {
@@ -34,6 +40,8 @@ export interface MetricasItemAdapterInput {
   accountMaxCplTarget?: number | null;
   sameObjectiveAvgCost?: number | null;
   ragDocuments?: CuratedRagDocument[];
+  operationalMode?: VictoriaOperationalMode;
+  siblingEntities?: any[];
 }
 
 /**
@@ -141,8 +149,23 @@ export function buildContextFromMetricasItem(
     has_landing_page_data: false,
     has_crm_funnel_data: false,
     account_max_cpl_target: isComparableWithAccountCpl ? input.accountMaxCplTarget ?? null : null,
-    comparable_same_objective_avg: isComparableWithAccountCpl ? input.sameObjectiveAvgCost ?? null : null,
+    comparable_same_objective_avg:
+      isComparableWithAccountCpl && input.sameObjectiveAvgCost && input.sameObjectiveAvgCost > 0
+        ? input.sameObjectiveAvgCost
+        : null,
     rag_documents: input.ragDocuments || [],
+    operational_mode: input.operationalMode || VICTORIA_DEFAULT_OPERATIONAL_MODE,
+    sibling_entities: (input.siblingEntities || []).map((sib: any) => ({
+      id: sib.id ? String(sib.id) : undefined,
+      external_id: sib.external_id ? String(sib.external_id) : undefined,
+      name: sib.name ? String(sib.name) : undefined,
+      spend: Number(sib.t?.cost ?? sib.cost ?? sib.spend ?? 0),
+      reach: Number(sib.t?.reach ?? sib.reach ?? 0),
+      impressions: Number(sib.t?.impressions ?? sib.impressions ?? 0),
+      cpm: Number(sib.t?.cpm ?? sib.cpm ?? 0),
+      cost_per_result: sib.t?.cpl !== undefined ? Number(sib.t.cpl) : null,
+      result_value: Number(sib.t?.conversions ?? sib.conversions ?? 0),
+    })),
   });
 }
 
@@ -273,27 +296,37 @@ export interface ExecuteVictoriaDiagnosticParams {
   authToken?: string | null;
   anonKey: string;
   userPrompt?: string;
+  conversationHistory?: Array<{ role: "user" | "assistant"; content: string }>;
   onToken?: (partialText: string, ctx: VictoriaAnalysisContext) => void;
   timeoutMs?: number;
+  requireFull10Sections?: boolean;
 }
 
 export interface ExecuteVictoriaDiagnosticResult {
   aborted: boolean;
   timedOut: boolean;
   fromCache: boolean;
-  status: "SUCCESS" | "FALLBACK_STRUCTURED" | "INSUFFICIENT_DATA" | "ABORTED" | "TIMEOUT";
+  status: "SUCCESS" | "FALLBACK_STRUCTURED" | "INSUFFICIENT_DATA" | "ABORTED" | "TIMEOUT" | "CONTEXT_MISMATCH_BLOCKED";
   text: string;
   suggestedQuestions: string[];
   context: VictoriaAnalysisContext;
+  ragCitations?: Array<{
+    id: string;
+    title: string;
+    version: string;
+    evidence_level: string;
+    approval_status: string;
+  }>;
+  responseMeta?: Record<string, any> | null;
 }
 
 /**
- * Executa uma chamada governada à Victoria AI com:
+ * Executa uma chamada governada à Victoria AI (Contrato 2026.11.4) com:
  * 1. Validação prévia do contrato VictoriaAnalysisContext
  * 2. Isolamento de sessão e cancelamento (AbortController) ao trocar de entidade
  * 3. Timeout estrito de 20 segundos
- * 4. Verificação de request_id + analysis_context_hash antes de cada token
- * 5. Sanitização pós-resposta contra vazamento de unidade cruzada (CPL em Alcance / R$ 7,93)
+ * 4. Verificação estrita dos 10 campos de identidade (request_id, analysis_context_hash, ad_account_id, entity_level, entity_id, date_from, date_to, result_indicator, contract_version, prompt_version)
+ * 5. Pós-validação server+client (unidade, bloqueio cross-campaign, READ_ONLY_ANALYSIS, 10 seções obrigatórias)
  */
 export async function executeGovernedVictoriaDiagnostic(
   params: ExecuteVictoriaDiagnosticParams
@@ -301,6 +334,7 @@ export async function executeGovernedVictoriaDiagnostic(
   const { ctx } = params;
   const sessionCtrl = params.controller || globalVictoriaSessionController;
   const suggestedQuestions = buildSuggestedQuestionsForContext(ctx);
+  const requireFull10 = params.requireFull10Sections !== false;
 
   // 1. Validar contrato antes de invocar modelo
   const validation = validateVictoriaAnalysisContext(ctx);
@@ -323,16 +357,19 @@ export async function executeGovernedVictoriaDiagnostic(
     conversationId: ctx.conversation_id,
   });
 
-  if (reqSession.cachedResponse) {
+  if (reqSession.cachedResponse && !params.userPrompt) {
+    const cachedGuard = enforceVictoriaPostLlmGuardrails(reqSession.cachedResponse, ctx, {
+      requireFull10Sections: requireFull10,
+    });
     if (params.onToken) {
-      params.onToken(reqSession.cachedResponse, ctx);
+      params.onToken(cachedGuard.text, ctx);
     }
     return {
       aborted: false,
       timedOut: false,
       fromCache: true,
       status: "SUCCESS",
-      text: reqSession.cachedResponse,
+      text: cachedGuard.text,
       suggestedQuestions,
       context: ctx,
     };
@@ -356,12 +393,17 @@ export async function executeGovernedVictoriaDiagnostic(
     const promptToSend =
       params.userPrompt ||
       [
-        `Gere uma análise técnica sênior para a entidade selecionada seguindo rigorosamente o contrato VictoriaAnalysisContext (${ctx.contract_version}).`,
-        `Comece obrigatoriamente respondendo: "O que esta campanha foi configurada para otimizar?"`,
-        `Use exclusivamente a unidade oficial "${ctx.result_indicator.cost_label}" (${ctx.result_indicator.unit}) e os números exatos do contexto JSON abaixo.`,
+        `Gere uma análise técnica sênior para a entidade selecionada seguindo rigorosamente o contrato VictoriaAnalysisContext (${VICTORIA_CONTRACT_VERSION}).`,
+        `Comece obrigatoriamente respondendo: "O que esta campanha foi configurada para otimizar?" e inclua todas as 10 seções obrigatórias.`,
+        `Use exclusivamente a unidade oficial "${ctx.result_indicator.cost_label}" (${ctx.result_indicator.unit}) e os números exatos do contexto.`,
         `Proibido usar o termo "CPL" se a categoria for REACH, INSTAGRAM_PROFILE, LANDING_PAGE_VIEWS, LINK_CLICKS, VIDEO_VIEWS ou ENGAGEMENT.`,
-        `Proibido comparar CPM com custo por conversa de outra campanha.`,
+        `Proibido citar qualquer outra campanha da conta ou comparar CPM com custo por conversa.`,
       ].join("\n");
+
+    const outgoingMessages =
+      params.conversationHistory && params.conversationHistory.length > 0
+        ? params.conversationHistory
+        : [{ role: "user" as const, content: promptToSend }];
 
     const response = await fetch(params.endpointUrl, {
       method: "POST",
@@ -370,15 +412,24 @@ export async function executeGovernedVictoriaDiagnostic(
         "Content-Type": "application/json",
         Authorization: `Bearer ${params.authToken || params.anonKey}`,
         apikey: params.anonKey,
+        "X-Victoria-Contract-Version": VICTORIA_CONTRACT_VERSION,
+        "X-Victoria-Prompt-Version": VICTORIA_PROMPT_VERSION,
+        "X-Victoria-Request-Id": ctx.request_id,
+        "X-Victoria-Context-Hash": ctx.analysis_context_hash,
       },
       body: JSON.stringify({
         action: "chat",
-        readOnly: true,
+        mode: "json",
+        stream: false,
+        readOnly: ctx.operational_mode !== "ACTION_PROPOSAL",
+        operational_mode: ctx.operational_mode || VICTORIA_DEFAULT_OPERATIONAL_MODE,
+        contract_version: VICTORIA_CONTRACT_VERSION,
+        prompt_version: VICTORIA_PROMPT_VERSION,
         temperature: VICTORIA_ANALYTICAL_TEMPERATURE,
         selectedAccountId: ctx.ad_account_id !== "all" ? ctx.ad_account_id : undefined,
         analysisContext: ctx,
-        messages: [{ role: "user", content: promptToSend }],
-        externalContext: `CONTRATO CANÔNICO VICTORIA (${ctx.contract_version}) [HASH: ${ctx.analysis_context_hash}]:\n${JSON.stringify(ctx, null, 2)}\n\nESTRUTURA SÊNIOR DE REFERÊNCIA:\n${structuredBaseline}`,
+        messages: outgoingMessages,
+        externalContext: `CONTRATO CANÔNICO VICTORIA (${VICTORIA_CONTRACT_VERSION}) [HASH: ${ctx.analysis_context_hash}]:\n${JSON.stringify(ctx, null, 2)}`,
       }),
     });
 
@@ -388,6 +439,8 @@ export async function executeGovernedVictoriaDiagnostic(
 
     const contentType = response.headers.get("content-type") || "";
     let rawAccumulated = "";
+    let responseMeta: Record<string, any> | null = null;
+    let ragCitations: ExecuteVictoriaDiagnosticResult["ragCitations"] = [];
 
     if (contentType.includes("text/event-stream") && response.body) {
       const reader = response.body.getReader();
@@ -405,6 +458,11 @@ export async function executeGovernedVictoriaDiagnostic(
             accountId: ctx.ad_account_id,
             entityLevel: ctx.entity_level,
             entityId: ctx.entity_id,
+            dateFrom: ctx.period.date_from,
+            dateTo: ctx.period.date_to,
+            resultIndicator: ctx.result_indicator.code,
+            contractVersion: ctx.contract_version,
+            promptVersion: ctx.prompt_version,
           })
         ) {
           try {
@@ -432,6 +490,12 @@ export async function executeGovernedVictoriaDiagnostic(
           if (jsonStr === "[DONE]") continue;
           try {
             const parsed = JSON.parse(jsonStr);
+            if (parsed.victoria_meta) {
+              responseMeta = parsed.victoria_meta;
+              if (Array.isArray(parsed.victoria_meta.rag_citations)) {
+                ragCitations = parsed.victoria_meta.rag_citations;
+              }
+            }
             const chunk = parsed.choices?.[0]?.delta?.content || "";
             if (chunk) {
               rawAccumulated += chunk;
@@ -444,6 +508,11 @@ export async function executeGovernedVictoriaDiagnostic(
                   accountId: ctx.ad_account_id,
                   entityLevel: ctx.entity_level,
                   entityId: ctx.entity_id,
+                  dateFrom: ctx.period.date_from,
+                  dateTo: ctx.period.date_to,
+                  resultIndicator: ctx.result_indicator.code,
+                  contractVersion: ctx.contract_version,
+                  promptVersion: ctx.prompt_version,
                 })
               ) {
                 params.onToken(safePartial, ctx);
@@ -455,7 +524,25 @@ export async function executeGovernedVictoriaDiagnostic(
     } else {
       const data = await response.json().catch(() => null);
       rawAccumulated =
-        data?.diagnosis || data?.insight || data?.reply || data?.message || "";
+        data?.diagnosis || data?.insight || data?.reply || data?.message || data?.content || "";
+      if (data && typeof data === "object") {
+        responseMeta = {
+          request_id: data.request_id,
+          analysis_context_hash: data.analysis_context_hash,
+          ad_account_id: data.ad_account_id,
+          entity_level: data.entity_level,
+          entity_id: data.entity_id,
+          date_from: data.date_from,
+          date_to: data.date_to,
+          result_indicator: data.result_indicator,
+          contract_version: data.contract_version,
+          prompt_version: data.prompt_version,
+          rag_citations: data.rag_citations,
+        };
+        if (Array.isArray(data.rag_citations)) {
+          ragCitations = data.rag_citations;
+        }
+      }
     }
 
     if (
@@ -465,6 +552,11 @@ export async function executeGovernedVictoriaDiagnostic(
         accountId: ctx.ad_account_id,
         entityLevel: ctx.entity_level,
         entityId: ctx.entity_id,
+        dateFrom: ctx.period.date_from,
+        dateTo: ctx.period.date_to,
+        resultIndicator: ctx.result_indicator.code,
+        contractVersion: ctx.contract_version,
+        promptVersion: ctx.prompt_version,
       })
     ) {
       return {
@@ -478,38 +570,99 @@ export async function executeGovernedVictoriaDiagnostic(
       };
     }
 
-    const sanitized = sanitizeVictoriaOutputText(rawAccumulated, ctx);
-    // Se a resposta vier vazia, com erro de provedor ou sem a seção obrigatória de otimização, usa a estrutura sênior determinística validada
-    const isValidSeniorResponse =
-      sanitized.length >= 120 &&
-      !/^\[ERRO\s+\d+\]/i.test(sanitized) &&
-      !/tive um problema de comunicação/i.test(sanitized) &&
-      sanitized.includes("O que esta campanha foi configurada para otimizar?");
+    // 4. Verificação estrita dos 10 campos obrigatórios de identidade antes da renderização
+    if (responseMeta) {
+      const idMatch = matchesCanonicalContextIdentity(ctx, {
+        request_id: responseMeta.request_id,
+        analysis_context_hash: responseMeta.analysis_context_hash,
+        ad_account_id: responseMeta.ad_account_id,
+        entity_level: responseMeta.entity_level,
+        entity_id: responseMeta.entity_id,
+        date_from: responseMeta.date_from,
+        date_to: responseMeta.date_to,
+        result_indicator: responseMeta.result_indicator,
+        contract_version: responseMeta.contract_version,
+        prompt_version: responseMeta.prompt_version,
+      });
+      if (!idMatch.valid) {
+        console.warn("[VICTORIA_CONTEXT_MISMATCH]", idMatch.mismatches);
+        return {
+          aborted: false,
+          timedOut: false,
+          fromCache: false,
+          status: "CONTEXT_MISMATCH_BLOCKED",
+          text: structuredBaseline,
+          suggestedQuestions,
+          context: ctx,
+          ragCitations,
+          responseMeta,
+        };
+      }
+    }
 
-    const finalText = isValidSeniorResponse ? sanitized : structuredBaseline;
+    const enrichedCtx: VictoriaAnalysisContext =
+      ragCitations && ragCitations.length > 0 && ctx.governance_and_benchmarks.rag_documents.length === 0
+        ? {
+            ...ctx,
+            governance_and_benchmarks: {
+              ...ctx.governance_and_benchmarks,
+              rag_documents: ragCitations.map((c) => ({
+                id: c.id,
+                title: c.title,
+                author: "NC Performance Strategy Team",
+                source: "Base Curada RAG NC Suite",
+                url: null,
+                published_at: null,
+                ingested_at: new Date().toISOString(),
+                valid_until: null,
+                category: "rag",
+                region: "BR-RJ",
+                objective: ctx.optimization.category,
+                evidence_level: (c.evidence_level as any) || "INTERNAL_RULE",
+                version: c.version || VICTORIA_CONTRACT_VERSION,
+                approval_status: (c.approval_status as any) || "APPROVED",
+                content: "",
+              })),
+            },
+          }
+        : ctx;
 
-    sessionCtrl.commitResponse({
-      cacheKey: reqSession.cacheKey,
-      requestId: reqSession.requestId,
-      contextHash: reqSession.contextHash,
-      accountId: ctx.ad_account_id,
-      entityLevel: ctx.entity_level,
-      entityId: ctx.entity_id,
-      text: finalText,
+    const enforced = enforceVictoriaPostLlmGuardrails(rawAccumulated, enrichedCtx, {
+      requireFull10Sections: requireFull10,
     });
+    const finalText = enforced.text;
+
+    if (!params.userPrompt) {
+      sessionCtrl.commitResponse({
+        cacheKey: reqSession.cacheKey,
+        requestId: reqSession.requestId,
+        contextHash: reqSession.contextHash,
+        accountId: ctx.ad_account_id,
+        entityLevel: ctx.entity_level,
+        entityId: ctx.entity_id,
+        dateFrom: ctx.period.date_from,
+        dateTo: ctx.period.date_to,
+        resultIndicator: ctx.result_indicator.code,
+        contractVersion: ctx.contract_version,
+        promptVersion: ctx.prompt_version,
+        text: finalText,
+      });
+    }
 
     if (params.onToken) {
-      params.onToken(finalText, ctx);
+      params.onToken(finalText, enrichedCtx);
     }
 
     return {
       aborted: false,
       timedOut: false,
       fromCache: false,
-      status: isValidSeniorResponse ? "SUCCESS" : "FALLBACK_STRUCTURED",
+      status: enforced.replacedByDeterministic ? "FALLBACK_STRUCTURED" : "SUCCESS",
       text: finalText,
       suggestedQuestions,
-      context: ctx,
+      context: enrichedCtx,
+      ragCitations,
+      responseMeta,
     };
   } catch (err: any) {
     if (reqSession.signal.aborted && !timedOut) {
@@ -532,17 +685,29 @@ export async function executeGovernedVictoriaDiagnostic(
         accountId: ctx.ad_account_id,
         entityLevel: ctx.entity_level,
         entityId: ctx.entity_id,
+        dateFrom: ctx.period.date_from,
+        dateTo: ctx.period.date_to,
+        resultIndicator: ctx.result_indicator.code,
+        contractVersion: ctx.contract_version,
+        promptVersion: ctx.prompt_version,
       })
     ) {
-      sessionCtrl.commitResponse({
-        cacheKey: reqSession.cacheKey,
-        requestId: reqSession.requestId,
-        contextHash: reqSession.contextHash,
-        accountId: ctx.ad_account_id,
-        entityLevel: ctx.entity_level,
-        entityId: ctx.entity_id,
-        text: fallbackText,
-      });
+      if (!params.userPrompt) {
+        sessionCtrl.commitResponse({
+          cacheKey: reqSession.cacheKey,
+          requestId: reqSession.requestId,
+          contextHash: reqSession.contextHash,
+          accountId: ctx.ad_account_id,
+          entityLevel: ctx.entity_level,
+          entityId: ctx.entity_id,
+          dateFrom: ctx.period.date_from,
+          dateTo: ctx.period.date_to,
+          resultIndicator: ctx.result_indicator.code,
+          contractVersion: ctx.contract_version,
+          promptVersion: ctx.prompt_version,
+          text: fallbackText,
+        });
+      }
       if (params.onToken) {
         params.onToken(fallbackText, ctx);
       }

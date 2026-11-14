@@ -1983,6 +1983,19 @@ function VictoriaHubPage() {
                           <span>{msg.role === "user" ? "Você" : "Victoria AI"}</span>
                           <span>•</span>
                           <span>{msg.created_at.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                          {msg.role === "assistant" && (msg.isLegacy || msg.legacyStatus) && (
+                            <span
+                              className="rounded-full bg-amber-500/15 border border-amber-500/30 px-2 py-0.5 text-[9px] font-bold uppercase text-amber-300"
+                              title="Registro gerado antes do contrato canônico 2026.11.4"
+                            >
+                              {msg.legacyStatus || "diagnóstico legado"}
+                            </span>
+                          )}
+                          {msg.role === "assistant" && !msg.isLegacy && msg.contractVersion && (
+                            <span className="rounded-full bg-primary/10 border border-primary/20 px-2 py-0.5 text-[9px] font-mono text-primary">
+                              v{msg.contractVersion}
+                            </span>
+                          )}
                           {msg.role === "user" && editingMessageId !== msg.id && (
                             <button
                               onClick={() => {

@@ -7,6 +7,7 @@ import ReactMarkdown from "react-markdown";
 import { chatWithVictoriaFn } from "@/lib/agent.functions";
 import { classifyMetaEvent, computeUnitCost } from "@/lib/metricsDomain";
 import { isReadOnlyAnalysisRequest, stripJsonActionBlocks, validateActionExecution } from "@/lib/victoriaGovernance";
+import { VICTORIA_CONTRACT_VERSION, VICTORIA_PROMPT_VERSION, VICTORIA_DEFAULT_OPERATIONAL_MODE } from "@/lib/victoriaContract";
 
 type Message = {
   role: "user" | "assistant";
@@ -125,7 +126,11 @@ export function AIAgentSidebar({ isOpen, onClose }: AIAgentSidebarProps) {
           const { data, error } = await supabase.functions.invoke("victoria-agent", {
             body: { 
               messages: requestMessages,
-              selectedAccountId: selectedAccountId
+              selectedAccountId: selectedAccountId,
+              readOnly: true,
+              operational_mode: VICTORIA_DEFAULT_OPERATIONAL_MODE,
+              contract_version: VICTORIA_CONTRACT_VERSION,
+              prompt_version: VICTORIA_PROMPT_VERSION,
             }
           });
 
@@ -165,11 +170,16 @@ export function AIAgentSidebar({ isOpen, onClose }: AIAgentSidebarProps) {
           };
         });
 
-        // Calcular estatísticas globais
+        // Calcular estatísticas globais SEM misturar unidades heterogêneas (ex.: Alcance vs Mensagens)
         const totalInvest = campaigns.reduce((s: number, c: any) => s + c.totals.cost, 0);
         const totalConversions = campaigns.reduce((s: number, c: any) => s + c.totals.conversions, 0);
         const activeCount = campaigns.filter((c: any) => c.status === "ACTIVE").length;
-        const globalCpl = totalConversions > 0 ? totalInvest / totalConversions : null;
+        const msgLeadCamps = campaigns.filter(
+          (c: any) => c.classification.category === "MESSAGES" || c.classification.category === "LEADS"
+        );
+        const msgLeadInvest = msgLeadCamps.reduce((s: number, c: any) => s + c.totals.cost, 0);
+        const msgLeadResults = msgLeadCamps.reduce((s: number, c: any) => s + c.totals.conversions, 0);
+        const comparableCpl = msgLeadResults > 0 ? msgLeadInvest / msgLeadResults : null;
 
         // Ordenar campanhas por gasto e performance
         const activeCampaigns = campaigns.filter((c: any) => c.status === "ACTIVE");
@@ -197,7 +207,7 @@ export function AIAgentSidebar({ isOpen, onClose }: AIAgentSidebarProps) {
         if (query.includes("performance") || query.includes("desempenho") || query.includes("como tá") || query.includes("como ta")) {
           intro = `Olá! Fiz um raio-x completo na nossa conta de anúncios agora mesmo. Puxei os dados consolidados do NC Database e montei o diagnóstico tático da operação.
 
-Olha, no geral, estamos gerenciando **${activeCount} campanhas ativas** rodando no Meta Ads. O investimento acumulado já soma **R$ ${totalInvest.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}**, trazendo **${totalConversions.toLocaleString("pt-BR")} resultados registrados**. Nosso custo médio por resultado está em **${globalCpl !== null ? `R$ ${globalCpl.toFixed(2)}` : "Não calculável (0 resultados)"}**.`;
+Olha, no geral, estamos gerenciando **${activeCount} campanhas ativas** rodando no Meta Ads. O investimento acumulado já soma **R$ ${totalInvest.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}**, trazendo **${totalConversions.toLocaleString("pt-BR")} resultados registrados** (cada campanha auditada na sua própria unidade oficial). ${comparableCpl !== null ? `Nas campanhas de Leads/Mensagens elegíveis, o custo médio homogêneo está em **R$ ${comparableCpl.toFixed(2)}**.` : "Sem base homogênea de Leads/Mensagens para CPL consolidado."}`;
 
           if (efficientCamp) {
             body += `\n\n### ⚡ Campanha Campeã (Alta Eficiência)
@@ -248,7 +258,7 @@ Pronto para rodar essa otimização?`;
           // Resposta customizada super premium e de alto nível para conversas gerais
           intro = `Olá! Fico extremamente feliz em conversar com você sobre estratégias de tráfego pago. Já estou com toda a nossa base de dados operando e a postos na central da NC. 
 
-Atualmente, estamos gerenciando **${activeCount} campanhas ativas** com um investimento consolidado de **R$ ${totalInvest.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}** e **${totalConversions.toLocaleString("pt-BR")} resultados registrados**. Nosso custo médio por resultado está em **${globalCpl !== null ? `R$ ${globalCpl.toFixed(2)}` : "Não calculável (0 resultados)"}**.`;
+Atualmente, estamos gerenciando **${activeCount} campanhas ativas** com um investimento consolidado de **R$ ${totalInvest.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}** e **${totalConversions.toLocaleString("pt-BR")} resultados registrados** (cada campanha auditada na sua própria unidade oficial). ${comparableCpl !== null ? `Nosso CPL homogêneo para Leads/Mensagens está em **R$ ${comparableCpl.toFixed(2)}**.` : ""}`;
 
           body = `\n\nPara te dar uma orientação cirúrgica e acelerar o resultado da agência hoje, qual desses tópicos estratégicos você quer auditar primeiro?
 * 💰 **Otimização de Orçamento:** Descobrir onde estamos desperdiçando verba e onde vale a pena escalar.

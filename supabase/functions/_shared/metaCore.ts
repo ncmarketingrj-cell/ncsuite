@@ -1014,8 +1014,8 @@ export function reconcileAccountSummary(params: {
   const reachDisplayLabel = hasAccountReach
     ? "Alcance da conta (deduplicado)"
     : items.length === 1
-    ? "Alcance da campanha"
-    : "Alcance (soma não deduplicada)";
+      ? "Alcance da campanha"
+      : "Alcance (soma não deduplicada)";
 
   const unitCost = totalResultsKnown > 0 ? totalSpend / totalResultsKnown : null;
 

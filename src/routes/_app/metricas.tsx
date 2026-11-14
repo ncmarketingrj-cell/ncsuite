@@ -274,7 +274,41 @@ function calcHealthScore(c: any, avgCpl: number): number {
   return Math.max(0, Math.min(100, score));
 }
 
-function getDecision(c: any, avgCpl: number, accountTargetCpl?: number | null): { label: string; tier: string; reason: string; action: string } {
+function computeHomogeneousSameObjectiveAvg(target: any, peers: any[]): number | null {
+  if (!target || !Array.isArray(peers) || peers.length === 0) return null;
+  const targetCls = classifyMetaEvent({
+    campaignName: target.name || "",
+    rawObjective: target.objective || target.campaigns?.objective,
+    optimizationGoal: target.optimization_goal,
+    resultType: target.result_type,
+    resultsIndicator: target.result_indicator,
+    isVehicleContext: false,
+  });
+  const comparable = peers.filter((p) => {
+    const cls = classifyMetaEvent({
+      campaignName: p.name || "",
+      rawObjective: p.objective || p.campaigns?.objective,
+      optimizationGoal: p.optimization_goal,
+      resultType: p.result_type,
+      resultsIndicator: p.result_indicator,
+      isVehicleContext: false,
+    });
+    return cls.category === targetCls.category && Number(p.t?.cost || 0) > 0;
+  });
+  if (targetCls.category === "REACH" && comparable.length < 2) return null;
+  if (comparable.length === 0) return null;
+  const sumCost = comparable.reduce((s, p) => s + Number(p.t?.cost || 0), 0);
+  const sumRes = comparable.reduce((s, p) => {
+    const val = targetCls.category === "REACH"
+      ? (Number(p.t?.reach || 0) || Number(p.t?.conversions || 0))
+      : Number(p.t?.conversions || 0);
+    return s + val;
+  }, 0);
+  if (sumRes <= 0) return null;
+  return targetCls.category === "REACH" ? (sumCost / sumRes) * 1000 : sumCost / sumRes;
+}
+
+function getDecision(c: any, avgCpl: number, accountTargetCpl?: number | null, daysCount: number = 1): { label: string; tier: string; reason: string; action: string } {
   const normalized = normalizeCampaignItem({
     id: c.id,
     name: c.name,
@@ -288,15 +322,35 @@ function getDecision(c: any, avgCpl: number, accountTargetCpl?: number | null): 
     isVehicleContext: true,
   });
 
+  const isLeadOrMsg = ["MESSAGES", "LEADS", "PURCHASES"].includes(normalized.classification.category);
+  if (normalized.classification.category === "REACH") {
+    const unitCost = normalized.reach > 0 ? (normalized.cost / normalized.reach) * 1000 : 0;
+    return {
+      label: "MONITORAR",
+      tier: "blue",
+      reason: `Alcance puro (${normalized.reach.toLocaleString("pt-BR")} pessoas · R$ ${unitCost.toFixed(2)}/1k alcançadas). Sem comparação com CPL.`,
+      action: "Manter e acompanhar CPM/frequência",
+    };
+  }
+
   const diag = evaluateCampaignHealth({
     item: normalized,
     targetCandidates: {
-      accountThresholdMaxCpl: accountTargetCpl && accountTargetCpl > 0 ? accountTargetCpl : null,
-      regionalBenchmarkCpl: avgCpl > 0 ? avgCpl : null,
+      accountThresholdMaxCpl: isLeadOrMsg && accountTargetCpl && accountTargetCpl > 0 ? accountTargetCpl : null,
+      regionalBenchmarkCpl: isLeadOrMsg && avgCpl > 0 ? avgCpl : null,
     },
     minSpendForPauseDecision: 50,
     minResultsForScale: 3,
   });
+
+  if (daysCount < 3 && (diag.status === "PAUSAR" || diag.status === "ESCALAR")) {
+    return {
+      label: "MONITORAR",
+      tier: "yellow",
+      reason: `${diag.headline} (Janela de ${daysCount} dia(s) insuficiente para decisão irreversível.)`,
+      action: "Aguardar janela >= 3 dias antes de alterar orçamento ou pausar",
+    };
+  }
 
   const tier =
     diag.status === "PAUSAR"
@@ -406,7 +460,18 @@ export function getCampaignTemperature(c: any, avgCpl: number): {
     reason: "Performance equilibrada dentro do benchmark operacional"
   };
 }
-function generateLocalDiagnostic(item: any, avgCpl: number, options?: { accountId?: string; accountName?: string; dateFrom?: string; dateTo?: string; accountMaxCplTarget?: number | null }): string {
+function generateLocalDiagnostic(
+  item: any,
+  sameObjectiveAvg: number | null,
+  options?: {
+    accountId?: string;
+    accountName?: string;
+    dateFrom?: string;
+    dateTo?: string;
+    accountMaxCplTarget?: number | null;
+    siblingEntities?: any[];
+  }
+): string {
   const todayIso = new Date().toISOString().slice(0, 10);
   const ctx = buildContextFromMetricasItem({
     item,
@@ -417,70 +482,12 @@ function generateLocalDiagnostic(item: any, avgCpl: number, options?: { accountI
     dateFrom: options?.dateFrom || todayIso,
     dateTo: options?.dateTo || todayIso,
     accountMaxCplTarget: options?.accountMaxCplTarget ?? null,
-    sameObjectiveAvgCost: avgCpl > 0 ? avgCpl : null,
+    sameObjectiveAvgCost: sameObjectiveAvg && sameObjectiveAvg > 0 ? sameObjectiveAvg : null,
+    siblingEntities: options?.siblingEntities,
+    operationalMode: "READ_ONLY_ANALYSIS",
   });
   return generateSeniorStructuredAnalysis(ctx);
 }
-function _legacyUnusedDiagnostic(item: any, avgCpl: number): string {
-  const { cost, conversions, clicks, impressions, reach, freq, cpl, ctr, cpm, cpc } = item.t;
-  const cplStr = cpl > 0 ? `R$ ${cpl.toFixed(2)}` : "N/A";
-  const costStr = `R$ ${cost.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`;
-  const avgCplStr = avgCpl > 0 ? `R$ ${avgCpl.toFixed(2)}` : "N/A";
-  
-  let diag = `### 🤖 Diagnóstico da Victoria IA\n\n`;
-  
-  if (conversions === 0 && cost > 30) {
-    diag += `⚠️ **Desempenho Crítico:** Esta campanha gastou **${costStr}** e não gerou nenhuma conversão/lead. Há um vazamento de verba ativo que precisa de intervenção imediata.\n\n`;
-  } else if (cpl > 0 && avgCpl > 0 && cpl > avgCpl * 1.5) {
-    diag += `⚠️ **Desempenho Preocupante:** O custo por lead de **${cplStr}** está significativamente acima da média da conta (**${avgCplStr}**). A campanha gera resultados, mas a eficiência financeira está comprometida.\n\n`;
-  } else if (conversions > 2 && cpl > 0 && avgCpl > 0 && cpl < avgCpl * 0.8) {
-    diag += `🔥 **Excelente Performance!** A campanha está operando com altíssima eficiência. O CPL de **${cplStr}** está abaixo da média geral da conta, e o volume de conversões indica que o público está respondendo muito bem.\n\n`;
-  } else {
-    diag += `📈 **Desempenho Estável:** A campanha exibe métricas de custo e conversão equilibradas. Apresenta tração inicial saudável no período avaliado.\n\n`;
-  }
-
-  diag += `#### 📍 Análise de Gargalos:\n`;
-  let gargalos = false;
-  
-  if (ctr < 1.0 && impressions > 1000) {
-    diag += `- 📉 **CTR Baixo (${ctr.toFixed(2)}%):** A taxa de clique está abaixo de 1%. Isso indica que o criativo (imagem/vídeo) não está chamando a atenção necessária ou a copy está fraca para o público selecionado.\n`;
-    gargalos = true;
-  }
-  if (freq > 3.0) {
-    diag += `- ⚠️ **Saturação de Público (Frequência ${freq.toFixed(1)}x):** A audiência está vendo o mesmo anúncio repetidamente no período. Isso desgasta a campanha, eleva o CPM e reduz o CTR.\n`;
-    gargalos = true;
-  }
-  if (cpm > 30) {
-    diag += `- 💸 **CPM Elevado (R$ ${cpm.toFixed(2)}):** O custo por mil impressões está alto, indicando forte concorrência no leilão ou que o público selecionado é excessivamente restrito.\n`;
-    gargalos = true;
-  }
-  if (!gargalos) {
-    diag += `- ✨ Não foram detectadas anomalias graves nas métricas secundárias (CTR, Frequência e CPM estão dentro de limites saudáveis).\n`;
-  }
-
-  diag += `\n#### 💡 Recomendações Práticas:\n`;
-  if (conversions === 0 && cost > 30) {
-    diag += `1. **Pausar o anúncio** para estancar o gasto sem conversão.\n`;
-    diag += `2. Revisar o formulário ou página de destino para certificar-se de que não há falhas técnicas.\n`;
-    diag += `3. Testar criativos mais chamativos com propostas de valor diferentes.\n`;
-  } else if (freq > 3.0) {
-    diag += `1. **Ampliar o público-alvo** (adicionar novos interesses ou expandir a localização).\n`;
-    diag += `2. Inserir novos criativos no conjunto para rotacionar as imagens/vídeos exibidos.\n`;
-    diag += `3. Criar público de exclusão de quem já converteu (leads) nos últimos 30 dias.\n`;
-  } else if (ctr < 1.0) {
-    diag += `1. **Testar novas variações de criativos** focando em ganchos fortes nos primeiros 3 segundos.\n`;
-    diag += `2. Trocar a headline e a oferta principal no anúncio.\n`;
-  } else if (cpl > 0 && avgCpl > 0 && cpl < avgCpl * 0.8 && conversions > 2) {
-    diag += `1. **Escalar o orçamento** de forma gradual (10% a 20% ao dia) para não resetar a fase de aprendizado do leilão.\n`;
-    diag += `2. Criar um público Semelhante (Lookalike) a partir do público que já converteu.\n`;
-  } else {
-    diag += `1. Manter a campanha em monitoramento ativo.\n`;
-    diag += `2. Realizar testes A/B pontuais nas copys secundárias.\n`;
-  }
-
-  return diag;
-}
-
 function parseMarkdown(text: string) {
   if (!text) return null;
   return text.split("\n").map((line, index) => {
@@ -895,6 +902,12 @@ function MetricasCampanhasPage() {
 
   const startStr = getLocalDateStr(dateRange.startDate);
   const endStr   = getLocalDateStr(dateRange.endDate);
+  const periodDaysCount = useMemo(() => {
+    const startMs = Date.parse(`${startStr}T00:00:00Z`);
+    const endMs = Date.parse(`${endStr}T00:00:00Z`);
+    if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs < startMs) return 1;
+    return Math.max(1, Math.round((endMs - startMs) / 86_400_000) + 1);
+  }, [startStr, endStr]);
   const activeSnapshot = useActiveMetaSnapshot({ accountId: accountFilter });
 
   const { data: campaigns = [], isFetching: isFetchingCamps, isLoading: isLoadingCamps } = useQuery({
@@ -1596,6 +1609,12 @@ function MetricasCampanhasPage() {
     });
   }, [listData, search, temperatureMode, temperatureFilter, accountBenchmarkCpl]);
 
+  const maxCplThreshold = useMemo(() => {
+    if (accountFilter === "all") return null;
+    const t = alertThresholds.find((t: any) => t.ad_account_id === accountFilter);
+    return t?.max_cpl ?? null;
+  }, [alertThresholds, accountFilter]);
+
   const handleOpenVictoriaDiagnostic = useCallback((item?: any) => {
     let target = item;
     if (!target) {
@@ -1631,7 +1650,9 @@ function MetricasCampanhasPage() {
         dateFrom: startStr,
         dateTo: endStr,
         accountMaxCplTarget: maxCplThreshold,
-        sameObjectiveAvgCost: avgCpl > 0 ? avgCpl : null,
+        sameObjectiveAvgCost: computeHomogeneousSameObjectiveAvg(target, listData),
+        siblingEntities: listData,
+        operationalMode: "READ_ONLY_ANALYSIS",
       });
       setFloatingChatContext({
         id: target.external_id || target.id,
@@ -1654,7 +1675,7 @@ function MetricasCampanhasPage() {
       setFloatingChatContext(null);
     }
     setIsFloatingChatOpen(true);
-  }, [selectedFocusItem, selectedCamps, listData, level]);
+  }, [selectedFocusItem, selectedCamps, listData, level, adAccounts, accountFilter, startStr, endStr, maxCplThreshold, user]);
 
   const selSet = level === "campanhas" ? selectedCamps : level === "conjuntos" ? selectedAdSets : selectedAds;
   const setSelSet = level === "campanhas" ? setSelectedCamps : level === "conjuntos" ? setSelectedAdSets : setSelectedAds;
@@ -1738,12 +1759,6 @@ function MetricasCampanhasPage() {
     };
   }, [selSet, filtered, level, search, statusFilter, accountFilter, accountPeriodStats]);
 
-  const maxCplThreshold = useMemo(() => {
-    if (accountFilter === "all") return null;
-    const t = alertThresholds.find((t: any) => t.ad_account_id === accountFilter);
-    return t?.max_cpl ?? null;
-  }, [alertThresholds, accountFilter]);
-
   const insights = useMemo(() => gerarInsights(enrichedCampaigns, totCost, totConv, avgCpl, avgCtr, avgCpm), [enrichedCampaigns, totCost, totConv, avgCpl, avgCtr, avgCpm]);
 
   const loadAiInsight = async (item: any) => {
@@ -1772,7 +1787,9 @@ function MetricasCampanhasPage() {
       dateFrom: startStr,
       dateTo: endStr,
       accountMaxCplTarget: maxCplThreshold,
-      sameObjectiveAvgCost: avgCpl > 0 ? avgCpl : null,
+      sameObjectiveAvgCost: computeHomogeneousSameObjectiveAvg(item, listData),
+      siblingEntities: listData,
+      operationalMode: "READ_ONLY_ANALYSIS",
     });
 
     setInspectorContext(ctx);
@@ -1969,9 +1986,16 @@ function MetricasCampanhasPage() {
   const campDecisions = useMemo(() =>
     enrichedCampaigns
       .filter((c: any) => c.t.cost > 0 || c.t.impressions > 0)
-      .map((c: any) => ({ ...c, healthScore: calcHealthScore(c, avgCpl), decision: getDecision(c, avgCpl, maxCplThreshold) }))
+      .map((c: any) => {
+        const sameObjAvg = computeHomogeneousSameObjectiveAvg(c, enrichedCampaigns) ?? 0;
+        return {
+          ...c,
+          healthScore: calcHealthScore(c, sameObjAvg),
+          decision: getDecision(c, sameObjAvg, maxCplThreshold, periodDaysCount),
+        };
+      })
       .sort((a: any, b: any) => a.healthScore - b.healthScore),
-  [enrichedCampaigns, avgCpl, maxCplThreshold]);
+  [enrichedCampaigns, maxCplThreshold, periodDaysCount]);
 
   const overallHealthScore = useMemo(() => {
     const withSpend = campDecisions.filter((c: any) => c.t.cost > 0);
@@ -3986,17 +4010,21 @@ function MetricasCampanhasPage() {
                   </div>
 
                   {/* Rodapé do Inspector com Recomendação rápida */}
-                  {selectedFocusItem.t && (
-                    <div className="rounded-xl border border-white/5 bg-white/[0.02] p-4 flex items-center justify-between">
-                      <div>
-                        <span className="text-[9px] text-muted-foreground/60 uppercase">Recomendação Estratégica</span>
-                        <p className="text-xs font-black text-foreground mt-0.5">{getDecision(selectedFocusItem, avgCpl, maxCplThreshold).label}</p>
+                  {selectedFocusItem.t && (() => {
+                    const inspectorAvg = computeHomogeneousSameObjectiveAvg(selectedFocusItem, listData) ?? 0;
+                    const inspectorDecision = getDecision(selectedFocusItem, inspectorAvg, maxCplThreshold, periodDaysCount);
+                    return (
+                      <div className="rounded-xl border border-white/5 bg-white/[0.02] p-4 flex items-center justify-between">
+                        <div>
+                          <span className="text-[9px] text-muted-foreground/60 uppercase">Recomendação Estratégica</span>
+                          <p className="text-xs font-black text-foreground mt-0.5">{inspectorDecision.label}</p>
+                        </div>
+                        <span className={`text-[10px] font-mono font-bold px-3 py-1 rounded-lg border ${DECISION_COLORS[inspectorDecision.tier] || "text-muted-foreground border-white/10"}`}>
+                          {inspectorDecision.action}
+                        </span>
                       </div>
-                      <span className={`text-[10px] font-mono font-bold px-3 py-1 rounded-lg border ${DECISION_COLORS[getDecision(selectedFocusItem, avgCpl, maxCplThreshold).tier] || "text-muted-foreground border-white/10"}`}>
-                        {getDecision(selectedFocusItem, avgCpl, maxCplThreshold).action}
-                      </span>
-                    </div>
-                  )}
+                    );
+                  })()}
 
                 </div>
               </motion.div>
@@ -4011,7 +4039,7 @@ function MetricasCampanhasPage() {
           contextItem={floatingChatContext}
           accountId={accountFilter}
           accountName={adAccounts.find((a: any) => a.id === accountFilter)?.name || "Conta Meta Ads"}
-          avgAccountCpl={avgCpl > 0 ? avgCpl : accountBenchmarkCpl}
+          avgAccountCpl={floatingChatContext?.analysisContext?.governance_and_benchmarks?.comparable_same_objective_avg ?? undefined}
           dateFrom={startStr}
           dateTo={endStr}
         />

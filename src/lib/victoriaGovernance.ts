@@ -172,6 +172,10 @@ export function buildActionProposal(
     accountName?: string | null;
     windowStart?: string;
     windowEnd?: string;
+    daysCount?: number;
+    currentBudget?: number | null;
+    explicitUserRequest?: boolean;
+    operationalMode?: "READ_ONLY_ANALYSIS" | "ACTION_PROPOSAL";
     nowIso?: string;
     ttlMinutes?: number;
     readOnly?: boolean;
@@ -181,8 +185,22 @@ export function buildActionProposal(
   const actionType = String(rawAction.type);
   const mutating = isMutatingActionType(actionType);
 
-  if (context.readOnly && mutating) {
+  if ((context.readOnly || context.operationalMode !== "ACTION_PROPOSAL") && mutating) {
     return null;
+  }
+
+  if (mutating) {
+    // Exige pedido explícito, janela >= 3 dias, ID numérico Meta e orçamento atual conhecido (se ajuste de orçamento)
+    if (!context.explicitUserRequest) return null;
+    if ((context.daysCount ?? 0) < 3) return null;
+    const cid = String(rawAction.campaignId || "").trim();
+    if (!/^\d{6,}$/.test(cid)) return null;
+    if (
+      actionType === "update_budget" &&
+      (context.currentBudget === null || context.currentBudget === undefined || Number(context.currentBudget) <= 0)
+    ) {
+      return null;
+    }
   }
 
   const nowDate = context.nowIso ? new Date(context.nowIso) : new Date();

@@ -28,6 +28,9 @@ import {
 import {
   sanitizeVictoriaOutputText,
   VICTORIA_ANALYTICAL_TEMPERATURE,
+  VICTORIA_CONTRACT_VERSION,
+  VICTORIA_PROMPT_VERSION,
+  isLegacyVictoriaVersion,
 } from "@/lib/victoriaContract";
 
 
@@ -36,6 +39,10 @@ export type Message = {
   role: "user" | "assistant";
   content: string;
   created_at: Date;
+  contractVersion?: string | null;
+  promptVersion?: string | null;
+  legacyStatus?: string | null;
+  isLegacy?: boolean;
   metadata?: {
     image?: { base64: string; mimeType: string };
     readOnly?: boolean;
@@ -342,13 +349,22 @@ export function useVictoriaChat(
 
         if (error) throw error;
         setMessages(
-          (data || []).map((m: any) => ({
-            id: m.id,
-            role: m.role,
-            content: m.content,
-            created_at: new Date(m.created_at),
-            metadata: m.metadata || {},
-          }))
+          (data || []).map((m: any) => {
+            const legacy =
+              m.legacy_status === "diagnóstico legado" ||
+              isLegacyVictoriaVersion(m.contract_version);
+            return {
+              id: m.id,
+              role: m.role,
+              content: m.content,
+              created_at: new Date(m.created_at),
+              contractVersion: m.contract_version ?? null,
+              promptVersion: m.prompt_version ?? null,
+              legacyStatus: m.legacy_status ?? (legacy ? "diagnóstico legado" : null),
+              isLegacy: legacy,
+              metadata: m.metadata || {},
+            };
+          })
         );
       } catch (err) {
         console.error("Erro ao carregar mensagens:", err);
@@ -369,7 +385,12 @@ export function useVictoriaChat(
 
       const { data, error } = await (supabase
         .from("victoria_conversations" as any)
-        .insert({ user_id: user.id, title })
+        .insert({
+          user_id: user.id,
+          title,
+          contract_version: VICTORIA_CONTRACT_VERSION,
+          legacy_status: null,
+        })
         .select()
         .single() as any);
 
@@ -542,6 +563,9 @@ export function useVictoriaChat(
           conversation_id: convId,
           role: "user",
           content,
+          contract_version: VICTORIA_CONTRACT_VERSION,
+          prompt_version: VICTORIA_PROMPT_VERSION,
+          legacy_status: null,
           metadata: userMsg.metadata
         });
       if (userMsgErr) throw userMsgErr;
@@ -632,7 +656,11 @@ export function useVictoriaChat(
             user_name: userName || undefined,
             externalContext,
             regionalBenchmark,
-            readOnly: isReadOnly
+            readOnly: isReadOnly,
+            operational_mode: isReadOnly ? "READ_ONLY_ANALYSIS" : "ACTION_PROPOSAL",
+            contract_version: VICTORIA_CONTRACT_VERSION,
+            prompt_version: VICTORIA_PROMPT_VERSION,
+            temperature: VICTORIA_ANALYTICAL_TEMPERATURE,
           })
         }
       );
@@ -762,6 +790,9 @@ export function useVictoriaChat(
           conversation_id: convId,
           role: "assistant",
           content: responseText,
+          contract_version: VICTORIA_CONTRACT_VERSION,
+          prompt_version: VICTORIA_PROMPT_VERSION,
+          legacy_status: null,
           metadata: assistantMsgMetadata
         });
       if (assistantMsgErr) throw assistantMsgErr;
@@ -1258,6 +1289,10 @@ export function useVictoriaChat(
             selectedAccountId: selectedAccountId || undefined,
             user_name: userName || undefined,
             readOnly: isReadOnlyEdit,
+            operational_mode: isReadOnlyEdit ? "READ_ONLY_ANALYSIS" : "ACTION_PROPOSAL",
+            contract_version: VICTORIA_CONTRACT_VERSION,
+            prompt_version: VICTORIA_PROMPT_VERSION,
+            temperature: VICTORIA_ANALYTICAL_TEMPERATURE,
           })
         }
       );
@@ -1337,6 +1372,9 @@ export function useVictoriaChat(
           conversation_id: convId,
           role: "assistant",
           content: responseText,
+          contract_version: VICTORIA_CONTRACT_VERSION,
+          prompt_version: VICTORIA_PROMPT_VERSION,
+          legacy_status: null,
           metadata: assistantMsgMetadata
         });
       if (assistantMsgErr) throw assistantMsgErr;

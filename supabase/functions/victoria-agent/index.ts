@@ -7,10 +7,19 @@ import {
   formatMetricVectorSummary,
   type MetricVector,
 } from "../_shared/metaCore.ts";
+import {
+  VICTORIA_CONTRACT_VERSION,
+  VICTORIA_PROMPT_VERSION,
+  VICTORIA_DEFAULT_OPERATIONAL_MODE,
+  enforceServerPostLlmGuardrails,
+  sanitizeVictoriaServerOutput,
+  generateDeterministic10SectionAnalysis,
+  type ServerRagCitation,
+} from "../_shared/victoriaCore.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-victoria-contract-version, x-victoria-prompt-version, x-victoria-request-id, x-victoria-context-hash",
 };
 
 serve(async (req) => {
@@ -73,6 +82,11 @@ serve(async (req) => {
       return true;
     };
     const isReadOnlyRequest = detectServerReadOnly(messages, explicitReadOnly);
+    const ctxDaysCount = Number(analysisContext?.period?.days_count ?? analysisContext?.period?.days ?? 1);
+    const operationalMode =
+      body.operational_mode === "ACTION_PROPOSAL" && !isReadOnlyRequest && ctxDaysCount >= 3
+        ? "ACTION_PROPOSAL"
+        : VICTORIA_DEFAULT_OPERATIONAL_MODE;
 
     // =========================================================================
     // AÇÃO: fetch_market_intel (Pesquisa de Mercado, Marketing e Leis em Tempo Real - R$ 0,00)
@@ -256,7 +270,7 @@ serve(async (req) => {
         region: "BR",
         objective: "MARKET_INTEL",
         evidence_level: "MARKET_NEWS",
-        version: "2026.11.3",
+        version: VICTORIA_CONTRACT_VERSION,
         approval_status: "PENDING_REVIEW",
         rejection_reason: "Notícias externas via RSS permanecem em PENDING_REVIEW até curadoria humana e não entram como regra operacional automática no RAG."
       };
@@ -351,7 +365,7 @@ serve(async (req) => {
           region: body.region || "BR-RJ",
           objective: body.objective || "ALL",
           evidence_level: hasProhibitedClaim ? "UNVERIFIED" : (body.evidence_level || "INTERNAL_RULE"),
-          version: "2026.11.3",
+          version: VICTORIA_CONTRACT_VERSION,
           approval_status: approvalStatus,
           rejection_reason: rejectionReason
         })
@@ -544,58 +558,164 @@ Escreva em formato altamente profissional, com dados baseados na série de métr
         text = "Não foi possível gerar o diagnóstico da IA no momento devido a uma indisponibilidade na API.";
       }
 
-      return new Response(JSON.stringify({ diagnosis: text.trim() }), {
+      const safeDiagnosis = sanitizeVictoriaServerOutput(
+        text.trim(),
+        {
+          result_indicator: {
+            category: campaign.objective || "UNKNOWN",
+            cost_label: "Custo por resultado",
+          },
+          period: { days_count: 7 },
+        },
+        VICTORIA_DEFAULT_OPERATIONAL_MODE
+      );
+
+      return new Response(JSON.stringify({
+        diagnosis: safeDiagnosis,
+        contract_version: VICTORIA_CONTRACT_VERSION,
+        prompt_version: VICTORIA_PROMPT_VERSION,
+        operational_mode: VICTORIA_DEFAULT_OPERATIONAL_MODE,
+      }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" }
       });
     }
 
     // =========================================================================
-    // AÇÃO: search_knowledge (busca vetorial exposta ao hook — C4)
+    // AÇÃO: search_knowledge (busca vetorial + fallback lexical curado)
     // =========================================================================
     if (action === "search_knowledge") {
-      if (!query || !GEMINI_API_KEY) {
+      const q = String(query || "").trim();
+      if (!q) {
         return new Response(JSON.stringify({ snippets: [] }), {
           headers: { ...corsHeaders, "Content-Type": "application/json" }
         });
       }
 
-      const embedRes = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent?key=${GEMINI_API_KEY}`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            model: "models/text-embedding-004",
-            content: { parts: [{ text: query }] }
-          })
-        }
-      );
+      let snippets: any[] = [];
+      if (GEMINI_API_KEY) {
+        try {
+          const embedRes = await fetch(
+            `https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent?key=${GEMINI_API_KEY}`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                model: "models/text-embedding-004",
+                content: { parts: [{ text: q }] }
+              })
+            }
+          );
 
-      if (embedRes.ok) {
-        const embedData = await embedRes.json();
-        const embedding = embedData.embedding?.values;
-        if (embedding) {
-          const { data: matchData } = await supabase.rpc("match_victoria_knowledge", {
-            query_embedding: embedding,
-            match_threshold: 0.65,
-            match_count: 5,
-            p_user_id: user.id
-          });
+          if (embedRes.ok) {
+            const embedData = await embedRes.json();
+            const embedding = embedData.embedding?.values;
+            if (embedding) {
+              const { data: matchData } = await supabase.rpc("match_victoria_knowledge", {
+                query_embedding: embedding,
+                match_threshold: 0.55,
+                match_count: 5,
+                p_user_id: user.id
+              });
 
-          const snippets = (matchData || []).map((k: any) => ({
-            id: k.id,
-            title: k.title,
-            category: k.category,
-            content: (k.content || "").slice(0, 600)
-          }));
-
-          return new Response(JSON.stringify({ snippets }), {
-            headers: { ...corsHeaders, "Content-Type": "application/json" }
-          });
+              snippets = (matchData || []).map((k: any) => ({
+                id: k.id,
+                title: k.title,
+                category: k.category,
+                version: k.version || VICTORIA_CONTRACT_VERSION,
+                evidence_level: k.evidence_level || "INTERNAL_RULE",
+                approval_status: k.approval_status || "APPROVED",
+                content: (k.content || "").slice(0, 600)
+              }));
+            }
+          }
+        } catch (vecErr) {
+          console.warn("[VICTORIA] Vector search_knowledge falhou, usando fallback lexical curado:", vecErr);
         }
       }
 
-      return new Response(JSON.stringify({ snippets: [] }), {
+      if (snippets.length === 0) {
+        const { data: docs } = await supabase
+          .from("victoria_knowledge")
+          .select("id, title, category, content, source, evidence_level, approval_status, version, objective, priority")
+          .eq("is_active", true)
+          .eq("approval_status", "APPROVED")
+          .not("evidence_level", "in", '("UNVERIFIED","OPINION")')
+          .or(`user_id.eq.${user.id},evidence_level.in.(OFFICIAL_DOC,INTERNAL_RULE)`)
+          .order("priority", { ascending: false })
+          .order("created_at", { ascending: false })
+          .limit(20);
+
+        const tokens = q.toLowerCase().split(/\s+/).filter((w) => w.length >= 3);
+        const scored = (docs || [])
+          .map((d: any) => {
+            const hay = `${d.title || ""} ${d.content || ""} ${d.category || ""} ${d.objective || ""}`.toLowerCase();
+            const score = tokens.reduce((s, tok) => s + (hay.includes(tok) ? 2 : 0), 0) + (d.evidence_level === "OFFICIAL_DOC" ? 2 : 1);
+            return { doc: d, score };
+          })
+          .sort((a, b) => b.score - a.score)
+          .slice(0, 5);
+
+        snippets = scored.map(({ doc: k }) => ({
+          id: k.id,
+          title: k.title,
+          category: k.category,
+          version: k.version || VICTORIA_CONTRACT_VERSION,
+          evidence_level: k.evidence_level || "INTERNAL_RULE",
+          approval_status: k.approval_status || "APPROVED",
+          content: (k.content || "").slice(0, 600)
+        }));
+      }
+
+      return new Response(JSON.stringify({ snippets }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" }
+      });
+    }
+
+    // =========================================================================
+    // AÇÃO: backfill_embeddings (gera embeddings para docs APPROVED sem vetor)
+    // =========================================================================
+    if (action === "backfill_embeddings") {
+      if (!GEMINI_API_KEY) {
+        return new Response(JSON.stringify({ success: false, updated: 0, reason: "GEMINI_API_KEY not configured" }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" }
+        });
+      }
+      const { data: pendingDocs } = await supabase
+        .from("victoria_knowledge")
+        .select("id, title, content")
+        .eq("is_active", true)
+        .eq("approval_status", "APPROVED")
+        .is("embedding", null)
+        .limit(25);
+
+      let updated = 0;
+      for (const doc of pendingDocs || []) {
+        try {
+          const embedRes = await fetch(
+            `https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent?key=${GEMINI_API_KEY}`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                model: "models/text-embedding-004",
+                content: { parts: [{ text: `${doc.title}\n\n${doc.content}` }] }
+              })
+            }
+          );
+          if (embedRes.ok) {
+            const embedData = await embedRes.json();
+            const vec = embedData.embedding?.values;
+            if (Array.isArray(vec) && vec.length > 0) {
+              const { error: uErr } = await supabase
+                .from("victoria_knowledge")
+                .update({ embedding: vec, version: VICTORIA_CONTRACT_VERSION })
+                .eq("id", doc.id);
+              if (!uErr) updated++;
+            }
+          }
+        } catch {}
+      }
+      return new Response(JSON.stringify({ success: true, updated, scanned: (pendingDocs || []).length }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" }
       });
     }
@@ -708,8 +828,10 @@ Escreva em formato altamente profissional, com dados baseados na série de métr
               region: "BR-RJ",
               objective: "ALL",
               evidence_level: "INTERNAL_RULE",
-              version: "2026.11.3",
-              approval_status: "APPROVED"
+              version: VICTORIA_CONTRACT_VERSION,
+              approval_status: "APPROVED",
+              is_active: true,
+              priority: 90
             });
             if (error) { errors.push(doc.title); } else { created++; }
           } catch { errors.push(doc.title); }
@@ -754,15 +876,24 @@ Escreva em formato altamente profissional, com dados baseados na série de métr
       ? 0.65
       : Math.min(0.3, Math.max(0.1, Number(body.temperature ?? 0.2)));
 
-    // Registrar telemetria do VictoriaAnalysisContext se fornecido
+    const requestStartedAt = Date.now();
+    const isScopedSingleEntity =
+      Boolean(analysisContext && typeof analysisContext === "object") &&
+      ["campaign", "adset", "ad"].includes(String(analysisContext.entity_level || "")) &&
+      Boolean(analysisContext.entity_id);
+    const scopedEntityExternalId = isScopedSingleEntity ? String(analysisContext.external_id || analysisContext.entity_id || "") : "";
+    const scopedEntityInternalId = isScopedSingleEntity && analysisContext.internal_id ? String(analysisContext.internal_id) : "";
+    const requireFull10Sections = body.requireFull10Sections !== false;
+
+    // Registrar telemetria inicial do VictoriaAnalysisContext se fornecido
     if (analysisContext && typeof analysisContext === "object" && analysisContext.request_id) {
       try {
         await supabase.from("victoria_analysis_logs").insert({
           user_id: user.id,
           request_id: String(analysisContext.request_id),
           analysis_context_hash: String(analysisContext.analysis_context_hash || "ctx_server"),
-          contract_version: String(analysisContext.contract_version || "2026.11.3"),
-          prompt_version: String(analysisContext.prompt_version || "2026.11.3-senior-9part"),
+          contract_version: VICTORIA_CONTRACT_VERSION,
+          prompt_version: VICTORIA_PROMPT_VERSION,
           model_version: String(userModelName),
           source_surface: String(analysisContext.source_surface || "victoria_hub"),
           route: String(analysisContext.route || "/victoria"),
@@ -772,7 +903,9 @@ Escreva em formato altamente profissional, com dados baseados na série de métr
           entity_name: String(analysisContext.entity_name || ""),
           metric_category: String(analysisContext.result_indicator?.category || "UNKNOWN"),
           official_result_label: String(analysisContext.result_indicator?.cost_label || ""),
-          confidence_level: String(analysisContext.confidence_level || "media"),
+          confidence_level: String(analysisContext.confidence_level || "baixa"),
+          action_mode: operationalMode,
+          validation_status: "PENDING",
           latency_ms: 0,
           used_fallback: false,
           aborted: false,
@@ -791,25 +924,45 @@ Escreva em formato altamente profissional, com dados baseados na série de métr
       (allAdAccounts || []).map((acc: any) => [acc.id, acc.name] as [string, string])
     );
 
-    // 2. Campanhas com paginação completa (suporta todas as 18+ contas sem limite de 1.000 linhas)
+    // 2. Campanhas com paginação completa (ou estritamente isolada quando entity_level=campaign/adset/ad)
     const allCampaigns: any[] = [];
-    for (let from = 0; from < 5000; from += 1000) {
-      let campsQuery = (supabase as any)
+    if (isScopedSingleEntity) {
+      let scopedQ = (supabase as any)
         .from("campaigns")
-        .select("id, name, status, objective, budget, platform, ad_account_id, client_id, clients(id, name)")
-        .order("id")
-        .range(from, from + 999);
+        .select("id, external_id, name, status, objective, budget, platform, ad_account_id, client_id, clients(id, name)");
       if (selectedAccountId) {
-        campsQuery = campsQuery.eq("ad_account_id", selectedAccountId);
+        scopedQ = scopedQ.eq("ad_account_id", selectedAccountId);
       }
-      const { data: campPage, error: campsErr } = await campsQuery;
-      if (campsErr) {
-        console.error("Error fetching campaigns:", campsErr);
-        break;
+      if (scopedEntityInternalId) {
+        scopedQ = scopedQ.eq("id", scopedEntityInternalId);
+      } else if (scopedEntityExternalId) {
+        scopedQ = scopedQ.or(`external_id.eq.${scopedEntityExternalId},id.eq.${scopedEntityExternalId}`);
       }
-      if (!campPage?.length) break;
-      allCampaigns.push(...campPage);
-      if (campPage.length < 1000) break;
+      const { data: scopedRows, error: scopedErr } = await scopedQ.limit(5);
+      if (scopedErr) {
+        console.error("Error fetching scoped campaign:", scopedErr);
+      } else if (Array.isArray(scopedRows) && scopedRows.length > 0) {
+        allCampaigns.push(...scopedRows);
+      }
+    } else {
+      for (let from = 0; from < 5000; from += 1000) {
+        let campsQuery = (supabase as any)
+          .from("campaigns")
+          .select("id, external_id, name, status, objective, budget, platform, ad_account_id, client_id, clients(id, name)")
+          .order("id")
+          .range(from, from + 999);
+        if (selectedAccountId) {
+          campsQuery = campsQuery.eq("ad_account_id", selectedAccountId);
+        }
+        const { data: campPage, error: campsErr } = await campsQuery;
+        if (campsErr) {
+          console.error("Error fetching campaigns:", campsErr);
+          break;
+        }
+        if (!campPage?.length) break;
+        allCampaigns.push(...campPage);
+        if (campPage.length < 1000) break;
+      }
     }
 
     // 2b. Buscar meta configurada na tabela alert_thresholds (precedência de metas ID 27)
@@ -911,10 +1064,12 @@ Escreva em formato altamente profissional, com dados baseados na série de métr
       }
     }
 
-    // Janela padrão: 30 dias (se nenhuma data detectada)
+    // Janela: usa estritamente o periodo canônico do analysisContext quando em modo escopado
+    const ctxDateFrom = String(analysisContext?.period?.date_from || analysisContext?.period?.start_date || "").slice(0, 10);
+    const ctxDateTo = String(analysisContext?.period?.date_to || analysisContext?.period?.end_date || "").slice(0, 10);
     const defaultStart = new Date(todayRef); defaultStart.setDate(defaultStart.getDate() - 30);
-    const startDateStr = dynamicStartDate || defaultStart.toISOString().split("T")[0];
-    const endDateStr   = dynamicEndDate   || isoToday;
+    const startDateStr = (isScopedSingleEntity && ctxDateFrom) ? ctxDateFrom : (dynamicStartDate || ctxDateFrom || defaultStart.toISOString().split("T")[0]);
+    const endDateStr   = (isScopedSingleEntity && ctxDateTo)   ? ctxDateTo   : (dynamicEndDate   || ctxDateTo   || isoToday);
 
     let dbMetrics: any[] = [];
     if (campaignIds.length > 0) {
@@ -1229,7 +1384,7 @@ Escreva em formato altamente profissional, com dados baseados na série de métr
         const avgMqlMin = Math.round(avgMqlMs / 60000);
         timeToMQLText = `${avgMqlMin} minutos`;
       } else {
-        timeToMQLText = "12 minutos (Média do histórico da NC)";
+        timeToMQLText = "Sem dados suficientes registrados no período";
       }
 
       if (sqlTimes.length > 0) {
@@ -1237,7 +1392,7 @@ Escreva em formato altamente profissional, com dados baseados na série de métr
         const avgSqlHours = Math.round((avgSqlMs / 3600000) * 10) / 10;
         timeToSQLText = `${avgSqlHours} horas`;
       } else {
-        timeToSQLText = "78 horas (Média do histórico da NC - Gargalo Crítico)";
+        timeToSQLText = "Sem dados suficientes registrados no período";
       }
     }
 
@@ -1408,7 +1563,13 @@ DIRETRIZES TÉCNICAS E ESTRATÉGICAS DE MARKETING AUTOMOTIVO:
 GROUNDING DE TEMPO E DATAS:
 ${timeMetadata}
 
-PERÍODO DOS DADOS CARREGADOS: ${startDateStr} até ${endDateStr} | Total investido: R$ ${totalInvest.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} | Campanhas com dados: ${campaigns.length}
+${isScopedSingleEntity ? `ESCOPO ESTRITAMENTE ISOLADO (ENTIDADE ÚNICA — PROIBIDO CITAR OUTRAS CAMPANHAS OU RESUMO GLOBAL DA CONTA):
+- Entidade: ${analysisContext?.entity_name || ""} (${analysisContext?.entity_id || ""})
+- Conta: ${analysisContext?.ad_account_name || ""} (${analysisContext?.ad_account_id || ""})
+- Período: ${startDateStr} até ${endDateStr} (${ctxDaysCount} dia(s))
+- Categoria / Evento Oficial: ${analysisContext?.result_indicator?.category || "UNKNOWN"} | Indicador Oficial: ${analysisContext?.result_indicator?.cost_label || "Custo por resultado"}
+- REGISTRO DIÁRIO DESTA ENTIDADE:
+${dailySeriesText}` : `PERÍODO DOS DADOS CARREGADOS: ${startDateStr} até ${endDateStr} | Total investido: R$ ${totalInvest.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} | Campanhas com dados: ${campaigns.length}
 
 RESUMO POR CLIENTE (período acima):
 ${clientSummaryCtx}
@@ -1418,12 +1579,6 @@ ${contextData}
 
 TABELA DIÁRIA — Data | Cliente | Plataforma | Campanha | Gasto | Leads/Conversões | Cliques | Impressões:
 ${dailySeriesText}
-
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-ROTEAMENTO MULTIAGENTE — SUB-AGENTE ATIVO:
-→ ${subAgentLabel[intent]}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 DADOS SOCIAIS (Meta / Instagram / Facebook):
 PÁGINAS CONECTADAS:
@@ -1440,86 +1595,117 @@ ${funnelsCtx}
 
 LATÊNCIA ATUAL DE JORNADA (MÉTRICA DE EVENTOS DO FUNIL):
 - Tempo Médio de Conversão (Time to MQL): ${timeToMQLText}
-- Tempo Médio de Agendamento (Time to SQL): ${timeToSQLText}
+- Tempo Médio de Agendamento (Time to SQL): ${timeToSQLText}`}
 
-DIRETRIZES DE AUDITORIA DE FUNIS E CRO (MUITO IMPORTANTE):
-1. Quando solicitada a auditoria de funis ou de gargalos, analise os atritos e fricções entre as etapas.
-2. Identifique gargalos críticos, especialmente quando a taxa de conversão local cai drasticamente (como de 65% para 15% - um atrito de 85%).
-3. Use os tempos de jornada calculados: compare o Time to MQL (ex. de 12 minutos - excelente) com o Time to SQL (ex. de 78 horas - crítico, fazendo o lead esfriar).
-4. Proponha soluções práticas para eliminação de fricção:
-   - Automatização instantânea de contatos pós-formulário via WhatsApp (reduzindo tempo de agendamento de 78h para menos de 10 min).
-   - Simplificação de formulários (redução de atrito na captura de dados).
-   - Implementação de CTAs de agendamento direto na página de obrigado (como agendador integrado tipo Calendly ou WhatsApp direto).
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ROTEAMENTO MULTIAGENTE — SUB-AGENTE ATIVO:
+→ ${subAgentLabel[intent]}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-REGRAS DE RESPOSTA:
+DIRETRIZES DE AUDITORIA DE FUNIS E CRO:
+1. Analise atritos e fricções reais observados entre etapas sem inventar percentuais não presentes nos dados.
+2. Compare apenas métricas e intervalos efetivamente registrados (Time to MQL e Time to SQL reais) antes de recomendar automação ou ajustes.
+
+REGRAS DE RESPOSTA (${VICTORIA_CONTRACT_VERSION}):
 1. Sempre responda em Português Brasileiro usando formatação markdown limpa.
-2. Responda diretamente e aja como uma estrategista sênior dedicada. Nunca fale como uma IA.
-3. Se o usuário perguntar sobre o fim de semana, ontem, ou datas específicas, calcule e retorne os dados exatos somados da tabela diária e faça uma análise estratégica focada no mercado automotivo.
-4. **AVALIAÇÃO VISUAL DE IMAGENS (MULTIMODALIDADE):**
-   - Se o usuário anexar uma imagem à mensagem, comente sobre fotos reais vs catálogo, legibilidade de textos no mobile, oferta e chamadas para ação. Seja construtiva.
-5. **MÉTRICAS CORRETAS POR OBJETIVO — REGRA CRÍTICA DE UNIDADES (CONTRATO 2026.11.3):**
-   Use sempre a coluna "Resultado correto pelo objetivo" da seção CAMPANHAS DETALHADAS e respeite estritamente a tabela oficial de indicadores:
-   - 👁️ *Alcance / Reconhecimento (REACH / OUTCOME_AWARENESS)* → resultado primário = **pessoas alcançadas**, indicador oficial de custo = **Custo por 1.000 pessoas alcançadas** `(spend / reach) * 1000`, e secundário = **CPM (Custo por 1.000 impressões)**. **PROIBIDO** chamar esse custo de "CPL", "CPA" ou "Custo por conversa", e **PROIBIDO** compará-lo com o custo por conversa de campanhas de Mensagens!
-   - 💬 *Mensagens / WhatsApp (MESSAGES)* → resultado primário = **conversas iniciadas**, indicador oficial de custo = **Custo por conversa** `spend / messaging_conversation_started_7d`.
-   - 📸 *Visitas ao Perfil do Instagram (INSTAGRAM_PROFILE)* → resultado primário = **visitas ao perfil**, indicador oficial = **Custo por visita ao perfil** (`spend / instagram_profile_visits`). **PROIBIDO** chamar de "CPL".
+2. Aja como estrategista sênior dedicada, clara e factual. Nunca invente números fora dos dados recebidos.
+3. **AVALIAÇÃO VISUAL DE IMAGENS (MULTIMODALIDADE):**
+   - Se o usuário anexar imagem, comente sobre clareza da oferta, legibilidade mobile e chamada para ação.
+4. **MÉTRICAS CORRETAS POR OBJETIVO — REGRA CRÍTICA DE UNIDADES (CONTRATO ${VICTORIA_CONTRACT_VERSION}):**
+   - 👁️ *Alcance / Reconhecimento (REACH / OUTCOME_AWARENESS)* → resultado primário = **pessoas alcançadas**, indicador oficial de custo = **Custo por 1.000 pessoas alcançadas** \`(spend / reach) * 1000\`, secundário = **CPM**. **PROIBIDO** usar "CPL", "CPA", "Custo por conversa" ou comparar com campanha de Mensagens!
+   - 💬 *Mensagens / WhatsApp (MESSAGES)* → resultado primário = **conversas iniciadas**, indicador oficial = **Custo por conversa**.
+   - 📸 *Visitas ao Perfil do Instagram (INSTAGRAM_PROFILE)* → resultado primário = **visitas ao perfil**, indicador oficial = **Custo por visita ao perfil**. **PROIBIDO** usar "CPL".
    - 🌐 *Visualizações da Página de Destino (LANDING_PAGE_VIEWS)* → resultado primário = **visualizações da página de destino**, indicador oficial = **Custo por visualização da página de destino**.
-   - 👆 *Cliques no Link (LINK_CLICKS)* → resultado primário = **cliques no link**, indicador oficial = **CPC (custo por clique no link)** (`spend / link_clicks`), distinto de todos os cliques (`all_clicks`).
+   - 👆 *Cliques no Link (LINK_CLICKS)* → resultado primário = **cliques no link**, indicador oficial = **CPC (custo por clique no link)**, distinto de todos os cliques (\`all_clicks\`).
    - 🎯 *Leads / Cadastros (LEADS)* → resultado primário = **leads**, indicador oficial = **CPL (custo por lead)**.
    - 🛒 *Compras (PURCHASES)* → resultado primário = **compras**, indicadores oficiais = **CPA (custo por compra)** e **ROAS**.
-   - **PROIBIÇÃO DE COMPARAÇÃO ENTRE UNIDADES DIFERENTES:** Nunca compare grandezas de denominadores diferentes (ex.: CPM por 1.000 impressões com Custo por conversa ou CPL).
-   - **ESTRUTURA OBRIGATÓRIA DE RESPOSTA ANALÍTICA (9 PARTES):**
-     Quando estiver diagnosticando uma campanha, conjunto, anúncio ou conta, comece SEMPRE respondendo explicitamente:
-     **"O que esta campanha foi configurada para otimizar?"**
-     E estruture o diagnóstico em:
-     1. **Resumo executivo** (entidade, período, objetivo, indicador oficial e status geral);
-     2. **Leitura técnica das métricas** (`[FATO OBSERVADO]`: gasto, resultado primário, custo por resultado oficial, impressões, alcance, frequência, cliques de link vs todos os cliques, CTR link vs CTR total, CPM e CPC link);
-     3. **Diagnóstico por hipótese** (separando explicitamente `[FATO OBSERVADO]`, `[INFERÊNCIA]` e `[HIPÓTESE]`);
-     4. **Limitações da análise** (janela curta de 1 dia, campos de criativo/copy/público/CRM ausentes);
-     5. **Recomendações priorizadas** (`[RECOMENDAÇÃO]`: P1, P2, P3 com ação, justificativa, métrica afetada, impacto esperado, risco e condição de reversão — em janela de 1 dia, recomende monitorar antes de pausar definitivamente);
-     6. **Próximas verificações sugeridas**.
+   - **PROIBIÇÃO DE COMPARAÇÃO ENTRE UNIDADES DIFERENTES:** Nunca compare grandezas de denominadores diferentes.
+   - **ESTRUTURA OBRIGATÓRIA DE RESPOSTA ANALÍTICA (10 SEÇÕES EM ORDEM EXATA):**
+     Comece SEMPRE com **"O que esta campanha foi configurada para otimizar?"** e estruture exatamente nestas 10 seções:
+     1. \`#### 1. Escopo analisado\`
+     2. \`#### 2. Objetivo e evento oficial\`
+     3. \`#### 3. Leitura factual\`
+     4. \`#### 4. Indicadores primários e secundários\`
+     5. \`#### 5. Limitações e dados ausentes\`
+     6. \`#### 6. Hipóteses\`
+     7. \`#### 7. Recomendações seguras\`
+     8. \`#### 8. Plano de validação\`
+     9. \`#### 9. Nível de confiança\`
+     10. \`#### 10. Fontes e documentos utilizados\`
 
-6. **RECOMENDAÇÃO DE AÇÃO EM 1-CLIQUE (GOVERNANÇA):**
-   - ${isReadOnlyRequest
-     ? "MODO SOMENTE LEITURA ATIVO PARA ESTA SOLICITAÇÃO: Responda apenas com análise, ranking e diagnóstico baseados nos dados. É TERMINANTEMENTE PROIBIDO emitir blocos `json:action` ou propor execução de alterações."
-     : `Se o operador solicitou alteração e você recomendar ação prática de otimização, inclua no final o bloco JSON especial (nunca marque risco baixo para alteração mutável):
-   \`\`\`json:action
-   {
-     "type": "update_budget",
-     "campaignId": "ID_DA_CAMPANHA",
-     "campaignName": "NOME_DA_CAMPANHA",
-     "value": 150.00,
-     "ruleId": "victoria-budget-adjustment"
-   }
-   \`\`\`
-   Ou:
-   \`\`\`json:action
-   {
-     "type": "pause_campaign",
-     "campaignId": "ID_DA_CAMPANHA",
-     "campaignName": "NOME_DA_CAMPANHA",
-     "ruleId": "victoria-pause-underperforming"
-   }
-   \`\`\`
-   Use apenas uma dessas se e somente se o usuário pediu ação mutável.`}`;
+5. **MODO OPERACIONAL PADRÃO (SOMENTE LEITURA):**
+   - ${operationalMode === "ACTION_PROPOSAL"
+     ? `APROVAÇÃO EXPLÍCITA DE PROPOSTA ATIVA: Inclua no final proposta \`json:action\` apenas com campaignId numérico do Meta, orçamento atual conhecido, preview e rollback.`
+     : "MODO READ_ONLY_ANALYSIS ATIVO: É TERMINANTEMENTE PROIBIDO emitir blocos `json:action`, sugerir orçamento novo ou propor mutação automática no Meta Ads."}`;
+
+    const scopedHeaderSystemPrompt = `Você é a Victoria AI, Estrategista Sênior da NC Performance operando sob o Contrato Canônico ${VICTORIA_CONTRACT_VERSION} (${VICTORIA_PROMPT_VERSION}).
+- Trate o usuário pelo primeiro nome: **${userName}**. Nunca use "Comandante", "Chefe" ou apelidos.
+- Em análise de campanha única, analise EXCLUSIVAMENTE a entidade informada no Contrato Canônico.`;
+
+    const normalizedSystemPrompt = isScopedSingleEntity
+      ? `${scopedHeaderSystemPrompt}\n${defaultSystemPrompt.slice(defaultSystemPrompt.indexOf("ESCOPO ESTRITAMENTE ISOLADO"))}`
+      : defaultSystemPrompt;
 
     // =========================================================================
-    // 3. EXECUÇÃO RAG CURADO (RETRIEVAL-AUGMENTED GENERATION — APENAS APPROVED)
+    // 3. EXECUÇÃO RAG CURADO (APENAS APPROVED + FALLBACK LEXICAL + CITAÇÕES)
     // =========================================================================
     let knowledgeCtx = "";
+    const ragCitations: ServerRagCitation[] = [];
+    const seenCitationIds = new Set<string>();
+    const addCitation = (k: any) => {
+      const cid = String(k?.id || "");
+      if (!cid || seenCitationIds.has(cid)) return;
+      seenCitationIds.add(cid);
+      ragCitations.push({
+        id: cid,
+        title: String(k?.title || "Documento Interno"),
+        version: String(k?.version || VICTORIA_CONTRACT_VERSION),
+        evidence_level: String(k?.evidence_level || "INTERNAL_RULE"),
+        approval_status: String(k?.approval_status || "APPROVED"),
+        source: String(k?.source || "Base de Conhecimento NC Suite"),
+      });
+    };
+
     try {
       const { data: allKnowledge, error: kErr } = await supabase
         .from("victoria_knowledge")
-        .select("category, title, content, source, evidence_level, approval_status")
-        .eq("user_id", user.id)
+        .select("id, category, title, content, source, evidence_level, approval_status, version, objective, priority")
         .eq("is_active", true)
         .eq("approval_status", "APPROVED")
+        .not("evidence_level", "in", "(UNVERIFIED,OPINION)")
+        .or(`user_id.eq.${user.id},evidence_level.in.(OFFICIAL_DOC,INTERNAL_RULE)`)
         .order("priority", { ascending: false })
         .order("created_at", { ascending: false })
-        .limit(20);
-      if (!kErr && allKnowledge && allKnowledge.length > 0) {
-        knowledgeCtx = allKnowledge
+        .limit(30);
+
+      if (!kErr && Array.isArray(allKnowledge) && allKnowledge.length > 0) {
+        const lastMsgLower = String(messages[messages.length - 1]?.content || "").toLowerCase();
+        const catKeyword = String(analysisContext?.result_indicator?.category || "").toLowerCase();
+        const entityKeyword = String(analysisContext?.entity_name || "").toLowerCase();
+        const combinedQueryTerms = `${lastMsgLower} ${catKeyword} ${entityKeyword}`
+          .split(/[^a-zà-ú0-9]+/i)
+          .filter((t) => t.length >= 3);
+
+        const rankedDocs = allKnowledge
           .filter((k: any) => k.approval_status === "APPROVED" && k.evidence_level !== "UNVERIFIED" && k.evidence_level !== "OPINION")
-          .map((k: any) => `[${String(k.category || "").toUpperCase()} | Fonte: ${String(k.source || "Manual Interno")} | Evidência: ${String(k.evidence_level || "INTERNAL_RULE")}] ${String(k.title || "")}:\n${String(k.content || "").slice(0, 600)}`)
+          .map((k: any) => {
+            const hay = `${k.title || ""} ${k.category || ""} ${k.objective || ""} ${k.content || ""}`.toLowerCase();
+            let score = Number(k.priority || 50) / 100;
+            if (catKeyword && (String(k.objective || "").toLowerCase().includes(catKeyword) || hay.includes(catKeyword))) {
+              score += 5;
+            }
+            if (k.evidence_level === "OFFICIAL_DOC") score += 2;
+            for (const term of combinedQueryTerms) {
+              if (hay.includes(term)) score += 1;
+            }
+            return { doc: k, score };
+          })
+          .sort((a, b) => b.score - a.score)
+          .slice(0, Math.max(4, userRagCount));
+
+        rankedDocs.forEach(({ doc }) => addCitation(doc));
+        knowledgeCtx = rankedDocs
+          .map(({ doc: k }) => `[ID: ${k.id} | ${String(k.category || "").toUpperCase()} | Fonte: ${String(k.source || "Manual Interno")} | Evidência: ${String(k.evidence_level || "INTERNAL_RULE")} | v${String(k.version || VICTORIA_CONTRACT_VERSION)}] ${String(k.title || "")}:\n${String(k.content || "").slice(0, 650)}`)
           .join("\n\n---\n\n");
       }
     } catch (_kErr) {
@@ -1528,10 +1714,10 @@ REGRAS DE RESPOSTA:
 
     let retrievedContext = externalContext || "";
     if (!retrievedContext && GEMINI_API_KEY && messages && messages.length > 0) {
-      const lastUserMessage = messages[messages.length - 1].content;
-      if (lastUserMessage && lastUserMessage.trim() !== "") {
+      const lastUserMessage = String(messages[messages.length - 1]?.content || "").trim();
+      const semanticQuery = `${lastUserMessage} ${analysisContext?.result_indicator?.category || ""} ${analysisContext?.result_indicator?.cost_label || ""}`.trim();
+      if (semanticQuery) {
         try {
-          // Obter o embedding da última pergunta do usuário
           const embedRes = await fetch(
             `https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent?key=${GEMINI_API_KEY}`,
             {
@@ -1539,9 +1725,7 @@ REGRAS DE RESPOSTA:
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
                 model: "models/text-embedding-004",
-                content: {
-                  parts: [{ text: lastUserMessage }]
-                }
+                content: { parts: [{ text: semanticQuery }] }
               })
             }
           );
@@ -1550,7 +1734,6 @@ REGRAS DE RESPOSTA:
             const embedData = await embedRes.json();
             const embedding = embedData.embedding?.values;
             if (embedding) {
-              // Buscar conhecimentos similares usando a RPC do Supabase
               const { data: matchData, error: matchErr } = await supabase.rpc(
                 "match_victoria_knowledge",
                 {
@@ -1564,15 +1747,16 @@ REGRAS DE RESPOSTA:
               if (matchErr) {
                 console.error("Erro na busca de similaridade RAG:", matchErr);
               } else if (matchData && matchData.length > 0) {
+                matchData.forEach((k: any) => addCitation(k));
                 retrievedContext = matchData
-                  .map((k: any) => `[CONHECIMENTO EXTRAÍDO - Categoria: ${k.category}] ${k.title}: ${k.content}`)
+                  .map((k: any) => `[ID: ${k.id} | Categoria: ${k.category} | Evidência: ${k.evidence_level || "INTERNAL_RULE"}] ${k.title}: ${k.content}`)
                   .join("\n\n");
-                console.log(`[VICTORIA] RAG Ativado: ${matchData.length} blocos de conhecimento recuperados.`);
+                console.log(`[VICTORIA] RAG Vetorial Ativado: ${matchData.length} blocos recuperados.`);
               }
             }
           }
         } catch (ragErr) {
-          console.error("Falha ao computar RAG para a pergunta:", ragErr);
+          console.error("Falha ao computar RAG vetorial:", ragErr);
         }
       }
     }
@@ -1611,21 +1795,28 @@ REGRAS DE RESPOSTA:
       }
     }
 
-    let promptWithRAG = userSystemPrompt || defaultSystemPrompt;
-    promptWithRAG += `\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nREGRA MANDATÓRIA DE TRATAMENTO & PRECISÃO:\n- Você DEVE se dirigir ao usuário SEMPRE pelo primeiro nome dele: **${userName}**.\n- É TERMINANTEMENTE PROIBIDO utilizar a palavra "Comandante", "Chefe", "Usuário" ou apelidos similares. Trate-o por **${userName}**.\n- Ao cumprimentar no início da resposta, use o nome dele: "Olá, ${userName}!", "Fala, ${userName}!". NUNCA use "Comandante".\n- SEMPRE preserve o nome exato do evento real de cada campanha (ex: "conversas iniciadas", "visitas ao perfil", "visualizações de página", "pessoas alcançadas") e NUNCA troque para "leads de formulário" se o evento for conversa/visita/alcance.\n- Quando resultados forem 0 e custo não calculável, informe "Não calculável" e NUNCA R$ 0,00.\n- ${isReadOnlyRequest ? "MODO SOMENTE LEITURA ATIVO: PROIBIDO emitir qualquer bloco json:action nesta resposta." : "Ações mutáveis exigem proposta estruturada com aprovação humana explícita."}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+    let promptWithRAG = isScopedSingleEntity
+      ? normalizedSystemPrompt
+      : (userSystemPrompt ? `${normalizedSystemPrompt}\n\nPREFERÊNCIA COMPLEMENTAR DO USUÁRIO (SUBORDINADA ÀS REGRAS CANÔNICAS):\n${userSystemPrompt}` : normalizedSystemPrompt);
+
+    promptWithRAG += `\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nREGRA MANDATÓRIA DE TRATAMENTO & PRECISÃO (${VICTORIA_CONTRACT_VERSION}):\n- Dirija-se ao usuário SEMPRE pelo primeiro nome dele: **${userName}**. PROIBIDO usar "Comandante", "Chefe" ou "Usuário".\n- SEMPRE preserve o evento oficial da entidade (ex: "conversas iniciadas", "visitas ao perfil", "visualizações de página", "pessoas alcançadas") e NUNCA converta para "CPL" quando o objetivo for alcance/visitas/mensagens/cliques.\n- Quando resultados forem 0 e custo não calculável, informe "Não calculável" e NUNCA R$ 0,00.\n- ${operationalMode === "ACTION_PROPOSAL" ? "Ações mutáveis exigem proposta estruturada com aprovação humana explícita." : "MODO READ_ONLY_ANALYSIS ATIVO: PROIBIDO emitir json:action ou propor alteração automática."}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+
     if (analysisContext && typeof analysisContext === "object") {
       const cat = String(analysisContext.result_indicator?.category || "UNKNOWN");
       const costLbl = String(analysisContext.result_indicator?.cost_label || "Custo por resultado");
       const forbidden = Array.isArray(analysisContext.result_indicator?.forbidden_labels)
         ? analysisContext.result_indicator.forbidden_labels.join(", ")
         : "";
-      promptWithRAG += `\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nCONTRATO CANÔNICO DE CONTEXTO ATIVO (VictoriaAnalysisContext v${analysisContext.contract_version || "2026.11.3"}):\n- Request ID: ${analysisContext.request_id || "n/a"} | Context Hash: ${analysisContext.analysis_context_hash || "n/a"}\n- Entidade Analisada: [${analysisContext.entity_level || "campaign"}] ${analysisContext.entity_name || ""} (ID: ${analysisContext.entity_id || ""})\n- Conta: ${analysisContext.ad_account_name || ""} (${analysisContext.ad_account_id || ""})\n- Período: ${analysisContext.period?.start_date || ""} a ${analysisContext.period?.end_date || ""} (${analysisContext.period?.days || 1} dia(s))\n- Categoria / Evento Oficial: ${cat} | Indicador Oficial de Custo: **${costLbl}**\n- Rótulos PROIBIDOS para esta entidade: ${forbidden || "Nenhum"}\n- Nível de Confiança Calibrado: **${String(analysisContext.confidence_level || "media").toUpperCase()}** (${analysisContext.confidence_reason || ""})\n- Campos Ausentes: ${Array.isArray(analysisContext.missing_fields) ? analysisContext.missing_fields.join(", ") : "nenhum"}\n- REGRA DE ISOLAMENTO ABSOLUTO: Analise EXCLUSIVAMENTE a entidade "${analysisContext.entity_name || ""}". NUNCA cite nomes, métricas, CPM ou custos de outras campanhas da conta nesta resposta!\n- REGRA DE ABERTURA OBRIGATÓRIA: Inicie sua resposta com a seção **"O que esta campanha foi configurada para otimizar?"** e siga rigorosamente os blocos [FATO OBSERVADO], [INFERÊNCIA], [HIPÓTESE] e [RECOMENDAÇÃO].\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+      const siblingList = Array.isArray(analysisContext.isolated_sibling_blocklist)
+        ? analysisContext.isolated_sibling_blocklist.join(" | ")
+        : "";
+      promptWithRAG += `\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nCONTRATO CANÔNICO DE CONTEXTO ATIVO (VictoriaAnalysisContext ${VICTORIA_CONTRACT_VERSION}):\n- Request ID: ${analysisContext.request_id || "n/a"} | Context Hash: ${analysisContext.analysis_context_hash || "n/a"}\n- Modo Operacional: ${operationalMode}\n- Entidade Analisada: [${analysisContext.entity_level || "campaign"}] ${analysisContext.entity_name || ""} (ID: ${analysisContext.entity_id || ""})\n- Conta: ${analysisContext.ad_account_name || ""} (${analysisContext.ad_account_id || ""})\n- Período: ${ctxDateFrom || startDateStr} a ${ctxDateTo || endDateStr} (${ctxDaysCount} dia(s))\n- Categoria / Evento Oficial: ${cat} | Indicador Oficial de Custo: **${costLbl}**\n- Métricas Oficiais no Contrato: ${JSON.stringify(analysisContext.metrics || {})}\n- Rótulos PROIBIDOS para esta entidade: ${forbidden || "Nenhum"}\n- Nível de Confiança Calibrado: **${String(analysisContext.confidence_level || "baixa").toUpperCase()}** (${analysisContext.confidence_justification || analysisContext.confidence_reason || ""})\n- Campos Ausentes: ${Array.isArray(analysisContext.missing_fields) ? analysisContext.missing_fields.join(", ") : "nenhum"}\n- REGRA DE ISOLAMENTO ABSOLUTO: Analise EXCLUSIVAMENTE a entidade "${analysisContext.entity_name || ""}". É TERMINANTEMENTE PROIBIDO citar estas entidades irmãs da conta: ${siblingList || "outras campanhas"}.\n- CITAÇÃO OBRIGATÓRIA DE FONTES (Seção 10): Cite os IDs/títulos reais dos documentos RAG recuperados abaixo.\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
     }
     if (knowledgeCtx) {
-      promptWithRAG += `\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nBASE DE CONHECIMENTO CURADA NC PERFORMANCE (APENAS DOCUMENTOS APROVADOS — Prioridade: 1º Dados Reais da Conta > 2º Metas da Conta > 3º Regras Internas):\n\n${knowledgeCtx}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+      promptWithRAG += `\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nBASE DE CONHECIMENTO CURADA NC PERFORMANCE (APENAS APPROVED — Prioridade: 1º Dados Reais da Conta > 2º Metas da Conta > 3º Documentos RAG abaixo):\n\n${knowledgeCtx}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
     }
     if (retrievedContext && retrievedContext !== knowledgeCtx) {
-      promptWithRAG += `\n\nCONHECIMENTO ESPECÍFICO RECUPERADO POR SIMILARIDADE:\n${retrievedContext}`;
+      promptWithRAG += `\n\nCONHECIMENTO VETORIAL RECUPERADO (${ragCitations.length} doc(s)):\n${retrievedContext}`;
     }
     if (webSearchContext) {
       promptWithRAG += webSearchContext;
@@ -1685,19 +1876,39 @@ REGRAS DE RESPOSTA:
       };
     }
 
-    const sanitizeServerOutput = (rawText: string): string => {
-      let cleaned = String(rawText || "");
-      const activeCat = String(analysisContext?.result_indicator?.category || "");
-      const activeCostLabel = String(analysisContext?.result_indicator?.cost_label || "");
-      if (activeCat === "REACH" || activeCat === "INSTAGRAM_PROFILE" || activeCat === "LANDING_PAGE_VIEWS" || activeCat === "LINK_CLICKS") {
-        cleaned = cleaned.replace(/\bCPL\b/g, activeCostLabel || "Custo por resultado");
-      }
-      cleaned = cleaned
-        .replace(/54%\s*mais\s*(conversas|cliques|leads)/gi, "maior taxa de engajamento qualificado")
-        .replace(/80%\s*(de\s*)?(convers[aã]o|dos?\s+leads?\s+[eé]\s+perdido)/gi, "queda acentuada de aproveitamento comercial")
-        .replace(/financiamento\s+sem\s+consulta\s+(ao\s+)?(spc|serasa)/gi, "análise de financiamento sujeita a aprovação de crédito");
-      return cleaned;
+    const finalizeTelemetry = async (opts: { usedFallback: boolean; validationStatus: string }) => {
+      if (!analysisContext?.request_id) return;
+      try {
+        await supabase
+          .from("victoria_analysis_logs")
+          .update({
+            latency_ms: Date.now() - requestStartedAt,
+            used_fallback: opts.usedFallback,
+            validation_status: opts.validationStatus,
+            retrieved_doc_ids: ragCitations.map((c) => c.id),
+            rag_citations: ragCitations,
+            action_mode: operationalMode,
+          })
+          .eq("request_id", String(analysisContext.request_id));
+      } catch {}
     };
+
+    const buildResponseMetadata = () => ({
+      request_id: analysisContext?.request_id || null,
+      analysis_context_hash: analysisContext?.analysis_context_hash || null,
+      ad_account_id: analysisContext?.ad_account_id || selectedAccountId || null,
+      entity_level: analysisContext?.entity_level || null,
+      entity_id: analysisContext?.entity_id || null,
+      date_from: ctxDateFrom || startDateStr,
+      date_to: ctxDateTo || endDateStr,
+      result_indicator: analysisContext?.result_indicator || null,
+      contract_version: VICTORIA_CONTRACT_VERSION,
+      prompt_version: VICTORIA_PROMPT_VERSION,
+      operational_mode: operationalMode,
+      model_version: userModelName,
+      temperature: userTemperature,
+      rag_citations: ragCitations,
+    });
 
     if (fetchUrl) {
       try {
@@ -1711,22 +1922,81 @@ REGRAS DE RESPOSTA:
           if (shouldReturnJson) {
             const jsonPayload = await streamRes.json();
             const rawReply = jsonPayload?.choices?.[0]?.message?.content || "";
-            const cleanReply = sanitizeServerOutput(rawReply);
+            const guarded = enforceServerPostLlmGuardrails(
+              rawReply,
+              analysisContext,
+              ragCitations,
+              operationalMode,
+              requireFull10Sections
+            );
+            await finalizeTelemetry({
+              usedFallback: guarded.replacedByDeterministic,
+              validationStatus: guarded.replacedByDeterministic
+                ? `DETERMINISTIC_FALLBACK:${guarded.reasons.join("|")}`
+                : "PASSED",
+            });
             return new Response(JSON.stringify({
-              reply: cleanReply,
-              diagnosis: cleanReply,
-              content: cleanReply,
-              request_id: analysisContext?.request_id || null,
-              analysis_context_hash: analysisContext?.analysis_context_hash || null,
-              contract_version: "2026.11.3",
-              prompt_version: "2026.11.3-senior-9part",
-              model_version: userModelName,
-              temperature: userTemperature
+              reply: guarded.text,
+              diagnosis: guarded.text,
+              content: guarded.text,
+              replaced_by_deterministic: guarded.replacedByDeterministic,
+              guardrail_reasons: guarded.reasons,
+              ...buildResponseMetadata(),
             }), {
               headers: { ...corsHeaders, "Content-Type": "application/json" }
             });
           }
-          // Repassa a stream de eventos SSE diretamente!
+
+          // Modo SSE: se há analysisContext de entidade única, validar pós-LLM antes de entregar ao cliente
+          if (analysisContext && analysisContext.entity_id && streamRes.body) {
+            const reader = streamRes.body.getReader();
+            const decoder = new TextDecoder();
+            let buffer = "";
+            let assembled = "";
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) break;
+              buffer += decoder.decode(value, { stream: true });
+              const lines = buffer.split("\n");
+              buffer = lines.pop() || "";
+              for (const line of lines) {
+                const trimmed = line.trim();
+                if (!trimmed.startsWith("data: ") || trimmed === "data: [DONE]") continue;
+                try {
+                  const parsed = JSON.parse(trimmed.slice(6));
+                  const delta = parsed?.choices?.[0]?.delta?.content;
+                  if (typeof delta === "string") assembled += delta;
+                } catch {}
+              }
+            }
+            const guarded = enforceServerPostLlmGuardrails(
+              assembled,
+              analysisContext,
+              ragCitations,
+              operationalMode,
+              requireFull10Sections
+            );
+            await finalizeTelemetry({
+              usedFallback: guarded.replacedByDeterministic,
+              validationStatus: guarded.replacedByDeterministic
+                ? `SSE_FALLBACK:${guarded.reasons.join("|")}`
+                : "SSE_PASSED",
+            });
+            const encoderSse = new TextEncoder();
+            const metaEvent = `data: ${JSON.stringify({ victoria_meta: buildResponseMetadata() })}\n\n`;
+            const contentEvent = `data: ${JSON.stringify({ choices: [{ delta: { content: guarded.text } }] })}\n\n`;
+            return new Response(encoderSse.encode(`${metaEvent}${contentEvent}data: [DONE]\n\n`), {
+              headers: {
+                ...corsHeaders,
+                "Content-Type": "text/event-stream",
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+              }
+            });
+          }
+
+          // Repassa SSE para chat livre sem entity_id (ainda aplicando sanitização mínima por chunk se desejado)
+          await finalizeTelemetry({ usedFallback: false, validationStatus: "SSE_GENERAL_PASSED" });
           return new Response(streamRes.body, {
             headers: {
               ...corsHeaders,
@@ -1738,6 +2008,28 @@ REGRAS DE RESPOSTA:
         } else {
           const errText = await streamRes.text();
           console.error("[VICTORIA] Erro na stream do provedor:", streamRes.status, errText);
+          if (analysisContext && analysisContext.entity_id) {
+            const det = generateDeterministic10SectionAnalysis(analysisContext, ragCitations);
+            await finalizeTelemetry({ usedFallback: true, validationStatus: `PROVIDER_${streamRes.status}_FALLBACK` });
+            if (shouldReturnJson) {
+              return new Response(JSON.stringify({
+                reply: det,
+                diagnosis: det,
+                content: det,
+                replaced_by_deterministic: true,
+                guardrail_reasons: [`provider_http_${streamRes.status}`],
+                ...buildResponseMetadata(),
+              }), {
+                headers: { ...corsHeaders, "Content-Type": "application/json" }
+              });
+            }
+            const encDet = new TextEncoder();
+            const metaEvent = `data: ${JSON.stringify({ victoria_meta: buildResponseMetadata() })}\n\n`;
+            const contentEvent = `data: ${JSON.stringify({ choices: [{ delta: { content: det } }] })}\n\n`;
+            return new Response(encDet.encode(`${metaEvent}${contentEvent}data: [DONE]\n\n`), {
+              headers: { ...corsHeaders, "Content-Type": "text/event-stream" }
+            });
+          }
           if (shouldReturnJson) {
             return new Response(JSON.stringify({
               error: `Erro do provedor (${streamRes.status}): ${errText.slice(0, 300)}`,
@@ -1747,7 +2039,6 @@ REGRAS DE RESPOSTA:
               headers: { ...corsHeaders, "Content-Type": "application/json" }
             });
           }
-          // Retorna o erro real no SSE para diagnóstico
           const encoder2 = new TextEncoder();
           const debugMsg = `[ERRO ${streamRes.status}] ${errText.slice(0, 300)}`;
           const debugSse = `data: ${JSON.stringify({ choices: [{ delta: { content: debugMsg } }] })}\n\ndata: [DONE]\n\n`;
@@ -1760,14 +2051,33 @@ REGRAS DE RESPOSTA:
       }
     }
 
-    // Fallback SSE se nenhuma das streams funcionar
-    const fallbackText = `### 🤖 Victoria AI — Modo Analítico Local\n\nDesculpe, ${userName}, tive um problema de comunicação com o servidor de IA. Mas os dados do banco de dados continuam ativos. O que deseja auditar especificamente?`;
-    const encoder = new TextEncoder();
-    const sseChunk = `data: ${JSON.stringify({
-      choices: [{ delta: { content: fallbackText } }]
-    })}\n\ndata: [DONE]\n\n`;
+    // Fallback determinístico completo se nenhuma stream estiver disponível
+    const deterministicFallback = analysisContext && analysisContext.entity_id
+      ? generateDeterministic10SectionAnalysis(analysisContext, ragCitations)
+      : `### Victoria AI (${VICTORIA_CONTRACT_VERSION})\n\nDesculpe, ${userName}, houve indisponibilidade momentânea do provedor de IA. Os dados oficiais continuam ativos — informe qual conta ou campanha deseja auditar.`;
 
-    return new Response(encoder.encode(sseChunk), {
+    await finalizeTelemetry({ usedFallback: true, validationStatus: "PROVIDER_UNAVAILABLE_FALLBACK" });
+
+    if (shouldReturnJson) {
+      return new Response(JSON.stringify({
+        reply: deterministicFallback,
+        diagnosis: deterministicFallback,
+        content: deterministicFallback,
+        replaced_by_deterministic: true,
+        guardrail_reasons: ["provider_unavailable"],
+        ...buildResponseMetadata(),
+      }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" }
+      });
+    }
+
+    const encoder = new TextEncoder();
+    const metaFallback = `data: ${JSON.stringify({ victoria_meta: buildResponseMetadata() })}\n\n`;
+    const sseChunk = `data: ${JSON.stringify({
+      choices: [{ delta: { content: deterministicFallback } }]
+    })}\n\n`;
+
+    return new Response(encoder.encode(`${metaFallback}${sseChunk}data: [DONE]\n\n`), {
       headers: {
         ...corsHeaders,
         "Content-Type": "text/event-stream",

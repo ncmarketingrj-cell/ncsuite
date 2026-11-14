@@ -7,12 +7,15 @@ import {
   type MetricVector,
 } from "./metricsDomain.ts";
 
-export const VICTORIA_CONTRACT_VERSION = "2026.11.3";
-export const VICTORIA_PROMPT_VERSION = "2026.11.3-senior-9part";
+export const VICTORIA_CONTRACT_VERSION = "2026.11.4";
+export const VICTORIA_PROMPT_VERSION = "2026.11.4-senior-10part";
+export const VICTORIA_BUILD_TAG = "2026.11.4-e2e";
 export const VICTORIA_DEFAULT_ANALYTICAL_MODEL = "gemini-2.5-flash";
 export const VICTORIA_ANALYTICAL_TEMPERATURE = 0.2;
 export const VICTORIA_CREATIVE_TEMPERATURE = 0.65;
 export const VICTORIA_REQUEST_TIMEOUT_MS = 20000;
+export const VICTORIA_DEFAULT_OPERATIONAL_MODE = "READ_ONLY_ANALYSIS" as const;
+export type VictoriaOperationalMode = "READ_ONLY_ANALYSIS" | "ACTION_PROPOSAL";
 
 export type VictoriaSurfaceId =
   | "metricas"
@@ -411,6 +414,13 @@ export interface VictoriaAnalysisContext {
     attribution_window: string;
     source: string;
     allowed_comparable_metrics: string[];
+    forbidden_labels: string[];
+  };
+
+  operational_mode?: VictoriaOperationalMode;
+  isolated_sibling_blocklist?: {
+    names: string[];
+    distinctive_tokens: string[];
   };
 
   financial: {
@@ -597,7 +607,7 @@ export function calibrateAnalysisConfidence(params: {
   if (params.daysCount <= 2 || params.impressions < 500 || params.missingFields.length >= 4) {
     return {
       level: "baixa",
-      justification: `Confiança baixa-média (evidência limitada para conclusão causal definitiva): ${reasons.join("; ")}. As métricas brutas do período são exatas, mas recomendações estruturais exigem validação em janela maior.`,
+      justification: `Confiança BAIXA (evidência limitada para conclusão causal definitiva em janela de ${params.daysCount} dia(s)): ${reasons.join("; ")}. As métricas brutas do período são exatas, mas decisões estruturais de orçamento ou pausa exigem janela mínima de 3 a 7 dias.`,
     };
   }
 
@@ -673,6 +683,18 @@ export interface BuildVictoriaContextInput {
   rules_active?: string[];
   rag_documents?: CuratedRagDocument[];
   model_version?: string;
+  operational_mode?: VictoriaOperationalMode;
+  sibling_entities?: Array<{
+    id?: string;
+    external_id?: string;
+    name?: string;
+    spend?: number;
+    reach?: number;
+    impressions?: number;
+    cpm?: number;
+    cost_per_result?: number | null;
+    result_value?: number;
+  }>;
 }
 
 /**
@@ -877,7 +899,15 @@ export function buildVictoriaAnalysisContext(input: BuildVictoriaContextInput): 
       attribution_window: spec.attribution_window,
       source: "meta_insights_snapshot / metrics",
       allowed_comparable_metrics: spec.allowed_comparable_metrics,
+      forbidden_labels: spec.forbidden_labels,
     },
+
+    operational_mode: input.operational_mode || VICTORIA_DEFAULT_OPERATIONAL_MODE,
+    isolated_sibling_blocklist: buildSiblingIsolationBlocklist(
+      input.entity_name,
+      input.entity_id,
+      input.sibling_entities || []
+    ),
 
     financial: {
       spend,
@@ -1089,9 +1119,181 @@ export function buildSuggestedQuestionsForContext(
   }
 }
 
+export const MANDATORY_10_SECTION_TITLES = [
+  "Escopo analisado",
+  "Objetivo e evento oficial",
+  "Leitura factual",
+  "Indicadores primários e secundários",
+  "Limitações e dados ausentes",
+  "Hipóteses",
+  "Recomendações seguras",
+  "Plano de validação",
+  "Nível de confiança",
+  "Fontes e documentos utilizados",
+] as const;
+
+export function isLegacyVictoriaVersion(version?: string | null): boolean {
+  if (!version || typeof version !== "string") return true;
+  return version.trim() !== VICTORIA_CONTRACT_VERSION;
+}
+
+export function buildSiblingIsolationBlocklist(
+  currentEntityName: string,
+  currentEntityId: string,
+  siblings: Array<{
+    id?: string;
+    external_id?: string;
+    name?: string;
+    spend?: number;
+    reach?: number;
+    impressions?: number;
+    cpm?: number;
+    cost_per_result?: number | null;
+    result_value?: number;
+  }> = []
+): { names: string[]; distinctive_tokens: string[] } {
+  const normCurrent = String(currentEntityName || "").trim().toLowerCase();
+  const names: string[] = [];
+  const tokens = new Set<string>();
+
+  const fmtBrlVal = (n?: number | null) =>
+    typeof n === "number" && Number.isFinite(n) && n > 0
+      ? n.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+      : null;
+
+  for (const sib of siblings) {
+    if (!sib) continue;
+    const sid = String(sib.external_id || sib.id || "");
+    const sname = String(sib.name || "").trim();
+    if (sid && sid === String(currentEntityId)) continue;
+    if (sname && sname.toLowerCase() === normCurrent) continue;
+    if (sname && sname.length >= 6) {
+      names.push(sname);
+      // Palavras distintivas longas (>= 5 chars) exclusivas do nome da campanha irmã
+      const currentWords = new Set(
+        normCurrent
+          .split(/[^a-zà-ú0-9]+/i)
+          .filter((w) => w.length >= 4)
+      );
+      for (const word of sname.split(/[^a-zà-ú0-9]+/i)) {
+        const cleanW = word.trim();
+        if (cleanW.length >= 5 && !currentWords.has(cleanW.toLowerCase()) && !/^(campanha|meta|ads|copia|cópia|alcance|mensagens)$/i.test(cleanW)) {
+          tokens.add(cleanW);
+        }
+      }
+    }
+    const spendTok = fmtBrlVal(sib.spend);
+    if (spendTok && Number(sib.spend) >= 10) tokens.add(`R$ ${spendTok}`);
+    const cprTok = fmtBrlVal(sib.cost_per_result ?? null);
+    if (cprTok) tokens.add(`R$ ${cprTok}`);
+    const cpmTok = fmtBrlVal(sib.cpm);
+    if (cpmTok) tokens.add(`R$ ${cpmTok}`);
+    if (typeof sib.reach === "number" && sib.reach >= 1000) {
+      tokens.add(Math.round(sib.reach).toLocaleString("pt-BR"));
+    }
+  }
+
+  return {
+    names: Array.from(new Set(names)),
+    distinctive_tokens: Array.from(tokens),
+  };
+}
+
+export function detectCrossEntityLeakage(
+  text: string,
+  ctx?: Partial<VictoriaAnalysisContext> | null
+): { leaked: boolean; matches: string[] } {
+  const raw = String(text || "");
+  if (!raw || !ctx?.isolated_sibling_blocklist) {
+    return { leaked: false, matches: [] };
+  }
+  const ownTokens = new Set<string>();
+  const ownSpend = ctx.financial?.spend;
+  const ownReach = ctx.raw_metrics?.reach;
+  const ownImpr = ctx.raw_metrics?.impressions;
+  const ownResult = ctx.raw_metrics?.result_value;
+  const ownCpr = ctx.raw_metrics?.cost_per_result;
+  const ownCpm = ctx.raw_metrics?.cpm;
+  const fmtBrl = (v?: number | null) =>
+    typeof v === "number" && Number.isFinite(v)
+      ? `R$ ${v.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+      : "";
+  [ownSpend, ownCpr, ownCpm].forEach((n) => {
+    const f = fmtBrl(n);
+    if (f) ownTokens.add(f.toLowerCase());
+  });
+  [ownReach, ownImpr, ownResult].forEach((n) => {
+    if (typeof n === "number" && n > 0) ownTokens.add(Math.round(n).toLocaleString("pt-BR").toLowerCase());
+  });
+
+  const lowerText = raw.toLowerCase();
+  const matches: string[] = [];
+
+  for (const sibName of ctx.isolated_sibling_blocklist.names) {
+    if (sibName && lowerText.includes(sibName.toLowerCase())) {
+      matches.push(sibName);
+    }
+  }
+  for (const tok of ctx.isolated_sibling_blocklist.distinctive_tokens) {
+    const lt = tok.toLowerCase();
+    if (!lt || ownTokens.has(lt)) continue;
+    if (lowerText.includes(lt)) {
+      matches.push(tok);
+    }
+  }
+
+  return { leaked: matches.length > 0, matches };
+}
+
+export function hasAllMandatory10Sections(text: string): boolean {
+  const raw = String(text || "").toLowerCase();
+  return MANDATORY_10_SECTION_TITLES.every((title) => raw.includes(title.toLowerCase()));
+}
+
+export function matchesCanonicalContextIdentity(
+  expected: Pick<
+    VictoriaAnalysisContext,
+    | "request_id"
+    | "analysis_context_hash"
+    | "ad_account_id"
+    | "entity_level"
+    | "entity_id"
+    | "period"
+    | "result_indicator"
+    | "contract_version"
+    | "prompt_version"
+  >,
+  received: Partial<{
+    request_id: string | null;
+    analysis_context_hash: string | null;
+    ad_account_id: string | null;
+    entity_level: string | null;
+    entity_id: string | null;
+    date_from: string | null;
+    date_to: string | null;
+    result_indicator: string | null;
+    contract_version: string | null;
+    prompt_version: string | null;
+  }>
+): { valid: boolean; mismatches: string[] } {
+  const mismatches: string[] = [];
+  if (received.request_id !== undefined && received.request_id !== expected.request_id) mismatches.push("request_id");
+  if (received.analysis_context_hash !== undefined && received.analysis_context_hash !== expected.analysis_context_hash) mismatches.push("analysis_context_hash");
+  if (received.ad_account_id !== undefined && received.ad_account_id !== expected.ad_account_id) mismatches.push("ad_account_id");
+  if (received.entity_level !== undefined && received.entity_level !== expected.entity_level) mismatches.push("entity_level");
+  if (received.entity_id !== undefined && received.entity_id !== expected.entity_id) mismatches.push("entity_id");
+  if (received.date_from !== undefined && received.date_from !== expected.period.date_from) mismatches.push("date_from");
+  if (received.date_to !== undefined && received.date_to !== expected.period.date_to) mismatches.push("date_to");
+  if (received.result_indicator !== undefined && received.result_indicator !== expected.result_indicator.code) mismatches.push("result_indicator");
+  if (received.contract_version !== undefined && received.contract_version !== expected.contract_version) mismatches.push("contract_version");
+  if (received.prompt_version !== undefined && received.prompt_version !== expected.prompt_version) mismatches.push("prompt_version");
+
+  return { valid: mismatches.length === 0, mismatches };
+}
+
 /**
  * Sanitiza o texto de resposta para impedir vazamento de unidade cruzada (ex: chamar Reach de CPL ou comparar CPM com custo por conversa),
- * remover linguagem teatral/ofensiva e bloquear alegações universais não auditadas (Seções 3, 5, 7, 9).
+ * remover blocos json:action em modo somente-leitura, remover linguagem teatral/ofensiva e bloquear alegações universais não auditadas.
  */
 export function sanitizeVictoriaOutputText(
   rawText: string,
@@ -1099,6 +1301,15 @@ export function sanitizeVictoriaOutputText(
 ): string {
   if (!rawText) return "";
   let text = String(rawText);
+
+  // 0. Bloquear blocos json:action quando o modo é READ_ONLY_ANALYSIS ou janela < 3 dias
+  const isReadOnly =
+    !ctx ||
+    ctx.operational_mode !== "ACTION_PROPOSAL" ||
+    (ctx.period?.days_count ?? 1) < 3;
+  if (isReadOnly) {
+    text = text.replace(/```json:action[\s\S]*?```/gi, "").trim();
+  }
 
   // 1. Remover apelidos proibidos e linguagem teatral/ofensiva
   text = text
@@ -1131,10 +1342,10 @@ export function sanitizeVictoriaOutputText(
       .replace(/\bmeta\s+de\s+CPL\b/gi, "referência de custo por 1.000 pessoas alcançadas")
       .replace(/\bCPL\b/g, "custo por 1.000 pessoas alcançadas");
 
-    // Bloquear comparação indevida com R$ 7,93 (custo por conversa da campanha de mensagens) em campanha de alcance
+    // Bloquear comparação indevida com custo por conversa de mensagens (ex.: R$ 7,93) em campanha de alcance
     text = text.replace(
       /[^.\n]*R\$\s*7[.,]93[^.\n]*\.?/gi,
-      " (Nota de governança: métricas de alcance e CPM não são comparadas com o custo por conversa de campanhas de mensagens.)"
+      " (Nota de governança: Não há benchmark homogêneo disponível para comparação; métricas de alcance e CPM não são comparadas com o custo por conversa de campanhas de mensagens.)"
     );
   } else if (
     cat === "INSTAGRAM_PROFILE" ||
@@ -1149,15 +1360,62 @@ export function sanitizeVictoriaOutputText(
       .replace(/\bCPL\s+de\s+R\$/gi, `${replacementLabel} de R$`)
       .replace(/\bCPL\s*:\s*R\$/gi, `${replacementLabel}: R$`)
       .replace(/\bCPL\s+R\$/gi, `${replacementLabel} R$`)
+      .replace(/\bcusto\s+por\s+lead\b/gi, replacementLabel)
       .replace(/\bCPL\b/g, replacementLabel);
   }
 
   return text.trim();
 }
 
+export function enforceVictoriaPostLlmGuardrails(
+  rawText: string,
+  ctx: VictoriaAnalysisContext,
+  opts?: { requireFull10Sections?: boolean }
+): {
+  text: string;
+  replacedByDeterministic: boolean;
+  reasons: string[];
+} {
+  const reasons: string[] = [];
+  const sanitized = sanitizeVictoriaOutputText(rawText, ctx);
+  const leak = detectCrossEntityLeakage(sanitized, ctx);
+  if (leak.leaked) {
+    reasons.push(`cross_entity_leak:${leak.matches.join(",")}`);
+  }
+  const tooShortOrError =
+    sanitized.length < 120 ||
+    /^\[ERRO\s+\d+\]/i.test(sanitized) ||
+    /tive um problema de comunicação/i.test(sanitized);
+  if (tooShortOrError) {
+    reasons.push("empty_or_provider_error");
+  }
+  if (opts?.requireFull10Sections !== false) {
+    if (!sanitized.includes("O que esta campanha foi configurada para otimizar?")) {
+      reasons.push("missing_opening_question");
+    }
+    if (!hasAllMandatory10Sections(sanitized)) {
+      reasons.push("missing_mandatory_10_sections");
+    }
+  }
+
+  if (reasons.length > 0) {
+    return {
+      text: generateSeniorStructuredAnalysis(ctx),
+      replacedByDeterministic: true,
+      reasons,
+    };
+  }
+
+  return {
+    text: sanitized,
+    replacedByDeterministic: false,
+    reasons: [],
+  };
+}
+
 /**
- * Gera a análise sênior estruturada obrigatória em 9 seções (Seção 4 e Prompt 2) a partir do VictoriaAnalysisContext.
- * Garante 100% de fidelidade numérica, separação FATO / INFERÊNCIA / HIPÓTESE / RECOMENDAÇÃO e respeito ao objetivo.
+ * Gera a análise sênior estruturada obrigatória em 10 seções (Contrato 2026.11.4) a partir do VictoriaAnalysisContext.
+ * Garante 100% de fidelidade numérica, separação FATO / INFERÊNCIA / HIPÓTESE / RECOMENDAÇÃO, isolamento de unidade e fontes RAG.
  */
 export function generateSeniorStructuredAnalysis(ctx: VictoriaAnalysisContext): string {
   const validation = validateVictoriaAnalysisContext(ctx);
@@ -1174,7 +1432,7 @@ export function generateSeniorStructuredAnalysis(ctx: VictoriaAnalysisContext): 
   const { raw_metrics: m, financial: f, period: p, optimization: opt, result_indicator: ind } = ctx;
   const cat = opt.category;
   const isSingleDay = p.days_count <= 1;
-  const isShortWindow = p.days_count < 7;
+  const isShortSample = p.days_count < 3;
 
   const periodText =
     p.date_from === p.date_to
@@ -1188,151 +1446,148 @@ export function generateSeniorStructuredAnalysis(ctx: VictoriaAnalysisContext): 
       ? `${fmtBRL(f.lifetime_budget)} vitalício (${f.budget_type})`
       : "Não informado nos metadados sincronizados";
 
-  // Seção 3: Saúde do objetivo otimizado (específica por objetivo, sem misturar unidades)
-  let objectiveHealthSection = "";
+  const homogeneousRef =
+    ctx.governance_and_benchmarks.comparable_same_objective_avg !== null
+      ? `Benchmark homogêneo na mesma unidade (${ind.cost_label}): **${fmtBRL(ctx.governance_and_benchmarks.comparable_same_objective_avg)}**.`
+      : ctx.governance_and_benchmarks.account_max_cpl_target !== null
+      ? `Meta operacional configurada na conta (mesma unidade): **${fmtBRL(ctx.governance_and_benchmarks.account_max_cpl_target)}**.`
+      : "Não há benchmark homogêneo disponível para comparação.";
+
+  // Seção 4: Indicadores primários e secundários (estritamente separados por objetivo/unidade)
+  let indicatorsSection = "";
   if (cat === "REACH") {
     const costPer1kReach = m.cost_per_result !== null ? fmtBRL(m.cost_per_result) : "—";
-    objectiveHealthSection = [
-      `- **[FATO OBSERVADO]** A campanha entregou **${fmtNum(m.reach)} ${ind.label_plural}** com investimento de **${fmtBRL(f.spend)}**, resultando em **${ind.cost_label}** de **${costPer1kReach}** (fórmula: \`(gasto / alcance) × 1.000\`) e **CPM** de **${fmtBRL(m.cpm)}** (\`${fmtNum(m.impressions)}\` impressões).`,
-      `- **[FATO OBSERVADO]** A frequência observada no período foi de **${m.frequency.toFixed(2).replace(".", ",")}x** impressões por pessoa alcançada.`,
-      `- **[INFERÊNCIA]** Como o objetivo configurado é **Alcance (${opt.odax_objective})**, a eficiência primária deve ser avaliada pelo **custo por 1.000 pessoas alcançadas (${costPer1kReach})**, pelo **CPM (${fmtBRL(m.cpm)})** e pelo controle de **frequência (${m.frequency.toFixed(2).replace(".", ",")}x)** — e **não** por métricas de conversão direta ou conversas. A entrega apresenta custo de exposição competitivamente baixo e frequência controlada (sem saturação na janela observada).`,
+    indicatorsSection = [
+      `- **Indicador primário (fórmula explícita):** **${ind.cost_label}** = **${costPer1kReach}** (\`(spend / reach) × 1.000\` = \`(${fmtBRL(f.spend)} / ${fmtNum(m.reach)}) × 1.000\`).`,
+      `- **Indicadores de entrega e cobertura:** **${fmtNum(m.reach)} pessoas alcançadas**, **${fmtNum(m.impressions)} impressões**, **CPM (custo por 1.000 impressões)** de **${fmtBRL(m.cpm)}** e **frequência média** de **${m.frequency.toFixed(2).replace(".", ",")}x**.`,
+      `- **Indicadores secundários (cliques distintos — não são critério de otimização em Alcance):** **CTR (link)** de **${fmtPct(m.ctr_link)}** (**${fmtNum(m.link_clicks)} cliques no link** · \`CPC link: ${m.link_clicks > 0 ? fmtBRL(m.cpc_link) : "—"}\`) vs. **${fmtNum(m.all_clicks)} cliques totais** (\`CTR todos: ${fmtPct(m.ctr_all)}\`).`,
+      `- **Benchmark comparativo:** ${homogeneousRef} Não há mistura de unidades (ex.: CPM ou custo por 1.000 alcançadas não são comparados com custo por conversa).`,
     ].join("\n");
   } else if (cat === "MESSAGES") {
     const cpaMsg = m.cost_per_result !== null ? fmtBRL(m.cost_per_result) : "— (0 conversas no período)";
     const clickToMsgRate =
       m.link_clicks > 0 ? `${((m.result_value / m.link_clicks) * 100).toFixed(2).replace(".", ",")}%` : "—";
-    const sameUnitRef =
-      ctx.governance_and_benchmarks.comparable_same_objective_avg !== null
-        ? `Referência de mesma unidade (custo por conversa na conta): **${fmtBRL(ctx.governance_and_benchmarks.comparable_same_objective_avg)}**.`
-        : ctx.governance_and_benchmarks.account_max_cpl_target !== null
-        ? `Meta operacional configurada na conta (mesma unidade): **${fmtBRL(ctx.governance_and_benchmarks.account_max_cpl_target)}**.`
-        : "Sem meta específica de custo por conversa configurada para esta conta.";
-    objectiveHealthSection = [
-      `- **[FATO OBSERVADO]** A campanha registrou **${fmtNum(m.result_value)} ${ind.label_plural}** (\`${ind.code}\`) com gasto de **${fmtBRL(f.spend)}**, resultando em **${ind.cost_label}** de **${cpaMsg}**. ${sameUnitRef}`,
-      `- **[FATO OBSERVADO]** A relação observada entre cliques no link (**${fmtNum(m.link_clicks)}**) e conversas iniciadas (**${fmtNum(m.result_value)}**) foi de **${clickToMsgRate}** de conversão pós-clique em mensagem.`,
-      `- **[INFERÊNCIA]** ${
-        m.result_value > 0
-          ? `Há tração funcional no objetivo principal (${fmtNum(m.result_value)} conversas iniciadas a ${cpaMsg} por conversa), porém ${isSingleDay ? "por tratar-se de leitura de apenas 1 dia, o valor representa fotografia pontual e não tendência consolidada." : "a estabilidade do custo por conversa deve ser acompanhada ao longo de ciclos de 7 dias."}`
-          : `Não houve registro de conversas iniciadas para o gasto de ${fmtBRL(f.spend)} na janela selecionada.`
-      }`,
+    indicatorsSection = [
+      `- **Indicador primário (fórmula explícita):** **${ind.cost_label}** = **${cpaMsg}** (\`spend / messaging_conversation_started_7d\` = \`${fmtBRL(f.spend)} / ${fmtNum(m.result_value)}\`), com taxa de clique-para-conversa de **${clickToMsgRate}**.`,
+      `- **Indicadores secundários de entrega e cliques:** **CTR (link)** de **${fmtPct(m.ctr_link)}** (**${fmtNum(m.link_clicks)} cliques no link** · \`CPC link: ${m.link_clicks > 0 ? fmtBRL(m.cpc_link) : "—"}\`), **${fmtNum(m.all_clicks)} cliques totais** (\`CTR todos: ${fmtPct(m.ctr_all)}\`), **CPM** de **${fmtBRL(m.cpm)}** e **frequência** de **${m.frequency.toFixed(2).replace(".", ",")}x**.`,
+      `- **Benchmark comparativo:** ${homogeneousRef}`,
     ].join("\n");
   } else {
     const unitCostStr = m.cost_per_result !== null ? fmtBRL(m.cost_per_result) : "—";
-    objectiveHealthSection = [
-      `- **[FATO OBSERVADO]** A entidade entregou **${fmtNum(m.result_value)} ${ind.label_plural}** (\`${ind.code}\`) com investimento de **${fmtBRL(f.spend)}**, apurando **${ind.cost_label}** de **${unitCostStr}**.`,
-      `- **[INFERÊNCIA]** Avaliação restrita estritamente à unidade **${ind.unit}**, sem cruzamento com indicadores de outros objetivos.`,
+    indicatorsSection = [
+      `- **Indicador primário (fórmula explícita):** **${ind.cost_label}** = **${unitCostStr}** (\`${ind.unit}\`).`,
+      `- **Indicadores secundários:** **CTR (link)** de **${fmtPct(m.ctr_link)}** (**${fmtNum(m.link_clicks)} cliques no link** · \`CPC link: ${m.link_clicks > 0 ? fmtBRL(m.cpc_link) : "—"}\`) vs. **${fmtNum(m.all_clicks)} cliques totais** (\`CTR todos: ${fmtPct(m.ctr_all)}\`), **CPM** **${fmtBRL(m.cpm)}**, **frequência** **${m.frequency.toFixed(2).replace(".", ",")}x**.`,
+      `- **Benchmark comparativo:** ${homogeneousRef}`,
     ].join("\n");
   }
 
-  // Seção 4: Sinais secundários
-  const secondarySignalsSection = [
-    `- **[FATO OBSERVADO]** **Cliques direcionais vs. cliques totais:** **${fmtNum(m.link_clicks)} cliques no link** (\`CTR link: ${fmtPct(m.ctr_link)}\` | \`CPC link: ${m.link_clicks > 0 ? fmtBRL(m.cpc_link) : "—"}\`) contra **${fmtNum(m.all_clicks)} cliques totais** (\`CTR todos: ${fmtPct(m.ctr_all)}\`).`,
-    `- **[FATO OBSERVADO]** **Pressão de leilão e exposição:** **CPM** em **${fmtBRL(m.cpm)}**, **${fmtNum(m.impressions)} impressões**, **${fmtNum(m.reach)} pessoas alcançadas** e **frequência de ${m.frequency.toFixed(2).replace(".", ",")}x**.`,
-    cat === "REACH"
-      ? `- **[INFERÊNCIA]** Em campanhas de **Alcance**, o \`CTR (link)\` de **${fmtPct(m.ctr_link)}** (**${fmtNum(m.link_clicks)}** cliques no link) e a diferença para cliques totais (**${fmtNum(m.all_clicks)}**) são **sinais secundários de interação**, pois o algoritmo otimiza entrega de alcance único e não propensão a clique.`
-      : `- **[INFERÊNCIA]** A diferença entre cliques totais (**${fmtNum(m.all_clicks)}**) e cliques no link (**${fmtNum(m.link_clicks)}**) representa interações sociais/expansão de mídia (**${fmtNum(Math.max(0, m.all_clicks - m.link_clicks))}** interações não direcionais).`,
-  ].join("\n");
-
-  // Seção 6: Hipóteses priorizadas (máximo 3)
+  // Seção 6: Hipóteses
   let hypothesesSection = "";
   if (cat === "REACH") {
     hypothesesSection = [
-      `1. **[HIPÓTESE 1 — Eficiência de cobertura de topo de funil]** O baixo custo por 1.000 pessoas alcançadas (**${m.cost_per_result !== null ? fmtBRL(m.cost_per_result) : "—"}**) e o CPM de **${fmtBRL(m.cpm)}** indicam inventário amplo com baixa restrição de lance.`,
-      `   - *Evidência a favor:* **${fmtNum(m.reach)}** contas alcançadas com frequência próxima de 1x (**${m.frequency.toFixed(2).replace(".", ",")}x**).`,
-      `   - *Evidência contra / lacuna:* Janela de ${p.days_count} dia(s) e ausência do detalhamento geográfico/etário do conjunto no payload.`,
-      `2. **[HIPÓTESE 2 — Interação direcional secundária compatível com o objetivo]** O volume de **${fmtNum(m.link_clicks)}** cliques no link (\`CTR link ${fmtPct(m.ctr_link)}\`) decorre da otimização para alcance (impressões únicas), e não de falha criativa de conversão.`,
-      `   - *Evidência a favor:* Existência de **${fmtNum(m.all_clicks)}** cliques totais contra **${fmtNum(m.link_clicks)}** cliques no link em campanha cujo evento de otimização é \`${opt.optimization_goal}\`.`,
-      `   - *Evidência contra / lacuna:* Não temos acesso ao criativo ou presença de CTA externo na peça.`,
+      `- **[HIPÓTESE 1 — Cobertura eficiente de topo de funil]** O custo por 1.000 pessoas alcançadas de **${m.cost_per_result !== null ? fmtBRL(m.cost_per_result) : "—"}** com CPM de **${fmtBRL(m.cpm)}** sugere inventário amplo e baixa pressão de frequência (**${m.frequency.toFixed(2).replace(".", ",")}x**).`,
+      `  - *Evidência a favor:* **${fmtNum(m.reach)}** pessoas alcançadas com frequência próxima de 1x.`,
+      `  - *Evidência contra / lacuna:* Amostra de apenas ${p.days_count} dia(s) e ausência do criativo/segmentação completa.`,
+      `- **[HIPÓTESE 2 — Interação direcional secundária esperada no objetivo Alcance]** O \`CTR (link)\` de **${fmtPct(m.ctr_link)}** (**${fmtNum(m.link_clicks)}** cliques no link) em oposição a **${fmtNum(m.all_clicks)}** cliques totais é compatível com entregas otimizadas para \`${opt.optimization_goal}\` (exposição ampla, não clique/conversa).`,
+      `  - *Evidência a favor:* Evento oficial configurado é \`reach\` (${opt.odax_objective}).`,
+      `  - *Evidência contra / lacuna:* Peça criativa e presença de CTA não foram inspecionados neste contexto.`,
     ].join("\n");
   } else {
     const clickConvRatio = m.link_clicks > 0 ? (m.result_value / m.link_clicks) * 100 : 0;
     hypothesesSection = [
-      `1. **[HIPÓTESE 1 — Conversão pós-clique entre clique no anúncio e abertura de conversa]** A taxa de conversão de cliques no link (**${fmtNum(m.link_clicks)}**) em ${ind.label_plural} (**${fmtNum(m.result_value)}**, equivalente a **${clickConvRatio.toFixed(1).replace(".", ",")}%**) reflete o filtro natural entre clique curioso e envio efetivo da primeira mensagem.`,
-      `   - *Evidência a favor:* \`CTR (link)\` de **${fmtPct(m.ctr_link)}** (**${fmtNum(m.link_clicks)}** cliques no link) com **${fmtNum(m.result_value)}** eventos \`${ind.code}\` contabilizados.`,
-      `   - *Evidência contra / lacuna:* Sem dados da mensagem automática de saudação ou da velocidade de resposta no WhatsApp/CRM.`,
-      `2. **[HIPÓTESE 2 — Variância natural de janela curta (${p.days_count} dia${p.days_count > 1 ? "s" : ""})]** O custo unitário de **${m.cost_per_result_formatted}** pode oscilar entre dias úteis e fim de semana no varejo automotivo.`,
-      `   - *Evidência a favor:* Amostra restrita a **${p.days_count} dia(s)** e **${fmtNum(m.impressions)}** impressões.`,
-      `   - *Evidência contra / lacuna:* Necessário comparar com a série histórica de 7 e 14 dias da mesma campanha antes de inferir tendência estrutural.`,
+      `- **[HIPÓTESE 1 — Conversão pós-clique entre clique no link e resultado oficial]** A relação de **${fmtNum(m.result_value)} ${ind.label_plural}** sobre **${fmtNum(m.link_clicks)} cliques no link** (**${clickConvRatio.toFixed(1).replace(".", ",")}%**) reflete o filtro natural entre interesse inicial no anúncio e execução do evento \`${ind.code}\`.`,
+      `  - *Evidência a favor:* \`CTR (link)\` de **${fmtPct(m.ctr_link)}** sustentando volume de **${fmtNum(m.result_value)}** eventos oficiais.`,
+      `  - *Evidência contra / lacuna:* Sem telemetria de resposta no WhatsApp/CRM ou da experiência pós-clique.`,
+      `- **[HIPÓTESE 2 — Variância de amostra curta (${p.days_count} dia${p.days_count > 1 ? "s" : ""})]** O custo unitário de **${m.cost_per_result_formatted}** está sujeito a oscilações diárias de leilão e não deve motivar decisões irreversíveis com amostra curta.`,
+      `  - *Evidência a favor:* Janela restrita a **${p.days_count} dia(s)** (${fmtNum(m.impressions)} impressões).`,
+      `  - *Evidência contra / lacuna:* Necessário comparar com histórico móvel de 7 dias da própria campanha.`,
     ].join("\n");
   }
 
-  // Seção 7: Recomendações reversíveis
-  const recommendationAction = isSingleDay
-    ? "Manter orçamento e configuração atuais em observação estruturada por janela acumulada de 3 a 7 dias antes de executar alterações de orçamento ou pausa."
-    : "Se a estabilidade de custo na mesma unidade se confirmar na janela de 7 dias, avaliar ajuste gradual e reversível de orçamento (limitado a ±15%–20% com aprovação humana).";
+  // Seção 7: Recomendações seguras (sem alteração mutável quando < 3 dias)
+  const recommendationAction = isShortSample
+    ? "MODO SOMENTE LEITURA (READ_ONLY_ANALYSIS): Manter orçamento, segmentação e status inalterados durante esta janela curta; observar janela acumulada mínima de 3 a 7 dias antes de propor qualquer ajuste."
+    : "Avaliar eventual ajuste gradual e reversível de orçamento (<= ±15%–20%) apenas após aprovação humana explícita com pré-visualização e rollback documentado.";
 
   const recommendationsSection = [
-    `- **[RECOMENDAÇÃO 1 — Governança de Amostra e Continuidade Operacional]**`,
-    `  - **Problema observado:** Leitura baseada em janela de **${p.days_count} dia(s)** (${periodText}) com metadados parciais de criativo/segmentação.`,
-    `  - **Evidência:** Investimento de **${fmtBRL(f.spend)}**, **${fmtNum(m.result_value)} ${ind.label_plural}** (**${m.cost_per_result_formatted}**) e **${fmtNum(m.impressions)}** impressões.`,
-    `  - **Hipóteses alternativas:** Oscilação diária normal do leilão vs. mudança real de elasticidade da demanda local.`,
-    `  - **Ação sugerida:** ${recommendationAction}`,
-    `  - **Risco:** Baixo (preserva fase de aprendizado e evita reinicialização prematura do conjunto).`,
-    `  - **Métrica de sucesso:** Estabilidade do **${ind.cost_label.toLowerCase()}** e controle da **frequência** abaixo de 2,8x.`,
-    `  - **Janela de avaliação:** Próximas **72 horas a 7 dias** acumulados.`,
-    `  - **Plano de rollback:** Caso qualquer ajuste futuro eleve o **${ind.cost_label.toLowerCase()}** em mais de 25% por 48h, restaurar imediatamente o orçamento/configuração anterior.`,
+    `- **[RECOMENDAÇÃO 1 — Preservação de Aprendizado e Segurança Operacional]**`,
+    `  - **Problema observado:** Leitura baseada em janela de **${p.days_count} dia(s)** (${periodText}) com ausência de criativo/copy/público/CRM no contexto.`,
+    `  - **Ação segura recomendada:** ${recommendationAction}`,
+    `  - **Risco:** Baixo (reversível, não reinicia fase de aprendizado e não executa mutação automática no Meta Ads).`,
+    `  - **Critério de acompanhamento:** Monitorar **${ind.cost_label.toLowerCase()}** e **frequência** ao longo de 72h a 7 dias.`,
   ].join("\n");
 
-  const ragSummary =
-    ctx.governance_and_benchmarks.rag_documents.length > 0
-      ? ctx.governance_and_benchmarks.rag_documents
-          .slice(0, 3)
-          .map((d) => `\`${d.title}\` (${d.evidence_level} · v${d.version})`)
-          .join(", ")
-      : "Nenhum documento externo aplicado além do contrato determinístico";
+  // Seção 10: Fontes e documentos utilizados (RAG curado + contrato)
+  const ragDocs = ctx.governance_and_benchmarks.rag_documents || [];
+  const sourcesLines = [
+    `- **Dados oficiais:** \`${ind.source}\` · Contrato \`${ctx.contract_version}\` · Prompt \`${ctx.prompt_version}\` · Request \`${ctx.request_id}\` · Context Hash \`${ctx.analysis_context_hash}\`.`,
+    ragDocs.length > 0
+      ? `- **Documentos RAG aprovados recuperados (${ragDocs.length}):** ${ragDocs
+          .map((d) => `\`[${d.id}]\` **${d.title}** (\`${d.evidence_level}\` · v\`${d.version}\` · status \`${d.approval_status}\`)`)
+          .join("; ")}.`
+      : `- **Base de conhecimento RAG:** Nenhum documento específico recuperado para este diagnóstico isolado; aplicado integralmente o contrato determinístico \`${ctx.contract_version}\` (documentos \`REJECTED\` e \`UNVERIFIED\` excluídos por governança).`,
+  ];
 
   const output = [
     `### 🧭 O que esta campanha foi configurada para otimizar?`,
-    `Esta entidade (**${ctx.entity_name}** · ID \`${ctx.entity_id}\`) está configurada sob o objetivo **${opt.odax_objective}** (\`optimization_goal: ${opt.optimization_goal}\`), otimizando oficialmente para **${ind.label_plural}** (evento oficial: \`${opt.official_result_event}\`, medido em **${ind.cost_label}** — \`${ind.unit}\`).`,
+    `Esta entidade (**${ctx.entity_name}** · ID \`${ctx.entity_id}\`) está configurada sob o objetivo **${opt.odax_objective}** (\`optimization_goal: ${opt.optimization_goal}\`), otimizando oficialmente para **${ind.label_plural}** (evento oficial: \`${opt.official_result_event}\`, unidade: **${ind.cost_label}** — \`${ind.unit}\`).`,
     "",
-    `#### 1. Escopo e Contrato de Contexto`,
-    `- **Conta:** ${ctx.ad_account_name} (\`${ctx.ad_account_id}\`) | **Nível:** \`${ctx.entity_level}\` | **Status:** \`${ctx.effective_status}\``,
-    `- **Período analisado:** ${periodText} | **Timezone:** \`${p.timezone}\``,
-    `- **Fonte dos dados:** \`${ind.source}\` | **Último sync:** \`${p.last_sync_at || "Sob demanda"}\` | **Hash de contexto:** \`${ctx.analysis_context_hash}\``,
+    `#### 1. Escopo analisado`,
+    `- **Conta:** ${ctx.ad_account_name} (\`${ctx.ad_account_id}\`) | **Entidade:** ${ctx.entity_name} (\`${ctx.entity_level}\` · ID \`${ctx.entity_id}\`) | **Status:** \`${ctx.effective_status}\``,
+    `- **Período:** ${periodText} | **Timezone:** \`${p.timezone}\` | **Modo:** \`${ctx.operational_mode || VICTORIA_DEFAULT_OPERATIONAL_MODE}\``,
+    `- **Versão do contrato:** \`${ctx.contract_version}\` | **Prompt:** \`${ctx.prompt_version}\` | **Context Hash:** \`${ctx.analysis_context_hash}\``,
     "",
-    `#### 2. Leitura Factual das Métricas (FATO OBSERVADO)`,
+    `#### 2. Objetivo e evento oficial`,
+    `- **O que esta campanha foi configurada para otimizar?** Otimização configurada para **${ind.label_plural}** (\`objective: ${opt.odax_objective}\` · \`optimization_goal: ${opt.optimization_goal}\` · evento oficial \`${ind.code}\`).`,
+    `- **Unidade oficial de custo:** **${ind.cost_label}** (\`${ind.unit}\`). Rótulos incompatíveis com este objetivo permanecem bloqueados.`,
+    "",
+    `#### 3. Leitura factual`,
     `- **[FATO OBSERVADO]** **Investimento (Spend):** ${fmtBRL(f.spend)} | **Orçamento configurado:** ${budgetText}`,
-    `- **[FATO OBSERVADO]** **Resultado Oficial (${ind.label_plural}):** **${fmtNum(m.result_value)}** | **${ind.cost_label}:** **${m.cost_per_result_formatted}**`,
+    `- **[FATO OBSERVADO]** **Resultado oficial (${ind.label_plural}):** **${fmtNum(m.result_value)}** | **${ind.cost_label}:** **${m.cost_per_result_formatted}**`,
     `- **[FATO OBSERVADO]** **Exposição:** **${fmtNum(m.impressions)}** impressões | **${fmtNum(m.reach)}** pessoas alcançadas (\`${m.reach_scope}\`) | **Frequência:** **${m.frequency.toFixed(2).replace(".", ",")}x** | **CPM:** **${fmtBRL(m.cpm)}**`,
     `- **[FATO OBSERVADO]** **Cliques separados por tipo:** **${fmtNum(m.link_clicks)}** cliques no link (\`CTR link: ${fmtPct(m.ctr_link)}\` · \`CPC link: ${m.link_clicks > 0 ? fmtBRL(m.cpc_link) : "—"}\`) | **${fmtNum(m.all_clicks)}** cliques totais (\`CTR todos: ${fmtPct(m.ctr_all)}\`)`,
     "",
-    `#### 3. Saúde do Objetivo Otimizado`,
-    objectiveHealthSection,
+    `#### 4. Indicadores primários e secundários`,
+    indicatorsSection,
     "",
-    `#### 4. Sinais Secundários de Leilão e Entrega`,
-    secondarySignalsSection,
-    "",
-    `#### 5. Limitações de Dados e Observabilidade`,
+    `#### 5. Limitações e dados ausentes`,
     ...ctx.limitations.map((lim) => `- ${lim}`),
-    `- **Base de referência (RAG curado):** ${ragSummary}.`,
     "",
-    `#### 6. Hipóteses Priorizadas`,
+    `#### 6. Hipóteses`,
     hypothesesSection,
     "",
-    `#### 7. Recomendações Reversíveis e Seguras`,
+    `#### 7. Recomendações seguras`,
     recommendationsSection,
     "",
-    `#### 8. Plano de Validação Operacional`,
-    `- **Passo 1 (Comparação multi-janela):** Confrontar o período atual (${periodText}) com a janela móvel de 7 dias da mesma campanha (**${ctx.entity_name}**) mantendo estritamente a unidade **${ind.cost_label}**.`,
-    `- **Passo 2 (Verificação de componentes não observados):** Caso deseje auditar criativo, copy ou segmentação, anexar a peça/configuração para leitura específica.`,
-    `- **Passo 3 (Governança):** Nenhuma alteração foi nem será executada automaticamente no Meta Ads sem pré-visualização de campos e aprovação humana explícita.`,
+    `#### 8. Plano de validação`,
+    `- **Passo 1 (Janela mínima):** Aguardar o fechamento de **3 a 7 dias** acumulados da mesma campanha (**${ctx.entity_name}**) antes de concluir tendência ou propor mudança de orçamento.`,
+    `- **Passo 2 (Critério objetivo na unidade oficial):** Validar estabilidade do **${ind.cost_label}**, do **CPM**, da **frequência** e, no caso de mensagens/leads, da relação entre **cliques no link** e **${ind.label_plural}**.`,
+    `- **Passo 3 (Governança):** Nenhuma alteração é executada automaticamente no Meta Ads. Alterações futuras exigem solicitação explícita em \`ACTION_PROPOSAL\`, orçamento conhecido, preview e plano de rollback.`,
     "",
-    `#### 9. Nível de Confiança: **${ctx.confidence_level.toUpperCase()}**`,
-    `- ${ctx.confidence_justification}`,
+    `#### 9. Nível de confiança`,
+    `- **Nível de confiança:** **${ctx.confidence_level.toUpperCase()}**`,
+    `- **Justificativa:** ${ctx.confidence_justification}`,
+    "",
+    `#### 10. Fontes e documentos utilizados`,
+    ...sourcesLines,
   ].join("\n");
 
   return sanitizeVictoriaOutputText(output, ctx);
 }
 
 /**
- * Controlador de isolamento de sessão, concorrência e cancelamento (AbortController) para gavetas, modais e chats da Victoria (Seção 2).
+ * Controlador de isolamento de sessão, concorrência e cancelamento (AbortController) para gavetas, modais e chats da Victoria (Contrato 2026.11.4).
  */
 export class VictoriaSessionController {
   private activeRequestId: string | null = null;
   private activeContextHash: string | null = null;
   private activeEntityKey: string | null = null;
+  private activePeriodKey: string | null = null;
+  private activeIndicatorCode: string | null = null;
+  private activeContractVersion: string | null = null;
+  private activePromptVersion: string | null = null;
   private activeAbortController: AbortController | null = null;
-  private responseCache = new Map<string, { text: string; createdAt: number; contextHash: string; entityId: string }>();
+  private responseCache = new Map<string, { text: string; createdAt: number; contextHash: string; entityId: string; contractVersion: string; promptVersion: string }>();
 
   public beginRequest(params: {
     ctx: VictoriaAnalysisContext;
@@ -1345,7 +1600,6 @@ export class VictoriaSessionController {
     signal: AbortSignal;
     cachedResponse: string | null;
   } {
-    // Cancela imediatamente qualquer requisição anterior em andamento
     if (this.activeAbortController) {
       try {
         this.activeAbortController.abort("ENTITY_OR_CONTEXT_SWITCHED");
@@ -1357,6 +1611,10 @@ export class VictoriaSessionController {
     this.activeRequestId = params.ctx.request_id;
     this.activeContextHash = params.ctx.analysis_context_hash;
     this.activeEntityKey = `${params.ctx.ad_account_id}::${params.ctx.entity_level}::${params.ctx.entity_id}`;
+    this.activePeriodKey = `${params.ctx.period.date_from}..${params.ctx.period.date_to}`;
+    this.activeIndicatorCode = params.ctx.result_indicator.code;
+    this.activeContractVersion = params.ctx.contract_version;
+    this.activePromptVersion = params.ctx.prompt_version;
 
     const cacheKey = buildVictoriaSessionCacheKey({
       userId: params.userId ?? params.ctx.user_id,
@@ -1376,6 +1634,8 @@ export class VictoriaSessionController {
       cached &&
       cached.contextHash === params.ctx.analysis_context_hash &&
       cached.entityId === params.ctx.entity_id &&
+      cached.contractVersion === params.ctx.contract_version &&
+      cached.promptVersion === params.ctx.prompt_version &&
       Date.now() - cached.createdAt < 5 * 60 * 1000;
 
     return {
@@ -1393,15 +1653,35 @@ export class VictoriaSessionController {
     accountId: string;
     entityLevel: VictoriaEntityLevel;
     entityId: string;
+    dateFrom?: string;
+    dateTo?: string;
+    resultIndicator?: string;
+    contractVersion?: string;
+    promptVersion?: string;
   }): boolean {
     const entityKey = `${params.accountId}::${params.entityLevel}::${params.entityId}`;
-    return (
-      this.activeRequestId === params.requestId &&
-      this.activeContextHash === params.contextHash &&
-      this.activeEntityKey === entityKey &&
-      this.activeAbortController !== null &&
-      !this.activeAbortController.signal.aborted
-    );
+    if (
+      this.activeRequestId !== params.requestId ||
+      this.activeContextHash !== params.contextHash ||
+      this.activeEntityKey !== entityKey ||
+      this.activeAbortController === null ||
+      this.activeAbortController.signal.aborted
+    ) {
+      return false;
+    }
+    if (params.dateFrom && params.dateTo && this.activePeriodKey !== `${params.dateFrom}..${params.dateTo}`) {
+      return false;
+    }
+    if (params.resultIndicator && this.activeIndicatorCode !== params.resultIndicator) {
+      return false;
+    }
+    if (params.contractVersion && this.activeContractVersion !== params.contractVersion) {
+      return false;
+    }
+    if (params.promptVersion && this.activePromptVersion !== params.promptVersion) {
+      return false;
+    }
+    return true;
   }
 
   public commitResponse(params: {
@@ -1411,6 +1691,11 @@ export class VictoriaSessionController {
     accountId: string;
     entityLevel: VictoriaEntityLevel;
     entityId: string;
+    dateFrom?: string;
+    dateTo?: string;
+    resultIndicator?: string;
+    contractVersion?: string;
+    promptVersion?: string;
     text: string;
   }): boolean {
     if (
@@ -1420,6 +1705,11 @@ export class VictoriaSessionController {
         accountId: params.accountId,
         entityLevel: params.entityLevel,
         entityId: params.entityId,
+        dateFrom: params.dateFrom,
+        dateTo: params.dateTo,
+        resultIndicator: params.resultIndicator,
+        contractVersion: params.contractVersion,
+        promptVersion: params.promptVersion,
       })
     ) {
       return false;
@@ -1429,6 +1719,8 @@ export class VictoriaSessionController {
       createdAt: Date.now(),
       contextHash: params.contextHash,
       entityId: params.entityId,
+      contractVersion: this.activeContractVersion || VICTORIA_CONTRACT_VERSION,
+      promptVersion: this.activePromptVersion || VICTORIA_PROMPT_VERSION,
     });
     return true;
   }
@@ -1443,6 +1735,10 @@ export class VictoriaSessionController {
     this.activeRequestId = null;
     this.activeContextHash = null;
     this.activeEntityKey = null;
+    this.activePeriodKey = null;
+    this.activeIndicatorCode = null;
+    this.activeContractVersion = null;
+    this.activePromptVersion = null;
   }
 
   public clearCache(): void {

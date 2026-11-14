@@ -24,6 +24,10 @@ import {
   buildSuggestedQuestionsForContext,
   sanitizeVictoriaOutputText,
   generateSeniorStructuredAnalysis,
+  hasAllMandatory10Sections,
+  matchesCanonicalContextIdentity,
+  isLegacyVictoriaVersion,
+  enforceVictoriaPostLlmGuardrails,
   VictoriaSessionController,
   type VictoriaSurfaceId,
 } from "../src/lib/victoriaContract.ts";
@@ -92,17 +96,18 @@ test("Fixture 1 (Fly Garage 13/11/2026 — Mensagens): NC - MSG - 29/06 — Cóp
 
   const diagnosis = generateSeniorStructuredAnalysis(ctx);
   assert.ok(diagnosis.includes("O que esta campanha foi configurada para otimizar?"));
-  assert.ok(diagnosis.includes("1. Escopo e Contrato de Contexto"));
-  assert.ok(diagnosis.includes("2. Leitura Factual das Métricas (FATO OBSERVADO)"));
-  assert.ok(diagnosis.includes("3. Saúde do Objetivo Otimizado"));
-  assert.ok(diagnosis.includes("4. Sinais Secundários de Leilão e Entrega"));
-  assert.ok(diagnosis.includes("5. Limitações de Dados e Observabilidade"));
-  assert.ok(diagnosis.includes("6. Hipóteses Priorizadas"));
-  assert.ok(diagnosis.includes("7. Recomendações Reversíveis e Seguras"));
-  assert.ok(diagnosis.includes("8. Plano de Validação Operacional"));
-  assert.ok(diagnosis.includes("9. Nível de Confiança:"));
+  assert.ok(diagnosis.includes("1. Escopo analisado"));
+  assert.ok(diagnosis.includes("2. Objetivo e evento oficial"));
+  assert.ok(diagnosis.includes("3. Leitura factual"));
+  assert.ok(diagnosis.includes("4. Indicadores primários e secundários"));
+  assert.ok(diagnosis.includes("5. Limitações e dados ausentes"));
+  assert.ok(diagnosis.includes("6. Hipóteses"));
+  assert.ok(diagnosis.includes("7. Recomendações seguras"));
+  assert.ok(diagnosis.includes("8. Plano de validação"));
+  assert.ok(diagnosis.includes("9. Nível de confiança"));
+  assert.ok(diagnosis.includes("10. Fontes e documentos utilizados"));
+  assert.equal(hasAllMandatory10Sections(diagnosis), true);
   assert.ok(diagnosis.includes("[FATO OBSERVADO]"));
-  assert.ok(diagnosis.includes("[INFERÊNCIA]"));
   assert.ok(diagnosis.includes("[HIPÓTESE 1"));
   assert.ok(diagnosis.includes("[RECOMENDAÇÃO 1"));
   assert.ok(diagnosis.includes("R$ 150,58"));
@@ -181,7 +186,8 @@ test("Fixture 2 (Fly Garage 13/11/2026 — Alcance): CMP | NC - ALCANCE JOJO TOD
   assert.ok(diagnosis.includes("R$ 1,27"));
   assert.ok(diagnosis.includes("R$ 1,21"));
   assert.ok(diagnosis.includes("52.360"));
-  assert.ok(diagnosis.includes("sinais secundários"));
+  assert.ok(diagnosis.includes("Indicadores secundários"));
+  assert.equal(hasAllMandatory10Sections(diagnosis), true);
   // Zero occurrence of "CPL" or "R$ 7,93" (from the Messages campaign)
   assert.equal(/\bCPL\b/.test(diagnosis), false, "Reach campaign diagnosis must NEVER contain 'CPL'");
   assert.equal(diagnosis.includes("7,93"), false, "Reach campaign diagnosis must NEVER contain R$ 7,93 from Messages");
@@ -419,14 +425,21 @@ test("Legacy Governance (IDs 21–30): RSS sanitization, read-only guard, action
   assert.equal(stripped.parsedAction?.type, "pause_campaign");
 
   const blockedProposal = buildActionProposal(
-    { type: "pause_campaign", campaignId: "123" },
+    { type: "pause_campaign", campaignId: "120238955348150254" },
     { readOnly: true }
   );
   assert.equal(blockedProposal, null);
 
+  // Also blocked when operationalMode !== ACTION_PROPOSAL or daysCount < 3
+  const blockedShortWindow = buildActionProposal(
+    { type: "pause_campaign", campaignId: "120238955348150254", accountId: "act_3177396632405159" },
+    { readOnly: false, operationalMode: "ACTION_PROPOSAL", explicitUserRequest: true, daysCount: 1, windowStart: "2026-11-13", windowEnd: "2026-11-13" }
+  );
+  assert.equal(blockedShortWindow, null);
+
   const activeProposal = buildActionProposal(
-    { type: "pause_campaign", campaignId: "123", accountId: "act_3177396632405159" },
-    { readOnly: false, windowStart: "2026-11-13", windowEnd: "2026-11-13" }
+    { type: "pause_campaign", campaignId: "120238955348150254", accountId: "act_3177396632405159" },
+    { readOnly: false, operationalMode: "ACTION_PROPOSAL", explicitUserRequest: true, daysCount: 5, windowStart: "2026-11-09", windowEnd: "2026-11-13" }
   );
   assert.ok(activeProposal);
   assert.equal(activeProposal.risk, "high");
@@ -713,15 +726,15 @@ test("Evaluation Suite (112 Labeled Scenarios): 100% accuracy on objective/unit,
       }
     }
 
-    // 3. Validate 9-part structured senior analysis output
+    // 3. Validate 10-part structured senior analysis output
     const output = generateSeniorStructuredAnalysis(ctx);
     assert.ok(
       output.includes("O que esta campanha foi configurada para otimizar?"),
       `[${sc.id}] must start with 'O que esta campanha foi configurada para otimizar?'`
     );
+    assert.equal(hasAllMandatory10Sections(output), true, `[${sc.id}] must include all 10 mandatory sections`);
     assert.ok(output.includes(sc.expectedCostLabel), `[${sc.id}] output must contain official cost label ${sc.expectedCostLabel}`);
     assert.ok(output.includes("[FATO OBSERVADO]"), `[${sc.id}] missing [FATO OBSERVADO]`);
-    assert.ok(output.includes("[INFERÊNCIA]"), `[${sc.id}] missing [INFERÊNCIA]`);
     assert.ok(output.includes("[HIPÓTESE 1"), `[${sc.id}] missing [HIPÓTESE 1`);
     assert.ok(output.includes("[RECOMENDAÇÃO 1"), `[${sc.id}] missing [RECOMENDAÇÃO 1`);
 
@@ -744,4 +757,92 @@ test("Evaluation Suite (112 Labeled Scenarios): 100% accuracy on objective/unit,
   }
 
   assert.equal(passed, 112);
+});
+
+// ============================================================================
+// 6. CONTRACT 2026.11.4 GOVERNANCE TESTS (10-FIELD IDENTITY, LEGACY TAGGING, CROSS-ENTITY LEAK GUARD)
+// ============================================================================
+
+test("Contract 2026.11.4: strict 10-field context identity verification, legacy tagging, and cross-entity leak replacement", () => {
+  const reachSibling = {
+    id: "camp_reach_jojo",
+    external_id: "120238955348150254",
+    name: "CMP | NC  - ALCANCE JOJO TODYNHO",
+    spend: 63.56,
+    reach: 50013,
+    impressions: 52360,
+    cpm: 1.21,
+    cost_per_result: 1.27,
+    result_value: 50013,
+  };
+
+  const msgCtx = buildContextFromMetricasItem({
+    item: {
+      id: "camp_msg_2906",
+      external_id: "120249884798220254",
+      name: "NC - MSG - 29/06 — Cópia",
+      status: "ACTIVE",
+      ad_account_id: "act_3177396632405159",
+      adAccountName: "NC - Fly Garage",
+      rawObjective: "OUTCOME_ENGAGEMENT",
+      optimizationGoal: "CONVERSATIONS",
+      resultType: "MESSAGES",
+      resultIndicator: "actions:onsite_conversion.messaging_conversation_started_7d",
+      cost: 150.60,
+      conversions: 19,
+      impressions: 9436,
+      reach: 7196,
+      clicks: 137,
+    },
+    surface: "floating_chat",
+    route: "/metricas",
+    accountId: "act_3177396632405159",
+    accountName: "NC - Fly Garage",
+    dateFrom: "2026-11-13",
+    dateTo: "2026-11-13",
+    siblingEntities: [reachSibling],
+    operationalMode: "READ_ONLY_ANALYSIS",
+  });
+
+  // Strict 10-field identity check
+  const receivedOk = {
+    request_id: msgCtx.request_id,
+    analysis_context_hash: msgCtx.analysis_context_hash,
+    ad_account_id: msgCtx.ad_account_id,
+    entity_level: msgCtx.entity_level,
+    entity_id: msgCtx.entity_id,
+    date_from: msgCtx.period.date_from,
+    date_to: msgCtx.period.date_to,
+    result_indicator: msgCtx.result_indicator.code,
+    contract_version: msgCtx.contract_version,
+    prompt_version: msgCtx.prompt_version,
+  };
+  const matchOk = matchesCanonicalContextIdentity(msgCtx, receivedOk);
+  assert.equal(matchOk.valid, true);
+  assert.equal(matchOk.mismatches.length, 0);
+
+  const mismatchEntity = matchesCanonicalContextIdentity(msgCtx, {
+    ...receivedOk,
+    entity_id: "120238955348150254",
+  });
+  assert.equal(mismatchEntity.valid, false);
+  assert.ok(mismatchEntity.mismatches.some((m) => m.includes("entity_id")));
+
+  // Legacy detection
+  assert.equal(isLegacyVictoriaVersion(null), true);
+  assert.equal(isLegacyVictoriaVersion("2026.11.3"), true);
+  assert.equal(isLegacyVictoriaVersion("2026.11.4"), false);
+
+  // Post-LLM guardrails must replace leaky output referencing sibling Reach campaign
+  const leakyLlmOutput =
+    "A campanha CMP | NC - ALCANCE JOJO TODYNHO atingiu 50.013 pessoas com gasto de R$ 63,56 e CPM R$ 1,21.\n```json:action\n{\"type\":\"pause_campaign\",\"campaignId\":\"120249884798220254\"}\n```";
+  const enforced = enforceVictoriaPostLlmGuardrails(leakyLlmOutput, msgCtx, {
+    requireFull10Sections: true,
+  });
+  assert.equal(enforced.replacedByDeterministic, true);
+  assert.equal(enforced.text.includes("JOJO TODYNHO"), false);
+  assert.equal(enforced.text.includes("50.013"), false);
+  assert.equal(enforced.text.includes("63,56"), false);
+  assert.equal(enforced.text.includes("json:action"), false);
+  assert.equal(hasAllMandatory10Sections(enforced.text), true);
 });
