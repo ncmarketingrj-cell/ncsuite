@@ -137,7 +137,7 @@ async function getAccountAndCampaignLookup(): Promise<LookupCache> {
 
   try {
     const [{ data: accs }, { data: camps }] = await Promise.all([
-      (supabase as any).from("ad_accounts").select("id, external_id, name"),
+      (supabase as any).from("ad_accounts").select("id, name"),
       (supabase as any).from("campaigns").select("id, external_id, name, ad_account_id"),
     ]);
 

@@ -95,10 +95,18 @@ export interface RealSocialInsightsResult {
 
 async function fetchMetaJson(url: string): Promise<any> {
   const res = await metaFetchJsonWithRetry(url, { maxRetries: 2, baseDelayMs: 400 });
-  if (!res.ok) {
-    return res.data?.error ? res.data : { error: { message: res.error || "Erro ao consultar Meta API" } };
+  if (res.ok) return res.data;
+  if (res.errorKind === "network") {
+    try {
+      const { data: proxyData, error: proxyErr } = await supabase.functions.invoke("sync-social-media", {
+        body: { action: "graph-proxy", url },
+      });
+      if (!proxyErr && proxyData) return proxyData;
+    } catch {
+      // mantém retorno de erro original abaixo
+    }
   }
-  return res.data;
+  return res.data?.error ? res.data : { error: { message: res.error || "Erro ao consultar Meta API" } };
 }
 
 async function fetchMetaPaginatedList(
@@ -107,11 +115,24 @@ async function fetchMetaPaginatedList(
   params: Record<string, string>,
   maxPages = 10
 ) {
-  return await metaFetchPaginatedWithStatus(endpoint, token, params, {
+  const res = await metaFetchPaginatedWithStatus(endpoint, token, params, {
     maxRetries: 2,
     baseDelayMs: 400,
     maxPages,
   });
+  if (!res.ok && res.errorKind === "network") {
+    try {
+      const { data: proxyRes, error: proxyErr } = await supabase.functions.invoke("sync-social-media", {
+        body: { action: "graph-proxy", paginated: true, endpoint, params, token, maxPages },
+      });
+      if (!proxyErr && proxyRes?.paginated) {
+        return proxyRes;
+      }
+    } catch {
+      // fallback para resultado direto
+    }
+  }
+  return res;
 }
 
 export async function getActiveMasterMetaToken(): Promise<string | null> {
@@ -120,24 +141,26 @@ export async function getActiveMasterMetaToken(): Promise<string | null> {
     .select("access_token")
     .not("access_token", "is", null)
     .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+    .limit(15);
 
-  const token = (data as any)?.access_token;
-  if (!token || token.startsWith("mock_") || token.length < 20) return null;
-  return token;
+  const valid = ((data || []) as any[]).find((row) => {
+    const t = String(row?.access_token || "").trim();
+    return t.length >= 20 && !t.startsWith("mock_");
+  });
+  return valid?.access_token ? String(valid.access_token).trim() : null;
 }
 
 /**
  * Busca as contas reais conectadas diretamente no Meta Graph API (/me/accounts)
- * usando o token ativo e faz fallback seguro para `social_pages` caso /me/accounts não responda.
+ * usando o token ativo, com proxy automático via Edge Function quando o navegador bloqueia graph.facebook.com.
  */
 export async function fetchLiveSocialAccounts(syncToDb = false): Promise<{
   accounts: RealSocialAccount[];
   masterToken: string | null;
+  hasMasterToken?: boolean;
   error?: string;
 }> {
-  const masterToken = await getActiveMasterMetaToken();
+  let masterToken = await getActiveMasterMetaToken();
 
   const { data: dbPages } = await supabase
     .from("social_pages")
@@ -145,6 +168,22 @@ export async function fetchLiveSocialAccounts(syncToDb = false): Promise<{
     .order("page_name");
 
   if (!masterToken) {
+    try {
+      const { data: edgeData, error: edgeErr } = await supabase.functions.invoke("sync-social-media", {
+        body: { action: "get-live-accounts", syncToDb },
+      });
+      if (!edgeErr && edgeData) {
+        return {
+          accounts: edgeData.accounts || [],
+          masterToken: edgeData.masterToken || null,
+          hasMasterToken: Boolean(edgeData.hasMasterToken || edgeData.masterToken),
+          error: edgeData.error,
+        };
+      }
+    } catch {
+      // prossegue para fallback local
+    }
+
     const mappedDb = ((dbPages || []) as any[])
       .filter((p) => p.page_id && !String(p.page_id).startsWith("mock_"))
       .map((p) => ({
@@ -160,6 +199,7 @@ export async function fetchLiveSocialAccounts(syncToDb = false): Promise<{
     return {
       accounts: mappedDb,
       masterToken: null,
+      hasMasterToken: false,
       error: "Token Master da Meta não configurado em Configurações → Integrações Master.",
     };
   }
@@ -175,6 +215,22 @@ export async function fetchLiveSocialAccounts(syncToDb = false): Promise<{
   );
 
   if (!mePaginated.ok && mePaginated.data.length === 0) {
+    try {
+      const { data: edgeData, error: edgeErr } = await supabase.functions.invoke("sync-social-media", {
+        body: { action: "get-live-accounts", syncToDb },
+      });
+      if (!edgeErr && edgeData && Array.isArray(edgeData.accounts) && edgeData.accounts.length > 0) {
+        return {
+          accounts: edgeData.accounts,
+          masterToken: edgeData.masterToken || masterToken,
+          hasMasterToken: true,
+          error: edgeData.error,
+        };
+      }
+    } catch {
+      // prossegue para fallback em dbPages
+    }
+
     const mappedDb = ((dbPages || []) as any[])
       .filter((p) => p.page_id && !String(p.page_id).startsWith("mock_"))
       .map((p) => ({
@@ -190,6 +246,7 @@ export async function fetchLiveSocialAccounts(syncToDb = false): Promise<{
     return {
       accounts: mappedDb,
       masterToken,
+      hasMasterToken: true,
       error: mePaginated.error || "Não foi possível consultar páginas conectadas no Meta.",
     };
   }
@@ -425,8 +482,7 @@ export async function fetchRealSocialInsights(params: {
   // Resolver alvo(s)
   let targetAccounts: RealSocialAccount[] = [];
   if (selectedPageId === "all") {
-    // Limita em até 8 principais contas com IG/seguidores para manter resposta rápida e precisa
-    targetAccounts = accounts.slice(0, 8);
+    targetAccounts = accounts;
   } else {
     const matched = accounts.find((a) => a.page_id === selectedPageId || a.instagram_account_id === selectedPageId);
     if (matched) targetAccounts = [matched];

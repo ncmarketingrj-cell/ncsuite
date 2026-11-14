@@ -162,6 +162,7 @@ function SocialInsightsPage() {
 
   const activePages = liveAccountsData?.accounts || [];
   const masterToken = liveAccountsData?.masterToken || null;
+  const hasMasterToken = Boolean(liveAccountsData?.hasMasterToken || masterToken);
 
   // 2. Insights e posts 100% REAIS da Meta Graph API v21.0
   const {
@@ -469,9 +470,17 @@ Responda de forma objetiva e tática em Markdown com:
             <BarChart3 className="h-6 w-6 text-primary" /> Performance do Meta
           </h2>
           <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground font-semibold">
-            {isConnected ? (
+            {loadingAccounts ? (
+              <span className="inline-flex items-center gap-1 rounded-full bg-slate-500/10 border border-slate-500/20 px-2.5 py-0.5 font-bold text-slate-300">
+                <Loader2 className="w-2.5 h-2.5 animate-spin" /> VALIDANDO CONEXÃO META...
+              </span>
+            ) : isConnected ? (
               <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-0.5 font-bold text-emerald-400">
                 <Wifi className="w-2.5 h-2.5" /> API CONECTADA ({activePages.length} contas reais)
+              </span>
+            ) : hasMasterToken ? (
+              <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/10 border border-amber-500/20 px-2.5 py-0.5 font-bold text-amber-400">
+                <WifiOff className="w-2.5 h-2.5" /> TOKEN ATIVO · SEM PÁGINAS OU BLOQUEIO DE REDE
               </span>
             ) : (
               <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/10 border border-amber-500/20 px-2.5 py-0.5 font-bold text-amber-400">

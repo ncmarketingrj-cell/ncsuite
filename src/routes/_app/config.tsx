@@ -36,6 +36,7 @@ import { DidacticUserAccessEditor } from "@/components/DidacticUserAccessEditor"
 import { TeamActivityMonitor } from "@/components/TeamActivityMonitor";
 import { isUserOnlineNow } from "@/lib/activityPixelService";
 import { getSyncStatus, SYNC_STATUS_EVENT, type SyncStatus } from "@/hooks/useAutoSync";
+import { EVENT_MODEL_VERSION } from "@/lib/metricsDomain";
 
 export const Route = createFileRoute("/_app/config")({
   head: () => ({ meta: [{ title: "Configurações — NC Suite" }] }),
@@ -1093,7 +1094,12 @@ function TabSistema() {
     },
   });
 
-  const lastSyncLabel = syncState.isSyncing
+  const isActivelySyncing = Boolean(
+    syncState.isSyncing &&
+    (!syncState.startedAt || Date.now() - new Date(syncState.startedAt).getTime() <= 120_000)
+  );
+
+  const lastSyncLabel = isActivelySyncing
     ? "Sincronizando agora..."
     : syncState.lastSync
     ? `${new Date(syncState.lastSync).toLocaleString("pt-BR")} (${syncState.lastResult || "ok"})`
@@ -1129,7 +1135,7 @@ function TabSistema() {
               ? `Erro ao consultar: ${systemHealth.accountsError}`
               : `${(systemHealth?.accounts || []).length} conta(s) registrada(s)`,
           },
-          { label: "Versão do Modelo de Eventos", value: "2026.11.1 (Meta / Supabase Edge)" },
+          { label: "Versão do Modelo de Eventos", value: `${EVENT_MODEL_VERSION} (Meta / Supabase Edge)` },
         ].map((info) => (
           <div key={info.label} className="flex items-center justify-between gap-2 rounded-lg border border-white/5 bg-background/40 p-3">
             <span className="label-mono text-muted-foreground">{info.label}</span>

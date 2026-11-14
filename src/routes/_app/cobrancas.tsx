@@ -116,30 +116,47 @@ function CobrancasPage() {
     },
   });
 
-  // Carrega despesas das campanhas com datas civis locais alinhadas ao restante do painel (ID 23)
+  // Carrega despesas das campanhas com paginação completa e datas civis locais (ID 23)
   const { data: campaignStats = [], isLoading: loadingStats, error: statsError } = useQuery<any[]>({
     queryKey: ["campaign_billing_stats", getLocalDateString(startDate), getLocalDateString(endDate)],
     placeholderData: (prev) => prev,
     queryFn: async () => {
-      const { data: campaigns, error: campErr } = await (supabase as any)
-        .from("campaigns")
-        .select("id, name, status, daily_budget, budget_currency, ad_account_id, platform");
-      if (campErr) throw campErr;
+      const campaigns: any[] = [];
+      for (let from = 0; from < 5000; from += 1000) {
+        const { data: campPage, error: campErr } = await (supabase as any)
+          .from("campaigns")
+          .select("id, name, status, delivery_status, daily_budget, budget_currency, ad_account_id, platform")
+          .order("id")
+          .range(from, from + 999);
+        if (campErr) throw campErr;
+        if (!campPage?.length) break;
+        campaigns.push(...campPage);
+        if (campPage.length < 1000) break;
+      }
 
       const startStr = getLocalDateString(startDate);
       const endStr = getLocalDateString(endDate);
       const todayStr = getLocalDateString(new Date());
 
-      // Busca métricas agregadas por dia
-      const { data: metrics, error: metErr } = await (supabase as any)
-        .from("metrics")
-        .select("campaign_id, cost, date")
-        .gte("date", startStr)
-        .lte("date", endStr);
-      if (metErr) throw metErr;
+      // Busca métricas agregadas por dia com paginação para suportar > 1.000 linhas
+      const metrics: any[] = [];
+      for (let from = 0; from < 20000; from += 1000) {
+        const { data: metPage, error: metErr } = await (supabase as any)
+          .from("metrics")
+          .select("campaign_id, cost, date")
+          .gte("date", startStr)
+          .lte("date", endStr)
+          .order("date")
+          .order("campaign_id")
+          .range(from, from + 999);
+        if (metErr) throw metErr;
+        if (!metPage?.length) break;
+        metrics.push(...metPage);
+        if (metPage.length < 1000) break;
+      }
 
       const statsMap = new Map<string, { totalSpend: number; todaySpend: number }>();
-      (metrics || []).forEach((m: any) => {
+      metrics.forEach((m: any) => {
         const cost = Number(m.cost || 0);
         const existing = statsMap.get(m.campaign_id) || { totalSpend: 0, todaySpend: 0 };
         existing.totalSpend += cost;
@@ -149,10 +166,18 @@ function CobrancasPage() {
         statsMap.set(m.campaign_id, existing);
       });
 
-      return (campaigns || []).map((c: any) => {
+      return campaigns.map((c: any) => {
         const stats = statsMap.get(c.id) || { totalSpend: 0, todaySpend: 0 };
+        const isConfiguredActive = String(c.status || "").toUpperCase() === "ACTIVE";
+        const deliveryNorm = String(c.delivery_status || "").toUpperCase();
+        const isDelivering =
+          deliveryNorm === "ACTIVE" ||
+          deliveryNorm === "LEARNING" ||
+          (isConfiguredActive && stats.totalSpend > 0 && deliveryNorm !== "PAUSED");
         return {
           ...c,
+          isConfiguredActive,
+          isDelivering,
           totalSpend: stats.totalSpend,
           todaySpend: stats.todaySpend
         };
@@ -188,10 +213,11 @@ function CobrancasPage() {
     return true;
   });
 
-  // Métricas Consolidadas Gerais
+  // Métricas Consolidadas Gerais (distingue status configurado vs em veiculação real)
   const totalSpentToday = campaignStats.reduce((sum, c) => sum + c.todaySpend, 0);
   const totalSpentPeriod = campaignStats.reduce((sum, c) => sum + c.totalSpend, 0);
-  const activeCampaignsCount = campaignStats.filter(c => ["active", "ACTIVE"].includes(c.status)).length;
+  const activeCampaignsCount = campaignStats.filter(c => c.isConfiguredActive).length;
+  const deliveringCampaignsCount = campaignStats.filter(c => c.isDelivering).length;
 
   return (
     <div className="space-y-8">
@@ -265,8 +291,10 @@ function CobrancasPage() {
             <Sparkles className="h-4 w-4 text-amber-400" />
             <span className="text-[10px] font-black uppercase tracking-wider">Campanhas Ativas</span>
           </div>
-          <p className="text-2xl font-black text-white">{activeCampaignsCount} ativas</p>
-          <p className="text-[10px] text-muted-foreground">gerando tráfego e leads agora</p>
+          <p className="text-2xl font-black text-white">{activeCampaignsCount} com status ativo</p>
+          <p className="text-[10px] text-muted-foreground">
+            {deliveringCampaignsCount} em veiculação real ({Math.max(0, activeCampaignsCount - deliveringCampaignsCount)} ativas sem entrega no período)
+          </p>
         </div>
       </div>
 
@@ -329,7 +357,8 @@ function CobrancasPage() {
             // Campanhas vinculadas a esta conta de anúncios
             const accountCampaigns = campaignStats.filter(c => c.ad_account_id === snap.ad_account_id);
             const totalAccountSpentToday = accountCampaigns.reduce((sum, c) => sum + c.todaySpend, 0);
-            const activeAccountCampaigns = accountCampaigns.filter(c => ["active", "ACTIVE"].includes(c.status));
+            const activeAccountCampaigns = accountCampaigns.filter(c => c.isConfiguredActive);
+            const deliveringAccountCampaigns = accountCampaigns.filter(c => c.isDelivering);
             const totalDailyBudget = activeAccountCampaigns.reduce((sum, c) => sum + (c.daily_budget || 0), 0);
             const pctUsed = totalDailyBudget > 0 ? (totalAccountSpentToday / totalDailyBudget) * 100 : 0;
 
@@ -435,7 +464,7 @@ function CobrancasPage() {
                   {/* Monitoramento de Orçamento Diário */}
                   <div className="pt-2">
                     <h5 className="text-[10px] font-black uppercase text-muted-foreground/70 tracking-wider mb-3 flex items-center gap-1.5">
-                      <Activity className="h-3 w-3 text-primary animate-pulse" /> Monitoramento de Orçamento Diário ({activeAccountCampaigns.length} campanhas ativas)
+                      <Activity className="h-3 w-3 text-primary animate-pulse" /> Monitoramento de Orçamento Diário ({activeAccountCampaigns.length} status ativo · {deliveringAccountCampaigns.length} em veiculação)
                     </h5>
 
                     <div className="bg-white/[0.01] border border-white/5 p-4 rounded-xl space-y-3">

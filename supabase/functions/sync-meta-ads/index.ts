@@ -11,7 +11,7 @@ import {
   type MetaPaginatedResult,
 } from "../_shared/metaCore.ts"
 
-const SYNC_VERSION = "2026-11-14-integral-v1"
+const SYNC_VERSION = "2026-11-14-integral-v2"
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -287,7 +287,7 @@ async function fetchPlacementBreakdowns(adAccountId: string, token: string, time
   return await safePaginatedFetch(`/${adAccountId}/insights`, token, {
     level: "campaign",
     fields: "campaign_id,campaign_name,objective,optimization_goal,results,spend,actions,action_values,reach,impressions,clicks,inline_link_clicks,date_start",
-    breakdowns: "publisher_platform,placement",
+    breakdowns: "publisher_platform,platform_position",
     time_increment: "1",
     use_unified_attribution_setting: "true",
     action_attribution_windows: INSIGHT_ATTRIBUTION_WINDOWS,
@@ -550,7 +550,20 @@ serve(async (req) => {
       })
     }
 
-    // 3. Registrar início do sync no histórico
+    // 3. Registrar início do sync no histórico (limpa eventuais locks zumbis >5m)
+    try {
+      const staleCutoffIso = new Date(Date.now() - 5 * 60 * 1000).toISOString()
+      await supabase
+        .from("sync_history")
+        .update({
+          status: "error",
+          completed_at: new Date().toISOString(),
+          error_message: "Execução anterior interrompida por timeout (>5m)",
+        })
+        .eq("status", "running")
+        .lt("started_at", staleCutoffIso)
+    } catch (_) {}
+
     const { data: syncRecord } = await supabase.from("sync_history").insert({
       user_id: userId,
       status: "running",
@@ -1437,7 +1450,7 @@ serve(async (req) => {
           ad_account_id: accountId,
           date: row.date_start,
           platform: row.publisher_platform || "facebook",
-          placement: row.placement || "unknown",
+          placement: row.platform_position || row.placement || "unknown",
           impressions: ex.impressions,
           clicks: ex.inlineLinkClicks,
           spend: ex.spend,

@@ -50,7 +50,9 @@ import {
   computeUnitCost,
   computeWeightedAggregates,
   evaluateCampaignHealth,
+  formatMetricVectorSummary,
   normalizeCampaignItem,
+  type MetricVector,
 } from "@/lib/metricsDomain";
 
 // â"€â"€â"€ ROTA â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
@@ -98,10 +100,12 @@ const OBJECTIVE_MAP: Record<string, { label: string; color: string; icon: any }>
   LEAD_GENERATION:    { label: "Leads",      color: "text-violet-400 bg-violet-500/10 border-violet-500/20", icon: Target },
   MESSAGES:           { label: "Mensagens",  color: "text-blue-400 bg-blue-500/10 border-blue-500/20",       icon: MessageCircle },
   OUTCOME_ENGAGEMENT: { label: "Engaj.",     color: "text-pink-400 bg-pink-500/10 border-pink-500/20",       icon: Zap },
+  ENGAGEMENT:         { label: "Engaj.",     color: "text-pink-400 bg-pink-500/10 border-pink-500/20",       icon: Zap },
   OUTCOME_TRAFFIC:    { label: "Tráfego",    color: "text-amber-400 bg-amber-500/10 border-amber-500/20",    icon: Car },
   LINK_CLICKS:        { label: "Tráfego",    color: "text-amber-400 bg-amber-500/10 border-amber-500/20",    icon: Car },
   VIDEO_VIEWS:        { label: "Vídeo",      color: "text-cyan-400 bg-cyan-500/10 border-cyan-500/20",       icon: Video },
-  OUTCOME_AWARENESS:  { label: "Awareness",  color: "text-emerald-400 bg-emerald-500/10 border-emerald-500/20", icon: Users },
+  OUTCOME_AWARENESS:  { label: "Alcance",    color: "text-emerald-400 bg-emerald-500/10 border-emerald-500/20", icon: Users },
+  REACH:              { label: "Alcance",    color: "text-emerald-400 bg-emerald-500/10 border-emerald-500/20", icon: Users },
   OUTCOME_SALES:      { label: "Vendas",     color: "text-primary bg-primary/10 border-primary/20",          icon: Target },
   CONVERSIONS:        { label: "Conversões", color: "text-primary bg-primary/10 border-primary/20",          icon: Target },
   VISIT_INSTAGRAM_PROFILE: { label: "Instagram", color: "text-pink-400 bg-pink-500/10 border-pink-500/20", icon: Zap },
@@ -174,16 +178,21 @@ function processMetrics(item: any, rawData: any[], startStr: string, endStr: str
   const reach       = m.reduce((s: number, x: any) => s + Number(x.reach       || 0), 0);
   const purchaseVal = m.reduce((s: number, x: any) => s + Number(x.purchase_value || 0), 0);
   const freq        = reach > 0 ? impressions / reach : 0;
-  const ctr  = impressions > 0 ? (clicks / impressions) * 100 : 0;
-  const cpm  = impressions > 0 ? (cost / impressions) * 1000 : 0;
-  const cpc  = clicks > 0 ? cost / clicks : 0;
-  const roas = cost > 0 && purchaseVal > 0 ? purchaseVal / cost : null;
+  const ctr         = impressions > 0 ? (clicks / impressions) * 100 : 0;
+  const ctrAll      = impressions > 0 ? (allClicks / impressions) * 100 : 0;
+  const cpm         = impressions > 0 ? (cost / impressions) * 1000 : 0;
+  const cpc         = clicks > 0 ? cost / clicks : 0;
+  const roas        = cost > 0 && purchaseVal > 0 ? purchaseVal / cost : null;
 
   const storedType = m.find((x: any) => x.result_type)?.result_type || item.result_type;
+  const resultIndicator = m.find((x: any) => x.result_indicator)?.result_indicator || item.result_indicator || null;
+  const optimizationGoal = m.find((x: any) => x.optimization_goal)?.optimization_goal || item.optimization_goal || null;
   const classification = classifyMetaEvent({
     campaignName: item.name + (item.campaigns?.name ? ` ${item.campaigns.name}` : ""),
     rawObjective: item.objective || item.campaigns?.objective,
     resultType: storedType,
+    resultsIndicator: resultIndicator || undefined,
+    optimizationGoal: optimizationGoal || undefined,
     isVehicleContext: false,
   });
   const effectiveResults = classification.category === "REACH" ? (reach > 0 ? reach : conversions) : conversions;
@@ -194,7 +203,9 @@ function processMetrics(item: any, rawData: any[], startStr: string, endStr: str
   return {
     ...item,
     result_type,
-    t: { cost, conversions, clicks, allClicks, impressions, reach, freq, cpl, ctr, cpm, cpc, roas, purchaseValue: purchaseVal },
+    result_indicator: resultIndicator,
+    optimization_goal: optimizationGoal,
+    t: { cost, conversions, clicks, allClicks, impressions, reach, freq, cpl, ctr, ctrAll, cpm, cpc, roas, purchaseValue: purchaseVal },
     _metrics: m,
   };
 }
@@ -477,18 +488,20 @@ function ObjectiveBadge({ objective, name: _name, resultType }: { objective?: st
   const isPurchases = res === "PURCHASES" || obj === "OUTCOME_SALES" || obj === "CONVERSIONS";
   const isLp = res === "LANDING_PAGE_VIEWS" || obj === "LANDING_PAGE_VIEWS";
   const isLeads = res === "LEADS" || obj === "OUTCOME_LEADS" || obj === "LEAD_GENERATION";
-  const isReach = res === "REACH" || obj === "OUTCOME_AWARENESS";
+  const isReach = res === "REACH" || obj === "OUTCOME_AWARENESS" || obj === "REACH";
   const isVideo = res === "VIDEO_VIEWS" || obj === "VIDEO_VIEWS";
   const isClicks = res === "LINK_CLICKS";
+  const isEngagement = res === "ENGAGEMENT" || obj === "ENGAGEMENT";
 
   const effectiveObjective = isMsg ? "MESSAGES" :
                              isInsta ? "INSTAGRAM_PROFILE" :
                              isPurchases ? "OUTCOME_SALES" :
                              isLp ? "LANDING_PAGE_VIEWS" :
                              isLeads ? "OUTCOME_LEADS" :
-                             isReach ? "OUTCOME_AWARENESS" :
+                             isReach ? "REACH" :
                              isVideo ? "VIDEO_VIEWS" :
                              isClicks ? "LINK_CLICKS" :
+                             isEngagement ? "ENGAGEMENT" :
                              (OBJECTIVE_MAP[obj] ? obj : OBJECTIVE_MAP[res] ? res : "UNKNOWN");
 
   if (!effectiveObjective) return null;
@@ -576,12 +589,28 @@ interface KPIBarProps {
   totImpr: number;
   totReach: number;
   totClicks: number;
+  totAllClicks?: number;
   avgCtr: number;
+  avgCtrAll?: number;
   avgCpm: number;
   reachLabel?: string;
+  metricVector?: MetricVector;
 }
 
-function KPIBar({ totCost, totConv, avgCpl, totImpr, totReach, totClicks, avgCtr, avgCpm, reachLabel = "Alcance" }: KPIBarProps) {
+function KPIBar({
+  totCost,
+  totConv,
+  avgCpl,
+  totImpr,
+  totReach,
+  totClicks,
+  totAllClicks,
+  avgCtr,
+  avgCtrAll,
+  avgCpm,
+  reachLabel = "Alcance",
+  metricVector,
+}: KPIBarProps) {
   const [scrolled, setScrolled] = useState(false);
 
   useEffect(() => {
@@ -590,15 +619,34 @@ function KPIBar({ totCost, totConv, avgCpl, totImpr, totReach, totClicks, avgCtr
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
 
+  const vectorEntries = metricVector ? formatMetricVectorSummary(metricVector) : [];
+  const isMixed = vectorEntries.length > 1;
+  const primaryEntry = vectorEntries[0];
+  const vectorSummaryText = vectorEntries.map(e => `${fmtN(e.value)} ${e.label.toLowerCase()}`).join(" • ");
+  const resultsDisplay = metricVector
+    ? (isMixed ? vectorSummaryText : fmtN(primaryEntry?.value ?? totConv))
+    : fmtN(totConv);
+  const cplLabel = !isMixed && primaryEntry?.key === "reach"
+    ? "Custo / 1k Alc."
+    : isMixed
+    ? "CPA Elegível"
+    : "CPL / CPA";
+  const clicksSub = typeof totAllClicks === "number" && totAllClicks > totClicks
+    ? `Todos: ${fmtN(totAllClicks)}`
+    : undefined;
+  const ctrSub = typeof avgCtrAll === "number" && avgCtrAll > avgCtr
+    ? `Todos: ${avgCtrAll.toFixed(2)}%`
+    : undefined;
+
   const kpiItems = [
-    { label: "Gasto",      value: `R$ ${fmtBRL(totCost)}`,                                   color: "text-primary",              icon: DollarSign },
-    { label: "Resultados", value: fmtN(totConv),                                             color: "text-violet-400",           icon: Target },
-    { label: "CPL / CPA",  value: avgCpl > 0 ? `R$ ${avgCpl.toFixed(2)}` : "—",              color: "text-primary",              icon: Zap },
-    { label: "Impressões", value: fmtN(totImpr),                                             color: "text-muted-foreground",     icon: Eye },
-    { label: reachLabel,   value: totReach > 0 ? fmtN(totReach) : "—",                       color: "text-muted-foreground",     icon: Users },
-    { label: "Cliques",    value: fmtN(totClicks),                                           color: "text-muted-foreground",     icon: MousePointer2 },
-    { label: "CTR Médio",  value: `${avgCtr.toFixed(2)}%`,                                   color: avgCtr >= 1.5 ? "text-green-400" : "text-muted-foreground", icon: TrendingUp },
-    { label: "CPM Médio",  value: avgCpm > 0 ? `R$ ${avgCpm.toFixed(2)}` : "—",              color: "text-muted-foreground",     icon: BarChart3 },
+    { label: "Gasto",          value: `R$ ${fmtBRL(totCost)}`,                         color: "text-primary",          icon: DollarSign,    sub: undefined },
+    { label: isMixed ? "Resultados (Tipo)" : "Resultados", value: resultsDisplay,      color: "text-violet-400",       icon: Target,        sub: isMixed ? "Sem soma mista" : undefined },
+    { label: cplLabel,         value: avgCpl > 0 ? `R$ ${avgCpl.toFixed(2)}` : "—",    color: "text-primary",          icon: Zap,           sub: undefined },
+    { label: "Impressões",     value: fmtN(totImpr),                                   color: "text-muted-foreground", icon: Eye,           sub: undefined },
+    { label: reachLabel,       value: totReach > 0 ? fmtN(totReach) : "—",             color: "text-muted-foreground", icon: Users,         sub: undefined },
+    { label: "Cliques (Link)", value: fmtN(totClicks),                                 color: "text-muted-foreground", icon: MousePointer2, sub: clicksSub },
+    { label: "CTR Link",       value: `${avgCtr.toFixed(2)}%`,                         color: avgCtr >= 1.5 ? "text-green-400" : "text-muted-foreground", icon: TrendingUp, sub: ctrSub },
+    { label: "CPM Médio",      value: avgCpm > 0 ? `R$ ${avgCpm.toFixed(2)}` : "—",    color: "text-muted-foreground", icon: BarChart3,     sub: undefined },
   ];
 
   return (
@@ -607,12 +655,12 @@ function KPIBar({ totCost, totConv, avgCpl, totImpr, totReach, totClicks, avgCtr
       animate={{ opacity: 1 }} initial={{ opacity: 0 }}
     >
       {kpiItems.map(k => (
-        <div key={k.label} className={`flex-1 min-w-[125px] transition-all duration-300 hover:bg-white/[0.02] ${scrolled ? "px-3 py-1.5" : "px-4 py-2.5"}`}>
+        <div key={k.label} className={`flex-1 min-w-[130px] transition-all duration-300 hover:bg-white/[0.02] ${scrolled ? "px-3 py-1.5" : "px-4 py-2.5"}`} title={k.sub ? `${k.label}: ${k.value} (${k.sub})` : `${k.label}: ${k.value}`}>
           {scrolled ? (
             <div className="flex items-center gap-1.5">
               <k.icon className={`h-3 w-3 flex-shrink-0 ${k.color}`} />
               <span className="text-[8px] font-black uppercase tracking-widest text-muted-foreground/50 whitespace-nowrap">{k.label}</span>
-              <span className={`font-mono font-black text-[11px] whitespace-nowrap ${k.color}`}>{k.value}</span>
+              <span className={`font-mono font-black text-[11px] whitespace-nowrap truncate max-w-[160px] ${k.color}`}>{k.value}</span>
             </div>
           ) : (
             <div className="flex flex-col justify-center gap-0.5">
@@ -620,7 +668,8 @@ function KPIBar({ totCost, totConv, avgCpl, totImpr, totReach, totClicks, avgCtr
                 <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/60 whitespace-nowrap">{k.label}</span>
                 <k.icon className={`h-3 w-3 flex-shrink-0 ${k.color}`} />
               </div>
-              <span className={`font-mono font-black text-[13px] whitespace-nowrap ${k.color}`}>{k.value}</span>
+              <span className={`font-mono font-black tracking-tight whitespace-nowrap truncate ${isMixed && k.label.startsWith("Resultados") ? "text-[11px]" : "text-[13px]"} ${k.color}`}>{k.value}</span>
+              {k.sub && <span className="text-[9px] font-mono text-muted-foreground/70 whitespace-nowrap truncate">{k.sub}</span>}
             </div>
           )}
         </div>
@@ -813,21 +862,29 @@ function MetricasCampanhasPage() {
       ensureDatabaseCalibrated(supabase).catch(() => {});
       const buildQuery = (withExtended: boolean) => {
         const metricsCols = withExtended
-          ? "cost, conversions, impressions, clicks, inline_link_clicks, all_clicks, purchase_value, reach, frequency, date, result_type"
+          ? "cost, conversions, impressions, clicks, inline_link_clicks, all_clicks, optimization_goal, result_indicator, purchase_value, reach, frequency, date, result_type"
           : "cost, conversions, impressions, clicks, reach, frequency, date, result_type";
         let q = (supabase as any)
           .from("campaigns")
           .select(`id, name, status, delivery_status, objective, daily_budget, lifetime_budget, budget_currency, external_id, ad_account_id, ad_account:ad_accounts(name), metrics(${metricsCols})`);
         if (accountFilter !== "all") q = q.eq("ad_account_id", accountFilter);
         if (statusFilter !== "all") q = q.ilike("status", statusFilter === "active" ? "ACTIVE" : "PAUSED");
-        return q.order("name");
+        return q;
       };
-      let { data, error } = await buildQuery(true);
-      if (error && (error.code === "42703" || error.code === "PGRST204" || String(error.message || "").includes("column"))) {
-        ({ data, error } = await buildQuery(false));
+      const all: any[] = [];
+      let useExtended = true;
+      for (let from = 0; from < 5000; from += 1000) {
+        let { data, error } = await buildQuery(useExtended).order("name").order("id").range(from, from + 999);
+        if (error && useExtended && (error.code === "42703" || error.code === "PGRST204" || String(error.message || "").includes("column"))) {
+          useExtended = false;
+          ({ data, error } = await buildQuery(false).order("name").order("id").range(from, from + 999));
+        }
+        if (error) throw error;
+        if (!data?.length) break;
+        all.push(...data);
+        if (data.length < 1000) break;
       }
-      if (error) throw error;
-      return (data || []).map((c: any) =>
+      return all.map((c: any) =>
         processMetrics(c, calibrateCampaignMetricsArray(c.name, c.metrics), startStr, endStr)
       );
     },
@@ -841,45 +898,54 @@ function MetricasCampanhasPage() {
   }, [selectedCampaignId, campaigns]);
 
   const campaignIdsInAccount = useMemo(
-    () => campaigns.map((c: any) => c.id).filter(Boolean),
+    () => campaigns.map((c: any) => c.id).filter(Boolean).slice().sort(),
     [campaigns]
   );
 
+  const selectedCampsKey = useMemo(() => Array.from(selectedCamps).sort().join(","), [selectedCamps]);
+  const selectedAdSetsKey = useMemo(() => Array.from(selectedAdSets).sort().join(","), [selectedAdSets]);
+  const campaignIdsKey = useMemo(() => campaignIdsInAccount.join(","), [campaignIdsInAccount]);
+
   const { data: adSets = [], isLoading: isLoadingAdSets } = useQuery({
-    queryKey: ["mc-adsets", accountFilter, selectedCampaignId || Array.from(selectedCamps).join(","), campaignIdsInAccount.length, statusFilter, startStr, endStr],
+    queryKey: ["mc-adsets", accountFilter, selectedCampaignId || selectedCampsKey, campaignIdsKey, statusFilter, startStr, endStr],
     enabled: level === "conjuntos" || level === "anuncios" || !!selectedCampaignId,
     placeholderData: (prev) => prev,
     queryFn: async () => {
       const targetCampIds = selectedCampaignId
         ? [selectedCampaignId]
         : selectedCamps.size > 0
-          ? Array.from(selectedCamps)
+          ? Array.from(selectedCamps).sort()
           : accountFilter !== "all"
             ? campaignIdsInAccount
             : null;
       if (targetCampIds !== null && targetCampIds.length === 0) return [];
-      const buildQuery = (withExtended: boolean) => {
+      const buildQuery = (withExtended: boolean, chunkIds: string[] | null) => {
         const metricCols = withExtended
-          ? "cost, conversions, impressions, clicks, inline_link_clicks, all_clicks, purchase_value, reach, date"
+          ? "cost, conversions, impressions, clicks, inline_link_clicks, all_clicks, optimization_goal, result_indicator, purchase_value, reach, date, result_type"
           : "cost, conversions, impressions, clicks, reach, date";
         let q = (supabase as any)
           .from("ad_sets")
           .select(`id, name, status, budget, external_id, campaign_id, campaigns(id, name, objective), asset_metrics(${metricCols})`);
-        if (targetCampIds) q = q.in("campaign_id", targetCampIds);
+        if (chunkIds) q = q.in("campaign_id", chunkIds);
         if (statusFilter !== "all") q = q.ilike("status", statusFilter === "active" ? "ACTIVE" : "PAUSED");
         return q;
       };
+      const chunks: (string[] | null)[] = targetCampIds === null
+        ? [null]
+        : Array.from({ length: Math.ceil(targetCampIds.length / 200) }, (_, i) => targetCampIds.slice(i * 200, (i + 1) * 200));
       const all: any[] = [];
       let useExtended = true;
-      for (let from = 0; from < 10000; from += 1000) {
-        let { data, error } = await buildQuery(useExtended).order("name").order("id").range(from, from + 999);
-        if (error && useExtended && (error.code === "42703" || error.code === "PGRST204" || String(error.message || "").includes("column"))) {
-          useExtended = false;
-          ({ data, error } = await buildQuery(false).order("name").order("id").range(from, from + 999));
+      for (const chunkIds of chunks) {
+        for (let from = 0; from < 10000; from += 1000) {
+          let { data, error } = await buildQuery(useExtended, chunkIds).order("name").order("id").range(from, from + 999);
+          if (error && useExtended && (error.code === "42703" || error.code === "PGRST204" || String(error.message || "").includes("column"))) {
+            useExtended = false;
+            ({ data, error } = await buildQuery(false, chunkIds).order("name").order("id").range(from, from + 999));
+          }
+          if (error) throw error;
+          all.push(...(data || []));
+          if (!data || data.length < 1000) break;
         }
-        if (error) throw error;
-        all.push(...(data || []));
-        if (!data || data.length < 1000) break;
       }
       return all.map((c: any) =>
         processMetrics(c, calibrateAdSetMetricsArray(c.name, c.asset_metrics), startStr, endStr)
@@ -888,41 +954,55 @@ function MetricasCampanhasPage() {
   });
 
   const { data: ads = [], isLoading: isLoadingAds } = useQuery({
-    queryKey: ["mc-ads", accountFilter, Array.from(selectedAdSets).join(","), selectedCampaignId || Array.from(selectedCamps).join(","), campaignIdsInAccount.length, statusFilter, startStr, endStr],
+    queryKey: ["mc-ads", accountFilter, selectedAdSetsKey, selectedCampaignId || selectedCampsKey, campaignIdsKey, statusFilter, startStr, endStr],
     enabled: true,
     placeholderData: (prev) => prev,
     queryFn: async () => {
       const targetCampIds = selectedCampaignId
         ? [selectedCampaignId]
         : selectedCamps.size > 0
-          ? Array.from(selectedCamps)
+          ? Array.from(selectedCamps).sort()
           : accountFilter !== "all"
             ? campaignIdsInAccount
             : null;
       if (selectedAdSets.size === 0 && targetCampIds !== null && targetCampIds.length === 0) return [];
-      const buildQuery = (withExtended: boolean) => {
+      const buildQuery = (withExtended: boolean, chunkAdSetIds: string[] | null, chunkCampIds: string[] | null) => {
         const metricCols = withExtended
-          ? "cost, conversions, impressions, clicks, inline_link_clicks, all_clicks, purchase_value, reach, date"
+          ? "cost, conversions, impressions, clicks, inline_link_clicks, all_clicks, optimization_goal, result_indicator, purchase_value, reach, date, result_type"
           : "cost, conversions, impressions, clicks, reach, date";
         let q = (supabase as any)
           .from("ads")
           .select(`id, name, status, external_id, campaign_id, ad_set_id, creative_url, campaigns(id, name, objective), asset_metrics(${metricCols})`);
-        if (selectedAdSets.size > 0) q = q.in("ad_set_id", Array.from(selectedAdSets));
-        else if (targetCampIds) q = q.in("campaign_id", targetCampIds);
+        if (chunkAdSetIds) q = q.in("ad_set_id", chunkAdSetIds);
+        else if (chunkCampIds) q = q.in("campaign_id", chunkCampIds);
         if (statusFilter !== "all") q = q.ilike("status", statusFilter === "active" ? "ACTIVE" : "PAUSED");
         return q;
       };
+      const adSetChunks: (string[] | null)[] = selectedAdSets.size > 0
+        ? Array.from({ length: Math.ceil(selectedAdSets.size / 200) }, (_, i) => Array.from(selectedAdSets).sort().slice(i * 200, (i + 1) * 200))
+        : [];
+      const campChunks: (string[] | null)[] = selectedAdSets.size === 0
+        ? (targetCampIds === null
+            ? [null]
+            : Array.from({ length: Math.ceil(targetCampIds.length / 200) }, (_, i) => targetCampIds.slice(i * 200, (i + 1) * 200)))
+        : [];
+      const iterations = adSetChunks.length > 0
+        ? adSetChunks.map(a => ({ adSets: a, camps: null as string[] | null }))
+        : campChunks.map(c => ({ adSets: null as string[] | null, camps: c }));
+
       const all: any[] = [];
       let useExtended = true;
-      for (let from = 0; from < 20000; from += 1000) {
-        let { data, error } = await buildQuery(useExtended).order("name").order("id").range(from, from + 999);
-        if (error && useExtended && (error.code === "42703" || error.code === "PGRST204" || String(error.message || "").includes("column"))) {
-          useExtended = false;
-          ({ data, error } = await buildQuery(false).order("name").order("id").range(from, from + 999));
+      for (const it of iterations) {
+        for (let from = 0; from < 20000; from += 1000) {
+          let { data, error } = await buildQuery(useExtended, it.adSets, it.camps).order("name").order("id").range(from, from + 999);
+          if (error && useExtended && (error.code === "42703" || error.code === "PGRST204" || String(error.message || "").includes("column"))) {
+            useExtended = false;
+            ({ data, error } = await buildQuery(false, it.adSets, it.camps).order("name").order("id").range(from, from + 999));
+          }
+          if (error) throw error;
+          all.push(...(data || []));
+          if (!data || data.length < 1000) break;
         }
-        if (error) throw error;
-        all.push(...(data || []));
-        if (!data || data.length < 1000) break;
       }
       return all.map((c: any) =>
         processMetrics(c, calibrateAdMetricsArray(c.name, c.asset_metrics), startStr, endStr)
@@ -935,14 +1015,33 @@ function MetricasCampanhasPage() {
     queryKey: ["mc-period-stats", accountFilter, startStr, endStr],
     placeholderData: (prev) => prev,
     queryFn: async () => {
-      let q = (supabase as any)
-        .from("meta_period_stats")
-        .select("entity_type, entity_id, reach, impressions, frequency, spend, conversions, clicks, quality_ranking, engagement_rate_ranking, conversion_rate_ranking")
-        .eq("start_date", startStr)
-        .eq("end_date", endStr);
-      if (accountFilter !== "all") q = q.eq("ad_account_id", accountFilter);
-      const { data } = await q;
-      return data || [];
+      const buildQ = (withExtended: boolean, from: number) => {
+        const cols = withExtended
+          ? "entity_type, entity_id, reach, impressions, frequency, spend, conversions, clicks, inline_link_clicks, all_clicks, result_type, result_indicator, optimization_goal, quality_ranking, engagement_rate_ranking, conversion_rate_ranking"
+          : "entity_type, entity_id, reach, impressions, frequency, spend, conversions, clicks, quality_ranking, engagement_rate_ranking, conversion_rate_ranking";
+        let q = (supabase as any)
+          .from("meta_period_stats")
+          .select(cols)
+          .eq("start_date", startStr)
+          .eq("end_date", endStr)
+          .order("entity_id")
+          .range(from, from + 999);
+        if (accountFilter !== "all") q = q.eq("ad_account_id", accountFilter);
+        return q;
+      };
+      const all: any[] = [];
+      let useExtended = true;
+      for (let from = 0; from < 20000; from += 1000) {
+        let { data, error } = await buildQ(useExtended, from);
+        if (error && useExtended && (error.code === "42703" || error.code === "PGRST204" || String(error.message || "").includes("column"))) {
+          useExtended = false;
+          ({ data, error } = await buildQ(false, from));
+        }
+        if (error || !data?.length) break;
+        all.push(...data);
+        if (data.length < 1000) break;
+      }
+      return all;
     },
     refetchInterval: 60 * 1000,
     refetchIntervalInBackground: false,
@@ -1166,15 +1265,26 @@ function MetricasCampanhasPage() {
         if (!ps) return c;
         const cost = Number(ps.spend || 0);
         const conversions = Number(ps.conversions || 0);
-        const clicks = Number(ps.clicks || 0);
+        const clicks = Number(ps.inline_link_clicks ?? ps.clicks ?? 0);
+        const allClicks = Number(ps.all_clicks ?? ps.clicks ?? 0);
         const impressions = Number(ps.impressions || 0);
         const reach = Number(ps.reach || 0);
 
         const freq = reach > 0 ? impressions / reach : 0;
-        const cat = c.result_type || classifyMetaEvent({ campaignName: c.name, rawObjective: c.objective, isVehicleContext: false }).category;
+        const resIndicator = ps.result_indicator || c.result_indicator || null;
+        const optGoal = ps.optimization_goal || c.optimization_goal || null;
+        const cat = c.result_type || classifyMetaEvent({
+          campaignName: c.name,
+          rawObjective: c.objective,
+          resultType: ps.result_type,
+          resultsIndicator: resIndicator || undefined,
+          optimizationGoal: optGoal || undefined,
+          isVehicleContext: false,
+        }).category;
         const effectiveRes = cat === "REACH" ? (reach > 0 ? reach : conversions) : conversions;
         const cpl = computeUnitCost(cost, effectiveRes, cat) ?? 0;
         const ctr = impressions > 0 ? (clicks / impressions) * 100 : 0;
+        const ctrAll = impressions > 0 ? (allClicks / impressions) * 100 : 0;
         const cpm = impressions > 0 ? (cost / impressions) * 1000 : 0;
         const cpc = clicks > 0 ? cost / clicks : 0;
         const purchaseVal = Number(c.t?.purchaseValue || 0);
@@ -1182,9 +1292,12 @@ function MetricasCampanhasPage() {
         
         return { 
           ...c, 
+          result_type: cat,
+          result_indicator: resIndicator,
+          optimization_goal: optGoal,
           t: { 
             ...c.t, 
-            cost, conversions, clicks, impressions, reach, freq, cpl, ctr, cpm, cpc, roas 
+            cost, conversions, clicks, allClicks, impressions, reach, freq, cpl, ctr, ctrAll, cpm, cpc, roas 
           } 
         };
       });
@@ -1204,20 +1317,31 @@ function MetricasCampanhasPage() {
         if (!ps) return c;
         const cost = Number(ps.spend || 0);
         const conversions = Number(ps.conversions || 0);
-        const clicks = Number(ps.clicks || 0);
+        const clicks = Number(ps.inline_link_clicks ?? ps.clicks ?? 0);
+        const allClicks = Number(ps.all_clicks ?? ps.clicks ?? 0);
         const impressions = Number(ps.impressions || 0);
         const reach = Number(ps.reach || 0);
 
         const freq = reach > 0 ? impressions / reach : 0;
-        const cat = c.result_type || classifyMetaEvent({ campaignName: c.name + " " + (c.campaigns?.name || ""), rawObjective: c.objective || c.campaigns?.objective, isVehicleContext: false }).category;
+        const resIndicator = ps.result_indicator || c.result_indicator || null;
+        const optGoal = ps.optimization_goal || c.optimization_goal || null;
+        const cat = c.result_type || classifyMetaEvent({
+          campaignName: c.name + " " + (c.campaigns?.name || ""),
+          rawObjective: c.objective || c.campaigns?.objective,
+          resultType: ps.result_type,
+          resultsIndicator: resIndicator || undefined,
+          optimizationGoal: optGoal || undefined,
+          isVehicleContext: false,
+        }).category;
         const effectiveRes = cat === "REACH" ? (reach > 0 ? reach : conversions) : conversions;
         const cpl = computeUnitCost(cost, effectiveRes, cat) ?? 0;
         const ctr = impressions > 0 ? (clicks / impressions) * 100 : 0;
+        const ctrAll = impressions > 0 ? (allClicks / impressions) * 100 : 0;
         const cpm = impressions > 0 ? (cost / impressions) * 1000 : 0;
         const cpc = clicks > 0 ? cost / clicks : 0;
         const purchaseVal = Number(c.t?.purchaseValue || 0);
         const roas = cost > 0 && purchaseVal > 0 ? purchaseVal / cost : null;
-        return { ...c, t: { ...c.t, cost, conversions, clicks, impressions, reach, freq, cpl, ctr, cpm, cpc, roas } };
+        return { ...c, result_type: cat, result_indicator: resIndicator, optimization_goal: optGoal, t: { ...c.t, cost, conversions, clicks, allClicks, impressions, reach, freq, cpl, ctr, ctrAll, cpm, cpc, roas } };
       });
     }
     return includeNoDelivery
@@ -1235,20 +1359,31 @@ function MetricasCampanhasPage() {
         if (!ps) return c;
         const cost = Number(ps.spend || 0);
         const conversions = Number(ps.conversions || 0);
-        const clicks = Number(ps.clicks || 0);
+        const clicks = Number(ps.inline_link_clicks ?? ps.clicks ?? 0);
+        const allClicks = Number(ps.all_clicks ?? ps.clicks ?? 0);
         const impressions = Number(ps.impressions || 0);
         const reach = Number(ps.reach || 0);
 
         const freq = reach > 0 ? impressions / reach : 0;
-        const cat = c.result_type || classifyMetaEvent({ campaignName: c.name + " " + (c.campaigns?.name || ""), rawObjective: c.objective || c.campaigns?.objective, isVehicleContext: false }).category;
+        const resIndicator = ps.result_indicator || c.result_indicator || null;
+        const optGoal = ps.optimization_goal || c.optimization_goal || null;
+        const cat = c.result_type || classifyMetaEvent({
+          campaignName: c.name + " " + (c.campaigns?.name || ""),
+          rawObjective: c.objective || c.campaigns?.objective,
+          resultType: ps.result_type,
+          resultsIndicator: resIndicator || undefined,
+          optimizationGoal: optGoal || undefined,
+          isVehicleContext: false,
+        }).category;
         const effectiveRes = cat === "REACH" ? (reach > 0 ? reach : conversions) : conversions;
         const cpl = computeUnitCost(cost, effectiveRes, cat) ?? 0;
         const ctr = impressions > 0 ? (clicks / impressions) * 100 : 0;
+        const ctrAll = impressions > 0 ? (allClicks / impressions) * 100 : 0;
         const cpm = impressions > 0 ? (cost / impressions) * 1000 : 0;
         const cpc = clicks > 0 ? cost / clicks : 0;
         const purchaseVal = Number(c.t?.purchaseValue || 0);
         const roas = cost > 0 && purchaseVal > 0 ? purchaseVal / cost : null;
-        return { ...c, t: { ...c.t, cost, conversions, clicks, impressions, reach, freq, cpl, ctr, cpm, cpc, roas } };
+        return { ...c, result_type: cat, result_indicator: resIndicator, optimization_goal: optGoal, t: { ...c.t, cost, conversions, clicks, allClicks, impressions, reach, freq, cpl, ctr, ctrAll, cpm, cpc, roas } };
       });
     }
     return includeNoDelivery
@@ -1383,13 +1518,14 @@ function MetricasCampanhasPage() {
   const toggleAll = useCallback(() => allSelected ? setSelSet(new Set()) : setSelSet(new Set(filtered.map((c: any) => c.id))), [allSelected, filtered, setSelSet]);
   const toggleOne = useCallback((id: string) => { const s = new Set(selSet); s.has(id) ? s.delete(id) : s.add(id); setSelSet(s); }, [selSet, setSelSet]);
 
-  const { sel, totCost, totConv, totImpr, totReach, reachLabel, totClicks, avgCpl, avgCtr, avgCpm } = useMemo(() => {
+  const { sel, totCost, totConv, totImpr, totReach, reachLabel, totClicks, totAllClicks, avgCpl, avgCtr, avgCtrAll, avgCpm, metricVector } = useMemo(() => {
     const s = selSet.size > 0 ? filtered.filter((c: any) => selSet.has(c.id)) : filtered;
     const cost = s.reduce((sum: number, c: any) => sum + c.t.cost, 0);
     const conv = s.reduce((sum: number, c: any) => sum + c.t.conversions, 0);
     const impr = s.reduce((sum: number, c: any) => sum + c.t.impressions, 0);
     const summedReach = s.reduce((sum: number, c: any) => sum + c.t.reach, 0);
     const clicks = s.reduce((sum: number, c: any) => sum + c.t.clicks, 0);
+    const allClicks = s.reduce((sum: number, c: any) => sum + (c.t.allClicks ?? c.t.clicks ?? 0), 0);
 
     const canUseAccountReach =
       level === "campanhas" &&
@@ -1412,10 +1548,13 @@ function MetricasCampanhasPage() {
         cost: c.t.cost,
         conversions: c.t.conversions,
         clicks: c.t.clicks,
+        allClicks: c.t.allClicks ?? c.t.clicks,
         impressions: c.t.impressions,
         reach: c.t.reach,
         rawObjective: c.objective || c.campaigns?.objective,
         resultType: c.result_type,
+        resultIndicator: c.result_indicator,
+        optimizationGoal: c.optimization_goal,
         isVehicleContext: false,
       })),
       { deduplicatedAccountReach }
@@ -1444,9 +1583,12 @@ function MetricasCampanhasPage() {
       totReach: deduplicatedAccountReach ?? summedReach,
       reachLabel: deduplicatedAccountReach !== null ? "Alcance (Conta)" : "Alcance (Soma)",
       totClicks: clicks,
+      totAllClicks: allClicks,
       avgCpl: computedAvgCpl,
       avgCtr: impr > 0 ? (clicks / impr) * 100 : 0,
+      avgCtrAll: impr > 0 ? (allClicks / impr) * 100 : 0,
       avgCpm: impr > 0 ? (cost / impr) * 1000 : 0,
+      metricVector: summary.metricVector,
     };
   }, [selSet, filtered, level, search, statusFilter, accountFilter, accountPeriodStats]);
 
@@ -1696,8 +1838,11 @@ function MetricasCampanhasPage() {
           totReach={totReach}
           reachLabel={reachLabel}
           totClicks={totClicks}
+          totAllClicks={totAllClicks}
           avgCtr={avgCtr}
+          avgCtrAll={avgCtrAll}
           avgCpm={avgCpm}
+          metricVector={metricVector}
         />
       </div>
 
@@ -2031,7 +2176,17 @@ function MetricasCampanhasPage() {
                     <div className="border-b border-white/5 bg-primary/5 px-4 py-2.5 flex items-center gap-4 overflow-x-auto scrollbar-hide text-xs">
                       <span className="shrink-0 font-black text-primary uppercase tracking-widest text-[11px]">{selSet.size} selecionado{selSet.size>1?"s":""}</span>
                       <span className="shrink-0 text-muted-foreground">Gasto <strong className="text-foreground font-mono">R$ {fmtBRL(totCost)}</strong></span>
-                      <span className="shrink-0"><strong className="text-violet-400 font-mono">{totConv}</strong> <span className="text-muted-foreground">resultados</span></span>
+                      {(() => {
+                        const entries = formatMetricVectorSummary(metricVector);
+                        const isVecMixed = entries.length > 1;
+                        const label = entries.map(e => `${fmtN(e.value)} ${e.label.toLowerCase()}`).join(" • ");
+                        return (
+                          <span className="shrink-0">
+                            <strong className="text-violet-400 font-mono">{isVecMixed ? label : fmtN(entries[0]?.value ?? totConv)}</strong>{" "}
+                            <span className="text-muted-foreground">{isVecMixed ? "(por tipo)" : "resultados"}</span>
+                          </span>
+                        );
+                      })()}
                       <span className="shrink-0 text-muted-foreground">CPL <strong className={`font-mono ${maxCplThreshold && avgCpl > maxCplThreshold ? "text-red-400" : "text-green-400"}`}>R$ {avgCpl > 0 ? avgCpl.toFixed(2) : "—"}</strong></span>
                       <span className="shrink-0 text-muted-foreground">Alcance <strong className="text-foreground font-mono">{fmtN(totReach)}</strong></span>
                       <button onClick={() => setSelSet(new Set())} className="ml-auto shrink-0 text-[9px] text-muted-foreground hover:text-foreground underline">Limpar seleção</button>
@@ -2203,13 +2358,20 @@ function MetricasCampanhasPage() {
                                     )}
                                   </div>
                                 </td>
-                                {/* ctr */}
+                                {/* ctr (link + todos) */}
                                 <td className="px-4 py-2.5 text-right hidden lg:table-cell whitespace-nowrap">
-                                  <span className={`font-mono font-bold text-xs transition-colors ${
-                                    temperatureMode
-                                      ? (c.t.ctr < 1 ? "bg-red-500/20 text-red-400 px-2 py-0.5 rounded border border-red-500/30" : c.t.ctr >= 2 ? "bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded border border-emerald-500/30" : "bg-amber-500/20 text-amber-400 px-2 py-0.5 rounded border border-amber-500/30")
-                                      : (ctrGood ? "text-green-400" : c.t.ctr > 0 ? "text-blue-400" : "text-muted-foreground/30")
-                                  }`}>{c.t.ctr > 0 ? `${c.t.ctr.toFixed(2)}%` : "—"}</span>
+                                  <div className="flex flex-col items-end justify-center">
+                                    <span className={`font-mono font-bold text-xs transition-colors ${
+                                      temperatureMode
+                                        ? (c.t.ctr < 1 ? "bg-red-500/20 text-red-400 px-2 py-0.5 rounded border border-red-500/30" : c.t.ctr >= 2 ? "bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded border border-emerald-500/30" : "bg-amber-500/20 text-amber-400 px-2 py-0.5 rounded border border-amber-500/30")
+                                        : (ctrGood ? "text-green-400" : c.t.ctr > 0 ? "text-blue-400" : "text-muted-foreground/30")
+                                    }`}>{c.t.ctr > 0 ? `${c.t.ctr.toFixed(2)}%` : "—"}</span>
+                                    {c.t.ctrAll > c.t.ctr && (
+                                      <span className="text-[8.5px] font-mono text-muted-foreground/60">
+                                        Todos: {c.t.ctrAll.toFixed(2)}%
+                                      </span>
+                                    )}
+                                  </div>
                                 </td>
                                 {/* cpc */}
                                 <td className="px-4 py-2.5 text-right font-mono text-[11px] text-muted-foreground hidden xl:table-cell whitespace-nowrap">{c.t.cpc > 0 ? `R$ ${c.t.cpc.toFixed(2)}` : "—"}</td>
@@ -2243,20 +2405,46 @@ function MetricasCampanhasPage() {
                             <td className="px-4 py-3 text-right font-mono font-black text-muted-foreground text-xs hidden xl:table-cell whitespace-nowrap">{totImpr > 0 ? fmtN(totImpr) : "—"}</td>
                             {/* resultados — always */}
                             <td className="px-4 py-3 text-right whitespace-nowrap">
-                              <div className="flex flex-col items-end justify-center">
-                                <span className="font-mono font-black text-violet-400 text-xs leading-tight">{totConv > 0 ? fmtN(totConv) : "—"}</span>
-                                <span className="text-[8.5px] text-muted-foreground/60 font-medium leading-tight">Total acumulado</span>
-                              </div>
+                              {(() => {
+                                const entries = formatMetricVectorSummary(metricVector);
+                                const isVecMixed = entries.length > 1;
+                                const summaryTxt = entries.map(e => `${fmtN(e.value)} ${e.label.toLowerCase()}`).join(" • ");
+                                return (
+                                  <div className="flex flex-col items-end justify-center">
+                                    <span className="font-mono font-black text-violet-400 text-xs leading-tight max-w-[180px] truncate" title={isVecMixed ? summaryTxt : undefined}>
+                                      {isVecMixed
+                                        ? summaryTxt
+                                        : (entries[0]?.value ?? 0) > 0
+                                        ? fmtN(entries[0].value)
+                                        : totConv > 0
+                                        ? fmtN(totConv)
+                                        : "—"}
+                                    </span>
+                                    <span className="text-[8.5px] text-muted-foreground/60 font-medium leading-tight">
+                                      {isVecMixed ? "Separado por tipo" : "Total acumulado"}
+                                    </span>
+                                  </div>
+                                );
+                              })()}
                             </td>
                             {/* cpl — always */}
                             <td className="px-4 py-3 text-right whitespace-nowrap">
                               <div className="flex flex-col items-end justify-center">
                                 <span className="font-mono font-black text-green-400 text-xs leading-tight">{avgCpl > 0 ? `R$ ${avgCpl.toFixed(2)}` : "—"}</span>
-                                <span className="text-[8.5px] text-muted-foreground/60 font-medium leading-tight">Custo médio por res.</span>
+                                <span className="text-[8.5px] text-muted-foreground/60 font-medium leading-tight">
+                                  {formatMetricVectorSummary(metricVector).length > 1 ? "CPA elegível" : "Custo médio por res."}
+                                </span>
                               </div>
                             </td>
                             {/* ctr — hidden lg */}
-                            <td className="px-4 py-3 text-right font-mono font-black text-blue-400 text-xs hidden lg:table-cell whitespace-nowrap">{avgCtr > 0 ? `${avgCtr.toFixed(2)}%` : "—"}</td>
+                            <td className="px-4 py-3 text-right font-mono font-black text-blue-400 text-xs hidden lg:table-cell whitespace-nowrap">
+                              <div className="flex flex-col items-end justify-center">
+                                <span>{avgCtr > 0 ? `${avgCtr.toFixed(2)}%` : "—"}</span>
+                                {avgCtrAll > avgCtr && (
+                                  <span className="text-[8.5px] text-muted-foreground/60 font-medium">Todos: {avgCtrAll.toFixed(2)}%</span>
+                                )}
+                              </div>
+                            </td>
                             {/* cpc — hidden xl */}
                             <td className="px-4 py-3 hidden xl:table-cell"/>
                             {/* cpm — hidden xl */}
@@ -2422,10 +2610,19 @@ function MetricasCampanhasPage() {
                             <span className="text-xs text-muted-foreground font-bold">Gasto</span>
                             <span className="font-mono font-black text-primary text-sm">R$ {fmtBRL(totCost)}</span>
                           </div>
-                          <div className="flex items-center justify-between border-b border-primary/10 pb-2">
-                            <span className="text-xs text-muted-foreground font-bold">Resultados</span>
-                            <span className="font-mono font-black text-violet-400 text-sm">{totConv > 0 ? fmtN(totConv) : "—"}</span>
-                          </div>
+                          {(() => {
+                            const entries = formatMetricVectorSummary(metricVector);
+                            const isVecMixed = entries.length > 1;
+                            const summaryTxt = entries.map(e => `${fmtN(e.value)} ${e.label.toLowerCase()}`).join(" • ");
+                            return (
+                              <div className="flex items-center justify-between border-b border-primary/10 pb-2">
+                                <span className="text-xs text-muted-foreground font-bold">{isVecMixed ? "Resultados (Tipo)" : "Resultados"}</span>
+                                <span className="font-mono font-black text-violet-400 text-sm text-right">
+                                  {isVecMixed ? summaryTxt : (totConv > 0 ? fmtN(totConv) : "—")}
+                                </span>
+                              </div>
+                            );
+                          })()}
                           <div className="flex items-center justify-between">
                             <span className="text-xs text-muted-foreground font-bold">Custo por Res.</span>
                             <span className="font-mono font-black text-emerald-400 text-sm">{avgCpl > 0 ? `R$ ${avgCpl.toFixed(2)}` : "—"}</span>

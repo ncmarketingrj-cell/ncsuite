@@ -21,6 +21,8 @@ import { useGlobalDate, getLocalDateString } from "@/contexts/DateContext";
 import {
   buildReportSnapshot,
   classifyMetaEvent,
+  computeUnitCost,
+  formatMetricVectorSummary,
   formatPeriodLabel,
   parseCivilDate,
   type ReportSnapshot,
@@ -43,11 +45,15 @@ interface CampaignData {
   cost: number;
   impressions: number;
   clicks: number;
+  inlineLinkClicks?: number;
+  allClicks?: number;
   conversions: number;
   reach: number;
   objective: string;
   rawObjective?: string;
+  optimizationGoal?: string;
   resultType?: string;
+  resultIndicator?: string;
   platform: "meta" | "google";
   selected: boolean;
   campaignName?: string;
@@ -71,12 +77,38 @@ export function detectCampaignObjective(
   campName: string = "",
   resultType: string = "",
   isVehicleStore: boolean = false,
-  metaObjective: string = ""
+  metaObjective: string = "",
+  optimizationGoal: string = "",
+  resultsIndicator: string = ""
 ): string {
   const name = (campName || "").toLowerCase();
   const rt = (resultType || "").toLowerCase();
   const rtUpper = (resultType || "").toUpperCase();
   const metaObj = (metaObjective || "").toUpperCase();
+  const isCarDealership = isVehicleStore || name.includes("veiculo") || name.includes("veículo") || name.includes("carro") || name.includes("auto") || name.includes("moto") || name.includes("estoque");
+
+  // Precedência oficial Meta: indicator -> optimization_goal -> resultType (nunca deixa POP/FACTOR caírem em Engajamento!)
+  if (resultsIndicator || optimizationGoal) {
+    const ev = classifyMetaEvent({
+      campaignName: campName,
+      rawObjective: metaObjective,
+      optimizationGoal,
+      resultType,
+      resultsIndicator,
+      isVehicleContext: isCarDealership,
+    });
+    if (ev.confidence !== "unknown" && ev.category !== "UNKNOWN") {
+      if (ev.category === "MESSAGES") return isCarDealership ? "🚗 Mensagens nos veículos" : "💬 Mensagens";
+      if (ev.category === "INSTAGRAM_PROFILE") return "📱 Visitas ao Perfil";
+      if (ev.category === "LANDING_PAGE_VIEWS") return "🌐 Visualizações na Página";
+      if (ev.category === "PURCHASES") return "💳 Conversões / Compras";
+      if (ev.category === "LEADS") return /consignado|compramos seu carro/i.test(name) ? "🚗 Consignado" : "📧 Cadastros / Leads";
+      if (ev.category === "VIDEO_VIEWS") return "▶️ Thru-Play";
+      if (ev.category === "REACH") return "👁️ Alcance e Impressões";
+      if (ev.category === "LINK_CLICKS") return "👆 Cliques no Link";
+      if (ev.category === "ENGAGEMENT") return "👍 Engajamento / Página";
+    }
+  }
 
   // 0. Prioridade absoluta ao resultType canônico sincronizado da Meta Graph API
   if (rtUpper === "MESSAGES") {
@@ -396,6 +428,41 @@ function RelatoriosPage() {
     return /veic|veíc|car|auto|moto|repass|multimarc/i.test(target);
   }, [clientName, selectedAccountId, accounts]);
 
+  // Snapshot Único Determinístico (mesmo snapshotId na prévia, WhatsApp, PDF e histórico salvo)
+  const activeReportSnapshot = useMemo<ReportSnapshot | null>(() => {
+    const selected = campaignList.filter(c => c.selected);
+    if (selected.length === 0) return null;
+    const allAccSelected =
+      selectedAccountId !== "all" &&
+      reportLevel === "campaign" &&
+      selected.length === campaignList.length &&
+      Boolean(accountPeriodReach && accountPeriodReach > 0);
+    return buildReportSnapshot({
+      clientName: clientName || accounts.find(a => a.id === selectedAccountId)?.name || "Cliente",
+      accountName: accounts.find(a => a.id === selectedAccountId)?.name || clientName || "Cliente",
+      dateFrom: globalDateFrom,
+      dateTo: globalDateTo,
+      source: source || "database",
+      deduplicatedAccountReach: allAccSelected ? accountPeriodReach : null,
+      campaigns: selected.map(c => ({
+        id: c.id,
+        name: c.name,
+        cost: c.cost,
+        impressions: c.impressions,
+        reach: c.reach,
+        clicks: Number(c.inlineLinkClicks ?? c.clicks ?? 0),
+        inlineLinkClicks: Number(c.inlineLinkClicks ?? c.clicks ?? 0),
+        allClicks: Number(c.allClicks ?? c.clicks ?? 0),
+        conversions: c.conversions,
+        rawObjective: c.rawObjective,
+        optimizationGoal: c.optimizationGoal,
+        resultType: c.resultType || c.objective,
+        resultsIndicator: c.resultIndicator,
+        isVehicleContext,
+      })),
+    });
+  }, [campaignList, clientName, accounts, selectedAccountId, reportLevel, accountPeriodReach, globalDateFrom, globalDateTo, source, isVehicleContext]);
+
   const handleUpdateCampaignName = (id: string, newName: string) => {
     setCampaignList(prev => prev.map(c => c.id === id ? { ...c, name: newName } : c));
   };
@@ -418,7 +485,7 @@ function RelatoriosPage() {
     const totalInvestment = campaignList.filter(c => c.selected).reduce((s, c) => s + c.cost, 0);
     const totalCampaigns = campaignList.filter(c => c.selected).length;
 
-    const selectedSnapshot = buildReportSnapshot({
+    const selectedSnapshot = activeReportSnapshot || buildReportSnapshot({
       clientName,
       accountName: clientName,
       dateFrom: globalDateFrom,
@@ -432,10 +499,14 @@ function RelatoriosPage() {
           cost: c.cost,
           impressions: c.impressions,
           reach: c.reach,
-          clicks: c.clicks,
+          clicks: Number(c.inlineLinkClicks ?? c.clicks ?? 0),
+          inlineLinkClicks: Number(c.inlineLinkClicks ?? c.clicks ?? 0),
+          allClicks: Number(c.allClicks ?? c.clicks ?? 0),
           conversions: c.conversions,
           rawObjective: c.rawObjective,
+          optimizationGoal: c.optimizationGoal,
           resultType: c.resultType || c.objective,
+          resultsIndicator: c.resultIndicator,
           isVehicleContext,
         })),
     });
@@ -659,11 +730,18 @@ function RelatoriosPage() {
         };
 
         if (reportLevel === "adset") {
-          const dbData = await fetchPaginated("ad_sets", `
-            id, name, campaign_id,
+          let dbData = await fetchPaginated("ad_sets", `
+            id, name, campaign_id, optimization_goal,
             campaigns!inner(id, name, ad_account_id, objective),
-            asset_metrics(cost, conversions, impressions, clicks, reach, date)
+            asset_metrics(cost, conversions, impressions, clicks, inline_link_clicks, all_clicks, reach, result_type, result_indicator, optimization_goal, date)
           `, selectedAccountId);
+          if (!dbData || dbData.length === 0) {
+            dbData = await fetchPaginated("ad_sets", `
+              id, name, campaign_id,
+              campaigns!inner(id, name, ad_account_id, objective),
+              asset_metrics(cost, conversions, impressions, clicks, reach, date)
+            `, selectedAccountId);
+          }
 
           mapped = (dbData || []).map((adset: any) => {
             const filteredMetrics = (adset.asset_metrics || []).filter((x: any) => {
@@ -672,9 +750,13 @@ function RelatoriosPage() {
             });
             const cost = filteredMetrics.reduce((s: number, x: any) => s + Number(x.cost || 0), 0);
             const conversions = filteredMetrics.reduce((s: number, x: any) => s + Number(x.conversions || 0), 0);
-            const clicks = filteredMetrics.reduce((s: number, x: any) => s + Number(x.clicks || 0), 0);
+            const inlineLinkClicks = filteredMetrics.reduce((s: number, x: any) => s + Number(x.inline_link_clicks ?? x.clicks ?? 0), 0);
+            const allClicks = filteredMetrics.reduce((s: number, x: any) => s + Number(x.all_clicks ?? x.clicks ?? 0), 0);
             const impressions = filteredMetrics.reduce((s: number, x: any) => s + Number(x.impressions || 0), 0);
             const reach = filteredMetrics.reduce((s: number, x: any) => s + Number(x.reach || 0), 0);
+            const optGoal = filteredMetrics.find((x: any) => x.optimization_goal)?.optimization_goal || adset.optimization_goal || "";
+            const resType = filteredMetrics.find((x: any) => x.result_type)?.result_type || "";
+            const resInd = filteredMetrics.find((x: any) => x.result_indicator)?.result_indicator || "";
 
             const adAccountId = adset.campaigns?.ad_account_id;
             const matchedAccount = accounts.find(a => a.id === adAccountId);
@@ -686,22 +768,36 @@ function RelatoriosPage() {
               campaignName: adset.campaigns?.name || "Sem Campanha",
               cost,
               impressions,
-              clicks,
+              clicks: inlineLinkClicks,
+              inlineLinkClicks,
+              allClicks,
               conversions,
               reach,
-              objective: detectCampaignObjective(adset.name, "", isVehicleContext, adset.campaigns?.objective),
+              rawObjective: adset.campaigns?.objective,
+              optimizationGoal: optGoal || undefined,
+              resultType: resType || undefined,
+              resultIndicator: resInd || undefined,
+              objective: detectCampaignObjective(adset.name, resType, isVehicleContext, adset.campaigns?.objective, optGoal, resInd),
               platform: platformStr as "meta" | "google",
               selected: cost > 0
             };
           }).filter((c: any) => c.cost > 0 || c.impressions >= 1 || c.reach >= 1);
 
         } else if (reportLevel === "ad") {
-          const dbData = await fetchPaginated("ads", `
+          let dbData = await fetchPaginated("ads", `
             id, name, campaign_id, ad_set_id,
             campaigns!inner(id, name, ad_account_id, objective),
-            ad_sets(id, name),
-            asset_metrics(cost, conversions, impressions, clicks, reach, date)
+            ad_sets(id, name, optimization_goal),
+            asset_metrics(cost, conversions, impressions, clicks, inline_link_clicks, all_clicks, reach, result_type, result_indicator, optimization_goal, date)
           `, selectedAccountId);
+          if (!dbData || dbData.length === 0) {
+            dbData = await fetchPaginated("ads", `
+              id, name, campaign_id, ad_set_id,
+              campaigns!inner(id, name, ad_account_id, objective),
+              ad_sets(id, name),
+              asset_metrics(cost, conversions, impressions, clicks, reach, date)
+            `, selectedAccountId);
+          }
 
           mapped = (dbData || []).map((ad: any) => {
             const calibratedAssetMetrics = calibrateAdMetricsArray(ad.name || "", ad.asset_metrics || []);
@@ -711,9 +807,13 @@ function RelatoriosPage() {
             });
             const cost = filteredMetrics.reduce((s: number, x: any) => s + Number(x.cost || 0), 0);
             const conversions = filteredMetrics.reduce((s: number, x: any) => s + Number(x.conversions || 0), 0);
-            const clicks = filteredMetrics.reduce((s: number, x: any) => s + Number(x.clicks || 0), 0);
+            const inlineLinkClicks = filteredMetrics.reduce((s: number, x: any) => s + Number(x.inline_link_clicks ?? x.clicks ?? 0), 0);
+            const allClicks = filteredMetrics.reduce((s: number, x: any) => s + Number(x.all_clicks ?? x.clicks ?? 0), 0);
             const impressions = filteredMetrics.reduce((s: number, x: any) => s + Number(x.impressions || 0), 0);
             const reach = filteredMetrics.reduce((s: number, x: any) => s + Number(x.reach || 0), 0);
+            const optGoal = filteredMetrics.find((x: any) => x.optimization_goal)?.optimization_goal || ad.ad_sets?.optimization_goal || "";
+            const resType = filteredMetrics.find((x: any) => x.result_type)?.result_type || "";
+            const resInd = filteredMetrics.find((x: any) => x.result_indicator)?.result_indicator || "";
 
             const adAccountId = ad.campaigns?.ad_account_id;
             const matchedAccount = accounts.find(a => a.id === adAccountId);
@@ -726,10 +826,16 @@ function RelatoriosPage() {
               adSetName: ad.ad_sets?.name || "Sem Conjunto",
               cost,
               impressions,
-              clicks,
+              clicks: inlineLinkClicks,
+              inlineLinkClicks,
+              allClicks,
               conversions,
               reach,
-              objective: detectCampaignObjective(ad.name, "", isVehicleContext, ad.campaigns?.objective),
+              rawObjective: ad.campaigns?.objective,
+              optimizationGoal: optGoal || undefined,
+              resultType: resType || undefined,
+              resultIndicator: resInd || undefined,
+              objective: detectCampaignObjective(ad.name, resType, isVehicleContext, ad.campaigns?.objective, optGoal, resInd),
               platform: platformStr as "meta" | "google",
               selected: cost > 0
             };
@@ -738,12 +844,20 @@ function RelatoriosPage() {
         } else {
           // Default: campaign level
           ensureDatabaseCalibrated(supabase).catch(() => {});
-          const dbMetrics = await fetchPaginated("metrics", `
-            campaign_id, cost, conversions, impressions, clicks, reach, result_type, date,
+          let dbMetrics = await fetchPaginated("metrics", `
+            campaign_id, cost, conversions, impressions, clicks, inline_link_clicks, all_clicks, reach, result_type, result_indicator, optimization_goal, date,
             campaigns!inner(id, name, ad_account_id, objective)
           `, selectedAccountId, (q) => {
              return q.gte("date", startLimit).lte("date", endLimit);
           });
+          if (!dbMetrics || dbMetrics.length === 0) {
+            dbMetrics = await fetchPaginated("metrics", `
+              campaign_id, cost, conversions, impressions, clicks, reach, result_type, date,
+              campaigns!inner(id, name, ad_account_id, objective)
+            `, selectedAccountId, (q) => {
+              return q.gte("date", startLimit).lte("date", endLimit);
+            });
+          }
 
           if (!dbMetrics || dbMetrics.length === 0) {
             setCampaignList([]);
@@ -751,7 +865,7 @@ function RelatoriosPage() {
           }
 
           // Agrupar métricas por campanha e identificar plataforma correta
-          const metricsMap = new Map<string, { id: string, name: string, platform: string, cost: number; impressions: number; clicks: number; conversions: number; reach: number; resultType?: string; metaObjective?: string }>();
+          const metricsMap = new Map<string, { id: string, name: string, platform: string, cost: number; impressions: number; clicks: number; inlineLinkClicks: number; allClicks: number; conversions: number; reach: number; resultType?: string; resultIndicator?: string; optimizationGoal?: string; metaObjective?: string }>();
           
           dbMetrics.forEach((rawM: any) => {
             const [m] = calibrateCampaignMetricsArray(rawM.campaigns?.name || "", [rawM]);
@@ -759,22 +873,30 @@ function RelatoriosPage() {
             const adAccountId = m.campaigns?.ad_account_id;
             const matchedAccount = accounts.find(a => a.id === adAccountId);
             const platformStr = matchedAccount?.platform === "Google Ads" ? "google" : "meta";
+            const linkClk = Number(m.inline_link_clicks !== undefined && m.inline_link_clicks !== null ? m.inline_link_clicks : m.clicks || 0);
+            const totalClk = Number(m.all_clicks !== undefined && m.all_clicks !== null ? m.all_clicks : m.clicks || 0);
             
             const cur = metricsMap.get(campId) || { 
                id: campId, 
                name: m.campaigns?.name || "Sem Nome", 
                platform: platformStr,
-               cost: 0, impressions: 0, clicks: 0, conversions: 0, reach: 0,
+               cost: 0, impressions: 0, clicks: 0, inlineLinkClicks: 0, allClicks: 0, conversions: 0, reach: 0,
                resultType: m.result_type || undefined,
+               resultIndicator: m.result_indicator || undefined,
+               optimizationGoal: m.optimization_goal || undefined,
                metaObjective: m.campaigns?.objective || undefined,
             };
             
             cur.cost += Number(m.cost || 0);
             cur.impressions += Number(m.impressions || 0);
-            cur.clicks += Number(m.clicks || 0);
+            cur.clicks += linkClk;
+            cur.inlineLinkClicks += linkClk;
+            cur.allClicks += totalClk;
             cur.conversions += Number(m.conversions || 0);
             cur.reach += Number(m.reach || 0);
             if (m.result_type) cur.resultType = m.result_type;
+            if (m.result_indicator) cur.resultIndicator = m.result_indicator;
+            if (m.optimization_goal) cur.optimizationGoal = m.optimization_goal;
             if (m.campaigns?.objective) cur.metaObjective = m.campaigns?.objective;
             metricsMap.set(campId, cur);
           });
@@ -784,12 +906,16 @@ function RelatoriosPage() {
             name: c.name,
             cost: c.cost,
             impressions: c.impressions,
-            clicks: c.clicks,
+            clicks: c.inlineLinkClicks,
+            inlineLinkClicks: c.inlineLinkClicks,
+            allClicks: c.allClicks,
             conversions: c.conversions,
             reach: c.reach,
             rawObjective: c.metaObjective,
+            optimizationGoal: c.optimizationGoal,
             resultType: c.resultType,
-            objective: detectCampaignObjective(c.name, c.resultType, isVehicleContext, c.metaObjective),
+            resultIndicator: c.resultIndicator,
+            objective: detectCampaignObjective(c.name, c.resultType, isVehicleContext, c.metaObjective, c.optimizationGoal, c.resultIndicator),
             platform: c.platform as "meta" | "google",
             selected: c.cost > 0 || c.impressions > 0 || c.reach > 0
           }));
@@ -879,33 +1005,50 @@ function RelatoriosPage() {
     const totalCost = selected.reduce((sum, c) => sum + c.cost, 0);
     const agencyName = localStorage.getItem("nc_agency_name") || "NC AGÊNCIA";
 
-    // 1. Agrupar Resultados por Tipo/Objetivo e Plataforma
-    const groupedTypes = new Map<string, { cost: number; results: number; reach: number; impressions: number }>();
+    // 1. Agrupar Resultados por Tipo/Objetivo e Plataforma (MetricVector — nunca soma unidades heterogêneas)
+    const groupedTypes = new Map<string, { cost: number; results: number; reach: number; impressions: number; linkClicks: number; unitPlural: string; isReach: boolean; isClick: boolean }>();
     const platforms = new Set<string>();
 
     selected.forEach(c => {
-      // Registrar plataforma
       platforms.add(c.platform === 'google' ? 'Google Ads' : 'Meta Ads');
+      const linkClk = Number(c.inlineLinkClicks ?? c.clicks ?? 0);
+      const ev = classifyMetaEvent({
+        campaignName: c.name,
+        rawObjective: c.rawObjective,
+        optimizationGoal: c.optimizationGoal,
+        resultType: c.resultType || c.objective,
+        resultsIndicator: c.resultIndicator,
+        isVehicleContext,
+      });
+      const isClickBased = ev.category === "LINK_CLICKS" || c.objective.includes("Cliques");
+      const isReachBased = ev.category === "REACH" || c.objective.includes("Alcance");
 
-      // Calcular resultado base
-      const isClickBased = c.objective.includes("Cliques");
-      const isReachBased = c.objective.includes("Alcance") || c.objective.includes("Visualizações") || c.objective.includes("Engajamento") || c.objective.includes("Impressões") || c.objective.includes("Thru-Play");
-      
-      let resultValue = c.conversions;
-      if (isClickBased) resultValue = c.clicks;
-      if (isReachBased) resultValue = c.impressions; // Base de cálculo para campanhas de topo
+      let resultValue = Number(c.conversions || 0);
+      if (isClickBased) resultValue = linkClk;
+      if (isReachBased) resultValue = c.reach > 0 ? c.reach : Number(c.conversions || 0);
 
-      // Agrupamento por Objetivo
-      const cur = groupedTypes.get(c.objective) || { cost: 0, results: 0, reach: 0, impressions: 0 };
+      const cur = groupedTypes.get(c.objective) || {
+        cost: 0,
+        results: 0,
+        reach: 0,
+        impressions: 0,
+        linkClicks: 0,
+        unitPlural: ev.unitPlural,
+        isReach: isReachBased,
+        isClick: isClickBased,
+      };
       cur.cost += c.cost;
       cur.results += resultValue;
       cur.reach += c.reach;
       cur.impressions += c.impressions;
+      cur.linkClicks += linkClk;
       groupedTypes.set(c.objective, cur);
     });
 
-    const totalResults = Array.from(groupedTypes.values()).reduce((sum, g) => sum + g.results, 0);
-    const avgCpa = totalResults > 0 ? totalCost / totalResults : 0;
+    const snapSummary = activeReportSnapshot?.summary;
+    const vectorSummary = snapSummary ? formatMetricVectorSummary(snapSummary.metricVector) : [];
+    const totalLinkClicks = selected.reduce((sum, c) => sum + Number(c.inlineLinkClicks ?? c.clicks ?? 0), 0);
+    const totalAllClicks = selected.reduce((sum, c) => sum + Number(c.allClicks ?? c.clicks ?? 0), 0);
     const platformString = Array.from(platforms).join(" & ");
     
     // Calcula o período civil exato (1 dia -> DD/MM/YYYY; parcial -> início a fim; mês completo -> MÊS ANO)
@@ -958,44 +1101,70 @@ function RelatoriosPage() {
       return `📊 *${title}*\n━━━━━━━━━━━━━━━━━━━━\n🏢 *Cliente:* ${clientName}\n📅 *Período:* ${displayPeriod}\n📱 *Plataformas:* ${platformString}\n\n`;
     };
 
-    // Bloco de totais gerais — presente em TODOS os modos de relatório
+    // Bloco de totais gerais — presente em TODOS os modos de relatório (sem soma heterogênea de unidades)
     const buildTotais = () => {
       let txt = `━━━━━━━━━━━━━━━━━━━━\n*📊 TOTAIS GERAIS*\n━━━━━━━━━━━━━━━━━━━━\n`;
       txt += `💵 *Investimento Total:* ${fmtBRLWithSymbol(totalCost)}\n`;
-      txt += `📈 *Resultados Totais:* ${totalResults.toLocaleString("pt-BR")}\n`;
-      txt += `💲 *CPA Médio Geral:* ${avgCpa > 0 ? fmtBRLWithSymbol(avgCpa) : "Não calculável"}\n`;
+      if (snapSummary && snapSummary.conversionResults > 0) {
+        txt += `📈 *Conversões Elegíveis:* ${snapSummary.conversionResults.toLocaleString("pt-BR")}\n`;
+        txt += `💲 *CPA (Conversões):* ${snapSummary.cpaEligible !== null ? fmtBRLWithSymbol(snapSummary.cpaEligible) : "Não calculável"}\n`;
+      } else if (vectorSummary.length === 1) {
+        txt += `📈 *${vectorSummary[0].label}:* ${vectorSummary[0].value.toLocaleString("pt-BR")}\n`;
+      }
+      if (vectorSummary.length > 1) {
+        txt += `📊 *Resultados por tipo:* ${vectorSummary.map((e) => `${e.value.toLocaleString("pt-BR")} ${e.label}`).join(" | ")}\n`;
+      }
+      txt += `👆 *Cliques no Link:* ${totalLinkClicks.toLocaleString("pt-BR")}`;
+      if (totalImps > 0) {
+        txt += ` (CTR: ${((totalLinkClicks / totalImps) * 100).toFixed(2)}%)`;
+      }
+      if (totalAllClicks > totalLinkClicks) {
+        txt += ` • Todos: ${totalAllClicks.toLocaleString("pt-BR")}`;
+      }
+      txt += `\n`;
       if (totalReach > 0) {
         const reachLbl = effectiveAccountReach !== null ? " (conta deduplicado)" : selected.length > 1 ? " (soma)" : "";
         txt += `👥 *Alcance${reachLbl}:* ${totalReach.toLocaleString("pt-BR")}\n`;
       }
       if (totalImps > 0) txt += `👁️ *Impressões Totais:* ${totalImps.toLocaleString("pt-BR")}\n`;
-      txt += `📌 *Campanhas no Relatório:* ${selected.length}\n\n`;
+      txt += `📌 *Campanhas no Relatório:* ${selected.length}`;
+      if (activeReportSnapshot?.snapshotId) {
+        txt += ` • ID: \`${activeReportSnapshot.snapshotId}\``;
+      }
+      txt += `\n\n`;
       return txt;
     };
 
     const buildResultsByType = () => {
-      let txt = `━━━━━━━━━━━━━━━━━━━━\n*RESULTADOS POR OBJETIVO*\n━━━━━━━━━━━━━━━━━━━━\n\n`;
+      let txt = `━━━━━━━━━━━━━━━━━━━━\n*RESULTADOS POR TIPO*\n━━━━━━━━━━━━━━━━━━━━\n\n`;
       groupedTypes.forEach((data, type) => {
-        const isClick = type.includes("Cliques");
-        const isReach = type.includes("Alcance") || type.includes("Visualizações") || type.includes("Engajamento") || type.includes("Impressões") || type.includes("Thru-Play");
-        
+        const isClick = data.isClick;
+        const isReach = data.isReach;
         const cpl = data.results > 0 ? (isReach ? (data.cost / data.results) * 1000 : data.cost / data.results) : null;
-        
-        let resultLabel = "Resultados";
-        if (isClick) resultLabel = "Visitas";
-        if (isReach) resultLabel = "Impressões / Plays";
-        
-        let costLabel = "CPA";
-        if (isClick) costLabel = "Custo por Visita";
-        if (isReach) costLabel = "CPM";
+
+        let resultLabel = `Resultados (${data.unitPlural})`;
+        if (isClick) resultLabel = "Cliques no Link";
+        if (isReach) resultLabel = "Pessoas Alcançadas";
+
+        let costLabel = "Custo por Resultado";
+        if (isClick) costLabel = "CPC (Link)";
+        if (isReach) costLabel = "Custo por 1.000 Contas Alcançadas";
 
         txt += `${type}\n`;
         txt += `   💵 Investimento: ${fmtBRLWithSymbol(data.cost)}\n`;
         txt += `   📈 ${resultLabel}: ${data.results.toLocaleString("pt-BR")}\n`;
         txt += `   💲 ${costLabel}: ${cpl !== null ? fmtBRLWithSymbol(cpl) : "Não calculável"}\n`;
+        if (data.linkClicks > 0 && !isClick) txt += `   👆 Cliques no link: ${data.linkClicks.toLocaleString("pt-BR")}\n`;
         if (data.reach > 0 && !isReach) txt += `   👥 Alcance${selected.length > 1 ? " (soma)" : ""}: ${data.reach.toLocaleString("pt-BR")}\n`;
-        if (!isReach) txt += `   👁️ Impressões: ${data.impressions.toLocaleString("pt-BR")}\n\n`;
-        else txt += `\n`;
+        if (data.impressions > 0) {
+          txt += `   👁️ Impressões: ${data.impressions.toLocaleString("pt-BR")}`;
+          if (isReach && data.cost > 0) {
+            txt += ` (CPM: ${fmtBRLWithSymbol((data.cost / data.impressions) * 1000)})`;
+          }
+          txt += `\n\n`;
+        } else {
+          txt += `\n`;
+        }
       });
       return txt;
     };
@@ -1012,12 +1181,21 @@ function RelatoriosPage() {
         
         txt += `*— ${plat === 'google' ? 'GOOGLE ADS' : 'META ADS'} —*\n\n`;
         platCampaigns.forEach(c => {
-          const isClickObj = c.objective.includes("Cliques");
-          const isReachObj = c.objective.includes("Alcance") || c.objective.includes("Visualizações") || c.objective.includes("Engajamento") || c.objective.includes("Impressões") || c.objective.includes("Thru-Play");
-          const resultValue = isClickObj ? c.clicks : c.conversions;
+          const ev = classifyMetaEvent({
+            campaignName: c.name,
+            rawObjective: c.rawObjective,
+            optimizationGoal: c.optimizationGoal,
+            resultType: c.resultType || c.objective,
+            resultsIndicator: c.resultIndicator,
+            isVehicleContext,
+          });
+          const isClickObj = ev.category === "LINK_CLICKS" || c.objective.includes("Cliques");
+          const isReachObj = ev.category === "REACH" || c.objective.includes("Alcance");
+          const linkClk = Number(c.inlineLinkClicks ?? c.clicks ?? 0);
+          const resultValue = isClickObj ? linkClk : isReachObj ? (c.reach > 0 ? c.reach : c.conversions) : c.conversions;
           const costPerRes = resultValue > 0 ? (isReachObj ? (c.cost / resultValue) * 1000 : c.cost / resultValue) : null;
-          const costLabel = isReachObj ? "CPM" : "Custo/Resultado";
-          const typeLabel = c.objective.substring(2).trim();
+          const costLabel = isReachObj ? "Custo/1.000 contas alc." : "Custo/Resultado";
+          const typeLabel = ev.unitPlural;
           
           txt += `📌 *${c.name.toUpperCase()}*\n`;
           if (reportLevel === "adset" && c.campaignName) {
@@ -1028,7 +1206,9 @@ function RelatoriosPage() {
           }
           txt += `   💵 Invest: ${fmtBRLWithSymbol(c.cost)}\n`;
           txt += `   📈 Result: ${resultValue.toLocaleString("pt-BR")} (${typeLabel})\n`;
-          txt += `   💲 ${costLabel}: ${costPerRes !== null ? fmtBRLWithSymbol(costPerRes) : "Não calculável"}\n\n`;
+          txt += `   💲 ${costLabel}: ${costPerRes !== null ? fmtBRLWithSymbol(costPerRes) : "Não calculável"}\n`;
+          if (linkClk > 0 && !isClickObj) txt += `   👆 Cliques no link: ${linkClk.toLocaleString("pt-BR")}\n`;
+          txt += `\n`;
         });
       });
       return txt;
@@ -1139,12 +1319,18 @@ function RelatoriosPage() {
       // 3. Alcance e Impressões
       if (reachCampaigns.length > 0) {
         const costReach = reachCampaigns.reduce((s, c) => s + c.cost, 0);
-        const impsReach = reachCampaigns.reduce((s, c) => s + (c.impressions > 0 ? c.impressions : c.reach), 0);
-        const cpmReach = impsReach > 0 ? (costReach / impsReach) * 1000 : 0;
+        const reachedPeople = reachCampaigns.reduce((s, c) => s + (c.reach > 0 ? c.reach : Number(c.conversions || 0)), 0);
+        const impsReach = reachCampaigns.reduce((s, c) => s + c.impressions, 0);
+        const costPer1kReach = computeUnitCost(costReach, reachedPeople, "REACH");
+        const cpmReach = impsReach > 0 ? (costReach / impsReach) * 1000 : null;
         txt += `*Campanha de Alcance e Impressões:*\n`;
         txt += `Investimento: ${fmtBRLWithSymbol(costReach)}\n`;
-        txt += `Impressões / Plays: ${impsReach.toLocaleString("pt-BR")}\n`;
-        txt += `CPM: ${fmtBRLWithSymbol(cpmReach)}\n\n`;
+        txt += `Pessoas alcançadas: ${reachedPeople.toLocaleString("pt-BR")}\n`;
+        txt += `Custo por 1.000 contas alcançadas: ${costPer1kReach !== null ? fmtBRLWithSymbol(costPer1kReach) : "Não calculável"}\n`;
+        if (impsReach > 0) {
+          txt += `Impressões: ${impsReach.toLocaleString("pt-BR")}${cpmReach !== null ? ` (CPM: ${fmtBRLWithSymbol(cpmReach)})` : ""}\n`;
+        }
+        txt += `\n`;
       }
 
       // 4. Consignado
@@ -1808,7 +1994,9 @@ function RelatoriosPage() {
                     <span className="flex h-6 w-6 items-center justify-center rounded-full bg-success/20 text-success text-[10px] font-black">3</span>
                     <div>
                       <h3 className="text-sm font-black uppercase tracking-widest text-primary flex items-center gap-1.5"><Smartphone className="h-4 w-4" /> Relatório Pronto</h3>
-                      <p className="text-[10px] text-muted-foreground mt-0.5">Texto idealizado para envio direto via WhatsApp.</p>
+                      <p className="text-[10px] text-muted-foreground mt-0.5">
+                        Texto WhatsApp • {activeReportSnapshot ? `Snapshot ${activeReportSnapshot.snapshotId}` : "Meta Ads"}
+                      </p>
                     </div>
                   </div>
                   <div className="flex flex-wrap gap-2">
@@ -1926,72 +2114,92 @@ function RelatoriosPage() {
                     Boolean(accountPeriodReach && accountPeriodReach > 0);
                   const totalReach = allAccSelected && accountPeriodReach ? accountPeriodReach : selectedCamps.reduce((sum, c) => sum + c.reach, 0);
                   const totalImpressions = selectedCamps.reduce((sum, c) => sum + c.impressions, 0);
-                  const totalClicks = selectedCamps.reduce((sum, c) => sum + c.clicks, 0);
+                  const totalLinkClicks = selectedCamps.reduce((sum, c) => sum + Number(c.inlineLinkClicks ?? c.clicks ?? 0), 0);
+                  const totalAllClicks = selectedCamps.reduce((sum, c) => sum + Number(c.allClicks ?? c.clicks ?? 0), 0);
 
-                  // Classificação compartilhada pelo modelo de eventos (elimina divergência Frente 1 vs Frente 2)
                   const classifiedList = selectedCamps.map(c => ({
                     raw: c,
                     cls: classifyMetaEvent({
                       campaignName: c.name,
                       rawObjective: c.rawObjective,
+                      optimizationGoal: c.optimizationGoal,
                       resultType: c.resultType || c.objective,
+                      resultsIndicator: c.resultIndicator,
                       isVehicleContext,
                     }),
                   }));
-                  const messageCamps = classifiedList
-                    .filter(x => x.cls.category === "MESSAGES" || x.cls.category === "LEADS")
-                    .map(x => x.raw);
-                  const audienceCamps = classifiedList
-                    .filter(x => x.cls.category !== "MESSAGES" && x.cls.category !== "LEADS")
-                    .map(x => x.raw);
+                  const convCamps = classifiedList.filter(x => x.cls.isConversionGoal).map(x => x.raw);
+                  const audienceCamps = classifiedList.filter(x => !x.cls.isConversionGoal);
 
-                  const totalMessages = messageCamps.reduce((sum, c) => sum + (c.conversions || 0), 0);
-                  const costMessages = messageCamps.reduce((sum, c) => sum + c.cost, 0);
-                  const costAudience = audienceCamps.reduce((sum, c) => sum + c.cost, 0);
-                  const cplMessages = totalMessages > 0 ? costMessages / totalMessages : null;
-                  const hasMultipleObjectives = messageCamps.length > 0 && audienceCamps.length > 0;
+                  const totalConv = convCamps.reduce((sum, c) => sum + Number(c.conversions || 0), 0);
+                  const costConv = convCamps.reduce((sum, c) => sum + c.cost, 0);
+                  const costAudience = audienceCamps.reduce((sum, x) => sum + x.raw.cost, 0);
+                  const cpaConv = totalConv > 0 ? costConv / totalConv : null;
+                  const nonConvSummary = formatMetricVectorSummary(
+                    activeReportSnapshot?.summary?.metricVector || {
+                      conversations: 0, leads: 0, websiteContacts: 0, purchases: 0, checkout: 0, addToCart: 0,
+                      profileVisits: 0, pageVisits: 0, landingPageViews: 0, linkClicks: 0, reach: 0, videoViews: 0, engagements: 0, unknownResults: 0,
+                    }
+                  ).filter((e) => !["conversations", "leads", "websiteContacts", "purchases", "checkout", "addToCart"].includes(e.key as string));
+                  const hasMultipleObjectives = convCamps.length > 0 && audienceCamps.length > 0;
+                  const ctrLink = totalImpressions > 0 ? (totalLinkClicks / totalImpressions) * 100 : 0;
 
                   return (
                     <>
-                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
-                        <div className="p-4 rounded-xl bg-white/5 border border-white/10 print:bg-gray-100 print:border-gray-300">
+                      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-6">
+                        <div className="p-3.5 rounded-xl bg-white/5 border border-white/10 print:bg-gray-100 print:border-gray-300">
                           <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground print:text-black/60">Investido</p>
-                          <p className="text-lg sm:text-xl font-mono font-black mt-1 text-primary print:text-red-700">
+                          <p className="text-lg font-mono font-black mt-1 text-primary print:text-red-700">
                             {fmtBRLWithSymbol(totalCost)}
                           </p>
                           <p className="text-[8px] font-bold uppercase tracking-wider text-muted-foreground/80 print:text-black/50 mt-1">
                             {selectedCamps.length} camp. selecionadas
                           </p>
                         </div>
-                        <div className="p-4 rounded-xl bg-white/5 border border-white/10 print:bg-gray-100 print:border-gray-300">
+
+                        <div className="p-3.5 rounded-xl bg-white/5 border border-white/10 print:bg-gray-100 print:border-gray-300">
                           <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground print:text-black/60">
-                            {messageCamps.length > 0 ? "Conversas / Leads" : "Resultados"}
+                            {convCamps.length > 0 ? "Conversas / Conversões" : (nonConvSummary[0]?.label || "Resultados por tipo")}
                           </p>
-                          <p className="text-lg sm:text-xl font-mono font-black mt-1 text-white print:text-black">
-                            {messageCamps.length > 0
-                              ? totalMessages.toLocaleString('pt-BR')
-                              : (totalClicks > 0 ? totalClicks.toLocaleString('pt-BR') : totalImpressions.toLocaleString('pt-BR'))}
+                          <p className="text-lg font-mono font-black mt-1 text-white print:text-black">
+                            {convCamps.length > 0
+                              ? totalConv.toLocaleString('pt-BR')
+                              : (nonConvSummary[0] ? nonConvSummary[0].value.toLocaleString('pt-BR') : "0")}
                           </p>
                           <p className="text-[8px] font-bold uppercase tracking-wider text-muted-foreground/80 print:text-black/50 mt-1">
-                            {messageCamps.length > 0 
-                              ? (cplMessages !== null ? `CPA: ${fmtBRLWithSymbol(cplMessages)}` : "CPA não calculável (0 conv.)")
-                              : (totalClicks > 0 ? "Cliques no Link" : "Alcance / Marca")}
+                            {convCamps.length > 0
+                              ? (cpaConv !== null ? `CPA: ${fmtBRLWithSymbol(cpaConv)}` : "CPA não calculável (0 conv.)")
+                              : (nonConvSummary.length > 1
+                                ? nonConvSummary.slice(1).map((e) => `${e.value.toLocaleString('pt-BR')} ${e.label}`).join(" · ")
+                                : (nonConvSummary[0]?.key === "reach" ? "Pessoas alcançadas" : "Sem mistura de cliques"))}
                           </p>
                         </div>
-                        <div className="p-4 rounded-xl bg-white/5 border border-white/10 print:bg-gray-100 print:border-gray-300">
+
+                        <div className="p-3.5 rounded-xl bg-white/5 border border-white/10 print:bg-gray-100 print:border-gray-300">
+                          <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground print:text-black/60">Cliques no Link</p>
+                          <p className="text-lg font-mono font-black mt-1 text-indigo-300 print:text-black">
+                            {totalLinkClicks.toLocaleString('pt-BR')}
+                          </p>
+                          <p className="text-[8px] font-bold uppercase tracking-wider text-muted-foreground/80 print:text-black/50 mt-1">
+                            CTR: {ctrLink.toFixed(2)}%{totalAllClicks > totalLinkClicks ? ` · Todos: ${totalAllClicks.toLocaleString('pt-BR')}` : ""}
+                          </p>
+                        </div>
+
+                        <div className="p-3.5 rounded-xl bg-white/5 border border-white/10 print:bg-gray-100 print:border-gray-300">
                           <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground print:text-black/60">
                             {allAccSelected ? "Alcance (Conta)" : selectedCamps.length > 1 ? "Alcance (soma)" : "Alcance"}
                           </p>
-                          <p className="text-lg sm:text-xl font-mono font-black mt-1 text-white print:text-black">
+                          <p className="text-lg font-mono font-black mt-1 text-white print:text-black">
                             {totalReach > 0 ? totalReach.toLocaleString('pt-BR') : "—"}
                           </p>
                           <p className="text-[8px] font-bold uppercase tracking-wider text-muted-foreground/80 print:text-black/50 mt-1">
                             {allAccSelected ? "Deduplicado (Meta Ads)" : selectedCamps.length > 1 ? "Soma por campanha (não deduplicado)" : "Pessoas impactadas"}
                           </p>
                         </div>
-                        <div className="p-4 rounded-xl bg-white/5 border border-white/10 print:bg-gray-100 print:border-gray-300">
+
+                        <div className="p-3.5 rounded-xl bg-white/5 border border-white/10 print:bg-gray-100 print:border-gray-300">
                           <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground print:text-black/60">Impressões</p>
-                          <p className="text-lg sm:text-xl font-mono font-black mt-1 text-white print:text-black">
+                          <p className="text-lg font-mono font-black mt-1 text-white print:text-black">
                             {totalImpressions.toLocaleString('pt-BR')}
                           </p>
                           <p className="text-[8px] font-bold uppercase tracking-wider text-muted-foreground/80 print:text-black/50 mt-1">
@@ -2000,32 +2208,40 @@ function RelatoriosPage() {
                         </div>
                       </div>
 
-                      {/* Diferenciação Didática quando há Objetivos Mistos (Mensagem + Audiência) */}
+                      {/* Diferenciação Didática quando há Objetivos Mistos (Conversão + Audiência/Alcance/Perfil) */}
                       {hasMultipleObjectives && (
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-6 p-4 rounded-2xl bg-white/[0.03] border border-white/10 print:bg-gray-50 print:border-gray-200">
                           <div className="space-y-1">
                             <div className="flex items-center gap-2">
                               <span className="w-2 h-2 rounded-full bg-emerald-400" />
                               <span className="text-[10px] font-black uppercase tracking-wider text-emerald-400 print:text-emerald-700">
-                                Frente 1: Conversas &amp; Leads
+                                Frente 1: Conversas &amp; Conversões
                               </span>
                             </div>
                             <p className="text-xs text-muted-foreground print:text-gray-700 leading-relaxed">
-                              Investido: <strong className="text-foreground print:text-black font-mono">R$ {costMessages.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong> • 
-                              Gerou <strong className="text-foreground print:text-black font-mono">{totalMessages} conversas/leads</strong>{" "}
-                              {cplMessages !== null ? <>a <strong className="text-foreground print:text-black font-mono">R$ {cplMessages.toFixed(2)}/contato</strong></> : "(CPA não calculável)"}.
+                              Investido: <strong className="text-foreground print:text-black font-mono">R$ {costConv.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong> •{" "}
+                              Gerou <strong className="text-foreground print:text-black font-mono">{totalConv.toLocaleString('pt-BR')} conversões</strong>{" "}
+                              {cpaConv !== null ? <>a <strong className="text-foreground print:text-black font-mono">R$ {cpaConv.toFixed(2)}/conv.</strong></> : "(CPA não calculável)"}.
                             </p>
                           </div>
                           <div className="space-y-1">
                             <div className="flex items-center gap-2">
                               <span className="w-2 h-2 rounded-full bg-blue-400" />
                               <span className="text-[10px] font-black uppercase tracking-wider text-blue-400 print:text-blue-700">
-                                Frente 2: Audiência &amp; Fortalecimento de Marca
+                                Frente 2: Outros Objetivos ({nonConvSummary.map((e) => e.label).join(" • ") || "Alcance / Audiência"})
                               </span>
                             </div>
                             <p className="text-xs text-muted-foreground print:text-gray-700 leading-relaxed">
-                              Investido: <strong className="text-foreground print:text-black font-mono">R$ {costAudience.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong> • 
-                              Somou <strong className="text-foreground print:text-black font-mono">{audienceCamps.reduce((s, c) => s + c.reach, 0).toLocaleString('pt-BR')} alcance</strong> e <strong className="text-foreground print:text-black font-mono">{audienceCamps.reduce((s, c) => s + c.clicks, 0).toLocaleString('pt-BR')} cliques</strong>.
+                              Investido: <strong className="text-foreground print:text-black font-mono">R$ {costAudience.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong> •{" "}
+                              {nonConvSummary.length > 0 ? (
+                                nonConvSummary.map((e) => (
+                                  <span key={e.key} className="mr-2">
+                                    <strong className="text-foreground print:text-black font-mono">{e.value.toLocaleString('pt-BR')}</strong> {e.label.toLowerCase()}
+                                  </span>
+                                ))
+                              ) : (
+                                <>Somou <strong className="text-foreground print:text-black font-mono">{audienceCamps.reduce((s, x) => s + x.raw.reach, 0).toLocaleString('pt-BR')} alcance</strong></>
+                              )}
                             </p>
                           </div>
                         </div>
@@ -2035,12 +2251,13 @@ function RelatoriosPage() {
                       <div className="space-y-2 mt-6">
                         <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground print:text-black/60 mb-3 border-b border-white/10 pb-1.5 flex items-center justify-between">
                           <span>Detalhamento das Campanhas Compiladas ({selectedCamps.length})</span>
-                          <span className="font-mono text-[9px]">Gasto • Retorno</span>
+                          <span className="font-mono text-[9px]">Snapshot: {activeReportSnapshot?.snapshotId || "N/A"}</span>
                         </p>
                         {classifiedList.map(({ raw: c, cls }, idx) => {
-                          const isMsg = cls.category === "MESSAGES" || cls.category === "LEADS";
+                          const isMsg = cls.isConversionGoal;
                           const isReach = cls.category === "REACH";
-                          const resultCount = cls.category === "LINK_CLICKS" ? c.clicks : c.conversions;
+                          const linkClk = Number(c.inlineLinkClicks ?? c.clicks ?? 0);
+                          const resultCount = cls.category === "LINK_CLICKS" ? linkClk : isReach ? (c.reach > 0 ? c.reach : c.conversions) : c.conversions;
                           const resultUnit = cls.unitPlural;
                           const cpa = resultCount > 0 ? (isReach ? (c.cost / resultCount) * 1000 : c.cost / resultCount) : null;
 

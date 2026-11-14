@@ -364,7 +364,7 @@ function SimuladorPage() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("ad_accounts")
-        .select("id, name, external_id, status")
+        .select("id, name, currency, status, platform, last_sync")
         .order("name");
       if (error) throw error;
       return data || [];
@@ -377,20 +377,43 @@ function SimuladorPage() {
     staleTime: 2 * 60 * 1000,
     queryFn: async () => {
       ensureDatabaseCalibrated(supabase).catch(() => {});
-      let q = (supabase as any)
-        .from("campaigns")
-        .select(
-          "id, name, status, delivery_status, objective, daily_budget, lifetime_budget, ad_account_id, ad_account:ad_accounts(name), metrics(cost, conversions, impressions, clicks, reach, frequency, date, result_type)"
-        );
-      if (accountId !== "all") {
-        q = q.eq("ad_account_id", accountId);
+      const fetchCampaignPage = async (selectCols: string) => {
+        const rows: any[] = [];
+        let from = 0;
+        const pageSize = 500;
+        while (from < 5000) {
+          let q = (supabase as any)
+            .from("campaigns")
+            .select(selectCols)
+            .order("name")
+            .range(from, from + pageSize - 1);
+          if (accountId !== "all") {
+            q = q.eq("ad_account_id", accountId);
+          }
+          const { data, error } = await q;
+          if (error) return { data: null as any, error };
+          if (!data || data.length === 0) break;
+          rows.push(...data);
+          if (data.length < pageSize) break;
+          from += pageSize;
+        }
+        return { data: rows, error: null };
+      };
+
+      const fullCols =
+        "id, name, status, delivery_status, objective, daily_budget, lifetime_budget, ad_account_id, ad_account:ad_accounts(name), metrics(cost, conversions, impressions, clicks, inline_link_clicks, reach, frequency, date, result_type, optimization_goal, result_indicator)";
+      const baseCols =
+        "id, name, status, delivery_status, objective, daily_budget, lifetime_budget, ad_account_id, ad_account:ad_accounts(name), metrics(cost, conversions, impressions, clicks, reach, frequency, date, result_type)";
+
+      let res = await fetchCampaignPage(fullCols);
+      if (res.error) {
+        res = await fetchCampaignPage(baseCols);
       }
-      const { data, error } = await q.order("name");
-      if (error) {
-        console.warn("Aviso ao carregar campanhas no simulador:", error);
+      if (res.error) {
+        console.warn("Aviso ao carregar campanhas no simulador:", res.error);
         return [];
       }
-      return (data || []).map((c: any) => {
+      return (res.data || []).map((c: any) => {
         const calibrated = calibrateCampaignMetricsArray(c.name, c.metrics || []);
         const category = detectConversionCategory(c.name, c.objective);
         const mappedObj = mapCategoryToSimObjective(category);
@@ -713,7 +736,7 @@ function SimuladorPage() {
       estimatedAdSetsCount: 3,
       detectedObjective: dominantObjective,
       sourceType: "benchmark_demo",
-      sourceLabel: `Baseline de Referência NC Performance (${objCfg.shortLabel})`,
+      sourceLabel: `Benchmark teórico sintético (${objCfg.shortLabel}) — sem histórico real no escopo (não representa conta sincronizada)`,
     };
   }, [allCampaigns, accountId, campaignId, params.objective, dateFrom, dateTo]);
 
@@ -1104,7 +1127,7 @@ function SimuladorPage() {
                   {isLoadingAccounts
                     ? "Carregando contas de anúncios..."
                     : isAccountsError
-                    ? "Erro ao carregar contas (usando fallback)"
+                    ? "Erro ao carregar contas sincronizadas"
                     : adAccounts.length === 0
                     ? "Nenhuma conta sincronizada"
                     : `Todas as Contas Conectadas (${adAccounts.length})`}
@@ -1231,6 +1254,16 @@ function SimuladorPage() {
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
           {/* ── COLUNA 1: BASELINE ATUAL DA CONTA/CAMPANHA (3 cols) ──────── */}
           <div className="lg:col-span-3 rounded-2xl border border-border bg-card/90 p-5 space-y-4 shadow-sm">
+            {isAccountsError && (
+              <div className="rounded-xl border border-rose-500/40 bg-rose-500/10 p-3 text-[11px] font-bold text-rose-400">
+                Falha ao carregar contas sincronizadas no Supabase. Projeção impedida de reivindicar baseline real da conta.
+              </div>
+            )}
+            {!isAccountsError && baseline.sourceType === "benchmark_demo" && !isLoadingCampaigns && (
+              <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-[11px] font-semibold text-amber-300">
+                Modo sintético ativo: a seleção atual não possui métricas reais no período; os números abaixo são apenas benchmark de referência.
+              </div>
+            )}
             <div className="flex items-center justify-between border-b border-border pb-3">
               <div>
                 <span className="text-[9px] font-black uppercase tracking-widest text-primary">

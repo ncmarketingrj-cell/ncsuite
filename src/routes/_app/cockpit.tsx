@@ -43,7 +43,9 @@ export const Route = createFileRoute("/_app/cockpit")({
 export function classifyCampaignType(
   campName = "",
   resultType = "",
-  metaObjective = ""
+  metaObjective = "",
+  resultIndicator = "",
+  optimizationGoal = ""
 ): {
   isLead: boolean;
   typeLabel: string;
@@ -53,6 +55,8 @@ export function classifyCampaignType(
     campaignName: campName,
     resultType,
     rawObjective: metaObjective,
+    resultsIndicator: resultIndicator || undefined,
+    optimizationGoal: optimizationGoal || undefined,
     isVehicleContext: true,
   });
 
@@ -1826,31 +1830,58 @@ function useCockpitData() {
     refetchIntervalInBackground: false,
     placeholderData: (prev) => prev,
     queryFn: async () => {
-      let q = (supabase as any)
-        .from("campaigns")
-        .select(
-          `id, name, status, delivery_status, objective, daily_budget, budget, lifetime_budget, budget_currency, external_id, ad_account_id, metrics(cost, conversions, impressions, clicks, reach, frequency, result_type, date)`
-        );
+      const buildPageQuery = (withExtended: boolean, from: number) => {
+        const metricCols = withExtended
+          ? "cost, conversions, impressions, clicks, inline_link_clicks, all_clicks, optimization_goal, result_indicator, reach, frequency, result_type, date"
+          : "cost, conversions, impressions, clicks, reach, frequency, result_type, date";
+        let q = (supabase as any)
+          .from("campaigns")
+          .select(
+            `id, name, status, delivery_status, objective, daily_budget, budget, lifetime_budget, budget_currency, external_id, ad_account_id, metrics(${metricCols})`
+          )
+          .order("id")
+          .range(from, from + 999);
 
-      if (accountId !== "all") q = q.eq("ad_account_id", accountId);
-      if (campaignId !== "all") q = q.eq("id", campaignId);
+        if (accountId !== "all") q = q.eq("ad_account_id", accountId);
+        if (campaignId !== "all") q = q.eq("id", campaignId);
+        return q;
+      };
 
+      let filterCampaignId: string | null = null;
       if (adSetId !== "all") {
         const { data: adSetData } = await (supabase as any)
           .from("ad_sets")
           .select("campaign_id")
           .eq("id", adSetId)
           .single();
-        if (adSetData?.campaign_id) q = q.eq("id", adSetData.campaign_id);
+        if (adSetData?.campaign_id) filterCampaignId = adSetData.campaign_id;
       }
 
-      const { data, error } = await q;
-      if (error) {
-        console.error("[cockpit] query error:", error);
-        return [];
+      const campaignsWithMetrics: any[] = [];
+      let useExtended = true;
+      for (let from = 0; from < 5000; from += 1000) {
+        let q = buildPageQuery(useExtended, from);
+        if (filterCampaignId) q = q.eq("id", filterCampaignId);
+        let { data, error } = await q;
+        if (
+          error &&
+          useExtended &&
+          (error.code === "42703" || error.code === "PGRST204" || String(error.message || "").includes("column"))
+        ) {
+          useExtended = false;
+          let fallbackQ = buildPageQuery(false, from);
+          if (filterCampaignId) fallbackQ = fallbackQ.eq("id", filterCampaignId);
+          ({ data, error } = await fallbackQ);
+        }
+        if (error) {
+          console.error("[cockpit] query error:", error);
+          return [];
+        }
+        if (!data?.length) break;
+        campaignsWithMetrics.push(...data);
+        if (data.length < 1000) break;
       }
 
-      const campaignsWithMetrics = (data as any[]) ?? [];
       ensureDatabaseCalibrated(supabase).catch(() => {});
       const rows: any[] = [];
 
@@ -1871,15 +1902,20 @@ function useCockpitData() {
               ? m.impressions / m.reach
               : 1.0;
 
+          const linkClicks = Number(m.inline_link_clicks ?? m.clicks ?? 0);
+
           rows.push({
             campaign_id: camp.id,
             cost: Number(m.cost ?? 0),
             conversions: Number(m.conversions ?? 0),
             impressions: Number(m.impressions ?? 0),
-            clicks: Number(m.clicks ?? 0),
+            clicks: linkClicks,
+            all_clicks: Number(m.all_clicks ?? m.clicks ?? 0),
             cpm: m.impressions > 0 ? (Number(m.cost ?? 0) / m.impressions) * 1000 : 0,
             frequency: freq,
             result_type: m.result_type,
+            result_indicator: m.result_indicator ?? null,
+            optimization_goal: m.optimization_goal ?? null,
             date: d,
             campaigns: {
               id: camp.id,
@@ -1953,7 +1989,9 @@ function useCockpitData() {
         const cType = classifyCampaignType(
           r.campaigns?.name ?? "",
           r.result_type ?? "",
-          r.campaigns?.objective ?? ""
+          r.campaigns?.objective ?? "",
+          r.result_indicator ?? "",
+          r.optimization_goal ?? ""
         );
 
         if (cType.isLead) {
@@ -2055,7 +2093,9 @@ function useCockpitData() {
         const cType = classifyCampaignType(
           r.campaigns?.name ?? "",
           r.result_type ?? "",
-          r.campaigns?.objective ?? ""
+          r.campaigns?.objective ?? "",
+          r.result_indicator ?? "",
+          r.optimization_goal ?? ""
         );
         campMap[cid] = {
           name: r.campaigns?.name ?? cid,

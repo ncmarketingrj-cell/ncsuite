@@ -1,6 +1,12 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.43.1";
-import { detectStrictConversionCategory } from "../_shared/metaCore.ts";
+import {
+  detectStrictConversionCategory,
+  emptyMetricVector,
+  accumulateMetricVector,
+  formatMetricVectorSummary,
+  type MetricVector,
+} from "../_shared/metaCore.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -694,15 +700,26 @@ Escreva em formato altamente profissional, com dados baseados na série de métr
       (allAdAccounts || []).map((acc: any) => [acc.id, acc.name] as [string, string])
     );
 
-    // 2. Campanhas — igual ao dashboard (sem filtro user, filtra por ad_account se selecionado)
-    let campsQuery = (supabase as any)
-      .from("campaigns")
-      .select("id, name, status, objective, budget, platform, ad_account_id, client_id, clients(id, name)");
-    if (selectedAccountId) {
-      campsQuery = campsQuery.eq("ad_account_id", selectedAccountId);
+    // 2. Campanhas com paginação completa (suporta todas as 18+ contas sem limite de 1.000 linhas)
+    const allCampaigns: any[] = [];
+    for (let from = 0; from < 5000; from += 1000) {
+      let campsQuery = (supabase as any)
+        .from("campaigns")
+        .select("id, name, status, objective, budget, platform, ad_account_id, client_id, clients(id, name)")
+        .order("id")
+        .range(from, from + 999);
+      if (selectedAccountId) {
+        campsQuery = campsQuery.eq("ad_account_id", selectedAccountId);
+      }
+      const { data: campPage, error: campsErr } = await campsQuery;
+      if (campsErr) {
+        console.error("Error fetching campaigns:", campsErr);
+        break;
+      }
+      if (!campPage?.length) break;
+      allCampaigns.push(...campPage);
+      if (campPage.length < 1000) break;
     }
-    const { data: campaignsData, error: campsErr } = await campsQuery;
-    if (campsErr) console.error("Error fetching campaigns:", campsErr);
 
     // 2b. Buscar meta configurada na tabela alert_thresholds (precedência de metas ID 27)
     let accountThresholdCpl: number | null = null;
@@ -715,7 +732,6 @@ Escreva em formato altamente profissional, com dados baseados na série de métr
       }
     } catch {}
 
-    const allCampaigns: any[] = campaignsData || [];
     const campaignInfoMap = new Map<string, any>(allCampaigns.map((c: any) => [c.id, c]));
     const campaignIds = allCampaigns.map((c: any) => c.id);
 
@@ -811,61 +827,101 @@ Escreva em formato altamente profissional, com dados baseados na série de métr
 
     let dbMetrics: any[] = [];
     if (campaignIds.length > 0) {
-      let metricsQ = supabase
-        .from("metrics")
-        .select("cost, conversions, clicks, impressions, reach, date, campaign_id, result_type")
-        .in("campaign_id", campaignIds)
-        .gte("date", startDateStr)
-        .lte("date", endDateStr)
-        .order("date", { ascending: true });
-      const { data, error: queryError } = await metricsQ;
-      if (queryError) console.error("Error querying metrics:", queryError);
-      else dbMetrics = data || [];
+      let useExtendedCols = true;
+      for (let i = 0; i < campaignIds.length; i += 200) {
+        const chunkIds = campaignIds.slice(i, i + 200);
+        for (let from = 0; from < 20000; from += 1000) {
+          const selectCols = useExtendedCols
+            ? "cost, conversions, clicks, inline_link_clicks, all_clicks, impressions, reach, date, campaign_id, result_type, result_indicator, optimization_goal"
+            : "cost, conversions, clicks, impressions, reach, date, campaign_id, result_type";
+          let { data, error: queryError } = await supabase
+            .from("metrics")
+            .select(selectCols)
+            .in("campaign_id", chunkIds)
+            .gte("date", startDateStr)
+            .lte("date", endDateStr)
+            .order("date", { ascending: true })
+            .order("campaign_id", { ascending: true })
+            .range(from, from + 999);
+          if (
+            queryError &&
+            useExtendedCols &&
+            (queryError.code === "42703" || queryError.code === "PGRST204" || String(queryError.message || "").includes("column"))
+          ) {
+            useExtendedCols = false;
+            ({ data, error: queryError } = await supabase
+              .from("metrics")
+              .select("cost, conversions, clicks, impressions, reach, date, campaign_id, result_type")
+              .in("campaign_id", chunkIds)
+              .gte("date", startDateStr)
+              .lte("date", endDateStr)
+              .order("date", { ascending: true })
+              .order("campaign_id", { ascending: true })
+              .range(from, from + 999));
+          }
+          if (queryError) {
+            console.error("Error querying metrics:", queryError);
+            break;
+          }
+          if (!data?.length) break;
+          dbMetrics.push(...data);
+          if (data.length < 1000) break;
+        }
+      }
     }
 
     // Classificador estrito alinhado a metaCore.ts (sem inferência por nome de cliente/campanha)
-    const classifyEventForVictoria = (_campName: string, rawObj = "", resultType = ""): {
+    const classifyEventForVictoria = (
+      _campName: string,
+      rawObj = "",
+      resultType = "",
+      resultIndicator = "",
+      optimizationGoal = ""
+    ): {
       badge: string;
-      category: "MESSAGES" | "PROFILE_VISITS" | "LANDING_PAGE_VIEWS" | "LINK_CLICKS" | "LEADS" | "REACH" | "PURCHASE" | "UNKNOWN";
+      category: string;
       unitPlural: string;
       costLabel: string;
     } => {
       const cat = detectStrictConversionCategory({
         rawObjective: rawObj || null,
         storedResultType: resultType || null,
+        resultIndicator: resultIndicator || null,
+        optimizationGoal: optimizationGoal || null,
       });
       switch (cat) {
         case "INSTAGRAM_PROFILE":
-          return { badge: "👤 Visitas ao Perfil", category: "PROFILE_VISITS", unitPlural: "visitas ao perfil", costLabel: "Custo/Visita ao Perfil" };
+          return { badge: "👤 Visitas ao Perfil IG", category: cat, unitPlural: "visitas ao perfil", costLabel: "Custo/Visita ao Perfil" };
         case "LANDING_PAGE_VIEWS":
-          return { badge: "🌐 Page Views", category: "LANDING_PAGE_VIEWS", unitPlural: "visualizações de página", costLabel: "Custo/Page View" };
+          return { badge: "🌐 Page Views / Site", category: cat, unitPlural: "visualizações de página", costLabel: "Custo/Page View" };
         case "MESSAGES":
-          return { badge: "💬 Conversas Meta", category: "MESSAGES", unitPlural: "conversas iniciadas (Meta)", costLabel: "CPA/Conversa" };
+          return { badge: "💬 Conversas Meta", category: cat, unitPlural: "conversas iniciadas (Meta)", costLabel: "CPA/Conversa" };
         case "LEADS":
-          return { badge: "🎯 Leads/Cadastros", category: "LEADS", unitPlural: "leads/cadastros", costLabel: "CPL/Cadastro" };
+          return { badge: "🎯 Leads/Cadastros", category: cat, unitPlural: "leads/cadastros", costLabel: "CPL/Cadastro" };
         case "PURCHASES":
         case "CHECKOUT":
         case "ADD_TO_CART":
-          return { badge: "🛒 Compras/Conversões", category: "PURCHASE", unitPlural: "conversões de compra", costLabel: "CPA/Compra" };
+          return { badge: "🛒 Compras/Conversões", category: cat, unitPlural: "conversões de compra", costLabel: "CPA/Compra" };
         case "REACH":
-          return { badge: "👁️ Alcance", category: "REACH", unitPlural: "pessoas alcançadas", costLabel: "Custo por 1.000 alcançados" };
+          return { badge: "👁️ Alcance", category: cat, unitPlural: "pessoas alcançadas", costLabel: "Custo por 1.000 alcançados" };
         case "LINK_CLICKS":
-          return { badge: "👆 Cliques", category: "LINK_CLICKS", unitPlural: "cliques no link", costLabel: "CPC" };
+          return { badge: "👆 Cliques no Link", category: cat, unitPlural: "cliques no link", costLabel: "CPC (Link)" };
         case "VIDEO_VIEWS":
-          return { badge: "🎬 Vídeo/ThruPlay", category: "UNKNOWN", unitPlural: "visualizações ThruPlay", costLabel: "CPV/ThruPlay" };
+          return { badge: "🎬 Vídeo/ThruPlay", category: cat, unitPlural: "visualizações ThruPlay", costLabel: "CPV/ThruPlay" };
         case "ENGAGEMENT":
-          return { badge: "❤️ Engajamento", category: "UNKNOWN", unitPlural: "engajamentos", costLabel: "CPE" };
+          return { badge: "❤️ Engajamento/Curtidas", category: cat, unitPlural: "engajamentos/curtidas", costLabel: "CPE" };
         default:
           return { badge: "❓ Revisar Objetivo", category: "UNKNOWN", unitPlural: "resultados (revisar)", costLabel: "Custo/Resultado" };
       }
     };
 
-    // 4. Process metrics — campaign map com evento e unidade reais (IDs 11 e 12)
+    // 4. Process metrics — campaign map com evento, vetor por tipo e clicks distintos
     const campaignMap = new Map<string, {
       name: string; status: string; budget: number; platform: string;
-      clientName: string; adAccountName: string; rawObjective: string; resultType: string;
+      clientName: string; adAccountName: string; rawObjective: string;
+      resultType: string; resultIndicator: string; optimizationGoal: string;
       classification: ReturnType<typeof classifyEventForVictoria>;
-      cost: number; conversions: number; clicks: number; impressions: number; reach: number;
+      cost: number; conversions: number; clicks: number; allClicks: number; impressions: number; reach: number;
     }>();
 
     (dbMetrics || []).forEach((m: any) => {
@@ -876,6 +932,8 @@ Escreva em formato altamente profissional, com dados baseados na série de métr
       const clientName = (camp.clients as any)?.name || adAccountNameMap.get(camp.ad_account_id) || "Sem Cliente";
       const adAccountName = adAccountNameMap.get(camp.ad_account_id) || camp.ad_account_id || "—";
       const rt = m.result_type || "";
+      const ri = m.result_indicator || "";
+      const og = m.optimization_goal || "";
       const existing = campaignMap.get(campId) || {
         name: camp.name,
         status: camp.status?.toUpperCase() || "PAUSED",
@@ -884,16 +942,27 @@ Escreva em formato altamente profissional, com dados baseados na série de métr
         clientName, adAccountName,
         rawObjective: camp.objective || "",
         resultType: rt,
-        classification: classifyEventForVictoria(camp.name || "", camp.objective || "", rt),
-        cost: 0, conversions: 0, clicks: 0, impressions: 0, reach: 0
+        resultIndicator: ri,
+        optimizationGoal: og,
+        classification: classifyEventForVictoria(camp.name || "", camp.objective || "", rt, ri, og),
+        cost: 0, conversions: 0, clicks: 0, allClicks: 0, impressions: 0, reach: 0
       };
-      if (!existing.resultType && rt) {
-        existing.resultType = rt;
-        existing.classification = classifyEventForVictoria(camp.name || "", camp.objective || "", rt);
+      if ((!existing.resultType && rt) || (!existing.resultIndicator && ri) || (!existing.optimizationGoal && og)) {
+        existing.resultType = existing.resultType || rt;
+        existing.resultIndicator = existing.resultIndicator || ri;
+        existing.optimizationGoal = existing.optimizationGoal || og;
+        existing.classification = classifyEventForVictoria(
+          camp.name || "",
+          camp.objective || "",
+          existing.resultType,
+          existing.resultIndicator,
+          existing.optimizationGoal
+        );
       }
       existing.cost += Number(m.cost || 0);
       existing.conversions += Number(m.conversions || 0);
-      existing.clicks += Number(m.clicks || 0);
+      existing.clicks += Number(m.inline_link_clicks ?? m.clicks ?? 0);
+      existing.allClicks += Number(m.all_clicks ?? m.clicks ?? 0);
       existing.impressions += Number(m.impressions || 0);
       existing.reach += Number(m.reach || 0);
       campaignMap.set(campId, existing);
@@ -901,11 +970,8 @@ Escreva em formato altamente profissional, com dados baseados na série de métr
 
     const campaigns = Array.from(campaignMap.entries()).map(([id, c]) => {
       const isReach = c.classification.category === "REACH";
-      const isClick = c.classification.category === "LINK_CLICKS";
       const resultValue = isReach
         ? (c.reach > 0 ? c.reach : c.conversions)
-        : isClick && c.conversions <= 0
-        ? c.clicks
         : c.conversions;
       const costPerRes: number | null = resultValue > 0
         ? (isReach ? (c.cost / resultValue) * 1000 : c.cost / resultValue)
@@ -920,7 +986,7 @@ Escreva em formato altamente profissional, com dados baseados na série de métr
         objective: c.classification.badge,
         category: c.classification.category,
         totals: {
-          cost: c.cost, conversions: c.conversions, clicks: c.clicks,
+          cost: c.cost, conversions: c.conversions, clicks: c.clicks, allClicks: c.allClicks,
           impressions: c.impressions, reach: c.reach,
           resultValue, costPerRes, costPerResFormatted, resultLabel, costLabel, ctr
         }
@@ -929,13 +995,13 @@ Escreva em formato altamente profissional, com dados baseados na série de métr
 
     const totalInvest = campaigns.reduce((s, c) => s + c.totals.cost, 0);
 
-    // Resumo por cliente preservando cálculo seguro contra divisão por zero (ID 11)
-    const clientSummaryMap = new Map<string, { invest: number; results: number; campaigns: string[] }>();
+    // Resumo por cliente via MetricVector (NUNCA soma conversas + alcance/visitas no mesmo escalar)
+    const clientSummaryMap = new Map<string, { invest: number; vector: MetricVector; campaigns: string[] }>();
     campaigns.forEach(c => {
       const key = c.clientName;
-      const ex = clientSummaryMap.get(key) || { invest: 0, results: 0, campaigns: [] };
+      const ex = clientSummaryMap.get(key) || { invest: 0, vector: emptyMetricVector(), campaigns: [] };
       ex.invest += c.totals.cost;
-      ex.results += c.totals.resultValue;
+      accumulateMetricVector(ex.vector, c.category as any, c.totals.resultValue, c.totals.reach ? undefined : undefined);
       if (!ex.campaigns.includes(c.name)) ex.campaigns.push(c.name);
       clientSummaryMap.set(key, ex);
     });
@@ -944,8 +1010,20 @@ Escreva em formato altamente profissional, com dados baseados na série de métr
       ? Array.from(clientSummaryMap.entries())
           .sort((a, b) => b[1].invest - a[1].invest)
           .map(([name, d]) => {
-            const cpaText = d.results > 0 ? `R$${(d.invest / d.results).toFixed(2)}` : "Não calculável";
-            return `- ${name} | Invest: R$${d.invest.toFixed(2)} | Resultados agregados: ${d.results} | Custo médio ref.: ${cpaText} | Campanhas: ${d.campaigns.slice(0,3).join(", ")}`;
+            const entries = formatMetricVectorSummary(d.vector);
+            const vectorSummary = entries.length > 0
+              ? entries.map(e => `${e.value.toLocaleString("pt-BR")} ${e.label}`).join(" + ")
+              : "0 resultados";
+            const isMixed = entries.length > 1;
+            const single = entries.length === 1 ? entries[0] : null;
+            const cpaText = isMixed
+              ? "Misto por categoria"
+              : single && single.value > 0
+              ? (single.key === "reach"
+                  ? `R$${((d.invest / single.value) * 1000).toFixed(2)}/1k`
+                  : `R$${(d.invest / single.value).toFixed(2)}`)
+              : "Não calculável";
+            return `- ${name} | Invest: R$${d.invest.toFixed(2)} | Resultados por tipo: ${vectorSummary} | Custo ref.: ${cpaText} | Campanhas: ${d.campaigns.slice(0,3).join(", ")}`;
           }).join("\n")
       : "Nenhum dado de cliente disponível.";
 
@@ -984,8 +1062,8 @@ Escreva em formato altamente profissional, com dados baseados na série de métr
         const isReach = obj.includes("Alcance");
         const isClick = obj.includes("Cliques");
         const cpa: number | null = d.results > 0 ? (isReach ? (d.cost / d.results) * 1000 : d.cost / d.results) : null;
-        const rLabel = isClick ? "Visitas" : isReach ? "Impressões" : "Resultados";
-        const cLabel = isClick ? "Custo/Visita" : isReach ? "CPM" : "CPA/CPL";
+        const rLabel = isReach ? "Pessoas alcançadas" : isClick ? "Cliques no Link" : "Resultados";
+        const cLabel = isReach ? "Custo por 1.000 contas alcançadas" : isClick ? "CPC (Link)" : "CPA/CPL";
         tpl += `${obj}\n   💵 Investimento: R$ ${fmt(d.cost)}\n   📈 ${rLabel}: ${fmtN(d.results)}\n   💲 ${cLabel}: ${cpa !== null ? `R$ ${fmt(cpa)}` : "Não calculável"}\n`;
         if (d.reach > 0 && !isReach) tpl += `   👥 Alcance (soma diária não deduplicada): ${fmtN(d.reach)}\n`;
         tpl += `\n`;

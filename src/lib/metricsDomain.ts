@@ -6,7 +6,18 @@
 // - Precedência única de metas e motor de diagnóstico unificado
 // - Snapshot imutável de relatórios (única fonte para texto WhatsApp, prévia visual e PDF)
 
-export const EVENT_MODEL_VERSION = "2026.11.1";
+import {
+  type MetricVector,
+  type NormalizedResultCategory,
+  emptyMetricVector,
+  accumulateMetricVector,
+  formatMetricVectorSummary,
+} from "./metaIntegrationCore.ts";
+
+export type { MetricVector, NormalizedResultCategory };
+export { emptyMetricVector, accumulateMetricVector, formatMetricVectorSummary };
+
+export const EVENT_MODEL_VERSION = "2026.11.2";
 
 export type DataLoadState =
   | "initial"
@@ -464,14 +475,44 @@ export function classifyMetaEvent(input: ClassifyMetaEventInput): EventClassific
 
   // 1. Meta API results[0].indicator (fonte oficial de mais alta confiança)
   if (indicator) {
+    if (indicator.includes("page_visit")) {
+      return {
+        ...buildDetailFromCategory("ENGAGEMENT", input, "high", "meta_indicator"),
+        primaryMetric: "page_visit_view",
+        unitSingular: "visita à página",
+        unitPlural: "visitas à página",
+        costUnitLabel: "Por visita à página",
+        shortBadge: "VISITAS PÁGINA",
+      };
+    }
     if (indicator.includes("purchase")) return buildDetailFromCategory("PURCHASES", input, "high", "meta_indicator");
     if (indicator.includes("landing_page_view")) return buildDetailFromCategory("LANDING_PAGE_VIEWS", input, "high", "meta_indicator");
     if (indicator.includes("profile_visit") || indicator.includes("instagram_profile")) return buildDetailFromCategory("INSTAGRAM_PROFILE", input, "high", "meta_indicator");
     if (indicator.includes("messaging")) return buildDetailFromCategory("MESSAGES", input, "high", "meta_indicator");
+    if (indicator.includes("contact_website")) {
+      return {
+        ...buildDetailFromCategory("LEADS", input, "high", "meta_indicator"),
+        primaryMetric: "conversions:contact_website",
+        unitSingular: "contato no site",
+        unitPlural: "contatos no site",
+        costUnitLabel: "Por contato no site",
+        shortBadge: "CONTATOS SITE",
+      };
+    }
     if (indicator.includes("lead") || indicator.includes("registration")) return buildDetailFromCategory("LEADS", input, "high", "meta_indicator");
     if (indicator.includes("thruplay") || indicator.includes("video_view")) return buildDetailFromCategory("VIDEO_VIEWS", input, "high", "meta_indicator");
-    if (indicator === "reach") return buildDetailFromCategory("REACH", input, "high", "meta_indicator");
-    if (indicator.includes("post_engagement")) return buildDetailFromCategory("ENGAGEMENT", input, "high", "meta_indicator");
+    if (indicator === "reach" || indicator === "impressions") return buildDetailFromCategory("REACH", input, "high", "meta_indicator");
+    if (indicator === "like" || indicator === "actions:like" || indicator.endsWith(":like")) {
+      return {
+        ...buildDetailFromCategory("ENGAGEMENT", input, "high", "meta_indicator"),
+        primaryMetric: "like",
+        unitSingular: "curtida na página",
+        unitPlural: "curtidas na página",
+        costUnitLabel: "Por curtida na página",
+        shortBadge: "CURTIDAS",
+      };
+    }
+    if (indicator.includes("post_engagement") || indicator.includes("page_engagement")) return buildDetailFromCategory("ENGAGEMENT", input, "high", "meta_indicator");
     if (indicator.includes("link_click")) return buildDetailFromCategory("LINK_CLICKS", input, "high", "meta_indicator");
   }
 
@@ -679,9 +720,12 @@ export interface RawCampaignMetricRow {
   rawObjective?: string;
   optimizationGoal?: string;
   resultType?: string;
+  resultsIndicator?: string;
   cost: number;
   conversions: number; // Somente conversões/resultados reais do evento (NUNCA cliques fallback)
   clicks: number;
+  inlineLinkClicks?: number;
+  allClicks?: number;
   impressions: number;
   reach: number;
   reachIsDeduplicated?: boolean;
@@ -710,6 +754,7 @@ export function normalizeCampaignItem(row: RawCampaignMetricRow): NormalizedCamp
     rawObjective: row.rawObjective,
     optimizationGoal: row.optimizationGoal,
     resultType: row.resultType,
+    resultsIndicator: row.resultsIndicator,
     isVehicleContext: row.isVehicleContext,
   });
 
@@ -754,12 +799,15 @@ export interface EventGroupAggregate {
 export interface WeightedAggregateSummary {
   totalMediaSpend: number;
   totalClicks: number;
+  inlineLinkClicks: number;
+  allClicks: number;
   totalImpressions: number;
   reachEstimateSum: number;
   accountDeduplicatedReach: number | null;
   hasDeduplicatedReach: boolean;
   reachLabel: string;
   ctr: number | null;
+  ctrAll: number | null;
   cpm: number | null;
   cpc: number | null;
   // Separação estrita: apenas campanhas de conversão comercial direta (Mensagens, Cadastros, Compras)
@@ -773,6 +821,7 @@ export interface WeightedAggregateSummary {
   cpaMessages: number | null;
   hasMixedObjectives: boolean;
   groupsByCategory: EventGroupAggregate[];
+  metricVector: MetricVector;
 }
 
 export function computeWeightedAggregates(
@@ -780,9 +829,11 @@ export function computeWeightedAggregates(
   options: { deduplicatedAccountReach?: number | null } = {}
 ): WeightedAggregateSummary {
   const normalized = rows.map(normalizeCampaignItem);
+  const metricVector = emptyMetricVector();
 
   let totalMediaSpend = 0;
   let totalClicks = 0;
+  let totalAllClicks = 0;
   let totalImpressions = 0;
   let reachEstimateSum = 0;
   let conversionSpend = 0;
@@ -793,10 +844,20 @@ export function computeWeightedAggregates(
   const groupMap = new Map<MetaConversionCategory, NormalizedCampaignItem[]>();
 
   for (const item of normalized) {
+    const linkClk = item.inlineLinkClicks ?? item.clicks;
+    const allClk = item.allClicks ?? item.clicks;
     totalMediaSpend += item.cost;
-    totalClicks += item.clicks;
+    totalClicks += linkClk;
+    totalAllClicks += allClk;
     totalImpressions += item.impressions;
     reachEstimateSum += item.reach;
+
+    accumulateMetricVector(
+      metricVector,
+      item.classification.category as NormalizedResultCategory,
+      item.conversions,
+      item.resultsIndicator || item.classification.primaryMetric
+    );
 
     if (item.classification.isConversionGoal) {
       conversionSpend += item.cost;
@@ -815,7 +876,7 @@ export function computeWeightedAggregates(
   const groupsByCategory: EventGroupAggregate[] = Array.from(groupMap.entries()).map(([category, items]) => {
     const spend = items.reduce((s, x) => s + x.cost, 0);
     const results = items.reduce((s, x) => s + x.conversions, 0);
-    const clicks = items.reduce((s, x) => s + x.clicks, 0);
+    const clicks = items.reduce((s, x) => s + (x.inlineLinkClicks ?? x.clicks), 0);
     const impressions = items.reduce((s, x) => s + x.impressions, 0);
     const reachSum = items.reduce((s, x) => s + x.reach, 0);
     const sample = items[0].classification;
@@ -859,12 +920,15 @@ export function computeWeightedAggregates(
   return {
     totalMediaSpend,
     totalClicks,
+    inlineLinkClicks: totalClicks,
+    allClicks: totalAllClicks,
     totalImpressions,
     reachEstimateSum,
     accountDeduplicatedReach: dedupReach ?? (singleCampDedup ? normalized[0].reach : null),
     hasDeduplicatedReach,
     reachLabel,
     ctr: computeCtr(totalClicks, totalImpressions),
+    ctrAll: computeCtr(totalAllClicks, totalImpressions),
     cpm: computeCpm(totalMediaSpend, totalImpressions),
     cpc: computeCpc(totalMediaSpend, totalClicks),
     conversionSpend,
@@ -876,6 +940,7 @@ export function computeWeightedAggregates(
     cpaMessages: messagesCount > 0 ? messagesSpend / messagesCount : null,
     hasMixedObjectives,
     groupsByCategory,
+    metricVector,
   };
 }
 
@@ -977,11 +1042,23 @@ export function buildReportSnapshot(params: {
         lines.push(`Visualizações: ${fmtInt(grp.results)}`);
         lines.push(`Custo por visualização: ${grp.unitCost !== null ? `R$ ${fmtBRL(grp.unitCost)}` : "Não calculável"}`);
         lines.push("");
-      } else if (grp.category === "REACH" || grp.category === "VIDEO_VIEWS" || grp.category === "ENGAGEMENT") {
-        lines.push("*Campanha de Alcance e Impressões:*");
+      } else if (grp.category === "REACH") {
+        lines.push("*Campanha de Alcance e Reconhecimento:*");
         lines.push(`Investimento: R$ ${fmtBRL(grp.spend)}`);
-        lines.push(`Impressões: ${fmtInt(grp.impressions)}`);
-        lines.push(`CPM: ${grp.cpm !== null ? `R$ ${fmtBRL(grp.cpm)}` : "Não calculável"}`);
+        lines.push(`Pessoas alcançadas: ${fmtInt(grp.results)} | Impressões: ${fmtInt(grp.impressions)}`);
+        lines.push(`Custo por 1.000 contas alcançadas: ${grp.unitCost !== null ? `R$ ${fmtBRL(grp.unitCost)}` : "Não calculável"}`);
+        lines.push("");
+      } else if (grp.category === "VIDEO_VIEWS") {
+        lines.push("*Campanha de Visualizações de Vídeo:*");
+        lines.push(`Investimento: R$ ${fmtBRL(grp.spend)}`);
+        lines.push(`ThruPlays: ${fmtInt(grp.results)} | Impressões: ${fmtInt(grp.impressions)}`);
+        lines.push(`Custo por ThruPlay: ${grp.unitCost !== null ? `R$ ${fmtBRL(grp.unitCost)}` : "Não calculável"}`);
+        lines.push("");
+      } else if (grp.category === "ENGAGEMENT") {
+        lines.push("*Campanha de Engajamento / Página:*");
+        lines.push(`Investimento: R$ ${fmtBRL(grp.spend)}`);
+        lines.push(`${grp.unitPlural}: ${fmtInt(grp.results)}`);
+        lines.push(`Custo unitário: ${grp.unitCost !== null ? `R$ ${fmtBRL(grp.unitCost)}` : "Não calculável"}`);
         lines.push("");
       } else if (grp.category === "LINK_CLICKS") {
         lines.push("*Campanha de Cliques no Link:*");

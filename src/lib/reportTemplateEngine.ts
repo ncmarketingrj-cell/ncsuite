@@ -1,5 +1,11 @@
 import { supabase } from "@/integrations/supabase-external/client";
 import { formatCurrencyBRLStrict } from "@/lib/metaIntegrationCore";
+import {
+  buildReportSnapshot,
+  classifyMetaEvent,
+  computeUnitCost,
+  formatMetricVectorSummary,
+} from "@/lib/metricsDomain";
 
 function fmtBRLWithSymbol(v: number | null | undefined): string {
   const f = formatCurrencyBRLStrict(v ?? null);
@@ -12,9 +18,15 @@ export interface ReportCampaignItem {
   cost: number;
   impressions: number;
   clicks: number;
+  inlineLinkClicks?: number;
+  allClicks?: number;
   conversions: number;
   reach: number;
   objective: string;
+  rawObjective?: string;
+  optimizationGoal?: string;
+  resultType?: string;
+  resultIndicator?: string;
   platform: "meta" | "google";
   selected: boolean;
   campaignName?: string;
@@ -973,45 +985,80 @@ export function renderReportTemplateText(params: {
   const summedReach = selected.reduce((sum, c) => sum + c.reach, 0);
   const totalReach = accountPeriodReach && accountPeriodReach > 0 ? accountPeriodReach : summedReach;
   const totalImps = selected.reduce((sum, c) => sum + c.impressions, 0);
+  const totalLinkClicks = selected.reduce((sum, c) => sum + Number(c.inlineLinkClicks ?? c.clicks ?? 0), 0);
 
   const groupedTypes = new Map<
     string,
-    { cost: number; results: number; reach: number; impressions: number }
+    { cost: number; results: number; reach: number; impressions: number; linkClicks: number; unitPlural: string; isReach: boolean; isClick: boolean }
   >();
   const platforms = new Set<string>();
 
   selected.forEach((c) => {
     platforms.add(c.platform === "google" ? "Google Ads" : "Meta Ads");
-    const isClickBased = c.objective.includes("Cliques");
-    const isReachBased =
-      c.objective.includes("Alcance") ||
-      c.objective.includes("Visualizações") ||
-      c.objective.includes("Engajamento") ||
-      c.objective.includes("Impressões") ||
-      c.objective.includes("Thru-Play");
+    const linkClk = Number(c.inlineLinkClicks ?? c.clicks ?? 0);
+    const ev = classifyMetaEvent({
+      campaignName: c.name,
+      rawObjective: c.rawObjective,
+      optimizationGoal: c.optimizationGoal,
+      resultType: c.resultType || c.objective,
+      resultsIndicator: c.resultIndicator,
+      isVehicleContext,
+    });
+    const isClickBased = ev.category === "LINK_CLICKS" || c.objective.includes("Cliques");
+    const isReachBased = ev.category === "REACH" || c.objective.includes("Alcance");
 
-    let resultValue = c.conversions;
-    if (isClickBased) resultValue = c.clicks;
-    if (isReachBased) resultValue = c.impressions;
+    let resultValue = Number(c.conversions || 0);
+    if (isClickBased) resultValue = linkClk;
+    if (isReachBased) resultValue = c.reach > 0 ? c.reach : Number(c.conversions || 0);
 
     const cur = groupedTypes.get(c.objective) || {
       cost: 0,
       results: 0,
       reach: 0,
       impressions: 0,
+      linkClicks: 0,
+      unitPlural: ev.unitPlural,
+      isReach: isReachBased,
+      isClick: isClickBased,
     };
     cur.cost += c.cost;
     cur.results += resultValue;
     cur.reach += c.reach;
     cur.impressions += c.impressions;
+    cur.linkClicks += linkClk;
     groupedTypes.set(c.objective, cur);
   });
 
-  const totalResults = Array.from(groupedTypes.values()).reduce(
-    (sum, g) => sum + g.results,
-    0
-  );
-  const avgCpa = totalResults > 0 ? totalCost / totalResults : 0;
+  const snapshot = buildReportSnapshot({
+    clientName: clientName || "Cliente",
+    accountName: clientName || "Cliente",
+    dateFrom: "2026-01-01",
+    dateTo: "2026-01-01",
+    deduplicatedAccountReach: accountPeriodReach,
+    campaigns: selected.map((c) => ({
+      id: c.id,
+      name: c.name,
+      cost: c.cost,
+      impressions: c.impressions,
+      reach: c.reach,
+      clicks: Number(c.inlineLinkClicks ?? c.clicks ?? 0),
+      inlineLinkClicks: Number(c.inlineLinkClicks ?? c.clicks ?? 0),
+      allClicks: Number(c.allClicks ?? c.clicks ?? 0),
+      conversions: Number(c.conversions || 0),
+      rawObjective: c.rawObjective,
+      optimizationGoal: c.optimizationGoal,
+      resultType: c.resultType || c.objective,
+      resultsIndicator: c.resultIndicator,
+      isVehicleContext,
+    })),
+  });
+
+  const vectorSummary = formatMetricVectorSummary(snapshot.summary.metricVector);
+  const heterogeneousResultsLabel =
+    vectorSummary.length <= 1
+      ? (vectorSummary[0] ? `${vectorSummary[0].value.toLocaleString("pt-BR")} ${vectorSummary[0].label.toLowerCase()}` : "0")
+      : vectorSummary.map((e) => `${e.value.toLocaleString("pt-BR")} ${e.label}`).join(" | ");
+  const avgCpa = snapshot.summary.cpaEligible ?? 0;
   const platformString = Array.from(platforms).join(" & ") || "Meta Ads";
 
   let text = templateText;
@@ -1030,13 +1077,14 @@ export function renderReportTemplateText(params: {
     /\{\{INVESTIMENTO\}\}/g,
     fmtBRLWithSymbol(totalCost)
   );
-  text = text.replace(/\{\{TOTAL_RESULTADOS\}\}/g, totalResults.toLocaleString("pt-BR"));
+  text = text.replace(/\{\{TOTAL_RESULTADOS\}\}/g, heterogeneousResultsLabel);
   text = text.replace(
     /\{\{CPA_MEDIO\}\}/g,
     avgCpa > 0 ? fmtBRLWithSymbol(avgCpa) : "Não calculável"
   );
   text = text.replace(/\{\{ALCANCE_TOTAL\}\}/g, totalReach.toLocaleString("pt-BR"));
   text = text.replace(/\{\{IMPRESSOES_TOTAIS\}\}/g, totalImps.toLocaleString("pt-BR"));
+  text = text.replace(/\{\{CLIQUES_NO_LINK\}\}/g, totalLinkClicks.toLocaleString("pt-BR"));
   text = text.replace(/\{\{AGENCIA\}\}/g, agencyName.toUpperCase());
 
   // 2. Classificadores de Blocos Setoriais
@@ -1088,12 +1136,11 @@ export function renderReportTemplateText(params: {
     const reachCamps = selected.filter((c) => isReachOrImpression(c) && !isConsignado(c));
     if (reachCamps.length > 0) {
       const costReach = reachCamps.reduce((s, c) => s + c.cost, 0);
-      const impsReach = reachCamps.reduce(
-        (s, c) => s + (c.impressions > 0 ? c.impressions : c.reach),
-        0
-      );
-      const cpmReach = impsReach > 0 ? (costReach / impsReach) * 1000 : 0;
-      const block = `*Campanha de Alcance e Impressões:*\nInvestimento: ${fmtBRLWithSymbol(costReach)}\nImpressões / Plays: ${impsReach.toLocaleString("pt-BR")}\nCPM: ${fmtBRLWithSymbol(cpmReach)}`;
+      const peopleReached = reachCamps.reduce((s, c) => s + (c.reach > 0 ? c.reach : Number(c.conversions || 0)), 0);
+      const impsReach = reachCamps.reduce((s, c) => s + c.impressions, 0);
+      const costPer1kReach = computeUnitCost(costReach, peopleReached, "REACH");
+      const cpmReach = impsReach > 0 ? (costReach / impsReach) * 1000 : null;
+      const block = `*Campanha de Alcance e Impressões:*\nInvestimento: ${fmtBRLWithSymbol(costReach)}\nPessoas alcançadas: ${peopleReached.toLocaleString("pt-BR")}\nCusto por 1.000 contas alcançadas: ${costPer1kReach !== null ? fmtBRLWithSymbol(costPer1kReach) : "Não calculável"}\nImpressões: ${impsReach.toLocaleString("pt-BR")}${cpmReach !== null ? ` (CPM: ${fmtBRLWithSymbol(cpmReach)})` : ""}`;
       text = text.replace(/\{\{BLOCO_ALCANCE\}\}/g, block);
     } else {
       text = text.replace(/\{\{BLOCO_ALCANCE\}\}/g, "");
@@ -1165,13 +1212,8 @@ export function renderReportTemplateText(params: {
   if (text.includes("{{RESULTADOS_POR_TIPO}}")) {
     let typeText = "";
     groupedTypes.forEach((data, type) => {
-      const isClick = type.includes("Cliques");
-      const isReach =
-        type.includes("Alcance") ||
-        type.includes("Visualizações") ||
-        type.includes("Engajamento") ||
-        type.includes("Impressões") ||
-        type.includes("Thru-Play");
+      const isClick = data.isClick;
+      const isReach = data.isReach;
 
       const cpl =
         data.results > 0
@@ -1180,13 +1222,13 @@ export function renderReportTemplateText(params: {
             : data.cost / data.results
           : null;
 
-      let resultLabel = "Resultados";
-      if (isClick) resultLabel = "Visitas";
-      if (isReach) resultLabel = "Impressões";
+      let resultLabel = `Resultados (${data.unitPlural})`;
+      if (isClick) resultLabel = "Cliques no link";
+      if (isReach) resultLabel = "Pessoas alcançadas";
 
-      let costLabel = "CPL/CPA";
-      if (isClick) costLabel = "Custo por Visita";
-      if (isReach) costLabel = "CPM";
+      let costLabel = "Custo por resultado";
+      if (isClick) costLabel = "CPC (link)";
+      if (isReach) costLabel = "Custo por 1.000 contas alcançadas";
 
       const cplFormatted =
         cpl !== null
@@ -1196,7 +1238,11 @@ export function renderReportTemplateText(params: {
       typeText += `*${type}*\n`;
       typeText += `   💵 Investimento: ${fmtBRLWithSymbol(data.cost)}\n`;
       typeText += `   📈 ${resultLabel}: ${data.results.toLocaleString("pt-BR")}\n`;
-      typeText += `   💲 ${costLabel}: ${cplFormatted}\n\n`;
+      typeText += `   💲 ${costLabel}: ${cplFormatted}\n`;
+      if (isReach && data.impressions > 0) {
+        typeText += `   👁️ Impressões: ${data.impressions.toLocaleString("pt-BR")} (CPM: ${fmtBRLWithSymbol((data.cost / data.impressions) * 1000)})\n`;
+      }
+      typeText += `\n`;
     });
     text = text.replace(/\{\{RESULTADOS_POR_TIPO\}\}/g, typeText.trim());
   }
@@ -1205,20 +1251,22 @@ export function renderReportTemplateText(params: {
   if (text.includes("{{LISTA_CAMPANHAS_RESUMO}}")) {
     let summaryText = "";
     selected.forEach((c) => {
-      const isClick = c.objective.includes("Cliques");
-      const isReach =
-        c.objective.includes("Alcance") ||
-        c.objective.includes("Visualizações") ||
-        c.objective.includes("Engajamento") ||
-        c.objective.includes("Impressões") ||
-        c.objective.includes("Thru-Play");
-      let resultValue = c.conversions;
-      if (isClick) resultValue = c.clicks;
-      if (isReach) resultValue = c.impressions;
+      const ev = classifyMetaEvent({
+        campaignName: c.name,
+        rawObjective: c.rawObjective,
+        optimizationGoal: c.optimizationGoal,
+        resultType: c.resultType || c.objective,
+        resultsIndicator: c.resultIndicator,
+        isVehicleContext,
+      });
+      const isClick = ev.category === "LINK_CLICKS" || c.objective.includes("Cliques");
+      const isReach = ev.category === "REACH" || c.objective.includes("Alcance");
+      const linkClk = Number(c.inlineLinkClicks ?? c.clicks ?? 0);
+      const resultValue = isClick ? linkClk : isReach ? (c.reach > 0 ? c.reach : c.conversions) : c.conversions;
       const costPerRes =
         resultValue > 0 ? (isReach ? (c.cost / resultValue) * 1000 : c.cost / resultValue) : null;
-      const unitLabel = isReach ? "impr." : isClick ? "cliques" : "leads";
-      const costUnit = isReach ? "CPM" : "CPA";
+      const unitLabel = isReach ? "pessoas alc." : isClick ? "cliques link" : ev.unitPlural;
+      const costUnit = isReach ? "Custo/1k alc." : ev.isConversionGoal ? "CPA" : "CPR";
       const costFormatted =
         costPerRes !== null
           ? fmtBRLWithSymbol(costPerRes)
@@ -1232,21 +1280,22 @@ export function renderReportTemplateText(params: {
   if (text.includes("{{LISTA_CAMPANHAS}}")) {
     let listText = "";
     selected.forEach((c) => {
-      const isClick = c.objective.includes("Cliques");
-      const isReach =
-        c.objective.includes("Alcance") ||
-        c.objective.includes("Visualizações") ||
-        c.objective.includes("Engajamento") ||
-        c.objective.includes("Impressões") ||
-        c.objective.includes("Thru-Play");
+      const ev = classifyMetaEvent({
+        campaignName: c.name,
+        rawObjective: c.rawObjective,
+        optimizationGoal: c.optimizationGoal,
+        resultType: c.resultType || c.objective,
+        resultsIndicator: c.resultIndicator,
+        isVehicleContext,
+      });
+      const isClick = ev.category === "LINK_CLICKS" || c.objective.includes("Cliques");
+      const isReach = ev.category === "REACH" || c.objective.includes("Alcance");
+      const linkClk = Number(c.inlineLinkClicks ?? c.clicks ?? 0);
 
-      let resultValue = c.conversions;
-      if (isClick) resultValue = c.clicks;
-      if (isReach) resultValue = c.impressions;
-
+      const resultValue = isClick ? linkClk : isReach ? (c.reach > 0 ? c.reach : c.conversions) : c.conversions;
       const costPerRes =
         resultValue > 0 ? (isReach ? (c.cost / resultValue) * 1000 : c.cost / resultValue) : null;
-      const costLabel = isReach ? "CPM" : "Custo/Resultado";
+      const costLabel = isReach ? "Custo por 1.000 contas alcançadas" : "Custo/Resultado";
       const platIcon = c.platform === "google" ? "🌐" : "🎯";
       const costFormatted =
         costPerRes !== null
@@ -1261,9 +1310,10 @@ export function renderReportTemplateText(params: {
         if (c.campaignName) listText += `   📁 Campanha: ${c.campaignName}\n`;
       }
       listText += `   💵 Investimento: ${fmtBRLWithSymbol(c.cost)}\n`;
-      listText += `   📈 Resultados: ${resultValue.toLocaleString("pt-BR")} ${isReach ? "impr." : ""}\n`;
+      listText += `   📈 Resultados: ${resultValue.toLocaleString("pt-BR")} ${ev.unitPlural}\n`;
       listText += `   💲 ${costLabel}: ${costFormatted}\n`;
-      if (c.reach > 0) listText += `   👥 Alcance: ${c.reach.toLocaleString("pt-BR")}\n`;
+      if (linkClk > 0) listText += `   👆 Cliques no link: ${linkClk.toLocaleString("pt-BR")}\n`;
+      if (c.reach > 0 && !isReach) listText += `   👥 Alcance: ${c.reach.toLocaleString("pt-BR")}\n`;
       listText += `\n`;
     });
     text = text.replace(/\{\{LISTA_CAMPANHAS\}\}/g, listText.trim());

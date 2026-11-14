@@ -9,6 +9,8 @@ import { supabase } from "@/integrations/supabase-external/client";
 import { ensureDatabaseCalibrated, calibrateMetaConversionsFromGraph } from "@/lib/metaConversionCalibrator";
 
 const REALTIME_SYNC_INTERVAL_MS = 3 * 60 * 1000; // 3 minutos rigorosos em tempo real
+const STALE_SYNC_LOCK_MS = 120 * 1000; // Libera lock preso em localStorage após 120s
+const INVOKE_TIMEOUT_MS = 90 * 1000; // Timeout defensivo por Edge Function
 const STORAGE_REALTIME_KEY = "nc_last_realtime_sync";
 const STORAGE_SYNC_STATUS = "nc_auto_sync_status";
 
@@ -16,10 +18,21 @@ export type SyncStatus = {
   lastSync: string | null;   // ISO timestamp
   nextSync: string | null;   // ISO timestamp
   isSyncing: boolean;
+  startedAt?: string | null; // ISO timestamp para expirar locks órfãos
   lastResult: "success" | "error" | "partial" | null;
 };
 
 export const SYNC_STATUS_EVENT = "nc_sync_status_changed";
+
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`Timeout (${Math.round(ms / 1000)}s) em ${label}`)), ms);
+    promise.then(
+      (v) => { clearTimeout(timer); resolve(v); },
+      (e) => { clearTimeout(timer); reject(e); }
+    );
+  });
+}
 
 function dispatchSyncStatus(status: Partial<SyncStatus>) {
   try {
@@ -34,13 +47,22 @@ function dispatchSyncStatus(status: Partial<SyncStatus>) {
 }
 
 export function getSyncStatus(): SyncStatus {
+  const empty: SyncStatus = { lastSync: null, nextSync: null, isSyncing: false, startedAt: null, lastResult: null };
   try {
     const stored = localStorage.getItem(STORAGE_SYNC_STATUS);
-    return stored ? JSON.parse(stored) : {
-      lastSync: null, nextSync: null, isSyncing: false, lastResult: null
-    };
+    if (!stored) return empty;
+    const parsed: SyncStatus = JSON.parse(stored);
+    if (parsed.isSyncing) {
+      const startedMs = parsed.startedAt ? new Date(parsed.startedAt).getTime() : 0;
+      if (!startedMs || Number.isNaN(startedMs) || Date.now() - startedMs > STALE_SYNC_LOCK_MS) {
+        const recovered: SyncStatus = { ...parsed, isSyncing: false, startedAt: null };
+        localStorage.setItem(STORAGE_SYNC_STATUS, JSON.stringify(recovered));
+        return recovered;
+      }
+    }
+    return parsed;
   } catch {
-    return { lastSync: null, nextSync: null, isSyncing: false, lastResult: null };
+    return empty;
   }
 }
 
@@ -54,6 +76,7 @@ function getLocalDateString(date: Date): string {
 export function useAutoSync() {
   const qc = useQueryClient();
   const isSyncingRef = useRef(false);
+  const syncSeqRef = useRef(0);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const runSync = useCallback(async (triggeredBy: "auto" | "manual" = "auto") => {
@@ -62,8 +85,9 @@ export function useAutoSync() {
       return;
     }
 
+    const mySeq = ++syncSeqRef.current;
     isSyncingRef.current = true;
-    dispatchSyncStatus({ isSyncing: true });
+    dispatchSyncStatus({ isSyncing: true, startedAt: new Date().toISOString() });
 
     try {
       // ── SYNC DE 3 MINUTOS: Ontem + Hoje (D-1 e D0), TODOS os níveis ─────
@@ -76,21 +100,32 @@ export function useAutoSync() {
 
       console.log(`[AUTO-SYNC] ⚡ Iniciando Sync Unificado 3min [${triggeredBy}]: ${timeRange.since} → ${timeRange.until}`);
 
-      // Executa todos os sincronizadores oficiais em paralelo via Edge Functions (Service Role)
+      // Executa todos os sincronizadores oficiais em paralelo com timeout defensivo
       const syncResults = await Promise.allSettled([
-        supabase.functions.invoke("sync-meta-ads", {
-          body: { triggered_by: "auto", time_range: timeRange }
-        }),
-        supabase.functions.invoke("sync-google-ads", {
-          body: { triggered_by: "auto", time_range: timeRange }
-        }),
-        supabase.functions.invoke("get-meta-billing", {
-          body: {}
-        }),
-        supabase.functions.invoke("sync-social-media", {
-          body: { action: "sync-metrics" }
-        })
+        withTimeout(
+          supabase.functions.invoke("sync-meta-ads", { body: { triggered_by: "auto", time_range: timeRange } }),
+          INVOKE_TIMEOUT_MS,
+          "sync-meta-ads"
+        ),
+        withTimeout(
+          supabase.functions.invoke("sync-google-ads", { body: { triggered_by: "auto", time_range: timeRange } }),
+          INVOKE_TIMEOUT_MS,
+          "sync-google-ads"
+        ),
+        withTimeout(
+          supabase.functions.invoke("get-meta-billing", { body: {} }),
+          INVOKE_TIMEOUT_MS,
+          "get-meta-billing"
+        ),
+        withTimeout(
+          supabase.functions.invoke("sync-social-media", { body: { action: "sync-metrics" } }),
+          INVOKE_TIMEOUT_MS,
+          "sync-social-media"
+        )
       ]);
+
+      // Evita sobrescrever estado mais novo em caso de resposta atrasada
+      if (mySeq !== syncSeqRef.current) return;
 
       // Verifica se houve falha total
       const failures = syncResults.filter(r => r.status === "rejected" || (r.status === "fulfilled" && r.value.error));
@@ -100,31 +135,33 @@ export function useAutoSync() {
 
       // Calibração em tempo real direta com Meta Graph API para D-1 e D0
       try {
-        await calibrateMetaConversionsFromGraph(supabase, timeRange.since, timeRange.until, "all");
+        await withTimeout(calibrateMetaConversionsFromGraph(supabase, timeRange.since, timeRange.until, "all"), 30_000, "calibrate-graph");
       } catch (calibGraphErr) {
         console.warn("[AUTO-SYNC] Calibração Graph ignorada:", calibGraphErr);
       }
 
       // Calibração rápida de segurança no banco
       try {
-        await ensureDatabaseCalibrated(supabase, false);
+        await withTimeout(ensureDatabaseCalibrated(supabase, false), 20_000, "calibrate-db");
       } catch (calibErr) {
         console.warn("[AUTO-SYNC] Calibração de segurança ignorada:", calibErr);
       }
 
       // Executar motor de alertas após sync
       try {
-        await supabase.functions.invoke("run-automations", { body: {} });
+        await withTimeout(supabase.functions.invoke("run-automations", { body: {} }), 30_000, "run-automations");
       } catch (autoErr) {
         console.warn("[AUTO-SYNC] Automações ignoradas:", autoErr);
       }
+
+      if (mySeq !== syncSeqRef.current) return;
 
       const now = new Date().toISOString();
       localStorage.setItem(STORAGE_REALTIME_KEY, now);
 
       const nextSync = new Date(Date.now() + REALTIME_SYNC_INTERVAL_MS).toISOString();
       const lastResult = failures.length > 0 ? "partial" : "success";
-      dispatchSyncStatus({ isSyncing: false, lastSync: now, nextSync, lastResult });
+      dispatchSyncStatus({ isSyncing: false, startedAt: null, lastSync: now, nextSync, lastResult });
 
       // Atualiza IMEDIATAMENTE toda a UI sem depender de reload manual
       qc.invalidateQueries();
@@ -132,10 +169,14 @@ export function useAutoSync() {
       console.log(`[AUTO-SYNC] ✅ Sync unificado 3min concluído em ${now}. Status: ${lastResult}. Próximo em ${nextSync}`);
 
     } catch (error: any) {
-      console.error("[AUTO-SYNC] ❌ Erro no sync unificado:", error?.message || error);
-      dispatchSyncStatus({ isSyncing: false, lastResult: "error" });
+      if (mySeq === syncSeqRef.current) {
+        console.error("[AUTO-SYNC] ❌ Erro no sync unificado:", error?.message || error);
+        dispatchSyncStatus({ isSyncing: false, startedAt: null, lastResult: "error" });
+      }
     } finally {
-      isSyncingRef.current = false;
+      if (mySeq === syncSeqRef.current) {
+        isSyncingRef.current = false;
+      }
     }
   }, [qc]);
 

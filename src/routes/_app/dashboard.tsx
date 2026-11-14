@@ -22,6 +22,13 @@ import { DateRangePicker } from "@/components/DateRangePicker";
 import { PageHeader } from "@/components/PageHeader";
 import { useGlobalDate } from "@/contexts/DateContext";
 import { calibrateCampaignMetricsArray, ensureDatabaseCalibrated } from "@/lib/metaConversionCalibrator";
+import {
+  classifyMetaEvent,
+  computeUnitCost,
+  emptyMetricVector,
+  accumulateMetricVector,
+  formatMetricVectorSummary,
+} from "@/lib/metricsDomain";
 
 export const Route = createFileRoute("/_app/dashboard")({
   head: () => ({ meta: [{ title: "Dashboard — NC Performance Suite" }] }),
@@ -164,23 +171,49 @@ function Dashboard() {
           bestDay: null,
           avgDailyCost: 0,
           healthScore: 100,
-          totals: { cost: 0, conversions: 0, results: 0, clicks: 0, impressions: 0, reach: 0, accountReach: 0 },
+          metricVector: emptyMetricVector(),
+          totals: { cost: 0, conversionSpend: 0, conversions: 0, trueConversions: 0, results: 0, clicks: 0, inlineLinkClicks: 0, allClicks: 0, impressions: 0, reach: 0, accountReach: 0 },
           trends: { cost: "0%", costPositive: true, conversions: "0%", conversionsPositive: true, clicks: "0%", clicksPositive: true, cpl: "0%", cplPositive: true },
           cpl: 0
         };
       }
 
-      let metricsQuery = (supabase as any).from("metrics").select(`
-        campaign_id, cost, conversions, impressions, clicks, reach, date, result_type,
-        campaigns(ad_account_id, client_id, name, objective)
-      `).gte('date', prevStartStr).lte('date', endStr);
-
-      if (campIds.length > 0 && (selectedAccountId !== "all" || selectedClientId !== "all")) {
-        metricsQuery = metricsQuery.in("campaign_id", campIds);
-      }
+      const fetchMetricsPaged = async (selectCols: string) => {
+        const allRows: any[] = [];
+        let from = 0;
+        const pageSize = 1000;
+        while (from < 15000) {
+          let q = (supabase as any)
+            .from("metrics")
+            .select(selectCols)
+            .gte("date", prevStartStr)
+            .lte("date", endStr)
+            .range(from, from + pageSize - 1);
+          if (campIds.length > 0 && (selectedAccountId !== "all" || selectedClientId !== "all")) {
+            q = q.in("campaign_id", campIds);
+          }
+          const { data, error } = await q;
+          if (error) return { data: null as any, error };
+          if (!data || data.length === 0) break;
+          allRows.push(...data);
+          if (data.length < pageSize) break;
+          from += pageSize;
+        }
+        return { data: allRows, error: null };
+      };
 
       ensureDatabaseCalibrated(supabase).catch(() => {});
-      const { data: metricsData } = await metricsQuery;
+      let metricsRes = await fetchMetricsPaged(`
+        campaign_id, cost, conversions, impressions, clicks, inline_link_clicks, all_clicks, reach, date, result_type, optimization_goal, result_indicator,
+        campaigns(ad_account_id, client_id, name, objective)
+      `);
+      if (metricsRes.error) {
+        metricsRes = await fetchMetricsPaged(`
+          campaign_id, cost, conversions, impressions, clicks, reach, date, result_type,
+          campaigns(ad_account_id, client_id, name, objective)
+        `);
+      }
+      const metricsData = metricsRes.data || [];
       const metrics = (metricsData || []).map((m: any) =>
         calibrateCampaignMetricsArray(m.campaigns?.name || "", [m])[0] || m
       );
@@ -202,8 +235,28 @@ function Dashboard() {
       }
 
       const chartMap = new Map();
-      let currentPeriod = { cost: 0, results: 0, trueConversions: 0, clicks: 0, impressions: 0, reach: 0 };
-      let previousPeriod = { cost: 0, results: 0, trueConversions: 0, clicks: 0, impressions: 0, reach: 0 };
+      const metricVector = emptyMetricVector();
+      let currentPeriod = {
+        cost: 0,
+        conversionSpend: 0,
+        results: 0,
+        trueConversions: 0,
+        clicks: 0,
+        inlineLinkClicks: 0,
+        allClicks: 0,
+        impressions: 0,
+        reach: 0,
+      };
+      let previousPeriod = {
+        cost: 0,
+        conversionSpend: 0,
+        results: 0,
+        trueConversions: 0,
+        clicks: 0,
+        inlineLinkClicks: 0,
+        allClicks: 0,
+        impressions: 0,
+      };
 
       // Ensure all dates in interval exist in chartMap to prevent broken lines
       const { eachDayOfInterval } = await import("date-fns");
@@ -215,63 +268,116 @@ function Dashboard() {
 
       (metrics || []).forEach((m: any) => {
         if (!m.date) return;
-        
+
         const isCurrent = m.date >= startStr && m.date <= endStr;
         const isPrevious = m.date >= prevStartStr && m.date < startStr;
-        
+
         const objective = (m.campaigns?.objective || "").toUpperCase();
-        const storedType = (m.result_type || "").toUpperCase();
-        const isConversionGoal = ["MESSAGES", "LEADS", "PURCHASES"].includes(storedType);
-        const isExplicitNonLead = ["REACH", "VIDEO_VIEWS", "LINK_CLICKS", "INSTAGRAM_PROFILE", "LANDING_PAGE_VIEWS"].includes(storedType);
-        const isVanity = isConversionGoal
-          ? false
-          : isExplicitNonLead
-            ? true
-            : (objective ? ["OUTCOME_AWARENESS", "VIDEO_VIEWS", "OUTCOME_ENGAGEMENT", "LINK_CLICKS", "OUTCOME_TRAFFIC"].includes(objective) : false);
-        
+        const evClass = classifyMetaEvent({
+          campaignName: m.campaigns?.name || "",
+          rawObjective: objective,
+          optimizationGoal: m.optimization_goal,
+          resultType: m.result_type,
+          resultsIndicator: m.result_indicator,
+        });
+        const isConversionGoal = evClass.isConversionGoal;
+        const isVanity = !isConversionGoal;
+        const linkClk = Number(m.inline_link_clicks !== undefined && m.inline_link_clicks !== null ? m.inline_link_clicks : m.clicks || 0);
+        const totalClk = Number(m.all_clicks !== undefined && m.all_clicks !== null ? m.all_clicks : m.clicks || 0);
+        const rowConv = Number(m.conversions || 0);
+
         if (isCurrent) {
           const date = m.date;
           const current = chartMap.get(date) || { date, cost: 0, conversions: 0, clicks: 0 };
           current.cost += Number(m.cost || 0);
-          current.conversions += isVanity ? 0 : Number(m.conversions || 0); // Only True Conversions on the chart
-          current.clicks += Number(m.clicks || 0);
+          current.conversions += isVanity ? 0 : rowConv;
+          current.clicks += linkClk;
           chartMap.set(date, current);
 
+          accumulateMetricVector(
+            metricVector,
+            evClass.category as any,
+            evClass.category === "REACH" ? Math.max(Number(m.reach || 0), rowConv) : rowConv,
+            m.result_indicator || evClass.primaryMetric
+          );
+
           const campId = m.campaign_id;
-          const camp = campaignsMap.get(campId) || { id: campId, name: m.campaigns?.name || "Desconhecida", objective, cost: 0, results: 0, trueConversions: 0 };
+          const camp = campaignsMap.get(campId) || {
+            id: campId,
+            name: m.campaigns?.name || "Desconhecida",
+            objective,
+            optimizationGoal: m.optimization_goal || "",
+            resultType: m.result_type || "",
+            resultIndicator: m.result_indicator || "",
+            classification: evClass,
+            cost: 0,
+            results: 0,
+            trueConversions: 0,
+            reach: 0,
+            impressions: 0,
+          };
+          if (!camp.resultIndicator && m.result_indicator) camp.resultIndicator = m.result_indicator;
+          if (!camp.optimizationGoal && m.optimization_goal) camp.optimizationGoal = m.optimization_goal;
+          if (evClass.confidence === "high" && camp.classification?.confidence !== "high") camp.classification = evClass;
           camp.cost += Number(m.cost || 0);
-          camp.results += Number(m.conversions || 0);
-          if (!isVanity) camp.trueConversions += Number(m.conversions || 0);
+          camp.results += evClass.category === "REACH" ? Math.max(Number(m.reach || 0), rowConv) : rowConv;
+          if (!isVanity) camp.trueConversions += rowConv;
+          camp.reach += Number(m.reach || 0);
+          camp.impressions += Number(m.impressions || 0);
           campaignsMap.set(campId, camp);
 
           currentPeriod.cost += Number(m.cost || 0);
-          currentPeriod.results += Number(m.conversions || 0);
-          if (!isVanity) currentPeriod.trueConversions += Number(m.conversions || 0);
-          currentPeriod.clicks += Number(m.clicks || 0);
+          if (!isVanity) currentPeriod.conversionSpend += Number(m.cost || 0);
+          currentPeriod.results += rowConv;
+          if (!isVanity) currentPeriod.trueConversions += rowConv;
+          currentPeriod.clicks += linkClk;
+          currentPeriod.inlineLinkClicks += linkClk;
+          currentPeriod.allClicks += totalClk;
           currentPeriod.impressions += Number(m.impressions || 0);
           currentPeriod.reach += Number(m.reach || 0);
         } else if (isPrevious) {
           previousPeriod.cost += Number(m.cost || 0);
-          previousPeriod.results += Number(m.conversions || 0);
-          if (!isVanity) previousPeriod.trueConversions += Number(m.conversions || 0);
-          previousPeriod.clicks += Number(m.clicks || 0);
+          if (!isVanity) previousPeriod.conversionSpend += Number(m.cost || 0);
+          previousPeriod.results += rowConv;
+          if (!isVanity) previousPeriod.trueConversions += rowConv;
+          previousPeriod.clicks += linkClk;
+          previousPeriod.inlineLinkClicks += linkClk;
+          previousPeriod.allClicks += totalClk;
           previousPeriod.impressions += Number(m.impressions || 0);
         }
       });
 
       const chartData = Array.from(chartMap.values()).sort((a, b) => a.date.localeCompare(b.date));
       const campaignsData = Array.from(campaignsMap.values()).sort((a, b) => b.cost - a.cost);
-      
+
       const totalSpendPeriod = currentPeriod.cost || 1;
       const campaignsRanked = campaignsData.map(c => {
-        const classification = classifyCampaignType(c.name, "", c.objective);
+        const metaEv = c.classification || classifyMetaEvent({
+          campaignName: c.name,
+          rawObjective: c.objective,
+          optimizationGoal: c.optimizationGoal,
+          resultType: c.resultType,
+          resultsIndicator: c.resultIndicator,
+        });
+        const classification = {
+          ...classifyCampaignType(c.name, "", c.objective),
+          typeLabel: metaEv.shortBadge,
+          unitSingular: metaEv.unitSingular,
+          unitPlural: metaEv.unitPlural,
+          category: metaEv.category,
+          isLead: metaEv.isConversionGoal,
+          isConversionGoal: metaEv.isConversionGoal,
+        };
         const cost = c.cost || 0;
-        const convCount = classification.isLead ? c.trueConversions : c.results;
-        const cpa = convCount > 0 ? cost / convCount : 0;
+        const convCount = metaEv.isConversionGoal ? c.trueConversions : c.results;
+        const unitCost = computeUnitCost(cost, convCount, metaEv.category);
+        const cpa = unitCost ?? 0;
         const percentage = (cost / totalSpendPeriod) * 100;
         return {
           ...c,
           classification,
+          metaClassification: metaEv,
+          unitCost,
           cpa,
           percentage,
           conversions: convCount,
@@ -321,16 +427,14 @@ function Dashboard() {
         return `${diff > 0 ? '+' : ''}${diff.toFixed(1)}%`;
       };
 
-      const cplCurr = currentPeriod.trueConversions > 0 ? currentPeriod.cost / currentPeriod.trueConversions : 0;
-      const cplPrev = previousPeriod.trueConversions > 0 ? previousPeriod.cost / previousPeriod.trueConversions : 0;
+      const effectiveConvSpend = currentPeriod.conversionSpend > 0 ? currentPeriod.conversionSpend : currentPeriod.cost;
+      const effectivePrevConvSpend = previousPeriod.conversionSpend > 0 ? previousPeriod.conversionSpend : previousPeriod.cost;
+      const cplCurr = currentPeriod.trueConversions > 0 ? effectiveConvSpend / currentPeriod.trueConversions : 0;
+      const cplPrev = previousPeriod.trueConversions > 0 ? effectivePrevConvSpend / previousPeriod.trueConversions : 0;
       const cplTrendVal = cplPrev === 0 ? 0 : ((cplCurr - cplPrev) / cplPrev) * 100;
 
-      const isVanity = (obj: string) => {
-        return ["OUTCOME_AWARENESS", "VIDEO_VIEWS", "OUTCOME_ENGAGEMENT", "LINK_CLICKS", "OUTCOME_TRAFFIC"].includes((obj || "").toUpperCase());
-      };
-
       const riskReturn = campaignsData.map(c => {
-        const isVanityObjective = isVanity(c.objective);
+        const isVanityObjective = !(c.classification?.isConversionGoal ?? false);
         const cpa = c.trueConversions > 0 ? c.cost / c.trueConversions : c.cost;
         let type = "Estável";
         
@@ -367,6 +471,8 @@ function Dashboard() {
         bestDay,
         avgDailyCost,
         healthScore,
+        metricVector,
+        metricVectorSummary: formatMetricVectorSummary(metricVector),
         totals: { ...currentPeriod, conversions: currentPeriod.trueConversions, accountReach },
         trends: {
           cost: calcTrend(currentPeriod.cost, previousPeriod.cost),
@@ -435,7 +541,7 @@ function Dashboard() {
         const { data: rawMetrics } = await (supabase as any)
           .from("metrics")
           .select(`
-            cost, conversions, reach, impressions, result_type, date,
+            cost, conversions, reach, impressions, result_type, optimization_goal, result_indicator, date,
             campaigns!inner(ad_account_id, name, objective)
           `)
           .gte("date", dateFrom)
@@ -454,45 +560,24 @@ function Dashboard() {
             const reach = Number(m.reach || 0);
             const impressions = Number(m.impressions || 0);
 
-            const campName = (m.campaigns?.name || "").toUpperCase();
-
             metricsMap[key].spend += cost;
             metricsMap[key].reach += reach;
             metricsMap[key].impressions += impressions;
             metricsMap[key].results += conversions;
-            const obj = (m.campaigns?.objective || "").toUpperCase();
-            const resType = (m.result_type || "").toUpperCase();
+            const evAcc = classifyMetaEvent({
+              campaignName: m.campaigns?.name || "",
+              rawObjective: m.campaigns?.objective || "",
+              optimizationGoal: m.optimization_goal,
+              resultType: m.result_type,
+              resultsIndicator: m.result_indicator,
+            });
 
-            const isMessaging = resType === "MESSAGES" ||
-                                obj === "MESSAGES" ||
-                                campName.includes("MSG") ||
-                                campName.includes("MENSAGEM") ||
-                                campName.includes("MENSAGENS") ||
-                                campName.includes("WPP") ||
-                                campName.includes("WHATSAPP") ||
-                                campName.includes("DIRECT") ||
-                                campName.includes("CONVERSA") ||
-                                campName.includes("CONVERSAS") ||
-                                campName.includes("ZAP");
-
-            const isLeadGen = ["OUTCOME_LEADS", "LEAD_GENERATION"].includes(obj) ||
-                              ["OUTCOME_LEADS", "LEAD_GENERATION"].includes(resType) ||
-                              campName.includes("LEAD") || campName.includes("CADASTRO");
-
-            const isPurchase = ["CONVERSIONS", "OUTCOME_SALES", "CATALOG_SALES"].includes(obj) ||
-                               ["CONVERSIONS", "OUTCOME_SALES", "CATALOG_SALES"].includes(resType) ||
-                               campName.includes("COMPRA") || campName.includes("VENDA") || campName.includes("PURCHASE");
-
-            const isTraffic = ["OUTCOME_TRAFFIC", "LINK_CLICKS"].includes(obj) ||
-                              ["INSTAGRAM_PROFILE", "LANDING_PAGE_VIEWS"].includes(resType) ||
-                              campName.includes("TRAFEGO") || campName.includes("TRÁFEGO") || campName.includes("INSTA");
-
-            if (isMessaging) {
+            if (evAcc.category === "MESSAGES") {
               metricsMap[key].leads += conversions;
               messagingAccountsSet.add(key);
-            } else if (isLeadGen) {
+            } else if (evAcc.category === "LEADS") {
               metricsMap[key].leads += conversions;
-            } else if (isPurchase) {
+            } else if (evAcc.category === "PURCHASES") {
               metricsMap[key].purchases += conversions;
             }
           }
@@ -765,7 +850,19 @@ function Dashboard() {
           helper="Verba bruta consumida em anúncios"
           subMetric={
             <span>
-              Alcance: <strong className="text-foreground">{(performanceData?.totals?.reach || Math.round((performanceData?.totals?.impressions || 0) * 0.75)).toLocaleString('pt-BR')}</strong>
+              {(performanceData?.totals?.accountReach || 0) > 0 ? (
+                <>
+                  Alcance da conta: <strong className="text-foreground">{Number(performanceData?.totals?.accountReach || 0).toLocaleString('pt-BR')}</strong>
+                </>
+              ) : (performanceData?.totals?.reach || 0) > 0 ? (
+                <>
+                  Alcance (soma campanhas): <strong className="text-foreground">{Number(performanceData?.totals?.reach || 0).toLocaleString('pt-BR')}</strong>
+                </>
+              ) : (
+                <>
+                  Alcance: <strong className="text-muted-foreground">Indisponível</strong>
+                </>
+              )}
             </span>
           }
         />
@@ -775,11 +872,24 @@ function Dashboard() {
           icon={Trophy}
           trend={performanceData?.trends?.conversions}
           isPositive={performanceData?.trends?.conversionsPositive}
-          helper="Contatos diretos no WhatsApp e cadastros"
+          helper="Apenas conversões comerciais diretas (Mensagens, Leads e Compras)"
           subMetric={
-            <span>
-              CVR: <strong className="text-primary">{performanceData?.totals?.clicks ? ((performanceData.totals.conversions / performanceData.totals.clicks) * 100).toFixed(2) : "0.00"}%</strong> dos cliques
-            </span>
+            (() => {
+              const vec = performanceData?.metricVector;
+              const secondary: string[] = [];
+              if ((vec?.reach ?? 0) > 0) secondary.push(`${vec!.reach.toLocaleString('pt-BR')} alcance`);
+              if ((vec?.profileVisits ?? 0) > 0) secondary.push(`${vec!.profileVisits.toLocaleString('pt-BR')} perfil`);
+              if ((vec?.landingPageViews ?? 0) > 0) secondary.push(`${vec!.landingPageViews.toLocaleString('pt-BR')} LPV`);
+              const linkClk = performanceData?.totals?.inlineLinkClicks ?? performanceData?.totals?.clicks ?? 0;
+              if (secondary.length > 0) {
+                return <span className="truncate block">Outros obj.: <strong className="text-foreground">{secondary.join(" • ")}</strong></span>;
+              }
+              return (
+                <span>
+                  CVR: <strong className="text-primary">{linkClk > 0 ? (((performanceData?.totals?.conversions ?? 0) / linkClk) * 100).toFixed(2) : "0.00"}%</strong> dos cliques no link
+                </span>
+              );
+            })()
           }
         />
         <StatCard
@@ -789,7 +899,7 @@ function Dashboard() {
           icon={Target}
           trend={performanceData?.trends?.cpl}
           isPositive={performanceData?.trends?.cplPositive}
-          helper="Custo médio por contato qualificado"
+          helper="Custo médio sobre investimento elegível de conversão"
           subMetric={
             <span>
               Meta: <strong className="text-emerald-400">R$ 5,00 a R$ 35,00</strong>
@@ -798,14 +908,17 @@ function Dashboard() {
         />
         <StatCard
           label="Cliques no Link"
-          value={performanceData?.totals?.clicks ?? 0}
+          value={performanceData?.totals?.inlineLinkClicks ?? performanceData?.totals?.clicks ?? 0}
           icon={MousePointer2}
           trend={performanceData?.trends?.clicks}
           isPositive={performanceData?.trends?.clicksPositive}
-          helper="Visitas enviadas aos anúncios e site"
+          helper="Cliques no link do anúncio (inline_link_clicks)"
           subMetric={
             <span>
-              CTR: <strong className="text-indigo-400">{performanceData?.totals?.impressions ? ((performanceData.totals.clicks / performanceData.totals.impressions) * 100).toFixed(2) : "0.00"}%</strong>
+              CTR Link: <strong className="text-indigo-400">{performanceData?.totals?.impressions ? (((performanceData.totals.inlineLinkClicks ?? performanceData.totals.clicks ?? 0) / performanceData.totals.impressions) * 100).toFixed(2) : "0.00"}%</strong>
+              {(performanceData?.totals?.allClicks || 0) > (performanceData?.totals?.inlineLinkClicks || 0) && (
+                <> · Todos: <strong className="text-foreground">{Number(performanceData?.totals?.allClicks || 0).toLocaleString('pt-BR')}</strong></>
+              )}
             </span>
           }
         />
@@ -815,9 +928,10 @@ function Dashboard() {
 
       {/* ─── RESUMO EXECUTIVO DA CONTA / CONSOLIDADO ─── */}
       {(() => {
-        const totals = performanceData?.totals || { cost: 0, clicks: 0, impressions: 0, conversions: 0, reach: 0, accountReach: 0 };
-        const ctr = totals.impressions > 0 ? (totals.clicks / totals.impressions) * 100 : 0;
-        const cpc = totals.clicks > 0 ? totals.cost / totals.clicks : 0;
+        const totals = performanceData?.totals || { cost: 0, clicks: 0, inlineLinkClicks: 0, allClicks: 0, impressions: 0, conversions: 0, reach: 0, accountReach: 0 };
+        const linkClk = totals.inlineLinkClicks ?? totals.clicks ?? 0;
+        const ctr = totals.impressions > 0 ? (linkClk / totals.impressions) * 100 : 0;
+        const cpc = linkClk > 0 ? totals.cost / linkClk : 0;
         const cpa = performanceData?.cpl || 0;
         const cpm = totals.impressions > 0 ? (totals.cost / totals.impressions) * 1000 : 0;
         const hasAccountReach = (totals.accountReach || 0) > 0;
@@ -894,10 +1008,10 @@ function Dashboard() {
               <div>
                 <h3 className="header-sport text-xs sm:text-sm font-black tracking-widest uppercase flex items-center gap-2">
                   <Trophy className="h-4 w-4 text-primary" />
-                  Top Campanhas por Investimento &amp; Retorno
+                  Top Campanhas por Gasto
                 </h3>
                 <p className="text-[10px] text-muted-foreground uppercase mt-1 tracking-widest">
-                  Compara gasto, conversões geradas e eficiência de cada campanha
+                  Ranking por investimento com unidade oficial e eficiência específica de cada objetivo
                 </p>
               </div>
               <span className="text-[9px] font-black uppercase tracking-wider text-muted-foreground bg-white/5 border border-white/10 px-2 py-1 rounded-lg">
@@ -950,23 +1064,34 @@ function Dashboard() {
                       />
                     </div>
 
-                    {/* Detalhes de Retorno e CPA */}
+                    {/* Detalhes de Retorno e Custo por Unidade */}
                     <div className="flex items-center justify-between text-[10px] pt-0.5">
                       <span className="text-muted-foreground">
-                        Retorno: <strong className="text-foreground font-mono">{camp.conversions}</strong> {camp.classification?.isLead ? "contatos/leads" : "ações"}
+                        Resultado: <strong className="text-foreground font-mono">{Number(camp.conversions || 0).toLocaleString("pt-BR")}</strong>{" "}
+                        {camp.metaClassification?.unitPlural || (camp.classification?.isLead ? "conversas/leads" : "resultados")}
                       </span>
                       <span className="font-mono">
-                        {camp.conversions > 0 ? (
-                          <span className={`px-2 py-0.5 rounded text-[9px] font-black ${
-                            camp.cpa <= 35 ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20" :
-                            camp.cpa <= 75 ? "bg-amber-500/10 text-amber-400 border border-amber-500/20" :
-                            "bg-red-500/10 text-red-400 border border-red-500/20"
-                          }`}>
-                            CPA: R$ {camp.cpa.toFixed(2)}
-                          </span>
+                        {camp.unitCost !== null && camp.unitCost !== undefined && camp.conversions > 0 ? (
+                          camp.metaClassification?.category === "REACH" ? (
+                            <span className="px-2 py-0.5 rounded text-[9px] font-black bg-sky-500/10 text-sky-400 border border-sky-500/20">
+                              Custo/1k alc.: R$ {camp.unitCost.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </span>
+                          ) : camp.metaClassification?.isConversionGoal ? (
+                            <span className={`px-2 py-0.5 rounded text-[9px] font-black ${
+                              camp.unitCost <= 35 ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20" :
+                              camp.unitCost <= 75 ? "bg-amber-500/10 text-amber-400 border border-amber-500/20" :
+                              "bg-red-500/10 text-red-400 border border-red-500/20"
+                            }`}>
+                              CPA: R$ {camp.unitCost.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </span>
+                          ) : (
+                            <span className="px-2 py-0.5 rounded text-[9px] font-black bg-indigo-500/10 text-indigo-300 border border-indigo-500/20">
+                              CPR: R$ {camp.unitCost.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </span>
+                          )
                         ) : (
                           <span className="text-muted-foreground/60 text-[9px] uppercase font-bold bg-white/5 px-2 py-0.5 rounded">
-                            Sem conversão
+                            Sem entrega de resultado
                           </span>
                         )}
                       </span>

@@ -709,6 +709,159 @@ serve(async (req) => {
       return new Response(JSON.stringify(results), { headers: { ...corsHeaders, "Content-Type": "application/json" } })
     }
 
+    // ==========================================
+    // AÇÃO: GET-LIVE-ACCOUNTS — Lista /me/accounts server-side (imune a bloqueadores/Brave Shields do navegador)
+    // ==========================================
+    if (action === "get-live-accounts") {
+      const syncToDb = Boolean(body?.syncToDb)
+      const { data: userConfigs } = await supabase
+        .from("meta_ads_configs")
+        .select("access_token, user_id, created_at")
+        .not("access_token", "is", null)
+        .order("created_at", { ascending: false })
+        .limit(20)
+
+      const prioritized = [
+        ...((userConfigs || []).filter((c: any) => c.user_id === user.id)),
+        ...((userConfigs || []).filter((c: any) => c.user_id !== user.id)),
+      ]
+      const validRow = prioritized.find((c: any) => {
+        const t = String(c?.access_token || "").trim()
+        return t.length >= 20 && !t.startsWith("mock_")
+      })
+      const masterToken = validRow?.access_token ? String(validRow.access_token).trim() : null
+
+      const { data: dbPages } = await supabase
+        .from("social_pages")
+        .select("*")
+        .order("page_name")
+
+      const mapDbFallback = () =>
+        ((dbPages || []) as any[])
+          .filter((p) => p.page_id && !String(p.page_id).startsWith("mock_"))
+          .map((p) => ({
+            page_id: p.page_id,
+            page_name: p.page_name,
+            access_token: p.access_token || masterToken || "",
+            facebook_followers: Number(p.facebook_followers || 0),
+            instagram_account_id: p.instagram_account_id || null,
+            instagram_handle: p.instagram_handle || null,
+            instagram_followers: Number(p.instagram_followers || 0),
+            profile_picture_url: null,
+          }))
+
+      if (!masterToken) {
+        return new Response(
+          JSON.stringify({
+            hasMasterToken: false,
+            masterToken: null,
+            accounts: mapDbFallback(),
+            error: "Token Master da Meta não configurado em Configurações → Integrações Master.",
+          }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        )
+      }
+
+      const mePaginated = await metaFetchPaginatedWithStatus(
+        "/me/accounts",
+        masterToken,
+        {
+          fields: "id,name,access_token,fan_count,followers_count,instagram_business_account{id,username,followers_count,profile_picture_url}",
+          limit: "100",
+        },
+        { maxRetries: 2, baseDelayMs: 400, maxPages: 25 }
+      )
+
+      if (!mePaginated.ok && mePaginated.data.length === 0) {
+        return new Response(
+          JSON.stringify({
+            hasMasterToken: true,
+            masterToken,
+            accounts: mapDbFallback(),
+            error: mePaginated.error || "Não foi possível consultar páginas conectadas no Meta.",
+          }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        )
+      }
+
+      const accounts = (mePaginated.data || []).map((p: any) => ({
+        page_id: p.id,
+        page_name: p.name,
+        access_token: p.access_token || masterToken,
+        facebook_followers: Number(p.followers_count ?? p.fan_count ?? 0),
+        instagram_account_id: p.instagram_business_account?.id || null,
+        instagram_handle: p.instagram_business_account?.username || null,
+        instagram_followers: Number(p.instagram_business_account?.followers_count ?? 0),
+        profile_picture_url: p.instagram_business_account?.profile_picture_url || null,
+      }))
+      accounts.sort((a: any, b: any) => (b.instagram_followers + b.facebook_followers) - (a.instagram_followers + a.facebook_followers))
+
+      if (syncToDb && accounts.length > 0) {
+        const ownerUserId = validRow?.user_id || user.id
+        for (const acc of accounts) {
+          await supabase.from("social_pages").upsert(
+            {
+              user_id: ownerUserId,
+              page_id: acc.page_id,
+              page_name: acc.page_name,
+              instagram_account_id: acc.instagram_account_id,
+              instagram_handle: acc.instagram_handle,
+              access_token: acc.access_token,
+              facebook_followers: acc.facebook_followers,
+              instagram_followers: acc.instagram_followers,
+              updated_at: new Date().toISOString(),
+            },
+            { onConflict: "page_id" }
+          )
+        }
+      }
+
+      return new Response(
+        JSON.stringify({
+          hasMasterToken: true,
+          masterToken,
+          accounts,
+        }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      )
+    }
+
+    // ==========================================
+    // AÇÃO: GRAPH-PROXY — Proxy autenticado restrito a graph.facebook.com para clientes com shields/proxy
+    // ==========================================
+    if (action === "graph-proxy") {
+      if (body?.paginated && body?.endpoint) {
+        const ep = String(body.endpoint)
+        if (!ep.startsWith("/")) {
+          return new Response(JSON.stringify({ error: "Endpoint inválido" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } })
+        }
+        const tok = String(body.token || "").trim()
+        const res = await metaFetchPaginatedWithStatus(
+          ep,
+          tok,
+          (body.params && typeof body.params === "object") ? body.params : {},
+          { maxRetries: 2, baseDelayMs: 400, maxPages: Math.min(25, Number(body.maxPages || 10)) }
+        )
+        return new Response(JSON.stringify({ paginated: true, ...res }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        })
+      }
+
+      const rawUrl = String(body?.url || "")
+      if (!rawUrl.startsWith("https://graph.facebook.com/")) {
+        return new Response(JSON.stringify({ error: "URL não permitida no proxy Meta." }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        })
+      }
+      const resp = await fetch(rawUrl)
+      const json = await resp.json().catch(() => ({}))
+      return new Response(JSON.stringify(json), {
+        status: resp.ok ? 200 : resp.status,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      })
+    }
+
     // Ação desconhecida
     return new Response(JSON.stringify({ error: "Ação desconhecida." }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } })
 

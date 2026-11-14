@@ -3,6 +3,7 @@
 // Espelhado em supabase/functions/_shared/metaCore.ts para garantir paridade exata entre backend Deno e frontend/testes.
 
 export const META_GRAPH_VERSION = "v21.0";
+export const META_INDICATOR_SPEC_VERSION = "2026.11.2";
 export const META_GRAPH_BASE = `https://graph.facebook.com/${META_GRAPH_VERSION}`;
 
 export type FieldState =
@@ -312,6 +313,120 @@ export type NormalizedResultCategory =
   | "LINK_CLICKS"
   | "UNKNOWN";
 
+export interface MetricVector {
+  conversations: number;
+  leads: number;
+  websiteContacts: number;
+  purchases: number;
+  checkout: number;
+  addToCart: number;
+  profileVisits: number;
+  pageVisits: number;
+  landingPageViews: number;
+  linkClicks: number;
+  reach: number;
+  videoViews: number;
+  engagements: number;
+  unknownResults: number;
+}
+
+export function emptyMetricVector(): MetricVector {
+  return {
+    conversations: 0,
+    leads: 0,
+    websiteContacts: 0,
+    purchases: 0,
+    checkout: 0,
+    addToCart: 0,
+    profileVisits: 0,
+    pageVisits: 0,
+    landingPageViews: 0,
+    linkClicks: 0,
+    reach: 0,
+    videoViews: 0,
+    engagements: 0,
+    unknownResults: 0,
+  };
+}
+
+export function accumulateMetricVector(
+  vec: MetricVector,
+  category: NormalizedResultCategory,
+  count: number | null | undefined,
+  resultIndicator?: string | null
+): MetricVector {
+  const n = typeof count === "number" && Number.isFinite(count) ? Math.max(0, count) : 0;
+  if (n <= 0) return vec;
+  const ind = String(resultIndicator || "").toLowerCase();
+  if (ind.includes("page_visit")) {
+    vec.pageVisits += n;
+    return vec;
+  }
+  if (ind.includes("contact_website")) {
+    vec.websiteContacts += n;
+    return vec;
+  }
+  switch (category) {
+    case "MESSAGES":
+      vec.conversations += n;
+      break;
+    case "LEADS":
+      vec.leads += n;
+      break;
+    case "PURCHASES":
+      vec.purchases += n;
+      break;
+    case "CHECKOUT":
+      vec.checkout += n;
+      break;
+    case "ADD_TO_CART":
+      vec.addToCart += n;
+      break;
+    case "INSTAGRAM_PROFILE":
+      vec.profileVisits += n;
+      break;
+    case "LANDING_PAGE_VIEWS":
+      vec.landingPageViews += n;
+      break;
+    case "LINK_CLICKS":
+      vec.linkClicks += n;
+      break;
+    case "REACH":
+      vec.reach += n;
+      break;
+    case "VIDEO_VIEWS":
+      vec.videoViews += n;
+      break;
+    case "ENGAGEMENT":
+      vec.engagements += n;
+      break;
+    default:
+      vec.unknownResults += n;
+      break;
+  }
+  return vec;
+}
+
+export function formatMetricVectorSummary(vec: MetricVector): Array<{ key: keyof MetricVector; label: string; value: number }> {
+  const entries: Array<{ key: keyof MetricVector; label: string; value: number }> = [
+    { key: "conversations", label: "Conversas", value: vec.conversations },
+    { key: "leads", label: "Cadastros / Leads", value: vec.leads },
+    { key: "websiteContacts", label: "Contatos no Site", value: vec.websiteContacts },
+    { key: "purchases", label: "Compras", value: vec.purchases },
+    { key: "checkout", label: "Checkouts", value: vec.checkout },
+    { key: "addToCart", label: "Add to Cart", value: vec.addToCart },
+    { key: "profileVisits", label: "Visitas ao Perfil", value: vec.profileVisits },
+    { key: "pageVisits", label: "Visitas à Página", value: vec.pageVisits },
+    { key: "landingPageViews", label: "Vis. Página Destino", value: vec.landingPageViews },
+    { key: "linkClicks", label: "Cliques no Link (obj.)", value: vec.linkClicks },
+    { key: "reach", label: "Alcance (obj.)", value: vec.reach },
+    { key: "videoViews", label: "Video ThruPlay", value: vec.videoViews },
+    { key: "engagements", label: "Engajamentos / Curtidas", value: vec.engagements },
+    { key: "unknownResults", label: "Não classificados", value: vec.unknownResults },
+  ];
+  return entries.filter((e) => e.value > 0);
+}
+
 export function parseMetaActionNumericValue(action: any): number {
   if (!action) return 0;
   // Quando janelas estao explicitas (7d_click / 1d_view), preservar precisao e somar janelas compativeis
@@ -362,21 +477,40 @@ export function detectStrictConversionCategory(input: {
 
   // 1. Prioridade maxima: indicator oficial de `results[]`
   if (indicator) {
+    if (indicator.includes("page_visit")) return "ENGAGEMENT";
     if (indicator.includes("profile_visit") || indicator.includes("instagram_profile")) return "INSTAGRAM_PROFILE";
-    if (indicator.includes("messaging_conversation_started") || indicator.includes("total_messaging_connection")) return "MESSAGES";
+    if (
+      indicator.includes("messaging_conversation_started") ||
+      indicator.includes("total_messaging_connection") ||
+      indicator.includes("messaging_first_reply")
+    ) return "MESSAGES";
     if (indicator.includes("landing_page_view") || indicator.includes("omni_landing_page_view")) return "LANDING_PAGE_VIEWS";
     if (indicator.includes("initiate_checkout") || indicator.includes("checkout")) return "CHECKOUT";
     if (indicator.includes("add_to_cart")) return "ADD_TO_CART";
     if (indicator.includes("purchase") || indicator.includes("omni_purchase")) return "PURCHASES";
+    if (indicator.includes("contact_website")) return "LEADS";
     if (indicator.includes("lead") || indicator.includes("complete_registration")) return "LEADS";
     if (indicator.includes("thruplay") || indicator.includes("video_view")) return "VIDEO_VIEWS";
-    if (indicator.includes("post_engagement") || indicator.includes("page_engagement")) return "ENGAGEMENT";
+    if (
+      indicator === "like" ||
+      indicator === "actions:like" ||
+      indicator.endsWith(":like") ||
+      indicator.includes("post_engagement") ||
+      indicator.includes("page_engagement") ||
+      indicator.includes("post_reaction")
+    ) return "ENGAGEMENT";
     if (indicator === "reach" || indicator === "impressions") return "REACH";
     if (indicator.includes("link_click")) return "LINK_CLICKS";
   }
 
   // 2. Segunda prioridade: optimization_goal / destination_type do AdSet/Insight
-  if (opt === "PROFILE_VISIT" || opt === "VISIT_INSTAGRAM_PROFILE" || opt === "PROFILE_AND_PAGE_ENGAGEMENT" || dest === "INSTAGRAM_PROFILE" || dest === "INSTAGRAM_DIRECT" && opt === "PROFILE_VISIT") {
+  if (opt === "PROFILE_AND_PAGE_ENGAGEMENT") {
+    const pageV = extractActionByExactTypes(input.actions || [], ["page_visit_view"]);
+    const igV = extractActionByExactTypes(input.actions || [], ["profile_visit_view", "visit_instagram_profile", "instagram_profile_visit"]);
+    if (pageV > 0 && igV === 0) return "ENGAGEMENT";
+    return "INSTAGRAM_PROFILE";
+  }
+  if (opt === "PROFILE_VISIT" || opt === "VISIT_INSTAGRAM_PROFILE" || dest === "INSTAGRAM_PROFILE" || (dest === "INSTAGRAM_DIRECT" && opt === "PROFILE_VISIT")) {
     return "INSTAGRAM_PROFILE";
   }
   if (opt === "CONVERSATIONS" || opt === "REPLIES" || opt === "MESSAGING_PURCHASE_CONVERSION" || dest === "WHATSAPP" || dest === "MESSENGER" || dest === "INSTAGRAM_DIRECT") {
@@ -385,7 +519,7 @@ export function detectStrictConversionCategory(input: {
   if (opt === "LANDING_PAGE_VIEWS") return "LANDING_PAGE_VIEWS";
   if (opt === "LEAD_GENERATION" || opt === "QUALITY_LEAD" || opt === "LEAD" || dest === "ON_AD") return "LEADS";
   if (opt === "OFFSITE_CONVERSIONS" || opt === "VALUE" || opt === "PURCHASE" || opt === "PURCHASES") {
-    // Se optimization_goal for OFFSITE_CONVERSIONS, distingue purchase vs lead pelos actions reais se houver
+    // Se optimization_goal for OFFSITE_CONVERSIONS, distingue purchase vs lead/contact pelos actions reais se houver
     const purchaseVal = extractActionByExactTypes(input.actions || [], [
       "omni_purchase",
       "offsite_conversion.fb_pixel_purchase",
@@ -397,6 +531,8 @@ export function detectStrictConversionCategory(input: {
       "lead",
       "complete_registration",
       "offsite_conversion.fb_pixel_complete_registration",
+      "contact_website",
+      "contact",
     ]);
     if (purchaseVal > 0 && leadVal === 0) return "PURCHASES";
     if (leadVal > 0 && purchaseVal === 0) return "LEADS";
@@ -404,7 +540,7 @@ export function detectStrictConversionCategory(input: {
     return "PURCHASES";
   }
   if (opt === "THRUPLAY" || opt === "VIDEO_VIEWS" || opt === "TWO_SECOND_CONTINUOUS_VIDEO_VIEWS") return "VIDEO_VIEWS";
-  if (opt === "POST_ENGAGEMENT" || opt === "PAGE_LIKES") return "ENGAGEMENT";
+  if (opt === "POST_ENGAGEMENT" || opt === "PAGE_LIKES" || opt === "ENGAGEMENT") return "ENGAGEMENT";
   if (opt === "REACH" || opt === "IMPRESSIONS" || opt === "AD_RECALL_LIFT") return "REACH";
   if (opt === "LINK_CLICKS") {
     if (dest === "INSTAGRAM_PROFILE") return "INSTAGRAM_PROFILE";
@@ -438,15 +574,24 @@ export function detectStrictConversionCategory(input: {
   if (obj === "VIDEO_VIEWS") return "VIDEO_VIEWS";
   if (obj === "POST_ENGAGEMENT") return "ENGAGEMENT";
   if (obj === "LINK_CLICKS" || obj === "OUTCOME_TRAFFIC") {
-    // Em OUTCOME_TRAFFIC sem optGoal explicito, distingue profile_visit vs lpv vs link_click pelos actions reais presentes
+    const msgs = extractActionByExactTypes(input.actions || [], [
+      "onsite_conversion.messaging_conversation_started_7d",
+      "onsite_conversion.total_messaging_connection",
+      "messaging_conversation_started_7d",
+    ]);
+    if (msgs > 0) return "MESSAGES";
     const pv = extractActionByExactTypes(input.actions || [], [
       "profile_visit_view",
       "instagram_profile_visit",
+      "visit_instagram_profile",
       "profile_visit",
       "onsite_conversion.instagram_profile_visit",
     ]);
     if (pv > 0) return "INSTAGRAM_PROFILE";
+    const pageVisits = extractActionByExactTypes(input.actions || [], ["page_visit_view"]);
+    if (pageVisits > 0) return "ENGAGEMENT";
     const lpv = extractActionByExactTypes(input.actions || [], [
+      "omni_landing_page_view",
       "landing_page_view",
       "onsite_conversion.landing_page_view",
     ]);
@@ -460,7 +605,14 @@ export function detectStrictConversionCategory(input: {
       "messaging_conversation_started_7d",
     ]);
     if (msgs > 0) return "MESSAGES";
-    const pe = extractActionByExactTypes(input.actions || [], ["post_engagement", "page_engagement"]);
+    const pv = extractActionByExactTypes(input.actions || [], [
+      "profile_visit_view",
+      "instagram_profile_visit",
+      "visit_instagram_profile",
+      "profile_visit",
+    ]);
+    if (pv > 0) return "INSTAGRAM_PROFILE";
+    const pe = extractActionByExactTypes(input.actions || [], ["page_visit_view", "like", "post_engagement", "page_engagement"]);
     if (pe > 0) return "ENGAGEMENT";
     return "UNKNOWN";
   }
@@ -495,10 +647,12 @@ function matchResultRowForGoal(results: any[], optimizationGoal?: string | null)
   if (opt) {
     const matched = results.find((r) => {
       const ind = String(r?.indicator || "").toLowerCase();
-      if (opt === "PROFILE_VISIT" || opt === "VISIT_INSTAGRAM_PROFILE") return ind.includes("profile_visit");
-      if (opt === "CONVERSATIONS" || opt === "REPLIES") return ind.includes("messaging_conversation_started");
+      if (opt === "PROFILE_VISIT" || opt === "VISIT_INSTAGRAM_PROFILE") return ind.includes("profile_visit") || ind.includes("visit_instagram_profile");
+      if (opt === "PROFILE_AND_PAGE_ENGAGEMENT") return ind.includes("profile_visit") || ind.includes("page_visit");
+      if (opt === "CONVERSATIONS" || opt === "REPLIES") return ind.includes("messaging_conversation_started") || ind.includes("total_messaging_connection");
       if (opt === "LANDING_PAGE_VIEWS") return ind.includes("landing_page_view");
-      if (opt === "LEAD_GENERATION" || opt === "QUALITY_LEAD") return ind.includes("lead");
+      if (opt === "LEAD_GENERATION" || opt === "QUALITY_LEAD" || opt === "LEAD") return ind.includes("lead") || ind.includes("contact_website");
+      if (opt === "PAGE_LIKES") return ind.includes("like");
       if (opt === "LINK_CLICKS") return ind.includes("link_click");
       if (opt === "THRUPLAY") return ind.includes("thruplay");
       if (opt === "REACH") return ind === "reach";
@@ -507,6 +661,34 @@ function matchResultRowForGoal(results: any[], optimizationGoal?: string | null)
     if (matched) return matched;
   }
   return results[0];
+}
+
+function extractMetaResultValuesCount(values: any[] | undefined): number | null {
+  if (!Array.isArray(values) || values.length === 0) return null;
+  const defaultEntry = values.find(
+    (v: any) => Array.isArray(v?.attribution_windows) && v.attribution_windows.includes("default")
+  );
+  const valObj = defaultEntry ?? values[0];
+  const hasSplit = valObj && (valObj["7d_click"] !== undefined || valObj["1d_view"] !== undefined);
+  if (hasSplit) {
+    return parseMetaActionNumericValue(valObj);
+  }
+  if (valObj?.value !== undefined && valObj?.value !== null && valObj?.value !== "") {
+    const parsed = parseFloat(String(valObj.value));
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  const entry7d = values.find(
+    (v: any) => Array.isArray(v?.attribution_windows) && v.attribution_windows.includes("7d_click")
+  );
+  const entry1d = values.find(
+    (v: any) => Array.isArray(v?.attribution_windows) && v.attribution_windows.includes("1d_view")
+  );
+  if (entry7d || entry1d) {
+    const c = parseFloat(String(entry7d?.value ?? "0"));
+    const v = parseFloat(String(entry1d?.value ?? "0"));
+    return (Number.isFinite(c) ? c : 0) + (Number.isFinite(v) ? v : 0);
+  }
+  return null;
 }
 
 export function extractMetaInsightMetrics(row: any, context: {
@@ -521,6 +703,8 @@ export function extractMetaInsightMetrics(row: any, context: {
   const frequency = reach > 0 ? impressions / reach : (parseFloat(String(row?.frequency ?? "0")) || 0);
 
   const actions = Array.isArray(row?.actions) ? row.actions : [];
+  const conversions = Array.isArray(row?.conversions) ? row.conversions : [];
+  const combinedActions = conversions.length > 0 ? [...actions, ...conversions] : actions;
   const results = Array.isArray(row?.results) ? row.results : [];
   const optGoal = row?.optimization_goal || context.optimizationGoal || null;
   const rawObj = row?.objective || context.rawObjective || null;
@@ -543,7 +727,7 @@ export function extractMetaInsightMetrics(row: any, context: {
     optimizationGoal: optGoal,
     destinationType: context.destinationType,
     results: matchedResult ? [matchedResult] : results,
-    actions,
+    actions: combinedActions,
     storedResultType: context.storedResultType,
   });
 
@@ -574,18 +758,10 @@ export function extractMetaInsightMetrics(row: any, context: {
 
   // 1. Native Meta `results[]` takes absolute precedence
   if (matchedResult) {
-    const valObj = matchedResult.values?.[0];
-    const hasSplit = valObj && (valObj["7d_click"] !== undefined || valObj["1d_view"] !== undefined);
-    if (hasSplit) {
-      const parsed = parseMetaActionNumericValue(valObj);
+    const parsed = extractMetaResultValuesCount(matchedResult.values);
+    if (parsed !== null) {
       resultCount = parsed;
       resultSource = "meta_results";
-    } else if (valObj?.value !== undefined && valObj?.value !== null && valObj?.value !== "") {
-      const parsed = parseFloat(String(valObj.value));
-      if (Number.isFinite(parsed)) {
-        resultCount = parsed;
-        resultSource = "meta_results";
-      }
     } else if (matchedResult.indicator) {
       // Meta returned indicator without value -> explicitly 0 occurrences of that configured result!
       resultCount = 0;
@@ -634,7 +810,8 @@ export function extractMetaInsightMetrics(row: any, context: {
         resultSource = "actions";
         break;
       case "LEADS":
-        resultCount = extractActionByExactTypes(actions, [
+        resultCount = extractActionByExactTypes(combinedActions, [
+          "contact_website",
           "lead",
           "onsite_conversion.lead_grouped",
           "leadgen_grouped",
@@ -645,7 +822,7 @@ export function extractMetaInsightMetrics(row: any, context: {
         resultSource = "actions";
         break;
       case "CHECKOUT":
-        resultCount = extractActionByExactTypes(actions, [
+        resultCount = extractActionByExactTypes(combinedActions, [
           "omni_initiated_checkout",
           "offsite_conversion.fb_pixel_initiate_checkout",
           "initiate_checkout",
@@ -653,7 +830,7 @@ export function extractMetaInsightMetrics(row: any, context: {
         resultSource = "actions";
         break;
       case "ADD_TO_CART":
-        resultCount = extractActionByExactTypes(actions, [
+        resultCount = extractActionByExactTypes(combinedActions, [
           "omni_add_to_cart",
           "offsite_conversion.fb_pixel_add_to_cart",
           "add_to_cart",
@@ -661,7 +838,7 @@ export function extractMetaInsightMetrics(row: any, context: {
         resultSource = "actions";
         break;
       case "VIDEO_VIEWS":
-        resultCount = extractActionByExactTypes(actions, [
+        resultCount = extractActionByExactTypes(combinedActions, [
           "thruplay",
           "video_thruplay_watched_actions",
           "video_view",
@@ -669,7 +846,9 @@ export function extractMetaInsightMetrics(row: any, context: {
         resultSource = "actions";
         break;
       case "ENGAGEMENT":
-        resultCount = extractActionByExactTypes(actions, [
+        resultCount = extractActionByExactTypes(combinedActions, [
+          "page_visit_view",
+          "like",
           "post_engagement",
           "page_engagement",
           "post_reaction",

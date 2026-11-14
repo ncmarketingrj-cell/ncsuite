@@ -3,9 +3,11 @@ import assert from "node:assert/strict";
 
 import {
   META_GRAPH_VERSION,
+  META_INDICATOR_SPEC_VERSION,
   detectStrictConversionCategory,
   extractMetaInsightMetrics,
   formatCurrencyBRLStrict,
+  formatMetricVectorSummary,
   mergeSocialCrosspostRecords,
   metaFetchJsonWithRetry,
   metaFetchPaginatedWithStatus,
@@ -602,5 +604,201 @@ describe("Meta Integration — Contrato Meta v21.0, Paridade Rio2 & MOVE, Pagina
     const fullMonth = formatPeriodLabel("2026-11-01", "2026-11-30");
     assert.equal(fullMonth.isFullMonth, true);
     assert.equal(fullMonth.label, "NOVEMBRO 2026");
+  });
+
+  it("Contrato 2026.11.2: novos tokens Meta (page_visit_view, contact_website, like, profile_visit_view)", () => {
+    assert.equal(META_INDICATOR_SPEC_VERSION, "2026.11.2");
+    assert.equal(edgeMetaCore.META_INDICATOR_SPEC_VERSION, "2026.11.2");
+
+    // 1. profile_visit_view exclusivamente em results[0].indicator (sem actions[])
+    const rio2Profile = extractMetaInsightMetrics(
+      {
+        spend: "50.43",
+        reach: "4018",
+        impressions: "4175",
+        clicks: "329",
+        inline_link_clicks: "334",
+        results: [{ indicator: "profile_visit_view", values: [{ value: "328" }] }],
+        actions: [],
+      },
+      { rawObjective: "OUTCOME_ENGAGEMENT", optimizationGoal: "PROFILE_VISIT" }
+    );
+    assert.equal(rio2Profile.category, "INSTAGRAM_PROFILE");
+    assert.equal(rio2Profile.resultCount, 328);
+    assert.equal(rio2Profile.resultIndicator, "profile_visit_view");
+
+    // 2. page_visit_view (visita a Pagina FB -> ENGAGEMENT) & landing_page_view (-> LANDING_PAGE_VIEWS)
+    const fbPageVisit = extractMetaInsightMetrics(
+      {
+        spend: "30.00",
+        reach: "1000",
+        impressions: "1200",
+        clicks: "80",
+        inline_link_clicks: "60",
+        results: [{ indicator: "page_visit_view", values: [{ value: "42" }] }],
+      },
+      { rawObjective: "OUTCOME_ENGAGEMENT" }
+    );
+    assert.equal(fbPageVisit.category, "ENGAGEMENT");
+    assert.equal(fbPageVisit.resultCount, 42);
+    assert.equal(
+      classifyMetaEvent({ campaignName: "X", rawObjective: "OUTCOME_ENGAGEMENT", resultsIndicator: "page_visit_view" }).shortBadge,
+      "VISITAS PÁGINA"
+    );
+
+    const lpv = extractMetaInsightMetrics(
+      {
+        spend: "30.00",
+        reach: "1000",
+        impressions: "1200",
+        clicks: "80",
+        inline_link_clicks: "60",
+        results: [{ indicator: "landing_page_view", values: [{ value: "27" }] }],
+      },
+      { rawObjective: "OUTCOME_TRAFFIC" }
+    );
+    assert.equal(lpv.category, "LANDING_PAGE_VIEWS");
+    assert.equal(lpv.resultCount, 27);
+
+    // 3. conversions:contact_website
+    const contactSite = extractMetaInsightMetrics(
+      {
+        spend: "80.00",
+        reach: "2000",
+        impressions: "2500",
+        clicks: "100",
+        inline_link_clicks: "75",
+        results: [{ indicator: "conversions:contact_website", values: [{ value: "9" }] }],
+      },
+      { rawObjective: "OUTCOME_LEADS" }
+    );
+    assert.equal(contactSite.category, "LEADS");
+    assert.equal(contactSite.resultCount, 9);
+
+    // 4. actions:like (Facebook Page Likes -> ENGAGEMENT)
+    const likes = extractMetaInsightMetrics(
+      {
+        spend: "25.00",
+        reach: "1500",
+        impressions: "1800",
+        clicks: "90",
+        inline_link_clicks: "12",
+        results: [{ indicator: "actions:like", values: [{ value: "31" }] }],
+      },
+      { rawObjective: "OUTCOME_ENGAGEMENT", optimizationGoal: "PAGE_LIKES" }
+    );
+    assert.equal(likes.category, "ENGAGEMENT");
+    assert.equal(likes.resultCount, 31);
+  });
+
+  it("MOVE (2026-11-13) e Fly Garage (2026-11-13): zero mixing, snapshotId consistente e alcance com custo por 1k", () => {
+    // Fixture 1: MOVE 2026-11-13 (18 conversas, R$ 43,49, 29 link clicks, 1.557 impr, 1.211 account reach)
+    const moveSnapshot = buildReportSnapshot({
+      clientName: "MOVE",
+      accountName: "act_521887042208137",
+      dateFrom: "2026-11-13",
+      dateTo: "2026-11-13",
+      deduplicatedAccountReach: 1211,
+      campaigns: [
+        { id: "m1", name: "NC | MSG — 1", cost: 7.76, conversions: 6, clicks: 6, allClicks: 14, impressions: 258, reach: 226, resultType: "MESSAGES" },
+        { id: "m2", name: "NC | MSG — Em torno", cost: 6.66, conversions: 1, clicks: 4, allClicks: 9, impressions: 277, reach: 223, resultType: "MESSAGES" },
+        { id: "m3", name: "11/11 CBO INS|FB HONDA POP 19 A 45", cost: 8.78, conversions: 4, clicks: 9, allClicks: 16, impressions: 420, reach: 331, resultType: "MESSAGES" },
+        { id: "m4", name: "11/11 HONDA FACTOR", cost: 8.0, conversions: 5, clicks: 8, allClicks: 15, impressions: 281, reach: 238, resultType: "MESSAGES" },
+        { id: "m5", name: "NC | MSG — 2", cost: 12.29, conversions: 2, clicks: 2, allClicks: 7, impressions: 321, reach: 261, resultType: "MESSAGES" },
+      ],
+    });
+    assert.equal(roundCurrency(moveSnapshot.summary.totalMediaSpend), 43.49);
+    assert.equal(moveSnapshot.summary.metricVector.conversations, 18);
+    assert.equal(moveSnapshot.summary.hasMixedObjectives, false);
+    assert.equal(moveSnapshot.summary.inlineLinkClicks, 29);
+    assert.equal(moveSnapshot.summary.allClicks, 61);
+    assert.equal(moveSnapshot.summary.totalImpressions, 1557);
+    assert.equal(moveSnapshot.summary.accountDeduplicatedReach, 1211);
+    assert.ok(moveSnapshot.snapshotId.length > 0);
+
+    // Fixture 2: Fly Garage 2026-11-13 (19 mensagens + 50.013 alcance -> hasMixedObjectives = true, CPA = R$ 7,92)
+    const flyWeighted = computeWeightedAggregates([
+      {
+        id: "fg1",
+        name: "NC - MSG - 29/06 — Cópia",
+        cost: 150.57,
+        conversions: 19,
+        clicks: 137,
+        allClicks: 167,
+        impressions: 9433,
+        reach: 7196,
+        rawObjective: "OUTCOME_ENGAGEMENT",
+        resultType: "MESSAGES",
+      },
+      {
+        id: "fg2",
+        name: "CMP | NC  - ALCANCE JOJO TODYNHO",
+        cost: 63.56,
+        conversions: 50013,
+        clicks: 21,
+        allClicks: 52,
+        impressions: 52358,
+        reach: 50013,
+        rawObjective: "OUTCOME_AWARENESS",
+        resultType: "REACH",
+      },
+    ]);
+    assert.equal(flyWeighted.hasMixedObjectives, true);
+    assert.equal(flyWeighted.metricVector.conversations, 19);
+    assert.equal(flyWeighted.metricVector.reach, 50013);
+    assert.equal(roundCurrency(flyWeighted.totalMediaSpend), 214.13);
+    assert.equal(flyWeighted.inlineLinkClicks, 158);
+    assert.equal(flyWeighted.allClicks, 219);
+    assert.ok(flyWeighted.cpaEligible !== null && Math.abs(flyWeighted.cpaEligible - 150.57 / 19) < 0.01);
+    const vecLabels = formatMetricVectorSummary(flyWeighted.metricVector).map(e => `${e.value}:${e.label}`).join("|");
+    assert.ok(vecLabels.includes("19:Conversas"));
+    assert.ok(vecLabels.includes("50013:Alcance"));
+  });
+
+  it("Contrato 2026.11.2: results[].values prioriza attribution_windows ['default'] sobre ['7d_click'] (Fly Garage 19 / Rio2 28)", () => {
+    const flyMultiWindow = extractMetaInsightMetrics(
+      {
+        spend: "150.58",
+        impressions: "9436",
+        reach: "7196",
+        clicks: "167",
+        inline_link_clicks: "137",
+        results: [
+          {
+            indicator: "actions:onsite_conversion.messaging_conversation_started_7d",
+            values: [
+              { value: "17", attribution_windows: ["7d_click"] },
+              { value: "2", attribution_windows: ["1d_view"] },
+              { value: "16", attribution_windows: ["1d_click"] },
+              { value: "19", attribution_windows: ["default"] },
+            ],
+          },
+        ],
+      },
+      { rawObjective: "MESSAGES", optimizationGoal: "REPLIES" }
+    );
+    assert.equal(flyMultiWindow.category, "MESSAGES");
+    assert.equal(flyMultiWindow.resultCount, 19);
+    assert.equal(
+      edgeMetaCore.extractMetaInsightMetrics(
+        {
+          spend: "183.97",
+          impressions: "13494",
+          reach: "11311",
+          results: [
+            {
+              indicator: "actions:onsite_conversion.messaging_conversation_started_7d",
+              values: [
+                { value: "27", attribution_windows: ["7d_click"] },
+                { value: "1", attribution_windows: ["1d_view"] },
+                { value: "28", attribution_windows: ["default"] },
+              ],
+            },
+          ],
+        },
+        { rawObjective: "OUTCOME_ENGAGEMENT", optimizationGoal: "REPLIES" }
+      ).resultCount,
+      28
+    );
   });
 });
