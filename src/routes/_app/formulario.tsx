@@ -9,6 +9,7 @@ import {
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase-external/client";
 import { toast } from "sonner";
+import { resolveCrmEmptyState, buildTrackedPageUrl, classifyLinkPageKind } from "@/lib/pageSanitizers";
 
 export const Route = createFileRoute("/_app/formulario")({
   component: FormularioPage,
@@ -34,10 +35,9 @@ function FormularioPage() {
       const { data, error } = await supabase
         .from("link_pages")
         .select("*")
-        .or("template.eq.form_only,lead_form_enabled.eq.true")
         .order("created_at", { ascending: false });
       if (error) return [];
-      return (data || []).filter((p: any) => p.template === "form_only" || p.lead_form_enabled);
+      return (data || []).filter((p: any) => classifyLinkPageKind(p) === "form");
     },
   });
 
@@ -312,13 +312,7 @@ function FormularioPage() {
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
                 {items.map((item: any) => {
                   const utmState = utmStates[item.id] || { source: "", medium: "", campaign: "", content: "" };
-                  const baseUrl = `${window.location.origin}/p/${item.slug}`;
-                  const queryParams = new URLSearchParams();
-                  if (utmState.source) queryParams.set("utm_source", utmState.source);
-                  if (utmState.medium) queryParams.set("utm_medium", utmState.medium);
-                  if (utmState.campaign) queryParams.set("utm_campaign", utmState.campaign);
-                  if (utmState.content) queryParams.set("utm_content", utmState.content);
-                  const generatedUrl = queryParams.toString() ? `${baseUrl}?${queryParams.toString()}` : baseUrl;
+                  const generatedUrl = buildTrackedPageUrl(window.location.origin, item.slug, utmState);
 
                   return (
                     <div
@@ -471,13 +465,32 @@ function FormularioPage() {
             {/* Leads Table */}
             {isLoadingLeads ? (
               <div className="flex justify-center py-16"><Loader2 className="w-6 h-6 animate-spin text-primary" /></div>
-            ) : filteredLeads.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-20 text-center bg-card border border-border rounded-2xl">
-                <Users className="w-8 h-8 text-muted-foreground/50 mb-3" />
-                <p className="font-bold text-foreground/70 text-sm">Nenhum lead encontrado</p>
-                <p className="text-xs text-muted-foreground mt-0.5">Experimente limpar os filtros de busca.</p>
-              </div>
-            ) : (
+            ) : filteredLeads.length === 0 ? (() => {
+              const emptyState = resolveCrmEmptyState({
+                totalLeads: leads.length,
+                filteredLeadsCount: filteredLeads.length,
+                hasActiveFilter: Boolean(searchTerm.trim()) || statusFilter !== "todos",
+              });
+              return (
+                <div className="flex flex-col items-center justify-center py-20 text-center bg-card border border-border rounded-2xl">
+                  <Users className="w-8 h-8 text-muted-foreground/50 mb-3" />
+                  <p className="font-bold text-foreground/70 text-sm">{emptyState.title}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5 max-w-md">{emptyState.description}</p>
+                  {emptyState.showResetFilters && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSearchTerm("");
+                        setStatusFilter("todos");
+                      }}
+                      className="mt-3 px-3 py-1.5 rounded-lg border border-border text-xs font-bold text-foreground hover:bg-muted transition-colors"
+                    >
+                      Limpar filtros
+                    </button>
+                  )}
+                </div>
+              );
+            })() : (
               <div className="bg-card border border-border rounded-2xl overflow-hidden shadow-sm">
                 <div className="overflow-x-auto">
                   <table className="w-full text-left border-collapse">

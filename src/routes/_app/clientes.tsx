@@ -11,6 +11,7 @@ import { toast } from "sonner";
 import { PageHeader } from "@/components/PageHeader";
 import { supabase } from "@/integrations/supabase-external/client";
 import { useGlobalDate, getLocalDateString } from "@/contexts/DateContext";
+import { formatCivilDateBR } from "@/lib/metricsDomain";
 
 export const Route = createFileRoute("/_app/clientes")({
   head: () => ({ meta: [{ title: "Clientes — NC Suite" }] }),
@@ -544,7 +545,7 @@ function ClientesPage() {
         name: a.name,
         meta_ad_account_id: a.id,
         status: "ativo",
-        niche: "Automotivo",
+        niche: null,
         user_id: u.user?.id,
       }));
       const { error } = await (supabase as any).from("clients").insert(inserts);
@@ -571,6 +572,19 @@ function ClientesPage() {
     pausado: clients.filter(c => c.status === "pausado").length,
     otimizando: clients.filter(c => c.status === "otimizando").length,
   };
+
+  // Auditoria estrita de vínculos por ID (ID 28): detecta contas duplicadas ou clientes sem vínculo Meta
+  const duplicateAccountLinks = (() => {
+    const map = new Map<string, ClientRow[]>();
+    for (const c of clients) {
+      if (!c.meta_ad_account_id) continue;
+      const list = map.get(c.meta_ad_account_id) ?? [];
+      list.push(c);
+      map.set(c.meta_ad_account_id, list);
+    }
+    return Array.from(map.entries()).filter(([, list]) => list.length > 1);
+  })();
+  const unlinkedClientsCount = clients.filter(c => !c.meta_ad_account_id).length;
 
   return (
     <div className="space-y-6">
@@ -600,6 +614,25 @@ function ClientesPage() {
         }
         compact
       />
+
+      {/* Alerta de Revisão de Vínculos (por ID exato, nunca auto-merge por nome — ID 28) */}
+      {(duplicateAccountLinks.length > 0 || unlinkedClientsCount > 0) && (
+        <div className="flex flex-wrap items-center gap-3 rounded-xl border border-amber-500/25 bg-amber-500/5 px-4 py-2.5 text-xs">
+          <AlertCircle className="h-4 w-4 text-amber-500 shrink-0" />
+          <div className="flex-1 text-muted-foreground">
+            {duplicateAccountLinks.length > 0 && (
+              <span className="text-amber-400 font-semibold mr-3">
+                {duplicateAccountLinks.length} conta(s) Meta vinculada(s) em mais de um cliente (revisar por ID).
+              </span>
+            )}
+            {unlinkedClientsCount > 0 && (
+              <span>
+                {unlinkedClientsCount} cliente(s) sem conta Meta vinculada — associe manualmente pelo ID da conta no cadastro.
+              </span>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Filtros */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
@@ -687,7 +720,7 @@ function ClientesPage() {
             const today = getLocalDateString();
             const dateLabel = selectedDate === today
               ? "Gasto hoje"
-              : `Gasto ${new Date(selectedDate + "T12:00:00").toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })}`;
+              : `Gasto ${formatCivilDateBR(selectedDate).slice(0, 5)}`;
             return (
               <ClientCard
                 key={client.id}

@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useState, useMemo, useRef } from "react";
+import { useState, useMemo, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -1692,7 +1692,7 @@ function CreatePostModal({
     initialPost?.scheduled_at ? format(new Date(initialPost.scheduled_at), "yyyy-MM-dd'T'HH:mm") : ""
   );
   const [pageId, setPageId] = useState(
-    initialPost?.page_id || (selectedPage !== "all" ? selectedPage : activePages[0]?.page_id || "")
+    initialPost?.page_id || (selectedPage !== "all" ? selectedPage : "")
   );
 
   const [aiPrompt, setAiPrompt] = useState("");
@@ -1704,7 +1704,16 @@ function CreatePostModal({
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const selectedAccount = activePages.find((p) => p.page_id === pageId) || activePages[0] || null;
+  // Nunca assume silenciosamente a 1ª conta (ex: LumaCar) quando o usuário veio de 'Consolidado' ('all') — ID 38
+  const selectedAccount = activePages.find((p) => p.page_id === pageId) || null;
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !isSaving) onClose();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [isSaving, onClose]);
 
   const handleInsertEmoji = (emoji: string) => setContent((prev) => prev + emoji);
 
@@ -1767,13 +1776,25 @@ function CreatePostModal({
       toast.error("O texto da legenda não pode estar vazio.");
       return;
     }
-    if (!pageId) {
-      toast.error("Selecione uma conta de destino conectada.");
+    if (!pageId || !selectedAccount) {
+      toast.error("Selecione explicitamente a conta de destino antes de salvar ou publicar.");
       return;
     }
     if (targetStatus === "scheduled" && !scheduledAt) {
       toast.error("Informe a data e hora do agendamento.");
       return;
+    }
+    if (publishImmediately) {
+      const targetName = selectedAccount.instagram_handle
+        ? `${selectedAccount.page_name} (@${selectedAccount.instagram_handle})`
+        : selectedAccount.page_name;
+      const confirmed =
+        typeof window !== "undefined"
+          ? window.confirm(
+              `Confirmar publicação imediata?\n\nConta de destino: ${targetName}\nCanal: ${platform}\nFormato: ${postType}`
+            )
+          : true;
+      if (!confirmed) return;
     }
 
     setIsSaving(true);
@@ -1887,11 +1908,20 @@ function CreatePostModal({
 
           <button
             onClick={onClose}
+            aria-label="Fechar modal de publicação"
             className="p-2 rounded-xl bg-muted/60 hover:bg-muted text-muted-foreground hover:text-foreground transition cursor-pointer"
           >
             <X className="h-4 w-4" />
           </button>
         </div>
+
+        {!pageId && (
+          <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-2.5 text-xs text-amber-300 flex items-center justify-between gap-2">
+            <span>
+              <strong>Atenção (Modo Consolidado):</strong> selecione explicitamente a conta de destino antes de publicar ou agendar.
+            </span>
+          </div>
+        )}
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
           <div className="lg:col-span-7 space-y-4">
@@ -1905,7 +1935,11 @@ function CreatePostModal({
                   onChange={(e) => setPageId(e.target.value)}
                   className="w-full bg-background border border-border/80 rounded-xl px-3 py-2 text-xs font-bold text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
                 >
-                  {activePages.length === 0 && <option value="">Nenhuma conta conectada</option>}
+                  <option value="">
+                    {activePages.length === 0
+                      ? "Nenhuma conta conectada"
+                      : "Selecione explicitamente a conta de destino..."}
+                  </option>
                   {activePages.map((page) => (
                     <option key={page.page_id} value={page.page_id}>
                       {page.page_name} {page.instagram_handle ? `(@${page.instagram_handle})` : "(FB)"}

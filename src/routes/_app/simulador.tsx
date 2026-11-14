@@ -955,7 +955,7 @@ function SimuladorPage() {
               }`}
             >
               {showHiddenMath ? <EyeOff className="h-3.5 w-3.5" /> : <Calculator className="h-3.5 w-3.5" />}
-              {showHiddenMath ? "Ocultar Fórmulas" : "Cálculos Ocultos (VCG/GEM)"}
+              {showHiddenMath ? "Ocultar Modo Técnico" : "Modo Técnico (Fórmulas)"}
             </button>
 
             <button
@@ -1190,9 +1190,9 @@ function SimuladorPage() {
                 [
                   { id: "all", label: "Visão Completa (360°)" },
                   { id: "conversions", label: "Volume & CPA" },
-                  { id: "auction", label: "Leilão VCG (CPM / CTR / CVR)" },
-                  { id: "financial", label: "Financeiro (ROAS / MER / nCAC)" },
-                  { id: "algorithm", label: "Pacing λ & Fase de Aprendizado" },
+                  { id: "auction", label: "Leilão (CPM / CTR / CVR)" },
+                  { id: "financial", label: "Financeiro (ROAS / Custo / Retorno)" },
+                  { id: "algorithm", label: "Ritmo de Entrega & Aprendizado" },
                 ] as { id: MetricFocusGroup; label: string }[]
               ).map((tab) => (
                 <button
@@ -1405,22 +1405,22 @@ function SimuladorPage() {
                 hint="Ganho de atração visual nos primeiros 3s. Maior pCTR reduz o eCPM pela regra VCG."
               />
 
-              {/* Seletor de Diversidade Criativa (Andromeda Creative Diversity Score) */}
+              {/* Seletor de Diversidade Criativa */}
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between">
                   <span className="text-[10px] font-black uppercase tracking-wider text-foreground/80">
-                    3. Creative Diversity Score (Motor Andromeda)
+                    3. Diversidade Criativa
                   </span>
                   <span className="text-[9px] font-mono font-bold text-primary">
-                    Afinidade LTI: {simResult.andromedaAffinityScore}/100
+                    Aderência: {simResult.andromedaAffinityScore}/100
                   </span>
                 </div>
                 <div className="grid grid-cols-3 gap-1.5">
                   {(
                     [
-                      { id: "LOW", label: "Baixa", sub: "Variação Cosmética" },
+                      { id: "LOW", label: "Baixa", sub: "Variação Simples" },
                       { id: "MEDIUM", label: "Média", sub: "2 Formatos" },
-                      { id: "HIGH", label: "Alta (MoE)", sub: "Conceitos Distintos" },
+                      { id: "HIGH", label: "Alta", sub: "Conceitos Distintos" },
                     ] as { id: CreativeDiversityLevel; label: string; sub: string }[]
                   ).map((item) => (
                     <button
@@ -1783,8 +1783,8 @@ function SimuladorPage() {
               {(metricFocus === "all" || metricFocus === "auction") && (
                 <>
                   <SimMetricCard
-                    label="eCPM Efetivo (Regra VCG)"
-                    sublabel={`Desconto/Ágio VCG: ${simResult.vcgEcpmDiscountPct >= 0 ? "+" : ""}${simResult.vcgEcpmDiscountPct.toFixed(1)}%`}
+                    label="CPM Projetado no Leilão"
+                    sublabel={`Ajuste de relevância: ${simResult.vcgEcpmDiscountPct >= 0 ? "+" : ""}${simResult.vcgEcpmDiscountPct.toFixed(1)}%`}
                     current={baseline.cpm}
                     projected={simResult.projCPM}
                     format={fmt.brlExact}
@@ -1803,12 +1803,12 @@ function SimuladorPage() {
               )}
             </div>
 
-            {/* Painel de Telemetria de Leilão: pCTR, pCVR, Shadow Price λ, Fase de Aprendizado e MER/nCAC */}
+            {/* Painel de Telemetria de Leilão & Eficiência Operacional */}
             <div className="rounded-2xl border border-border bg-card/90 p-4 space-y-3 shadow-sm">
               <div className="flex items-center justify-between">
                 <span className="text-[10px] font-black uppercase tracking-wider text-foreground flex items-center gap-1.5">
                   <Cpu className="h-3.5 w-3.5 text-primary" />
-                  Premissas & Estimativa Financeira (MER / nCAC Projetados)
+                  Premissas & Eficiência Estimada
                 </span>
                 <span
                   className={`rounded-md px-2 py-0.5 text-[9px] font-black uppercase ${
@@ -1826,7 +1826,7 @@ function SimuladorPage() {
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
                 <div className="rounded-xl border border-border bg-background/60 p-2.5">
                   <p className="text-[8px] font-black uppercase tracking-wider text-muted-foreground">
-                    pCTR (GEM Ranking)
+                    CTR Estimado
                   </p>
                   <p className="text-sm font-black font-mono text-foreground mt-0.5">
                     {fmt.pct(simResult.projCTR)}
@@ -1838,7 +1838,7 @@ function SimuladorPage() {
 
                 <div className="rounded-xl border border-border bg-background/60 p-2.5">
                   <p className="text-[8px] font-black uppercase tracking-wider text-muted-foreground">
-                    pCVR (Pós-Clique)
+                    Conversão Estimada (CVR)
                   </p>
                   <p className="text-sm font-black font-mono text-foreground mt-0.5">
                     {fmt.pct(simResult.projCVR)}
@@ -1850,14 +1850,18 @@ function SimuladorPage() {
 
                 <div className="rounded-xl border border-border bg-background/60 p-2.5">
                   <p className="text-[8px] font-black uppercase tracking-wider text-muted-foreground">
-                    Shadow Price (λ)
+                    Pressão de Ritmo
                   </p>
                   <p className="text-sm font-black font-mono text-primary mt-0.5">
-                    λ = {simResult.shadowPriceLambda.toFixed(2)}
+                    {simResult.shadowPriceLambda.toFixed(2)}
                   </p>
                   <p className="text-[8px] font-mono text-muted-foreground">
                     Lance Efetivo: {simResult.effectiveBidMultiplier.toFixed(2)}×
                   </p>
+                  <details className="mt-1">
+                    <summary className="text-[8px] text-muted-foreground cursor-pointer hover:text-foreground">Detalhe técnico (λ)</summary>
+                    <p className="text-[8px] text-muted-foreground mt-0.5">Shadow Price de pacing algorítmico no leilão VCG.</p>
+                  </details>
                 </div>
 
                 <div className="rounded-xl border border-border bg-background/60 p-2.5">

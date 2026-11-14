@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { PageHeader } from "@/components/PageHeader";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase-external/client";
+import { validatePublicLinkItem, classifyLinkPageKind } from "@/lib/pageSanitizers";
 
 export const Route = createFileRoute("/_app/organizador")({
   head: () => ({ meta: [{ title: "Central de Funis — NC Suite" }] }),
@@ -42,7 +43,7 @@ function OrganizadorPage() {
       
       const pages = (pagesRes.data || []).map((p: any) => ({
         id: p.id, slug: p.slug, title: p.title, is_active: p.is_active, created_at: p.created_at,
-        type: (p.template === 'form_only' || (!p.template && p.lead_form_enabled)) ? 'form' : 'link_bio',
+        type: classifyLinkPageKind(p),
         raw_data: p
       }));
       
@@ -619,23 +620,47 @@ function LinkBioEditorForm({ pageId, type }: { pageId: string, type: string }) {
             </div>
 
             <div className="space-y-3">
-              {links.map((link: any) => (
+              {links.map((link: any) => {
+                 const itemCheck = validatePublicLinkItem({ ...link, is_active: true });
+                 return (
                  <div key={link.id} className="glass-panel p-3 flex gap-3 relative">
                     <div className="flex-shrink-0 pt-2 cursor-grab text-muted-foreground hover:text-foreground"><GripVertical className="h-4 w-4" /></div>
                     <div className="flex-1 space-y-2">
                        <div className="flex items-center justify-between gap-2">
-                          <input defaultValue={link.title} onBlur={(e) => updateLinkMutation.mutate({ id: link.id, data: { title: e.target.value } })} placeholder="Título do Botão" className="flex-1 bg-transparent border-b border-border text-sm font-bold focus:border-primary focus:outline-none py-1" />
+                          <input defaultValue={link.title} onBlur={(e) => updateLinkMutation.mutate({ id: link.id, data: { title: e.target.value.trim() || "Botão" } })} placeholder="Título do Botão" className="flex-1 bg-transparent border-b border-border text-sm font-bold focus:border-primary focus:outline-none py-1" />
                           <div className="flex items-center gap-2">
+                            {!itemCheck.valid && (
+                              <span className="text-[9px] font-bold text-amber-400 bg-amber-500/10 border border-amber-500/30 px-1.5 py-0.5 rounded" title={itemCheck.reason}>
+                                Oculto até corrigir
+                              </span>
+                            )}
                             {/* Click analytics badge */}
                             <span className="flex items-center gap-0.5 text-[9px] font-bold text-muted-foreground bg-muted/60 px-1.5 py-0.5 rounded" title="Cliques acumulados">
                               <MousePointerClick className="h-2.5 w-2.5" /> {link.click_count || 0}
                             </span>
                             <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-muted uppercase">{link.type}</span>
                             <button onClick={() => updateLinkMutation.mutate({ id: link.id, data: { is_active: !link.is_active } })} className={`text-[10px] font-bold px-2 py-1 rounded ${link.is_active ? 'bg-success/20 text-success' : 'bg-muted text-muted-foreground'}`}>{link.is_active ? 'ON' : 'OFF'}</button>
-                            <button onClick={() => { if(confirm('Excluir link?')) deleteLinkMutation.mutate(link.id); }} className="text-muted-foreground hover:text-destructive"><Trash2 className="h-3.5 w-3.5" /></button>
+                            <button onClick={() => { if(confirm('Excluir link?')) deleteLinkMutation.mutate(link.id); }} aria-label="Excluir link" className="text-muted-foreground hover:text-destructive"><Trash2 className="h-3.5 w-3.5" /></button>
                           </div>
                        </div>
-                       <input defaultValue={link.url} onBlur={(e) => updateLinkMutation.mutate({ id: link.id, data: { url: e.target.value } })} placeholder={link.type === 'whatsapp' ? "Número: 5511999999999" : link.type === 'maps' ? "URL do Google Maps" : "URL completa..."} className="w-full text-xs bg-transparent border-none text-muted-foreground focus:text-foreground focus:outline-none" />
+                       <input
+                         defaultValue={link.url}
+                         onBlur={(e) => {
+                           const nextUrl = e.target.value.trim();
+                           const check = validatePublicLinkItem({ ...link, url: nextUrl, is_active: true });
+                           if (nextUrl && !check.valid) {
+                             toast.warning(check.reason || "Link inválido: ficará oculto na página pública até ser corrigido.");
+                           }
+                           updateLinkMutation.mutate({ id: link.id, data: { url: nextUrl } });
+                         }}
+                         placeholder={link.type === 'whatsapp' ? "Número: 5511999999999" : link.type === 'maps' ? "URL do Google Maps" : link.type === 'youtube' ? "URL do YouTube (watch, shorts ou youtu.be)" : "URL completa (https://...)"}
+                         className="w-full text-xs bg-transparent border-none text-muted-foreground focus:text-foreground focus:outline-none"
+                       />
+                       {!itemCheck.valid && (
+                         <p className="text-[10px] text-amber-400">
+                           {itemCheck.reason} — este bloco não será exibido na página pública até estar válido.
+                         </p>
+                       )}
                        {link.type === 'whatsapp' && (
                          <div className="pt-2 border-t border-border mt-2">
                            <input defaultValue={link.whatsapp_message || ""} onBlur={(e) => updateLinkMutation.mutate({ id: link.id, data: { whatsapp_message: e.target.value } })} placeholder="Mensagem pré-preenchida (ex: Olá, interesse no Civic)" className="w-full text-[11px] bg-background/50 border border-border rounded px-2 py-1.5 text-muted-foreground focus:outline-none focus:border-primary" />
@@ -659,7 +684,8 @@ function LinkBioEditorForm({ pageId, type }: { pageId: string, type: string }) {
                        </div>
                     </div>
                  </div>
-              ))}
+                 );
+              })}
               {links.length === 0 && <p className="text-xs text-muted-foreground text-center py-4 border border-dashed border-border rounded-lg">Nenhum link adicionado.</p>}
             </div>
           </div>

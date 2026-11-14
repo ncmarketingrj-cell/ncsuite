@@ -24,6 +24,7 @@ import { useAutoSync, getSyncStatus, SYNC_STATUS_EVENT, type SyncStatus } from "
 import { useAlertEngine } from "@/hooks/useAlertEngine";
 import { DateProvider } from "@/contexts/DateContext";
 import { usePagePermission } from "@/hooks/usePagePermission";
+import { resolveUserHeaderIdentity } from "@/lib/pageSanitizers";
 import {
   MAX_NOTIFICATIONS_CAP,
   getRecentNotifications,
@@ -145,6 +146,15 @@ function Shell() {
   };
 
   const { profile, isAdmin, isLoading: profileLoading, perms, hasAccess } = usePagePermission();
+
+  const headerIdentity = resolveUserHeaderIdentity({
+    profileLoading,
+    fullName: profile?.full_name,
+    metadataFullName: (user?.user_metadata as any)?.full_name,
+    email: user?.email,
+    position: profile?.position,
+    metadataPosition: (user?.user_metadata as any)?.position,
+  });
 
   const userLevel = getUserLevel({ email: user?.email, role: profile?.role, position: profile?.position });
   const isMaster = isMasterAdmin({ email: user?.email, id: user?.id });
@@ -454,7 +464,7 @@ function Shell() {
               Selecione o Módulo de Trabalho
             </h1>
             <p className="text-xs text-muted-foreground uppercase tracking-[0.2em] font-mono">
-              NC Performance Suite · Bem-vindo, {profile?.full_name || user?.email}
+              NC Performance Suite · Bem-vindo, {headerIdentity.displayName}
             </p>
           </div>
 
@@ -889,6 +899,7 @@ function Shell() {
             <button
               onClick={() => runSync("manual")}
               disabled={syncStatus.isSyncing}
+              aria-label="Sincronizar contas Meta Ads"
               className="hidden sm:flex relative h-8 w-8 items-center justify-center rounded-xl border border-border bg-card text-muted-foreground transition-all hover:border-primary/30 hover:text-primary active:scale-95 disabled:opacity-60"
               title={syncStatus.isSyncing ? 'Sincronizando...' : syncStatus.lastSync
                 ? `Último sync: ${new Date(syncStatus.lastSync).toLocaleTimeString('pt-BR')}`
@@ -906,6 +917,7 @@ function Shell() {
             {/* Theme Toggle — visível tanto no desktop quanto no mobile */}
             <button
               onClick={toggleTheme}
+              aria-label={theme === "dark" ? "Alternar para modo claro" : "Alternar para modo escuro"}
               className="flex relative h-8 w-8 items-center justify-center rounded-xl border border-border bg-card text-muted-foreground transition-all hover:text-foreground hover:border-primary/30 hover:shadow-glow-sm active:scale-95"
               title={theme === "dark" ? "Modo Claro" : "Modo Escuro"}
             >
@@ -941,6 +953,7 @@ function Shell() {
                 localStorage.setItem("nc_active_module", "victoria");
                 nav({ to: "/victoria" });
               }}
+              aria-label="Abrir Victoria AI"
               title="Victoria AI"
               className="flex lg:hidden relative h-8 w-8 items-center justify-center rounded-xl border border-primary/25 bg-primary/10 text-primary transition-all active:scale-95"
             >
@@ -952,6 +965,7 @@ function Shell() {
             <div className="relative">
               <button
                 onClick={() => { setShowNotifications(!showNotifications); acknowledgeAll(); }}
+                aria-label="Abrir central de notificações"
                 className={`relative flex h-8 w-8 items-center justify-center rounded-xl border transition-all active:scale-95 ${
                   showNotifications
                     ? "border-primary bg-primary/10 text-primary"
@@ -1207,24 +1221,25 @@ function Shell() {
             <div className="relative pl-2 ml-1 border-l border-border">
               <button
                 onClick={() => setShowUserMenu(v => !v)}
+                aria-label="Menu do usuário"
                 className="flex items-center gap-2 rounded-full border border-border/80 bg-card/60 hover:border-primary/50 hover:bg-card p-1 sm:pr-3 transition-all active:scale-95"
-                title={profile?.full_name || user?.email?.split('@')[0]}
+                title={headerIdentity.displayName}
               >
                 <UserAvatar
                   src={profile?.avatar_url}
                   userId={user?.id}
                   permissions={profile?.permissions}
-                  name={profile?.full_name}
+                  name={headerIdentity.displayName}
                   email={user?.email}
                   size="sm"
                   onlineStatus="online"
                 />
                 <div className="hidden md:flex flex-col items-start text-left max-w-[115px]">
                   <span className="text-[11px] font-bold text-foreground leading-tight truncate w-full">
-                    {(profile?.full_name || user?.email?.split("@")[0] || "Usuário").split(" ")[0]}
+                    {headerIdentity.firstName}
                   </span>
                   <span className="text-[9px] text-muted-foreground leading-tight truncate w-full">
-                    {profile?.position || "Equipe"}
+                    {headerIdentity.roleLabel}
                   </span>
                 </div>
                 <ChevronDown className="hidden md:block h-3 w-3 text-muted-foreground shrink-0" />
@@ -1257,8 +1272,8 @@ function Shell() {
                           onlineStatus="online"
                         />
                         <div className="min-w-0">
-                          <p className="text-xs font-bold truncate">{profile?.full_name || "Usuário"}</p>
-                          <p className="text-[10px] text-primary font-bold truncate">{profile?.position || "NC Performance"}</p>
+                          <p className="text-xs font-bold truncate">{headerIdentity.displayName}</p>
+                          <p className="text-[10px] text-primary font-bold truncate">{headerIdentity.roleLabel}</p>
                           <p className="text-[9px] text-muted-foreground truncate">{user?.email}</p>
                         </div>
                       </Link>

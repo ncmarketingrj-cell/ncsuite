@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase-external/client";
+import { classifyLinkPageKind } from "@/lib/pageSanitizers";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/_app/link-bio")({
@@ -23,10 +24,9 @@ function LinkBioPage() {
       const { data, error } = await supabase
         .from("link_pages")
         .select("*")
-        .or("template.neq.form_only,lead_form_enabled.is.false")
         .order("created_at", { ascending: false });
       if (error) return [];
-      return (data || []).filter((p: any) => p.template !== "form_only" && !p.lead_form_enabled);
+      return (data || []).filter((p: any) => classifyLinkPageKind(p) === "link_bio");
     },
   });
 

@@ -37,6 +37,8 @@ import {
   fetchRealSocialInsights,
   type RealSocialPost,
 } from "@/lib/metaSocialService";
+import { computeSocialAuditNetworkSplit } from "@/lib/pageSanitizers";
+import { formatCivilDateBR } from "@/lib/metricsDomain";
 
 export const Route = createFileRoute("/_app/social-audit")({
   component: SocialAuditPage,
@@ -168,32 +170,16 @@ function SocialAuditPage() {
   }, [sortedByEng, bestPosts]);
 
   const auditMetrics = useMemo(() => {
-    const postsReach = postsList.reduce((acc, p) => acc + (p.reach_count || 0), 0);
-    const totalReach = kpis.reachIg > 0 ? kpis.reachIg : postsReach;
+    const split = computeSocialAuditNetworkSplit(postsList, kpis);
+    const totalReach = split.instagram.reach;
     const totalLikes = postsList.reduce((acc, p) => acc + (p.likes_count || 0), 0);
     const totalComments = postsList.reduce((acc, p) => acc + (p.comments_count || 0), 0);
     const totalSavesAndShares = postsList.reduce(
       (acc, p) => acc + (p.saved_count || 0) + (p.shares_count || 0),
       0
     );
-    const postsInteractions = postsList.reduce(
-      (acc, p) =>
-        acc +
-        (p.total_interactions ||
-          p.likes_count + p.comments_count + p.saved_count + p.shares_count),
-      0
-    );
-    const totalInteractions =
-      kpis.interactionsIg + kpis.interactionsFb > 0
-        ? kpis.interactionsIg + kpis.interactionsFb
-        : postsInteractions;
-
-    const avgEngRate =
-      postsList.length > 0
-        ? postsList.reduce((acc, p) => acc + (p.engagement_rate || 0), 0) / postsList.length
-        : totalReach > 0
-        ? (totalInteractions / totalReach) * 100
-        : 0;
+    const totalInteractions = split.combined.totalInteractions;
+    const avgEngRate = split.instagram.avgEngRate;
 
     const totalFollowers = kpis.followersIg + kpis.followersFb;
     const newFollowers = kpis.newFollowersIg + kpis.newFollowersFb;
@@ -249,6 +235,7 @@ function SocialAuditPage() {
       totalFollowers,
       newFollowers,
       avgEngRate: formatPct(avgEngRate),
+      split,
       healthScore,
       healthLabel,
       consistencyLabel,
@@ -461,15 +448,20 @@ ${lowLines}
         <div className="glass-panel p-4 flex flex-col justify-between">
           <div>
             <span className="text-[9px] text-muted-foreground font-black uppercase tracking-wider block">
-              Taxa Média de Engajamento
+              Engajamento Médio (IG)
             </span>
             <span className="text-xl font-black text-white block mt-1 font-mono">
               {isLoadingInsights ? "..." : `${auditMetrics.avgEngRate}%`}
             </span>
           </div>
-          <div className="flex items-center gap-1 text-[9px] text-muted-foreground font-bold mt-2">
-            <Activity className="w-3 h-3 text-primary" />
-            {postsList.length} publicações analisadas
+          <div className="flex flex-col gap-0.5 text-[9px] text-muted-foreground font-bold mt-2">
+            <span className="flex items-center gap-1">
+              <Activity className="w-3 h-3 text-primary" />
+              {auditMetrics.split.instagram.postsCount} posts IG · {auditMetrics.split.facebook.postsCount} posts FB
+            </span>
+            <span className="text-[8px] font-normal text-muted-foreground/80">
+              {auditMetrics.split.instagram.denominatorLabel} · Janela {formatCivilDateBR(dateFrom)}–{formatCivilDateBR(dateTo)}
+            </span>
           </div>
         </div>
 
@@ -482,9 +474,14 @@ ${lowLines}
               {isLoadingInsights ? "..." : auditMetrics.totalInteractions.toLocaleString("pt-BR")}
             </span>
           </div>
-          <div className="flex items-center gap-1 text-[9px] text-muted-foreground font-bold mt-2">
-            <Sparkles className="w-3 h-3 text-amber-400" />
-            Contas engajadas: {kpis.accountsEngaged.toLocaleString("pt-BR")}
+          <div className="flex flex-col gap-0.5 text-[9px] text-muted-foreground font-bold mt-2">
+            <span className="flex items-center gap-1">
+              <Sparkles className="w-3 h-3 text-amber-400" />
+              IG: {auditMetrics.split.instagram.interactions.toLocaleString("pt-BR")} · FB: {auditMetrics.split.facebook.interactions.toLocaleString("pt-BR")}
+            </span>
+            <span className="text-[8px] font-normal text-muted-foreground/80">
+              Contas engajadas IG: {kpis.accountsEngaged.toLocaleString("pt-BR")}
+            </span>
           </div>
         </div>
 

@@ -16,6 +16,7 @@ import { supabase } from "@/integrations/supabase-external/client";
 import { subDays, format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { useGlobalDate, getLocalDateString } from "@/contexts/DateContext";
+import { formatCivilDateBR } from "@/lib/metricsDomain";
 
 export const Route = createFileRoute("/_app/clientes/$clientId")({
   head: () => ({ meta: [{ title: "Cliente — NC Suite" }] }),
@@ -300,7 +301,7 @@ function TabOverview({ client, metrics }: { client: ClientFull; metrics: MetricR
                 {[...metrics].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 30).map((r, i) => (
                   <tr key={r.date} className={`border-b border-border/30 hover:bg-white/[0.02] transition-colors ${i % 2 === 0 ? "" : "bg-white/[0.01]"}`}>
                     <td className="px-3 py-2 font-mono text-muted-foreground whitespace-nowrap">
-                      {format(new Date(r.date), "dd/MM", { locale: ptBR })}
+                      {formatCivilDateBR(r.date).slice(0, 5)}
                     </td>
                     <td className="px-3 py-2 font-bold text-foreground whitespace-nowrap">{fmtBRL(r.spend, 2)}</td>
                     <td className="px-3 py-2 font-bold text-violet-400 whitespace-nowrap">{fmtNum(r.leads)}</td>
@@ -1068,7 +1069,7 @@ function ClientDetailPage() {
     queryKey: ["client_metrics_90d", client?.meta_ad_account_id],
     enabled: !!client?.meta_ad_account_id,
     queryFn: async () => {
-      const since = subDays(new Date(), 89).toISOString().slice(0, 10);
+      const since = getLocalDateString(subDays(new Date(), 89));
       const { data } = await (supabase as any)
         .from("daily_metrics")
         .select("date, spend, leads, purchases, results, impressions, clicks, roas, ctr, cpm, cpa, reach")
@@ -1219,6 +1220,43 @@ function ClientDetailPage() {
             </>
           )}
         </div>
+      </div>
+
+      {/* Atalhos Contextuais do Hub do Cliente (ID 35) */}
+      <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-border/70 bg-card/60 px-3.5 py-2.5">
+        <span className="text-[10px] font-black uppercase tracking-wider text-muted-foreground mr-1">
+          Ações com contexto:
+        </span>
+        {[
+          { to: "/metricas", label: "Métricas", needsAccount: true },
+          { to: "/cockpit", label: "Cockpit", needsAccount: true },
+          { to: "/regras", label: "Regras", needsAccount: true },
+          { to: "/relatorios", label: "Relatórios", needsAccount: true },
+          { to: "/cobrancas", label: "Faturamento Meta", needsAccount: false },
+          { to: "/social", label: "Social", needsAccount: false },
+          { to: "/strategy-map", label: "Strategy Maps", needsAccount: false },
+        ].map((item) => {
+          const disabled = item.needsAccount && !client.meta_ad_account_id;
+          return disabled ? (
+            <span
+              key={item.to}
+              title="Vincule uma Conta Meta na aba Cadastro para abrir com contexto"
+              className="inline-flex items-center gap-1 rounded-lg border border-border/50 bg-muted/30 px-2.5 py-1 text-[11px] font-semibold text-muted-foreground/50 cursor-not-allowed"
+            >
+              {item.label}
+            </span>
+          ) : (
+            <Link
+              key={item.to}
+              to={item.to as any}
+              search={client.meta_ad_account_id ? ({ account: client.meta_ad_account_id, clientId: client.id } as any) : ({ clientId: client.id } as any)}
+              className="inline-flex items-center gap-1 rounded-lg border border-border bg-background/60 hover:border-primary/40 hover:text-primary px-2.5 py-1 text-[11px] font-bold text-foreground transition-colors"
+            >
+              {item.label}
+              <ArrowRight className="h-3 w-3 opacity-60" />
+            </Link>
+          );
+        })}
       </div>
 
       {/* Tabs + filtro de datas */}

@@ -5,6 +5,11 @@ import { motion, AnimatePresence } from "framer-motion";
 import { supabase } from "@/integrations/supabase-external/client";
 import { Loader2, ExternalLink, MessageSquare, Phone, MapPin, Youtube, Instagram, Facebook, Send, Car, ChevronLeft, ChevronRight, ChevronDown, Twitter, Linkedin } from "lucide-react";
 import { toast } from "sonner";
+import {
+  validateLeadSubmission,
+  validatePublicLinkItem,
+  sanitizeExternalUrl,
+} from "@/lib/pageSanitizers";
 
 export const Route = createFileRoute("/p/$slug")({
   head: () => ({ meta: [{ title: "Link Bio" }] }),
@@ -337,10 +342,17 @@ function PublicLinkPage() {
   const submitLeadMutation = useMutation({
     mutationFn: async (e: React.FormEvent) => {
       e.preventDefault();
-      if (!leadForm.name || !leadForm.phone) throw new Error("Nome e telefone são obrigatórios.");
+      const check = validateLeadSubmission(leadForm);
+      if (!check.valid || !check.sanitized) {
+        throw new Error(check.error || "Preencha nome e telefone válidos.");
+      }
       const { error } = await (supabase as any).from("lead_captures").insert({
-        page_id: page.id, name: leadForm.name, email: leadForm.email, phone: leadForm.phone,
-        vehicle_interest: leadForm.vehicle, source: 'link_page',
+        page_id: page.id,
+        name: check.sanitized.name,
+        email: check.sanitized.email,
+        phone: check.sanitized.phone,
+        vehicle_interest: check.sanitized.vehicle_interest,
+        source: 'link_page',
         utm_source: utms.utm_source || null, utm_medium: utms.utm_medium || null,
         utm_campaign: utms.utm_campaign || null, utm_content: utms.utm_content || null, status: 'novo'
       });
@@ -358,18 +370,21 @@ function PublicLinkPage() {
   });
 
   const handleLinkClick = (item: any) => {
+    const check = validatePublicLinkItem(item);
+    if (!check.valid) return;
     clickMutation.mutate(item.id);
-    if (item.type === 'whatsapp') {
+    if (item.type === 'whatsapp' && check.whatsappDigits) {
       const msg = encodeURIComponent(item.whatsapp_message || 'Olá, vim através do seu link.');
-      const num = item.url.replace(/\D/g, '');
-      window.open(`https://wa.me/${num}?text=${msg}`, '_blank');
-    } else {
-      window.open(item.url, '_blank');
+      window.open(`https://wa.me/${check.whatsappDigits}?text=${msg}`, '_blank', 'noopener,noreferrer');
+    } else if (check.sanitizedUrl) {
+      window.open(check.sanitizedUrl, '_blank', 'noopener,noreferrer');
     }
   };
 
   const handleBannerClick = (banner: any) => {
-    window.open(banner.url, '_blank');
+    const safeUrl = sanitizeExternalUrl(banner?.url);
+    if (!safeUrl) return;
+    window.open(safeUrl, '_blank', 'noopener,noreferrer');
   };
 
   if (isLoading) return <div className="flex min-h-screen items-center justify-center bg-black"><Loader2 className="h-6 w-6 animate-spin text-white" /></div>;
@@ -476,16 +491,14 @@ function PublicLinkPage() {
         {/* Links */}
         <div className="mt-6 w-full space-y-4">
           <AnimatePresence>
-            {items.map((item: any, i: number) => {
-              if (item.type === 'youtube') {
-                const videoId = item.url.split('v=')[1]?.split('&')[0] || item.url.split('youtu.be/')[1]?.split('?')[0];
+            {items
+              .filter((item: any) => validatePublicLinkItem(item).valid)
+              .map((item: any, i: number) => {
+              const validation = validatePublicLinkItem(item);
+              if (item.type === 'youtube' && validation.youtubeId) {
                 return (
                   <motion.div key={item.id} initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: i * 0.1 }} className="w-full overflow-hidden shadow-lg" style={{ borderRadius: btnRadius, border: `1px solid ${accentColor}30` }}>
-                    {videoId ? (
-                      <iframe width="100%" height="200" src={`https://www.youtube.com/embed/${videoId}`} title="YouTube" frameBorder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen></iframe>
-                    ) : (
-                      <div className="p-4 text-white text-center">URL do YouTube Inválida</div>
-                    )}
+                    <iframe width="100%" height="200" src={`https://www.youtube.com/embed/${validation.youtubeId}`} title={item.title || "YouTube"} frameBorder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen></iframe>
                   </motion.div>
                 );
               }

@@ -215,8 +215,8 @@ function StrategyMapPage() {
   const [edges, setEdges] = useState<Edge[]>([]);
   const [selectedNode, setSelectedNode] = useState<Node | null>(null);
 
-  // Status de Salvamento
-  const [saveStatus, setSaveStatus] = useState<"saved" | "saving" | "unsaved">("saved");
+  // Status de Salvamento estrito (ID 32): nunca exibir 'Salvo' em carga vazia ou falha
+  const [saveStatus, setSaveStatus] = useState<"idle" | "saved" | "saving" | "unsaved" | "error">("idle");
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // UI Panels
@@ -303,10 +303,10 @@ function StrategyMapPage() {
       if (ok) {
         setSaveStatus("saved");
       } else {
-        setSaveStatus("unsaved");
+        setSaveStatus("error");
       }
     } catch {
-      setSaveStatus("unsaved");
+      setSaveStatus("error");
     }
   };
 
@@ -329,7 +329,7 @@ function StrategyMapPage() {
       nodesRef.current,
       edgesRef.current
     );
-    setSaveStatus(ok ? "saved" : "unsaved");
+    setSaveStatus(ok ? "saved" : "error");
     if (ok) {
       toast.success("Mapa mental salvo com sucesso!");
       loadMapsList();
@@ -902,7 +902,10 @@ function StrategyMapPage() {
                 <input
                   autoFocus
                   value={mapTitle}
-                  onChange={(e) => setMapTitle(e.target.value)}
+                  onChange={(e) => {
+                    setMapTitle(e.target.value);
+                    setSaveStatus("unsaved");
+                  }}
                   onBlur={() => setIsEditingTitleInline(false)}
                   onKeyDown={(e) => {
                     if (e.key === "Enter") setIsEditingTitleInline(false);
@@ -911,6 +914,7 @@ function StrategyMapPage() {
                 />
                 <button
                   onClick={() => setIsEditingTitleInline(false)}
+                  aria-label="Confirmar título"
                   className="p-1 rounded bg-primary text-primary-foreground"
                 >
                   <Check className="h-3 w-3" />
@@ -920,17 +924,27 @@ function StrategyMapPage() {
               <button
                 onClick={() => setIsEditingTitleInline(true)}
                 className="flex items-center gap-2 group text-left min-w-0"
-                title="Clique para renomear este mapa"
+                title={activeMapId ? `ID #${activeMapId.slice(0, 6)} — Clique para renomear` : "Clique para renomear este mapa"}
               >
-                <span className="text-sm font-bold text-foreground group-hover:text-primary transition truncate max-w-[220px]">
+                <span className="text-sm font-bold text-foreground group-hover:text-primary transition truncate max-w-[200px]">
                   {mapTitle}
                 </span>
+                {activeMapId && (
+                  <span className="text-[10px] font-mono text-muted-foreground/70 shrink-0">
+                    #{activeMapId.slice(0, 6)}
+                  </span>
+                )}
                 <Pencil className="h-3 w-3 text-muted-foreground opacity-0 group-hover:opacity-100 transition" />
               </button>
             )}
 
             {/* Status do Salvamento */}
             <div className="hidden md:flex items-center gap-1 text-[10px] font-mono font-medium">
+              {saveStatus === "idle" && (
+                <span className="inline-flex items-center gap-1 text-muted-foreground bg-muted px-2 py-0.5 rounded-full border border-border">
+                  Aguardando mapa
+                </span>
+              )}
               {saveStatus === "saved" && (
                 <span className="inline-flex items-center gap-1 text-emerald-500 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
                   <Cloud className="h-3 w-3" /> Salvo
@@ -942,9 +956,19 @@ function StrategyMapPage() {
                 </span>
               )}
               {saveStatus === "unsaved" && (
-                <span className="inline-flex items-center gap-1 text-muted-foreground bg-muted px-2 py-0.5 rounded-full border border-border">
-                  <span className="h-1.5 w-1.5 rounded-full bg-amber-400 animate-pulse" /> Pendente
+                <span className="inline-flex items-center gap-1 text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-full border border-amber-500/25">
+                  <span className="h-1.5 w-1.5 rounded-full bg-amber-400 animate-pulse" /> Alterações não salvas
                 </span>
+              )}
+              {saveStatus === "error" && (
+                <button
+                  type="button"
+                  onClick={handleManualSave}
+                  className="inline-flex items-center gap-1 text-destructive bg-destructive/10 px-2 py-0.5 rounded-full border border-destructive/30 hover:bg-destructive/20 transition"
+                  title="Clique para tentar salvar novamente"
+                >
+                  Erro ao salvar · Tentar novamente
+                </button>
               )}
             </div>
 

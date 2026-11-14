@@ -2,7 +2,7 @@
 // MindMapManagerModal.tsx — Central de Gestão Completa de Mapas Mentais
 // ──────────────────────────────────────────────────────────────────────────────
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Brain, Plus, Trash2, Copy, Edit3, Search, Calendar, Folder,
@@ -11,6 +11,7 @@ import {
 import { toast } from "sonner";
 import { type MindMapRecord, duplicateMindMap, renameMindMap, deleteMindMap } from "./mindMapService";
 import { MIND_MAP_TEMPLATES, type MindMapTemplate } from "./mindMapTemplates";
+import { formatCivilDateBR } from "@/lib/metricsDomain";
 
 interface Props {
   isOpen: boolean;
@@ -36,6 +37,15 @@ export function MindMapManagerModal({
   const [editingTitleId, setEditingTitleId] = useState<string | null>(null);
   const [newTitleValue, setNewTitleValue] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !editingTitleId) onClose();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [isOpen, editingTitleId, onClose]);
 
   if (!isOpen) return null;
 
@@ -124,6 +134,7 @@ export function MindMapManagerModal({
           <div className="flex items-center gap-2">
             <button
               onClick={onClose}
+              aria-label="Fechar gerenciador de mapas"
               className="p-1.5 rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground transition"
             >
               <X className="h-5 w-5" />
@@ -239,6 +250,9 @@ export function MindMapManagerModal({
                                   Conta Vinculada
                                 </span>
                               )}
+                              <span className="rounded px-1.5 py-0.5 text-[8px] font-mono bg-muted/60 border border-border text-muted-foreground" title={`ID: ${map.id}`}>
+                                #{map.id.slice(0, 6)}{map.updated_at ? ` · ${formatCivilDateBR(map.updated_at.slice(0, 10))}` : ""}
+                              </span>
                             </div>
 
                             {isActive && (

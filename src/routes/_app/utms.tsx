@@ -4,6 +4,7 @@ import { motion } from "framer-motion";
 import { Copy, Link as LinkIcon, Check } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/PageHeader";
+import { sanitizeExternalUrl } from "@/lib/pageSanitizers";
 
 export const Route = createFileRoute("/_app/utms")({
   head: () => ({ meta: [{ title: "UTM Builder — NC Suite" }] }),
@@ -20,15 +21,20 @@ function UtmPage() {
   const [copied, setCopied] = useState(false);
 
   const params = new URLSearchParams();
-  if (source) params.set("utm_source", source);
-  if (medium) params.set("utm_medium", medium);
-  if (campaign) params.set("utm_campaign", campaign);
-  if (content) params.set("utm_content", content);
-  if (term) params.set("utm_term", term);
-  const finalUrl = url ? `${url}${url.includes("?") ? "&" : "?"}${params.toString()}` : "";
+  if (source.trim()) params.set("utm_source", source.trim());
+  if (medium.trim()) params.set("utm_medium", medium.trim());
+  if (campaign.trim()) params.set("utm_campaign", campaign.trim());
+  if (content.trim()) params.set("utm_content", content.trim());
+  if (term.trim()) params.set("utm_term", term.trim());
+  const sanitizedBase = sanitizeExternalUrl(url);
+  const qs = params.toString();
+  const finalUrl = sanitizedBase ? `${sanitizedBase}${sanitizedBase.includes("?") ? "&" : "?"}${qs}` : "";
 
   const copy = () => {
-    if (!finalUrl) return;
+    if (!finalUrl) {
+      toast.error("Informe uma URL base válida (http/https) para copiar.");
+      return;
+    }
     navigator.clipboard.writeText(finalUrl);
     setCopied(true);
     toast.success("URL copiada!");
