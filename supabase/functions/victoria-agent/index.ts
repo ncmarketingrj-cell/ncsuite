@@ -32,7 +32,31 @@ serve(async (req) => {
     }
 
     const body = await req.json();
-    const { action = "chat", messages, selectedAccountId, title, content, category, query, externalContext, regionalBenchmark, articlesToLearn, feeds: customFeeds, readOnly: explicitReadOnly } = body;
+    const {
+      action = "chat",
+      messages: rawMessages,
+      message: singleMessage,
+      mode,
+      stream: explicitStream,
+      analysisContext,
+      selectedAccountId: rawSelectedAccountId,
+      title,
+      content,
+      category,
+      query,
+      externalContext,
+      regionalBenchmark,
+      articlesToLearn,
+      feeds: customFeeds,
+      readOnly: explicitReadOnly
+    } = body;
+    const messages = Array.isArray(rawMessages) && rawMessages.length > 0
+      ? rawMessages
+      : (typeof singleMessage === "string" && singleMessage.trim()
+          ? [{ role: "user", content: singleMessage.trim() }]
+          : []);
+    const selectedAccountId = rawSelectedAccountId || analysisContext?.ad_account_id || undefined;
+    const shouldReturnJson = explicitStream === false || (typeof singleMessage === "string" && !Array.isArray(rawMessages)) || mode === "json" || mode === "social_audit" || mode === "social_caption";
     const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
 
@@ -224,7 +248,17 @@ serve(async (req) => {
         user_id: user.id,
         category: "strategy",
         title: docTitle,
-        content: docContent
+        content: docContent,
+        author: "Victoria Market Radar",
+        source: "Google News RSS",
+        published_at: collectedAtIso,
+        ingested_at: collectedAtIso,
+        region: "BR",
+        objective: "MARKET_INTEL",
+        evidence_level: "MARKET_NEWS",
+        version: "2026.11.3",
+        approval_status: "PENDING_REVIEW",
+        rejection_reason: "Notícias externas via RSS permanecem em PENDING_REVIEW até curadoria humana e não entram como regra operacional automática no RAG."
       };
       if (embedding) {
         insertPayload.embedding = embedding;
@@ -247,14 +281,14 @@ serve(async (req) => {
         success: true,
         learned_count: items.length,
         document: savedDoc,
-        message: "Victoria absorveu os aprendizados de mercado com sucesso!"
+        message: "Notícias registradas em quarentena (PENDING_REVIEW) para curadoria humana!"
       }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" }
       });
     }
 
     // =========================================================================
-    // AÇÃO: add_knowledge (Geração de embeddings e inserção na base)
+    // AÇÃO: add_knowledge (Geração de embeddings e inserção na base com governança)
     // =========================================================================
     if (action === "add_knowledge") {
       if (!title || !content || !category) {
@@ -267,6 +301,13 @@ serve(async (req) => {
       if (!GEMINI_API_KEY) {
         throw new Error("GEMINI_API_KEY não configurada no servidor");
       }
+
+      const combinedCheck = `${title}\n${content}`;
+      const hasProhibitedClaim = /54%\s*mais\s*(conversas|cliques|leads)|cpl\s+(reduzido|efetivo)\s+pela\s+metade|80%\s*(de\s*)?convers[aã]o|sem\s+consulta\s+(ao\s+)?(spc|serasa)|&lt;a\s+href=/i.test(combinedCheck);
+      const approvalStatus = hasProhibitedClaim ? "REJECTED" : (body.approval_status || "APPROVED");
+      const rejectionReason = hasProhibitedClaim
+        ? "Rejeitado automaticamente pela governança RAG: contém alegação numérica sem fonte primária auditável, promessa de crédito sensível ou HTML bruto."
+        : null;
 
       // 1. Obter o embedding do texto de conteúdo usando o Gemini text-embedding-004
       const embedRes = await fetch(
@@ -302,7 +343,17 @@ serve(async (req) => {
           category,
           title,
           content,
-          embedding
+          embedding,
+          author: body.author || "NC Performance",
+          source: body.source || "Base de Conhecimento NC Suite",
+          url: body.url || null,
+          canonical_url: body.canonical_url || body.url || null,
+          region: body.region || "BR-RJ",
+          objective: body.objective || "ALL",
+          evidence_level: hasProhibitedClaim ? "UNVERIFIED" : (body.evidence_level || "INTERNAL_RULE"),
+          version: "2026.11.3",
+          approval_status: approvalStatus,
+          rejection_reason: rejectionReason
         })
         .select()
         .single();
@@ -568,7 +619,7 @@ Escreva em formato altamente profissional, com dados baseados na série de métr
         {
           title: "Benchmarks CPL, CTR e Frequência — Automotivo RJ 2025-2026",
           category: "strategy",
-          content: `BENCHMARKS CPL (CUSTO POR LEAD) MERCADO AUTOMOTIVO RJ:\n\nVEÍCULOS NOVOS:\n- Excelente: < R$ 15,00\n- Saudável: R$ 15-35,00\n- Atenção: R$ 35-55,00\n- Crítico (pausar e revisar): > R$ 55,00\n\nSEMINOVOS POPULARES (HB20, Ônix, Gol até 5 anos):\n- Excelente: < R$ 18,00\n- Saudável: R$ 18-40,00\n- Atenção: R$ 40-65,00\n- Crítico: > R$ 65,00\n\nSEMINOVOS PREMIUM (BMW, Mercedes, Audi):\n- Excelente: < R$ 35,00\n- Saudável: R$ 35-80,00\n- Atenção: R$ 80-130,00\n- Crítico: > R$ 130,00\n\nCTR (TAXA DE CLIQUE):\n- Ideal: > 1.20%\n- Aceitável: 0.80%-1.20%\n- Crítico: < 0.80% → trocar criativos por fotos reais do pátio imediatamente\nAção imediata CTR baixo: Substituir fotos de catálogo por fotos reais tiradas com celular no pátio, luz natural. Fotos reais convertem 40-60% melhor no segmento automotivo.\n\nFREQUÊNCIA DE EXIBIÇÃO:\n- Ideal: 1.5-2.5 por pessoa\n- Alerta: > 3.0 (criativo saturando o público, renovar)\n- Crítico: > 4.0 → pausar conjunto e reformular segmentação`
+          content: `BENCHMARKS INTERNOS NC PERFORMANCE (REFERÊNCIA INICIAL QUANDO CONTA NÃO TEM HISTÓRICO PRÓPRIO):\n\nVEÍCULOS NOVOS (Campanhas de Leads/Mensagens):\n- Excelente: < R$ 15,00\n- Saudável: R$ 15-35,00\n- Atenção: R$ 35-55,00\n- Crítico (revisar após janela de 3-7 dias): > R$ 55,00\n\nSEMINOVOS POPULARES (HB20, Ônix, Gol até 5 anos):\n- Excelente: < R$ 18,00\n- Saudável: R$ 18-40,00\n- Atenção: R$ 40-65,00\n- Crítico: > R$ 65,00\n\nSEMINOVOS PREMIUM (BMW, Mercedes, Audi):\n- Excelente: < R$ 35,00\n- Saudável: R$ 35-80,00\n- Atenção: R$ 80-130,00\n- Crítico: > R$ 130,00\n\nCTR DE LINK (Campanhas orientadas a clique/conversão):\n- Ideal: > 1.20%\n- Aceitável: 0.80%-1.20%\n- Crítico: < 0.80% → testar fotos reais do pátio em luz natural em vez de imagens genéricas de catálogo.\n\nFREQUÊNCIA DE EXIBIÇÃO (Janela >= 7 dias):\n- Ideal: 1.5-2.5 por pessoa\n- Alerta: > 3.0 (avaliar renovação de criativo)\n- Crítico: > 4.0 → avaliar expansão de público ou renovação de criativos`
         },
         {
           title: "Estrutura de Campanhas Meta Ads — Automotivo",
@@ -593,7 +644,7 @@ Escreva em formato altamente profissional, com dados baseados na série de métr
         {
           title: "Mercado de Seminovos RJ — Guia Estratégico",
           category: "inventory",
-          content: `PANORAMA SEMINOVOS RJ 2025-2026:\n- RJ é o 2º maior mercado de seminovos do Brasil\n- Demanda concentrada: Zona Sul, Barra, Niterói, Nova Iguaçu, Duque de Caxias\n- Ticket médio: R$ 45.000-85.000 (popular) | R$ 120.000-280.000 (premium)\n\nMODELOS MAIS BUSCADOS NO RJ:\n1. Toyota Corolla (XEi, Altis)\n2. Jeep Renegade / Compass\n3. Honda HRV / Civic\n4. Volkswagen T-Cross / Virtus\n5. Hyundai Creta / ix35\n6. Ford Bronco Sport / Territory\n7. Chevrolet Tracker / Onix Plus\n8. BMW Série 3 (premium)\n\nDIFERENCIAIS COMPETITIVOS NOS ANÚNCIOS:\n1. Histórico completo (FIPE, revisões em dia)\n2. Laudo cautelar incluso\n3. Garantia estendida\n4. Financiamento aprovado em 24h\n5. Aceita troca\n6. IPVA e seguro inclusos\n\nGATILHOS DE COMPRA MAIS EFICAZES RJ:\n- "Parcela que cabe no seu bolso"\n- "Sem saída"\n- "Financiamento sem consulta SPC/Serasa"\n- "Entrega em domicílio"\n- "Documentação 100% inclusa"`
+          content: `PANORAMA SEMINOVOS RJ 2025-2026:\n- RJ é o 2º maior mercado de seminovos do Brasil\n- Demanda concentrada: Zona Sul, Barra, Niterói, Nova Iguaçu, Duque de Caxias\n- Ticket médio: R$ 45.000-85.000 (popular) | R$ 120.000-280.000 (premium)\n\nMODELOS MAIS BUSCADOS NO RJ:\n1. Toyota Corolla (XEi, Altis)\n2. Jeep Renegade / Compass\n3. Honda HRV / Civic\n4. Volkswagen T-Cross / Virtus\n5. Hyundai Creta / ix35\n6. Ford Bronco Sport / Territory\n7. Chevrolet Tracker / Onix Plus\n8. BMW Série 3 (premium)\n\nDIFERENCIAIS COMPETITIVOS NOS ANÚNCIOS:\n1. Histórico completo (FIPE, revisões em dia)\n2. Laudo cautelar incluso\n3. Garantia estendida\n4. Análise de financiamento ágil (sujeita a aprovação de crédito)\n5. Avaliação transparente do usado na troca\n6. Condições comerciais claras de IPVA e documentação\n\nGATILHOS DE COMPRA COMPLIANT RJ:\n- "Parcela planejada para o seu orçamento"\n- "Avaliação justa do seu usado na troca"\n- "Simulação rápida de financiamento (sujeita a análise de crédito)"\n- "Laudo cautelar aprovado e histórico revisado"`
         },
         {
           title: "Segmentos de Veículos e Abordagem por Público",
@@ -608,7 +659,7 @@ Escreva em formato altamente profissional, com dados baseados na série de métr
         {
           title: "SLA de Atendimento ao Lead e Script de Abordagem",
           category: "manual",
-          content: `SLA PADRÃO NC PERFORMANCE:\n- WhatsApp: Resposta em até 5 MINUTOS (meta: 2 min)\n- Formulário de site: Ligação em até 15 MINUTOS\n- Lead Ads Meta: Resposta em até 10 MINUTOS\n- E-mail: Resposta em até 2 HORAS\n\nIMPACTO DA DEMORA NA CONVERSÃO:\n- 0-5 min: Taxa 80%+\n- 5-30 min: Taxa 60%\n- 30-60 min: Taxa 40%\n- 1-24h: Taxa 20%\n- Após 24h: < 5%\n\nSCRIPT PRIMEIRO CONTATO WHATSAPP:\n"Oi [Nome]! Aqui é [Consultor] da [Concessionária]. Vi que você demonstrou interesse no [Modelo]. Tenho condições especiais que vão te interessar! Qual o melhor horário para eu te passar os detalhes? 😊"\n\nQUALIFICADORES (perguntar nos primeiros 2 min):\n1. "Você está buscando novo ou seminovo?"\n2. "Tem veículo para dar de entrada/troca?"\n3. "Pensou em financiar ou pagar à vista?"\n4. "Para quando você precisaria do carro?"\n\nSEQUÊNCIA FOLLOW-UP (leads que não responderam):\n- Dia 1: Mensagem inicial\n- Dia 2: Foto específica do carro + link\n- Dia 4: "Oferta especial disponível até [data]"\n- Dia 7: "Última oportunidade, carro pode ser vendido"\n- Dia 14: "Temos novos modelos, posso te mandar?"`
+          content: `SLA PADRÃO NC PERFORMANCE:\n- WhatsApp: Resposta recomendada em até 5 MINUTOS (meta operacional: 2 min)\n- Formulário de site: Contato em até 15 MINUTOS\n- Lead Ads Meta: Resposta em até 10 MINUTOS\n- E-mail: Resposta em até 2 HORAS\n\nDIRETRIZ DE TEMPO DE RESPOSTA:\n- Atendimento nos primeiros 5 minutos preserva a intenção de compra ativa do lead.\n- Demora superior a 30 minutos reduz significativamente a taxa de agendamento presencial.\n\nSCRIPT PRIMEIRO CONTATO WHATSAPP:\n"Oi [Nome]! Aqui é [Consultor] da [Concessionária]. Vi que você demonstrou interesse no [Modelo]. Posso te enviar fotos reais e simular as condições para o seu perfil agora?"\n\nQUALIFICADORES (perguntar nos primeiros 2 min):\n1. "Você está buscando novo ou seminovo?"\n2. "Tem veículo para avaliação na troca?"\n3. "Prefere simular financiamento ou pagamento à vista?"\n4. "Qual melhor dia para ver o carro pessoalmente?"`
         },
         {
           title: "Rotina de Otimização Semanal de Campanhas",
@@ -651,7 +702,14 @@ Escreva em formato altamente profissional, com dados baseados na série de métr
               category: doc.category,
               title: doc.title,
               content: doc.content,
-              embedding
+              embedding,
+              author: "NC Performance",
+              source: "Manual Interno NC Suite",
+              region: "BR-RJ",
+              objective: "ALL",
+              evidence_level: "INTERNAL_RULE",
+              version: "2026.11.3",
+              approval_status: "APPROVED"
             });
             if (error) { errors.push(doc.title); } else { created++; }
           } catch { errors.push(doc.title); }
@@ -664,7 +722,7 @@ Escreva em formato altamente profissional, com dados baseados na série de métr
     }
 
     // =========================================================================
-    // AÇÃO: chat (Modo Chat principal com RAG e Streaming SSE)
+    // AÇÃO: chat (Modo Chat principal com RAG e Streaming SSE ou JSON)
     // =========================================================================
 
     // 0. Obter configurações personalizadas do agente Victoria e nome do usuário
@@ -687,10 +745,43 @@ Escreva em formato altamente profissional, com dados baseados na série de métr
     const userName = cleanFirst ? cleanFirst.charAt(0).toUpperCase() + cleanFirst.slice(1) : "Parceiro";
 
     const userSystemPrompt = vConfig?.system_prompt || null;
-    const userModelName = vConfig?.model_name || "gemini-2.5-flash"; // default inteligente
+    const userModelName = body.model_version || vConfig?.model_name || "gemini-2.5-flash"; // default inteligente
     const userRagThreshold = vConfig?.rag_threshold ? Number(vConfig.rag_threshold) : 0.70;
     const userRagCount = vConfig?.rag_count ? Number(vConfig.rag_count) : 5;
-    const userTemperature = vConfig?.temperature ? Number(vConfig.temperature) : 0.7;
+    // Temperatura determinística (0.2) para análises e diagnósticos; 0.65 apenas para geração criativa de legendas
+    const isCreativeMode = mode === "social_caption";
+    const userTemperature = isCreativeMode
+      ? 0.65
+      : Math.min(0.3, Math.max(0.1, Number(body.temperature ?? 0.2)));
+
+    // Registrar telemetria do VictoriaAnalysisContext se fornecido
+    if (analysisContext && typeof analysisContext === "object" && analysisContext.request_id) {
+      try {
+        await supabase.from("victoria_analysis_logs").insert({
+          user_id: user.id,
+          request_id: String(analysisContext.request_id),
+          analysis_context_hash: String(analysisContext.analysis_context_hash || "ctx_server"),
+          contract_version: String(analysisContext.contract_version || "2026.11.3"),
+          prompt_version: String(analysisContext.prompt_version || "2026.11.3-senior-9part"),
+          model_version: String(userModelName),
+          source_surface: String(analysisContext.source_surface || "victoria_hub"),
+          route: String(analysisContext.route || "/victoria"),
+          ad_account_id: String(analysisContext.ad_account_id || selectedAccountId || ""),
+          entity_level: String(analysisContext.entity_level || "account"),
+          entity_id: String(analysisContext.entity_id || "unknown"),
+          entity_name: String(analysisContext.entity_name || ""),
+          metric_category: String(analysisContext.result_indicator?.category || "UNKNOWN"),
+          official_result_label: String(analysisContext.result_indicator?.cost_label || ""),
+          confidence_level: String(analysisContext.confidence_level || "media"),
+          latency_ms: 0,
+          used_fallback: false,
+          aborted: false,
+          context_snapshot: analysisContext
+        });
+      } catch (_logErr) {
+        // non-blocking
+      }
+    }
 
     // 1. Ad accounts (sem filtro user_id — sync do Meta pode deixar user_id null)
     const { data: allAdAccounts } = await supabase
@@ -891,27 +982,27 @@ Escreva em formato altamente profissional, com dados baseados na série de métr
       });
       switch (cat) {
         case "INSTAGRAM_PROFILE":
-          return { badge: "👤 Visitas ao Perfil IG", category: cat, unitPlural: "visitas ao perfil", costLabel: "Custo/Visita ao Perfil" };
+          return { badge: "👤 Visitas ao Perfil IG", category: cat, unitPlural: "visitas ao perfil", costLabel: "Custo por visita ao perfil" };
         case "LANDING_PAGE_VIEWS":
-          return { badge: "🌐 Page Views / Site", category: cat, unitPlural: "visualizações de página", costLabel: "Custo/Page View" };
+          return { badge: "🌐 Page Views / Site", category: cat, unitPlural: "visualizações da página de destino", costLabel: "Custo por visualização da página de destino" };
         case "MESSAGES":
-          return { badge: "💬 Conversas Meta", category: cat, unitPlural: "conversas iniciadas (Meta)", costLabel: "CPA/Conversa" };
+          return { badge: "💬 Conversas Meta", category: cat, unitPlural: "conversas iniciadas", costLabel: "Custo por conversa" };
         case "LEADS":
-          return { badge: "🎯 Leads/Cadastros", category: cat, unitPlural: "leads/cadastros", costLabel: "CPL/Cadastro" };
+          return { badge: "🎯 Leads/Cadastros", category: cat, unitPlural: "leads", costLabel: "CPL (custo por lead)" };
         case "PURCHASES":
         case "CHECKOUT":
         case "ADD_TO_CART":
-          return { badge: "🛒 Compras/Conversões", category: cat, unitPlural: "conversões de compra", costLabel: "CPA/Compra" };
+          return { badge: "🛒 Compras/Conversões", category: cat, unitPlural: "compras", costLabel: "CPA (custo por compra)" };
         case "REACH":
-          return { badge: "👁️ Alcance", category: cat, unitPlural: "pessoas alcançadas", costLabel: "Custo por 1.000 alcançados" };
+          return { badge: "👁️ Alcance", category: cat, unitPlural: "pessoas alcançadas", costLabel: "Custo por 1.000 pessoas alcançadas" };
         case "LINK_CLICKS":
-          return { badge: "👆 Cliques no Link", category: cat, unitPlural: "cliques no link", costLabel: "CPC (Link)" };
+          return { badge: "👆 Cliques no Link", category: cat, unitPlural: "cliques no link", costLabel: "CPC (custo por clique no link)" };
         case "VIDEO_VIEWS":
-          return { badge: "🎬 Vídeo/ThruPlay", category: cat, unitPlural: "visualizações ThruPlay", costLabel: "CPV/ThruPlay" };
+          return { badge: "🎬 Vídeo/ThruPlay", category: cat, unitPlural: "visualizações ThruPlay", costLabel: "Custo por visualização de vídeo" };
         case "ENGAGEMENT":
-          return { badge: "❤️ Engajamento/Curtidas", category: cat, unitPlural: "engajamentos/curtidas", costLabel: "CPE" };
+          return { badge: "❤️ Engajamento/Curtidas", category: cat, unitPlural: "engajamentos", costLabel: "Custo por engajamento" };
         default:
-          return { badge: "❓ Revisar Objetivo", category: "UNKNOWN", unitPlural: "resultados (revisar)", costLabel: "Custo/Resultado" };
+          return { badge: "❓ Revisar Objetivo", category: "UNKNOWN", unitPlural: "resultados (revisar)", costLabel: "Custo por resultado" };
       }
     };
 
@@ -1290,18 +1381,18 @@ DIRETRIZES TÉCNICAS E ESTRATÉGICAS DE MARKETING AUTOMOTIVO:
    - Para filtrar por cliente: filtre as linhas onde a coluna Cliente contém o nome buscado.
    - "ontem" = ${formattedYesterday} | "fim de semana" = ${lastSat} (sáb) e ${lastSun} (dom) | "hoje" = ${formattedToday}.
    - Se o usuário pedir uma data fora do período carregado, informe que os dados disponíveis são de ${startDateStr} até ${endDateStr} e sugira refinar a pergunta.
-2. **BENCHMARK REGIONAL ATIVO (${regBench.region} - META CPL WHATSAPP: R$ ${Number(regBench.targetCpl).toFixed(2)}):**
-   - **Regra de Ouro da NC Agência no ${regBench.region}:** A média de mercado real para mensagens de WhatsApp de veículos no RJ é de **R$ ${Number(regBench.targetCpl).toFixed(2)}**. TODAS as análises de Victoria devem comparar o CPL das campanhas com essa meta regional.
-   - **🟢 Excelente (Candidata a Escala):** CPL <= R$ ${Number(regBench.targetCpl).toFixed(2)}. Está dentro ou abaixo da meta regional! Sugira escalar verba em 15% a 20% a cada 48h.
-   - **🟡 Atenção (Necessita Otimização):** CPL entre R$ ${(Number(regBench.targetCpl) + 0.01).toFixed(2)} e R$ ${(Number(regBench.targetCpl) * 1.5).toFixed(2)}. Acima da média do RJ. Recomende trocar criativos por vídeos curtos/reels no pátio com som natural do motor e testar públicos abertos.
-   - **🔴 Crítico (Ofensora / Pausar):** CPL > R$ ${(Number(regBench.targetCpl) * 1.5).toFixed(2)}. Estourou muito o teto regional de R$ ${Number(regBench.targetCpl).toFixed(2)}. Recomende pausar conjunto imediatamente para estancar prejuízo e refazer a oferta.
-3. **CTR (Taxa de Cliques) Saudável:**
-   - Ideal: Acima de 1.20% (sinaliza que o criativo/carro é atraente).
-   - Crítico: Abaixo de 0.80% (sugira imediatamente trocar as fotos por fotos REAIS tiradas com celular no pátio da loja). Fotos de catálogo do fabricante não convertem bem.
-4. **Estratégias Reais para Recomendar:**
-   - **Leads no WhatsApp:** Resposta em menos de 5 minutos do comercial (após 15 minutos, 80% do lead é perdido).
-   - **Formulários nativos (Lead Ads):** Perguntas de filtro (ex: "Qual a entrada?", "Tem carro na troca?").
-   - **Campanhas de Seminovos vs Novos:** Carrosséis com fotos reais de múltiplos veículos vs taxa zero e parcelamento facilitado.
+2. **BENCHMARK REGIONAL DE MENSAGENS (${regBench.region} - META CUSTO POR CONVERSA WHATSAPP: R$ ${Number(regBench.targetCpl).toFixed(2)} — APLICÁVEL APENAS A CAMPANHAS DE MENSAGENS):**
+   - **Regra Estrita de Escopo:** A referência de **R$ ${Number(regBench.targetCpl).toFixed(2)}** aplica-se EXCLUSIVAMENTE a campanhas cujo objetivo/evento oficial seja **Mensagens (MESSAGES — conversas iniciadas)**. É TERMINANTEMENTE PROIBIDO aplicar essa meta a campanhas de Alcance (REACH), Visitas ao Perfil (INSTAGRAM_PROFILE), Landing Page Views ou Cliques no Link.
+   - **🟢 Excelente (apenas em Mensagens):** Custo por conversa <= R$ ${Number(regBench.targetCpl).toFixed(2)}. Se a janela tiver >= 3 dias de estabilidade, sugira escalar verba em +15% a +20% a cada 48h.
+   - **🟡 Atenção (apenas em Mensagens):** Custo por conversa entre R$ ${(Number(regBench.targetCpl) + 0.01).toFixed(2)} e R$ ${(Number(regBench.targetCpl) * 1.5).toFixed(2)}. Recomende testar vídeos curtos/tours reais no pátio e revisar a rapidez de resposta no WhatsApp.
+   - **🔴 Crítico (apenas em Mensagens):** Custo por conversa > R$ ${(Number(regBench.targetCpl) * 1.5).toFixed(2)}. Em janela curta (1 dia), recomende monitorar por 72h antes de pausar definitivamente; em janela >= 3–7 dias, recomende revisar oferta/criativo ou pausar conjuntos sem conversão.
+3. **CTR de Link (Taxa de Cliques de Link):**
+   - Em campanhas de Mensagens, Tráfego ou Leads: acima de 1,20% é saudável; abaixo de 0,80% sugere testar fotos/vídeos reais do pátio em vez de artes genéricas.
+   - Em campanhas de **Alcance (REACH / OUTCOME_AWARENESS)**: CTR de link é uma métrica **SECUNDÁRIA**, pois o algoritmo otimiza alcance único a baixo CPM, não cliques. Nunca condene uma campanha de Alcance apenas pelo CTR de link baixo.
+4. **Estratégias Reais e Éticas para Recomendar:**
+   - **Leads no WhatsApp:** Resposta rápida (meta operacional até 5 minutos) preserva a intenção de compra ativa.
+   - **Formulários nativos (Lead Ads):** Perguntas qualificadoras objetivas (ex.: "Tem veículo para avaliação na troca?", "Prefere simular financiamento ou à vista?").
+   - **Compliance Publicitário:** NUNCA sugira promessas enganosas como "Financiamento sem consulta ao SPC/Serasa", "Aprovação garantida 100%" ou percentuais sem fonte primária auditável (como "54% mais conversas" ou "80% de perda").
 5. **AUTONOMIA ABSOLUTA PARA ALTERAR DIAGNÓSTICOS (MENTE OFICIAL DO SISTEMA):**
    - Você comanda a Mente Oficial do Sistema. Você TEM AUTONOMIA TOTAL para reclassificar e alterar o diagnóstico de qualquer campanha, conjunto, criativo ou funil com base no que aprendeu na sua BASE DE CONHECIMENTO RAG e nas notícias/leis do RADAR DE MERCADO.
    - Se uma regra aprendida ou notícia/lei (ex: novas regras do CONTRAN/IPVA/SENATRAN, tendência de mercado ou diretriz tática inserida no RAG) contradisser um diagnóstico padrão ou indicar oportunidade/risco iminente, ALTEIRE O DIAGNÓSTICO explicitamente, citando a fonte/documento da Base de Conhecimento ou do Radar e prescrevendo a ação de ajuste imediato.
@@ -1366,13 +1457,26 @@ REGRAS DE RESPOSTA:
 3. Se o usuário perguntar sobre o fim de semana, ontem, ou datas específicas, calcule e retorne os dados exatos somados da tabela diária e faça uma análise estratégica focada no mercado automotivo.
 4. **AVALIAÇÃO VISUAL DE IMAGENS (MULTIMODALIDADE):**
    - Se o usuário anexar uma imagem à mensagem, comente sobre fotos reais vs catálogo, legibilidade de textos no mobile, oferta e chamadas para ação. Seja construtiva.
-5. **MÉTRICAS CORRETAS POR OBJETIVO — REGRA CRÍTICA:**
-   Use sempre a coluna "Resultado correto pelo objetivo" da seção CAMPANHAS DETALHADAS. Cada campanha já tem o valor calculado certo:
-   - 👁️ *Alcance/Awareness/Vídeo* → resultado = Impressões, custo = CPM (R$/mil impressões). NUNCA chame impressões de "leads".
-   - 💬 *Mensagens/WhatsApp* → resultado = conversas iniciadas, custo = CPA.
-   - 👆 *Cliques/Link/Tráfego* → resultado = visitas/cliques, custo = Custo/Visita.
-   - 🎯 *Conversões/Leads* → resultado = leads gerados, custo = CPL/CPA.
-   Ao responder análises ou "como foi?", cite cada campanha com seu resultado correto e custo/resultado. Responda em formato conversacional natural — não copie templates literalmente.
+5. **MÉTRICAS CORRETAS POR OBJETIVO — REGRA CRÍTICA DE UNIDADES (CONTRATO 2026.11.3):**
+   Use sempre a coluna "Resultado correto pelo objetivo" da seção CAMPANHAS DETALHADAS e respeite estritamente a tabela oficial de indicadores:
+   - 👁️ *Alcance / Reconhecimento (REACH / OUTCOME_AWARENESS)* → resultado primário = **pessoas alcançadas**, indicador oficial de custo = **Custo por 1.000 pessoas alcançadas** `(spend / reach) * 1000`, e secundário = **CPM (Custo por 1.000 impressões)**. **PROIBIDO** chamar esse custo de "CPL", "CPA" ou "Custo por conversa", e **PROIBIDO** compará-lo com o custo por conversa de campanhas de Mensagens!
+   - 💬 *Mensagens / WhatsApp (MESSAGES)* → resultado primário = **conversas iniciadas**, indicador oficial de custo = **Custo por conversa** `spend / messaging_conversation_started_7d`.
+   - 📸 *Visitas ao Perfil do Instagram (INSTAGRAM_PROFILE)* → resultado primário = **visitas ao perfil**, indicador oficial = **Custo por visita ao perfil** (`spend / instagram_profile_visits`). **PROIBIDO** chamar de "CPL".
+   - 🌐 *Visualizações da Página de Destino (LANDING_PAGE_VIEWS)* → resultado primário = **visualizações da página de destino**, indicador oficial = **Custo por visualização da página de destino**.
+   - 👆 *Cliques no Link (LINK_CLICKS)* → resultado primário = **cliques no link**, indicador oficial = **CPC (custo por clique no link)** (`spend / link_clicks`), distinto de todos os cliques (`all_clicks`).
+   - 🎯 *Leads / Cadastros (LEADS)* → resultado primário = **leads**, indicador oficial = **CPL (custo por lead)**.
+   - 🛒 *Compras (PURCHASES)* → resultado primário = **compras**, indicadores oficiais = **CPA (custo por compra)** e **ROAS**.
+   - **PROIBIÇÃO DE COMPARAÇÃO ENTRE UNIDADES DIFERENTES:** Nunca compare grandezas de denominadores diferentes (ex.: CPM por 1.000 impressões com Custo por conversa ou CPL).
+   - **ESTRUTURA OBRIGATÓRIA DE RESPOSTA ANALÍTICA (9 PARTES):**
+     Quando estiver diagnosticando uma campanha, conjunto, anúncio ou conta, comece SEMPRE respondendo explicitamente:
+     **"O que esta campanha foi configurada para otimizar?"**
+     E estruture o diagnóstico em:
+     1. **Resumo executivo** (entidade, período, objetivo, indicador oficial e status geral);
+     2. **Leitura técnica das métricas** (`[FATO OBSERVADO]`: gasto, resultado primário, custo por resultado oficial, impressões, alcance, frequência, cliques de link vs todos os cliques, CTR link vs CTR total, CPM e CPC link);
+     3. **Diagnóstico por hipótese** (separando explicitamente `[FATO OBSERVADO]`, `[INFERÊNCIA]` e `[HIPÓTESE]`);
+     4. **Limitações da análise** (janela curta de 1 dia, campos de criativo/copy/público/CRM ausentes);
+     5. **Recomendações priorizadas** (`[RECOMENDAÇÃO]`: P1, P2, P3 com ação, justificativa, métrica afetada, impacto esperado, risco e condição de reversão — em janela de 1 dia, recomende monitorar antes de pausar definitivamente);
+     6. **Próximas verificações sugeridas**.
 
 6. **RECOMENDAÇÃO DE AÇÃO EM 1-CLIQUE (GOVERNANÇA):**
    - ${isReadOnlyRequest
@@ -1399,20 +1503,23 @@ REGRAS DE RESPOSTA:
    Use apenas uma dessas se e somente se o usuário pediu ação mutável.`}`;
 
     // =========================================================================
-    // 3. EXECUÇÃO RAG (RETRIEVAL-AUGMENTED GENERATION)
+    // 3. EXECUÇÃO RAG CURADO (RETRIEVAL-AUGMENTED GENERATION — APENAS APPROVED)
     // =========================================================================
-    // ─── Injetar documentos de conhecimento no prompt (sem depender de embedding) ─
     let knowledgeCtx = "";
     try {
       const { data: allKnowledge, error: kErr } = await supabase
         .from("victoria_knowledge")
-        .select("category, title, content")
+        .select("category, title, content, source, evidence_level, approval_status")
         .eq("user_id", user.id)
+        .eq("is_active", true)
+        .eq("approval_status", "APPROVED")
+        .order("priority", { ascending: false })
         .order("created_at", { ascending: false })
         .limit(20);
       if (!kErr && allKnowledge && allKnowledge.length > 0) {
         knowledgeCtx = allKnowledge
-          .map((k: any) => `[${String(k.category || "").toUpperCase()}] ${String(k.title || "")}:\n${String(k.content || "").slice(0, 600)}`)
+          .filter((k: any) => k.approval_status === "APPROVED" && k.evidence_level !== "UNVERIFIED" && k.evidence_level !== "OPINION")
+          .map((k: any) => `[${String(k.category || "").toUpperCase()} | Fonte: ${String(k.source || "Manual Interno")} | Evidência: ${String(k.evidence_level || "INTERNAL_RULE")}] ${String(k.title || "")}:\n${String(k.content || "").slice(0, 600)}`)
           .join("\n\n---\n\n");
       }
     } catch (_kErr) {
@@ -1506,8 +1613,16 @@ REGRAS DE RESPOSTA:
 
     let promptWithRAG = userSystemPrompt || defaultSystemPrompt;
     promptWithRAG += `\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nREGRA MANDATÓRIA DE TRATAMENTO & PRECISÃO:\n- Você DEVE se dirigir ao usuário SEMPRE pelo primeiro nome dele: **${userName}**.\n- É TERMINANTEMENTE PROIBIDO utilizar a palavra "Comandante", "Chefe", "Usuário" ou apelidos similares. Trate-o por **${userName}**.\n- Ao cumprimentar no início da resposta, use o nome dele: "Olá, ${userName}!", "Fala, ${userName}!". NUNCA use "Comandante".\n- SEMPRE preserve o nome exato do evento real de cada campanha (ex: "conversas iniciadas", "visitas ao perfil", "visualizações de página", "pessoas alcançadas") e NUNCA troque para "leads de formulário" se o evento for conversa/visita/alcance.\n- Quando resultados forem 0 e custo não calculável, informe "Não calculável" e NUNCA R$ 0,00.\n- ${isReadOnlyRequest ? "MODO SOMENTE LEITURA ATIVO: PROIBIDO emitir qualquer bloco json:action nesta resposta." : "Ações mutáveis exigem proposta estruturada com aprovação humana explícita."}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+    if (analysisContext && typeof analysisContext === "object") {
+      const cat = String(analysisContext.result_indicator?.category || "UNKNOWN");
+      const costLbl = String(analysisContext.result_indicator?.cost_label || "Custo por resultado");
+      const forbidden = Array.isArray(analysisContext.result_indicator?.forbidden_labels)
+        ? analysisContext.result_indicator.forbidden_labels.join(", ")
+        : "";
+      promptWithRAG += `\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nCONTRATO CANÔNICO DE CONTEXTO ATIVO (VictoriaAnalysisContext v${analysisContext.contract_version || "2026.11.3"}):\n- Request ID: ${analysisContext.request_id || "n/a"} | Context Hash: ${analysisContext.analysis_context_hash || "n/a"}\n- Entidade Analisada: [${analysisContext.entity_level || "campaign"}] ${analysisContext.entity_name || ""} (ID: ${analysisContext.entity_id || ""})\n- Conta: ${analysisContext.ad_account_name || ""} (${analysisContext.ad_account_id || ""})\n- Período: ${analysisContext.period?.start_date || ""} a ${analysisContext.period?.end_date || ""} (${analysisContext.period?.days || 1} dia(s))\n- Categoria / Evento Oficial: ${cat} | Indicador Oficial de Custo: **${costLbl}**\n- Rótulos PROIBIDOS para esta entidade: ${forbidden || "Nenhum"}\n- Nível de Confiança Calibrado: **${String(analysisContext.confidence_level || "media").toUpperCase()}** (${analysisContext.confidence_reason || ""})\n- Campos Ausentes: ${Array.isArray(analysisContext.missing_fields) ? analysisContext.missing_fields.join(", ") : "nenhum"}\n- REGRA DE ISOLAMENTO ABSOLUTO: Analise EXCLUSIVAMENTE a entidade "${analysisContext.entity_name || ""}". NUNCA cite nomes, métricas, CPM ou custos de outras campanhas da conta nesta resposta!\n- REGRA DE ABERTURA OBRIGATÓRIA: Inicie sua resposta com a seção **"O que esta campanha foi configurada para otimizar?"** e siga rigorosamente os blocos [FATO OBSERVADO], [INFERÊNCIA], [HIPÓTESE] e [RECOMENDAÇÃO].\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+    }
     if (knowledgeCtx) {
-      promptWithRAG += `\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nBASE DE CONHECIMENTO NC PERFORMANCE (Utilize como verdade absoluta para todas as respostas):\n\n${knowledgeCtx}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+      promptWithRAG += `\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nBASE DE CONHECIMENTO CURADA NC PERFORMANCE (APENAS DOCUMENTOS APROVADOS — Prioridade: 1º Dados Reais da Conta > 2º Metas da Conta > 3º Regras Internas):\n\n${knowledgeCtx}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
     }
     if (retrievedContext && retrievedContext !== knowledgeCtx) {
       promptWithRAG += `\n\nCONHECIMENTO ESPECÍFICO RECUPERADO POR SIMILARIDADE:\n${retrievedContext}`;
@@ -1556,7 +1671,7 @@ REGRAS DE RESPOSTA:
         messages: openAiMessages,
         temperature: userTemperature,
         max_tokens: 8192,
-        stream: true
+        stream: !shouldReturnJson
       };
     } else if (GEMINI_API_KEY) {
       fetchUrl = `https://generativelanguage.googleapis.com/v1beta/openai/chat/completions`;
@@ -1566,9 +1681,23 @@ REGRAS DE RESPOSTA:
         messages: openAiMessages,
         temperature: userTemperature,
         max_tokens: 8192,
-        stream: true
+        stream: !shouldReturnJson
       };
     }
+
+    const sanitizeServerOutput = (rawText: string): string => {
+      let cleaned = String(rawText || "");
+      const activeCat = String(analysisContext?.result_indicator?.category || "");
+      const activeCostLabel = String(analysisContext?.result_indicator?.cost_label || "");
+      if (activeCat === "REACH" || activeCat === "INSTAGRAM_PROFILE" || activeCat === "LANDING_PAGE_VIEWS" || activeCat === "LINK_CLICKS") {
+        cleaned = cleaned.replace(/\bCPL\b/g, activeCostLabel || "Custo por resultado");
+      }
+      cleaned = cleaned
+        .replace(/54%\s*mais\s*(conversas|cliques|leads)/gi, "maior taxa de engajamento qualificado")
+        .replace(/80%\s*(de\s*)?(convers[aã]o|dos?\s+leads?\s+[eé]\s+perdido)/gi, "queda acentuada de aproveitamento comercial")
+        .replace(/financiamento\s+sem\s+consulta\s+(ao\s+)?(spc|serasa)/gi, "análise de financiamento sujeita a aprovação de crédito");
+      return cleaned;
+    };
 
     if (fetchUrl) {
       try {
@@ -1579,6 +1708,24 @@ REGRAS DE RESPOSTA:
         });
 
         if (streamRes.ok) {
+          if (shouldReturnJson) {
+            const jsonPayload = await streamRes.json();
+            const rawReply = jsonPayload?.choices?.[0]?.message?.content || "";
+            const cleanReply = sanitizeServerOutput(rawReply);
+            return new Response(JSON.stringify({
+              reply: cleanReply,
+              diagnosis: cleanReply,
+              content: cleanReply,
+              request_id: analysisContext?.request_id || null,
+              analysis_context_hash: analysisContext?.analysis_context_hash || null,
+              contract_version: "2026.11.3",
+              prompt_version: "2026.11.3-senior-9part",
+              model_version: userModelName,
+              temperature: userTemperature
+            }), {
+              headers: { ...corsHeaders, "Content-Type": "application/json" }
+            });
+          }
           // Repassa a stream de eventos SSE diretamente!
           return new Response(streamRes.body, {
             headers: {
@@ -1591,6 +1738,15 @@ REGRAS DE RESPOSTA:
         } else {
           const errText = await streamRes.text();
           console.error("[VICTORIA] Erro na stream do provedor:", streamRes.status, errText);
+          if (shouldReturnJson) {
+            return new Response(JSON.stringify({
+              error: `Erro do provedor (${streamRes.status}): ${errText.slice(0, 300)}`,
+              request_id: analysisContext?.request_id || null
+            }), {
+              status: 502,
+              headers: { ...corsHeaders, "Content-Type": "application/json" }
+            });
+          }
           // Retorna o erro real no SSE para diagnóstico
           const encoder2 = new TextEncoder();
           const debugMsg = `[ERRO ${streamRes.status}] ${errText.slice(0, 300)}`;

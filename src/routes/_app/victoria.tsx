@@ -1436,13 +1436,13 @@ function VictoriaHubPage() {
                       <div className="p-3.5 rounded-xl border border-border/40 bg-background/50 space-y-1.5">
                         <p className="text-xs font-black text-foreground">🏎️ Fotos no Pátio vs Catálogo</p>
                         <p className="text-[11px] text-muted-foreground leading-relaxed">
-                          Fotos reais com iluminação natural tiradas com celular no showroom geram até 54% mais cliques e leads que imagens 3D perfeitas do fabricante.
+                          Hipótese criativa recomendada para testes A/B: fotos e vídeos reais gravados no pátio da loja tendem a gerar maior percepção de autenticidade do estoque do que imagens genéricas de catálogo.
                         </p>
                       </div>
                       <div className="p-3.5 rounded-xl border border-border/40 bg-background/50 space-y-1.5">
-                        <p className="text-xs font-black text-foreground">⚡ Regra de Resposta em 5 Minutos</p>
+                        <p className="text-xs font-black text-foreground">⚡ Meta Operacional de Atendimento (5 Minutos)</p>
                         <p className="text-[11px] text-muted-foreground leading-relaxed">
-                          Se o lead do WhatsApp não for atendido em até 5 minutos, a probabilidade de fechamento cai em 80%. A agência cobra SLA do comercial.
+                          Diretriz interna de SLA comercial: priorizar o primeiro contato no WhatsApp nos primeiros 5 minutos para preservar a intenção de compra (requer telemetria de CRM para aferição causal).
                         </p>
                       </div>
                       <div className="p-3.5 rounded-xl border border-border/40 bg-background/50 space-y-1.5">

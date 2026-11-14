@@ -236,20 +236,13 @@ Evite aumentar orçamento de **"${inefficientCamp.name}"** (${inefficientCamp.cl
 Pronto para rodar essa otimização?`;
 
         } else if (query.includes("breakdown") || query.includes("idade") || query.includes("gênero") || query.includes("público") || query.includes("segmentação") || query.includes("genero")) {
-          intro = `Análise de público na mesa! Entender com precisão quem está convertendo é o que separa os amadores dos estrategistas seniores de tráfego pago automotivo.`;
+          intro = `### ⚠️ Limitação de Observabilidade — Breakdown Demográfico`;
 
-          body = `\n\n### 👥 Perfil de Conversão (Dados Consolidados):
-Ao auditar nosso histórico total de **${totalConversions.toLocaleString("pt-BR")} conversões**, identifiquei padrões muito claros no comportamento do público:
+          body = `\n\n- **[FATO OBSERVADO]** No snapshot atual desta conta (**${activeCount} campanhas ativas**, gasto consolidado de **R$ ${totalInvest.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}**), os dados sincronizados na tabela \`metrics\` estão agregados por entidade e data, **sem breakdown por idade, gênero ou dispositivo (mobile/desktop)**.\n- **[GOVERNANÇA VICTORIA AI]** Pela disciplina de evidência do sistema, a Victoria AI **não inventa percentuais demográficos** quando esses recortes não constam no payload oficial da Meta Graph API.`;
 
-1. **Faixa Etária de Ouro:** O público de **35 a 54 anos** responde por cerca de **62% do volume de leads qualificados**. É a faixa com maior poder aquisitivo e decisão de compra no nicho de veículos.
-2. **Gênero e Plataforma:** Temos uma divisão equilibrada de **58% Masculino / 42% Feminino** em cliques úteis, mas com conversões de leads mais baratas vindo diretamente do **Instagram Feed** e **Stories** (CTR médio de **1.45%** nesses posicionamentos).
-3. **Plataforma:** O **Mobile** representa **96% das conversões**. Se a nossa página de captura ou quiz de pré-filtragem não carregar em menos de 2 segundos no celular, estamos queimando dinheiro de graça.`;
-
-          conclusion = `\n\n### 🎯 Otimização de Segmentação Recomendada:
-* Crie um conjunto de anúncios dedicado excluindo a faixa de 18-24 anos se a sua meta for venda qualificada (leads muito jovens tendem a apenas especular preço).
-* Garanta que o criativo use um apelo forte de facilidade de aprovação de crédito e financiamento.
-
-Quer que eu monte uma estrutura de copy focada especificamente nessa faixa etária campeã?`;
+          conclusion = `\n\n### 🔍 Como validar este recorte com segurança:
+* Utilize os indicadores observados por campanha (gasto, resultado oficial por objetivo, frequência, CPM e CTR de link) para identificar variações de entrega entre conjuntos.
+* Para auditar público ou posicionamento específico, consulte a configuração do conjunto de anúncios correspondente.`;
 
         } else {
           // Resposta customizada super premium e de alto nível para conversas gerais

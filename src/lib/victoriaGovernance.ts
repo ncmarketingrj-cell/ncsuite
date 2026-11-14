@@ -484,3 +484,104 @@ export function isHomepageOnlyUrl(rawUrl?: string | null): boolean {
     return true;
   }
 }
+
+export function canonicalizeRagUrl(rawUrl?: string | null): string | null {
+  if (!rawUrl) return null;
+  try {
+    const u = new URL(String(rawUrl).trim());
+    if (u.protocol !== "http:" && u.protocol !== "https:") return null;
+    u.hash = "";
+    for (const param of ["utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content", "fbclid", "gclid"]) {
+      u.searchParams.delete(param);
+    }
+    return u.toString().replace(/\/+$/, "");
+  } catch {
+    return null;
+  }
+}
+
+export function computeRagSemanticHash(title: string, content: string): string {
+  const norm = `${ sanitizeRssText(title).toLowerCase() }|${ sanitizeRssText(content).toLowerCase().slice(0, 600) }`;
+  let hash = 2166136261;
+  for (let i = 0; i < norm.length; i++) {
+    hash ^= norm.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return `rag_${(hash >>> 0).toString(16).padStart(8, "0")}`;
+}
+
+export interface RagComplianceAuditResult {
+  compliant: boolean;
+  recommendedApprovalStatus: "APPROVED" | "PENDING_REVIEW" | "REJECTED";
+  recommendedEvidenceLevel: "OFFICIAL_DOC" | "INTERNAL_RULE" | "CASE_STUDY" | "MARKET_NEWS" | "OPINION" | "UNVERIFIED";
+  violations: string[];
+  sanitizedContent: string;
+}
+
+/**
+ * Audita documentos RAG contra alegações universais sem fonte ("54% mais conversas", "CPL pela metade", "80% conversão"),
+ * promessas ilegais/não conformes de crédito ("sem consulta SPC/Serasa") e HTML/URLs truncadas (Seção 7).
+ */
+export function auditRagDocumentCompliance(input: {
+  title: string;
+  content: string;
+  source?: string | null;
+  url?: string | null;
+  isRssIngestion?: boolean;
+}): RagComplianceAuditResult {
+  const violations: string[] = [];
+  const rawContent = String(input.content || "");
+  const rawTitle = String(input.title || "");
+  const combined = `${rawTitle}\n${rawContent}`;
+
+  if (/54%\s+mais\s+(conversas|cliques|leads)/i.test(combined)) {
+    violations.push("UNVERIFIED_UNIVERSAL_STAT_54_PCT");
+  }
+  if (/CPL\s+efetivo\s+pela\s+metade|CPL\s+reduzido\s+pela\s+metade/i.test(combined)) {
+    violations.push("UNVERIFIED_UNIVERSAL_STAT_HALF_CPL");
+  }
+  if (/0-5\s*min\s*(?:→|->|:)\s*80%\+?\s*(?:de\s*)?convers[ãa]o|probabilidade\s+de\s+fechamento\s+cai\s+em\s+80%/i.test(combined)) {
+    violations.push("UNVERIFIED_UNIVERSAL_STAT_80_PCT_SLA");
+  }
+  if (/sem\s+consulta\s+(?:ao\s+)?SPC|sem\s+consulta\s+Serasa|CPF\s+negativado\s+aprovado/i.test(combined)) {
+    violations.push("NON_COMPLIANT_CREDIT_CLAIM_SPC");
+  }
+  if (/&lt;a\s+href=|<a\s+href=/i.test(rawContent)) {
+    violations.push("RAW_UNSANITIZED_HTML_LINK");
+  }
+
+  let sanitizedContent = sanitizeRssText(rawContent)
+    .replace(/sem\s+consulta\s+(?:ao\s+)?SPC(?:\s*\/\s*Serasa)?/gi, "sujeito à análise formal de crédito")
+    .replace(/54%\s+mais\s+(conversas|cliques|leads)/gi, "maior engajamento visual observado em testes internos")
+    .replace(/reduz\s+o\s+CPL\s+efetivo\s+pela\s+metade/gi, "contribui para preservar a intenção do lead");
+
+  if (violations.length > 0) {
+    return {
+      compliant: false,
+      recommendedApprovalStatus: "REJECTED",
+      recommendedEvidenceLevel: "UNVERIFIED",
+      violations,
+      sanitizedContent,
+    };
+  }
+
+  // Coletas RSS nunca entram direto como verdade operacional sem revisão humana (Seção 7)
+  if (input.isRssIngestion) {
+    return {
+      compliant: true,
+      recommendedApprovalStatus: "PENDING_REVIEW",
+      recommendedEvidenceLevel: "MARKET_NEWS",
+      violations: [],
+      sanitizedContent,
+    };
+  }
+
+  return {
+    compliant: true,
+    recommendedApprovalStatus: "APPROVED",
+    recommendedEvidenceLevel: "INTERNAL_RULE",
+    violations: [],
+    sanitizedContent,
+  };
+}
+

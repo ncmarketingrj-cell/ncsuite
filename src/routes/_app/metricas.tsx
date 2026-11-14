@@ -20,7 +20,17 @@ import { VictoriaFloatingChat, type ContextItem } from "@/components/victoria/Vi
 import { useAccountRules, type AccountRule } from "@/hooks/useAccountRulesAndNotes";
 import { listMindMapsByAccount } from "@/components/mindmap/mindMapService";
 import { toast } from "sonner";
-import { supabase } from "@/integrations/supabase-external/client";
+import { supabase, EXTERNAL_SUPABASE_URL, EXTERNAL_SUPABASE_ANON_KEY } from "@/integrations/supabase-external/client";
+import {
+  VictoriaSessionController,
+  generateSeniorStructuredAnalysis,
+  buildSuggestedQuestionsForContext,
+  type VictoriaAnalysisContext,
+} from "@/lib/victoriaContract";
+import {
+  buildContextFromMetricasItem,
+  executeGovernedVictoriaDiagnostic,
+} from "@/lib/victoriaContextGateway";
 import { useAuth } from "@/lib/auth";
 import { hasPermissionAccess, isMasterAdmin } from "@/lib/userHierarchy";
 import { DateRangePicker } from "@/components/DateRangePicker";
@@ -396,7 +406,22 @@ export function getCampaignTemperature(c: any, avgCpl: number): {
     reason: "Performance equilibrada dentro do benchmark operacional"
   };
 }
-function generateLocalDiagnostic(item: any, avgCpl: number): string {
+function generateLocalDiagnostic(item: any, avgCpl: number, options?: { accountId?: string; accountName?: string; dateFrom?: string; dateTo?: string; accountMaxCplTarget?: number | null }): string {
+  const todayIso = new Date().toISOString().slice(0, 10);
+  const ctx = buildContextFromMetricasItem({
+    item,
+    surface: "metricas",
+    route: "/metricas",
+    accountId: options?.accountId || item?.ad_account_id || "all",
+    accountName: options?.accountName || item?.adAccountName || "Conta Meta Ads",
+    dateFrom: options?.dateFrom || todayIso,
+    dateTo: options?.dateTo || todayIso,
+    accountMaxCplTarget: options?.accountMaxCplTarget ?? null,
+    sameObjectiveAvgCost: avgCpl > 0 ? avgCpl : null,
+  });
+  return generateSeniorStructuredAnalysis(ctx);
+}
+function _legacyUnusedDiagnostic(item: any, avgCpl: number): string {
   const { cost, conversions, clicks, impressions, reach, freq, cpl, ctr, cpm, cpc } = item.t;
   const cplStr = cpl > 0 ? `R$ ${cpl.toFixed(2)}` : "N/A";
   const costStr = `R$ ${cost.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`;
@@ -816,6 +841,11 @@ function MetricasCampanhasPage() {
   const [selectedFocusItem, setSelectedFocusItem] = useState<any | null>(null);
   const [aiInsightText, setAiInsightText] = useState("");
   const [isGeneratingInsight, setIsGeneratingInsight] = useState(false);
+  const [inspectorContext, setInspectorContext] = useState<VictoriaAnalysisContext | null>(null);
+  const [inspectorShowData, setInspectorShowData] = useState(false);
+  const [inspectorShowWhy, setInspectorShowWhy] = useState(false);
+  const [inspectorTimedOut, setInspectorTimedOut] = useState(false);
+  const inspectorSessionRef = useRef<VictoriaSessionController>(new VictoriaSessionController());
 
 
 
@@ -1587,14 +1617,38 @@ function MetricasCampanhasPage() {
         target.objective || target.campaigns?.objective,
         target.result_type
       );
+      const activeAccName = adAccounts.find((a: any) => a.id === (target.ad_account_id || accountFilter))?.name || "Conta Meta Ads";
+      const canonicalCtx = buildContextFromMetricasItem({
+        item: {
+          ...target,
+          type: level === "campanhas" ? "campaign" : level === "conjuntos" ? "adset" : "ad",
+        },
+        surface: "floating_chat",
+        route: "/metricas",
+        userId: user?.id ?? null,
+        accountId: target.ad_account_id || accountFilter,
+        accountName: activeAccName,
+        dateFrom: startStr,
+        dateTo: endStr,
+        accountMaxCplTarget: maxCplThreshold,
+        sameObjectiveAvgCost: avgCpl > 0 ? avgCpl : null,
+      });
       setFloatingChatContext({
-        id: target.id,
+        id: target.external_id || target.id,
+        external_id: target.external_id,
+        ad_account_id: target.ad_account_id || accountFilter,
         name: target.name,
         type: level === "campanhas" ? "campaign" : level === "conjuntos" ? "adset" : "ad",
         objective: target.objective,
         resultType: target.result_type,
+        result_type: target.result_type,
+        result_indicator: target.result_indicator,
+        optimization_goal: target.optimization_goal,
+        dateFrom: startStr,
+        dateTo: endStr,
         t: target.t,
         resultDetail,
+        analysisContext: canonicalCtx,
       });
     } else {
       setFloatingChatContext(null);
@@ -1693,35 +1747,59 @@ function MetricasCampanhasPage() {
   const insights = useMemo(() => gerarInsights(enrichedCampaigns, totCost, totConv, avgCpl, avgCtr, avgCpm), [enrichedCampaigns, totCost, totConv, avgCpl, avgCtr, avgCpm]);
 
   const loadAiInsight = async (item: any) => {
+    if (!item) return;
+    inspectorSessionRef.current.abortActive();
     setIsGeneratingInsight(true);
     setAiInsightText("");
+    setInspectorTimedOut(false);
+    setInspectorShowData(false);
+    setInspectorShowWhy(false);
+
+    const activeAccName =
+      adAccounts.find((a: any) => a.id === (item.ad_account_id || accountFilter))?.name ||
+      "Conta Meta Ads";
+
+    const ctx = buildContextFromMetricasItem({
+      item: {
+        ...item,
+        type: item.type || (level === "campanhas" ? "campaign" : level === "conjuntos" ? "adset" : "ad"),
+      },
+      surface: "metricas",
+      route: "/metricas",
+      userId: user?.id ?? null,
+      accountId: item.ad_account_id || accountFilter,
+      accountName: activeAccName,
+      dateFrom: startStr,
+      dateTo: endStr,
+      accountMaxCplTarget: maxCplThreshold,
+      sameObjectiveAvgCost: avgCpl > 0 ? avgCpl : null,
+    });
+
+    setInspectorContext(ctx);
+
     try {
-      const { data, error } = await supabase.functions.invoke("ai-insights", {
-        body: {
-          metrics: {
-            name: item.name,
-            type: item.type,
-            objective: item.objective,
-            spend: item.t.cost,
-            conversions: item.t.conversions,
-            clicks: item.t.clicks,
-            impressions: item.t.impressions,
-            reach: item.t.reach,
-            frequency: item.t.freq,
-            cpl: item.t.cpl,
-            ctr: item.t.ctr,
-            cpm: item.t.cpm,
-            cpc: item.t.cpc,
-          },
-          context: `Campanha de Meta Ads da conta de tráfego, nível: ${item.type}. Período: ${startStr} a ${endStr}.`
-        }
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData?.session?.access_token || null;
+
+      const res = await executeGovernedVictoriaDiagnostic({
+        ctx,
+        controller: inspectorSessionRef.current,
+        endpointUrl: `${EXTERNAL_SUPABASE_URL}/functions/v1/victoria-agent`,
+        authToken: token,
+        anonKey: EXTERNAL_SUPABASE_ANON_KEY,
+        onToken: (partialText) => {
+          setAiInsightText(partialText);
+        },
       });
-      if (error) throw error;
-      setAiInsightText(data?.insight || "Não foi possível obter a análise da Victoria.");
+
+      if (res.aborted) return;
+      if (res.timedOut) {
+        setInspectorTimedOut(true);
+      }
+      setAiInsightText(res.text);
     } catch (e: any) {
       console.error("Erro na Victoria IA:", e);
-      const fallbackText = generateLocalDiagnostic(item, avgCpl);
-      setAiInsightText(fallbackText);
+      setAiInsightText(generateSeniorStructuredAnalysis(ctx));
     } finally {
       setIsGeneratingInsight(false);
     }
@@ -1729,11 +1807,16 @@ function MetricasCampanhasPage() {
 
   useEffect(() => {
     if (selectedFocusItem) {
-      loadAiInsight(selectedFocusItem);
+      void loadAiInsight(selectedFocusItem);
     } else {
+      inspectorSessionRef.current.abortActive();
       setAiInsightText("");
+      setInspectorContext(null);
     }
-  }, [selectedFocusItem]);
+    return () => {
+      inspectorSessionRef.current.abortActive();
+    };
+  }, [selectedFocusItem?.id, selectedFocusItem?.external_id, startStr, endStr, accountFilter]);
 
   // ── Configurações de Gráficos Dinâmicos ──
   const [activeChartTab, setActiveChartTab] = useState<"metricas" | "campanhas">("campanhas");
@@ -3709,7 +3792,7 @@ function MetricasCampanhasPage() {
                               { label: "CTR (Cliques/Impr.)", val: `${selectedFocusItem.t.ctr.toFixed(2)}%`, pct: Math.min(selectedFocusItem.t.ctr / 2 * 100, 100), desc: "Ideal: > 1.0%", color: selectedFocusItem.t.ctr >= 1.5 ? "bg-green-500" : selectedFocusItem.t.ctr >= 0.8 ? "bg-yellow-500" : "bg-red-500" },
                               { label: "Frequência", val: `${selectedFocusItem.t.freq.toFixed(2)}x`, pct: Math.min(selectedFocusItem.t.freq / 4 * 100, 100), desc: "Ideal: 1.5x a 3.0x", color: selectedFocusItem.t.freq > 3.5 ? "bg-red-500" : selectedFocusItem.t.freq > 2.5 ? "bg-yellow-500" : "bg-green-500" },
                               { label: "CPM (Custo por Mil)", val: `R$ ${selectedFocusItem.t.cpm.toFixed(2)}`, pct: Math.min(selectedFocusItem.t.cpm / 50 * 100, 100), desc: "Ideal: R$ 15 a R$ 35", color: selectedFocusItem.t.cpm > 40 ? "bg-red-500" : selectedFocusItem.t.cpm > 25 ? "bg-yellow-500" : "bg-green-500" },
-                              { label: `Custo / Res. (${focusDetail.shortBadge})`, val: selectedFocusItem.t.cpl > 0 ? `R$ ${selectedFocusItem.t.cpl.toFixed(2)}` : "—", pct: selectedFocusItem.t.cpl > 0 ? Math.min(selectedFocusItem.t.cpl / 45 * 100, 100) : 0, desc: focusDetail.costLabel, color: selectedFocusItem.t.cpl > 35 ? "bg-red-500" : selectedFocusItem.t.cpl > 20 ? "bg-yellow-500" : "bg-green-500" },
+                              { label: focusDetail.costLabel, val: selectedFocusItem.t.cpl > 0 ? `R$ ${selectedFocusItem.t.cpl.toFixed(2)}` : "—", pct: selectedFocusItem.t.cpl > 0 ? Math.min(selectedFocusItem.t.cpl / 45 * 100, 100) : 0, desc: focusDetail.costLabel, color: selectedFocusItem.t.cpl > 35 ? "bg-red-500" : selectedFocusItem.t.cpl > 20 ? "bg-yellow-500" : "bg-green-500" },
                             ].map((item, idx) => (
                               <div key={idx} className="bg-white/[0.015] border border-white/[0.04] rounded-xl p-3 space-y-1">
                                 <span className="text-[9px] text-muted-foreground/60">{item.label}</span>
@@ -3755,20 +3838,116 @@ function MetricasCampanhasPage() {
                   )}
 
                   {/* Bloco Diagnóstico IA */}
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <h4 className="text-[10px] font-black uppercase text-muted-foreground/60 tracking-wider flex items-center gap-1.5">
-                      <Sparkles className="h-3 w-3 text-primary animate-pulse" />
-                      Diagnóstico da Victoria IA
-                    </h4>
-                      <button
-                        onClick={() => handleOpenVictoriaDiagnostic(selectedFocusItem)}
-                        className="flex items-center gap-1 text-[10px] font-bold text-primary hover:underline"
-                      >
-                        <Bot className="h-3 w-3" />
-                        Conversar no Chat Flutuante
-                      </button>
+                  <div className="space-y-2.5">
+                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <h4 className="text-[10px] font-black uppercase text-muted-foreground/60 tracking-wider flex items-center gap-1.5">
+                          <Sparkles className="h-3 w-3 text-primary animate-pulse" />
+                          Diagnóstico da Victoria IA
+                        </h4>
+                        {inspectorContext && (
+                          <>
+                            <span className="rounded-full bg-primary/10 px-1.5 py-0.5 text-[8px] font-mono font-bold text-primary border border-primary/20">
+                              Confiança {inspectorContext.confidence_level.toUpperCase()}
+                            </span>
+                            <span className="rounded-full bg-white/5 px-1.5 py-0.5 text-[8px] font-mono text-muted-foreground border border-white/10">
+                              {inspectorContext.analysis_context_hash}
+                            </span>
+                          </>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => void loadAiInsight(selectedFocusItem)}
+                          disabled={isGeneratingInsight}
+                          className="flex items-center gap-1 text-[10px] font-bold text-muted-foreground hover:text-foreground"
+                          title="Regerar análise desta entidade"
+                        >
+                          <RefreshCw className={`h-3 w-3 ${isGeneratingInsight ? "animate-spin" : ""}`} />
+                          Atualizar
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleOpenVictoriaDiagnostic(selectedFocusItem)}
+                          className="flex items-center gap-1 text-[10px] font-bold text-primary hover:underline"
+                        >
+                          <Bot className="h-3 w-3" />
+                          Conversar no Chat Flutuante
+                        </button>
+                      </div>
                     </div>
+
+                    {/* Botões de Transparência: Ver dados usados & Por que esta recomendação */}
+                    {inspectorContext && (
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setInspectorShowData((v) => !v);
+                            setInspectorShowWhy(false);
+                          }}
+                          className="text-[9px] font-bold px-2 py-1 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-muted-foreground hover:text-foreground transition"
+                        >
+                          {inspectorShowData ? "Ocultar dados usados" : "Ver dados usados"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setInspectorShowWhy((v) => !v);
+                            setInspectorShowData(false);
+                          }}
+                          className="text-[9px] font-bold px-2 py-1 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-muted-foreground hover:text-foreground transition"
+                        >
+                          {inspectorShowWhy ? "Ocultar justificativa" : "Por que esta recomendação?"}
+                        </button>
+                      </div>
+                    )}
+
+                    {inspectorShowData && inspectorContext && (
+                      <div className="rounded-xl border border-white/10 bg-zinc-950/90 p-3 text-[10px] font-mono space-y-1">
+                        <p className="text-primary font-bold">
+                          Contrato Canônico v{inspectorContext.contract_version} · Fonte: {inspectorContext.result_indicator.source}
+                        </p>
+                        <p className="text-muted-foreground">
+                          Entidade: <strong className="text-foreground">{inspectorContext.entity_name}</strong> ({inspectorContext.entity_id}) · Período: {inspectorContext.period.date_from} a {inspectorContext.period.date_to} ({inspectorContext.period.days_count}d)
+                        </p>
+                        <p className="text-muted-foreground">
+                          Objetivo: <strong className="text-foreground">{inspectorContext.optimization.odax_objective}</strong> · Evento: {inspectorContext.optimization.official_result_event} · Unidade: {inspectorContext.result_indicator.cost_label} ({inspectorContext.result_indicator.unit})
+                        </p>
+                        <p className="text-muted-foreground">
+                          Spend: R$ {inspectorContext.financial.spend.toFixed(2)} | {inspectorContext.result_indicator.label_plural}: {inspectorContext.raw_metrics.result_value.toLocaleString("pt-BR")} | {inspectorContext.result_indicator.cost_label}: {inspectorContext.raw_metrics.cost_per_result_formatted} | Impr: {inspectorContext.raw_metrics.impressions.toLocaleString("pt-BR")} | Alcance: {inspectorContext.raw_metrics.reach.toLocaleString("pt-BR")} | Cliques Link: {inspectorContext.raw_metrics.link_clicks} | Cliques Totais: {inspectorContext.raw_metrics.all_clicks}
+                        </p>
+                      </div>
+                    )}
+
+                    {inspectorShowWhy && inspectorContext && (
+                      <div className="rounded-xl border border-white/10 bg-zinc-950/90 p-3 text-[10px] space-y-1">
+                        <p className="text-amber-400 font-bold">
+                          Calibração de Confiança ({inspectorContext.confidence_level.toUpperCase()}) & Isolamento de Unidade
+                        </p>
+                        <p className="text-muted-foreground leading-relaxed">
+                          {inspectorContext.confidence_justification}
+                        </p>
+                        <p className="text-muted-foreground leading-relaxed">
+                          <strong>Limitações declaradas:</strong> {inspectorContext.limitations.join(" ")}
+                        </p>
+                      </div>
+                    )}
+
+                    {inspectorTimedOut && (
+                      <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-1.5 flex items-center justify-between text-[10px] text-amber-300">
+                        <span>Tempo limite de 20s atingido; exibindo análise estruturada determinística.</span>
+                        <button
+                          type="button"
+                          onClick={() => void loadAiInsight(selectedFocusItem)}
+                          className="font-bold underline ml-2"
+                        >
+                          Tentar novamente
+                        </button>
+                      </div>
+                    )}
+
                     <div className="rounded-xl border border-primary/20 bg-primary/[0.02] p-4 min-h-[140px] relative overflow-hidden">
                       {isGeneratingInsight ? (
                         <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-background/40 backdrop-blur-[1px]">
@@ -3783,6 +3962,27 @@ function MetricasCampanhasPage() {
                         )}
                       </div>
                     </div>
+
+                    {/* Perguntas sugeridas específicas para o objetivo da campanha */}
+                    {inspectorContext && (
+                      <div className="space-y-1.5 pt-1">
+                        <span className="text-[9px] font-black uppercase tracking-wider text-muted-foreground/60">
+                          Perguntas Sugeridas ({inspectorContext.result_indicator.short_badge})
+                        </span>
+                        <div className="flex flex-wrap gap-1.5">
+                          {buildSuggestedQuestionsForContext(inspectorContext).map((q, qIdx) => (
+                            <button
+                              key={`${inspectorContext.analysis_context_hash}_sq_${qIdx}`}
+                              type="button"
+                              onClick={() => handleOpenVictoriaDiagnostic(selectedFocusItem)}
+                              className="text-left text-[10px] px-2.5 py-1 rounded-lg bg-white/[0.03] hover:bg-white/[0.08] border border-white/10 text-muted-foreground hover:text-foreground transition"
+                            >
+                              {q}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   {/* Rodapé do Inspector com Recomendação rápida */}
@@ -3809,8 +4009,11 @@ function MetricasCampanhasPage() {
           isOpen={isFloatingChatOpen}
           onClose={() => setIsFloatingChatOpen(false)}
           contextItem={floatingChatContext}
+          accountId={accountFilter}
           accountName={adAccounts.find((a: any) => a.id === accountFilter)?.name || "Conta Meta Ads"}
           avgAccountCpl={avgCpl > 0 ? avgCpl : accountBenchmarkCpl}
+          dateFrom={startStr}
+          dateTo={endStr}
         />
       </div>
     </div>

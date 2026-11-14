@@ -25,6 +25,10 @@ import {
   type GovernedActionProposal,
   type ProposalStatus,
 } from "@/lib/victoriaGovernance";
+import {
+  sanitizeVictoriaOutputText,
+  VICTORIA_ANALYTICAL_TEMPERATURE,
+} from "@/lib/victoriaContract";
 
 
 export type Message = {
@@ -220,7 +224,8 @@ export function useVictoriaChat(
     try {
       const { data, error } = await supabase
         .from("victoria_knowledge" as any)
-        .select("id, category, title, content, created_at")
+        .select("id, category, title, content, created_at, approval_status, evidence_level")
+        .neq("approval_status", "REJECTED")
         .order("created_at", { ascending: false });
 
       if (error) throw error;
@@ -690,7 +695,7 @@ export function useVictoriaChat(
 
       // 5. Detectar blocos json:action com bloqueio determinístico em modo somente-leitura (ID 09)
       const parsedBlock = stripJsonActionBlocks(responseText);
-      responseText = parsedBlock.cleanText;
+      responseText = sanitizeVictoriaOutputText(parsedBlock.cleanText);
       let responseAction: any = parsedBlock.parsedAction
         ? buildActionProposal(parsedBlock.parsedAction, {
             accountId: selectedAccountId || null,
@@ -1072,9 +1077,9 @@ export function useVictoriaChat(
         content: "NC Performance é uma agência de tráfego pago especializada em marketing automotivo no Rio de Janeiro. Atendemos concessionárias, revendedoras de seminovos e centros automotivos.\n\nNosso diferencial: velocidade de execução, dados em tempo real e linguagem do setor — não entregamos relatórios genéricos, entregamos diagnósticos precisos com ação imediata.\n\nTom de comunicação:\n- Direto, profissional mas acessível\n- Sempre com dados concretos (CPL, CTR, Leads gerados)\n- Proativo com sugestões de otimização\n- Nunca desculpas: se campanha não performa, apresentamos a solução imediatamente\n\nSlogans: 'Performance em Alta Velocidade', 'Motor de Tráfego Automotivo', 'Leads que convertem em vendas'.\nPosicionamento: Médio-alto tier. Não competimos por preço, competimos por resultado."
       },
       {
-        title: "Benchmarks CPL, CTR e Frequência — Automotivo RJ 2025-2026",
+        title: "Benchmarks Operacionais por Unidade — Automotivo RJ 2025-2026",
         category: "strategy",
-        content: "BENCHMARKS CPL (CUSTO POR LEAD) MERCADO AUTOMOTIVO RJ:\n\nVEÍCULOS NOVOS:\n- Excelente: < R$ 15,00 | Saudável: R$ 15-35 | Atenção: R$ 35-55 | Crítico: > R$ 55\n\nSEMINOVOS POPULARES:\n- Excelente: < R$ 18 | Saudável: R$ 18-40 | Atenção: R$ 40-65 | Crítico: > R$ 65\n\nSEMINOVOS PREMIUM (BMW, Mercedes, Audi):\n- Excelente: < R$ 35 | Saudável: R$ 35-80 | Crítico: > R$ 130\n\nCTR (TAXA DE CLIQUE):\n- Ideal: > 1.20% | Aceitável: 0.80-1.20% | Crítico: < 0.80% → trocar criativos por fotos reais do pátio\nAção CTR baixo: Fotos reais (celular, luz natural, pátio) convertem 40-60% melhor que catálogo.\n\nFREQUÊNCIA DE EXIBIÇÃO:\n- Ideal: 1.5-2.5 | Alerta: > 3.0 (renovar criativos) | Crítico: > 4.0 → pausar conjunto"
+        content: "REFERÊNCIAS INTERNAS DE CUSTO POR CONVERSA / CADASTRO (SOMENTE PARA OBJETIVOS DE MENSAGENS OU LEADS — NUNCA APLICAR A ALCANCE OU VISITAS):\n\nVEÍCULOS NOVOS (CADASTRO/CONVERSA):\n- Faixa saudável de referência: R$ 15,00 a R$ 35,00 | Atenção: R$ 35,00 a R$ 55,00\n\nSEMINOVOS POPULARES (CONVERSA INICIADA WHATSAPP):\n- Referência operacional conforme meta configurada na conta\n\nCTR (LINK):\n- Em campanhas de tráfego/mensagens: > 1.20% indica boa tração direcional; em campanhas de alcance (REACH), o CTR é apenas sinal secundário.\n- Hipótese criativa para teste: alternar fotos e vídeos reais do estoque no pátio para validar ganho de CTR na própria conta.\n\nFREQUÊNCIA DE EXIBIÇÃO:\n- Saudável em janelas de 7 dias: 1.5 a 2.5 | Atenção para repetição: > 3.0"
       },
       {
         title: "Estrutura de Campanhas Meta Ads — Automotivo",
@@ -1104,7 +1109,7 @@ export function useVictoriaChat(
       {
         title: "Mercado de Seminovos RJ — Guia Estratégico 2025-2026",
         category: "inventory",
-        content: "PANORAMA RJ: 2º maior mercado de seminovos do Brasil. Demanda concentrada em Zona Sul, Barra, Niterói, Nova Iguaçu, Duque de Caxias. Ticket médio: R$ 45-85k (popular) | R$ 120-280k (premium).\n\nMODELOS MAIS BUSCADOS NO RJ:\n1. Toyota Corolla (XEi, Altis) 2. Jeep Renegade/Compass 3. Honda HRV/Civic\n4. VW T-Cross/Virtus 5. Hyundai Creta/ix35 6. Chevrolet Tracker/Onix Plus 7. BMW Série 3\n\nDIFERENCIAIS NOS ANÚNCIOS: Histórico FIPE, laudo cautelar, garantia estendida, financiamento 24h, aceita troca, IPVA incluso.\n\nGATILHOS EFICAZES RJ: 'Parcela que cabe no bolso', 'Sem saída', 'Financiamento sem consulta SPC', 'Entrega em domicílio', 'Documentação 100% inclusa'."
+        content: "PANORAMA RJ: 2º maior mercado de seminovos do Brasil. Demanda concentrada em Zona Sul, Barra, Niterói, Nova Iguaçu, Duque de Caxias. Ticket médio: R$ 45-85k (popular) | R$ 120-280k (premium).\n\nMODELOS MAIS BUSCADOS NO RJ:\n1. Toyota Corolla (XEi, Altis) 2. Jeep Renegade/Compass 3. Honda HRV/Civic\n4. VW T-Cross/Virtus 5. Hyundai Creta/ix35 6. Chevrolet Tracker/Onix Plus 7. BMW Série 3\n\nDIFERENCIAIS NOS ANÚNCIOS: Histórico FIPE, laudo cautelar, garantia em contrato, avaliação de usado na troca, condições claras de financiamento (sujeito à análise formal de crédito).\n\nCONFORMIDADE PUBLICITÁRIA: Nunca prometer aprovação garantida de crédito sem análise da instituição financeira."
       },
       {
         title: "Segmentos de Veículos e Abordagem por Público",
@@ -1114,12 +1119,12 @@ export function useVictoriaChat(
       {
         title: "Protocolo de Lançamento de Campanha NC Performance",
         category: "manual",
-        content: "CHECKLIST PRÉ-LANÇAMENTO (48h antes):\n☐ Definir objetivo: Leads, Tráfego ou Conversões\n☐ URL de destino funcional (site, WhatsApp, formulário)\n☐ Pixel Meta instalado e disparando eventos\n☐ Públicos criados: Prospecting, Remarketing, Lookalike\n☐ Mínimo 3 criativos por conjunto\n☐ Budget aprovado com cliente\n☐ Regras automáticas de pausa (CPL > meta × 2)\n☐ WhatsApp ativo para receber leads\n\nLANÇAMENTO: Ativar 6h-8h (melhor leilão). Monitorar 4 primeiras horas.\n\nPÓS 24h: Analisar CPL/CTR. Pausar criativos CTR < 0.5% após 1.000 impressões. Escalar +20% se CPL < meta."
+        content: "CHECKLIST PRÉ-LANÇAMENTO (48h antes):\n☐ Definir objetivo: Leads, Tráfego ou Conversões\n☐ URL de destino funcional (site, WhatsApp, formulário)\n☐ Pixel Meta instalado e disparando eventos\n☐ Públicos criados: Prospecting, Remarketing, Lookalike\n☐ Mínimo 3 criativos por conjunto\n☐ Budget aprovado com cliente\n☐ Regras automáticas de pausa (CPL > meta × 2)\n☐ WhatsApp ativo para receber leads\n\nLANÇAMENTO: Ativar 6h-8h (melhor leilão). Monitorar 4 primeiras horas.\n\nPÓS 24h: Analisar custo na unidade do objetivo e CTR. Avaliar ajustes graduais de até +20% após janela mínima de validação."
       },
       {
         title: "SLA de Atendimento ao Lead e Script de Abordagem",
         category: "manual",
-        content: "SLA NC PERFORMANCE: WhatsApp 5 min (meta 2 min) | Formulário site 15 min | Lead Ads Meta 10 min | E-mail 2h.\n\nIMPACTO DA DEMORA: 0-5 min → 80% conversão | 5-30 min → 60% | 30-60 min → 40% | 1-24h → 20% | após 24h → < 5%\n\nSCRIPT WHATSAPP: 'Oi [Nome]! Aqui é [Consultor] da [Concessionária]. Vi seu interesse no [Modelo]. Tenho condições especiais! Qual o melhor horário? 😊'\n\nQUALIFICADORES (primeiros 2 min): novo ou seminovo? tem troca? à vista ou financiado? para quando precisa?\n\nFOLLOW-UP: Dia 1 → mensagem | Dia 2 → foto + link | Dia 4 → oferta com prazo | Dia 7 → urgência | Dia 14 → novos modelos"
+        content: "SLA OPERACIONAL NC PERFORMANCE: WhatsApp até 5 min (meta operacional 2 min) | Formulário site 15 min | Lead Ads Meta 10 min | E-mail 2h.\n\nPRINCÍPIO OPERACIONAL: Menor tempo de resposta preserva a intenção de contato do lead (a Victoria não observa o CRM diretamente a menos que integrado no contexto).\n\nSCRIPT WHATSAPP: 'Oi [Nome]! Aqui é [Consultor] da [Concessionária]. Vi seu interesse no [Modelo]. Tenho condições especiais! Qual o melhor horário? 😊'\n\nQUALIFICADORES (primeiros 2 min): novo ou seminovo? tem troca? à vista ou financiado (sujeito a crédito)? para quando precisa?\n\nFOLLOW-UP: Dia 1 → mensagem | Dia 2 → foto + link | Dia 4 → oferta com prazo | Dia 7 → retomada | Dia 14 → novos modelos"
       },
       {
         title: "Capacidades e Comandos da Victoria no NC Suite",

@@ -32,20 +32,24 @@ serve(async (req) => {
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY not configured");
 
-    const systemPrompt = `Você é um analista de tráfego pago sênior especializado em performance de anúncios digitais (Meta Ads, Google Ads).
-Sua tarefa é analisar os dados de métricas fornecidos e gerar um insight acionável e estratégico.
+    const systemPrompt = `Você é a Victoria AI (Contrato 2026.11.3), estrategista sênior de tráfego pago especializada em Meta Ads e Google Ads no setor automotivo.
+Sua tarefa é analisar os dados de métricas fornecidos com rigor técnico, governança de unidades e calibração de confiança.
 
-REGRAS:
-1. Seja direto e objetivo — máximo 4 parágrafos.
-2. Comece com um diagnóstico rápido (a performance está boa, mediana ou preocupante).
-3. Identifique o que mais se destaca (positivo ou negativo) nos dados.
-4. Dê 2-3 recomendações práticas de otimização.
-5. Use emojis estratégicos (📈 📉 💡 ⚠️ 🎯 🔥) para facilitar a leitura.
-6. Formate a resposta em markdown.
-7. Se houver dados de CPR (Custo por Resultado), avalie se está dentro de um range saudável.
-8. Se houver dados de CTR, avalie se está acima de 1% (bom) ou abaixo (precisa melhorar).
-9. Responda SEMPRE em português brasileiro.
-10. Contexto do usuário: gestor de tráfego automotivo que trabalha com concessionárias e revendas.`;
+REGRAS OBRIGATÓRIAS:
+1. Sempre inicie respondendo: "O que esta campanha foi configurada para otimizar?"
+2. Respeite estritamente a unidade do objetivo:
+   - Mensagens (MESSAGES): Custo por conversa (conversas iniciadas).
+   - Alcance (REACH / OUTCOME_AWARENESS): Custo por 1.000 pessoas alcançadas (NUNCA chame de CPL!).
+   - Visitas ao perfil (INSTAGRAM_PROFILE): Custo por visita ao perfil (NUNCA chame de CPL!).
+   - Landing Page Views: Custo por visualização da página de destino.
+   - Cliques no link: CPC (custo por clique no link).
+   - Leads (LEADS): CPL (custo por lead).
+3. PROIBIDO comparar métricas de unidades diferentes (ex.: CPM por 1.000 impressões com Custo por conversa ou CPL).
+4. Em campanhas de Alcance, trate CTR de link como métrica secundária (o algoritmo otimiza alcance único, não cliques).
+5. Separe claramente [FATO OBSERVADO], [INFERÊNCIA], [HIPÓTESE] e [RECOMENDAÇÃO].
+6. Calibre a confiança pelo tamanho da janela: em janela de 1 dia, declare confiança baixa/moderada e recomende monitorar antes de pausar definitivamente.
+7. NUNCA invente benchmarks não verificados (como "54% mais conversas", "80% de perda em 5 min" ou "sem consulta SPC/Serasa").
+8. Responda SEMPRE em português brasileiro em Markdown estruturado.`;
 
     const userMessage = `Analise os seguintes dados de performance e gere um insight estratégico:
 
@@ -68,7 +72,7 @@ Gere sua análise agora:`;
           { role: "system", content: systemPrompt },
           { role: "user", content: userMessage },
         ],
-        temperature: 0.7,
+        temperature: 0.2,
         max_tokens: 1000,
       }),
     });
