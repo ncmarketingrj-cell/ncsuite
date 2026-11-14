@@ -83,18 +83,26 @@ serve(async (req) => {
     // Campos separados em dois grupos:
     // - safeFields: universais, não exigem permissão especial
     // - extendedFields: podem falhar se o token não tiver ads_management
-    const safeFields = "id,name,currency,amount_spent,balance,spend_cap"
+    const safeFields = "id,name,currency,amount_spent,balance,spend_cap,is_prepay_account"
     const extendedFields = "funding_source_details,bill_amount_immature"
 
-    // Meta retorna amount_spent em unidade mínima da moeda (centavos para BRL)
-    // mas spend_cap pode vir em unidade maior — tratamos os dois casos
+    // Meta retorna amount_spent e balance na menor unidade (centavos em BRL),
+    // salvo quando string já traz separador decimal.
     const parseAmount = (v: any): number | null => {
-      if (v === undefined || v === null || v === "" || v === "0") return null
-      const n = parseFloat(String(v))
-      if (isNaN(n) || n === 0) return null
-      // Se o valor vier sem casas decimais e for muito grande, assume centavos
-      // Caso contrário (string com "."), assume unidade da moeda diretamente
-      return String(v).includes(".") ? n : n / 100
+      if (v === undefined || v === null || v === "") return null
+      const s = String(v).trim()
+      if (s === "0") return 0
+      const n = parseFloat(s)
+      if (isNaN(n)) return null
+      return s.includes(".") ? n : n / 100
+    }
+
+    const FUNDING_CODE_LABEL: Record<string, string> = {
+      "1": "Cartão de Crédito",
+      "2": "PayPal",
+      "3": "Débito Direto / Transferência",
+      "4": "Cupom / Crédito Meta",
+      "20": "Boleto / Pix / Saldo Pré-Pago",
     }
 
     const results = await Promise.allSettled(
@@ -131,6 +139,18 @@ serve(async (req) => {
           // contas sem histórico ou sem permissão — ignora
         }
 
+        const normalizedFunding = accountBilling.funding_source_details
+          ? {
+              ...accountBilling.funding_source_details,
+              is_prepay_account: Boolean(accountBilling.is_prepay_account),
+              type_label:
+                FUNDING_CODE_LABEL[String(accountBilling.funding_source_details.type ?? "")] ||
+                String(accountBilling.funding_source_details.type || "Não informado"),
+            }
+          : accountBilling.is_prepay_account !== undefined
+          ? { is_prepay_account: Boolean(accountBilling.is_prepay_account) }
+          : null
+
         const snapshot = {
           user_id:          user.id,
           ad_account_id:    accountId,
@@ -140,7 +160,7 @@ serve(async (req) => {
           amount_spent:     parseAmount(accountBilling.amount_spent),
           spend_cap:        parseAmount(accountBilling.spend_cap),
           currency:         accountBilling.currency ?? acc.currency ?? "BRL",
-          funding_source:   accountBilling.funding_source_details ?? null,
+          funding_source:   normalizedFunding,
           bill_immature:    parseAmount(accountBilling.bill_amount_immature),
           transactions:     transactions.map(tx => ({
             id:             tx.id,

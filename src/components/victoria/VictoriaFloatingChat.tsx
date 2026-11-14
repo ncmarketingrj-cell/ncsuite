@@ -146,8 +146,8 @@ Dados Reais da Campanha Selecionada:
 - Objetivo / Conversão Real: ${contextItem?.resultDetail?.shortBadge || contextItem?.objective || "MENSAGENS"} (${resLabel})
 - Investimento Gasto: R$ ${cost.toFixed(2)}
 - Resultados Entregues: ${convs} ${resLabel}
-- Custo por Resultado (CPL/CPA): R$ ${cpl > 0 ? cpl.toFixed(2) : "0,00"} ${contextItem?.resultDetail?.costLabel ? `(${contextItem.resultDetail.costLabel})` : ""}
-- CPL Médio da Conta: R$ ${avgAccountCpl > 0 ? avgAccountCpl.toFixed(2) : "5,00"} (Benchmark automotivo RJ/SP)
+- Custo por Resultado (${contextItem?.resultDetail?.costLabel || "CPL/CPA"}): ${convs > 0 && cpl > 0 ? `R$ ${cpl.toFixed(2)}` : "Não calculável (0 resultados)"}
+- Média/Referência da Conta: ${avgAccountCpl > 0 ? `R$ ${avgAccountCpl.toFixed(2)}` : "Não calculável (sem referência configurada)"}
 - CTR Médio: ${ctr.toFixed(2)}%
 - Frequência: ${freq.toFixed(1)}x
 - CPM: R$ ${cpm.toFixed(2)}

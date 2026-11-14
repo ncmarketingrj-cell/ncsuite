@@ -25,9 +25,23 @@ serve(async (req) => {
     }
 
     const body = await req.json();
-    const { action = "chat", messages, selectedAccountId, title, content, category, query, externalContext, regionalBenchmark, articlesToLearn, feeds: customFeeds } = body;
+    const { action = "chat", messages, selectedAccountId, title, content, category, query, externalContext, regionalBenchmark, articlesToLearn, feeds: customFeeds, readOnly: explicitReadOnly } = body;
     const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
+
+    const detectServerReadOnly = (msgs: any[], explicitFlag?: boolean): boolean => {
+      if (explicitFlag === true) return true;
+      const lastText = Array.isArray(msgs) && msgs.length > 0 ? String(msgs[msgs.length - 1]?.content || "") : "";
+      if (!lastText.trim()) return true;
+      if (/somente\s+leitura|apenas\s+analis|s[oó]\s+analis|sem\s+alterar|n[aã]o\s+alter|n[aã]o\s+execut|n[aã]o\s+paus|sem\s+pausar|sem\s+editar|somente\s+diagn[oó]stico|apenas\s+relat[oó]rio/i.test(lastText)) {
+        return true;
+      }
+      if (/\bpausar\b|\bpause\b|\bescalar\s+(verba|or[çc]amento|campanha)|\b(aumentar|aumente|reduzir|reduza|ajustar|ajuste|alterar|altere|atualizar|atualize)\s+(o\s+|a\s+)?(verba|or[çc]amento|budget)|\bclonar\s+funil\b|\baprovo\b/i.test(lastText)) {
+        return false;
+      }
+      return true;
+    };
+    const isReadOnlyRequest = detectServerReadOnly(messages, explicitReadOnly);
 
     // =========================================================================
     // AÇÃO: fetch_market_intel (Pesquisa de Mercado, Marketing e Leis em Tempo Real - R$ 0,00)
@@ -155,12 +169,26 @@ serve(async (req) => {
         });
       }
 
-      // Sintetizar os principais pontos em documentos concisos de estratégia
+      // Sintetizar apenas metadados editoriais reais e excertos sanitizados (ID 26)
+      const collectedAtIso = new Date().toISOString();
       const nowStr = new Date().toLocaleDateString("pt-BR");
-      const summaryContent = items.map((art: any) => `- [${art.source}] ${art.title}\n  Contexto: ${art.snippet}\n  Link: ${art.link}`).join("\n\n");
+      const sanitizeXmlText = (v?: string) => String(v || "").replace(/<!\[CDATA\[([\s\S]*?)\]\]>/gi, "$1").replace(/<[^>]+>/g, " ").replace(/&amp;/g, "&").replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&nbsp;/g, " ").replace(/\s+/g, " ").trim();
+      const summaryContent = items.map((art: any) => {
+        const cleanSource = sanitizeXmlText(art.source) || "Fonte externa";
+        const cleanTitle = sanitizeXmlText(art.title);
+        const cleanExcerpt = sanitizeXmlText(art.snippet);
+        const linkStr = String(art.link || "").trim();
+        let isHomepageOnly = true;
+        try {
+          const u = new URL(linkStr);
+          isHomepageOnly = (u.pathname.replace(/\/+$/, "") === "" && !u.search);
+        } catch {}
+        const sourceUrlNote = isHomepageOnly ? `${linkStr || "sem-url"} [referência de portal — não usar como prova numérica]` : linkStr;
+        return `- [${cleanSource}] ${cleanTitle}\n  Publicado em: ${art.pubDate || "data não informada"} | Coletado em: ${collectedAtIso}\n  Excerto: ${cleanExcerpt}\n  URL: ${sourceUrlNote}`;
+      }).join("\n\n");
       
       const docTitle = `[RADAR MERCADO AUTOMOTIVO] Tendências & Lançamentos — ${nowStr}`;
-      const docContent = `SÍNTESE DE MERCADO E NOTÍCIAS AUTOMOTIVAS COLETADAS EM TEMPO REAL (${nowStr}):\n\n${summaryContent}\n\nDIRETRIZES PARA GESTÃO DE TRÁFEGO PAGO AUTOMOTIVO:\n- Alinhar anúncios com os modelos e notícias em alta.\n- Ofertas agressivas de seminovos devem aproveitar a busca por IPVA, taxa zero e financiamento ágil.\n- Monitorar CPL regional (especialmente no Rio de Janeiro com meta estrita de R$ 5,00 por conversa de WhatsApp).\n- Criativos dinâmicos com fotos de estoque real batem catálogos estáticos.`;
+      const docContent = `SÍNTESE DE NOTÍCIAS COLETADAS EM TEMPO REAL (${nowStr}):\n\n${summaryContent}\n\nDIRETRIZES DE GOVERNANÇA:\n- Cite apenas os excertos e URLs específicas registradas acima como evidência editorial.\n- Nunca invente percentuais ou metas de CPL fora dos dados reais da conta ou metas configuradas.`;
 
       let embedding: number[] | null = null;
       if (GEMINI_API_KEY) {
@@ -363,10 +391,10 @@ serve(async (req) => {
         throw new Error("GEMINI_API_KEY não configurada no servidor");
       }
 
-      // 1. Buscar detalhes da campanha
+      // 1. Buscar detalhes da campanha incluindo objetivo
       const { data: campaign, error: campErr } = await supabase
         .from("campaigns")
-        .select("id, name, daily_budget, budget_currency, ad_account_id, platform")
+        .select("id, name, objective, daily_budget, budget_currency, ad_account_id, platform")
         .eq("id", campaignId)
         .single();
 
@@ -377,14 +405,14 @@ serve(async (req) => {
         });
       }
 
-      // 2. Buscar métricas dos últimos 7 dias
+      // 2. Buscar métricas dos últimos 7 dias preservando result_type
       const sevenDaysAgo = new Date();
       sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
       const startStr = sevenDaysAgo.toISOString().split("T")[0];
 
       const { data: metrics, error: metErr } = await supabase
         .from("metrics")
-        .select("cost, conversions, clicks, impressions, reach, date, frequency")
+        .select("cost, conversions, clicks, impressions, reach, date, frequency, result_type")
         .eq("campaign_id", campaignId)
         .gte("date", startStr)
         .order("date", { ascending: true });
@@ -393,9 +421,9 @@ serve(async (req) => {
         throw metErr;
       }
 
-      // 3. Formatar dados de métricas para o LLM
+      // 3. Formatar dados de métricas para o LLM preservando unidade real
       const formattedMetrics = (metrics || []).map((m: any) => 
-        `Data: ${m.date} | Gasto: R$ ${Number(m.cost || 0).toFixed(2)} | Cliques: ${m.clicks || 0} | Impressões: ${m.impressions || 0} | Leads/Conv: ${m.conversions || 0} | Freq: ${Number(m.frequency || 0).toFixed(2)}`
+        `Data: ${m.date} | TipoResultado: ${m.result_type || campaign.objective || "N/A"} | Gasto: R$ ${Number(m.cost || 0).toFixed(2)} | Cliques: ${m.clicks || 0} | Impressões: ${m.impressions || 0} | Alcance: ${m.reach || 0} | Resultados: ${m.conversions || 0} | Freq: ${Number(m.frequency || 0).toFixed(2)}`
       ).join("\n");
 
       // 4. Montar o prompt de diagnóstico causal de orçamento do nicho automotivo
@@ -668,12 +696,23 @@ Escreva em formato altamente profissional, com dados baseados na série de métr
     // 2. Campanhas — igual ao dashboard (sem filtro user, filtra por ad_account se selecionado)
     let campsQuery = (supabase as any)
       .from("campaigns")
-      .select("id, name, status, budget, platform, ad_account_id, client_id, clients(id, name)");
+      .select("id, name, status, objective, budget, platform, ad_account_id, client_id, clients(id, name)");
     if (selectedAccountId) {
       campsQuery = campsQuery.eq("ad_account_id", selectedAccountId);
     }
     const { data: campaignsData, error: campsErr } = await campsQuery;
     if (campsErr) console.error("Error fetching campaigns:", campsErr);
+
+    // 2b. Buscar meta configurada na tabela alert_thresholds (precedência de metas ID 27)
+    let accountThresholdCpl: number | null = null;
+    try {
+      let thrQ = supabase.from("alert_thresholds").select("ad_account_id, max_cpl").eq("is_active", true);
+      if (selectedAccountId) thrQ = thrQ.eq("ad_account_id", selectedAccountId);
+      const { data: thrData } = await thrQ.limit(1).maybeSingle();
+      if (thrData?.max_cpl && Number(thrData.max_cpl) > 0) {
+        accountThresholdCpl = Number(thrData.max_cpl);
+      }
+    } catch {}
 
     const allCampaigns: any[] = campaignsData || [];
     const campaignInfoMap = new Map<string, any>(allCampaigns.map((c: any) => [c.id, c]));
@@ -773,7 +812,7 @@ Escreva em formato altamente profissional, com dados baseados na série de métr
     if (campaignIds.length > 0) {
       let metricsQ = supabase
         .from("metrics")
-        .select("cost, conversions, clicks, impressions, reach, date, campaign_id")
+        .select("cost, conversions, clicks, impressions, reach, date, campaign_id, result_type")
         .in("campaign_id", campaignIds)
         .gte("date", startDateStr)
         .lte("date", endDateStr)
@@ -783,20 +822,45 @@ Escreva em formato altamente profissional, com dados baseados na série de métr
       else dbMetrics = data || [];
     }
 
-    // Detecta objetivo da campanha pelo nome (igual ao detectObjective do relatorios.tsx)
-    const detectObjective = (campName: string): string => {
-      const n = campName.toLowerCase();
-      if (/atendimento|mensagem|whatsapp|msg|conversa/.test(n)) return "💬 Mensagens";
-      if (/clique|click|link|trafego|site|cardapio|visita/.test(n)) return "👆 Cliques";
-      if (/compra|conversao|venda|pedido|checkout|leads|concluido/.test(n)) return "🎯 Conversões";
-      if (/alcance|reconhecimento|reach|brand|audiencia|awareness|video/.test(n)) return "👁️ Alcance";
-      return "🎯 Conversões";
+    // Classificador alinhado ao domínio compartilhado preservando evento real (ID 12)
+    const classifyEventForVictoria = (campName: string, rawObj = "", resultType = ""): {
+      badge: string;
+      category: "MESSAGES" | "PROFILE_VISITS" | "LANDING_PAGE_VIEWS" | "LINK_CLICKS" | "LEADS" | "REACH" | "PURCHASE" | "OTHER";
+      unitPlural: string;
+      costLabel: string;
+    } => {
+      const rt = (resultType || "").toUpperCase();
+      const obj = (rawObj || "").toUpperCase();
+      const n = (campName || "").toUpperCase();
+      if (/PROFILE_VISIT|IG_PROFILE|VISITA.*PERFIL/.test(rt) || /VISITAS AO PERFIL|SEGUIDORES|PERFIL/.test(n)) {
+        return { badge: "👤 Visitas ao Perfil", category: "PROFILE_VISITS", unitPlural: "visitas ao perfil", costLabel: "Custo/Visita ao Perfil" };
+      }
+      if (/LANDING_PAGE|OMNICHANNEL_LPV|LPV/.test(rt) || (obj.includes("TRAFFIC") && /LPV|SITE/.test(n))) {
+        return { badge: "🌐 Page Views", category: "LANDING_PAGE_VIEWS", unitPlural: "visualizações de página", costLabel: "Custo/Page View" };
+      }
+      if (/MESSAGING_CONVERSATION|WHATSAPP|MENSAGEM/.test(rt) || /MSG|WPP|WHATSAPP|MENSAG/.test(n)) {
+        return { badge: "💬 Conversas Meta", category: "MESSAGES", unitPlural: "conversas iniciadas (Meta)", costLabel: "CPA/Conversa" };
+      }
+      if (/LEAD|CADASTRO/.test(rt) || obj.includes("LEAD")) {
+        return { badge: "🎯 Leads/Cadastros", category: "LEADS", unitPlural: "leads/cadastros", costLabel: "CPL/Cadastro" };
+      }
+      if (/PURCHASE|COMPRA|CHECKOUT/.test(rt) || obj.includes("SALES") || /COMPRA|VENDA/.test(n)) {
+        return { badge: "🛒 Compras/Conversões", category: "PURCHASE", unitPlural: "conversões de compra", costLabel: "CPA/Compra" };
+      }
+      if (/REACH|ALCANCE|IMPRESSION/.test(rt) || obj.includes("AWARENESS") || /ALCANCE|RECONHECIMENTO|AWARENESS|REACH/.test(n)) {
+        return { badge: "👁️ Alcance", category: "REACH", unitPlural: "pessoas alcançadas", costLabel: "Custo por 1.000 alcançados" };
+      }
+      if (/LINK_CLICK|CLIQUE/.test(rt) || obj.includes("TRAFFIC") || /CLIQUE|TRAFEGO|VISITA/.test(n)) {
+        return { badge: "👆 Cliques", category: "LINK_CLICKS", unitPlural: "cliques no link", costLabel: "CPC" };
+      }
+      return { badge: "📊 Resultados", category: "OTHER", unitPlural: "resultados", costLabel: "Custo/Resultado" };
     };
 
-    // 4. Process metrics — campaign map com objetivo detectado
+    // 4. Process metrics — campaign map com evento e unidade reais (IDs 11 e 12)
     const campaignMap = new Map<string, {
       name: string; status: string; budget: number; platform: string;
-      clientName: string; adAccountName: string; objective: string;
+      clientName: string; adAccountName: string; rawObjective: string; resultType: string;
+      classification: ReturnType<typeof classifyEventForVictoria>;
       cost: number; conversions: number; clicks: number; impressions: number; reach: number;
     }>();
 
@@ -807,15 +871,22 @@ Escreva em formato altamente profissional, com dados baseados na série de métr
       if (!camp) return;
       const clientName = (camp.clients as any)?.name || adAccountNameMap.get(camp.ad_account_id) || "Sem Cliente";
       const adAccountName = adAccountNameMap.get(camp.ad_account_id) || camp.ad_account_id || "—";
+      const rt = m.result_type || "";
       const existing = campaignMap.get(campId) || {
         name: camp.name,
         status: camp.status?.toUpperCase() || "PAUSED",
         budget: Number(camp.budget || 0),
         platform: camp.platform || "Meta Ads",
         clientName, adAccountName,
-        objective: detectObjective(camp.name || ""),
+        rawObjective: camp.objective || "",
+        resultType: rt,
+        classification: classifyEventForVictoria(camp.name || "", camp.objective || "", rt),
         cost: 0, conversions: 0, clicks: 0, impressions: 0, reach: 0
       };
+      if (!existing.resultType && rt) {
+        existing.resultType = rt;
+        existing.classification = classifyEventForVictoria(camp.name || "", camp.objective || "", rt);
+      }
       existing.cost += Number(m.cost || 0);
       existing.conversions += Number(m.conversions || 0);
       existing.clicks += Number(m.clicks || 0);
@@ -825,28 +896,36 @@ Escreva em formato altamente profissional, com dados baseados na série de métr
     });
 
     const campaigns = Array.from(campaignMap.entries()).map(([id, c]) => {
-      const isClick  = c.objective.includes("Cliques");
-      const isReach  = c.objective.includes("Alcance");
-      const resultValue = isClick ? c.clicks : isReach ? c.impressions : c.conversions;
-      const costPerRes  = resultValue > 0 ? (isReach ? (c.cost / resultValue) * 1000 : c.cost / resultValue) : 0;
-      const resultLabel = isClick ? "Visitas" : isReach ? "Impressões" : "Resultados/Leads";
-      const costLabel   = isClick ? "Custo/Visita" : isReach ? "CPM" : "CPL/CPA";
+      const isReach = c.classification.category === "REACH";
+      const isClick = c.classification.category === "LINK_CLICKS";
+      const resultValue = isReach
+        ? (c.reach > 0 ? c.reach : c.conversions)
+        : isClick && c.conversions <= 0
+        ? c.clicks
+        : c.conversions;
+      const costPerRes: number | null = resultValue > 0
+        ? (isReach ? (c.cost / resultValue) * 1000 : c.cost / resultValue)
+        : null;
+      const costPerResFormatted = costPerRes !== null ? `R$${costPerRes.toFixed(2)}` : "Não calculável";
+      const resultLabel = c.classification.unitPlural;
+      const costLabel = c.classification.costLabel;
       const ctr = c.impressions > 0 ? (c.clicks / c.impressions) * 100 : 0;
       return {
         id, name: c.name, status: c.status, budget: c.budget,
         platform: c.platform, clientName: c.clientName, adAccountName: c.adAccountName,
-        objective: c.objective,
+        objective: c.classification.badge,
+        category: c.classification.category,
         totals: {
           cost: c.cost, conversions: c.conversions, clicks: c.clicks,
           impressions: c.impressions, reach: c.reach,
-          resultValue, costPerRes, resultLabel, costLabel, ctr
+          resultValue, costPerRes, costPerResFormatted, resultLabel, costLabel, ctr
         }
       };
     });
 
     const totalInvest = campaigns.reduce((s, c) => s + c.totals.cost, 0);
 
-    // Resumo por cliente com métricas corretas por objetivo
+    // Resumo por cliente preservando cálculo seguro contra divisão por zero (ID 11)
     const clientSummaryMap = new Map<string, { invest: number; results: number; campaigns: string[] }>();
     campaigns.forEach(c => {
       const key = c.clientName;
@@ -861,15 +940,15 @@ Escreva em formato altamente profissional, com dados baseados na série de métr
       ? Array.from(clientSummaryMap.entries())
           .sort((a, b) => b[1].invest - a[1].invest)
           .map(([name, d]) => {
-            const cpa = d.results > 0 ? d.invest / d.results : 0;
-            return `- ${name} | Invest: R$${d.invest.toFixed(2)} | Resultados: ${d.results} | CPA: R$${cpa.toFixed(2)} | Campanhas: ${d.campaigns.slice(0,3).join(", ")}`;
+            const cpaText = d.results > 0 ? `R$${(d.invest / d.results).toFixed(2)}` : "Não calculável";
+            return `- ${name} | Invest: R$${d.invest.toFixed(2)} | Resultados agregados: ${d.results} | Custo médio ref.: ${cpaText} | Campanhas: ${d.campaigns.slice(0,3).join(", ")}`;
           }).join("\n")
       : "Nenhum dado de cliente disponível.";
 
-    // Contexto detalhado por campanha com objetivo e métrica correta
+    // Contexto detalhado por campanha com evento real e custo formatado sem 0 artificial
     const contextData = campaigns.length > 0
       ? campaigns.map(c =>
-          `- [${c.clientName}] ${c.name} | ${c.objective} | ${c.status} | Invest: R$${c.totals.cost.toFixed(2)} | ${c.totals.resultLabel}: ${c.totals.resultValue} | ${c.totals.costLabel}: R$${c.totals.costPerRes.toFixed(2)} | Alcance: ${c.totals.reach} | Impressões: ${c.totals.impressions} | CTR: ${c.totals.ctr.toFixed(2)}%`
+          `- [${c.clientName}] ${c.name} | ${c.objective} | ${c.status} | Invest: R$${c.totals.cost.toFixed(2)} | ${c.totals.resultLabel}: ${c.totals.resultValue} | ${c.totals.costLabel}: ${c.totals.costPerResFormatted} | Alcance: ${c.totals.reach} | Impressões: ${c.totals.impressions} | CTR: ${c.totals.ctr.toFixed(2)}%`
         ).join("\n")
       : "Nenhuma campanha com dados no período selecionado.";
 
@@ -909,11 +988,11 @@ Escreva em formato altamente profissional, com dados baseados na série de métr
       });
       tpl += `━━━━━━━━━━━━━━━━━━━━\n*DETALHAMENTO DE CAMPANHAS*\n━━━━━━━━━━━━━━━━━━━━\n\n`;
       campaigns.sort((a,b) => b.totals.cost - a.totals.cost).forEach(c => {
-        const isReach = c.objective.includes("Alcance");
+        const isReach = c.category === "REACH";
         tpl += `📌 *${c.name.toUpperCase()}*\n`;
         tpl += `   💵 Invest: R$ ${fmt(c.totals.cost)}\n`;
-        tpl += `   📈 ${c.totals.resultLabel}: ${fmtN(c.totals.resultValue)}${isReach ? " impr." : ""}\n`;
-        tpl += `   💲 ${c.totals.costLabel}: R$ ${fmt(c.totals.costPerRes)}\n`;
+        tpl += `   📈 ${c.totals.resultLabel}: ${fmtN(c.totals.resultValue)}${isReach ? " alc." : ""}\n`;
+        tpl += `   💲 ${c.totals.costLabel}: ${c.totals.costPerRes !== null ? `R$ ${fmt(c.totals.costPerRes)}` : "Não calculável"}\n`;
         if (c.totals.reach > 0) tpl += `   👥 Alcance: ${fmtN(c.totals.reach)}\n`;
         tpl += `\n`;
       });
@@ -1076,18 +1155,31 @@ DATA DE REFERÊNCIA DO SISTEMA (Use isso para saber quais datas correspondem a '
       const conversions = Number(m.conversions || 0);
       const clicks = Number(m.clicks || 0);
       const impressions = Number(m.impressions || 0);
-      return `${m.date} | ${clientName} | ${platform} | ${campName} | Gasto: R$ ${cost.toFixed(2)} | Leads: ${conversions} | Cliques: ${clicks} | Impressões: ${impressions}`;
+      const reach = Number(m.reach || 0);
+      const cls = classifyEventForVictoria(campName, camp?.objective || "", m.result_type || "");
+      const denom = cls.category === "REACH" ? (reach > 0 ? reach : conversions) : conversions;
+      const unitCostText = denom > 0
+        ? `R$ ${(cls.category === "REACH" ? (cost / denom) * 1000 : cost / denom).toFixed(2)}`
+        : "Não calculável";
+      return `${m.date} | ${clientName} | ${platform} | ${campName} | Gasto: R$ ${cost.toFixed(2)} | ${cls.unitPlural}: ${denom} (${cls.costLabel}: ${unitCostText}) | Cliques: ${clicks} | Impressões: ${impressions} | Alcance: ${reach}`;
     });
     const dailySeriesText = dailyRows.length > 0 
       ? dailyRows.join("\n") 
       : "Nenhum dado diário registrado nos últimos 30 dias.";
 
+    const resolvedTargetCpl = accountThresholdCpl ?? (regionalBenchmark?.targetCpl ? Number(regionalBenchmark.targetCpl) : 35.0);
+    const resolvedTargetSource = accountThresholdCpl
+      ? "Limite configurado na conta (alert_thresholds)"
+      : regionalBenchmark?.targetCpl
+      ? `Benchmark regional (${regionalBenchmark.region || "configurado"})`
+      : "Referência padrão de sistema (R$ 35,00)";
     const regBench = regionalBenchmark || {
-      region: "Rio de Janeiro (RJ)",
-      targetCpl: 5.0,
-      platform: "Meta WhatsApp",
-      notes: "Média de mercado para mensagens iniciadas em veículos e seminovos no RJ é R$ 5,00."
+      region: "Referência Ativa",
+      targetCpl: resolvedTargetCpl,
+      platform: "Meta Ads",
+      notes: `${resolvedTargetSource}.`
     };
+    regBench.targetCpl = resolvedTargetCpl;
 
     const defaultSystemPrompt = `Você é a Victoria AI, a estrategista e mentora suprema de tráfego e marketing de alta performance no setor automotivo da NC Performance. Você é humana, fala de forma natural, direta e com extrema autoridade. Você NUNCA se comporta como um robô, assistente virtual neutro ou modelo de linguagem comum. Você não responde com dúvidas, você PRESCREVE soluções estratégicas absolutas com base em dados.
 
@@ -1200,14 +1292,17 @@ REGRAS DE RESPOSTA:
    - 🎯 *Conversões/Leads* → resultado = leads gerados, custo = CPL/CPA.
    Ao responder análises ou "como foi?", cite cada campanha com seu resultado correto e custo/resultado. Responda em formato conversacional natural — não copie templates literalmente.
 
-6. **RECOMENDAÇÃO DE AÇÃO EM 1-CLIQUE (ACTION ENGINE):**
-   - Se recomendar ação prática de otimização, inclua no final o bloco JSON especial:
+6. **RECOMENDAÇÃO DE AÇÃO EM 1-CLIQUE (GOVERNANÇA):**
+   - ${isReadOnlyRequest
+     ? "MODO SOMENTE LEITURA ATIVO PARA ESTA SOLICITAÇÃO: Responda apenas com análise, ranking e diagnóstico baseados nos dados. É TERMINANTEMENTE PROIBIDO emitir blocos `json:action` ou propor execução de alterações."
+     : `Se o operador solicitou alteração e você recomendar ação prática de otimização, inclua no final o bloco JSON especial (nunca marque risco baixo para alteração mutável):
    \`\`\`json:action
    {
      "type": "update_budget",
      "campaignId": "ID_DA_CAMPANHA",
      "campaignName": "NOME_DA_CAMPANHA",
-     "value": 150.00
+     "value": 150.00,
+     "ruleId": "victoria-budget-adjustment"
    }
    \`\`\`
    Ou:
@@ -1215,10 +1310,11 @@ REGRAS DE RESPOSTA:
    {
      "type": "pause_campaign",
      "campaignId": "ID_DA_CAMPANHA",
-     "campaignName": "NOME_DA_CAMPANHA"
+     "campaignName": "NOME_DA_CAMPANHA",
+     "ruleId": "victoria-pause-underperforming"
    }
    \`\`\`
-   Use apenas uma dessas se e somente se recomendar a ação.`;
+   Use apenas uma dessas se e somente se o usuário pediu ação mutável.`}`;
 
     // =========================================================================
     // 3. EXECUÇÃO RAG (RETRIEVAL-AUGMENTED GENERATION)
@@ -1327,7 +1423,7 @@ REGRAS DE RESPOSTA:
     }
 
     let promptWithRAG = userSystemPrompt || defaultSystemPrompt;
-    promptWithRAG += `\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nREGRA MANDATÓRIA DE TRATAMENTO:\n- Você DEVE se dirigir ao usuário SEMPRE pelo primeiro nome dele: **${userName}**.\n- É TERMINANTEMENTE PROIBIDO utilizar a palavra "Comandante", "Chefe", "Usuário" ou apelidos similares. Trate-o por **${userName}**.\n- Ao cumprimentar no início da resposta, use o nome dele: "Olá, ${userName}!", "Fala, ${userName}!". NUNCA use "Comandante".\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+    promptWithRAG += `\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nREGRA MANDATÓRIA DE TRATAMENTO & PRECISÃO:\n- Você DEVE se dirigir ao usuário SEMPRE pelo primeiro nome dele: **${userName}**.\n- É TERMINANTEMENTE PROIBIDO utilizar a palavra "Comandante", "Chefe", "Usuário" ou apelidos similares. Trate-o por **${userName}**.\n- Ao cumprimentar no início da resposta, use o nome dele: "Olá, ${userName}!", "Fala, ${userName}!". NUNCA use "Comandante".\n- SEMPRE preserve o nome exato do evento real de cada campanha (ex: "conversas iniciadas", "visitas ao perfil", "visualizações de página", "pessoas alcançadas") e NUNCA troque para "leads de formulário" se o evento for conversa/visita/alcance.\n- Quando resultados forem 0 e custo não calculável, informe "Não calculável" e NUNCA R$ 0,00.\n- ${isReadOnlyRequest ? "MODO SOMENTE LEITURA ATIVO: PROIBIDO emitir qualquer bloco json:action nesta resposta." : "Ações mutáveis exigem proposta estruturada com aprovação humana explícita."}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
     if (knowledgeCtx) {
       promptWithRAG += `\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nBASE DE CONHECIMENTO NC PERFORMANCE (Utilize como verdade absoluta para todas as respostas):\n\n${knowledgeCtx}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
     }

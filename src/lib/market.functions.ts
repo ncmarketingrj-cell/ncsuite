@@ -121,44 +121,7 @@ export function parseRssXmlToArticles(
   return articles;
 }
 
-export const FALLBACK_ARTICLES: ServerMarketArticle[] = [
-  {
-    id: "fb_1",
-    title: "Vendas de Seminovos crescem 8,4% no RJ com foco em modelos econômicos e financiamento facilitado",
-    source: "Fenabrave / Mercado Automotivo",
-    link: "https://fenabrave.org.br",
-    pubDate: new Date().toISOString(),
-    snippet: "O mercado automotivo no Estado do Rio de Janeiro mantém forte tração para hatches e SUVs compactos com procura focada em parcelas previsíveis.",
-    category: "mercado",
-  },
-  {
-    id: "fb_2",
-    title: "Meta Ads 2026: Anúncios com fotos reais no pátio geram 54% mais conversas no WhatsApp do que imagens de estúdio",
-    source: "Meta Business & Performance",
-    link: "https://www.facebook.com/business",
-    pubDate: new Date().toISOString(),
-    snippet: "Compradores de veículos reagem com muito maior confiança a fotos tiradas em smartphones com luz natural no showroom da loja.",
-    category: "trafego",
-  },
-  {
-    id: "fb_3",
-    title: "Tempo de Resposta no WhatsApp: Atendimento em até 5 minutos reduz o CPL efetivo pela metade",
-    source: "AutoAnalytics Brasil",
-    link: "https://autoanalytics.com.br",
-    pubDate: new Date().toISOString(),
-    snippet: "Leads que recebem mensagem de boas-vindas do vendedor em menos de 300 segundos convertem 4 vezes mais em visita presencial.",
-    category: "trafego",
-  },
-  {
-    id: "fb_4",
-    title: "CONTRAN e SENATRAN atualizam regras de transferência digital de veículos e vistoria cautelar",
-    source: "Gov.br / SENATRAN",
-    link: "https://www.gov.br/transportes",
-    pubDate: new Date().toISOString(),
-    snippet: "Novas diretrizes nacionais simplificam a comunicação de venda eletrônica em cartórios e DETRANs estaduais para lojas e concessionárias.",
-    category: "leis",
-  },
-];
+export const FALLBACK_ARTICLES: ServerMarketArticle[] = [];
 
 export interface FetchRadarInput {
   timeFilter?: RadarTimeFilter;

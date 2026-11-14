@@ -5,6 +5,8 @@ import { supabase } from "@/integrations/supabase-external/client";
 import { toast } from "sonner";
 import ReactMarkdown from "react-markdown";
 import { chatWithVictoriaFn } from "@/lib/agent.functions";
+import { classifyMetaEvent, computeUnitCost } from "@/lib/metricsDomain";
+import { isReadOnlyAnalysisRequest, stripJsonActionBlocks, validateActionExecution } from "@/lib/victoriaGovernance";
 
 type Message = {
   role: "user" | "assistant";
@@ -13,18 +15,13 @@ type Message = {
   image?: { base64: string; mimeType: string };
 };
 
-function parseAction(content: string): { text: string; action: any | null } {
-  const match = content.match(/```json:action\s*([\s\S]*?)\s*```/);
-  if (match) {
-    try {
-      const action = JSON.parse(match[1]);
-      const text = content.replace(/```json:action[\s\S]*?```/, "").trim();
-      return { text, action };
-    } catch (e) {
-      console.error("Failed to parse action JSON:", e);
-    }
+function parseAction(content: string, prevUserPrompt = ""): { text: string; action: any | null } {
+  const { cleanText, parsedAction } = stripJsonActionBlocks(content);
+  if (!parsedAction) return { text: cleanText, action: null };
+  if (isReadOnlyAnalysisRequest(prevUserPrompt)) {
+    return { text: cleanText, action: null };
   }
-  return { text: content, action: null };
+  return { text: cleanText, action: parsedAction };
 }
 
 interface AIAgentSidebarProps {
@@ -138,10 +135,10 @@ export function AIAgentSidebar({ isOpen, onClose }: AIAgentSidebarProps) {
         } catch (edgeErr: any) {
           console.warn("Victoria Edge Function failed, executing advanced frontend database-grounded fallback...", edgeErr);
         
-        // 1. Buscar todas as campanhas da conta selecionada com suas métricas históricas completas
+        // 1. Buscar todas as campanhas da conta selecionada com suas métricas preservando result_type
         const { data: campaignsRaw } = await (supabase as any)
           .from('campaigns')
-          .select('name, status, budget, platform, metrics(cost, conversions, clicks, impressions)')
+          .select('name, status, budget, objective, platform, metrics(cost, conversions, clicks, impressions, reach, result_type)')
           .eq('ad_account_id', selectedAccountId)
           .order('name');
 
@@ -151,8 +148,11 @@ export function AIAgentSidebar({ isOpen, onClose }: AIAgentSidebarProps) {
           const conversions = metrics.reduce((s: number, m: any) => s + Number(m.conversions || 0), 0);
           const clicks = metrics.reduce((s: number, m: any) => s + Number(m.clicks || 0), 0);
           const impressions = metrics.reduce((s: number, m: any) => s + Number(m.impressions || 0), 0);
-
-          const cpl = conversions > 0 ? cost / conversions : 0;
+          const reach = metrics.reduce((s: number, m: any) => s + Number(m.reach || 0), 0);
+          const firstRt = metrics.find((m: any) => m.result_type)?.result_type || "";
+          const cls = classifyMetaEvent({ campaignName: c.name, rawObjective: c.objective, resultType: firstRt, isVehicleContext: true });
+          const denom = cls.category === "REACH" ? (reach > 0 ? reach : conversions) : conversions;
+          const unitCost = computeUnitCost(cost, denom, cls.category);
           const ctr = impressions > 0 ? (clicks / impressions) * 100 : 0;
 
           return {
@@ -160,7 +160,8 @@ export function AIAgentSidebar({ isOpen, onClose }: AIAgentSidebarProps) {
             status: c.status?.toUpperCase() || "PAUSED",
             budget: Number(c.budget || 0),
             platform: c.platform || "Meta Ads",
-            totals: { cost, conversions, clicks, impressions, cpl, ctr }
+            classification: cls,
+            totals: { cost, conversions, clicks, impressions, reach, cpl: unitCost ?? 0, unitCost, ctr }
           };
         });
 
@@ -168,7 +169,7 @@ export function AIAgentSidebar({ isOpen, onClose }: AIAgentSidebarProps) {
         const totalInvest = campaigns.reduce((s: number, c: any) => s + c.totals.cost, 0);
         const totalConversions = campaigns.reduce((s: number, c: any) => s + c.totals.conversions, 0);
         const activeCount = campaigns.filter((c: any) => c.status === "ACTIVE").length;
-        const globalCpl = totalConversions > 0 ? totalInvest / totalConversions : 0;
+        const globalCpl = totalConversions > 0 ? totalInvest / totalConversions : null;
 
         // Ordenar campanhas por gasto e performance
         const activeCampaigns = campaigns.filter((c: any) => c.status === "ACTIVE");
@@ -196,36 +197,36 @@ export function AIAgentSidebar({ isOpen, onClose }: AIAgentSidebarProps) {
         if (query.includes("performance") || query.includes("desempenho") || query.includes("como tá") || query.includes("como ta")) {
           intro = `Olá! Fiz um raio-x completo na nossa conta de anúncios agora mesmo. Puxei os dados consolidados do NC Database e montei o diagnóstico tático da operação.
 
-Olha, no geral, estamos gerenciando **${activeCount} campanhas ativas** rodando no Meta Ads. O investimento acumulado já soma **R$ ${totalInvest.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}**, trazendo um retorno robusto de **${totalConversions.toLocaleString("pt-BR")} leads qualificados** para o CRM das lojas. Nosso CPL (Custo por Lead) geral da conta está estabilizado em uma média de **R$ ${globalCpl.toFixed(2)}**.`;
+Olha, no geral, estamos gerenciando **${activeCount} campanhas ativas** rodando no Meta Ads. O investimento acumulado já soma **R$ ${totalInvest.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}**, trazendo **${totalConversions.toLocaleString("pt-BR")} resultados registrados**. Nosso custo médio por resultado está em **${globalCpl !== null ? `R$ ${globalCpl.toFixed(2)}` : "Não calculável (0 resultados)"}**.`;
 
           if (efficientCamp) {
             body += `\n\n### ⚡ Campanha Campeã (Alta Eficiência)
-O grande destaque da nossa operação continua sendo a campanha **"${efficientCamp.name}"**. O CPL dela está fantástico: apenas **R$ ${efficientCamp.totals.cpl.toFixed(2)}**, gerando **${efficientCamp.totals.conversions} leads** altamente qualificados. Isso prova que o criativo e o público-alvo estão perfeitamente alinhados nesta oferta. Recomendo **proteger e escalar** esse ativo gradualmente!`;
+O grande destaque da nossa operação continua sendo a campanha **"${efficientCamp.name}"**. O ${efficientCamp.classification.costUnitLabel} está em **${efficientCamp.totals.unitCost !== null ? `R$ ${efficientCamp.totals.unitCost.toFixed(2)}` : "Não calculável"}**, gerando **${efficientCamp.totals.conversions} ${efficientCamp.classification.unitPlural}**. Recomendo **proteger e escalar** gradualmente apenas se houver amostra e meta configurada!`;
           }
 
           if (inefficientCamp && inefficientCamp !== efficientCamp) {
             body += `\n\n### ⚠️ Alerta de Ineficiência (Gargalo de Verba)
-Precisamos ligar o sinal vermelho na campanha **"${inefficientCamp.name}"**. Ela já consumiu **R$ ${inefficientCamp.totals.cost.toFixed(2)}** da nossa verba e, infelizmente, o custo por lead decolou para **R$ ${inefficientCamp.totals.cpl.toFixed(2)}** ${inefficientCamp.totals.conversions === 0 ? "(com ZERO conversões geradas até agora!)" : ""}. O gargalo principal aqui parece ser a fadiga do criativo ou público muito saturado, indicado pelo CTR de **${inefficientCamp.totals.ctr.toFixed(2)}%**.`;
+Precisamos atenção na campanha **"${inefficientCamp.name}"**. Ela consumiu **R$ ${inefficientCamp.totals.cost.toFixed(2)}** com ${inefficientCamp.classification.costUnitLabel} de **${inefficientCamp.totals.unitCost !== null ? `R$ ${inefficientCamp.totals.unitCost.toFixed(2)}` : "Não calculável"}** ${inefficientCamp.totals.conversions === 0 ? `(com ZERO ${inefficientCamp.classification.unitPlural} até agora)` : ""}. Verifique CTR de **${inefficientCamp.totals.ctr.toFixed(2)}%**.`;
           }
 
           conclusion = `\n\n### 🛠️ Minha recomendação tática para hoje:
-1. **Redirecionar Orçamento:** Remaneje imediatamente 15% da verba diária dos ativos menos eficientes direto para a campanha campeã **"${efficientCamp ? efficientCamp.name : ''}"**.
-2. **Renovação de Criativos:** Peça para o time comercial produzir um novo vídeo demonstrando o estoque para reaquecer o CTR geral.
+1. **Redirecionar Orçamento:** Avalie priorizar verba nos ativos mais eficientes como **"${efficientCamp ? efficientCamp.name : ''}"**.
+2. **Renovação de Criativos:** Avalie novos criativos reais caso o CTR siga baixo.
 
 O que achou desse diagnóstico? Quer que eu analise alguma campanha específica no detalhe?`;
 
         } else if (query.includes("escala") || query.includes("orçamento") || query.includes("budget") || query.includes("aumentar") || query.includes("verba")) {
-          intro = `Excelente iniciativa! Escalar com inteligência é o segredo para não derreter o ROI. Analisando as nossas **${activeCount} campanhas ativas**, identifiquei exatamente onde temos margem saudável para colocar mais combustível na máquina de tráfego pago.`;
+          intro = `Excelente iniciativa! Escalar com inteligência evita desperdiçar verba. Analisando as nossas **${activeCount} campanhas ativas**, identifiquei onde há margem para ajuste gradual.`;
 
           if (efficientCamp) {
-            body += `\n\n### 🚀 Recomendação de Escala Segura (15%):
-A campanha **"${efficientCamp.name}"** é a nossa candidata número um. Ela está operando com um CPL saudável de **R$ ${efficientCamp.totals.cpl.toFixed(2)}** e já acumulou **${efficientCamp.totals.conversions} leads**. 
-Podemos subir o orçamento diário atual (hoje em **R$ ${efficientCamp.budget.toFixed(2)}**) em **15%** sem medo. Como a taxa de conversão dela está sólida, o custo por lead deve se manter estável na escala.`;
+            body += `\n\n### 🚀 Candidata à Escala Gradual:
+A campanha **"${efficientCamp.name}"** opera com ${efficientCamp.classification.costUnitLabel} de **${efficientCamp.totals.unitCost !== null ? `R$ ${efficientCamp.totals.unitCost.toFixed(2)}` : "Não calculável"}** e acumulou **${efficientCamp.totals.conversions} ${efficientCamp.classification.unitPlural}**. 
+Podemos avaliar subir o orçamento diário atual (hoje em **R$ ${efficientCamp.budget.toFixed(2)}**) de forma gradual e acompanhando a meta.`;
           }
 
           if (inefficientCamp && inefficientCamp !== efficientCamp) {
-            body += `\n\n### 🛑 Onde NÃO mexer (Bloqueio de verba):
-Não mexa de forma alguma no orçamento de **"${inefficientCamp.name}"**. O custo de aquisição lá está em **R$ ${inefficientCamp.totals.cpl.toFixed(2)}**, o que inviabiliza qualquer escala no momento. Qualquer real extra aí vai apenas encarecer o nosso resultado consolidado.`;
+            body += `\n\n### 🛑 Onde NÃO escalar:
+Evite aumentar orçamento de **"${inefficientCamp.name}"** (${inefficientCamp.classification.costUnitLabel}: **${inefficientCamp.totals.unitCost !== null ? `R$ ${inefficientCamp.totals.unitCost.toFixed(2)}` : "Não calculável"}**) antes de otimizar oferta, público e criativos.`;
           }
 
           conclusion = `\n\n### 📝 Plano de Ação:
@@ -254,7 +255,7 @@ Quer que eu monte uma estrutura de copy focada especificamente nessa faixa etár
           // Resposta customizada super premium e de alto nível para conversas gerais
           intro = `Olá! Fico extremamente feliz em conversar com você sobre estratégias de tráfego pago. Já estou com toda a nossa base de dados operando e a postos na central da NC. 
 
-Atualmente, estamos gerenciando **${activeCount} campanhas ativas** com um investimento consolidado de **R$ ${totalInvest.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}** e gerando **${totalConversions.toLocaleString("pt-BR")} leads**. Nosso custo médio por lead está saudável, girando em torno de **R$ ${globalCpl.toFixed(2)}**.`;
+Atualmente, estamos gerenciando **${activeCount} campanhas ativas** com um investimento consolidado de **R$ ${totalInvest.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}** e **${totalConversions.toLocaleString("pt-BR")} resultados registrados**. Nosso custo médio por resultado está em **${globalCpl !== null ? `R$ ${globalCpl.toFixed(2)}` : "Não calculável (0 resultados)"}**.`;
 
           body = `\n\nPara te dar uma orientação cirúrgica e acelerar o resultado da agência hoje, qual desses tópicos estratégicos você quer auditar primeiro?
 * 💰 **Otimização de Orçamento:** Descobrir onde estamos desperdiçando verba e onde vale a pena escalar.
@@ -310,6 +311,37 @@ Atualmente, estamos gerenciando **${activeCount} campanhas ativas** com um inves
   };
 
   const handleExecuteAction = async (msgIndex: number, action: { type: string; campaignId: string; externalId?: string; campaignName: string; value?: number }) => {
+    if (appliedActions[msgIndex]) {
+      toast.info("Esta ação já foi executada anteriormente.");
+      return;
+    }
+
+    const actionPrompt = messages[Math.max(0, msgIndex - 1)]?.content || "";
+    const readOnlyBlocked = isReadOnlyAnalysisRequest(actionPrompt);
+    const govCheck = validateActionExecution({
+      proposal: {
+        ...action,
+        accountId: selectedAccountId || null,
+        risk: action.type === "pause_campaign" ? "high" : "medium",
+      },
+      readOnly: readOnlyBlocked,
+      userConfirmed: true,
+      confirmPhrase: action.type === "pause_campaign" ? "CONFIRMAR" : undefined,
+      currentAccountId: selectedAccountId || null,
+    });
+
+    if (!govCheck.allowed) {
+      toast.error(govCheck.reason || "Ação bloqueada pela governança.");
+      return;
+    }
+
+    const actionDesc = action.type === "update_budget"
+      ? `Alterar orçamento de "${action.campaignName}" para R$ ${Number(action.value || 0).toFixed(2)}/dia?`
+      : `Pausar a campanha "${action.campaignName}" no Meta Ads?`;
+    if (typeof window !== "undefined" && !window.confirm(`Confirma execução em ambiente real?\n\n${actionDesc}`)) {
+      return;
+    }
+
     setActionLoading(action.campaignId);
     try {
       if (!action.externalId) {
@@ -508,7 +540,8 @@ Atualmente, estamos gerenciando **${activeCount} campanhas ativas** com um inves
                       <div>{msg.content}</div>
                     </div>
                   ) : (() => {
-                    const parsed = parseAction(msg.content);
+                    const prevUserContent = messages[Math.max(0, i - 1)]?.role === "user" ? messages[i - 1].content : "";
+                    const parsed = parseAction(msg.content, prevUserContent);
                     return (
                       <div className="flex flex-col gap-2">
                         <ReactMarkdown 

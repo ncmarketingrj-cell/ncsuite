@@ -117,7 +117,7 @@ const SOCIAL_NAV_ITEMS: NavItem[] = [
 const GESTAO_NAV_ITEMS: NavItem[] = [
   { to: "/clientes", icon: Store, label: "Clientes" },
   { to: "/reunioes", icon: Users, label: "Reuniões" },
-  { to: "/cobrancas", icon: CreditCard, label: "Cobranças" },
+  { to: "/cobrancas", icon: CreditCard, label: "Faturamento Meta" },
   { to: "/auditoria", icon: Activity, label: "Auditoria Hub" },
   { to: "/upload", icon: Upload, label: "Upload" },
 ];

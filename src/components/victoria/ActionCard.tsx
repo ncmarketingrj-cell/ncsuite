@@ -1,11 +1,12 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
-import { Sparkles, Check, X, Loader2, AlertTriangle, Play, HelpCircle, FileText } from "lucide-react";
+import { Sparkles, Check, X, Loader2, AlertTriangle, Play, FileText, ShieldCheck, Clock } from "lucide-react";
 import { Link } from "@tanstack/react-router";
+import type { GovernedActionProposal, ProposalStatus } from "@/lib/victoriaGovernance";
 
 interface ActionCardProps {
   messageId: string;
-  action: {
+  action: Partial<GovernedActionProposal> & {
     type: string;
     campaignId?: string;
     campaignName?: string;
@@ -16,8 +17,8 @@ interface ActionCardProps {
     risk?: 'low' | 'medium' | 'high';
     params?: Record<string, any>;
   };
-  status: "pending" | "approved" | "rejected" | "error";
-  onApprove: (messageId: string, action: any) => Promise<void>;
+  status: ProposalStatus;
+  onApprove: (messageId: string, action: any, confirmPhrase?: string) => Promise<void>;
   onReject: (messageId: string) => Promise<void>;
 }
 
@@ -26,33 +27,50 @@ export function ActionCard({ messageId, action, status, onApprove, onReject }: A
   const [highRiskInput, setHighRiskInput] = useState("");
   const [showHighRiskConfirm, setShowHighRiskConfirm] = useState(false);
 
-  const risk = action.risk || 'low';
+  const isMutating =
+    action.type === "update_budget" ||
+    action.type === "pause_campaign" ||
+    action.type === "clone_funnel_snapshot" ||
+    action.type === "toggle_status";
+
+  const risk: "low" | "medium" | "high" =
+    isMutating && (!action.risk || action.risk === "low")
+      ? action.type === "pause_campaign"
+        ? "high"
+        : "medium"
+      : action.risk || (isMutating ? "medium" : "low");
+
+  const isExpired =
+    status === "expired" ||
+    (Boolean(action.expiresAt) && !Number.isNaN(Date.parse(action.expiresAt!)) && Date.now() > Date.parse(action.expiresAt!));
 
   const riskStyles = {
     low: {
-      border: "border-emerald-500/20 bg-emerald-500/5",
+      border: "border-primary/20 bg-primary/5",
       icon: Sparkles,
-      iconColor: "text-emerald-500",
-      accentGlow: "shadow-[0_0_15px_rgba(16,185,129,0.08)]",
-      riskText: "Seguro",
+      iconColor: "text-primary",
+      accentGlow: "shadow-[0_0_15px_rgba(var(--primary-rgb),0.06)]",
+      riskText: isMutating ? "Revisão Necessária" : "Ação de Interface",
     },
     medium: {
       border: "border-amber-500/20 bg-amber-500/5",
       icon: AlertTriangle,
       iconColor: "text-amber-500",
       accentGlow: "shadow-[0_0_15px_rgba(245,158,11,0.08)]",
-      riskText: "Moderação",
+      riskText: "Moderação (Alteração)",
     },
     high: {
       border: "border-red-500/20 bg-red-500/5",
       icon: AlertTriangle,
       iconColor: "text-red-500",
       accentGlow: "shadow-[0_0_15px_rgba(239,68,68,0.08)]",
-      riskText: "Risco Alto",
+      riskText: "Alto Risco Operacional",
     },
   }[risk];
 
   const handleApprove = async () => {
+    if (isExpired || status !== "pending") return;
+
     if (risk === "high" && !showHighRiskConfirm) {
       setShowHighRiskConfirm(true);
       return;
@@ -64,7 +82,7 @@ export function ActionCard({ messageId, action, status, onApprove, onReject }: A
 
     setLoading(true);
     try {
-      await onApprove(messageId, action);
+      await onApprove(messageId, action, risk === "high" ? highRiskInput : undefined);
     } finally {
       setLoading(false);
       setShowHighRiskConfirm(false);
@@ -120,20 +138,21 @@ export function ActionCard({ messageId, action, status, onApprove, onReject }: A
 
     if (action.type === "update_budget") {
       return {
-        title: `Ajustar Orçamento: ${action.campaignName}`,
-        desc: `Definir a verba diária da campanha para R$ ${action.value?.toFixed(2)}/dia. Esta otimização ajudará a impulsionar o retorno com base nos leads qualificados gerados recentes.`,
+        title: `Proposta: Ajustar Orçamento de ${action.campaignName || "Campanha"}`,
+        desc: `Definir o orçamento diário para R$ ${Number(action.value || 0).toFixed(2)}/dia mediante aprovação explícita.`,
       };
     }
     if (action.type === "pause_campaign") {
+      const cplInfo = action.params?.cpl ? `R$ ${Number(action.params.cpl).toFixed(2)}` : action.evidence?.unitCostFormatted || "Não calculável";
       return {
-        title: `Pausar Campanha: ${action.campaignName}`,
-        desc: `Pausar esta campanha imediatamente devido a alto CPL (R$ ${action.params?.cpl?.toFixed(2) || '45.00+'}) ou baixo retorno geral para evitar desperdício de verba.`,
+        title: `Proposta: Pausar Campanha ${action.campaignName || "Selecionada"}`,
+        desc: `Pausar campanha após validação de evidência (custo/resultado observado: ${cplInfo}).`,
       };
     }
     if (action.type === "clone_funnel_snapshot") {
       return {
-        title: `Clonar Funil: ${action.params?.sourceFunnelName || "Original"}`,
-        desc: `Realizar o Deep Copy de toda a estrutura lógica e conexões deste funil para a conta do cliente "${action.params?.targetClientName || "Honda RJ"}".`,
+        title: `Proposta: Clonar Funil ${action.params?.sourceFunnelName || "Original"}`,
+        desc: `Realizar cópia da estrutura lógica deste funil para o cliente "${action.params?.targetClientName || "destino selecionado"}".`,
       };
     }
     return {
@@ -171,8 +190,34 @@ export function ActionCard({ messageId, action, status, onApprove, onReject }: A
         {actionDesc}
       </p>
 
+      {/* Metadados de Governança & Evidência (IDs 10 e 44) */}
+      {(action.accountName || action.windowStart || action.ruleId || action.expiresAt) && (
+        <div className="flex flex-wrap items-center gap-1.5 text-[9px] font-mono text-muted-foreground bg-background/40 border border-white/5 rounded-xl px-2.5 py-2">
+          {action.accountName && (
+            <span className="inline-flex items-center gap-1 bg-white/5 px-1.5 py-0.5 rounded">
+              <ShieldCheck className="h-2.5 w-2.5 text-primary" /> Conta: {action.accountName}
+            </span>
+          )}
+          {action.windowStart && action.windowEnd && (
+            <span className="bg-white/5 px-1.5 py-0.5 rounded">
+              Janela: {action.windowStart} → {action.windowEnd}
+            </span>
+          )}
+          {action.ruleId && (
+            <span className="bg-white/5 px-1.5 py-0.5 rounded">
+              Origem: {action.ruleId}
+            </span>
+          )}
+          {action.expiresAt && (
+            <span className="inline-flex items-center gap-1 bg-white/5 px-1.5 py-0.5 rounded">
+              <Clock className="h-2.5 w-2.5" /> Validade: {new Date(action.expiresAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
+            </span>
+          )}
+        </div>
+      )}
+
       {/* Risco Alto - Input de Confirmação */}
-      {showHighRiskConfirm && status === "pending" && (
+      {showHighRiskConfirm && status === "pending" && !isExpired && (
         <motion.div 
           initial={{ opacity: 0, y: -5 }} 
           animate={{ opacity: 1, y: 0 }}
@@ -192,7 +237,12 @@ export function ActionCard({ messageId, action, status, onApprove, onReject }: A
 
       {/* Rodapé / Botões */}
       <div className="flex gap-2">
-        {status === "pending" ? (
+        {isExpired && status === "pending" ? (
+          <div className="w-full py-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-400 font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-2">
+            <Clock className="h-4 w-4" />
+            Proposta Expirada — Gere Nova Análise
+          </div>
+        ) : status === "pending" ? (
           <>
             <button
               onClick={handleReject}

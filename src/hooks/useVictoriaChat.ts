@@ -15,6 +15,16 @@ import {
   type RadarRegionFilter,
 } from "@/lib/marketPortals";
 import { META_ADS_MASTER_KNOWLEDGE_DOCS } from "@/lib/metaAlgorithmEngine";
+import {
+  isReadOnlyAnalysisRequest,
+  stripJsonActionBlocks,
+  buildActionProposal,
+  validateActionExecution,
+  sanitizeRssText,
+  isHomepageOnlyUrl,
+  type GovernedActionProposal,
+  type ProposalStatus,
+} from "@/lib/victoriaGovernance";
 
 
 export type Message = {
@@ -24,7 +34,8 @@ export type Message = {
   created_at: Date;
   metadata?: {
     image?: { base64: string; mimeType: string };
-    action?: {
+    readOnly?: boolean;
+    action?: Partial<GovernedActionProposal> & {
       type: string;
       campaignId?: string;
       campaignName?: string;
@@ -35,7 +46,7 @@ export type Message = {
       risk?: 'low' | 'medium' | 'high';
       params?: Record<string, any>;
     };
-    actionStatus?: "pending" | "approved" | "rejected" | "error";
+    actionStatus?: ProposalStatus;
   };
 };
 
@@ -598,6 +609,7 @@ export function useVictoriaChat(
       const externalContext = [masterMetaContext, ragText].filter(Boolean).join("\n\n---\n\n");
 
       // 5. Invocar a IA Victoria por Streaming SSE
+      const isReadOnly = isReadOnlyAnalysisRequest(content);
       const { data: { session } } = await supabase.auth.getSession();
       const res = await fetch(
         `${VITE_SUPABASE_URL}/functions/v1/victoria-agent`,
@@ -614,7 +626,8 @@ export function useVictoriaChat(
             selectedAccountId: selectedAccountId || undefined,
             user_name: userName || undefined,
             externalContext,
-            regionalBenchmark
+            regionalBenchmark,
+            readOnly: isReadOnly
           })
         }
       );
@@ -675,17 +688,15 @@ export function useVictoriaChat(
         }
       }
 
-      // 5. Detectar blocos json:action
-      let responseAction: any = null;
-      const actionMatch = responseText.match(/```json:action\s*([\s\S]*?)\s*```/);
-      if (actionMatch) {
-        try {
-          responseAction = JSON.parse(actionMatch[1]);
-          responseText = responseText.replace(/```json:action[\s\S]*?```/, "").trim();
-        } catch (e) {
-          console.error("Erro ao fazer parse da action da Victoria:", e);
-        }
-      }
+      // 5. Detectar blocos json:action com bloqueio determinístico em modo somente-leitura (ID 09)
+      const parsedBlock = stripJsonActionBlocks(responseText);
+      responseText = parsedBlock.cleanText;
+      let responseAction: any = parsedBlock.parsedAction
+        ? buildActionProposal(parsedBlock.parsedAction, {
+            accountId: selectedAccountId || null,
+            readOnly: isReadOnly,
+          })
+        : null;
 
       // 6. Configurar relatório se for OCR
       if (ocrCampaigns.length > 0) {
@@ -733,7 +744,7 @@ export function useVictoriaChat(
       }
 
       // 7. Salvar resposta no banco
-      const assistantMsgMetadata: any = {};
+      const assistantMsgMetadata: any = { readOnly: isReadOnly };
       if (responseAction) {
         assistantMsgMetadata.action = responseAction;
         assistantMsgMetadata.actionStatus = "pending";
@@ -772,9 +783,37 @@ export function useVictoriaChat(
     }
   };
 
-  // Executar uma ação proposta (Human-in-the-loop)
-  const executeAction = async (messageId: string, action: any) => {
+  // Executar uma ação proposta com validação de governança (IDs 10 e 44)
+  const executeAction = async (messageId: string, action: any, confirmPhrase?: string) => {
     try {
+      const { data: currentMsg } = await (supabase
+        .from("victoria_messages" as any)
+        .select("metadata")
+        .eq("id", messageId)
+        .single() as any);
+
+      const persistedStatus: ProposalStatus = currentMsg?.metadata?.actionStatus || "pending";
+      const validation = validateActionExecution({
+        proposal: action,
+        status: persistedStatus,
+        readOnly: Boolean(currentMsg?.metadata?.readOnly),
+        userConfirmed: true,
+        confirmPhrase: confirmPhrase || (action?.risk === "high" ? undefined : "CONFIRMAR"),
+        currentAccountId: selectedAccountId || null,
+      });
+
+      if (!validation.allowed) {
+        toast.error(validation.reason || "Execução bloqueada pela governança da Victoria.");
+        if (validation.code === "EXPIRED") {
+          const expiredMeta = { ...(currentMsg?.metadata || {}), actionStatus: "expired" };
+          await supabase.from("victoria_messages" as any).update({ metadata: expiredMeta }).eq("id", messageId);
+          setMessages(prev =>
+            prev.map(m => m.id === messageId ? { ...m, metadata: { ...m.metadata, actionStatus: "expired" } } : m)
+          );
+        }
+        return;
+      }
+
       setMessages(prev =>
         prev.map(m =>
           m.id === messageId ? { ...m, metadata: { ...m.metadata, actionStatus: "pending" as any } } : m
@@ -790,7 +829,7 @@ export function useVictoriaChat(
           .update({ budget: action.value })
           .eq("id", action.campaignId);
         if (error) throw error;
-        toast.success(`Orçamento atualizado para R$ ${action.value.toFixed(2)}/dia.`);
+        toast.success(`Orçamento atualizado para R$ ${Number(action.value).toFixed(2)}/dia.`);
       } else if (action.type === "pause_campaign") {
         if (!action.campaignId) throw new Error("ID da campanha não especificado.");
         const { error } = await supabase
@@ -807,13 +846,11 @@ export function useVictoriaChat(
         toast.info(`Ação do tipo "${action.type}" executada.`);
       }
 
-      const { data: currentMsg } = await (supabase
-        .from("victoria_messages" as any)
-        .select("metadata")
-        .eq("id", messageId)
-        .single() as any);
-
-      const newMetadata = { ...(currentMsg?.metadata || {}), actionStatus: "approved" };
+      const newMetadata = {
+        ...(currentMsg?.metadata || {}),
+        actionStatus: "approved",
+        executedAt: new Date().toISOString(),
+      };
 
       await supabase
         .from("victoria_messages" as any)
@@ -1199,6 +1236,7 @@ export function useVictoriaChat(
         }));
 
       // 6. Chamar a IA Victoria via SSE Streaming
+      const isReadOnlyEdit = isReadOnlyAnalysisRequest(newContent);
       const { data: { session } } = await supabase.auth.getSession();
       const res = await fetch(
         `${VITE_SUPABASE_URL}/functions/v1/victoria-agent`,
@@ -1214,6 +1252,7 @@ export function useVictoriaChat(
             messages: requestMessages,
             selectedAccountId: selectedAccountId || undefined,
             user_name: userName || undefined,
+            readOnly: isReadOnlyEdit,
           })
         }
       );
@@ -1269,20 +1308,18 @@ export function useVictoriaChat(
         }
       }
 
-      // Processar action block
-      let responseAction: any = null;
-      const actionMatch = responseText.match(/```json:action\s*([\s\S]*?)\s*```/);
-      if (actionMatch) {
-        try {
-          responseAction = JSON.parse(actionMatch[1]);
-          responseText = responseText.replace(/```json:action[\s\S]*?```/, "").trim();
-        } catch (e) {
-          console.error("Erro ao fazer parse da action da Victoria:", e);
-        }
-      }
+      // Processar action block respeitando bloqueio de leitura (ID 09)
+      const parsedEditBlock = stripJsonActionBlocks(responseText);
+      responseText = parsedEditBlock.cleanText;
+      const responseAction: any = parsedEditBlock.parsedAction
+        ? buildActionProposal(parsedEditBlock.parsedAction, {
+            accountId: selectedAccountId || null,
+            readOnly: isReadOnlyEdit,
+          })
+        : null;
 
       // Salvar a resposta no banco
-      const assistantMsgMetadata: any = {};
+      const assistantMsgMetadata: any = { readOnly: isReadOnlyEdit };
       if (responseAction) {
         assistantMsgMetadata.action = responseAction;
         assistantMsgMetadata.actionStatus = "pending";
@@ -1576,16 +1613,25 @@ export function useVictoriaChat(
         throw new Error("Usuário não autenticado.");
       }
 
+      const collectedAtIso = new Date().toISOString();
       const nowStr = new Date().toLocaleDateString("pt-BR");
       const summaryContent = articles
-        .map((art) => `- [${art.source}] ${art.title}\n  Data: ${new Date(art.pubDate).toLocaleDateString("pt-BR")}\n  Contexto: ${art.snippet}\n  Fonte: ${art.link}`)
+        .map((art) => {
+          const cleanTitle = sanitizeRssText(art.title);
+          const cleanExcerpt = sanitizeRssText(art.snippet);
+          const hasSpecificArticleUrl = !isHomepageOnlyUrl(art.link);
+          const urlLabel = hasSpecificArticleUrl
+            ? art.link
+            : `${art.link || "sem-url"} [referência genérica — não usar como prova numérica]`;
+          return `- [${sanitizeRssText(art.source)}] ${cleanTitle}\n  Publicado em: ${art.pubDate} | Coletado em: ${collectedAtIso}\n  Excerto: ${cleanExcerpt}\n  Fonte: ${urlLabel}`;
+        })
         .join("\n\n");
 
       const docTitle = articles.length === 1
-        ? `[RADAR MERCADO] ${articles[0].title.slice(0, 75)}`
+        ? `[RADAR MERCADO] ${sanitizeRssText(articles[0].title).slice(0, 75)}`
         : `[RADAR MERCADO AUTOMOTIVO] Inteligência & Tendências — ${nowStr} (${articles.length} notícias)`;
 
-      const docContent = `SÍNTESE DE MERCADO E NOTÍCIAS AUTOMOTIVAS COLETADAS EM TEMPO REAL (${nowStr}):\n\n${summaryContent}\n\nDIRETRIZES ESTRATÉGICAS PARA GESTÃO DE TRÁFEGO PAGO AUTOMOTIVO (VICTORIA AI):\n- Alinhar anúncios com os modelos e notícias em alta.\n- Ofertas agressivas de seminovos devem aproveitar a busca por IPVA, taxa zero e financiamento facilitado.\n- Monitorar CPL regional (especialmente no Rio de Janeiro com meta estrita de R$ 5,00 por conversa de WhatsApp).\n- Criativos dinâmicos com fotos reais do pátio com iluminação natural convertem até 54% mais que catálogo estático.\n- Resposta no WhatsApp em menos de 5 minutos reduz o CPL efetivo pela metade e garante SLA da agência.`;
+      const docContent = `SÍNTESE DE NOTÍCIAS COLETADAS (${nowStr}):\n\n${summaryContent}\n\nNOTAS DE GOVERNANÇA RAG:\n- Utilize apenas os excertos e URLs específicas registradas acima como evidência editorial.\n- Metas numéricas e métricas operacionais de conta devem vir exclusivamente da base de campanhas ou metas configuradas (nunca de valores estáticos).`;
 
       // 1. Tentar absorver via Edge Function (gera embedding geométrico com Gemini)
       let savedViaFn = false;

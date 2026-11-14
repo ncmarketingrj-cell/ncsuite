@@ -15,9 +15,10 @@ import { toast } from "sonner";
 import { format, subDays, startOfDay, endOfDay } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { DiagnosisModal } from "@/components/victoria/DiagnosisModal";
+import { getLocalDateString } from "@/contexts/DateContext";
 
 export const Route = createFileRoute("/_app/cobrancas")({
-  head: () => ({ meta: [{ title: "Cobranças & Despesas — NC Suite" }] }),
+  head: () => ({ meta: [{ title: "Faturamento & Verba Meta — NC Suite" }] }),
   component: CobrancasPage,
 });
 
@@ -76,6 +77,11 @@ const FUNDING_TYPE_LABEL: Record<string, string> = {
   PAYPAL:       "PayPal",
   BANK_TRANSFER:"Transferência Bancária",
   PREPAY:       "Saldo Pré-pago",
+  "1":          "Cartão de Crédito",
+  "2":          "PayPal",
+  "3":          "Débito / Transferência",
+  "4":          "Cupom / Crédito Meta",
+  "20":         "Boleto / Pix / Saldo Pré-Pago",
 };
 
 // ─── Component ──────────────────────────────────────────────────────────────
@@ -90,9 +96,10 @@ function CobrancasPage() {
   const [selectedDiagnoseCampName, setSelectedDiagnoseCampName] = useState<string>("");
   const [isDiagnoseOpen, setIsDiagnoseOpen] = useState(false);
 
-  // Deduplica e carrega snapshots de faturamento
-  const { data: snapshots = [], refetch: refetchSnapshots, isLoading: loadingSnapshots } = useQuery<any[]>({
+  // Deduplica e carrega snapshots de faturamento sem zerar na atualização
+  const { data: snapshots = [], refetch: refetchSnapshots, isLoading: loadingSnapshots, error: snapshotsError } = useQuery<any[]>({
     queryKey: ["billing_snapshots"],
+    placeholderData: (prev) => prev,
     queryFn: async () => {
       const { data, error } = await (supabase as any)
         .from("billing_snapshots")
@@ -109,18 +116,19 @@ function CobrancasPage() {
     },
   });
 
-  // Carrega despesas das campanhas e progresso de hoje
-  const { data: campaignStats = [], isLoading: loadingStats } = useQuery<any[]>({
-    queryKey: ["campaign_billing_stats", startDate.toISOString(), endDate.toISOString()],
+  // Carrega despesas das campanhas com datas civis locais alinhadas ao restante do painel (ID 23)
+  const { data: campaignStats = [], isLoading: loadingStats, error: statsError } = useQuery<any[]>({
+    queryKey: ["campaign_billing_stats", getLocalDateString(startDate), getLocalDateString(endDate)],
+    placeholderData: (prev) => prev,
     queryFn: async () => {
       const { data: campaigns, error: campErr } = await (supabase as any)
         .from("campaigns")
         .select("id, name, status, daily_budget, budget_currency, ad_account_id, platform");
       if (campErr) throw campErr;
 
-      const startStr = startOfDay(startDate).toISOString().split("T")[0];
-      const endStr = endOfDay(endDate).toISOString().split("T")[0];
-      const todayStr = new Date().toISOString().split("T")[0];
+      const startStr = getLocalDateString(startDate);
+      const endStr = getLocalDateString(endDate);
+      const todayStr = getLocalDateString(new Date());
 
       // Busca métricas agregadas por dia
       const { data: metrics, error: metErr } = await (supabase as any)
@@ -188,9 +196,9 @@ function CobrancasPage() {
   return (
     <div className="space-y-8">
       <PageHeader
-        eyebrow="Finanças e Performance"
-        title="Cobranças & Investimentos"
-        description="Acompanhe o consumo diário de orçamento e os gastos das campanhas em tempo real."
+        eyebrow="Mídia & Contas de Anúncios"
+        title="Faturamento & Verba Meta"
+        description="Consumo das campanhas no período e snapshots de faturamento/saldo das contas de anúncios (fuso horário local do painel)."
         actions={
           <div className="flex items-center gap-2 flex-wrap justify-end">
             <DateRangePicker
@@ -212,8 +220,15 @@ function CobrancasPage() {
 
       {lastFetch && (
         <p className="text-[10px] text-muted-foreground font-mono -mt-6">
-          Última atualização de faturamento: {fmtDate(lastFetch)} (Sincronização global automática a cada 3 minutos)
+          Última atualização de faturamento: {fmtDate(lastFetch)} (Sincronização automática a cada 3 minutos; escopo: métricas de anúncios da conta)
         </p>
+      )}
+
+      {(snapshotsError || statsError) && (
+        <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-xs text-red-300 flex items-center gap-2">
+          <AlertCircle className="h-4 w-4 shrink-0" />
+          <span>Falha ao atualizar faturamento: {(snapshotsError as any)?.message || (statsError as any)?.message}</span>
+        </div>
       )}
 
       {/* Cards de Resumo Geral */}
@@ -358,19 +373,19 @@ function CobrancasPage() {
                       <p className="text-sm font-bold text-white mt-1">{fmtBRL(snap.amount_spent, snap.currency)}</p>
                     </div>
 
-                    <div className={`bg-white/[0.02] border rounded-xl p-3 relative overflow-hidden ${snap.balance !== null && totalDailyBudget > 0 && snap.balance < totalDailyBudget * 1.5 ? "border-emerald-500/50 bg-emerald-500/10" : "border-white/5"}`}>
-                      {snap.balance !== null && totalDailyBudget > 0 && snap.balance < totalDailyBudget * 1.5 && (
+                    <div className={`bg-white/[0.02] border rounded-xl p-3 relative overflow-hidden ${funding?.is_prepay_account && snap.balance !== null && totalDailyBudget > 0 && snap.balance < totalDailyBudget * 1.5 ? "border-amber-500/50 bg-amber-500/10" : "border-white/5"}`}>
+                      {funding?.is_prepay_account && snap.balance !== null && totalDailyBudget > 0 && snap.balance < totalDailyBudget * 1.5 && (
                         <div className="absolute top-0 right-0 p-2 opacity-10">
-                          <AlertTriangle className="h-10 w-10 text-emerald-400" />
+                          <AlertTriangle className="h-10 w-10 text-amber-400" />
                         </div>
                       )}
-                      <span className={`text-[9px] font-black uppercase block flex items-center gap-1 ${snap.balance !== null && totalDailyBudget > 0 && snap.balance < totalDailyBudget * 1.5 ? "text-emerald-400" : "text-muted-foreground/60"}`}>
-                        {snap.balance !== null ? "Saldo Pré-Pago" : "Não Faturado (Ciclo)"}
-                        {snap.balance !== null && totalDailyBudget > 0 && snap.balance < totalDailyBudget * 1.5 && (
-                          <span className="bg-emerald-500/20 text-emerald-400 px-1 py-0.5 rounded text-[8px] animate-pulse">BAIXO</span>
+                      <span className={`text-[9px] font-black uppercase block flex items-center gap-1 ${funding?.is_prepay_account && snap.balance !== null && totalDailyBudget > 0 && snap.balance < totalDailyBudget * 1.5 ? "text-amber-400" : "text-muted-foreground/60"}`}>
+                        {funding?.is_prepay_account ? "Saldo Pré-Pago Meta" : snap.balance !== null ? "Fatura em Aberto (Pós-Pago)" : "Não Faturado (Ciclo)"}
+                        {funding?.is_prepay_account && snap.balance !== null && totalDailyBudget > 0 && snap.balance < totalDailyBudget * 1.5 && (
+                          <span className="bg-amber-500/20 text-amber-400 px-1 py-0.5 rounded text-[8px]">BAIXO</span>
                         )}
                       </span>
-                      <p className={`text-sm font-bold mt-1 ${snap.balance !== null && totalDailyBudget > 0 && snap.balance < totalDailyBudget * 1.5 ? "text-emerald-400" : "text-white"}`}>
+                      <p className={`text-sm font-bold mt-1 ${funding?.is_prepay_account && snap.balance !== null && totalDailyBudget > 0 && snap.balance < totalDailyBudget * 1.5 ? "text-amber-400" : "text-white"}`}>
                         {snap.balance !== null 
                           ? fmtBRL(snap.balance, snap.currency) 
                           : snap.bill_immature !== null 
@@ -381,13 +396,15 @@ function CobrancasPage() {
 
                     <div className="bg-white/[0.02] border border-white/5 rounded-xl p-3">
                       <span className="text-[9px] font-black text-muted-foreground/60 uppercase block">Limite de Faturamento</span>
-                      <p className="text-sm font-bold text-white mt-1">{fmtBRL(snap.spend_cap, snap.currency)}</p>
+                      <p className="text-sm font-bold text-white mt-1">{snap.spend_cap !== null && snap.spend_cap !== undefined ? fmtBRL(snap.spend_cap, snap.currency) : "Sem teto"}</p>
                     </div>
 
                     <div className="bg-white/[0.02] border border-white/5 rounded-xl p-3">
                       <span className="text-[9px] font-black text-muted-foreground/60 uppercase block">Forma de Pagamento</span>
                       <p className="text-xs font-bold text-white truncate mt-1">
-                        {funding ? `${FUNDING_TYPE_LABEL[funding.type] || funding.type} (${funding.display_string || ""})` : "Não cadastrado"}
+                        {funding
+                          ? `${funding.type_label || FUNDING_TYPE_LABEL[String(funding.type ?? "")] || "Conta Meta"}${funding.display_string ? ` (${funding.display_string})` : ""}`
+                          : "Não cadastrado"}
                       </p>
                     </div>
                   </div>

@@ -35,6 +35,7 @@ import { UserAvatar } from "@/components/UserAvatar";
 import { DidacticUserAccessEditor } from "@/components/DidacticUserAccessEditor";
 import { TeamActivityMonitor } from "@/components/TeamActivityMonitor";
 import { isUserOnlineNow } from "@/lib/activityPixelService";
+import { getSyncStatus, SYNC_STATUS_EVENT, type SyncStatus } from "@/hooks/useAutoSync";
 
 export const Route = createFileRoute("/_app/config")({
   head: () => ({ meta: [{ title: "Configurações — NC Suite" }] }),
@@ -1059,17 +1060,102 @@ function TabIntegracoes() {
 
 
 function TabSistema() {
+  const [syncState, setSyncState] = useState<SyncStatus>(() => getSyncStatus());
+
+  useEffect(() => {
+    const handler = (e: CustomEvent) => setSyncState(e.detail || getSyncStatus());
+    window.addEventListener(SYNC_STATUS_EVENT, handler as EventListener);
+    return () => window.removeEventListener(SYNC_STATUS_EVENT, handler as EventListener);
+  }, []);
+
+  const { data: systemHealth, isLoading: loadingHealth, refetch: refetchHealth } = useQuery({
+    queryKey: ["system_operational_status"],
+    queryFn: async () => {
+      const [accountsRes, billingRes] = await Promise.all([
+        (supabase as any)
+          .from("ad_accounts")
+          .select("id, name, status, last_sync")
+          .order("name"),
+        (supabase as any)
+          .from("billing_snapshots")
+          .select("ad_account_id, fetched_at")
+          .order("fetched_at", { ascending: false })
+          .limit(20),
+      ]);
+      const accounts = accountsRes.data || [];
+      const latestBillingAt = billingRes.data?.[0]?.fetched_at || null;
+      return {
+        accounts,
+        accountsError: accountsRes.error?.message || null,
+        latestBillingAt,
+        billingError: billingRes.error?.message || null,
+      };
+    },
+  });
+
+  const lastSyncLabel = syncState.isSyncing
+    ? "Sincronizando agora..."
+    : syncState.lastSync
+    ? `${new Date(syncState.lastSync).toLocaleString("pt-BR")} (${syncState.lastResult || "ok"})`
+    : "Sem registro nesta sessão";
+
   return (
-    <div className="space-y-4">
-      <h3 className="header-sport font-display text-lg font-semibold">Informações do Sistema</h3>
+    <div className="space-y-6">
+      <div className="flex items-center justify-between gap-2">
+        <h3 className="header-sport font-display text-lg font-semibold">Status Operacional & Telemetria de Sync</h3>
+        <button
+          onClick={() => refetchHealth()}
+          className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 px-3 py-1.5 text-xs font-bold hover:bg-white/5"
+        >
+          <RefreshCw className={`h-3.5 w-3.5 ${loadingHealth ? "animate-spin" : ""}`} />
+          Verificar Agora
+        </button>
+      </div>
+
       <div className="grid gap-3 sm:grid-cols-2">
-        {[{ label: "Versão", value: "2.0.0" }, { label: "Plataforma", value: "NC Performance Suite" }, { label: "Stack", value: "React 18 + Vite + Supabase" }, { label: "Edge Runtime", value: "Supabase Edge Functions" }, { label: "DB", value: "PostgreSQL (Supabase)" }, { label: "Auth", value: "Supabase Auth" }].map((info) => (
-          <div key={info.label} className="flex items-center justify-between rounded-lg border border-white/5 bg-background/40 p-3">
+        {[
+          { label: "Último Auto-Sync (Navegador)", value: lastSyncLabel },
+          {
+            label: "Último Snapshot Faturamento Meta",
+            value: systemHealth?.latestBillingAt
+              ? new Date(systemHealth.latestBillingAt).toLocaleString("pt-BR")
+              : systemHealth?.billingError
+              ? `Erro: ${systemHealth.billingError}`
+              : "Sem snapshot recente",
+          },
+          {
+            label: "Contas Monitoradas",
+            value: systemHealth?.accountsError
+              ? `Erro ao consultar: ${systemHealth.accountsError}`
+              : `${(systemHealth?.accounts || []).length} conta(s) registrada(s)`,
+          },
+          { label: "Versão do Modelo de Eventos", value: "2026.11.1 (Meta / Supabase Edge)" },
+        ].map((info) => (
+          <div key={info.label} className="flex items-center justify-between gap-2 rounded-lg border border-white/5 bg-background/40 p-3">
             <span className="label-mono text-muted-foreground">{info.label}</span>
-            <span className="text-sm font-medium">{info.value}</span>
+            <span className="text-xs font-semibold text-right">{info.value}</span>
           </div>
         ))}
       </div>
+
+      {!loadingHealth && (systemHealth?.accounts || []).length > 0 && (
+        <div className="space-y-2">
+          <p className="text-[10px] font-black uppercase tracking-wider text-muted-foreground">Último Sync por Conta de Anúncios</p>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {(systemHealth?.accounts || []).map((acc: any) => (
+              <div key={acc.id} className="flex items-center justify-between rounded-lg border border-white/5 bg-background/30 px-3 py-2 text-xs">
+                <div className="min-w-0">
+                  <p className="font-bold truncate">{acc.name}</p>
+                  <p className="text-[10px] text-muted-foreground font-mono">{acc.id}</p>
+                </div>
+                <span className="text-[10px] font-mono text-muted-foreground shrink-0 ml-2">
+                  {acc.last_sync ? new Date(acc.last_sync).toLocaleString("pt-BR") : "Nunca sincronizada"}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1255,7 +1341,7 @@ const PERMISSION_PAGES = [
   { key: "social", label: "Social Media" },
   { key: "automacoes", label: "Automações" },
   { key: "reunioes", label: "Reuniões" },
-  { key: "cobrancas", label: "Cobranças" },
+  { key: "cobrancas", label: "Faturamento Meta" },
   { key: "strategy_map", label: "Mapa Estratégico" },
   { key: "agente", label: "Agente IA" },
   { key: "gestao_victoria", label: "Mente da Victoria AI" },
