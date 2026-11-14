@@ -3,10 +3,11 @@
 // Sincroniza em tempo real Meta Ads, Google Ads e Métricas Sociais a cada 3 minutos,
 // garantindo paridade imediata de 100% com o Gerenciador de Anúncios.
 
-import { useEffect, useRef, useCallback } from "react";
+import { useEffect, useRef, useCallback, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase-external/client";
 import { ensureDatabaseCalibrated, calibrateMetaConversionsFromGraph } from "@/lib/metaConversionCalibrator";
+import { fetchLatestCommittedSnapshot, invalidateMetaSnapshotConsumers } from "@/lib/metaSnapshotCache";
 
 const REALTIME_SYNC_INTERVAL_MS = 3 * 60 * 1000; // 3 minutos rigorosos em tempo real
 const STALE_SYNC_LOCK_MS = 120 * 1000; // Libera lock preso em localStorage após 120s
@@ -156,15 +157,27 @@ export function useAutoSync() {
 
       if (mySeq !== syncSeqRef.current) return;
 
-      const now = new Date().toISOString();
+      const metaRes = syncResults[0]?.status === "fulfilled" ? syncResults[0].value?.data : null;
+      const confirmedSnapshot = await fetchLatestCommittedSnapshot({
+        fallbackSnapshotId: metaRes?.sync_id || undefined,
+      });
+
+      const now = confirmedSnapshot.committedAt || new Date().toISOString();
       localStorage.setItem(STORAGE_REALTIME_KEY, now);
 
       const nextSync = new Date(Date.now() + REALTIME_SYNC_INTERVAL_MS).toISOString();
       const lastResult = failures.length > 0 ? "partial" : "success";
       dispatchSyncStatus({ isSyncing: false, startedAt: null, lastSync: now, nextSync, lastResult });
 
-      // Atualiza IMEDIATAMENTE toda a UI sem depender de reload manual
-      qc.invalidateQueries();
+      // Atualiza IMEDIATAMENTE todos os consumidores somente após commit confirmado do snapshot
+      await invalidateMetaSnapshotConsumers({
+        queryClient: qc,
+        accountId: "all",
+        dateFrom: timeRange.since,
+        dateTo: timeRange.until,
+        snapshotId: confirmedSnapshot.snapshotId,
+        committedAt: confirmedSnapshot.committedAt,
+      });
 
       console.log(`[AUTO-SYNC] ✅ Sync unificado 3min concluído em ${now}. Status: ${lastResult}. Próximo em ${nextSync}`);
 
@@ -223,4 +236,19 @@ export function useAutoSync() {
   }, [runSync]);
 
   return { runSync };
+}
+
+export function useAutoSyncStatus(): SyncStatus {
+  const [status, setStatus] = useState<SyncStatus>(() => getSyncStatus());
+
+  useEffect(() => {
+    const onChange = (ev: Event) => {
+      const detail = (ev as CustomEvent<Partial<SyncStatus>>)?.detail;
+      setStatus((prev) => ({ ...prev, ...(detail || getSyncStatus()) }));
+    };
+    window.addEventListener(SYNC_STATUS_EVENT, onChange as EventListener);
+    return () => window.removeEventListener(SYNC_STATUS_EVENT, onChange as EventListener);
+  }, []);
+
+  return status;
 }

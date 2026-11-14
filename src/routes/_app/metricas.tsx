@@ -25,6 +25,15 @@ import { useAuth } from "@/lib/auth";
 import { hasPermissionAccess, isMasterAdmin } from "@/lib/userHierarchy";
 import { DateRangePicker } from "@/components/DateRangePicker";
 import { useGlobalDate } from "@/contexts/DateContext";
+import { EVENT_MODEL_VERSION } from "@/lib/metricsDomain";
+import {
+  buildMetaSnapshotKey,
+  DEFAULT_META_TIMEZONE,
+  fetchLatestCommittedSnapshot,
+  invalidateMetaSnapshotConsumers,
+  useActiveMetaSnapshot,
+} from "@/lib/metaSnapshotCache";
+import { SnapshotStatusBadge } from "@/components/SnapshotStatusBadge";
 import { PageHeader } from "@/components/PageHeader";
 import { useChartConfig } from "@/hooks/useChartConfig";
 import { ChartEngine } from "@/components/charts/ChartEngine";
@@ -595,6 +604,7 @@ interface KPIBarProps {
   avgCpm: number;
   reachLabel?: string;
   metricVector?: MetricVector;
+  isLoading?: boolean;
 }
 
 function KPIBar({
@@ -610,6 +620,7 @@ function KPIBar({
   avgCpm,
   reachLabel = "Alcance",
   metricVector,
+  isLoading = false,
 }: KPIBarProps) {
   const [scrolled, setScrolled] = useState(false);
 
@@ -639,14 +650,14 @@ function KPIBar({
     : undefined;
 
   const kpiItems = [
-    { label: "Gasto",          value: `R$ ${fmtBRL(totCost)}`,                         color: "text-primary",          icon: DollarSign,    sub: undefined },
-    { label: isMixed ? "Resultados (Tipo)" : "Resultados", value: resultsDisplay,      color: "text-violet-400",       icon: Target,        sub: isMixed ? "Sem soma mista" : undefined },
-    { label: cplLabel,         value: avgCpl > 0 ? `R$ ${avgCpl.toFixed(2)}` : "—",    color: "text-primary",          icon: Zap,           sub: undefined },
-    { label: "Impressões",     value: fmtN(totImpr),                                   color: "text-muted-foreground", icon: Eye,           sub: undefined },
-    { label: reachLabel,       value: totReach > 0 ? fmtN(totReach) : "—",             color: "text-muted-foreground", icon: Users,         sub: undefined },
-    { label: "Cliques (Link)", value: fmtN(totClicks),                                 color: "text-muted-foreground", icon: MousePointer2, sub: clicksSub },
-    { label: "CTR Link",       value: `${avgCtr.toFixed(2)}%`,                         color: avgCtr >= 1.5 ? "text-green-400" : "text-muted-foreground", icon: TrendingUp, sub: ctrSub },
-    { label: "CPM Médio",      value: avgCpm > 0 ? `R$ ${avgCpm.toFixed(2)}` : "—",    color: "text-muted-foreground", icon: BarChart3,     sub: undefined },
+    { label: "Gasto",          value: isLoading ? "—" : `R$ ${fmtBRL(totCost)}`,                         color: "text-primary",          icon: DollarSign,    sub: undefined },
+    { label: isMixed ? "Resultados (Tipo)" : "Resultados", value: isLoading ? "—" : resultsDisplay,      color: "text-violet-400",       icon: Target,        sub: isMixed && !isLoading ? "Sem soma mista" : undefined },
+    { label: cplLabel,         value: isLoading ? "—" : avgCpl > 0 ? `R$ ${avgCpl.toFixed(2)}` : "—",    color: "text-primary",          icon: Zap,           sub: undefined },
+    { label: "Impressões",     value: isLoading ? "—" : fmtN(totImpr),                                   color: "text-muted-foreground", icon: Eye,           sub: undefined },
+    { label: reachLabel,       value: isLoading ? "—" : totReach > 0 ? fmtN(totReach) : "—",             color: "text-muted-foreground", icon: Users,         sub: undefined },
+    { label: "Cliques (Link)", value: isLoading ? "—" : fmtN(totClicks),                                 color: "text-muted-foreground", icon: MousePointer2, sub: isLoading ? undefined : clicksSub },
+    { label: "CTR Link",       value: isLoading ? "—" : `${avgCtr.toFixed(2)}%`,                         color: avgCtr >= 1.5 ? "text-green-400" : "text-muted-foreground", icon: TrendingUp, sub: isLoading ? undefined : ctrSub },
+    { label: "CPM Médio",      value: isLoading ? "—" : avgCpm > 0 ? `R$ ${avgCpm.toFixed(2)}` : "—",    color: "text-muted-foreground", icon: BarChart3,     sub: undefined },
   ];
 
   return (
@@ -854,10 +865,19 @@ function MetricasCampanhasPage() {
 
   const startStr = getLocalDateStr(dateRange.startDate);
   const endStr   = getLocalDateStr(dateRange.endDate);
+  const activeSnapshot = useActiveMetaSnapshot({ accountId: accountFilter });
 
   const { data: campaigns = [], isFetching: isFetchingCamps, isLoading: isLoadingCamps } = useQuery({
-    queryKey: ["mc-camps", accountFilter, statusFilter, startStr, endStr],
-    placeholderData: (prev) => prev,
+    queryKey: buildMetaSnapshotKey("mc-camps", {
+      accountId: accountFilter,
+      dateFrom: startStr,
+      dateTo: endStr,
+      timezone: DEFAULT_META_TIMEZONE,
+      level: "campaign",
+      statusFilter,
+      snapshotId: activeSnapshot.snapshotId,
+      eventModelVersion: EVENT_MODEL_VERSION,
+    }),
     queryFn: async () => {
       ensureDatabaseCalibrated(supabase).catch(() => {});
       const buildQuery = (withExtended: boolean) => {
@@ -906,10 +926,22 @@ function MetricasCampanhasPage() {
   const selectedAdSetsKey = useMemo(() => Array.from(selectedAdSets).sort().join(","), [selectedAdSets]);
   const campaignIdsKey = useMemo(() => campaignIdsInAccount.join(","), [campaignIdsInAccount]);
 
-  const { data: adSets = [], isLoading: isLoadingAdSets } = useQuery({
-    queryKey: ["mc-adsets", accountFilter, selectedCampaignId || selectedCampsKey, campaignIdsKey, statusFilter, startStr, endStr],
+  const { data: adSets = [], isLoading: isLoadingAdSets, isFetching: isFetchingAdSets } = useQuery({
+    queryKey: buildMetaSnapshotKey(
+      "mc-adsets",
+      {
+        accountId: accountFilter,
+        dateFrom: startStr,
+        dateTo: endStr,
+        timezone: DEFAULT_META_TIMEZONE,
+        level: "adset",
+        statusFilter,
+        snapshotId: activeSnapshot.snapshotId,
+        eventModelVersion: EVENT_MODEL_VERSION,
+      },
+      [selectedCampaignId || selectedCampsKey, campaignIdsKey]
+    ),
     enabled: level === "conjuntos" || level === "anuncios" || !!selectedCampaignId,
-    placeholderData: (prev) => prev,
     queryFn: async () => {
       const targetCampIds = selectedCampaignId
         ? [selectedCampaignId]
@@ -953,10 +985,22 @@ function MetricasCampanhasPage() {
     },
   });
 
-  const { data: ads = [], isLoading: isLoadingAds } = useQuery({
-    queryKey: ["mc-ads", accountFilter, selectedAdSetsKey, selectedCampaignId || selectedCampsKey, campaignIdsKey, statusFilter, startStr, endStr],
+  const { data: ads = [], isLoading: isLoadingAds, isFetching: isFetchingAds } = useQuery({
+    queryKey: buildMetaSnapshotKey(
+      "mc-ads",
+      {
+        accountId: accountFilter,
+        dateFrom: startStr,
+        dateTo: endStr,
+        timezone: DEFAULT_META_TIMEZONE,
+        level: "ad",
+        statusFilter,
+        snapshotId: activeSnapshot.snapshotId,
+        eventModelVersion: EVENT_MODEL_VERSION,
+      },
+      [selectedAdSetsKey, selectedCampaignId || selectedCampsKey, campaignIdsKey]
+    ),
     enabled: true,
-    placeholderData: (prev) => prev,
     queryFn: async () => {
       const targetCampIds = selectedCampaignId
         ? [selectedCampaignId]
@@ -1011,9 +1055,17 @@ function MetricasCampanhasPage() {
   });
 
   // Alcance e frequência reais do período (query sem time_increment → exato como Gerenciador)
-  const { data: periodStats = [] } = useQuery({
-    queryKey: ["mc-period-stats", accountFilter, startStr, endStr],
-    placeholderData: (prev) => prev,
+  const { data: periodStats = [], isFetching: isFetchingPeriod } = useQuery({
+    queryKey: buildMetaSnapshotKey("mc-period-stats", {
+      accountId: accountFilter,
+      dateFrom: startStr,
+      dateTo: endStr,
+      timezone: DEFAULT_META_TIMEZONE,
+      level,
+      statusFilter,
+      snapshotId: activeSnapshot.snapshotId,
+      eventModelVersion: EVENT_MODEL_VERSION,
+    }),
     queryFn: async () => {
       const buildQ = (withExtended: boolean, from: number) => {
         const cols = withExtended
@@ -1048,9 +1100,16 @@ function MetricasCampanhasPage() {
   });
 
   // Alcance deduplicado oficial da conta no período (meta_account_period_stats)
-  const { data: accountPeriodStats = [] } = useQuery({
-    queryKey: ["mc-account-period-stats", accountFilter, startStr, endStr],
-    placeholderData: (prev) => prev,
+  const { data: accountPeriodStats = [], isFetching: isFetchingAccPeriod } = useQuery({
+    queryKey: buildMetaSnapshotKey("mc-account-period-stats", {
+      accountId: accountFilter,
+      dateFrom: startStr,
+      dateTo: endStr,
+      timezone: DEFAULT_META_TIMEZONE,
+      level: "account",
+      snapshotId: activeSnapshot.snapshotId,
+      eventModelVersion: EVENT_MODEL_VERSION,
+    }),
     queryFn: async () => {
       try {
         let q = (supabase as any)
@@ -1081,7 +1140,20 @@ function MetricasCampanhasPage() {
   });
 
   const { data: placementData = [] } = useQuery({
-    queryKey: ["mc-placements", accountFilter, Array.from(selectedCamps).sort().join(","), startStr, endStr],
+    queryKey: buildMetaSnapshotKey(
+      "mc-placements",
+      {
+        accountId: accountFilter,
+        dateFrom: startStr,
+        dateTo: endStr,
+        timezone: DEFAULT_META_TIMEZONE,
+        level,
+        statusFilter,
+        deliveryFilter: includeNoDelivery ? "include_no_delivery" : "all",
+        snapshotId: activeSnapshot.snapshotId,
+      },
+      [Array.from(selectedCamps).sort().join(",")]
+    ),
     enabled: level === "campanhas",
     queryFn: async () => {
       let q = (supabase as any).from("placement_metrics").select("placement, publisher, impressions, clicks, spend, conversions, reach").gte("date", startStr).lte("date", endStr);
@@ -1100,7 +1172,20 @@ function MetricasCampanhasPage() {
   });
 
   const { data: breakdowns, isLoading: loadingBreakdowns } = useQuery({
-    queryKey: ["mc-breakdowns", accountFilter, Array.from(selectedCamps).sort().join(","), startStr, endStr],
+    queryKey: buildMetaSnapshotKey(
+      "mc-breakdowns",
+      {
+        accountId: accountFilter,
+        dateFrom: startStr,
+        dateTo: endStr,
+        timezone: DEFAULT_META_TIMEZONE,
+        level,
+        statusFilter,
+        deliveryFilter: includeNoDelivery ? "include_no_delivery" : "all",
+        snapshotId: activeSnapshot.snapshotId,
+      },
+      [selectedCampaignId || Array.from(selectedCamps).sort().join(",")]
+    ),
     enabled: view === "demograficos",
     queryFn: async () => {
       const acFilter = accountFilter !== "all";
@@ -1209,12 +1294,19 @@ function MetricasCampanhasPage() {
       await calibrateMetaConversionsFromGraph(supabase, startStr, endStr, accountFilter);
       return data;
     },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["mc-camps"] });
-      qc.invalidateQueries({ queryKey: ["mc-adsets"] });
-      qc.invalidateQueries({ queryKey: ["mc-ads"] });
-      qc.invalidateQueries({ queryKey: ["mc-period-stats"] });
-      qc.invalidateQueries({ queryKey: ["meta-sync-config"] });
+    onSuccess: async (data: any) => {
+      const confirmed = await fetchLatestCommittedSnapshot({
+        accountId: accountFilter,
+        fallbackSnapshotId: data?.sync_id || undefined,
+      });
+      await invalidateMetaSnapshotConsumers({
+        queryClient: qc,
+        accountId: accountFilter,
+        dateFrom: startStr,
+        dateTo: endStr,
+        snapshotId: confirmed.snapshotId,
+        committedAt: confirmed.committedAt,
+      });
       toast.success("Sincronizado com Meta Ads!");
     },
     onError: (e: any) => toast.error(`Erro: ${e.message}`),
@@ -1823,12 +1915,19 @@ function MetricasCampanhasPage() {
 
       {/* Cabeçalho e KPIs rolam naturalmente para liberar espaço vertical em telas menores e mobile */}
       <div className="space-y-2.5 pb-2.5">
-        <PageHeader
-          eyebrow="Operação Estratégica"
-          title="Controle de KPIs"
-          description="Gestão de campanhas, conjuntos e anúncios. Acompanhamento detalhado de métricas e conversões."
-          compact
-        />
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <PageHeader
+            eyebrow="Operação Estratégica"
+            title="Controle de KPIs"
+            description="Gestão de campanhas, conjuntos e anúncios. Acompanhamento detalhado de métricas e conversões."
+            compact
+          />
+          <SnapshotStatusBadge
+            snapshotId={activeSnapshot.snapshotId}
+            committedAt={activeSnapshot.committedAt}
+            isUpdating={isFetchingCamps || isFetchingAdSets || isFetchingAds || isFetchingPeriod || isFetchingAccPeriod || syncMutation.isPending}
+          />
+        </div>
 
         <KPIBar
           totCost={totCost}
@@ -1843,6 +1942,7 @@ function MetricasCampanhasPage() {
           avgCtrAll={avgCtrAll}
           avgCpm={avgCpm}
           metricVector={metricVector}
+          isLoading={isLoadingCamps || (isFetchingCamps && campaigns.length === 0)}
         />
       </div>
 

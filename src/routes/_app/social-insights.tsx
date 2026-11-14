@@ -20,8 +20,16 @@ import { DateRangePicker } from "@/components/DateRangePicker";
 import { supabase } from "@/integrations/supabase-external/client";
 import {
   fetchLiveSocialAccounts,
-  fetchRealSocialInsights,
+  fetchAccountSocialOverview,
+  fetchAccountSocialPosts,
+  getLastValidSocialSnapshot,
+  saveLastValidSocialSnapshot,
   type RealSocialPost,
+  type SocialDataState,
+  type SocialFieldAvailability,
+  type SocialOverviewResult,
+  type SocialPostsResult,
+  type RealSocialInsightsResult,
 } from "@/lib/metaSocialService";
 import ReactMarkdown from "react-markdown";
 
@@ -164,16 +172,19 @@ function SocialInsightsPage() {
   const masterToken = liveAccountsData?.masterToken || null;
   const hasMasterToken = Boolean(liveAccountsData?.hasMasterToken || masterToken);
 
-  // 2. Insights e posts 100% REAIS da Meta Graph API v21.0
+  // 2A. Visão Geral (identidade, seguidores, insights IG/FB, série diária e demográficos)
+  // Independente de publicações para que uma falha/demora nos posts nunca bloqueie o painel.
+  const overviewSnapshotKey = `overview:${selectedPage}:${dateFrom}:${dateTo}:${chartDaysWindow}`;
   const {
-    data: realInsights,
-    isFetching: fetchingInsights,
-    refetch: refetchInsights,
+    data: overviewQueryData,
+    isFetching: fetchingOverview,
+    isError: overviewQueryFailed,
+    refetch: refetchOverview,
   } = useQuery({
-    queryKey: ["real_social_insights_v21", selectedPage, dateFrom, dateTo, chartDaysWindow, activePages.length],
+    queryKey: ["real_social_overview_v21", selectedPage, dateFrom, dateTo, chartDaysWindow, activePages.length],
     enabled: !loadingAccounts,
-    queryFn: async () => {
-      const result = await fetchRealSocialInsights({
+    queryFn: async (): Promise<SocialOverviewResult & { isFromFallback?: boolean; fallbackSnapshotAt?: string | null }> => {
+      const result = await fetchAccountSocialOverview({
         accounts: activePages,
         selectedPageId: selectedPage,
         dateFrom,
@@ -181,6 +192,36 @@ function SocialInsightsPage() {
         chartDaysOverride: chartDaysWindow,
         masterToken,
       });
+      if (result.syncSource === "meta_graph_v21" && result.sectionStates.followers.state !== "error") {
+        saveLastValidSocialSnapshot(overviewSnapshotKey, {
+          accounts: result.accounts,
+          dailySeries: result.dailySeries,
+          chartWindowDays: result.chartWindowDays,
+          kpis: result.kpis,
+          fieldAvailability: result.fieldAvailability,
+          demographics: result.demographics,
+          posts: [],
+          heatmapMatrix: Array.from({ length: 7 }, () => Array(24).fill(0)),
+          hasPostsForHeatmap: false,
+          syncSource: result.syncSource,
+          snapshotAt: result.snapshotAt,
+          windowUsed: result.windowUsed,
+        });
+        setLastSync(new Date());
+        return result;
+      }
+      const prev = getLastValidSocialSnapshot(overviewSnapshotKey);
+      if (prev && result.sectionStates.followers.state === "error") {
+        return {
+          ...result,
+          kpis: prev.kpis,
+          dailySeries: prev.dailySeries,
+          demographics: prev.demographics,
+          fieldAvailability: prev.fieldAvailability || result.fieldAvailability,
+          isFromFallback: true,
+          fallbackSnapshotAt: prev.snapshotAt || null,
+        };
+      }
       setLastSync(new Date());
       return result;
     },
@@ -188,7 +229,68 @@ function SocialInsightsPage() {
     retry: false,
   });
 
-  const kpis = realInsights?.kpis || {
+  // 2B. Publicações & Heatmap (consulta independente da visão geral)
+  const postsSnapshotKey = `posts:${selectedPage}`;
+  const {
+    data: postsQueryData,
+    isFetching: fetchingPosts,
+    isError: postsQueryFailed,
+    refetch: refetchPosts,
+  } = useQuery({
+    queryKey: ["real_social_posts_v21", selectedPage, activePages.length],
+    enabled: !loadingAccounts,
+    queryFn: async (): Promise<SocialPostsResult & { isFromFallback?: boolean; fallbackSnapshotAt?: string | null }> => {
+      const result = await fetchAccountSocialPosts({
+        accounts: activePages,
+        selectedPageId: selectedPage,
+        masterToken,
+      });
+      if (result.postsState.state === "success" || result.postsState.state === "partial" || result.postsState.state === "empty") {
+        saveLastValidSocialSnapshot(postsSnapshotKey, {
+          accounts: activePages,
+          dailySeries: [],
+          chartWindowDays: chartDaysWindow,
+          kpis: {
+            followersIg: 0, followersFb: 0, newFollowersIg: 0, newFollowersFb: 0,
+            reachIg: 0, viewsIg: 0, viewsFb: 0, interactionsIg: 0, interactionsFb: 0,
+            accountsEngaged: 0, profileViews: 0, websiteClicks: 0,
+            reachDeltaPct: null, followersDeltaPct: null,
+          },
+          demographics: { available: false, totalSample: 0, gender: { male: 0, female: 0 }, age: [] },
+          posts: result.posts,
+          heatmapMatrix: result.heatmapMatrix,
+          hasPostsForHeatmap: result.hasPostsForHeatmap,
+          heatmapSampleSize: result.heatmapSampleSize,
+          syncSource: "meta_graph_v21",
+          snapshotAt: result.snapshotAt,
+        });
+        return result;
+      }
+      const prev = getLastValidSocialSnapshot(postsSnapshotKey);
+      if (prev && prev.posts.length > 0) {
+        return {
+          ...result,
+          posts: prev.posts,
+          heatmapMatrix: prev.heatmapMatrix,
+          hasPostsForHeatmap: prev.hasPostsForHeatmap,
+          heatmapSampleSize: prev.heatmapSampleSize || prev.posts.length,
+          isFromFallback: true,
+          fallbackSnapshotAt: prev.snapshotAt || null,
+        };
+      }
+      return result;
+    },
+    staleTime: 3 * 60 * 1000,
+    retry: false,
+  });
+
+  const refetchAllSocial = useCallback(async () => {
+    await Promise.allSettled([refetchOverview(), refetchPosts()]);
+  }, [refetchOverview, refetchPosts]);
+
+  const fetchingInsights = fetchingOverview || fetchingPosts;
+
+  const kpis = overviewQueryData?.kpis || {
     followersIg: 0,
     followersFb: 0,
     newFollowersIg: 0,
@@ -205,15 +307,30 @@ function SocialInsightsPage() {
     followersDeltaPct: null,
   };
 
-  const dailySeries = realInsights?.dailySeries || [];
-  const demographics = realInsights?.demographics || {
+  const fieldAvail = overviewQueryData?.fieldAvailability || {
+    reachIg: "available" as SocialFieldAvailability,
+    viewsIg: "available" as SocialFieldAvailability,
+    viewsFb: "available" as SocialFieldAvailability,
+    interactionsIg: "available" as SocialFieldAvailability,
+    interactionsFb: "available" as SocialFieldAvailability,
+    profileViews: "available" as SocialFieldAvailability,
+    websiteClicks: "available" as SocialFieldAvailability,
+    followers: "available" as SocialFieldAvailability,
+  };
+
+  const sectionStates = overviewQueryData?.sectionStates;
+  const overviewInitialLoading = (loadingAccounts || fetchingOverview) && !overviewQueryData;
+  const postsInitialLoading = (loadingAccounts || fetchingPosts) && !postsQueryData;
+
+  const dailySeries = overviewQueryData?.dailySeries || [];
+  const demographics = overviewQueryData?.demographics || {
     available: false,
     totalSample: 0,
     gender: { male: 0, female: 0 },
     age: [],
   };
-  const heatmapMatrix = realInsights?.heatmapMatrix || Array.from({ length: 7 }, () => Array(24).fill(0));
-  const hasPostsForHeatmap = Boolean(realInsights?.hasPostsForHeatmap);
+  const heatmapMatrix = postsQueryData?.heatmapMatrix || Array.from({ length: 7 }, () => Array(24).fill(0));
+  const hasPostsForHeatmap = Boolean(postsQueryData?.hasPostsForHeatmap);
 
   // Série pronta para o gráfico redesenhado (sempre legível e com resumo imediato)
   const chartView = useMemo(() => {
@@ -248,7 +365,7 @@ function SocialInsightsPage() {
 
   // Posts reais filtrados e ordenados
   const listPosts = useMemo(() => {
-    const raw = realInsights?.posts || [];
+    const raw = postsQueryData?.posts || [];
     let filtered = [...raw];
     if (postTypeFilter !== "all") {
       filtered = filtered.filter((p) => p.post_type === postTypeFilter);
@@ -263,33 +380,40 @@ function SocialInsightsPage() {
       if (sortPostsBy === "comments") return b.comments_count - a.comments_count;
       return b.engagement_rate - a.engagement_rate;
     });
-  }, [realInsights?.posts, postTypeFilter, sortPostsBy]);
+  }, [postsQueryData?.posts, postTypeFilter, sortPostsBy]);
 
   // Sincronização automática (countdown visual + refetch)
   useEffect(() => {
     const timer = setInterval(() => {
       setCountdown((prev) => {
         if (prev <= 1) {
-          refetchInsights();
+          void refetchAllSocial();
           return 300;
         }
         return prev - 1;
       });
     }, 1000);
     return () => clearInterval(timer);
-  }, [refetchInsights]);
+  }, [refetchAllSocial]);
 
   const handleManualSync = async () => {
     setIsSyncing(true);
     try {
-      await fetchLiveSocialAccounts(true);
+      const bounded = <T,>(promise: Promise<T>, label: string) =>
+        Promise.race([
+          promise,
+          new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error(`Tempo limite excedido ao atualizar ${label}.`)), 28_000)
+          ),
+        ]);
+      await bounded(fetchLiveSocialAccounts(true), "lista de contas Meta");
       await qc.invalidateQueries({ queryKey: ["live_meta_social_accounts"] });
-      await refetchInsights();
+      await bounded(refetchAllSocial(), "métricas e publicações sociais");
       setLastSync(new Date());
       setCountdown(300);
       toast.success("Contas e métricas reais atualizadas direto da Meta API!");
     } catch (err: any) {
-      toast.error(err?.message || "Erro ao sincronizar com a Meta API.");
+      toast.error(err?.message || "Erro ao sincronizar com a Meta API — tentar novamente.");
     } finally {
       setIsSyncing(false);
     }
@@ -403,11 +527,112 @@ Responda de forma objetiva e tática em Markdown com:
   }, [demographics]);
 
   const isConnected = Boolean(masterToken && activePages.length > 0);
+  const targetAccountsList = overviewQueryData?.targetAccounts || (selectedPage === "all" ? activePages : activePages.filter((p) => p.page_id === selectedPage));
+  const selectedAccountObj = selectedPage === "all" ? null : activePages.find((p) => p.page_id === selectedPage) || null;
+  const hasAnyInstagramTarget = targetAccountsList.some((a) => Boolean(a.instagram_account_id));
+  const networkModeLabel =
+    selectedPage === "all"
+      ? `Consolidado (${targetAccountsList.length} contas · IG + FB)`
+      : selectedAccountObj?.instagram_account_id
+      ? `Instagram (@${selectedAccountObj.instagram_handle || selectedAccountObj.instagram_account_id}) + Facebook`
+      : "Somente Facebook";
+
+  const overviewErrorState: SocialDataState | null = overviewQueryFailed
+    ? "error"
+    : sectionStates?.accountInsights.state &&
+      ["error", "token_expired", "rate_limited", "permission_denied"].includes(sectionStates.accountInsights.state)
+    ? sectionStates.accountInsights.state
+    : null;
+  const followersErrorState: SocialDataState | null = overviewQueryFailed
+    ? "error"
+    : sectionStates?.followers.state &&
+      ["error", "token_expired", "rate_limited", "permission_denied"].includes(sectionStates.followers.state)
+    ? sectionStates.followers.state
+    : null;
+  const postsErrorState: SocialDataState | null = postsQueryFailed
+    ? "error"
+    : postsQueryData?.postsState.state &&
+      ["error", "token_expired", "rate_limited", "permission_denied"].includes(postsQueryData.postsState.state)
+    ? postsQueryData.postsState.state
+    : null;
+
+  const allEndpointLogs = [
+    ...(overviewQueryData?.endpointLogs || []),
+    ...(postsQueryData?.endpointLogs || []),
+  ];
+  const effectiveSnapshotIso =
+    overviewQueryData?.fallbackSnapshotAt ||
+    overviewQueryData?.snapshotAt ||
+    postsQueryData?.snapshotAt ||
+    (lastSync ? lastSync.toISOString() : null);
+
+  const renderMetricDisplay = (
+    value: number,
+    availability: SocialFieldAvailability,
+    isLoadingCard: boolean,
+    errorState: SocialDataState | null
+  ) => {
+    if (isLoadingCard) return { main: "—", statusText: "Carregando..." as string | null, isUnavailable: false, isError: false, isZero: false };
+    if (errorState || availability === "error") {
+      return {
+        main: "—",
+        statusText: "Não foi possível carregar — tentar novamente",
+        isUnavailable: false,
+        isError: true,
+        isZero: false,
+      };
+    }
+    if (availability === "unavailable") {
+      return {
+        main: "Indisponível pela API Meta",
+        statusText: "Permissão/canal não disponível para esta conta",
+        isUnavailable: true,
+        isError: false,
+        isZero: false,
+      };
+    }
+    if (value === 0) {
+      return {
+        main: "0",
+        statusText: "0 no período selecionado",
+        isUnavailable: false,
+        isError: false,
+        isZero: true,
+      };
+    }
+    return {
+      main: value.toLocaleString("pt-BR"),
+      statusText: null,
+      isUnavailable: false,
+      isError: false,
+      isZero: false,
+    };
+  };
+
   const totalFollowersAll = kpis.followersIg + kpis.followersFb;
   const totalViewsAll = kpis.viewsIg + kpis.viewsFb;
   const totalInteractionsAll = kpis.interactionsIg + kpis.interactionsFb;
   const totalNewFollowersAll = kpis.newFollowersIg + kpis.newFollowersFb;
   const bioCtr = kpis.profileViews > 0 ? ((kpis.websiteClicks / kpis.profileViews) * 100).toFixed(1) : "0.0";
+
+  const reachDisplay = renderMetricDisplay(kpis.reachIg, fieldAvail.reachIg, overviewInitialLoading, overviewErrorState);
+  const viewsAvail: SocialFieldAvailability =
+    fieldAvail.viewsIg === "error" || fieldAvail.viewsFb === "error"
+      ? "error"
+      : fieldAvail.viewsIg === "unavailable" && fieldAvail.viewsFb === "unavailable"
+      ? "unavailable"
+      : "available";
+  const viewsDisplay = renderMetricDisplay(totalViewsAll, viewsAvail, overviewInitialLoading, overviewErrorState);
+  const interactionsAvail: SocialFieldAvailability =
+    fieldAvail.interactionsIg === "error" || fieldAvail.interactionsFb === "error"
+      ? "error"
+      : fieldAvail.interactionsIg === "unavailable" && fieldAvail.interactionsFb === "unavailable"
+      ? "unavailable"
+      : "available";
+  const interactionsDisplay = renderMetricDisplay(totalInteractionsAll, interactionsAvail, overviewInitialLoading, overviewErrorState);
+  const followersDisplay = renderMetricDisplay(totalFollowersAll, fieldAvail.followers, overviewInitialLoading, followersErrorState);
+  const websiteDisplay = renderMetricDisplay(kpis.websiteClicks, fieldAvail.websiteClicks, overviewInitialLoading, overviewErrorState);
+  const profileDisplay = renderMetricDisplay(kpis.profileViews, fieldAvail.profileViews, overviewInitialLoading, overviewErrorState);
 
   const chartMetricMeta: Record<ChartMetricKey, { label: string; color: string; desc: string }> = {
     reachIg: {
@@ -514,11 +739,11 @@ Responda de forma objetiva e tática em Markdown com:
           </Link>
           <button
             onClick={handleManualSync}
-            disabled={isSyncing || fetchingInsights}
+            disabled={isSyncing}
             className="flex items-center gap-2 rounded-xl border border-white/10 bg-card px-4 py-2.5 text-xs font-bold text-muted-foreground hover:text-foreground hover:bg-white/5 active:scale-95 transition disabled:opacity-50 cursor-pointer"
           >
             <RefreshCw className={`h-3.5 w-3.5 ${isSyncing || fetchingInsights ? "animate-spin" : ""}`} />
-            Sincronizar Agora
+            {isSyncing ? "Sincronizando..." : "Sincronizar Agora"}
           </button>
           <button
             onClick={generateAiInsights}
@@ -572,9 +797,14 @@ Responda de forma objetiva e tática em Markdown com:
               </option>
             ))}
           </select>
-          {fetchingInsights && (
+          {fetchingOverview && (
             <span className="inline-flex items-center gap-1.5 text-[11px] font-bold text-primary">
-              <Loader2 className="h-3.5 w-3.5 animate-spin" /> Carregando dados reais da Meta...
+              <Loader2 className="h-3.5 w-3.5 animate-spin" /> Carregando visão geral Meta...
+            </span>
+          )}
+          {fetchingPosts && (
+            <span className="inline-flex items-center gap-1.5 text-[11px] font-bold text-cyan-400">
+              <Loader2 className="h-3.5 w-3.5 animate-spin" /> Carregando publicações...
             </span>
           )}
         </div>
@@ -588,6 +818,44 @@ Responda de forma objetiva e tática em Markdown com:
         </div>
       </div>
 
+      {/* Diagnóstico Explícito da Conta, Rede, Janela e Estado de API */}
+      <div className="rounded-2xl border border-white/10 bg-white/[0.02] px-4 py-3 flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
+          <span className="text-foreground font-bold">
+            {selectedAccountObj
+              ? `${selectedAccountObj.page_name} (FB ID: ${selectedAccountObj.page_id}${selectedAccountObj.instagram_account_id ? ` · IG ID: ${selectedAccountObj.instagram_account_id}` : ""})`
+              : `Consolidado (${targetAccountsList.length} contas conectadas)`}
+          </span>
+          <span className="px-2 py-0.5 rounded-full bg-primary/10 border border-primary/25 text-primary font-bold text-[11px]">
+            {networkModeLabel}
+          </span>
+          <span className="text-muted-foreground font-mono text-[11px]">
+            Janela: {overviewQueryData?.windowUsed?.dateFrom || dateFrom} → {overviewQueryData?.windowUsed?.dateTo || dateTo} ({overviewQueryData?.chartWindowDays || chartDaysWindow}d série)
+          </span>
+          {effectiveSnapshotIso && (
+            <span className="text-muted-foreground font-mono text-[11px]">
+              Snapshot: {format(parseISO(effectiveSnapshotIso), "dd/MM HH:mm:ss")}
+              {(overviewQueryData?.isFromFallback || postsQueryData?.isFromFallback) ? " (último snapshot válido preservado)" : ""}
+            </span>
+          )}
+        </div>
+        {(overviewErrorState || followersErrorState || postsErrorState || allEndpointLogs.length > 0) && (
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-amber-300 font-semibold">
+              {allEndpointLogs[0]
+                ? `${allEndpointLogs[0].accountName} (${allEndpointLogs[0].endpoint}): ${allEndpointLogs[0].message}`
+                : "Falha parcial em endpoints Meta — exibindo dados disponíveis."}
+            </span>
+            <button
+              onClick={() => void refetchAllSocial()}
+              className="px-2.5 py-1 rounded-lg bg-primary/20 border border-primary/30 text-primary font-bold hover:bg-primary/30 cursor-pointer"
+            >
+              Tentar novamente
+            </button>
+          </div>
+        )}
+      </div>
+
       {/* Cards de KPIs Principais (100% Reais) */}
       <div className="grid gap-4 grid-cols-2 md:grid-cols-3 lg:grid-cols-6">
         {/* 1. Alcance */}
@@ -597,12 +865,18 @@ Responda de forma objetiva e tática em Markdown com:
             <span className="text-xs font-bold uppercase tracking-wider">Alcance Instagram</span>
             <Eye className="h-4 w-4 text-violet-400" />
           </div>
-          <p className="text-2xl font-bold text-white tracking-tight">
-            {kpis.reachIg.toLocaleString("pt-BR")}
+          <p className={`${reachDisplay.isUnavailable ? "text-xs text-amber-300" : "text-2xl text-white"} font-bold tracking-tight`}>
+            {reachDisplay.main}
           </p>
-          <div className="flex items-center justify-between text-xs pt-1">
-            <span className="text-muted-foreground">Contas únicas</span>
-            {kpis.reachDeltaPct !== null ? (
+          <div className="flex items-center justify-between text-xs pt-1 gap-2">
+            <span className="text-muted-foreground truncate">
+              {reachDisplay.statusText || "Contas únicas"}
+            </span>
+            {reachDisplay.isError ? (
+              <button onClick={() => void refetchOverview()} className="text-primary font-bold hover:underline cursor-pointer shrink-0">
+                Tentar
+              </button>
+            ) : kpis.reachDeltaPct !== null ? (
               <span className={`font-bold ${kpis.reachDeltaPct >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
                 {kpis.reachDeltaPct >= 0 ? `+${kpis.reachDeltaPct}%` : `${kpis.reachDeltaPct}%`}
               </span>
@@ -619,12 +893,18 @@ Responda de forma objetiva e tática em Markdown com:
             <span className="text-xs font-bold uppercase tracking-wider">Visualizações</span>
             <Activity className="h-4 w-4 text-amber-400" />
           </div>
-          <p className="text-2xl font-bold text-white tracking-tight">
-            {totalViewsAll.toLocaleString("pt-BR")}
+          <p className={`${viewsDisplay.isUnavailable ? "text-xs text-amber-300" : "text-2xl text-white"} font-bold tracking-tight`}>
+            {viewsDisplay.main}
           </p>
-          <div className="flex items-center justify-between text-xs pt-1">
-            <span className="text-muted-foreground">IG: {kpis.viewsIg.toLocaleString("pt-BR")}</span>
-            <span className="text-muted-foreground">FB: {kpis.viewsFb.toLocaleString("pt-BR")}</span>
+          <div className="flex items-center justify-between text-xs pt-1 gap-1">
+            {viewsDisplay.statusText ? (
+              <span className="text-muted-foreground truncate">{viewsDisplay.statusText}</span>
+            ) : (
+              <>
+                <span className="text-muted-foreground">IG: {fieldAvail.viewsIg === "unavailable" ? "Indisponível" : kpis.viewsIg.toLocaleString("pt-BR")}</span>
+                <span className="text-muted-foreground">FB: {fieldAvail.viewsFb === "unavailable" ? "Indisponível" : kpis.viewsFb.toLocaleString("pt-BR")}</span>
+              </>
+            )}
           </div>
         </motion.div>
 
@@ -635,12 +915,18 @@ Responda de forma objetiva e tática em Markdown com:
             <span className="text-xs font-bold uppercase tracking-wider">Interações</span>
             <ThumbsUp className="h-4 w-4 text-pink-400" />
           </div>
-          <p className="text-2xl font-bold text-white tracking-tight">
-            {totalInteractionsAll.toLocaleString("pt-BR")}
+          <p className={`${interactionsDisplay.isUnavailable ? "text-xs text-amber-300" : "text-2xl text-white"} font-bold tracking-tight`}>
+            {interactionsDisplay.main}
           </p>
-          <div className="flex items-center justify-between text-xs pt-1">
-            <span className="text-muted-foreground">Engajadas: {kpis.accountsEngaged.toLocaleString("pt-BR")}</span>
-            <span className="text-muted-foreground">FB: {kpis.interactionsFb.toLocaleString("pt-BR")}</span>
+          <div className="flex items-center justify-between text-xs pt-1 gap-1">
+            {interactionsDisplay.statusText ? (
+              <span className="text-muted-foreground truncate">{interactionsDisplay.statusText}</span>
+            ) : (
+              <>
+                <span className="text-muted-foreground">Engajadas: {kpis.accountsEngaged.toLocaleString("pt-BR")}</span>
+                <span className="text-muted-foreground">FB: {fieldAvail.interactionsFb === "unavailable" ? "Indisponível" : kpis.interactionsFb.toLocaleString("pt-BR")}</span>
+              </>
+            )}
           </div>
         </motion.div>
 
@@ -651,14 +937,20 @@ Responda de forma objetiva e tática em Markdown com:
             <span className="text-xs font-bold uppercase tracking-wider">Seguidores Reais</span>
             <UserPlus className="h-4 w-4 text-cyan-400" />
           </div>
-          <p className="text-2xl font-bold text-white tracking-tight">
-            {totalFollowersAll.toLocaleString("pt-BR")}
+          <p className={`${followersDisplay.isUnavailable ? "text-xs text-amber-300" : "text-2xl text-white"} font-bold tracking-tight`}>
+            {followersDisplay.main}
           </p>
-          <div className="flex items-center justify-between text-xs pt-1">
-            <span className="text-cyan-400 font-bold">
-              {totalNewFollowersAll >= 0 ? `+${totalNewFollowersAll.toLocaleString("pt-BR")}` : totalNewFollowersAll.toLocaleString("pt-BR")} no período
-            </span>
-            <span className="text-muted-foreground">IG {kpis.followersIg.toLocaleString("pt-BR")} · FB {kpis.followersFb}</span>
+          <div className="flex items-center justify-between text-xs pt-1 gap-1">
+            {followersDisplay.statusText ? (
+              <span className="text-muted-foreground truncate">{followersDisplay.statusText}</span>
+            ) : (
+              <>
+                <span className="text-cyan-400 font-bold">
+                  {totalNewFollowersAll >= 0 ? `+${totalNewFollowersAll.toLocaleString("pt-BR")}` : totalNewFollowersAll.toLocaleString("pt-BR")} no período
+                </span>
+                <span className="text-muted-foreground">IG {kpis.followersIg.toLocaleString("pt-BR")} · FB {kpis.followersFb.toLocaleString("pt-BR")}</span>
+              </>
+            )}
           </div>
         </motion.div>
 
@@ -669,12 +961,18 @@ Responda de forma objetiva e tática em Markdown com:
             <span className="text-xs font-bold uppercase tracking-wider">Cliques no Site</span>
             <Globe className="h-4 w-4 text-emerald-400" />
           </div>
-          <p className="text-2xl font-bold text-white tracking-tight">
-            {kpis.websiteClicks.toLocaleString("pt-BR")}
+          <p className={`${websiteDisplay.isUnavailable ? "text-xs text-amber-300" : "text-2xl text-white"} font-bold tracking-tight`}>
+            {websiteDisplay.main}
           </p>
-          <div className="flex items-center justify-between text-xs pt-1">
-            <span className="text-muted-foreground">CTR Perfil: {bioCtr}%</span>
-            <span className="text-muted-foreground">Bio / Link</span>
+          <div className="flex items-center justify-between text-xs pt-1 gap-1">
+            {websiteDisplay.statusText ? (
+              <span className="text-muted-foreground truncate">{websiteDisplay.statusText}</span>
+            ) : (
+              <>
+                <span className="text-muted-foreground">CTR Perfil: {bioCtr}%</span>
+                <span className="text-muted-foreground">Bio / Link</span>
+              </>
+            )}
           </div>
         </motion.div>
 
@@ -685,12 +983,18 @@ Responda de forma objetiva e tática em Markdown com:
             <span className="text-xs font-bold uppercase tracking-wider">Visitas Perfil IG</span>
             <Users className="h-4 w-4 text-purple-400" />
           </div>
-          <p className="text-2xl font-bold text-white tracking-tight">
-            {kpis.profileViews.toLocaleString("pt-BR")}
+          <p className={`${profileDisplay.isUnavailable ? "text-xs text-amber-300" : "text-2xl text-white"} font-bold tracking-tight`}>
+            {profileDisplay.main}
           </p>
-          <div className="flex items-center justify-between text-xs pt-1">
-            <span className="text-muted-foreground">No período filtrado</span>
-            <span className="text-muted-foreground">Instagram</span>
+          <div className="flex items-center justify-between text-xs pt-1 gap-1">
+            {profileDisplay.statusText ? (
+              <span className="text-muted-foreground truncate">{profileDisplay.statusText}</span>
+            ) : (
+              <>
+                <span className="text-muted-foreground">No período filtrado</span>
+                <span className="text-muted-foreground">{hasAnyInstagramTarget ? "Instagram" : "Somente Facebook"}</span>
+              </>
+            )}
           </div>
         </motion.div>
       </div>
@@ -826,16 +1130,30 @@ Responda de forma objetiva e tática em Markdown com:
                 </BarChart>
               </ResponsiveContainer>
             ) : (
-              <div className="h-full rounded-2xl border border-dashed border-white/10 flex flex-col items-center justify-center text-center p-6 space-y-2">
+              <div className="h-full rounded-2xl border border-dashed border-white/10 flex flex-col items-center justify-center text-center p-6 space-y-2.5">
                 <BarChart3 className="h-7 w-7 text-muted-foreground/40" />
                 <p className="text-xs font-bold text-foreground">
-                  {fetchingInsights
+                  {overviewInitialLoading
                     ? "Carregando série histórica real da Meta..."
-                    : `Sem movimentação registrada para "${chartMetricMeta[chartMetric].label}" nos últimos ${chartDaysWindow} dias`}
+                    : overviewErrorState
+                    ? "Não foi possível carregar — tentar novamente"
+                    : !hasAnyInstagramTarget && (chartMetric === "reachIg" || chartMetric === "newFollowers")
+                    ? "Indisponível pela API Meta (conta sem Instagram Business conectado)"
+                    : `0 no período selecionado para "${chartMetricMeta[chartMetric].label}" (últimos ${chartDaysWindow} dias)`}
                 </p>
                 <p className="text-[11px] text-muted-foreground max-w-md">
-                  Se esta página não tiver Instagram Business vinculado ou teve 0 interações nesta janela, alterne a métrica acima ou selecione outra conta conectada.
+                  {overviewErrorState
+                    ? (sectionStates?.dailySeries.message || sectionStates?.accountInsights.message || "Falha ao consultar a série diária na Meta Graph API.")
+                    : "Alterne a métrica acima ou selecione outra conta conectada."}
                 </p>
+                {overviewErrorState && (
+                  <button
+                    onClick={() => void refetchOverview()}
+                    className="px-3 py-1.5 rounded-xl bg-primary/20 border border-primary/30 text-primary text-xs font-bold hover:bg-primary/30 cursor-pointer"
+                  >
+                    Tentar novamente
+                  </button>
+                )}
               </div>
             )}
           </div>
@@ -895,7 +1213,7 @@ Responda de forma objetiva e tática em Markdown com:
                 Mapa de Calor: Horários das Publicações Reais
               </h4>
               <p className="text-[11px] text-muted-foreground mt-0.5">
-                Amostra real: <strong className="text-foreground font-mono">{realInsights?.heatmapSampleSize ?? realInsights?.posts?.length ?? 0}</strong> publicações carregadas na janela selecionada (sem valores simulados).
+                Amostra real: <strong className="text-foreground font-mono">{postsQueryData?.heatmapSampleSize ?? postsQueryData?.posts?.length ?? 0}</strong> publicações carregadas na janela selecionada (sem valores simulados).
               </p>
             </div>
           </div>
@@ -1155,17 +1473,33 @@ Responda de forma objetiva e tática em Markdown com:
           </div>
         </div>
 
-        {listPosts.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-white/10 p-10 text-center space-y-2">
-            {fetchingInsights ? (
+          {listPosts.length === 0 ? (
+          <div className="rounded-2xl border border-dashed border-white/10 p-10 text-center space-y-2.5">
+            {postsInitialLoading ? (
               <>
                 <Loader2 className="h-6 w-6 text-primary animate-spin mx-auto" />
                 <p className="text-xs font-bold text-foreground">Carregando publicações reais da Meta...</p>
               </>
+            ) : postsErrorState ? (
+              <>
+                <AlertCircle className="h-7 w-7 text-amber-400 mx-auto" />
+                <p className="text-xs font-bold text-foreground">Não foi possível carregar — tentar novamente</p>
+                <p className="text-[11px] text-muted-foreground max-w-md mx-auto">
+                  {postsQueryData?.postsState.message || "Falha ao recuperar publicações da Meta Graph API."}
+                </p>
+                <button
+                  onClick={() => void refetchPosts()}
+                  className="px-3 py-1.5 rounded-xl bg-primary/20 border border-primary/30 text-primary text-xs font-bold hover:bg-primary/30 cursor-pointer"
+                >
+                  Tentar novamente
+                </button>
+              </>
             ) : (
               <>
                 <ImageIcon className="h-7 w-7 text-muted-foreground/40 mx-auto" />
-                <p className="text-xs font-bold text-foreground">Nenhuma publicação encontrada nesta conta / filtro</p>
+                <p className="text-xs font-bold text-foreground">
+                  {postsQueryData?.postsState.state === "empty" ? "0 no período selecionado (nenhuma publicação retornada pela API Meta)" : "Nenhuma publicação encontrada neste filtro"}
+                </p>
                 <p className="text-[11px] text-muted-foreground">
                   Selecione outra conta no topo ou limpe o filtro de formato para visualizar as postagens reais da página.
                 </p>

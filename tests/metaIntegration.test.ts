@@ -20,11 +20,22 @@ import * as edgeMetaCore from "../supabase/functions/_shared/metaCore.ts";
 import {
   buildReportSnapshot,
   classifyMetaEvent,
+  computeAccountMessageSummary,
   computeWeightedAggregates,
   formatCivilDateBR,
   formatPeriodLabel,
+  getCampaignSelectionGroupLabel,
+  getCampaignSelectorResultDisplay,
   roundCurrency,
 } from "../src/lib/metricsDomain.ts";
+
+import {
+  buildMetaSnapshotKey,
+  createMonotonicRequestGuard,
+  isMatchingMetaConsumerKey,
+} from "../src/lib/metaSnapshotScope.ts";
+
+import { classifySocialErrorState } from "../src/lib/metaSocialErrors.ts";
 
 describe("Meta Integration — Contrato Meta v21.0, Paridade Rio2 & MOVE, Paginacao, Billing, Social & Edge Parity", () => {
   it("usa Graph API v21.0 e preserva Rio2 (act_243135681723027, 2026-11-12) sem soma inflada nem mistura de CTR", () => {
@@ -800,5 +811,226 @@ describe("Meta Integration — Contrato Meta v21.0, Paridade Rio2 & MOVE, Pagina
       ).resultCount,
       28
     );
+  });
+
+  it("Fix 1 (2026-11-14): CPL de Mensagens isola exclusivamente gasto de campanhas MESSAGES (Fly 7.93, Rio2 6.57, AlfaCar 2.17, MOVE 2.42, 0 -> null)", () => {
+    // Fly Garage: R$ 150,58 MESSAGES (19) + R$ 63,56 REACH (50.013) = R$ 214,14 total -> CPL = 150,58 / 19 = 7,93
+    const fly = computeAccountMessageSummary([
+      {
+        id: "fly_msg",
+        name: "NC - MSG - Principal",
+        cost: 150.58,
+        conversions: 19,
+        clicks: 137,
+        impressions: 9436,
+        reach: 7196,
+        rawObjective: "OUTCOME_ENGAGEMENT",
+        resultType: "MESSAGES",
+        resultsIndicator: "actions:onsite_conversion.messaging_conversation_started_7d",
+      },
+      {
+        id: "fly_reach",
+        name: "CMP | NC - ALCANCE JOJO TODYNHO",
+        cost: 63.56,
+        conversions: 50013,
+        clicks: 21,
+        impressions: 52358,
+        reach: 50013,
+        rawObjective: "OUTCOME_AWARENESS",
+        resultType: "REACH",
+        resultsIndicator: "reach",
+      },
+    ]);
+    assert.equal(roundCurrency(fly.messageEligibleSpend), 150.58);
+    assert.equal(fly.messageResults, 19);
+    assert.equal(roundCurrency(fly.totalAccountSpend), 214.14);
+    assert.ok(fly.messageCpl !== null);
+    assert.equal(roundCurrency(fly.messageCpl), 7.93);
+
+    // Rio2: ~R$ 184,08 MESSAGES (28) + R$ 50,43 INSTAGRAM_PROFILE (328) -> CPL = ~6,57
+    const rio2 = computeAccountMessageSummary([
+      {
+        id: "rio2_msg",
+        name: "Campanha Sem Palavra Chave",
+        cost: 184.08,
+        conversions: 28,
+        clicks: 400,
+        impressions: 13497,
+        reach: 11311,
+        rawObjective: "OUTCOME_ENGAGEMENT",
+        resultType: "MESSAGES",
+        resultsIndicator: "actions:onsite_conversion.messaging_conversation_started_7d",
+      },
+      {
+        id: "rio2_ig",
+        name: "WPP MSG FAKE IG",
+        cost: 50.43,
+        conversions: 328,
+        clicks: 334,
+        impressions: 4175,
+        reach: 4018,
+        rawObjective: "OUTCOME_ENGAGEMENT",
+        resultType: "INSTAGRAM_PROFILE",
+        resultsIndicator: "profile_visit_view",
+      },
+    ]);
+    assert.equal(rio2.messageResults, 28);
+    assert.equal(roundCurrency(rio2.messageEligibleSpend), 184.08);
+    assert.equal(roundCurrency(rio2.messageCpl!), 6.57);
+
+    // AlfaCar: R$ 43,34 MESSAGES (20) + R$ 12,88 REACH -> CPL = 2,17
+    const alfacar = computeAccountMessageSummary([
+      {
+        id: "alfa_msg",
+        name: "Mensagens AlfaCar",
+        cost: 43.34,
+        conversions: 20,
+        clicks: 120,
+        impressions: 4000,
+        reach: 3200,
+        rawObjective: "MESSAGES",
+        resultType: "MESSAGES",
+        resultsIndicator: "actions:onsite_conversion.messaging_conversation_started_7d",
+      },
+      {
+        id: "alfa_reach",
+        name: "Alcance AlfaCar",
+        cost: 12.88,
+        conversions: 10500,
+        clicks: 15,
+        impressions: 11000,
+        reach: 10500,
+        rawObjective: "OUTCOME_AWARENESS",
+        resultType: "REACH",
+        resultsIndicator: "reach",
+      },
+    ]);
+    assert.equal(alfacar.messageResults, 20);
+    assert.equal(roundCurrency(alfacar.messageEligibleSpend), 43.34);
+    assert.equal(roundCurrency(alfacar.totalAccountSpend), 56.22);
+    assert.equal(roundCurrency(alfacar.messageCpl!), 2.17);
+
+    // MOVE: R$ 43,51 MESSAGES (18) -> CPL = 2,42
+    const move = computeAccountMessageSummary([
+      {
+        id: "move_msg",
+        name: "Move Mensagens",
+        cost: 43.51,
+        conversions: 18,
+        clicks: 29,
+        impressions: 1557,
+        reach: 1211,
+        rawObjective: "MESSAGES",
+        resultType: "MESSAGES",
+        resultsIndicator: "actions:onsite_conversion.messaging_conversation_started_7d",
+      },
+    ]);
+    assert.equal(move.messageResults, 18);
+    assert.equal(roundCurrency(move.messageEligibleSpend), 43.51);
+    assert.equal(roundCurrency(move.messageCpl!), 2.42);
+
+    // Sem conversas -> messageCpl = null (nunca R$ 0,00)
+    const zeroMsg = computeAccountMessageSummary([
+      {
+        id: "no_conv",
+        name: "Alcance Puro",
+        cost: 100,
+        conversions: 40000,
+        clicks: 25,
+        impressions: 42000,
+        reach: 40000,
+        rawObjective: "OUTCOME_AWARENESS",
+        resultType: "REACH",
+        resultsIndicator: "reach",
+      },
+    ]);
+    assert.equal(zeroMsg.messageResults, 0);
+    assert.equal(zeroMsg.messageEligibleSpend, 0);
+    assert.equal(zeroMsg.messageCpl, null);
+  });
+
+  it("Fix 2 (2026-11-14): Seletor de Relatorios usa rotulo oficial da unidade e 'Resultados por tipo' para selecoes mistas", () => {
+    const flyReachDisplay = getCampaignSelectorResultDisplay({
+      id: "fly_reach",
+      name: "CMP | NC - ALCANCE JOJO TODYNHO",
+      cost: 63.56,
+      conversions: 50013,
+      clicks: 21,
+      impressions: 52358,
+      reach: 50013,
+      rawObjective: "OUTCOME_AWARENESS",
+      resultType: "REACH",
+      resultsIndicator: "reach",
+    });
+    assert.equal(flyReachDisplay.category, "REACH");
+    assert.equal(flyReachDisplay.label, "Alcance");
+    assert.equal(flyReachDisplay.formattedPair, "Alcance: 50.013");
+    assert.ok(!flyReachDisplay.summaryText.includes("Conversões"));
+
+    const expectedLabels: Array<[Parameters<typeof getCampaignSelectorResultDisplay>[0], string]> = [
+      [{ id: "1", name: "A", cost: 10, conversions: 19, clicks: 10, impressions: 100, reach: 90, resultType: "MESSAGES" }, "Conversas"],
+      [{ id: "2", name: "B", cost: 10, conversions: 328, clicks: 10, impressions: 100, reach: 90, resultType: "INSTAGRAM_PROFILE" }, "Visitas ao perfil"],
+      [{ id: "3", name: "C", cost: 10, conversions: 12, clicks: 10, impressions: 100, reach: 90, resultType: "LEADS" }, "Leads"],
+      [{ id: "4", name: "D", cost: 10, conversions: 4, clicks: 10, impressions: 100, reach: 90, resultType: "PURCHASES" }, "Compras"],
+      [{ id: "5", name: "E", cost: 10, conversions: 95, clicks: 10, impressions: 100, reach: 90, resultType: "LANDING_PAGE_VIEWS" }, "Visualizações da página"],
+      [{ id: "6", name: "F", cost: 10, conversions: 158, clicks: 10, impressions: 100, reach: 90, resultType: "LINK_CLICKS" }, "Cliques no link"],
+      [{ id: "7", name: "G", cost: 10, conversions: 230, clicks: 10, impressions: 100, reach: 90, resultType: "VIDEO_VIEWS" }, "ThruPlays"],
+      [{ id: "8", name: "H", cost: 10, conversions: 410, clicks: 10, impressions: 100, reach: 90, resultType: "ENGAGEMENT" }, "Engajamentos"],
+    ];
+
+    for (const [row, expected] of expectedLabels) {
+      const disp = getCampaignSelectorResultDisplay(row);
+      assert.equal(disp.label, expected);
+      assert.ok(!disp.formattedPair.includes("Conversões"));
+    }
+
+    assert.equal(
+      getCampaignSelectionGroupLabel([
+        { id: "1", name: "Msg", cost: 150.58, conversions: 19, clicks: 137, impressions: 9436, reach: 7196, resultType: "MESSAGES" },
+        { id: "2", name: "Reach", cost: 63.56, conversions: 50013, clicks: 21, impressions: 52358, reach: 50013, resultType: "REACH" },
+      ]),
+      "Resultados por tipo"
+    );
+  });
+
+  it("Fix 3 & Fix 4 (2026-11-14): chave de 10 dimensoes, guarda monotonica e estados explicitos SocialDataState", () => {
+    const keyA = buildMetaSnapshotKey("mc-camps", {
+      tenantId: "t1",
+      accountId: "act_rio2",
+      dateFrom: "2026-11-13",
+      dateTo: "2026-11-13",
+      timezone: "America/Sao_Paulo",
+      level: "campanhas",
+      statusFilter: "all",
+      deliveryFilter: "all",
+      snapshotId: "snap_001",
+    });
+    const keyB = buildMetaSnapshotKey("mc-camps", {
+      tenantId: "t1",
+      accountId: "act_rio2",
+      dateFrom: "2026-11-13",
+      dateTo: "2026-11-13",
+      timezone: "America/Sao_Paulo",
+      level: "campanhas",
+      statusFilter: "all",
+      deliveryFilter: "all",
+      snapshotId: "snap_002",
+    });
+    assert.equal(keyA.length, 11); // domain + 10 scope dimensions
+    assert.notDeepEqual(keyA, keyB);
+    assert.equal(isMatchingMetaConsumerKey(keyB, { accountId: "act_rio2", dateFrom: "2026-11-13", dateTo: "2026-11-13" }), true);
+    assert.equal(isMatchingMetaConsumerKey(keyB, { accountId: "act_move", dateFrom: "2026-11-13", dateTo: "2026-11-13" }), false);
+    assert.equal(isMatchingMetaConsumerKey(keyB, { accountId: "act_rio2", dateFrom: "2026-11-10", dateTo: "2026-11-11" }), false);
+
+    const guard = createMonotonicRequestGuard();
+    const r1 = guard.next();
+    const r2 = guard.next();
+    assert.equal(guard.isCurrent(r1), false);
+    assert.equal(guard.isCurrent(r2), true);
+
+    assert.equal(classifySocialErrorState({ code: 190, message: "Error validating access token" }).state, "token_expired");
+    assert.equal(classifySocialErrorState({ code: 200, message: "Requires pages_read_engagement permission" }).state, "permission_denied");
+    assert.equal(classifySocialErrorState({ code: 613, message: "Calls to this api have exceeded the rate limit" }).state, "rate_limited");
+    assert.equal(classifySocialErrorState({ message: "Network timeout" }).state, "error");
   });
 });

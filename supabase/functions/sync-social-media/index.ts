@@ -311,7 +311,7 @@ serve(async (req) => {
           let fbFollowers = 0
 
           try {
-            const fbFieldsRes = await fetch(`${META_API_BASE}/${p.id}?fields=fan_count,followers_count&access_token=${p.access_token}`)
+            const fbFieldsRes = await fetch(`${META_API_BASE}/${p.id}?fields=fan_count,followers_count&access_token=${p.access_token}`, { signal: AbortSignal.timeout(8000) })
             const fbFieldsData = await fbFieldsRes.json()
             if (!fbFieldsData.error) {
               fbFollowers = fbFieldsData.followers_count || fbFieldsData.fan_count || 0
@@ -321,12 +321,12 @@ serve(async (req) => {
           }
 
           try {
-            const igRes = await fetch(`${META_API_BASE}/${p.id}?fields=instagram_business_account{id,username}&access_token=${p.access_token}`)
+            const igRes = await fetch(`${META_API_BASE}/${p.id}?fields=instagram_business_account{id,username}&access_token=${p.access_token}`, { signal: AbortSignal.timeout(8000) })
             const igData = await igRes.json()
             if (igData.instagram_business_account) {
               igAccount = { id: igData.instagram_business_account.id, username: igData.instagram_business_account.username }
               try {
-                const igFieldsRes = await fetch(`${META_API_BASE}/${igAccount.id}?fields=followers_count&access_token=${p.access_token}`)
+                const igFieldsRes = await fetch(`${META_API_BASE}/${igAccount.id}?fields=followers_count&access_token=${p.access_token}`, { signal: AbortSignal.timeout(8000) })
                 const igFieldsData = await igFieldsRes.json()
                 if (!igFieldsData.error) igFollowers = igFieldsData.followers_count || 0
               } catch (e: any) {
@@ -836,12 +836,33 @@ serve(async (req) => {
           return new Response(JSON.stringify({ error: "Endpoint inválido" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } })
         }
         const tok = String(body.token || "").trim()
-        const res = await metaFetchPaginatedWithStatus(
-          ep,
-          tok,
-          (body.params && typeof body.params === "object") ? body.params : {},
-          { maxRetries: 2, baseDelayMs: 400, maxPages: Math.min(25, Number(body.maxPages || 10)) }
-        )
+        const timeoutMs = Math.min(20000, Math.max(4000, Number(body?.timeoutMs || 15000)))
+        const res = await Promise.race([
+          metaFetchPaginatedWithStatus(
+            ep,
+            tok,
+            (body.params && typeof body.params === "object") ? body.params : {},
+            { maxRetries: 1, baseDelayMs: 350, maxPages: Math.min(25, Number(body.maxPages || 5)) }
+          ),
+          new Promise<any>((resolve) =>
+            setTimeout(
+              () =>
+                resolve({
+                  ok: false,
+                  data: [],
+                  pagesFetched: 0,
+                  truncated: false,
+                  statusCode: 504,
+                  attempts: 1,
+                  error: `Timeout (${Math.round(timeoutMs / 1000)}s) em ${ep}`,
+                  errorCode: 504,
+                  errorKind: "network",
+                  rateLimitUsagePct: null,
+                }),
+              timeoutMs
+            )
+          ),
+        ])
         return new Response(JSON.stringify({ paginated: true, ...res }), {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         })
@@ -854,12 +875,33 @@ serve(async (req) => {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         })
       }
-      const resp = await fetch(rawUrl)
-      const json = await resp.json().catch(() => ({}))
-      return new Response(JSON.stringify(json), {
-        status: resp.ok ? 200 : resp.status,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      })
+      const timeoutMs = Math.min(20000, Math.max(4000, Number(body?.timeoutMs || 12000)))
+      const controller = new AbortController()
+      const timer = setTimeout(() => controller.abort(), timeoutMs)
+      try {
+        const resp = await fetch(rawUrl, { signal: controller.signal })
+        const json = await resp.json().catch(() => ({}))
+        return new Response(JSON.stringify(json), {
+          status: 200,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        })
+      } catch (proxyErr: any) {
+        const isTimeout = proxyErr?.name === "AbortError" || String(proxyErr?.message || "").toLowerCase().includes("abort")
+        return new Response(
+          JSON.stringify({
+            error: {
+              message: isTimeout
+                ? `Meta Graph API timeout (${Math.round(timeoutMs / 1000)}s)`
+                : proxyErr?.message || "Falha de rede no proxy Meta",
+              code: isTimeout ? 504 : 502,
+              is_timeout: isTimeout,
+            },
+          }),
+          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        )
+      } finally {
+        clearTimeout(timer)
+      }
     }
 
     // Ação desconhecida

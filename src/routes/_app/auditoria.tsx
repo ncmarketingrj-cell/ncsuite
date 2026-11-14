@@ -25,6 +25,8 @@ import {
   normalizeCampaignItem,
   resolveTargetPrecedence,
 } from "@/lib/metricsDomain";
+import { createMonotonicRequestGuard, useActiveMetaSnapshot } from "@/lib/metaSnapshotCache";
+import { SnapshotStatusBadge } from "@/components/SnapshotStatusBadge";
 
 export const Route = createFileRoute("/_app/auditoria")({
   component: AuditoriaHub,
@@ -105,6 +107,8 @@ function AuditoriaHub() {
   }[]>([]);
 
   const dashboardRef = useRef<HTMLDivElement>(null);
+  const loadGuardRef = useRef(createMonotonicRequestGuard());
+  const activeSnapshot = useActiveMetaSnapshot({ accountId: selectedAccountId });
 
   const runProactiveDiagnosis = (
     corrs: CorrelationData[],
@@ -531,6 +535,7 @@ function AuditoriaHub() {
   };
 
   const loadAuditoriaData = async () => {
+    const reqToken = loadGuardRef.current.next();
     setLoading(true);
     try {
       // 1. Carregar campanhas com base na conta selecionada incluindo objective
@@ -539,6 +544,7 @@ function AuditoriaHub() {
         campQ = campQ.eq("ad_account_id", selectedAccountId);
       }
       const { data: campaignsList } = await campQ;
+      if (!loadGuardRef.current.isCurrent(reqToken)) return;
       setCampaigns(campaignsList || []);
 
       // 2. Carregar métricas diárias no período (incluindo result_type para classificação exata)
@@ -571,6 +577,7 @@ function AuditoriaHub() {
         thresholdQ = thresholdQ.eq("ad_account_id", selectedAccountId);
       }
       const [{ data: dbMetrics }, { data: thresholds }] = await Promise.all([metricsQ, thresholdQ]);
+      if (!loadGuardRef.current.isCurrent(reqToken)) return;
       const accountThresholdCpl =
         selectedAccountId !== "all"
           ? thresholds?.find((t: any) => t.ad_account_id === selectedAccountId)?.max_cpl ?? null
@@ -588,6 +595,7 @@ function AuditoriaHub() {
         setAuctionPressure(0);
       }
     } catch (err) {
+      if (!loadGuardRef.current.isCurrent(reqToken)) return;
       console.error("Erro ao carregar dados da auditoria:", err);
       toast.error("Erro ao carregar métricas reais da auditoria.");
       setIsSimulated(true);
@@ -597,7 +605,9 @@ function AuditoriaHub() {
       setDropoffData([]);
       setAuctionPressure(0);
     } finally {
-      setLoading(false);
+      if (loadGuardRef.current.isCurrent(reqToken)) {
+        setLoading(false);
+      }
     }
   };
 
@@ -606,10 +616,10 @@ function AuditoriaHub() {
     fetchAccounts();
   }, []);
 
-  // Recarrega as campanhas e as métricas quando os filtros mudam
+  // Recarrega as campanhas e as métricas quando os filtros ou snapshot mudam
   useEffect(() => {
     loadAuditoriaData();
-  }, [selectedAccountId, selectedCampaignId, startDate, endDate]);
+  }, [selectedAccountId, selectedCampaignId, startDate, endDate, activeSnapshot.snapshotId]);
 
   const exportSnapshotPdf = async () => {
     if (typeof window === "undefined" || exporting) return;
@@ -724,6 +734,12 @@ function AuditoriaHub() {
           <p className="text-xs text-muted-foreground uppercase tracking-widest font-mono">
             Diagnóstico Analítico de Performance, CPC, CPM e Desvios de Mídia
           </p>
+          <SnapshotStatusBadge
+            snapshotId={activeSnapshot.snapshotId}
+            committedAt={activeSnapshot.committedAt}
+            isUpdating={loading}
+            className="mt-1.5 w-fit"
+          />
         </div>
 
         {/* Filtros e Controles */}

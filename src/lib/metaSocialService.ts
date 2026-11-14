@@ -6,6 +6,10 @@ import {
   metaFetchJsonWithRetry,
   metaFetchPaginatedWithStatus,
 } from "./metaIntegrationCore";
+import {
+  classifySocialErrorState,
+  type SocialDataState,
+} from "./metaSocialErrors";
 
 const META_API_BASE = META_GRAPH_BASE;
 
@@ -63,6 +67,30 @@ export interface RealDemographics {
   age: { range: string; male: number; female: number }[];
 }
 
+export { classifySocialErrorState };
+export type { SocialDataState };
+
+export interface SocialSectionStatus {
+  state: SocialDataState;
+  message?: string;
+  endpoint?: string;
+  accountId?: string;
+  accountName?: string;
+  updatedAt: string;
+}
+
+export interface SocialEndpointFailureLog {
+  endpoint: string;
+  accountId: string;
+  accountName: string;
+  section: string;
+  state: SocialDataState;
+  message: string;
+  timestamp: string;
+}
+
+export type SocialFieldAvailability = "available" | "unavailable" | "error";
+
 export interface RealSocialInsightsResult {
   accounts: RealSocialAccount[];
   dailySeries: RealDailyPoint[];
@@ -83,6 +111,16 @@ export interface RealSocialInsightsResult {
     reachDeltaPct: number | null;
     followersDeltaPct: number | null;
   };
+  fieldAvailability?: {
+    reachIg: SocialFieldAvailability;
+    viewsIg: SocialFieldAvailability;
+    viewsFb: SocialFieldAvailability;
+    interactionsIg: SocialFieldAvailability;
+    interactionsFb: SocialFieldAvailability;
+    profileViews: SocialFieldAvailability;
+    websiteClicks: SocialFieldAvailability;
+    followers: SocialFieldAvailability;
+  };
   demographics: RealDemographics;
   posts: RealSocialPost[];
   heatmapMatrix: number[][];
@@ -91,48 +129,199 @@ export interface RealSocialInsightsResult {
   apiLimitations?: string[];
   syncSource: "meta_graph_v21" | "no_token" | "api_error";
   errorMessage?: string;
+  overallState?: SocialDataState;
+  sectionStates?: {
+    identity: SocialSectionStatus;
+    followers: SocialSectionStatus;
+    accountInsights: SocialSectionStatus;
+    dailySeries: SocialSectionStatus;
+    demographics: SocialSectionStatus;
+    posts: SocialSectionStatus;
+    postInsights: SocialSectionStatus;
+  };
+  endpointLogs?: SocialEndpointFailureLog[];
+  windowUsed?: {
+    dateFrom: string;
+    dateTo: string;
+    chartSince: string;
+    chartDays: number;
+  };
+  snapshotAt?: string;
+  isFromLastValidSnapshot?: boolean;
+  lastValidSnapshotAt?: string | null;
 }
 
-async function fetchMetaJson(url: string): Promise<any> {
-  const res = await metaFetchJsonWithRetry(url, { maxRetries: 2, baseDelayMs: 400 });
-  if (res.ok) return res.data;
-  if (res.errorKind === "network") {
+const DEFAULT_META_CALL_TIMEOUT_MS = 12_000;
+const DEFAULT_META_PAGINATED_TIMEOUT_MS = 15_000;
+const SOCIAL_SNAPSHOT_CACHE_PREFIX = "nc_social_last_snapshot_v1_";
+const inMemorySocialSnapshots = new Map<string, RealSocialInsightsResult>();
+
+function withBoundedTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(
+      () => reject(new Error(`Timeout (${Math.round(timeoutMs / 1000)}s) em ${label}`)),
+      timeoutMs
+    );
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (err) => {
+        clearTimeout(timer);
+        reject(err);
+      }
+    );
+  });
+}
+
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  concurrency: number,
+  worker: (item: T, index: number) => Promise<R>
+): Promise<R[]> {
+  if (items.length === 0) return [];
+  const results: R[] = new Array(items.length);
+  let cursor = 0;
+  const runners = Array.from({ length: Math.min(concurrency, items.length) }, async () => {
+    while (cursor < items.length) {
+      const idx = cursor++;
+      results[idx] = await worker(items[idx], idx);
+    }
+  });
+  await Promise.all(runners);
+  return results;
+}
+
+export function saveLastValidSocialSnapshot(cacheKey: string, snapshot: RealSocialInsightsResult): void {
+  const stamped: RealSocialInsightsResult = {
+    ...snapshot,
+    snapshotAt: snapshot.snapshotAt || new Date().toISOString(),
+    isFromLastValidSnapshot: false,
+  };
+  inMemorySocialSnapshots.set(cacheKey, stamped);
+  if (typeof localStorage !== "undefined") {
     try {
-      const { data: proxyData, error: proxyErr } = await supabase.functions.invoke("sync-social-media", {
-        body: { action: "graph-proxy", url },
-      });
-      if (!proxyErr && proxyData) return proxyData;
+      // Compactar para evitar estourar quota em localStorage
+      const compact: RealSocialInsightsResult = {
+        ...stamped,
+        posts: stamped.posts.slice(0, 20),
+      };
+      localStorage.setItem(`${SOCIAL_SNAPSHOT_CACHE_PREFIX}${cacheKey}`, JSON.stringify(compact));
     } catch {
-      // mantém retorno de erro original abaixo
+      // ignore quota errors
     }
   }
-  return res.data?.error ? res.data : { error: { message: res.error || "Erro ao consultar Meta API" } };
+}
+
+export function getLastValidSocialSnapshot(cacheKey: string): RealSocialInsightsResult | null {
+  const mem = inMemorySocialSnapshots.get(cacheKey);
+  if (mem) return mem;
+  if (typeof localStorage === "undefined") return null;
+  try {
+    const raw = localStorage.getItem(`${SOCIAL_SNAPSHOT_CACHE_PREFIX}${cacheKey}`);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (parsed && parsed.kpis) {
+      inMemorySocialSnapshots.set(cacheKey, parsed);
+      return parsed;
+    }
+  } catch {
+    // ignore storage errors
+  }
+  return null;
+}
+
+async function fetchMetaJson(url: string, timeoutMs = DEFAULT_META_CALL_TIMEOUT_MS): Promise<any> {
+  const endpointLabel = url.split("?")[0].replace(META_API_BASE, "");
+  try {
+    const res = await withBoundedTimeout(
+      metaFetchJsonWithRetry(url, { maxRetries: 1, baseDelayMs: 350 }),
+      timeoutMs,
+      endpointLabel
+    );
+    if (res.ok) return res.data;
+    if (res.errorKind === "network") {
+      try {
+        const proxyResp: any = await withBoundedTimeout(
+          supabase.functions.invoke("sync-social-media", {
+            body: { action: "graph-proxy", url, timeoutMs },
+          }),
+          timeoutMs,
+          `proxy:${endpointLabel}`
+        );
+        if (!proxyResp?.error && proxyResp?.data) return proxyResp.data;
+      } catch (proxyErr: any) {
+        return { error: { message: proxyErr?.message || "Timeout ao consultar proxy Meta", code: 504 } };
+      }
+    }
+    return res.data?.error
+      ? res.data
+      : { error: { message: res.error || "Erro ao consultar Meta API", code: res.errorCode || 500, errorKind: res.errorKind } };
+  } catch (err: any) {
+    return { error: { message: err?.message || `Timeout ao consultar ${endpointLabel}`, code: 504, is_timeout: true } };
+  }
 }
 
 async function fetchMetaPaginatedList(
   endpoint: string,
   token: string,
   params: Record<string, string>,
-  maxPages = 10
+  maxPages = 5,
+  timeoutMs = DEFAULT_META_PAGINATED_TIMEOUT_MS
 ) {
-  const res = await metaFetchPaginatedWithStatus(endpoint, token, params, {
-    maxRetries: 2,
-    baseDelayMs: 400,
-    maxPages,
-  });
-  if (!res.ok && res.errorKind === "network") {
-    try {
-      const { data: proxyRes, error: proxyErr } = await supabase.functions.invoke("sync-social-media", {
-        body: { action: "graph-proxy", paginated: true, endpoint, params, token, maxPages },
-      });
-      if (!proxyErr && proxyRes?.paginated) {
-        return proxyRes;
+  try {
+    const res = await withBoundedTimeout(
+      metaFetchPaginatedWithStatus(endpoint, token, params, {
+        maxRetries: 1,
+        baseDelayMs: 350,
+        maxPages,
+      }),
+      timeoutMs,
+      endpoint
+    );
+    if (!res.ok && res.errorKind === "network") {
+      try {
+        const proxyResp: any = await withBoundedTimeout(
+          supabase.functions.invoke("sync-social-media", {
+            body: { action: "graph-proxy", paginated: true, endpoint, params, token, maxPages, timeoutMs },
+          }),
+          timeoutMs,
+          `proxy:${endpoint}`
+        );
+        if (!proxyResp?.error && proxyResp?.data?.paginated) {
+          return proxyResp.data;
+        }
+      } catch (proxyErr: any) {
+        return {
+          ok: false,
+          data: [],
+          pagesFetched: 0,
+          truncated: false,
+          statusCode: 504,
+          attempts: 1,
+          error: proxyErr?.message || `Timeout em ${endpoint}`,
+          errorCode: 504,
+          errorKind: "network" as const,
+          rateLimitUsagePct: null,
+        };
       }
-    } catch {
-      // fallback para resultado direto
     }
+    return res;
+  } catch (err: any) {
+    return {
+      ok: false,
+      data: [],
+      pagesFetched: 0,
+      truncated: false,
+      statusCode: 504,
+      attempts: 1,
+      error: err?.message || `Timeout em ${endpoint}`,
+      errorCode: 504,
+      errorKind: "network" as const,
+      rateLimitUsagePct: null,
+    };
   }
-  return res;
 }
 
 export async function getActiveMasterMetaToken(): Promise<string | null> {
@@ -433,73 +622,133 @@ function buildRealHeatmap(posts: RealSocialPost[]): { matrix: number[][]; hasDat
 /**
  * Busca dados 100% REAIS do Meta Graph API v21.0 para uma conta específica ou consolidação real das contas conectadas.
  */
-export async function fetchRealSocialInsights(params: {
+export interface SocialOverviewResult {
+  accounts: RealSocialAccount[];
+  targetAccounts: RealSocialAccount[];
+  dailySeries: RealDailyPoint[];
+  chartWindowDays: number;
+  kpis: RealSocialInsightsResult["kpis"];
+  fieldAvailability: NonNullable<RealSocialInsightsResult["fieldAvailability"]>;
+  demographics: RealDemographics;
+  sectionStates: {
+    identity: SocialSectionStatus;
+    followers: SocialSectionStatus;
+    accountInsights: SocialSectionStatus;
+    dailySeries: SocialSectionStatus;
+    demographics: SocialSectionStatus;
+  };
+  endpointLogs: SocialEndpointFailureLog[];
+  windowUsed: NonNullable<RealSocialInsightsResult["windowUsed"]>;
+  snapshotAt: string;
+  syncSource: "meta_graph_v21" | "no_token" | "api_error";
+  errorMessage?: string;
+}
+
+export interface SocialPostsResult {
+  posts: RealSocialPost[];
+  heatmapMatrix: number[][];
+  hasPostsForHeatmap: boolean;
+  heatmapSampleSize: number;
+  postsState: SocialSectionStatus;
+  postInsightsState: SocialSectionStatus;
+  endpointLogs: SocialEndpointFailureLog[];
+  snapshotAt: string;
+}
+
+function resolveTargetSocialAccounts(accounts: RealSocialAccount[], selectedPageId: string): RealSocialAccount[] {
+  if (accounts.length === 0) return [];
+  if (selectedPageId === "all") return accounts;
+  const matched = accounts.find(
+    (a) => a.page_id === selectedPageId || a.instagram_account_id === selectedPageId
+  );
+  return matched ? [matched] : [accounts[0]];
+}
+
+/**
+ * Consulta isolada de Identidade, Seguidores, Insights da Conta, Série Histórica e Demográficos.
+ * Nunca fica bloqueada por publicações ou insights de posts individuais.
+ */
+export async function fetchAccountSocialOverview(params: {
   accounts: RealSocialAccount[];
   selectedPageId: string;
   dateFrom: string;
   dateTo: string;
   chartDaysOverride?: number;
   masterToken: string | null;
-}): Promise<RealSocialInsightsResult> {
+}): Promise<SocialOverviewResult> {
   const { accounts, selectedPageId, dateFrom, dateTo, chartDaysOverride, masterToken } = params;
-
-  const emptyResult: RealSocialInsightsResult = {
-    accounts,
-    dailySeries: [],
-    chartWindowDays: 14,
-    kpis: {
-      followersIg: 0,
-      followersFb: 0,
-      newFollowersIg: 0,
-      newFollowersFb: 0,
-      reachIg: 0,
-      viewsIg: 0,
-      viewsFb: 0,
-      interactionsIg: 0,
-      interactionsFb: 0,
-      accountsEngaged: 0,
-      profileViews: 0,
-      websiteClicks: 0,
-      reachDeltaPct: null,
-      followersDeltaPct: null,
-    },
-    demographics: { available: false, totalSample: 0, gender: { male: 0, female: 0 }, age: [] },
-    posts: [],
-    heatmapMatrix: Array.from({ length: 7 }, () => Array(24).fill(0)),
-    hasPostsForHeatmap: false,
-    syncSource: masterToken ? "meta_graph_v21" : "no_token",
-  };
-
-  if (!masterToken || accounts.length === 0) {
-    return {
-      ...emptyResult,
-      errorMessage: masterToken
-        ? "Nenhuma página conectada encontrada no Token Meta."
-        : "Token de acesso da Meta não configurado.",
-    };
-  }
-
-  // Resolver alvo(s)
-  let targetAccounts: RealSocialAccount[] = [];
-  if (selectedPageId === "all") {
-    targetAccounts = accounts;
-  } else {
-    const matched = accounts.find((a) => a.page_id === selectedPageId || a.instagram_account_id === selectedPageId);
-    if (matched) targetAccounts = [matched];
-    else targetAccounts = [accounts[0]];
-  }
+  const nowIso = new Date().toISOString();
 
   const endDateObj = parseISO(dateTo);
   const startDateObj = parseISO(dateFrom);
   const selectedDaysCount = Math.max(1, differenceInCalendarDays(endDateObj, startDateObj) + 1);
   const chartDays = chartDaysOverride || Math.max(14, selectedDaysCount);
   const chartStartDate = subDays(endDateObj, chartDays - 1);
-
   const chartSince = format(chartStartDate, "yyyy-MM-dd");
   const kpiSince = dateFrom;
   const untilExclusive = format(addDays(endDateObj, 1), "yyyy-MM-dd");
 
-  // Mapa diário preenchido com todas as datas da janela do gráfico
+  const windowUsed = { dateFrom, dateTo, chartSince, chartDays };
+  const targetAccounts = resolveTargetSocialAccounts(accounts, selectedPageId);
+
+  const emptySection = (state: SocialDataState, message?: string): SocialSectionStatus => ({
+    state,
+    message,
+    updatedAt: nowIso,
+  });
+
+  if (!masterToken || targetAccounts.length === 0) {
+    const errState: SocialDataState = masterToken ? "empty" : "token_expired";
+    const errMsg = masterToken
+      ? "Nenhuma página conectada encontrada no Token Meta."
+      : "Token de acesso da Meta não configurado.";
+    return {
+      accounts,
+      targetAccounts,
+      dailySeries: [],
+      chartWindowDays: chartDays,
+      kpis: {
+        followersIg: 0,
+        followersFb: 0,
+        newFollowersIg: 0,
+        newFollowersFb: 0,
+        reachIg: 0,
+        viewsIg: 0,
+        viewsFb: 0,
+        interactionsIg: 0,
+        interactionsFb: 0,
+        accountsEngaged: 0,
+        profileViews: 0,
+        websiteClicks: 0,
+        reachDeltaPct: null,
+        followersDeltaPct: null,
+      },
+      fieldAvailability: {
+        reachIg: "unavailable",
+        viewsIg: "unavailable",
+        viewsFb: "unavailable",
+        interactionsIg: "unavailable",
+        interactionsFb: "unavailable",
+        profileViews: "unavailable",
+        websiteClicks: "unavailable",
+        followers: "unavailable",
+      },
+      demographics: { available: false, totalSample: 0, gender: { male: 0, female: 0 }, age: [] },
+      sectionStates: {
+        identity: emptySection(errState, errMsg),
+        followers: emptySection(errState, errMsg),
+        accountInsights: emptySection(errState, errMsg),
+        dailySeries: emptySection(errState, errMsg),
+        demographics: emptySection(errState, errMsg),
+      },
+      endpointLogs: [],
+      windowUsed,
+      snapshotAt: nowIso,
+      syncSource: masterToken ? "api_error" : "no_token",
+      errorMessage: errMsg,
+    };
+  }
+
   const dailyMap = new Map<string, RealDailyPoint>();
   for (let i = 0; i < chartDays; i++) {
     const d = addDays(chartStartDate, i);
@@ -529,7 +778,38 @@ export async function fetchRealSocialInsights(params: {
   let profileViews = 0;
   let websiteClicks = 0;
 
-  const allPosts: RealSocialPost[] = [];
+  let anyHasIg = false;
+  let followersSuccess = 0;
+  let followersErrors = 0;
+  let igTotalsSuccess = 0;
+  let igTotalsErrors = 0;
+  let igTsSuccess = 0;
+  let igTsErrors = 0;
+  let fbInsSuccess = 0;
+  let fbInsErrors = 0;
+  let demoSuccess = 0;
+  let demoErrors = 0;
+
+  const endpointLogs: SocialEndpointFailureLog[] = [];
+  const logFailure = (
+    endpoint: string,
+    acc: RealSocialAccount,
+    section: string,
+    rawErr: any
+  ) => {
+    const classified = classifySocialErrorState(rawErr);
+    endpointLogs.push({
+      endpoint,
+      accountId: acc.page_id,
+      accountName: acc.page_name,
+      section,
+      state: classified.state,
+      message: classified.message,
+      timestamp: new Date().toISOString(),
+    });
+    return classified;
+  };
+
   const demoTotals = {
     available: false,
     totalSample: 0,
@@ -538,92 +818,379 @@ export async function fetchRealSocialInsights(params: {
     ageMap: new Map<string, { male: number; female: number }>(),
   };
 
-  await Promise.all(
-    targetAccounts.map(async (acc) => {
-      followersIg += acc.instagram_followers || 0;
-      followersFb += acc.facebook_followers || 0;
-      const pageToken = acc.access_token || masterToken;
+  // Quando em modo "all", limita concorrência para nunca saturar pool de proxy/navegador
+  const accConcurrency = selectedPageId === "all" ? 3 : 1;
 
-      // 1. Insights & Mídias reais do Instagram
-      if (acc.instagram_account_id) {
-        const igId = acc.instagram_account_id;
-        const [igTsRes, igTotalsRes, igDemoRes, igMediaRes] = await Promise.all([
-          fetchMetaJson(
-            `${META_API_BASE}/${igId}/insights?metric=reach,follower_count&period=day&since=${chartSince}&until=${untilExclusive}&access_token=${encodeURIComponent(masterToken)}`
-          ),
-          fetchMetaJson(
-            `${META_API_BASE}/${igId}/insights?metric=views,total_interactions,accounts_engaged,profile_views,website_clicks&metric_type=total_value&period=day&since=${kpiSince}&until=${untilExclusive}&access_token=${encodeURIComponent(masterToken)}`
-          ),
-          fetchMetaJson(
-            `${META_API_BASE}/${igId}/insights?metric=follower_demographics&period=lifetime&metric_type=total_value&breakdown=age,gender&access_token=${encodeURIComponent(masterToken)}`
-          ),
-          fetchMetaJson(
-            `${META_API_BASE}/${igId}/media?fields=id,caption,media_type,media_product_type,thumbnail_url,media_url,permalink,timestamp,like_count,comments_count&limit=${selectedPageId === "all" ? 6 : 18}&access_token=${encodeURIComponent(masterToken)}`
-          ),
-        ]);
+  await mapWithConcurrency(targetAccounts, accConcurrency, async (acc) => {
+    let accFbFollowers = acc.facebook_followers || 0;
+    let accIgFollowers = acc.instagram_followers || 0;
+    const pageToken = acc.access_token || masterToken;
+    const igToken = pageToken || masterToken;
+    if (acc.instagram_account_id) anyHasIg = true;
 
-        // Time-series diário IG
-        if (Array.isArray(igTsRes?.data)) {
-          for (const metric of igTsRes.data) {
+    // 1. Seguidores reais isolados (não bloqueados por insights)
+    const followerCalls: Promise<void>[] = [
+      fetchMetaJson(
+        `${META_API_BASE}/${acc.page_id}?fields=fan_count,followers_count&access_token=${encodeURIComponent(pageToken)}`,
+        9_000
+      ).then((fbRes) => {
+        if (fbRes?.error) {
+          followersErrors++;
+          logFailure(`/${acc.page_id}?fields=fan_count,followers_count`, acc, "followers", fbRes);
+        } else {
+          followersSuccess++;
+          accFbFollowers = Number(fbRes.followers_count || fbRes.fan_count || accFbFollowers || 0);
+        }
+      }),
+    ];
+
+    if (acc.instagram_account_id) {
+      const igId = acc.instagram_account_id;
+      followerCalls.push(
+        fetchMetaJson(
+          `${META_API_BASE}/${igId}?fields=followers_count,username&access_token=${encodeURIComponent(igToken)}`,
+          9_000
+        ).then((igRes) => {
+          if (igRes?.error) {
+            followersErrors++;
+            logFailure(`/${igId}?fields=followers_count`, acc, "followers", igRes);
+          } else {
+            followersSuccess++;
+            accIgFollowers = Number(igRes.followers_count || accIgFollowers || 0);
+          }
+        })
+      );
+    }
+
+    // 2. Insights e série histórica (independentes via Promise.allSettled)
+    const insightTasks: Promise<void>[] = [
+      fetchMetaJson(
+        `${META_API_BASE}/${acc.page_id}/insights?metric=page_views_total,page_post_engagements,page_daily_follows&period=day&since=${chartSince}&until=${untilExclusive}&access_token=${encodeURIComponent(pageToken)}`,
+        11_000
+      ).then((fbInsRes) => {
+        if (fbInsRes?.error) {
+          fbInsErrors++;
+          logFailure(`/${acc.page_id}/insights`, acc, "accountInsights", fbInsRes);
+          return;
+        }
+        fbInsSuccess++;
+        if (Array.isArray(fbInsRes?.data)) {
+          for (const metric of fbInsRes.data) {
             for (const v of metric.values || []) {
               const dayIso = String(v.end_time || "").slice(0, 10);
               const val = Number(v.value || 0);
               const entry = dailyMap.get(dayIso);
               if (entry) {
-                if (metric.name === "reach") entry.reachIg += val;
-                if (metric.name === "follower_count") entry.newFollowersIg += val;
+                if (metric.name === "page_views_total") entry.viewsFb += val;
+                if (metric.name === "page_post_engagements") entry.engFb += val;
+                if (metric.name === "page_daily_follows") entry.newFollowersFb += val;
               }
               if (dayIso >= dateFrom && dayIso <= dateTo) {
-                if (metric.name === "reach") reachIg += val;
-                if (metric.name === "follower_count") newFollowersIg += val;
+                if (metric.name === "page_views_total") viewsFb += val;
+                if (metric.name === "page_post_engagements") interactionsFb += val;
+                if (metric.name === "page_daily_follows") newFollowersFb += val;
               }
             }
           }
         }
+      }),
+    ];
 
-        // Totais exatos do período IG
-        if (Array.isArray(igTotalsRes?.data)) {
-          for (const m of igTotalsRes.data) {
-            const val = Number(m.total_value?.value || 0);
-            if (m.name === "views") viewsIg += val;
-            if (m.name === "total_interactions") interactionsIg += val;
-            if (m.name === "accounts_engaged") accountsEngaged += val;
-            if (m.name === "profile_views") profileViews += val;
-            if (m.name === "website_clicks") websiteClicks += val;
+    if (acc.instagram_account_id) {
+      const igId = acc.instagram_account_id;
+      insightTasks.push(
+        fetchMetaJson(
+          `${META_API_BASE}/${igId}/insights?metric=reach,follower_count&period=day&since=${chartSince}&until=${untilExclusive}&access_token=${encodeURIComponent(igToken)}`,
+          11_000
+        ).then((igTsRes) => {
+          if (igTsRes?.error) {
+            igTsErrors++;
+            logFailure(`/${igId}/insights(reach,follower_count)`, acc, "dailySeries", igTsRes);
+            return;
           }
-        }
-
-        // Demográficos reais
-        const parsedDemo = parseDemographicsFromApi(igDemoRes);
-        if (parsedDemo.available) {
-          demoTotals.available = true;
-          demoTotals.totalSample += parsedDemo.totalSample;
-          const rawResults = igDemoRes?.data?.[0]?.total_value?.breakdowns?.[0]?.results || [];
-          for (const r of rawResults) {
-            const [ageRaw, gKey] = r.dimension_values || [];
-            const val = Number(r.value || 0);
-            if (val <= 0) continue;
-            let ageBucket = ageRaw;
-            if (ageRaw === "55-64" || ageRaw === "65+") ageBucket = "55+";
-            if (!["18-24", "25-34", "35-44", "45-54", "55+"].includes(ageBucket)) continue;
-            const cur = demoTotals.ageMap.get(ageBucket) || { male: 0, female: 0 };
-            if (gKey === "M") {
-              cur.male += val;
-              demoTotals.male += val;
-            } else if (gKey === "F") {
-              cur.female += val;
-              demoTotals.female += val;
+          igTsSuccess++;
+          if (Array.isArray(igTsRes?.data)) {
+            for (const metric of igTsRes.data) {
+              for (const v of metric.values || []) {
+                const dayIso = String(v.end_time || "").slice(0, 10);
+                const val = Number(v.value || 0);
+                const entry = dailyMap.get(dayIso);
+                if (entry) {
+                  if (metric.name === "reach") entry.reachIg += val;
+                  if (metric.name === "follower_count") entry.newFollowersIg += val;
+                }
+                if (dayIso >= dateFrom && dayIso <= dateTo) {
+                  if (metric.name === "reach") reachIg += val;
+                  if (metric.name === "follower_count") newFollowersIg += val;
+                }
+              }
             }
-            demoTotals.ageMap.set(ageBucket, cur);
           }
-        }
+        }),
+        fetchMetaJson(
+          `${META_API_BASE}/${igId}/insights?metric=views,total_interactions,accounts_engaged,profile_views,website_clicks&metric_type=total_value&period=day&since=${kpiSince}&until=${untilExclusive}&access_token=${encodeURIComponent(igToken)}`,
+          11_000
+        ).then((igTotalsRes) => {
+          if (igTotalsRes?.error) {
+            igTotalsErrors++;
+            logFailure(`/${igId}/insights(totals)`, acc, "accountInsights", igTotalsRes);
+            return;
+          }
+          igTotalsSuccess++;
+          if (Array.isArray(igTotalsRes?.data)) {
+            for (const m of igTotalsRes.data) {
+              const val = Number(m.total_value?.value || 0);
+              if (m.name === "views") viewsIg += val;
+              if (m.name === "total_interactions") interactionsIg += val;
+              if (m.name === "accounts_engaged") accountsEngaged += val;
+              if (m.name === "profile_views") profileViews += val;
+              if (m.name === "website_clicks") websiteClicks += val;
+            }
+          }
+        }),
+        fetchMetaJson(
+          `${META_API_BASE}/${igId}/insights?metric=follower_demographics&period=lifetime&metric_type=total_value&breakdown=age,gender&access_token=${encodeURIComponent(igToken)}`,
+          11_000
+        ).then((igDemoRes) => {
+          if (igDemoRes?.error) {
+            demoErrors++;
+            logFailure(`/${igId}/insights(demographics)`, acc, "demographics", igDemoRes);
+            return;
+          }
+          demoSuccess++;
+          const parsedDemo = parseDemographicsFromApi(igDemoRes);
+          if (parsedDemo.available) {
+            demoTotals.available = true;
+            demoTotals.totalSample += parsedDemo.totalSample;
+            const rawResults = igDemoRes?.data?.[0]?.total_value?.breakdowns?.[0]?.results || [];
+            for (const r of rawResults) {
+              const [ageRaw, gKey] = r.dimension_values || [];
+              const val = Number(r.value || 0);
+              if (val <= 0) continue;
+              let ageBucket = ageRaw;
+              if (ageRaw === "55-64" || ageRaw === "65+") ageBucket = "55+";
+              if (!["18-24", "25-34", "35-44", "45-54", "55+"].includes(ageBucket)) continue;
+              const cur = demoTotals.ageMap.get(ageBucket) || { male: 0, female: 0 };
+              if (gKey === "M") {
+                cur.male += val;
+                demoTotals.male += val;
+              } else if (gKey === "F") {
+                cur.female += val;
+                demoTotals.female += val;
+              }
+              demoTotals.ageMap.set(ageBucket, cur);
+            }
+          }
+        })
+      );
+    }
 
-        // Posts reais do Instagram + métricas individuais reais para todos os posts retornados
-        const mediaItems = Array.isArray(igMediaRes?.data) ? igMediaRes.data : [];
+    await Promise.allSettled([...followerCalls, ...insightTasks]);
+    followersFb += accFbFollowers;
+    followersIg += accIgFollowers;
+  });
 
-        for (let i = 0; i < mediaItems.length; i += 10) {
-          await Promise.all(
-            mediaItems.slice(i, i + 10).map(async (item: any) => {
+  const dailySeries = Array.from(dailyMap.values()).sort((a, b) => a.date.localeCompare(b.date));
+
+  let reachDeltaPct: number | null = null;
+  let followersDeltaPct: number | null = null;
+  if (dailySeries.length >= selectedDaysCount * 2) {
+    const prevSlice = dailySeries.slice(dailySeries.length - selectedDaysCount * 2, dailySeries.length - selectedDaysCount);
+    const prevReach = prevSlice.reduce((s, d) => s + d.reachIg, 0);
+    const prevFollowers = prevSlice.reduce((s, d) => s + d.newFollowersIg + d.newFollowersFb, 0);
+    if (prevReach > 0) reachDeltaPct = Number((((reachIg - prevReach) / prevReach) * 100).toFixed(1));
+    if (prevFollowers > 0) followersDeltaPct = Number((((newFollowersIg + newFollowersFb - prevFollowers) / prevFollowers) * 100).toFixed(1));
+  }
+
+  let demographics: RealDemographics = { available: false, totalSample: 0, gender: { male: 0, female: 0 }, age: [] };
+  const totalGender = demoTotals.male + demoTotals.female;
+  if (demoTotals.available && totalGender > 0) {
+    const malePct = Math.round((demoTotals.male / totalGender) * 100);
+    demographics = {
+      available: true,
+      totalSample: totalGender,
+      gender: { male: malePct, female: 100 - malePct },
+      age: ["18-24", "25-34", "35-44", "45-54", "55+"].map((range) => {
+        const b = demoTotals.ageMap.get(range) || { male: 0, female: 0 };
+        return {
+          range,
+          male: Math.round((b.male / totalGender) * 100),
+          female: Math.round((b.female / totalGender) * 100),
+        };
+      }),
+    };
+  }
+
+  const pickSectionState = (
+    sectionName: string,
+    okCount: number,
+    errCount: number,
+    hasData: boolean
+  ): SocialSectionStatus => {
+    const secLogs = endpointLogs.filter((l) => l.section === sectionName);
+    const firstErr = secLogs[0];
+    if (okCount > 0 && errCount > 0) {
+      return { state: "partial", message: firstErr?.message, endpoint: firstErr?.endpoint, updatedAt: nowIso };
+    }
+    if (okCount === 0 && errCount > 0) {
+      return {
+        state: firstErr?.state || "error",
+        message: firstErr?.message || "Não foi possível carregar — tentar novamente",
+        endpoint: firstErr?.endpoint,
+        accountId: firstErr?.accountId,
+        accountName: firstErr?.accountName,
+        updatedAt: nowIso,
+      };
+    }
+    return { state: hasData ? "success" : "empty", updatedAt: nowIso };
+  };
+
+  const identityState: SocialSectionStatus = {
+    state: targetAccounts.length > 0 ? "success" : "empty",
+    accountId: targetAccounts[0]?.page_id,
+    accountName: targetAccounts.length === 1 ? targetAccounts[0].page_name : `${targetAccounts.length} contas`,
+    updatedAt: nowIso,
+  };
+  const followersState = pickSectionState("followers", followersSuccess, followersErrors, followersIg + followersFb > 0);
+  const accountInsightsState = pickSectionState(
+    "accountInsights",
+    igTotalsSuccess + fbInsSuccess,
+    igTotalsErrors + fbInsErrors,
+    reachIg + viewsIg + viewsFb + interactionsIg + interactionsFb + profileViews + websiteClicks > 0
+  );
+  const dailySeriesState = pickSectionState(
+    "dailySeries",
+    igTsSuccess + fbInsSuccess,
+    igTsErrors + fbInsErrors,
+    dailySeries.some((d) => d.reachIg + d.viewsFb + d.engFb + d.newFollowersIg + d.newFollowersFb > 0)
+  );
+  const demographicsState = anyHasIg
+    ? pickSectionState("demographics", demoSuccess, demoErrors, demographics.available)
+    : emptySection("empty", "Conta somente Facebook — sem demográficos Instagram.");
+
+  return {
+    accounts,
+    targetAccounts,
+    dailySeries,
+    chartWindowDays: chartDays,
+    kpis: {
+      followersIg,
+      followersFb,
+      newFollowersIg,
+      newFollowersFb,
+      reachIg,
+      viewsIg,
+      viewsFb,
+      interactionsIg,
+      interactionsFb,
+      accountsEngaged,
+      profileViews,
+      websiteClicks,
+      reachDeltaPct,
+      followersDeltaPct,
+    },
+    fieldAvailability: {
+      reachIg: !anyHasIg ? "unavailable" : igTsSuccess > 0 ? "available" : "error",
+      viewsIg: !anyHasIg ? "unavailable" : igTotalsSuccess > 0 ? "available" : "error",
+      viewsFb: fbInsSuccess > 0 ? "available" : "error",
+      interactionsIg: !anyHasIg ? "unavailable" : igTotalsSuccess > 0 ? "available" : "error",
+      interactionsFb: fbInsSuccess > 0 ? "available" : "error",
+      profileViews: !anyHasIg ? "unavailable" : igTotalsSuccess > 0 ? "available" : "error",
+      websiteClicks: !anyHasIg ? "unavailable" : igTotalsSuccess > 0 ? "available" : "error",
+      followers: followersSuccess > 0 || followersIg + followersFb > 0 ? "available" : "error",
+    },
+    demographics,
+    sectionStates: {
+      identity: identityState,
+      followers: followersState,
+      accountInsights: accountInsightsState,
+      dailySeries: dailySeriesState,
+      demographics: demographicsState,
+    },
+    endpointLogs,
+    windowUsed,
+    snapshotAt: nowIso,
+    syncSource: "meta_graph_v21",
+  };
+}
+
+/**
+ * Consulta isolada de Publicações (Instagram + Facebook) e Insights das Publicações.
+ * Possui timeout controlado e concorrência limitada; falhas parciais nos insights
+ * individuais não descartam as publicações já recuperadas.
+ */
+export async function fetchAccountSocialPosts(params: {
+  accounts: RealSocialAccount[];
+  selectedPageId: string;
+  masterToken: string | null;
+}): Promise<SocialPostsResult> {
+  const { accounts, selectedPageId, masterToken } = params;
+  const nowIso = new Date().toISOString();
+  const targetAccounts = resolveTargetSocialAccounts(accounts, selectedPageId);
+
+  if (!masterToken || targetAccounts.length === 0) {
+    return {
+      posts: [],
+      heatmapMatrix: Array.from({ length: 7 }, () => Array(24).fill(0)),
+      hasPostsForHeatmap: false,
+      heatmapSampleSize: 0,
+      postsState: { state: masterToken ? "empty" : "token_expired", updatedAt: nowIso },
+      postInsightsState: { state: masterToken ? "empty" : "token_expired", updatedAt: nowIso },
+      endpointLogs: [],
+      snapshotAt: nowIso,
+    };
+  }
+
+  const allPosts: RealSocialPost[] = [];
+  const endpointLogs: SocialEndpointFailureLog[] = [];
+  let postListOk = 0;
+  let postListErr = 0;
+  let postInsOk = 0;
+  let postInsErr = 0;
+
+  const logFailure = (
+    endpoint: string,
+    acc: RealSocialAccount,
+    section: string,
+    rawErr: any
+  ) => {
+    const classified = classifySocialErrorState(rawErr);
+    endpointLogs.push({
+      endpoint,
+      accountId: acc.page_id,
+      accountName: acc.page_name,
+      section,
+      state: classified.state,
+      message: classified.message,
+      timestamp: new Date().toISOString(),
+    });
+  };
+
+  const accConcurrency = selectedPageId === "all" ? 3 : 1;
+  await mapWithConcurrency(targetAccounts, accConcurrency, async (acc) => {
+    const pageToken = acc.access_token || masterToken;
+    const igToken = pageToken || masterToken;
+
+    const tasks: Promise<void>[] = [];
+
+    if (acc.instagram_account_id) {
+      const igId = acc.instagram_account_id;
+      tasks.push(
+        (async () => {
+          const igLimit = selectedPageId === "all" ? 4 : 15;
+          const igMediaRes = await fetchMetaJson(
+            `${META_API_BASE}/${igId}/media?fields=id,caption,media_type,media_product_type,thumbnail_url,media_url,permalink,timestamp,like_count,comments_count&limit=${igLimit}&access_token=${encodeURIComponent(igToken)}`,
+            12_000
+          );
+          if (igMediaRes?.error) {
+            postListErr++;
+            logFailure(`/${igId}/media`, acc, "posts", igMediaRes);
+            return;
+          }
+          postListOk++;
+          const mediaItems = Array.isArray(igMediaRes?.data) ? igMediaRes.data : [];
+
+          await mapWithConcurrency(mediaItems, 4, async (item: any) => {
             let pReach = 0;
             let pViews = 0;
             let pSaved = 0;
@@ -631,9 +1198,14 @@ export async function fetchRealSocialInsights(params: {
             let pInteractions = 0;
 
             const ins = await fetchMetaJson(
-              `${META_API_BASE}/${item.id}/insights?metric=reach,views,saved,shares,total_interactions&access_token=${encodeURIComponent(masterToken)}`
+              `${META_API_BASE}/${item.id}/insights?metric=reach,views,saved,shares,total_interactions&access_token=${encodeURIComponent(igToken)}`,
+              8_000
             );
-            if (Array.isArray(ins?.data)) {
+            if (ins?.error) {
+              postInsErr++;
+              logFailure(`/${item.id}/insights`, acc, "postInsights", ins);
+            } else if (Array.isArray(ins?.data)) {
+              postInsOk++;
               for (const m of ins.data) {
                 const v = Number(m.values?.[0]?.value || 0);
                 if (m.name === "reach") pReach = v;
@@ -649,9 +1221,7 @@ export async function fetchRealSocialInsights(params: {
             const totalInt = pInteractions || likes + comments + pSaved + pShares;
             const engRate = pReach > 0 ? (totalInt / pReach) * 100 : 0;
 
-            const isReel =
-              item.media_product_type === "REELS" ||
-              item.media_type === "VIDEO";
+            const isReel = item.media_product_type === "REELS" || item.media_type === "VIDEO";
             const postType: RealSocialPost["post_type"] = isReel
               ? "reels"
               : item.media_type === "CAROUSEL_ALBUM"
@@ -697,180 +1267,251 @@ export async function fetchRealSocialInsights(params: {
               ai_sentiment: sentiment,
               ai_recommendation: recommendation,
             });
-          })
-        );
-        }
-      }
+          });
+        })()
+      );
+    }
 
-      // 2. Insights & Postagens reais do Facebook Page (com paginação e alcance orgânico quando permitido)
-      const [fbInsRes, fbPostsPaginated] = await Promise.all([
-        fetchMetaJson(
-          `${META_API_BASE}/${acc.page_id}/insights?metric=page_views_total,page_post_engagements,page_daily_follows&period=day&since=${chartSince}&until=${untilExclusive}&access_token=${encodeURIComponent(pageToken)}`
-        ),
-        fetchMetaPaginatedList(
+    tasks.push(
+      (async () => {
+        const fbPostsPaginated = await fetchMetaPaginatedList(
           `/${acc.page_id}/posts`,
           pageToken,
           {
             fields: "id,message,created_time,full_picture,permalink_url,likes.summary(true),comments.summary(true),shares",
-            limit: selectedPageId === "all" ? "10" : "25",
+            limit: selectedPageId === "all" ? "4" : "18",
           },
-          selectedPageId === "all" ? 1 : 3
-        ),
-      ]);
+          selectedPageId === "all" ? 1 : 2,
+          12_000
+        );
+        if (!fbPostsPaginated.ok) {
+          postListErr++;
+          logFailure(`/${acc.page_id}/posts`, acc, "posts", fbPostsPaginated);
+          return;
+        }
+        postListOk++;
+        const fbPosts = Array.isArray(fbPostsPaginated.data) ? fbPostsPaginated.data : [];
+        const fbPostMetrics = new Map<string, { reach: number; views: number }>();
 
-      if (Array.isArray(fbInsRes?.data)) {
-        for (const metric of fbInsRes.data) {
-          for (const v of metric.values || []) {
-            const dayIso = String(v.end_time || "").slice(0, 10);
-            const val = Number(v.value || 0);
-            const entry = dailyMap.get(dayIso);
-            if (entry) {
-              if (metric.name === "page_views_total") entry.viewsFb += val;
-              if (metric.name === "page_post_engagements") entry.engFb += val;
-              if (metric.name === "page_daily_follows") entry.newFollowersFb += val;
-            }
-            if (dayIso >= dateFrom && dayIso <= dateTo) {
-              if (metric.name === "page_views_total") viewsFb += val;
-              if (metric.name === "page_post_engagements") interactionsFb += val;
-              if (metric.name === "page_daily_follows") newFollowersFb += val;
+        await mapWithConcurrency(fbPosts, 4, async (fp: any) => {
+          const ins = await fetchMetaJson(
+            `${META_API_BASE}/${fp.id}/insights?metric=post_impressions_unique,post_impressions&access_token=${encodeURIComponent(pageToken)}`,
+            8_000
+          );
+          if (ins?.error) {
+            postInsErr++;
+            logFailure(`/${fp.id}/insights`, acc, "postInsights", ins);
+            return;
+          }
+          postInsOk++;
+          let reach = 0;
+          let views = 0;
+          if (Array.isArray(ins?.data)) {
+            for (const m of ins.data) {
+              const v = Number(m.values?.[0]?.value || 0);
+              if (m.name === "post_impressions_unique") reach = v;
+              if (m.name === "post_impressions") views = v;
             }
           }
-        }
-      }
-
-      const fbPosts = Array.isArray(fbPostsPaginated?.data) ? fbPostsPaginated.data : [];
-      const fbPostMetrics = new Map<string, { reach: number; views: number }>();
-      for (let i = 0; i < fbPosts.length; i += 10) {
-        await Promise.all(
-          fbPosts.slice(i, i + 10).map(async (fp: any) => {
-            const ins = await fetchMetaJson(
-              `${META_API_BASE}/${fp.id}/insights?metric=post_impressions_unique,post_impressions&access_token=${encodeURIComponent(pageToken)}`
-            );
-            let reach = 0;
-            let views = 0;
-            if (Array.isArray(ins?.data)) {
-              for (const m of ins.data) {
-                const v = Number(m.values?.[0]?.value || 0);
-                if (m.name === "post_impressions_unique") reach = v;
-                if (m.name === "post_impressions") views = v;
-              }
-            }
-            fbPostMetrics.set(fp.id, { reach, views });
-          })
-        );
-      }
-
-      for (const fp of fbPosts) {
-        const likes = Number(fp.likes?.summary?.total_count || 0);
-        const comments = Number(fp.comments?.summary?.total_count || 0);
-        const shares = Number(fp.shares?.count || 0);
-        const fbm = fbPostMetrics.get(fp.id) || { reach: 0, views: 0 };
-        const totalInt = likes + comments + shares;
-        const engRate = fbm.reach > 0 ? (totalInt / fbm.reach) * 100 : 0;
-        const msg = fp.message || "";
-        const firstLine = msg.split("\n").find((l: string) => l.trim()) || "Publicação no Facebook";
-
-        allPosts.push({
-          id: `fb_${fp.id}`,
-          accountName: acc.page_name,
-          accountHandle: acc.page_name,
-          title: firstLine.length > 52 ? firstLine.slice(0, 49) + "..." : firstLine,
-          content: msg,
-          post_type: "image",
-          platform: "facebook",
-          likes_count: likes,
-          comments_count: comments,
-          shares_count: shares,
-          saved_count: 0,
-          reach_count: fbm.reach,
-          views_count: fbm.views,
-          total_interactions: totalInt,
-          engagement_rate: engRate,
-          media_url: fp.full_picture || null,
-          thumbnail_url: fp.full_picture || null,
-          permalink: fp.permalink_url || `https://facebook.com/${fp.id}`,
-          published_at: fp.created_time,
-          ai_sentiment: likes + comments + shares > 0 ? "Engajamento Orgânico" : "Institucional Facebook",
-          ai_recommendation:
-            likes + comments + shares > 0
-              ? `${likes} reações, ${comments} comentários e ${shares} compartilhamentos no Facebook.`
-              : "Publicação ativa na Página do Facebook.",
+          fbPostMetrics.set(fp.id, { reach, views });
         });
-      }
-    })
-  );
 
-  // Ordenar série diária cronologicamente
-  const dailySeries = Array.from(dailyMap.values()).sort((a, b) => a.date.localeCompare(b.date));
+        for (const fp of fbPosts) {
+          const likes = Number(fp.likes?.summary?.total_count || 0);
+          const comments = Number(fp.comments?.summary?.total_count || 0);
+          const shares = Number(fp.shares?.count || 0);
+          const fbm = fbPostMetrics.get(fp.id) || { reach: 0, views: 0 };
+          const totalInt = likes + comments + shares;
+          const engRate = fbm.reach > 0 ? (totalInt / fbm.reach) * 100 : 0;
+          const msg = fp.message || "";
+          const firstLine = msg.split("\n").find((l: string) => l.trim()) || "Publicação no Facebook";
 
-  // Calcular deltas reais comparando período selecionado vs janela imediatamente anterior dentro da série
-  let reachDeltaPct: number | null = null;
-  let followersDeltaPct: number | null = null;
-  if (dailySeries.length >= selectedDaysCount * 2) {
-    const prevSlice = dailySeries.slice(dailySeries.length - selectedDaysCount * 2, dailySeries.length - selectedDaysCount);
-    const prevReach = prevSlice.reduce((s, d) => s + d.reachIg, 0);
-    const prevFollowers = prevSlice.reduce((s, d) => s + d.newFollowersIg + d.newFollowersFb, 0);
-    if (prevReach > 0) {
-      reachDeltaPct = Number((((reachIg - prevReach) / prevReach) * 100).toFixed(1));
-    }
-    if (prevFollowers > 0) {
-      followersDeltaPct = Number((((newFollowersIg + newFollowersFb - prevFollowers) / prevFollowers) * 100).toFixed(1));
-    }
-  }
+          allPosts.push({
+            id: `fb_${fp.id}`,
+            accountName: acc.page_name,
+            accountHandle: acc.page_name,
+            title: firstLine.length > 52 ? firstLine.slice(0, 49) + "..." : firstLine,
+            content: msg,
+            post_type: "image",
+            platform: "facebook",
+            likes_count: likes,
+            comments_count: comments,
+            shares_count: shares,
+            saved_count: 0,
+            reach_count: fbm.reach,
+            views_count: fbm.views,
+            total_interactions: totalInt,
+            engagement_rate: engRate,
+            media_url: fp.full_picture || null,
+            thumbnail_url: fp.full_picture || null,
+            permalink: fp.permalink_url || `https://facebook.com/${fp.id}`,
+            published_at: fp.created_time,
+            ai_sentiment: likes + comments + shares > 0 ? "Engajamento Orgânico" : "Institucional Facebook",
+            ai_recommendation:
+              likes + comments + shares > 0
+                ? `${likes} reações, ${comments} comentários e ${shares} compartilhamentos no Facebook.`
+                : "Publicação ativa na Página do Facebook.",
+          });
+        }
+      })()
+    );
 
-  // Montar demográficos consolidados reais
-  let demographics: RealDemographics = { available: false, totalSample: 0, gender: { male: 0, female: 0 }, age: [] };
-  const totalGender = demoTotals.male + demoTotals.female;
-  if (demoTotals.available && totalGender > 0) {
-    const malePct = Math.round((demoTotals.male / totalGender) * 100);
-    demographics = {
-      available: true,
-      totalSample: totalGender,
-      gender: { male: malePct, female: 100 - malePct },
-      age: ["18-24", "25-34", "35-44", "45-54", "55+"].map((range) => {
-        const b = demoTotals.ageMap.get(range) || { male: 0, female: 0 };
-        return {
-          range,
-          male: Math.round((b.male / totalGender) * 100),
-          female: Math.round((b.female / totalGender) * 100),
-        };
-      }),
-    };
-  }
+    await Promise.allSettled(tasks);
+  });
 
-  // Heatmap real a partir dos posts reais
   const { matrix: heatmapMatrix, hasData: hasPostsForHeatmap } = buildRealHeatmap(allPosts);
+  const firstPostErr = endpointLogs.find((l) => l.section === "posts");
+  const firstInsErr = endpointLogs.find((l) => l.section === "postInsights");
+
+  const postsState: SocialSectionStatus =
+    postListOk > 0 && postListErr > 0
+      ? { state: "partial", message: firstPostErr?.message, endpoint: firstPostErr?.endpoint, updatedAt: nowIso }
+      : postListOk === 0 && postListErr > 0
+      ? { state: firstPostErr?.state || "error", message: firstPostErr?.message, endpoint: firstPostErr?.endpoint, updatedAt: nowIso }
+      : { state: allPosts.length > 0 ? "success" : "empty", updatedAt: nowIso };
+
+  const postInsightsState: SocialSectionStatus =
+    postInsOk > 0 && postInsErr > 0
+      ? { state: "partial", message: firstInsErr?.message, endpoint: firstInsErr?.endpoint, updatedAt: nowIso }
+      : postInsOk === 0 && postInsErr > 0
+      ? { state: firstInsErr?.state || "permission_denied", message: firstInsErr?.message, endpoint: firstInsErr?.endpoint, updatedAt: nowIso }
+      : { state: postInsOk > 0 ? "success" : "empty", updatedAt: nowIso };
 
   return {
-    accounts,
-    dailySeries,
-    chartWindowDays: chartDays,
-    kpis: {
-      followersIg,
-      followersFb,
-      newFollowersIg,
-      newFollowersFb,
-      reachIg,
-      viewsIg,
-      viewsFb,
-      interactionsIg,
-      interactionsFb,
-      accountsEngaged,
-      profileViews,
-      websiteClicks,
-      reachDeltaPct,
-      followersDeltaPct,
-    },
-    demographics,
     posts: allPosts,
     heatmapMatrix,
     hasPostsForHeatmap,
     heatmapSampleSize: allPosts.filter((p) => Boolean(p.published_at)).length,
+    postsState,
+    postInsightsState,
+    endpointLogs,
+    snapshotAt: nowIso,
+  };
+}
+
+/**
+ * Orquestra visão geral + publicações com estados explícitos (`SocialDataState`),
+ * timeouts controlados e preservação do último snapshot válido em caso de erro total.
+ */
+export async function fetchRealSocialInsights(params: {
+  accounts: RealSocialAccount[];
+  selectedPageId: string;
+  dateFrom: string;
+  dateTo: string;
+  chartDaysOverride?: number;
+  masterToken: string | null;
+}): Promise<RealSocialInsightsResult> {
+  const snapshotKey = `${params.selectedPageId}:${params.dateFrom}:${params.dateTo}:${params.chartDaysOverride || 14}`;
+  const [overviewRes, postsRes] = await Promise.allSettled([
+    fetchAccountSocialOverview(params),
+    fetchAccountSocialPosts({
+      accounts: params.accounts,
+      selectedPageId: params.selectedPageId,
+      masterToken: params.masterToken,
+    }),
+  ]);
+
+  const nowIso = new Date().toISOString();
+  const prevValid = getLastValidSocialSnapshot(snapshotKey);
+
+  if (overviewRes.status === "rejected" && postsRes.status === "rejected") {
+    if (prevValid) {
+      return {
+        ...prevValid,
+        overallState: "partial",
+        isFromLastValidSnapshot: true,
+        lastValidSnapshotAt: prevValid.snapshotAt || null,
+        errorMessage: "Não foi possível atualizar agora — exibindo último snapshot válido.",
+      };
+    }
+    throw overviewRes.reason;
+  }
+
+  const overview =
+    overviewRes.status === "fulfilled"
+      ? overviewRes.value
+      : await fetchAccountSocialOverview({ ...params, masterToken: null });
+  const postsData: SocialPostsResult =
+    postsRes.status === "fulfilled"
+      ? postsRes.value
+      : {
+          posts: prevValid?.posts || [],
+          heatmapMatrix: prevValid?.heatmapMatrix || Array.from({ length: 7 }, () => Array(24).fill(0)),
+          hasPostsForHeatmap: Boolean(prevValid?.hasPostsForHeatmap),
+          heatmapSampleSize: prevValid?.heatmapSampleSize || 0,
+          postsState: { state: "error", message: "Falha ao carregar publicações — tentar novamente", updatedAt: nowIso },
+          postInsightsState: { state: "error", message: "Falha ao carregar insights de posts", updatedAt: nowIso },
+          endpointLogs: [],
+          snapshotAt: nowIso,
+        };
+
+  const allLogs = [...overview.endpointLogs, ...postsData.endpointLogs];
+  const anyError =
+    overview.sectionStates.followers.state === "error" ||
+    overview.sectionStates.accountInsights.state === "error" ||
+    postsData.postsState.state === "error";
+  const anyPartial =
+    overview.sectionStates.accountInsights.state === "partial" ||
+    postsData.postsState.state === "partial" ||
+    postsData.postInsightsState.state === "partial";
+  const anyExpired = allLogs.some((l) => l.state === "token_expired");
+  const anyRateLimit = allLogs.some((l) => l.state === "rate_limited");
+
+  let overallState: SocialDataState = "success";
+  if (overview.syncSource === "no_token" || anyExpired) overallState = "token_expired";
+  else if (anyRateLimit && overview.sectionStates.accountInsights.state === "error") overallState = "rate_limited";
+  else if (anyError || anyPartial) overallState = "partial";
+  else if (
+    overview.kpis.followersIg + overview.kpis.followersFb === 0 &&
+    postsData.posts.length === 0
+  ) {
+    overallState = "empty";
+  }
+
+  const assembled: RealSocialInsightsResult = {
+    accounts: overview.accounts,
+    dailySeries: overview.dailySeries,
+    chartWindowDays: overview.chartWindowDays,
+    kpis: overview.kpis,
+    fieldAvailability: overview.fieldAvailability,
+    demographics: overview.demographics,
+    posts: postsData.posts,
+    heatmapMatrix: postsData.heatmapMatrix,
+    hasPostsForHeatmap: postsData.hasPostsForHeatmap,
+    heatmapSampleSize: postsData.heatmapSampleSize,
     apiLimitations: [
       "Instagram Graph API não expõe rascunhos/agendados nativos criados fora da plataforma.",
     ],
-    syncSource: "meta_graph_v21",
+    syncSource: overview.syncSource,
+    errorMessage: overview.errorMessage || allLogs[0]?.message,
+    overallState,
+    sectionStates: {
+      ...overview.sectionStates,
+      posts: postsData.postsState,
+      postInsights: postsData.postInsightsState,
+    },
+    endpointLogs: allLogs,
+    windowUsed: overview.windowUsed,
+    snapshotAt: nowIso,
+    isFromLastValidSnapshot: false,
+    lastValidSnapshotAt: prevValid?.snapshotAt || nowIso,
   };
+
+  if (overview.syncSource === "meta_graph_v21" && overview.sectionStates.followers.state !== "error") {
+    saveLastValidSocialSnapshot(snapshotKey, assembled);
+  } else if (prevValid) {
+    return {
+      ...prevValid,
+      overallState,
+      sectionStates: assembled.sectionStates,
+      endpointLogs: allLogs,
+      isFromLastValidSnapshot: true,
+      lastValidSnapshotAt: prevValid.snapshotAt || null,
+      errorMessage: assembled.errorMessage,
+    };
+  }
+
+  return assembled;
 }
 
 export interface PlannerPost {

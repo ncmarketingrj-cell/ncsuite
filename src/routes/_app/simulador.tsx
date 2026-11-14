@@ -12,7 +12,9 @@ import {
   ensureDatabaseCalibrated,
   detectConversionCategory,
 } from "@/lib/metaConversionCalibrator";
-import { classifyMetaEvent, computeCvr, computeUnitCost } from "@/lib/metricsDomain";
+import { classifyMetaEvent, computeCvr, computeUnitCost, EVENT_MODEL_VERSION } from "@/lib/metricsDomain";
+import { buildMetaSnapshotKey, DEFAULT_META_TIMEZONE, useActiveMetaSnapshot } from "@/lib/metaSnapshotCache";
+import { SnapshotStatusBadge } from "@/components/SnapshotStatusBadge";
 import {
   SIM_OBJECTIVES,
   DIDACTIC_SIMULATION_PRESETS,
@@ -354,13 +356,15 @@ function SimuladorPage() {
   const [scenarioName, setScenarioName] = useState("");
   const [showSaveInput, setShowSaveInput] = useState(false);
 
+  const activeSnapshot = useActiveMetaSnapshot({ accountId });
+
   // ── 1. Buscar Contas de Anúncio ──────────────────────────────────────────────
   const {
     data: adAccounts = [],
     isLoading: isLoadingAccounts,
     isError: isAccountsError,
   } = useQuery({
-    queryKey: ["simulador-ad-accounts"],
+    queryKey: ["simulador-ad-accounts", activeSnapshot.snapshotId],
     queryFn: async () => {
       const { data, error } = await supabase
         .from("ad_accounts")
@@ -372,8 +376,16 @@ function SimuladorPage() {
   });
 
   // ── 2. Buscar Campanhas e Métricas Reais Calibradas ──────────────────────────
-  const { data: allCampaigns = [], isLoading: isLoadingCampaigns } = useQuery({
-    queryKey: ["simulador-campaigns", accountId],
+  const { data: allCampaigns = [], isLoading: isLoadingCampaigns, isFetching: isFetchingCampaigns } = useQuery({
+    queryKey: buildMetaSnapshotKey("simulador-campaigns", {
+      accountId,
+      dateFrom,
+      dateTo,
+      timezone: DEFAULT_META_TIMEZONE,
+      level: "campaign",
+      snapshotId: activeSnapshot.snapshotId,
+      eventModelVersion: EVENT_MODEL_VERSION,
+    }),
     staleTime: 2 * 60 * 1000,
     queryFn: async () => {
       ensureDatabaseCalibrated(supabase).catch(() => {});
@@ -957,6 +969,11 @@ function SimuladorPage() {
           />
 
           <div className="flex flex-wrap items-center gap-2">
+            <SnapshotStatusBadge
+              snapshotId={activeSnapshot.snapshotId}
+              committedAt={activeSnapshot.committedAt}
+              isUpdating={isLoadingCampaigns || isFetchingCampaigns}
+            />
             <button
               onClick={() => setShowDidacticGuide((v) => !v)}
               className={`flex items-center gap-1.5 rounded-xl border px-3 py-2 text-[10px] font-black uppercase tracking-wider transition-all ${

@@ -944,6 +944,103 @@ export function computeWeightedAggregates(
   };
 }
 
+export interface AccountMessageSummary {
+  totalAccountSpend: number;
+  messageEligibleSpend: number;
+  messageResults: number;
+  messageCpl: number | null;
+  hasMessagesCampaigns: boolean;
+}
+
+/**
+ * Calcula o resumo exclusivo de Mensagens por conta usando apenas campanhas
+ * cujo evento oficial classifica como MESSAGES (nunca o gasto total da conta).
+ */
+export function computeAccountMessageSummary(rows: RawCampaignMetricRow[]): AccountMessageSummary {
+  const agg = computeWeightedAggregates(rows);
+  const messageResults = agg.messagesCount;
+  const messageEligibleSpend = agg.messagesSpend;
+  return {
+    totalAccountSpend: agg.totalMediaSpend,
+    messageEligibleSpend,
+    messageResults,
+    messageCpl: messageResults > 0 ? messageEligibleSpend / messageResults : null,
+    hasMessagesCampaigns: agg.groupsByCategory.some((g) => g.category === "MESSAGES"),
+  };
+}
+
+const SELECTOR_UNIT_LABEL_BY_CATEGORY: Record<MetaConversionCategory, string> = {
+  MESSAGES: "Conversas",
+  REACH: "Alcance",
+  INSTAGRAM_PROFILE: "Visitas ao perfil",
+  LEADS: "Leads",
+  PURCHASES: "Compras",
+  LANDING_PAGE_VIEWS: "Visualizações da página",
+  LINK_CLICKS: "Cliques no link",
+  VIDEO_VIEWS: "ThruPlays",
+  ENGAGEMENT: "Engajamentos",
+  CHECKOUT: "Finalizações de compra",
+  ADD_TO_CART: "Adições ao carrinho",
+  UNKNOWN: "Resultados",
+};
+
+export interface CampaignSelectorResultDisplay {
+  category: MetaConversionCategory;
+  label: string;
+  value: number;
+  metricVector: MetricVector;
+  formattedPair: string;
+  summaryText: string;
+}
+
+/**
+ * Formata a linha de resumo de uma campanha no seletor de Relatórios usando
+ * o MetricVector e o nome oficial da unidade (nunca rotula alcance/perfil/LPV/cliques/vídeo/engajamento como "Conversões").
+ */
+export function getCampaignSelectorResultDisplay(
+  row: RawCampaignMetricRow
+): CampaignSelectorResultDisplay {
+  const norm = normalizeCampaignItem(row);
+  const vector = emptyMetricVector();
+  accumulateMetricVector(
+    vector,
+    norm.classification.category as NormalizedResultCategory,
+    norm.conversions,
+    row.resultsIndicator || norm.classification.primaryMetric
+  );
+
+  const label = SELECTOR_UNIT_LABEL_BY_CATEGORY[norm.classification.category] || "Resultados";
+  const value = norm.conversions;
+  const formattedPair = `${label}: ${value.toLocaleString("pt-BR")}`;
+
+  const parts: string[] = [
+    `Custo: R$ ${norm.cost.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+    `Cliques: ${(norm.inlineLinkClicks ?? norm.clicks).toLocaleString("pt-BR")}`,
+    formattedPair,
+  ];
+  if (norm.classification.category !== "REACH" && norm.reach > 0) {
+    parts.push(`Alcance: ${norm.reach.toLocaleString("pt-BR")}`);
+  }
+
+  return {
+    category: norm.classification.category,
+    label,
+    value,
+    metricVector: vector,
+    formattedPair,
+    summaryText: parts.join(" • "),
+  };
+}
+
+export function getCampaignSelectionGroupLabel(rows: RawCampaignMetricRow[]): string {
+  const cats = new Set(
+    rows.map((r) => normalizeCampaignItem(r).classification.category)
+  );
+  if (cats.size > 1) return "Resultados por tipo";
+  const single = Array.from(cats)[0];
+  return single ? (SELECTOR_UNIT_LABEL_BY_CATEGORY[single] || "Resultados") : "Resultados";
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // 4. SNAPSHOT IMUTÁVEL DE RELATÓRIO (ÚNICA FONTE P/ TEXTO, PRÉVIA E PDF)
 // ─────────────────────────────────────────────────────────────────────────────

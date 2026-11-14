@@ -16,6 +16,9 @@ import { format, subDays, startOfDay, endOfDay } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { DiagnosisModal } from "@/components/victoria/DiagnosisModal";
 import { getLocalDateString } from "@/contexts/DateContext";
+import { EVENT_MODEL_VERSION } from "@/lib/metricsDomain";
+import { buildMetaSnapshotKey, DEFAULT_META_TIMEZONE, useActiveMetaSnapshot } from "@/lib/metaSnapshotCache";
+import { SnapshotStatusBadge } from "@/components/SnapshotStatusBadge";
 
 export const Route = createFileRoute("/_app/cobrancas")({
   head: () => ({ meta: [{ title: "Faturamento & Verba Meta — NC Suite" }] }),
@@ -95,11 +98,19 @@ function CobrancasPage() {
   const [selectedDiagnoseCampId, setSelectedDiagnoseCampId] = useState<string | null>(null);
   const [selectedDiagnoseCampName, setSelectedDiagnoseCampName] = useState<string>("");
   const [isDiagnoseOpen, setIsDiagnoseOpen] = useState(false);
+  const activeSnapshot = useActiveMetaSnapshot();
 
-  // Deduplica e carrega snapshots de faturamento sem zerar na atualização
-  const { data: snapshots = [], refetch: refetchSnapshots, isLoading: loadingSnapshots, error: snapshotsError } = useQuery<any[]>({
-    queryKey: ["billing_snapshots"],
-    placeholderData: (prev) => prev,
+  // Deduplica e carrega snapshots de faturamento sem manter placeholder de período/snapshot antigo
+  const { data: snapshots = [], refetch: refetchSnapshots, isLoading: loadingSnapshots, isFetching: fetchingSnapshots, error: snapshotsError } = useQuery<any[]>({
+    queryKey: buildMetaSnapshotKey("billing_snapshots", {
+      accountId: "all",
+      dateFrom: getLocalDateString(startDate),
+      dateTo: getLocalDateString(endDate),
+      timezone: DEFAULT_META_TIMEZONE,
+      level: "account",
+      snapshotId: activeSnapshot.snapshotId,
+      eventModelVersion: EVENT_MODEL_VERSION,
+    }),
     queryFn: async () => {
       const { data, error } = await (supabase as any)
         .from("billing_snapshots")
@@ -117,9 +128,16 @@ function CobrancasPage() {
   });
 
   // Carrega despesas das campanhas com paginação completa e datas civis locais (ID 23)
-  const { data: campaignStats = [], isLoading: loadingStats, error: statsError } = useQuery<any[]>({
-    queryKey: ["campaign_billing_stats", getLocalDateString(startDate), getLocalDateString(endDate)],
-    placeholderData: (prev) => prev,
+  const { data: campaignStats = [], isLoading: loadingStats, isFetching: fetchingStats, error: statsError } = useQuery<any[]>({
+    queryKey: buildMetaSnapshotKey("campaign_billing_stats", {
+      accountId: "all",
+      dateFrom: getLocalDateString(startDate),
+      dateTo: getLocalDateString(endDate),
+      timezone: DEFAULT_META_TIMEZONE,
+      level: "campaign",
+      snapshotId: activeSnapshot.snapshotId,
+      eventModelVersion: EVENT_MODEL_VERSION,
+    }),
     queryFn: async () => {
       const campaigns: any[] = [];
       for (let from = 0; from < 5000; from += 1000) {
@@ -227,6 +245,11 @@ function CobrancasPage() {
         description="Consumo das campanhas no período e snapshots de faturamento/saldo das contas de anúncios (fuso horário local do painel)."
         actions={
           <div className="flex items-center gap-2 flex-wrap justify-end">
+            <SnapshotStatusBadge
+              snapshotId={activeSnapshot.snapshotId}
+              committedAt={activeSnapshot.committedAt}
+              isUpdating={loadingSnapshots || fetchingSnapshots || loadingStats || fetchingStats || fetching}
+            />
             <DateRangePicker
               startDate={startDate}
               endDate={endDate}

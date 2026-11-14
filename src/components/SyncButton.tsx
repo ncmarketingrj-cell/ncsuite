@@ -8,6 +8,7 @@ import { ptBR } from "date-fns/locale";
 import { useAuth } from "@/lib/auth";
 import { usePagePermission } from "@/hooks/usePagePermission";
 import { calibrateMetaConversionsFromGraph } from "@/lib/metaConversionCalibrator";
+import { fetchLatestCommittedSnapshot, invalidateMetaSnapshotConsumers } from "@/lib/metaSnapshotCache";
 
 interface SyncButtonProps {
   mode?: "quick" | "full" | "max" | "month1" | "month2" | "month3";
@@ -116,6 +117,10 @@ export function SyncButton({ mode = "quick" }: SyncButtonProps) {
         }
       }
 
+      const confirmed = await fetchLatestCommittedSnapshot({
+        fallbackSnapshotId: data?.sync_id || undefined,
+      });
+
       const msg = data?.message || (
         isQuick ? "7 dias atualizados!" :
         isMax ? "Histórico máximo sincronizado!" :
@@ -124,7 +129,15 @@ export function SyncButton({ mode = "quick" }: SyncButtonProps) {
       );
       toast.success(msg, { id: t, duration: 8000 });
       setLastStatus("success");
-      await qc.invalidateQueries();
+      await invalidateMetaSnapshotConsumers({
+        queryClient: qc,
+        accountId: "all",
+        dateFrom: body.time_range?.since || null,
+        dateTo: body.time_range?.until || null,
+        snapshotId: confirmed.snapshotId,
+        committedAt: confirmed.committedAt,
+      });
+      await qc.invalidateQueries({ queryKey: ["last-sync-date"] });
       await refetchSyncDate();
     } catch (err: any) {
       const errMsg = err.message || "Falha na sincronização";

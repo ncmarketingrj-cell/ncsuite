@@ -24,9 +24,17 @@ import {
   computeUnitCost,
   formatMetricVectorSummary,
   formatPeriodLabel,
+  getCampaignSelectionGroupLabel,
+  getCampaignSelectorResultDisplay,
   parseCivilDate,
   type ReportSnapshot,
 } from "@/lib/metricsDomain";
+import {
+  createMonotonicRequestGuard,
+  invalidateMetaSnapshotConsumers,
+  useActiveMetaSnapshot,
+} from "@/lib/metaSnapshotCache";
+import { SnapshotStatusBadge } from "@/components/SnapshotStatusBadge";
 import { formatCurrencyBRLStrict } from "@/lib/metaIntegrationCore";
 
 function fmtBRLWithSymbol(v: number | null | undefined): string {
@@ -359,6 +367,9 @@ function RelatoriosPage() {
   const [visibleCount, setVisibleCount] = useState(40);
   const [isGenerating, setIsGenerating] = useState(false);
   const [isSyncingPeriod, setIsSyncingPeriod] = useState(false);
+  const [isLoadingData, setIsLoadingData] = useState(false);
+  const loadGuardRef = useRef(createMonotonicRequestGuard());
+  const activeSnapshot = useActiveMetaSnapshot({ accountId: selectedAccountId });
   const [generatedText, setGeneratedText] = useState("");
   const [isTextManuallyEdited, setIsTextManuallyEdited] = useState(false);
   const [regenerateNonce, setRegenerateNonce] = useState(0);
@@ -612,6 +623,7 @@ function RelatoriosPage() {
 
   // Carregar dados de acordo com a origem (API ou Upload)
   const loadData = async () => {
+    const reqToken = loadGuardRef.current.next();
     if (source === "upload") {
       try {
         const stored = localStorage.getItem("nc_extracted_campaigns");
@@ -634,6 +646,7 @@ function RelatoriosPage() {
               selected: true
             };
           });
+          if (!loadGuardRef.current.isCurrent(reqToken)) return;
           setCampaignList(mapped);
 
           // Carregar informações extraídas de cliente, período e modelo
@@ -668,6 +681,9 @@ function RelatoriosPage() {
       }
     } else {
       // Buscar dados do Meta Ads / Google Ads integrado local
+      setIsLoadingData(true);
+      setCampaignList([]);
+      setAccountPeriodReach(null);
       try {
         const getLocalDateStr = (d: Date) => {
           const y = d.getFullYear();
@@ -860,6 +876,7 @@ function RelatoriosPage() {
           }
 
           if (!dbMetrics || dbMetrics.length === 0) {
+            if (!loadGuardRef.current.isCurrent(reqToken)) return;
             setCampaignList([]);
             return;
           }
@@ -938,15 +955,22 @@ function RelatoriosPage() {
               // Opcional caso migration não tenha sido aplicada
             }
           }
+          if (!loadGuardRef.current.isCurrent(reqToken)) return;
           setAccountPeriodReach(fetchedAccReach);
         }
 
         // Ordena por maior custo
+        if (!loadGuardRef.current.isCurrent(reqToken)) return;
         mapped.sort((a, b) => b.cost - a.cost);
         setCampaignList(mapped);
       } catch (err) {
+        if (!loadGuardRef.current.isCurrent(reqToken)) return;
         console.error("Erro ao puxar dados da API local:", err);
         toast.error("Falha ao puxar métricas das contas conectadas.");
+      } finally {
+        if (loadGuardRef.current.isCurrent(reqToken)) {
+          setIsLoadingData(false);
+        }
       }
     }
   };
@@ -965,10 +989,17 @@ function RelatoriosPage() {
         since: getLocalDateStr(dateRange.startDate),
         until: getLocalDateStr(dateRange.endDate),
       };
-      await Promise.all([
+      const [metaSyncRes] = await Promise.all([
         supabase.functions.invoke("sync-meta-ads", { body: { triggered_by: "manual_report", time_range: timeRange } }),
         supabase.functions.invoke("sync-google-ads", { body: { triggered_by: "manual_report", time_range: timeRange } }),
       ]);
+      await invalidateMetaSnapshotConsumers({
+        queryClient,
+        accountId: selectedAccountId,
+        dateFrom: globalDateFrom,
+        dateTo: globalDateTo,
+        snapshotId: metaSyncRes?.data?.sync_id || undefined,
+      });
       toast.success("Sincronização do período concluída! Recarregando dados...");
       await loadData();
     } catch (err: any) {
@@ -980,7 +1011,7 @@ function RelatoriosPage() {
 
   useEffect(() => {
     loadData();
-  }, [source, selectedAccountId, dateRange, reportLevel]);
+  }, [source, selectedAccountId, globalDateFrom, globalDateTo, reportLevel, activeSnapshot.snapshotId]);
 
   const handleToggleSelectAll = (val: boolean) => {
     setCampaignList(prev => prev.map(c => ({ ...c, selected: val })));
@@ -1501,6 +1532,10 @@ function RelatoriosPage() {
   }, [campaignList, reportMode, clientName, periodText, templatesData, reportLevel, salesRevenue, salesOrders, dateRange, selectedAccountId, globalDateFrom, globalDateTo, source, isTextManuallyEdited, regenerateNonce]);
 
   const handleGenerate = () => {
+    if (isLoadingData || isSyncingPeriod) {
+      toast.warning("Atualizando dados do snapshot — aguarde concluir antes de gerar ou salvar.");
+      return;
+    }
     const selected = campaignList.filter(c => c.selected);
     if (selected.length === 0) {
       toast.warning("Selecione pelo menos uma campanha!");
@@ -1560,6 +1595,12 @@ function RelatoriosPage() {
               <p className="label-mono text-primary font-bold tracking-widest uppercase text-[11px]">Módulo Performance AI</p>
             </div>
             <h1 className="text-2xl sm:text-3xl font-black tracking-tighter text-gradient uppercase mt-0.5 leading-tight">Motor de Relatórios</h1>
+            <SnapshotStatusBadge
+              snapshotId={activeSnapshot.snapshotId}
+              committedAt={activeSnapshot.committedAt}
+              isUpdating={isLoadingData || isSyncingPeriod}
+              className="mt-1.5 w-fit"
+            />
           </div>
         </div>
 
@@ -1807,11 +1848,30 @@ function RelatoriosPage() {
             <div className="flex items-center gap-3">
               <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary/20 text-primary text-[10px] font-black">2</span>
               <div>
-                <h3 className="header-sport text-sm font-black uppercase tracking-widest text-primary flex items-center gap-2">
+                <h3 className="header-sport text-sm font-black uppercase tracking-widest text-primary flex items-center gap-2 flex-wrap">
                   {reportLevel === "campaign" ? "Selecione e Classifique as Campanhas" : reportLevel === "adset" ? "Selecione e Classifique os Conjuntos" : "Selecione e Classifique os Anúncios"}
                   {campaignList.length > 0 && (
                     <span className="text-[10px] px-2 py-0.5 rounded-full bg-white/10 text-muted-foreground font-mono">
                       {campaignList.filter(c => c.selected).length}/{campaignList.length}
+                    </span>
+                  )}
+                  {campaignList.some(c => c.selected) && (
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-primary/10 border border-primary/20 text-primary font-mono">
+                      {getCampaignSelectionGroupLabel(
+                        campaignList.filter(c => c.selected).map(c => ({
+                          id: c.id,
+                          name: c.name,
+                          rawObjective: c.rawObjective,
+                          optimizationGoal: c.optimizationGoal,
+                          resultType: c.resultType,
+                          resultsIndicator: c.resultIndicator,
+                          cost: c.cost,
+                          conversions: c.conversions,
+                          clicks: c.inlineLinkClicks ?? c.clicks,
+                          impressions: c.impressions,
+                          reach: c.reach,
+                        }))
+                      )}
                     </span>
                   )}
                 </h3>
@@ -1868,7 +1928,13 @@ function RelatoriosPage() {
             </div>
           )}
 
-          {campaignList.length === 0 ? (
+          {isLoadingData && campaignList.length === 0 ? (
+            <div className="flex-1 flex flex-col items-center justify-center text-center p-8">
+              <Loader2 className="h-8 w-8 animate-spin text-primary mb-3" />
+              <p className="text-sm font-black text-white">Atualizando dados...</p>
+              <p className="text-[10px] text-muted-foreground mt-1 max-w-[260px]">Carregando snapshot oficial da conta e período selecionados.</p>
+            </div>
+          ) : campaignList.length === 0 ? (
             <div className="flex-1 flex flex-col items-center justify-center text-center p-8">
               <div className="rounded-full bg-white/5 p-4 mb-4">
                 <AlertCircle className="h-10 w-10 text-muted-foreground/40" />
@@ -1922,10 +1988,28 @@ function RelatoriosPage() {
                           {c.adSetName ? `Conjunto: ${c.adSetName} • ` : ""}Campanha: {c.campaignName}
                         </p>
                       )}
-                      <p className="text-[10px] text-muted-foreground font-mono mt-0.5 px-2">
-                        Custo: R$ {c.cost.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} • Cliques: {c.clicks.toLocaleString('pt-BR')} • Conversões: {c.conversions.toLocaleString('pt-BR')}
-                        {c.reach > 0 ? ` • Alcance: ${c.reach.toLocaleString('pt-BR')}` : ""}
-                      </p>
+                      {(() => {
+                        const selectorDisplay = getCampaignSelectorResultDisplay({
+                          id: c.id,
+                          name: c.name,
+                          rawObjective: c.rawObjective,
+                          optimizationGoal: c.optimizationGoal,
+                          resultType: c.resultType,
+                          resultsIndicator: c.resultIndicator,
+                          cost: c.cost,
+                          conversions: c.conversions,
+                          clicks: c.inlineLinkClicks ?? c.clicks,
+                          inlineLinkClicks: c.inlineLinkClicks ?? c.clicks,
+                          allClicks: c.allClicks ?? c.clicks,
+                          impressions: c.impressions,
+                          reach: c.reach,
+                        });
+                        return (
+                          <p className="text-[10px] text-muted-foreground font-mono mt-0.5 px-2" data-testid={`selector-summary-${c.id}`}>
+                            {selectorDisplay.summaryText}
+                          </p>
+                        );
+                      })()}
                     </div>
                   </div>
 

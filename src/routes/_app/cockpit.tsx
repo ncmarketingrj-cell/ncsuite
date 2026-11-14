@@ -11,10 +11,17 @@ import { useGlobalDate, type Period } from "@/contexts/DateContext";
 import { calibrateCampaignMetricsArray, ensureDatabaseCalibrated } from "@/lib/metaConversionCalibrator";
 import {
   classifyMetaEvent,
+  EVENT_MODEL_VERSION,
   resolveTargetPrecedence,
   evaluateCampaignHealth,
   normalizeCampaignItem,
 } from "@/lib/metricsDomain";
+import {
+  buildMetaSnapshotKey,
+  DEFAULT_META_TIMEZONE,
+  useActiveMetaSnapshot,
+} from "@/lib/metaSnapshotCache";
+import { SnapshotStatusBadge } from "@/components/SnapshotStatusBadge";
 import {
   AreaChart, Area, XAxis, YAxis, ResponsiveContainer, Tooltip as RTooltip,
 } from "recharts";
@@ -1812,6 +1819,8 @@ function useCockpitData() {
   const queryLookbackDays = totalDays <= 3 ? 14 : totalDays * 2;
   const queryDateFrom = format(subDays(parseISO(dateFrom), queryLookbackDays), "yyyy-MM-dd");
 
+  const activeSnapshot = useActiveMetaSnapshot({ accountId });
+
   const { data: cockpitThresholds = [] } = useQuery({
     queryKey: ["cockpit-thresholds", accountId],
     staleTime: 5 * 60 * 1000,
@@ -1823,12 +1832,23 @@ function useCockpitData() {
     },
   });
 
-  const { data: raw, isLoading } = useQuery({
-    queryKey: ["cockpit-raw", dateFrom, dateTo, queryDateFrom, accountId, campaignId, adSetId],
+  const { data: raw, isLoading, isFetching } = useQuery({
+    queryKey: buildMetaSnapshotKey(
+      "cockpit-raw",
+      {
+        accountId,
+        dateFrom,
+        dateTo,
+        timezone: DEFAULT_META_TIMEZONE,
+        level: adSetId !== "all" ? "adset" : campaignId !== "all" ? "campaign" : "account",
+        snapshotId: activeSnapshot.snapshotId,
+        eventModelVersion: EVENT_MODEL_VERSION,
+      },
+      [queryDateFrom, campaignId, adSetId]
+    ),
     staleTime: 2 * 60 * 1000,
     refetchInterval: 60 * 1000,
     refetchIntervalInBackground: false,
-    placeholderData: (prev) => prev,
     queryFn: async () => {
       const buildPageQuery = (withExtended: boolean, from: number) => {
         const metricCols = withExtended
@@ -1941,6 +1961,8 @@ function useCockpitData() {
         dailyScores: [],
         recommendations: [],
         isLoading: true,
+        isFetching,
+        activeSnapshot,
         meta: null,
       };
     }
@@ -1953,6 +1975,8 @@ function useCockpitData() {
         dailyScores: [],
         recommendations: [],
         isLoading: false,
+        isFetching,
+        activeSnapshot,
         meta: null,
       };
     }
@@ -2334,13 +2358,15 @@ function useCockpitData() {
         topWasteCampaign,
         campsWithLeadsCount: campsWithLeads.length,
       },
+      isFetching,
+      activeSnapshot,
     };
-  }, [raw, isLoading, dateFrom, dateTo, accountId, campaignId, totalDays]);
+  }, [raw, isLoading, isFetching, activeSnapshot, dateFrom, dateTo, accountId, campaignId, totalDays]);
 }
 
 // ─── MAIN COCKPIT DASHBOARD ──────────────────────────────────────────────────────
 function CockpitPage() {
-  const { score, components, gauges: g, radar, dailyScores, recommendations, isLoading, meta } = useCockpitData() as any;
+  const { score, components, gauges: g, radar, dailyScores, recommendations, isLoading, isFetching, activeSnapshot, meta } = useCockpitData() as any;
   const { accountId, campaignId, adSetId, dateFrom, dateTo } = useGlobalDate();
   const [clock, setClock] = useState("");
 
@@ -2729,7 +2755,13 @@ function CockpitPage() {
             description="Painel tático e executivo em tempo real — vendas no WhatsApp, custo por comprador e decisões do dia."
             compact
           />
-          <motion.div
+          <div className="flex items-center gap-2 flex-wrap">
+            <SnapshotStatusBadge
+              snapshotId={activeSnapshot.snapshotId}
+              committedAt={activeSnapshot.committedAt}
+              isUpdating={isLoading || isFetching}
+            />
+            <motion.div
             initial={{ opacity: 0, x: 20 }}
             animate={{ opacity: 1, x: 0 }}
             className="flex items-center gap-3 rounded-xl border border-border bg-card/80 px-4 py-2.5 backdrop-blur-md shadow-sm"
@@ -2754,6 +2786,7 @@ function CockpitPage() {
               </div>
             )}
           </motion.div>
+          </div>
         </div>
 
         {/* ── FILTER BAR ─────────────────────────────────────────── */}

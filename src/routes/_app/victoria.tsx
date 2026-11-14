@@ -24,6 +24,8 @@ import {
   type PortalCategory,
 } from "@/lib/marketPortals";
 import { ActionCard } from "@/components/victoria/ActionCard";
+import { SnapshotStatusBadge } from "@/components/SnapshotStatusBadge";
+import { useActiveMetaSnapshot } from "@/lib/metaSnapshotCache";
 import ReactMarkdown from "react-markdown";
 import { toast } from "sonner";
 
@@ -196,10 +198,11 @@ function VictoriaHubPage() {
 
   // Hook customizado com lógica e persistência de conversas
   const chat = useVictoriaChat(selectedAccountId, setSelectedAccountId, userName);
+  const activeSnapshot = useActiveMetaSnapshot({ accountId: selectedAccountId || "all" });
 
   // Buscar contas de anúncio para o dropdown
-  const { data: accounts = [] } = useQuery({
-    queryKey: ["ad-accounts-victoria"],
+  const { data: accounts = [], isFetching: isFetchingAccounts } = useQuery({
+    queryKey: ["ad-accounts-victoria", activeSnapshot.snapshotId],
     queryFn: async () => {
       const { data } = await supabase.from("ad_accounts").select("id, name").order("name");
       return data || [];
@@ -1864,6 +1867,11 @@ function VictoriaHubPage() {
                     <p className="text-xs text-muted-foreground/80 leading-relaxed max-w-md">
                       Sou a estrategista sênior da NC Performance. Tenho acesso total ao banco de dados (funis, métricas, social, clientes) e estou pronta para auditar campanhas, clonar estruturas ou gerar relatórios em segundos.
                     </p>
+                    <SnapshotStatusBadge
+                      snapshotId={activeSnapshot.snapshotId}
+                      committedAt={activeSnapshot.committedAt}
+                      isUpdating={isFetchingAccounts}
+                    />
                   </div>
 
                   {/* Seletor de Conta Alerta se nenhuma selecionada */}

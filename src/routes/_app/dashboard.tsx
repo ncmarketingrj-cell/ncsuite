@@ -1,6 +1,23 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { motion, AnimatePresence } from "framer-motion";
 import { useQuery } from "@tanstack/react-query";
+import {
+  EVENT_MODEL_VERSION,
+  classifyMetaEvent,
+  computeAccountMessageSummary,
+  computeUnitCost,
+  emptyMetricVector,
+  accumulateMetricVector,
+  formatMetricVectorSummary,
+  type RawCampaignMetricRow,
+} from "@/lib/metricsDomain";
+import {
+  buildMetaSnapshotKey,
+  DEFAULT_META_TIMEZONE,
+  useActiveMetaSnapshot,
+} from "@/lib/metaSnapshotCache";
+import { SnapshotStatusBadge } from "@/components/SnapshotStatusBadge";
+import { useAutoSyncStatus } from "@/hooks/useAutoSync";
 import { useState, useMemo, useRef, useEffect } from "react";
 import {
   FileText, BarChart3, ArrowUpRight, Activity, Layers,
@@ -22,13 +39,6 @@ import { DateRangePicker } from "@/components/DateRangePicker";
 import { PageHeader } from "@/components/PageHeader";
 import { useGlobalDate } from "@/contexts/DateContext";
 import { calibrateCampaignMetricsArray, ensureDatabaseCalibrated } from "@/lib/metaConversionCalibrator";
-import {
-  classifyMetaEvent,
-  computeUnitCost,
-  emptyMetricVector,
-  accumulateMetricVector,
-  formatMetricVectorSummary,
-} from "@/lib/metricsDomain";
 
 export const Route = createFileRoute("/_app/dashboard")({
   head: () => ({ meta: [{ title: "Dashboard — NC Performance Suite" }] }),
@@ -120,8 +130,19 @@ function Dashboard() {
     },
   });
 
-  const { data: performanceData } = useQuery({
-    queryKey: ["dash-performance-custom", selectedAccountId, selectedClientId, dateFrom, dateTo],
+  const activeSnapshot = useActiveMetaSnapshot({ accountId: selectedAccountId });
+  const { isSyncing: isAutoSyncing } = useAutoSyncStatus();
+
+  const { data: performanceData, isLoading: isLoadingPerf, isFetching: isFetchingPerf } = useQuery({
+    queryKey: buildMetaSnapshotKey("dash-performance-custom", {
+      accountId: selectedAccountId,
+      dateFrom,
+      dateTo,
+      timezone: DEFAULT_META_TIMEZONE,
+      level: selectedAccountId === "all" ? "account" : "campaign",
+      snapshotId: activeSnapshot.snapshotId,
+      eventModelVersion: EVENT_MODEL_VERSION,
+    }, [selectedClientId]),
     refetchInterval: 3 * 60 * 1000, // Atualização automática em tempo real a cada 3 min
     refetchIntervalInBackground: true,
     staleTime: 30 * 1000,
@@ -490,10 +511,18 @@ function Dashboard() {
   });
 
   // ─── Query: Tabela de Desempenho de Contas (Command Center) ───────────────────
-  const { data: accountsTableData = [], isLoading: isLoadingTable } = useQuery({
-    queryKey: ["dashboard-accounts-table-data", dateFrom, dateTo],
+  const { data: accountsTableData = [], isLoading: isLoadingTable, isFetching: isFetchingTable } = useQuery({
+    queryKey: buildMetaSnapshotKey("dashboard-accounts-table-data", {
+      accountId: "all",
+      dateFrom,
+      dateTo,
+      timezone: DEFAULT_META_TIMEZONE,
+      level: "account",
+      snapshotId: activeSnapshot.snapshotId,
+      eventModelVersion: EVENT_MODEL_VERSION,
+    }),
     refetchInterval: 3 * 60 * 1000, // Atualização automática em tempo real a cada 3 min
-    refetchIntervalInBackground: true,
+    refetchIntervalInBackground: false,
     staleTime: 30 * 1000,
     queryFn: async () => {
       const { data: adAccounts } = await (supabase as any)
@@ -510,25 +539,19 @@ function Dashboard() {
 
       for (const c of (activeCamps || [])) {
         activeCounts[c.ad_account_id] = (activeCounts[c.ad_account_id] || 0) + 1;
-        const n = (c.name || "").toUpperCase();
-        const obj = (c.objective || "").toUpperCase();
-        const isMsg = n.includes("MSG") ||
-                      n.includes("MENSAGEM") ||
-                      n.includes("MENSAGENS") ||
-                      n.includes("WPP") ||
-                      n.includes("WHATSAPP") ||
-                      n.includes("DIRECT") ||
-                      n.includes("CONVERSA") ||
-                      n.includes("CONVERSAS") ||
-                      n.includes("ZAP") ||
-                      obj === "MESSAGES";
-        if (isMsg) {
+        // Apenas objetivo oficial da Meta (nunca heurística por nome da campanha)
+        if ((c.objective || "").toUpperCase() === "MESSAGES") {
           messagingAccountsSet.add(c.ad_account_id);
         }
       }
 
+      const rawRowsByAccount: Record<string, RawCampaignMetricRow[]> = {};
       const metricsMap: Record<string, {
         spend: number;
+        totalAccountSpend: number;
+        messageEligibleSpend: number;
+        messageResults: number;
+        messageCpl: number | null;
         reach: number;
         results: number;
         impressions: number;
@@ -536,44 +559,83 @@ function Dashboard() {
         leads: number;
       }> = {};
 
-      // 1. Tenta buscar direto de metrics com join de campaigns (tempo real e classificação por nome/objetivo)
+      // 1. Busca paginada em `metrics` com join em `campaigns` (classificação oficial via result_indicator)
       try {
-        const { data: rawMetrics } = await (supabase as any)
-          .from("metrics")
-          .select(`
-            cost, conversions, reach, impressions, result_type, optimization_goal, result_indicator, date,
-            campaigns!inner(ad_account_id, name, objective)
-          `)
-          .gte("date", dateFrom)
-          .lte("date", dateTo);
+        const allRawMetrics: any[] = [];
+        for (let from = 0; from < 10000; from += 1000) {
+          const { data: pageRows, error: pageErr } = await (supabase as any)
+            .from("metrics")
+            .select(`
+              cost, conversions, reach, impressions, clicks, inline_link_clicks, all_clicks,
+              result_type, optimization_goal, result_indicator, date,
+              campaigns!inner(id, ad_account_id, name, objective)
+            `)
+            .gte("date", dateFrom)
+            .lte("date", dateTo)
+            .order("id")
+            .range(from, from + 999);
+          if (pageErr) throw pageErr;
+          if (!pageRows || pageRows.length === 0) break;
+          allRawMetrics.push(...pageRows);
+          if (pageRows.length < 1000) break;
+        }
 
-        if (rawMetrics && rawMetrics.length > 0) {
-          for (const rawM of rawMetrics) {
-            const m = calibrateCampaignMetricsArray(rawM.campaigns?.name || "", [rawM])[0] || rawM;
-            const key = m.campaigns?.ad_account_id;
+        if (allRawMetrics.length > 0) {
+          for (const rawM of allRawMetrics) {
+            const key = rawM.campaigns?.ad_account_id;
             if (!key) continue;
+            if (!rawRowsByAccount[key]) rawRowsByAccount[key] = [];
             if (!metricsMap[key]) {
-              metricsMap[key] = { spend: 0, reach: 0, results: 0, impressions: 0, purchases: 0, leads: 0 };
+              metricsMap[key] = {
+                spend: 0,
+                totalAccountSpend: 0,
+                messageEligibleSpend: 0,
+                messageResults: 0,
+                messageCpl: null,
+                reach: 0,
+                results: 0,
+                impressions: 0,
+                purchases: 0,
+                leads: 0,
+              };
             }
-            const cost = Number(m.cost || 0);
-            const conversions = Number(m.conversions || 0);
-            const reach = Number(m.reach || 0);
-            const impressions = Number(m.impressions || 0);
+            const cost = Number(rawM.cost || 0);
+            const conversions = Number(rawM.conversions || 0);
+            const reach = Number(rawM.reach || 0);
+            const impressions = Number(rawM.impressions || 0);
+            const clicks = Number(rawM.inline_link_clicks ?? rawM.clicks ?? 0);
+
+            rawRowsByAccount[key].push({
+              id: rawM.campaigns?.id || `${key}-${rawRowsByAccount[key].length}`,
+              name: rawM.campaigns?.name || "",
+              rawObjective: rawM.campaigns?.objective || "",
+              optimizationGoal: rawM.optimization_goal || undefined,
+              resultType: rawM.result_type || undefined,
+              resultsIndicator: rawM.result_indicator || undefined,
+              cost,
+              conversions,
+              clicks,
+              inlineLinkClicks: clicks,
+              allClicks: Number(rawM.all_clicks ?? rawM.clicks ?? 0),
+              impressions,
+              reach,
+            });
 
             metricsMap[key].spend += cost;
+            metricsMap[key].totalAccountSpend += cost;
             metricsMap[key].reach += reach;
             metricsMap[key].impressions += impressions;
             metricsMap[key].results += conversions;
+
             const evAcc = classifyMetaEvent({
-              campaignName: m.campaigns?.name || "",
-              rawObjective: m.campaigns?.objective || "",
-              optimizationGoal: m.optimization_goal,
-              resultType: m.result_type,
-              resultsIndicator: m.result_indicator,
+              campaignName: rawM.campaigns?.name || "",
+              rawObjective: rawM.campaigns?.objective || "",
+              optimizationGoal: rawM.optimization_goal,
+              resultType: rawM.result_type,
+              resultsIndicator: rawM.result_indicator,
             });
 
             if (evAcc.category === "MESSAGES") {
-              metricsMap[key].leads += conversions;
               messagingAccountsSet.add(key);
             } else if (evAcc.category === "LEADS") {
               metricsMap[key].leads += conversions;
@@ -581,12 +643,26 @@ function Dashboard() {
               metricsMap[key].purchases += conversions;
             }
           }
+
+          // Aplica cálculo estrito de elegibilidade de Mensagens por conta via metricsDomain
+          for (const [accKey, accRows] of Object.entries(rawRowsByAccount)) {
+            const msgSummary = computeAccountMessageSummary(accRows);
+            metricsMap[accKey].totalAccountSpend = msgSummary.totalAccountSpend;
+            metricsMap[accKey].spend = msgSummary.totalAccountSpend;
+            metricsMap[accKey].messageEligibleSpend = msgSummary.messageEligibleSpend;
+            metricsMap[accKey].messageResults = msgSummary.messageResults;
+            metricsMap[accKey].messageCpl = msgSummary.messageCpl;
+            metricsMap[accKey].leads = msgSummary.messageResults;
+            if (msgSummary.hasMessagesCampaigns) {
+              messagingAccountsSet.add(accKey);
+            }
+          }
         }
       } catch (errMetrics) {
         console.warn("[Dashboard] Falha ao consultar metrics joined:", errMetrics);
       }
 
-      // 2. Se metricsMap estiver vazio ou faltarem dados, complementa com daily_metrics
+      // 2. Fallback em daily_metrics apenas para contas sem nenhum registro em metrics (nunca contamina CPL de mensagens)
       try {
         const { data: metricsData } = await (supabase as any)
           .from("daily_metrics")
@@ -596,28 +672,22 @@ function Dashboard() {
 
         for (const row of (metricsData || [])) {
           const key = row.ad_account_id;
-          const rowLeads = Number(row.leads || 0);
-          const rowResults = Number(row.results || 0);
-          const rowPurchases = Number(row.purchases || 0);
-          const effectiveLeads = rowLeads > 0 ? rowLeads : 0;
-
           if (!metricsMap[key]) {
+            const rowSpend = Number(row.spend || 0);
             metricsMap[key] = {
-              spend: Number(row.spend || 0),
+              spend: rowSpend,
+              totalAccountSpend: rowSpend,
+              messageEligibleSpend: 0,
+              messageResults: 0,
+              messageCpl: null,
               reach: Number(row.reach || 0),
-              results: rowResults,
+              results: Number(row.results || 0),
               impressions: Number(row.impressions || 0),
-              purchases: rowPurchases,
-              leads: effectiveLeads,
+              purchases: Number(row.purchases || 0),
+              leads: 0,
             };
-          } else {
-            // Se a query direta deixou leads zerado mas daily_metrics tem ou results > 0
-            if (metricsMap[key].leads === 0 && effectiveLeads > 0) {
-              metricsMap[key].leads = effectiveLeads;
-            }
-            if (metricsMap[key].reach === 0 && Number(row.reach || 0) > 0) {
-              metricsMap[key].reach = Number(row.reach || 0);
-            }
+          } else if (metricsMap[key].reach === 0 && Number(row.reach || 0) > 0) {
+            metricsMap[key].reach = Number(row.reach || 0);
           }
         }
       } catch (errDaily) {
@@ -637,7 +707,18 @@ function Dashboard() {
       }
 
       return (adAccounts || []).map((acc: any) => {
-        const metrics = metricsMap[acc.id] || { spend: 0, reach: 0, results: 0, impressions: 0, purchases: 0, leads: 0 };
+        const metrics = metricsMap[acc.id] || {
+          spend: 0,
+          totalAccountSpend: 0,
+          messageEligibleSpend: 0,
+          messageResults: 0,
+          messageCpl: null,
+          reach: 0,
+          results: 0,
+          impressions: 0,
+          purchases: 0,
+          leads: 0,
+        };
         const activeCampaignsCount = activeCounts[acc.id] || 0;
         const linkedClient = clientMap[acc.id] || null;
         const isMessagingAccount = messagingAccountsSet.has(acc.id);
@@ -833,16 +914,26 @@ function Dashboard() {
         </div>
 
         {/* Stats Layer (Dinâmico) */}
-        {(isLoadingTable) && (
-          <div className="flex items-center gap-2 text-xs text-muted-foreground/60 font-mono">
-            <div className="h-3 w-3 rounded-full bg-primary/50 animate-pulse" />
-            Atualizando dados...
-          </div>
-        )}
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          {(isLoadingTable || isLoadingPerf || isFetchingPerf || isFetchingTable || isAutoSyncing) ? (
+            <div className="flex items-center gap-2 text-xs text-primary font-mono">
+              <div className="h-3 w-3 rounded-full bg-primary/70 animate-pulse" />
+              Atualizando dados...
+            </div>
+          ) : (
+            <div />
+          )}
+          <SnapshotStatusBadge
+            snapshotId={activeSnapshot.snapshotId}
+            committedAt={activeSnapshot.committedAt}
+            isUpdating={isLoadingTable || isLoadingPerf || isFetchingPerf || isFetchingTable || isAutoSyncing}
+          />
+        </div>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard
           label="Investimento"
-          value={performanceData?.totals?.cost ?? 0}
+          value={performanceData ? performanceData.totals?.cost : null}
+          isLoading={!performanceData && (isLoadingPerf || isFetchingPerf)}
           prefix="R$ "
           icon={DollarSign}
           trend={performanceData?.trends?.cost}
@@ -850,7 +941,9 @@ function Dashboard() {
           helper="Verba bruta consumida em anúncios"
           subMetric={
             <span>
-              {(performanceData?.totals?.accountReach || 0) > 0 ? (
+              {!performanceData && (isLoadingPerf || isFetchingPerf) ? (
+                <span className="text-muted-foreground">Carregando alcance...</span>
+              ) : (performanceData?.totals?.accountReach || 0) > 0 ? (
                 <>
                   Alcance da conta: <strong className="text-foreground">{Number(performanceData?.totals?.accountReach || 0).toLocaleString('pt-BR')}</strong>
                 </>
@@ -868,13 +961,17 @@ function Dashboard() {
         />
         <StatCard
           label="Conversões"
-          value={performanceData?.totals?.conversions ?? 0}
+          value={performanceData ? performanceData.totals?.conversions : null}
+          isLoading={!performanceData && (isLoadingPerf || isFetchingPerf)}
           icon={Trophy}
           trend={performanceData?.trends?.conversions}
           isPositive={performanceData?.trends?.conversionsPositive}
           helper="Apenas conversões comerciais diretas (Mensagens, Leads e Compras)"
           subMetric={
             (() => {
+              if (!performanceData && (isLoadingPerf || isFetchingPerf)) {
+                return <span className="text-muted-foreground">Atualizando dados...</span>;
+              }
               const vec = performanceData?.metricVector;
               const secondary: string[] = [];
               if ((vec?.reach ?? 0) > 0) secondary.push(`${vec!.reach.toLocaleString('pt-BR')} alcance`);
@@ -894,7 +991,8 @@ function Dashboard() {
         />
         <StatCard
           label="CPA Médio"
-          value={performanceData?.cpl ?? 0}
+          value={performanceData ? performanceData.cpl : null}
+          isLoading={!performanceData && (isLoadingPerf || isFetchingPerf)}
           prefix="R$ "
           icon={Target}
           trend={performanceData?.trends?.cpl}
@@ -908,14 +1006,15 @@ function Dashboard() {
         />
         <StatCard
           label="Cliques no Link"
-          value={performanceData?.totals?.inlineLinkClicks ?? performanceData?.totals?.clicks ?? 0}
+          value={performanceData ? (performanceData.totals?.inlineLinkClicks ?? performanceData.totals?.clicks) : null}
+          isLoading={!performanceData && (isLoadingPerf || isFetchingPerf)}
           icon={MousePointer2}
           trend={performanceData?.trends?.clicks}
           isPositive={performanceData?.trends?.clicksPositive}
           helper="Cliques no link do anúncio (inline_link_clicks)"
           subMetric={
             <span>
-              CTR Link: <strong className="text-indigo-400">{performanceData?.totals?.impressions ? (((performanceData.totals.inlineLinkClicks ?? performanceData.totals.clicks ?? 0) / performanceData.totals.impressions) * 100).toFixed(2) : "0.00"}%</strong>
+              CTR Link: <strong className="text-indigo-400">{performanceData?.totals?.impressions ? (((performanceData.totals.inlineLinkClicks ?? performanceData.totals.clicks ?? 0) / performanceData.totals.impressions) * 100).toFixed(2) : "—"}%</strong>
               {(performanceData?.totals?.allClicks || 0) > (performanceData?.totals?.inlineLinkClicks || 0) && (
                 <> · Todos: <strong className="text-foreground">{Number(performanceData?.totals?.allClicks || 0).toLocaleString('pt-BR')}</strong></>
               )}
@@ -958,7 +1057,9 @@ function Dashboard() {
                   </span>
                 </div>
                 <p className="text-xs text-foreground/90 leading-relaxed">
-                  {totals.cost > 0 ? (
+                  {!performanceData && (isLoadingPerf || isFetchingPerf) ? (
+                    "Atualizando dados do snapshot..."
+                  ) : totals.cost > 0 ? (
                     <>
                       Investimento de <strong className="text-foreground font-mono">R$ {totals.cost.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong> gerou{" "}
                       <strong className="text-foreground font-mono">{totals.clicks.toLocaleString('pt-BR')} cliques</strong> (CTR de {ctr.toFixed(2)}%) e{" "}
@@ -1415,9 +1516,29 @@ function Dashboard() {
                 {/* Grid de métricas 3x2 */}
                 <div className="grid grid-cols-3 gap-2">
                   <div className="bg-primary/5 border border-primary/10 rounded-xl p-2.5 col-span-1">
-                    <p className="text-[8px] font-black uppercase tracking-widest text-muted-foreground">Investido</p>
+                    <p className="text-[8px] font-black uppercase tracking-widest text-muted-foreground">Investido em Mensagens</p>
                     <p className="text-xs font-black font-mono text-primary mt-1">
-                      {row.metrics.spend.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                      {row.metrics.messageEligibleSpend.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                    </p>
+                  </div>
+                  <div className="bg-white/[0.03] border border-white/5 rounded-xl p-2.5">
+                    <p className="text-[8px] font-black uppercase tracking-widest text-muted-foreground">Inv. Total Conta</p>
+                    <p className="text-xs font-black font-mono text-foreground mt-1">
+                      {row.metrics.totalAccountSpend.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                    </p>
+                  </div>
+                  <div className="bg-white/[0.03] border border-white/5 rounded-xl p-2.5">
+                    <p className="text-[8px] font-black uppercase tracking-widest text-muted-foreground">CPL de Mensagens</p>
+                    <p className="text-xs font-black font-mono text-foreground mt-1">
+                      {row.metrics.messageResults > 0 && row.metrics.messageCpl !== null
+                        ? row.metrics.messageCpl.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) 
+                        : "—"}
+                    </p>
+                  </div>
+                  <div className="bg-white/[0.03] border border-white/5 rounded-xl p-2.5">
+                    <p className="text-[8px] font-black uppercase tracking-widest text-muted-foreground">Mensagens</p>
+                    <p className="text-xs font-black font-mono text-foreground mt-1">
+                      {row.metrics.messageResults > 0 ? row.metrics.messageResults.toLocaleString('pt-BR') : "—"}
                     </p>
                   </div>
                   <div className="bg-white/[0.03] border border-white/5 rounded-xl p-2.5">
@@ -1425,24 +1546,6 @@ function Dashboard() {
                     <p className="text-xs font-black font-mono text-foreground mt-1">
                       {row.metrics.reach > 999 ? `${(row.metrics.reach / 1000).toFixed(1)}k` : row.metrics.reach.toLocaleString('pt-BR')}
                     </p>
-                  </div>
-                  <div className="bg-white/[0.03] border border-white/5 rounded-xl p-2.5">
-                    <p className="text-[8px] font-black uppercase tracking-widest text-muted-foreground">CPL</p>
-                    <p className="text-xs font-black font-mono text-foreground mt-1">
-                      {row.metrics.leads > 0 
-                        ? (row.metrics.spend / row.metrics.leads).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) 
-                        : "—"}
-                    </p>
-                  </div>
-                  <div className="bg-white/[0.03] border border-white/5 rounded-xl p-2.5">
-                    <p className="text-[8px] font-black uppercase tracking-widest text-muted-foreground">Mensagens</p>
-                    <p className="text-xs font-black font-mono text-foreground mt-1">
-                      {row.metrics.leads > 0 ? row.metrics.leads.toLocaleString('pt-BR') : "—"}
-                    </p>
-                  </div>
-                  <div className="bg-white/[0.03] border border-white/5 rounded-xl p-2.5">
-                    <p className="text-[8px] font-black uppercase tracking-widest text-muted-foreground">Compras</p>
-                    <p className="text-xs font-black font-mono text-foreground mt-1">{row.metrics.purchases.toLocaleString('pt-BR')}</p>
                   </div>
                   <div className="bg-white/[0.03] border border-white/5 rounded-xl p-2.5">
                     <p className="text-[8px] font-black uppercase tracking-widest text-muted-foreground">Visualiz.</p>
@@ -1464,10 +1567,11 @@ function Dashboard() {
                   <th className="text-[10px] font-black uppercase tracking-wider text-muted-foreground pb-3">Status</th>
                   <th className="text-[10px] font-black uppercase tracking-wider text-muted-foreground pb-3 text-right">Alcance</th>
                   <th className="text-[10px] font-black uppercase tracking-wider text-muted-foreground pb-3 text-right">Visualizações</th>
-                  <th className="text-[10px] font-black uppercase tracking-wider text-muted-foreground pb-3 text-right">Mensagens</th>
-                  <th className="text-[10px] font-black uppercase tracking-wider text-muted-foreground pb-3 text-right">CPL</th>
+                  <th className="text-[10px] font-black uppercase tracking-wider text-muted-foreground pb-3 text-right">MENSAGENS</th>
+                  <th className="text-[10px] font-black uppercase tracking-wider text-muted-foreground pb-3 text-right">CPL DE MENSAGENS</th>
+                  <th className="text-[10px] font-black uppercase tracking-wider text-muted-foreground pb-3 text-right">INVESTIDO EM MENSAGENS</th>
                   <th className="text-[10px] font-black uppercase tracking-wider text-muted-foreground pb-3 text-right">Compras</th>
-                  <th className="text-[10px] font-black uppercase tracking-wider text-muted-foreground pb-3 text-right">Investido</th>
+                  <th className="text-[10px] font-black uppercase tracking-wider text-muted-foreground pb-3 text-right">INVESTIMENTO TOTAL DA CONTA</th>
                   <th className="text-[10px] font-black uppercase tracking-wider text-muted-foreground pb-3 pr-2 text-right">Ação</th>
                 </tr>
               </thead>
@@ -1506,16 +1610,19 @@ function Dashboard() {
                     <td className="py-4 text-right font-mono text-[11px] font-bold tabular-nums text-foreground">{row.metrics.reach.toLocaleString('pt-BR')}</td>
                     <td className="py-4 text-right font-mono text-[11px] font-bold tabular-nums text-foreground">{row.metrics.impressions.toLocaleString('pt-BR')}</td>
                     <td className="py-4 text-right font-mono text-[11px] font-bold tabular-nums text-foreground">
-                      {row.metrics.leads > 0 ? row.metrics.leads.toLocaleString('pt-BR') : "—"}
+                      {row.metrics.messageResults > 0 ? row.metrics.messageResults.toLocaleString('pt-BR') : "—"}
                     </td>
                     <td className="py-4 text-right font-mono text-[11px] font-bold tabular-nums text-foreground">
-                      {row.metrics.leads > 0 
-                        ? (row.metrics.spend / row.metrics.leads).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) 
+                      {row.metrics.messageResults > 0 && row.metrics.messageCpl !== null
+                        ? row.metrics.messageCpl.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
                         : "—"}
                     </td>
-                    <td className="py-4 text-right font-mono text-[11px] font-bold tabular-nums text-foreground">{row.metrics.purchases.toLocaleString('pt-BR')}</td>
                     <td className="py-4 text-right font-mono text-[11px] font-black tabular-nums text-primary">
-                      {row.metrics.spend.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                      {row.metrics.messageEligibleSpend.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                    </td>
+                    <td className="py-4 text-right font-mono text-[11px] font-bold tabular-nums text-foreground">{row.metrics.purchases.toLocaleString('pt-BR')}</td>
+                    <td className="py-4 text-right font-mono text-[11px] font-bold tabular-nums text-muted-foreground">
+                      {row.metrics.totalAccountSpend.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                     </td>
                     <td className="py-4 pr-2 text-right">
                       <button 
@@ -1541,9 +1648,12 @@ function Dashboard() {
 }
 
 
-function StatCard({ label, value, prefix = "", icon: Icon, trend, isPositive, helper, subMetric }: any) {
+function StatCard({ label, value, isLoading = false, prefix = "", icon: Icon, trend, isPositive, helper, subMetric }: any) {
   const isCurrency = prefix.includes("R$");
-  const formatted = typeof value === 'number'
+  const isUnavailable = isLoading || value === null || value === undefined;
+  const formatted = isUnavailable
+    ? "—"
+    : typeof value === 'number'
     ? value.toLocaleString('pt-BR', {
         minimumFractionDigits: isCurrency ? 2 : (value % 1 !== 0 ? 2 : 0),
         maximumFractionDigits: isCurrency ? 2 : (value % 1 !== 0 ? 2 : 0),
@@ -1557,7 +1667,7 @@ function StatCard({ label, value, prefix = "", icon: Icon, trend, isPositive, he
           <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 border border-primary/20 text-primary shadow-inner group-hover:bg-primary/20 transition-colors">
             <Icon className="h-5 w-5" />
           </div>
-          {trend && (
+          {!isUnavailable && trend && (
             <div className={`flex items-center gap-1 text-[10px] font-black px-2.5 py-1 rounded-lg backdrop-blur-md border shadow-sm ${isPositive ? 'text-emerald-500 bg-emerald-500/10 border-emerald-500/20' : 'text-primary bg-primary/10 border-primary/20'}`}>
               {isPositive ? <TrendingUp className="h-3.5 w-3.5" /> : <TrendingDown className="h-3.5 w-3.5" />}
               {trend}
@@ -1566,8 +1676,8 @@ function StatCard({ label, value, prefix = "", icon: Icon, trend, isPositive, he
         </div>
         <div className="relative z-10">
           <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-black mb-1">{label}</p>
-          <h4 className="text-2xl sm:text-3xl font-black font-mono tracking-tight text-foreground drop-shadow-sm">
-            {prefix}{formatted}
+          <h4 className={`text-2xl sm:text-3xl font-black font-mono tracking-tight drop-shadow-sm ${isLoading ? "text-muted-foreground animate-pulse" : "text-foreground"}`}>
+            {isUnavailable ? "—" : `${prefix}${formatted}`}
           </h4>
           {helper && (
             <p className="text-[10px] text-muted-foreground/80 mt-1.5 leading-snug">{helper}</p>
