@@ -89,28 +89,41 @@
    Claramente cinza — nunca branco puro — elegante, com contraste impecável.
    ═══════════════════════════════════════════ */
 html.light {
-  --background: 220 12% 80%;       /* #C6CAD1 — cinza nardo clássico e perceptível, nunca branco */
-  --foreground: 220 32% 10%;       /* #11151E — grafite profundo de alta nitidez */
-  --card: 220 10% 86%;             /* #D7DAE0 — cinza intermediário para cards e superfícies táteis */
+  --background: 220 12% 80%;
+  /* #C6CAD1 — cinza nardo clássico e perceptível, nunca branco */
+  --foreground: 220 32% 10%;
+  /* #11151E — grafite profundo de alta nitidez */
+  --card: 220 10% 86%;
+  /* #D7DAE0 — cinza intermediário para cards e superfícies táteis */
   --card-foreground: 220 32% 10%;
-  --popover: 220 10% 86%;          /* #D7DAE0 */
+  --popover: 220 10% 86%;
+  /* #D7DAE0 */
   --popover-foreground: 220 32% 10%;
-  --primary: 0 88% 46%;            /* #E11D1D — Vermelho Ferrari vivo e esportivo */
-  --primary-foreground: 0 0% 100%; /* #FFFFFF — texto branco sobre o vermelho */
-  --secondary: 220 12% 76%;        /* #BBC1CB — cinza tátil para pills e botões secundários */
+  --primary: 0 88% 46%;
+  /* #E11D1D — Vermelho Ferrari vivo e esportivo */
+  --primary-foreground: 0 0% 100%;
+  /* #FFFFFF — texto branco sobre o vermelho */
+  --secondary: 220 12% 76%;
+  /* #BBC1CB — cinza tátil para pills e botões secundários */
   --secondary-foreground: 220 30% 10%;
   --accent: 0 78% 42%;
   --accent-foreground: 0 0% 100%;
-  --success: 161 94% 20%;          /* #065f46 — Verde Esmeralda Floresta profundo de altíssima leitura */
+  --success: 161 94% 20%;
+  /* #065f46 — Verde Esmeralda Floresta profundo de altíssima leitura */
   --success-foreground: 0 0% 100%;
-  --muted: 220 12% 76%;            /* #BBC1CB — cinza neutro de apoio */
-  --muted-foreground: 220 18% 28%; /* #3A4353 — texto secundário grafite de alta legibilidade */
+  --muted: 220 12% 76%;
+  /* #BBC1CB — cinza neutro de apoio */
+  --muted-foreground: 220 18% 28%;
+  /* #3A4353 — texto secundário grafite de alta legibilidade */
   --destructive: 0 84% 45%;
   --destructive-foreground: 0 0% 100%;
-  --border: 220 12% 68%;           /* #A6AFBC — bordas nítidas, contrastantes e elegantes */
-  --input: 220 10% 84%;            /* #D1D5DC — inputs cinza confortáveis */
+  --border: 220 12% 68%;
+  /* #A6AFBC — bordas nítidas, contrastantes e elegantes */
+  --input: 220 10% 84%;
+  /* #D1D5DC — inputs cinza confortáveis */
   --ring: 0 88% 46%;
-  --sidebar: 220 12% 82%;          /* #CBCFD7 — sidebar em cinza nardo refinado */
+  --sidebar: 220 12% 82%;
+  /* #CBCFD7 — sidebar em cinza nardo refinado */
   --sidebar-foreground: 220 32% 10%;
   --sidebar-primary: 0 88% 46%;
   --sidebar-primary-foreground: 0 0% 100%;
@@ -152,7 +165,8 @@ html.light {
     border-color: hsl(var(--border));
   }
 
-  html, body {
+  html,
+  body {
     background-color: hsl(var(--background));
     color: hsl(var(--foreground));
     font-family: var(--font-body);
@@ -161,7 +175,11 @@ html.light {
     /* SEM transition permanente — causava jank em qualquer interação com background */
   }
 
-  h1, h2, h3, h4, h5 {
+  h1,
+  h2,
+  h3,
+  h4,
+  h5 {
     font-family: var(--font-display);
     letter-spacing: -0.025em;
     font-weight: 700;
@@ -197,11 +215,9 @@ html.light {
   .glass-panel {
     border-radius: 1.25rem;
     border: 1px solid hsl(var(--border));
-    background: linear-gradient(
-      145deg,
-      hsl(var(--card) / 0.95) 0%,
-      hsl(var(--card) / 0.80) 100%
-    );
+    background: linear-gradient(145deg,
+        hsl(var(--card) / 0.95) 0%,
+        hsl(var(--card) / 0.80) 100%);
     /* blur reduzido de 28px → 16px: visual igual, custo GPU -40% */
     backdrop-filter: blur(16px) saturate(1.5);
     box-shadow:
@@ -212,7 +228,6 @@ html.light {
       0 16px 48px hsl(0 0% 0% / 0.22);
     /* transition: all SUBSTITUÍDO por props específicas — all monitora tudo, mesmo o que nunca muda */
     transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
-    will-change: transform;
   }
 
   .glass-panel:hover {
@@ -250,22 +265,61 @@ html.light {
   /* ──────────────────────────────────────────
      GLOW EFFECTS
   ────────────────────────────────────────── */
-  .glow-xs  { box-shadow: 0 0 8px  hsl(var(--primary) / 0.28); }
-  .glow-sm  { box-shadow: 0 0 16px hsl(var(--primary) / 0.32); }
-  .glow-md  { box-shadow: 0 0 32px hsl(var(--primary) / 0.38); }
-  .glow-lg  { box-shadow: 0 0 64px hsl(var(--primary) / 0.42); }
+  .glow-xs {
+    box-shadow: 0 0 8px hsl(var(--primary) / 0.28);
+  }
 
-  .shadow-glow    { box-shadow: 0 0 32px hsl(var(--primary) / 0.38); }
-  .shadow-glow-sm { box-shadow: 0 0 16px hsl(var(--primary) / 0.30); }
-  .ring-glow      { box-shadow: 0 0 0 1px hsl(var(--primary) / 0.5), 0 0 20px hsl(var(--primary) / 0.3); }
+  .glow-sm {
+    box-shadow: 0 0 16px hsl(var(--primary) / 0.32);
+  }
 
-  html.light .shadow-glow    { box-shadow: 0 2px 16px hsl(var(--primary) / 0.28); }
-  html.light .shadow-glow-sm { box-shadow: 0 1px 10px hsl(var(--primary) / 0.22); }
-  html.light .ring-glow      { box-shadow: 0 0 0 1px hsl(var(--primary) / 0.4), 0 0 14px hsl(var(--primary) / 0.22); }
-  html.light .glow-xs        { box-shadow: 0 0 8px  hsl(var(--primary) / 0.22); }
-  html.light .glow-sm        { box-shadow: 0 0 16px hsl(var(--primary) / 0.26); }
-  html.light .glow-md        { box-shadow: 0 0 28px hsl(var(--primary) / 0.28); }
-  html.light .glow-lg        { box-shadow: 0 0 48px hsl(var(--primary) / 0.30); }
+  .glow-md {
+    box-shadow: 0 0 32px hsl(var(--primary) / 0.38);
+  }
+
+  .glow-lg {
+    box-shadow: 0 0 64px hsl(var(--primary) / 0.42);
+  }
+
+  .shadow-glow {
+    box-shadow: 0 0 32px hsl(var(--primary) / 0.38);
+  }
+
+  .shadow-glow-sm {
+    box-shadow: 0 0 16px hsl(var(--primary) / 0.30);
+  }
+
+  .ring-glow {
+    box-shadow: 0 0 0 1px hsl(var(--primary) / 0.5), 0 0 20px hsl(var(--primary) / 0.3);
+  }
+
+  html.light .shadow-glow {
+    box-shadow: 0 2px 16px hsl(var(--primary) / 0.28);
+  }
+
+  html.light .shadow-glow-sm {
+    box-shadow: 0 1px 10px hsl(var(--primary) / 0.22);
+  }
+
+  html.light .ring-glow {
+    box-shadow: 0 0 0 1px hsl(var(--primary) / 0.4), 0 0 14px hsl(var(--primary) / 0.22);
+  }
+
+  html.light .glow-xs {
+    box-shadow: 0 0 8px hsl(var(--primary) / 0.22);
+  }
+
+  html.light .glow-sm {
+    box-shadow: 0 0 16px hsl(var(--primary) / 0.26);
+  }
+
+  html.light .glow-md {
+    box-shadow: 0 0 28px hsl(var(--primary) / 0.28);
+  }
+
+  html.light .glow-lg {
+    box-shadow: 0 0 48px hsl(var(--primary) / 0.30);
+  }
 
   /* ──────────────────────────────────────────
      NEON BORDER — borda brilhante neon
@@ -300,26 +354,22 @@ html.light {
     left: 0;
     right: 0;
     height: 1px;
-    background: linear-gradient(
-      90deg,
-      transparent 0%,
-      hsl(var(--primary) / 0.5) 25%,
-      hsl(var(--primary) / 0.9) 50%,
-      hsl(var(--primary) / 0.5) 75%,
-      transparent 100%
-    );
+    background: linear-gradient(90deg,
+        transparent 0%,
+        hsl(var(--primary) / 0.5) 25%,
+        hsl(var(--primary) / 0.9) 50%,
+        hsl(var(--primary) / 0.5) 75%,
+        transparent 100%);
     pointer-events: none;
   }
 
   html.light .border-gradient-bottom::after {
-    background: linear-gradient(
-      90deg,
-      transparent 0%,
-      hsl(var(--border)) 20%,
-      hsl(var(--primary) / 0.35) 50%,
-      hsl(var(--border)) 80%,
-      transparent 100%
-    );
+    background: linear-gradient(90deg,
+        transparent 0%,
+        hsl(var(--border)) 20%,
+        hsl(var(--primary) / 0.35) 50%,
+        hsl(var(--border)) 80%,
+        transparent 100%);
   }
 
   /* ──────────────────────────────────────────
@@ -337,12 +387,10 @@ html.light {
     left: -75%;
     width: 50%;
     height: 100%;
-    background: linear-gradient(
-      105deg,
-      transparent 40%,
-      hsl(255 100% 100% / 0.045) 50%,
-      transparent 60%
-    );
+    background: linear-gradient(105deg,
+        transparent 40%,
+        hsl(255 100% 100% / 0.045) 50%,
+        transparent 60%);
     transition: left 0.6s cubic-bezier(0.4, 0, 0.2, 1);
     pointer-events: none;
     z-index: 1;
@@ -356,12 +404,10 @@ html.light {
      TEXT GRADIENT — Ferrari Red animado
   ────────────────────────────────────────── */
   .text-gradient {
-    background-image: linear-gradient(
-      100deg,
-      #ff6b6b 0%,
-      #ff9f43 50%,
-      #ff6b6b 100%
-    );
+    background-image: linear-gradient(100deg,
+        #ff6b6b 0%,
+        #ff9f43 50%,
+        #ff6b6b 100%);
     background-clip: text;
     -webkit-background-clip: text;
     color: transparent;
@@ -371,12 +417,10 @@ html.light {
   }
 
   html.light .text-gradient {
-    background-image: linear-gradient(
-      100deg,
-      #c31313 0%,
-      #e03131 50%,
-      #c31313 100%
-    );
+    background-image: linear-gradient(100deg,
+        #c31313 0%,
+        #e03131 50%,
+        #c31313 100%);
   }
 
   .bg-card-gradient {
@@ -397,22 +441,38 @@ html.light {
   /* ──────────────────────────────────────────
      SCROLLBAR — global e local
   ────────────────────────────────────────── */
-  ::-webkit-scrollbar { width: 5px; height: 5px; }
-  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar {
+    width: 5px;
+    height: 5px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
   ::-webkit-scrollbar-thumb {
     background: hsl(var(--muted-foreground) / 0.2);
     border-radius: 999px;
   }
+
   ::-webkit-scrollbar-thumb:hover {
     background: hsl(var(--primary) / 0.55);
   }
 
-  .custom-scrollbar::-webkit-scrollbar { width: 4px; height: 4px; }
-  .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+  .custom-scrollbar::-webkit-scrollbar {
+    width: 4px;
+    height: 4px;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
   .custom-scrollbar::-webkit-scrollbar-thumb {
     background: hsl(var(--muted-foreground) / 0.22);
     border-radius: 999px;
   }
+
   .custom-scrollbar::-webkit-scrollbar-thumb:hover {
     background: hsl(var(--primary) / 0.6);
   }
@@ -422,6 +482,7 @@ html.light {
     -ms-overflow-style: none !important;
     scrollbar-width: none !important;
   }
+
   .scrollbar-none::-webkit-scrollbar,
   .scrollbar-hide::-webkit-scrollbar {
     display: none !important;
@@ -435,107 +496,218 @@ html.light {
 
   /* Gradiente em movimento */
   @keyframes gradient-flow {
-    0%   { background-position: 0% 50%; }
-    100% { background-position: 300% 50%; }
+    0% {
+      background-position: 0% 50%;
+    }
+
+    100% {
+      background-position: 300% 50%;
+    }
   }
 
   /* Legado */
   @keyframes textGradient {
-    0%   { background-position: 0% 50%; }
-    100% { background-position: 200% 50%; }
+    0% {
+      background-position: 0% 50%;
+    }
+
+    100% {
+      background-position: 200% 50%;
+    }
   }
 
   /* Marquee */
   @keyframes marquee {
-    from { transform: translateX(0); }
-    to   { transform: translateX(-50%); }
+    from {
+      transform: translateX(0);
+    }
+
+    to {
+      transform: translateX(-50%);
+    }
   }
-  .animate-marquee { animation: marquee 30s linear infinite; }
+
+  .animate-marquee {
+    animation: marquee 30s linear infinite;
+  }
 
   /* Pulse dot */
   @keyframes pulse-dot {
-    0%, 100% { opacity: 1; transform: scale(1); }
-    50%      { opacity: 0.5; transform: scale(1.55); }
+
+    0%,
+    100% {
+      opacity: 1;
+      transform: scale(1);
+    }
+
+    50% {
+      opacity: 0.5;
+      transform: scale(1.55);
+    }
   }
-  .animate-pulse-dot { animation: pulse-dot 2s ease-in-out infinite; }
+
+  .animate-pulse-dot {
+    animation: pulse-dot 2s ease-in-out infinite;
+  }
 
   /* Float suave */
   @keyframes float {
-    0%, 100% { transform: translateY(0px); }
-    50%      { transform: translateY(-7px); }
+
+    0%,
+    100% {
+      transform: translateY(0px);
+    }
+
+    50% {
+      transform: translateY(-7px);
+    }
   }
-  .animate-float { animation: float 4s ease-in-out infinite; }
+
+  .animate-float {
+    animation: float 4s ease-in-out infinite;
+  }
 
   /* Glow respirando */
   @keyframes glow-breathe {
-    0%, 100% {
+
+    0%,
+    100% {
       box-shadow: 0 0 14px hsl(var(--primary) / 0.22),
-                  0 0 0 1px hsl(var(--primary) / 0.18);
+        0 0 0 1px hsl(var(--primary) / 0.18);
     }
+
     50% {
       box-shadow: 0 0 32px hsl(var(--primary) / 0.5),
-                  0 0 64px hsl(var(--primary) / 0.18),
-                  0 0 0 1px hsl(var(--primary) / 0.4);
+        0 0 64px hsl(var(--primary) / 0.18),
+        0 0 0 1px hsl(var(--primary) / 0.4);
     }
   }
-  .animate-glow-breathe { animation: glow-breathe 3s ease-in-out infinite; }
+
+  .animate-glow-breathe {
+    animation: glow-breathe 3s ease-in-out infinite;
+  }
 
   /* Neon pulse na borda */
   @keyframes neon-pulse {
-    0%, 100% {
-      box-shadow: 0 0 4px  hsl(var(--primary) / 0.55),
-                  0 0 14px hsl(var(--primary) / 0.32);
+
+    0%,
+    100% {
+      box-shadow: 0 0 4px hsl(var(--primary) / 0.55),
+        0 0 14px hsl(var(--primary) / 0.32);
     }
+
     50% {
       box-shadow: 0 0 10px hsl(var(--primary) / 0.85),
-                  0 0 32px hsl(var(--primary) / 0.55),
-                  0 0 64px hsl(var(--primary) / 0.22);
+        0 0 32px hsl(var(--primary) / 0.55),
+        0 0 64px hsl(var(--primary) / 0.22);
     }
   }
-  .animate-neon-pulse { animation: neon-pulse 2.2s ease-in-out infinite; }
+
+  .animate-neon-pulse {
+    animation: neon-pulse 2.2s ease-in-out infinite;
+  }
 
   /* Shimmer slide (highlight) */
   @keyframes shimmer-slide {
-    0%   { transform: translateX(-100%); }
-    100% { transform: translateX(250%); }
+    0% {
+      transform: translateX(-100%);
+    }
+
+    100% {
+      transform: translateX(250%);
+    }
   }
 
   /* Entrada de baixo */
   @keyframes entrance-up {
-    from { opacity: 0; transform: translateY(18px); }
-    to   { opacity: 1; transform: translateY(0); }
+    from {
+      opacity: 0;
+      transform: translateY(18px);
+    }
+
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
   }
+
   .animate-entrance-up {
     animation: entrance-up 0.55s cubic-bezier(0.4, 0, 0.2, 1) forwards;
   }
 
   /* Rotação lenta */
   @keyframes spin-slow {
-    from { transform: rotate(0deg); }
-    to   { transform: rotate(360deg); }
+    from {
+      transform: rotate(0deg);
+    }
+
+    to {
+      transform: rotate(360deg);
+    }
   }
-  .animate-spin-slow { animation: spin-slow 10s linear infinite; }
+
+  .animate-spin-slow {
+    animation: spin-slow 10s linear infinite;
+  }
 
   /* Ping ring para loading */
   @keyframes ping-ring {
-    0%       { transform: scale(1);   opacity: 0.6; }
-    70%, 100% { transform: scale(1.8); opacity: 0; }
+    0% {
+      transform: scale(1);
+      opacity: 0.6;
+    }
+
+    70%,
+    100% {
+      transform: scale(1.8);
+      opacity: 0;
+    }
   }
-  .animate-ping-ring { animation: ping-ring 1.8s cubic-bezier(0, 0, 0.2, 1) infinite; }
+
+  .animate-ping-ring {
+    animation: ping-ring 1.8s cubic-bezier(0, 0, 0.2, 1) infinite;
+  }
 
   /* Bounce dots */
   @keyframes bounce-dot {
-    0%, 80%, 100% { transform: translateY(0); }
-    40%           { transform: translateY(-8px); }
+
+    0%,
+    80%,
+    100% {
+      transform: translateY(0);
+    }
+
+    40% {
+      transform: translateY(-8px);
+    }
   }
-  .animate-bounce-dot-1 { animation: bounce-dot 1.2s ease-in-out infinite; animation-delay: 0ms; }
-  .animate-bounce-dot-2 { animation: bounce-dot 1.2s ease-in-out infinite; animation-delay: 150ms; }
-  .animate-bounce-dot-3 { animation: bounce-dot 1.2s ease-in-out infinite; animation-delay: 300ms; }
+
+  .animate-bounce-dot-1 {
+    animation: bounce-dot 1.2s ease-in-out infinite;
+    animation-delay: 0ms;
+  }
+
+  .animate-bounce-dot-2 {
+    animation: bounce-dot 1.2s ease-in-out infinite;
+    animation-delay: 150ms;
+  }
+
+  .animate-bounce-dot-3 {
+    animation: bounce-dot 1.2s ease-in-out infinite;
+    animation-delay: 300ms;
+  }
 
   /* Slide entrada lateral */
   @keyframes slide-in-right {
-    from { opacity: 0; transform: translateX(24px); }
-    to   { opacity: 1; transform: translateX(0); }
+    from {
+      opacity: 0;
+      transform: translateX(24px);
+    }
+
+    to {
+      opacity: 1;
+      transform: translateX(0);
+    }
   }
 
   /* ──────────────────────────────────────────
@@ -751,6 +923,7 @@ html.light {
     background-color: hsl(var(--secondary)) !important;
     backdrop-filter: none;
   }
+
   html.light .bg-slate-900\/50,
   html.light .bg-background\/50 {
     background-color: hsl(var(--background) / 0.85) !important;
@@ -829,8 +1002,13 @@ html.light {
   /* ── Landing page: zonas hardcoded escuras preservam texto em qualquer tema ──
      Especificidade html + [attr] + .class = (0,2,1) — empata com html.light .text-white
      mas vem depois no stylesheet, portanto ganha na cascata. ── */
-  html [data-lp-zone="dark"] .text-white  { color: rgb(255 255 255) !important; }
-  html [data-lp-zone="dark"] .text-zinc-400 { color: rgb(161 161 170) !important; }
+  html [data-lp-zone="dark"] .text-white {
+    color: rgb(255 255 255) !important;
+  }
+
+  html [data-lp-zone="dark"] .text-zinc-400 {
+    color: rgb(161 161 170) !important;
+  }
 
   /* ══════════════════════════════════════════════
      AUTOMOTIVO & BRANDING — NC Performance Suite
@@ -841,15 +1019,13 @@ html.light {
   .racing-stripe {
     height: 2px;
     border: none;
-    background: linear-gradient(
-      90deg,
-      transparent 0%,
-      hsl(var(--primary) / 0.6) 15%,
-      hsl(var(--primary)) 40%,
-      hsl(var(--primary)) 60%,
-      hsl(var(--primary) / 0.6) 85%,
-      transparent 100%
-    );
+    background: linear-gradient(90deg,
+        transparent 0%,
+        hsl(var(--primary) / 0.6) 15%,
+        hsl(var(--primary)) 40%,
+        hsl(var(--primary)) 60%,
+        hsl(var(--primary) / 0.6) 85%,
+        transparent 100%);
     border-radius: 999px;
   }
 
@@ -865,6 +1041,7 @@ html.light {
   .font-display .tracking-tight {
     letter-spacing: 0em !important;
   }
+
   .header-sport::before {
     content: '';
     position: absolute;
@@ -888,6 +1065,7 @@ html.light {
     align-items: center;
     gap: 0.75rem;
   }
+
   .chassis-line::before,
   .chassis-line::after {
     content: '';
@@ -897,6 +1075,7 @@ html.light {
     background: linear-gradient(90deg, transparent, hsl(var(--primary) / 0.55));
     flex-shrink: 0;
   }
+
   .chassis-line::after {
     background: linear-gradient(90deg, hsl(var(--primary) / 0.55), transparent);
   }
@@ -906,6 +1085,7 @@ html.light {
     position: relative;
     overflow: hidden;
   }
+
   .card-sport::after {
     content: '';
     position: absolute;
@@ -914,31 +1094,28 @@ html.light {
     right: 12%;
     height: 2px;
     border-radius: 999px;
-    background: linear-gradient(
-      90deg,
-      transparent 0%,
-      hsl(var(--primary) / 0.55) 25%,
-      hsl(var(--primary) / 0.92) 50%,
-      hsl(var(--primary) / 0.55) 75%,
-      transparent 100%
-    );
+    background: linear-gradient(90deg,
+        transparent 0%,
+        hsl(var(--primary) / 0.55) 25%,
+        hsl(var(--primary) / 0.92) 50%,
+        hsl(var(--primary) / 0.55) 75%,
+        transparent 100%);
     opacity: 0;
     transition: opacity 0.35s cubic-bezier(0.4, 0, 0.2, 1);
     pointer-events: none;
   }
+
   .card-sport:hover::after {
     opacity: 1;
   }
 
   html.light .card-sport::after {
-    background: linear-gradient(
-      90deg,
-      transparent 0%,
-      hsl(var(--primary) / 0.22) 25%,
-      hsl(var(--primary) / 0.45) 50%,
-      hsl(var(--primary) / 0.22) 75%,
-      transparent 100%
-    );
+    background: linear-gradient(90deg,
+        transparent 0%,
+        hsl(var(--primary) / 0.22) 25%,
+        hsl(var(--primary) / 0.45) 50%,
+        hsl(var(--primary) / 0.22) 75%,
+        transparent 100%);
   }
 
   /* Badge esportivo — etiqueta de pit lane */
@@ -958,6 +1135,7 @@ html.light {
     color: hsl(var(--primary));
     box-shadow: 0 0 12px hsl(var(--primary) / 0.13);
   }
+
   html.light .badge-sport {
     background: hsl(var(--primary) / 0.06);
     box-shadow: 0 0 8px hsl(var(--primary) / 0.09);
@@ -973,6 +1151,7 @@ html.light {
     pointer-events: none;
     user-select: none;
   }
+
   html.light .nc-watermark-text {
     color: hsl(var(--primary) / 0.075);
   }
@@ -981,6 +1160,7 @@ html.light {
   .nc-badge-corner {
     position: relative;
   }
+
   .nc-badge-corner::after {
     content: 'NC';
     position: absolute;
@@ -995,6 +1175,7 @@ html.light {
     user-select: none;
     line-height: 1;
   }
+
   html.light .nc-badge-corner::after {
     color: hsl(var(--primary) / 0.2);
   }
@@ -1005,6 +1186,7 @@ html.light {
     align-items: center;
     gap: 0.625rem;
   }
+
   .pit-divider::before,
   .pit-divider::after {
     content: '';
@@ -1012,6 +1194,7 @@ html.light {
     height: 1px;
     background: linear-gradient(90deg, transparent, hsl(var(--border)));
   }
+
   .pit-divider::after {
     background: linear-gradient(90deg, hsl(var(--border)), transparent);
   }
@@ -1019,23 +1202,20 @@ html.light {
   /* Cockpit panel — card com textura sutil de cockpit */
   .cockpit-panel {
     background:
-      repeating-linear-gradient(
-        135deg,
+      repeating-linear-gradient(135deg,
         transparent,
         transparent 18px,
         hsl(var(--primary) / 0.012) 18px,
-        hsl(var(--primary) / 0.012) 19px
-      );
+        hsl(var(--primary) / 0.012) 19px);
   }
+
   html.light .cockpit-panel {
     background:
-      repeating-linear-gradient(
-        135deg,
+      repeating-linear-gradient(135deg,
         transparent,
         transparent 18px,
         hsl(var(--primary) / 0.025) 18px,
-        hsl(var(--primary) / 0.025) 19px
-      );
+        hsl(var(--primary) / 0.025) 19px);
   }
 
   /* Performance indicator — tag de KPI */
@@ -1050,6 +1230,7 @@ html.light {
     letter-spacing: 0.15em;
     color: hsl(var(--muted-foreground));
   }
+
   .kpi-tag::before {
     content: '';
     display: block;
@@ -1069,12 +1250,15 @@ html.light {
   html.light ::-webkit-scrollbar-thumb {
     background: hsl(220 14% 70%);
   }
+
   html.light ::-webkit-scrollbar-thumb:hover {
     background: hsl(var(--primary) / 0.55);
   }
+
   html.light .custom-scrollbar::-webkit-scrollbar-thumb {
     background: hsl(220 14% 72%);
   }
+
   html.light .custom-scrollbar::-webkit-scrollbar-thumb:hover {
     background: hsl(var(--primary) / 0.6);
   }
@@ -1083,6 +1267,7 @@ html.light {
      PERFORMANCE: respeitar preferência do usuário por menos movimento
   ────────────────────────────────────────── */
   @media (prefers-reduced-motion: reduce) {
+
     *,
     *::before,
     *::after {
@@ -1090,6 +1275,7 @@ html.light {
       animation-iteration-count: 1 !important;
       transition-duration: 0.01ms !important;
     }
+
     .animate-marquee,
     .animate-float,
     .animate-glow-breathe,
@@ -1108,12 +1294,14 @@ html.light {
   .pb-safe {
     padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
   }
+
   .pb-safe-nav {
     padding-bottom: env(safe-area-inset-bottom, 0px);
   }
 }
 
 @media (max-width: 1023px) {
+
   html,
   body,
   #root {
@@ -1124,11 +1312,13 @@ html.light {
 }
 
 /* Remove Lovable Badge globally */
-[id^="lovable"], #lovable-badge, a[href*="lovable.dev"], div[class*="lovable-badge"] {
+[id^="lovable"],
+#lovable-badge,
+a[href*="lovable.dev"],
+div[class*="lovable-badge"] {
   display: none !important;
   opacity: 0 !important;
   visibility: hidden !important;
   pointer-events: none !important;
   z-index: -9999 !important;
 }
-

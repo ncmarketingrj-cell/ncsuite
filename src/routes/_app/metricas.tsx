@@ -632,6 +632,7 @@ function MetricasCampanhasPage() {
   const [auditData,      setAuditData]      = useState<any[]|null>(null);
   const [isAuditing,     setIsAuditing]     = useState(false);
   const [visibleCount,   setVisibleCount]   = useState(40);
+  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
 
   useEffect(() => {
     setVisibleCount(40);
@@ -1542,17 +1543,15 @@ function MetricasCampanhasPage() {
   return (
     <div className="mx-auto max-w-[1700px] p-1 pb-24">
 
-      {/* â•â•â• STICKY HEADER â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */}
-      <div className="sticky top-0 z-40 -mx-1 px-1 bg-background/95 backdrop-blur-xl pt-2 pb-0 space-y-2">
-          
-          <PageHeader
-            eyebrow="Operação Estratégica"
-            title="Controle de KPIs"
-            description="Gestão de campanhas, conjuntos e anúncios. Acompanhamento detalhado de métricas e conversões."
-            compact
-          />
+      {/* Cabeçalho e KPIs rolam naturalmente para liberar espaço vertical em telas menores e mobile */}
+      <div className="space-y-2.5 pb-2.5">
+        <PageHeader
+          eyebrow="Operação Estratégica"
+          title="Controle de KPIs"
+          description="Gestão de campanhas, conjuntos e anúncios. Acompanhamento detalhado de métricas e conversões."
+          compact
+        />
 
-          {/* KPI Bar */}
         <KPIBar
           totCost={totCost}
           totConv={totConv}
@@ -1563,80 +1562,108 @@ function MetricasCampanhasPage() {
           avgCtr={avgCtr}
           avgCpm={avgCpm}
         />
+      </div>
+
+      {/* STICKY BAR COMPACTA (Filtros + Abas de Nível) */}
+      <div className="sticky top-0 z-40 -mx-2.5 px-2.5 sm:-mx-4 sm:px-4 md:-mx-6 md:px-6 lg:-mx-8 lg:px-8 bg-background/98 backdrop-blur-md border-b border-border/60 pt-2 pb-0 space-y-1.5">
 
         {/* Breadcrumb Contexto de Campanha (Drill-down) */}
         {selectedCampaignObj && (
-          <motion.div 
-            initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} 
-            className="flex w-full items-center gap-2 mb-2 bg-gradient-to-r from-primary/10 to-transparent border-l-2 border-primary pl-3 py-2 rounded-r-xl"
+          <motion.div
+            initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}
+            className="flex w-full items-center gap-2 bg-gradient-to-r from-primary/10 to-transparent border-l-2 border-primary pl-3 py-1.5 rounded-r-xl"
           >
             <span className="text-[10px] font-black uppercase tracking-widest text-primary/70">Contexto Analítico:</span>
-            <div className="flex items-center gap-2 text-primary">
-              <span className="text-xs font-bold truncate max-w-[300px]">{selectedCampaignObj.name}</span>
+            <div className="flex items-center gap-2 text-primary min-w-0">
+              <span className="text-xs font-bold truncate max-w-[220px] sm:max-w-[300px]">{selectedCampaignObj.name}</span>
             </div>
-            <button 
+            <button
               onClick={() => setSelectedCampaignId(null)}
-              className="ml-auto mr-4 flex items-center gap-1.5 rounded-md bg-primary/10 px-2 py-1 text-[10px] font-black uppercase tracking-wider text-primary hover:bg-primary/20 transition-colors"
+              className="ml-auto mr-2 flex items-center gap-1 rounded-md bg-primary/10 px-2 py-1 text-[10px] font-black uppercase tracking-wider text-primary hover:bg-primary/20 transition-colors shrink-0"
             >
               <XCircle className="h-3.5 w-3.5" />
-              Remover Contexto
+              <span className="hidden sm:inline">Remover Contexto</span>
             </button>
           </motion.div>
         )}
 
-        {/* Controles: View + Filtros */}
-        <div className="flex flex-wrap items-center gap-2 pb-1">
+        {/* Controles: Linha principal compacta (mobile + desktop) */}
+        <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 pb-1">
           {/* View switcher */}
-          <div className="flex items-center gap-0.5 rounded-xl border border-border bg-card/50 p-0.5">
+          <div className="flex items-center gap-0.5 rounded-xl border border-border bg-card/50 p-0.5 shrink-0">
             {([
               { id: "gestao",       label: "Gestão",      icon: LayoutGrid },
               { id: "analise",      label: "Análise",     icon: BarChart2 },
               { id: "demograficos", label: "Demográficos",icon: Users },
             ] as const).map(v => (
-              <button key={v.id} onClick={() => setView(v.id)} className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[11px] font-black uppercase tracking-wider transition-all ${view === v.id ? "bg-primary text-primary-foreground shadow-glow-sm" : "text-muted-foreground hover:text-foreground"}`}>
+              <button key={v.id} onClick={() => setView(v.id)} className={`flex items-center gap-1.5 rounded-lg px-2.5 sm:px-3 py-1.5 text-[11px] font-black uppercase tracking-wider transition-all ${view === v.id ? "bg-primary text-primary-foreground shadow-glow-sm" : "text-muted-foreground hover:text-foreground"}`}>
                 <v.icon className="h-3 w-3 shrink-0" />
                 <span className="hidden sm:inline">{v.label}</span>
               </button>
             ))}
           </div>
 
-          {/* Conta */}
-          <div className="relative shrink-0">
-            <Layers className="pointer-events-none absolute left-2.5 top-1/2 h-3 w-3 -translate-y-1/2 text-muted-foreground" />
-            <select value={accountFilter} onChange={e => setAccountFilter(e.target.value)} className="appearance-none rounded-xl border border-border bg-background/60 py-1.5 pl-7 pr-6 text-xs font-bold focus:border-primary/50 focus:outline-none transition-all">
-              <option value="all" className="bg-background text-foreground">Todas as Contas</option>
-              {adAccounts.map((a: any) => <option key={a.id} value={a.id} className="bg-background text-foreground">{a.name}</option>)}
-            </select>
-            <ChevronDown className="pointer-events-none absolute right-2 top-1/2 h-3 w-3 -translate-y-1/2 text-muted-foreground" />
-          </div>
-
-          {/* Período */}
-          <DateRangePicker startDate={dateRange.startDate} endDate={dateRange.endDate} onChange={(s, e) => setDateRange({ startDate: s, endDate: e })} />
-
-          {/* Status (apenas na tab Gestão) */}
+          {/* Search inline no mobile (tab Gestão) */}
           {view === "gestao" && (
-            <div className="relative">
-              <select
-                value={statusFilter}
-                onChange={e => setStatusFilter(e.target.value as any)}
-                className="appearance-none rounded-xl border border-border bg-background/60 py-1.5 pl-3 pr-8 text-xs font-semibold focus:border-primary/50 focus:outline-none transition-all cursor-pointer"
-              >
-                <option value="ALL">Todos os status</option>
-                <option value="ACTIVE">Ativos</option>
-                <option value="PAUSED">Pausados</option>
+            <div className="relative flex-1 min-w-[110px] sm:hidden">
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3 w-3 -translate-y-1/2 text-muted-foreground" />
+              <input value={search} onChange={e => setSearch(e.target.value)} placeholder={`Buscar ${level}...`} className="w-full rounded-xl border border-border bg-background/60 py-1.5 pl-7 pr-2.5 text-xs font-semibold focus:border-primary/50 focus:outline-none transition-all placeholder:text-muted-foreground/50" />
+            </div>
+          )}
+
+          {/* Toggle de filtros no mobile */}
+          <button
+            type="button"
+            onClick={() => setMobileFiltersOpen(v => !v)}
+            className={`sm:hidden flex items-center gap-1 rounded-xl border px-2.5 py-1.5 text-[11px] font-bold transition-all shrink-0 ${
+              mobileFiltersOpen || accountFilter !== "all" || statusFilter !== "all"
+                ? "border-primary/40 bg-primary/10 text-primary"
+                : "border-border bg-card/50 text-muted-foreground"
+            }`}
+            title="Filtros de conta, período e status"
+          >
+            <SlidersHorizontal className="h-3.5 w-3.5" />
+          </button>
+
+          {/* Filtros completos (sempre inline no desktop sm+, expansível no mobile) */}
+          <div className={`${mobileFiltersOpen ? "flex w-full order-last pt-1" : "hidden"} sm:flex sm:w-auto sm:order-none flex-wrap items-center gap-1.5 sm:gap-2 flex-1 min-w-0`}>
+            {/* Conta */}
+            <div className="relative shrink-0">
+              <Layers className="pointer-events-none absolute left-2.5 top-1/2 h-3 w-3 -translate-y-1/2 text-muted-foreground" />
+              <select value={accountFilter} onChange={e => setAccountFilter(e.target.value)} className="appearance-none rounded-xl border border-border bg-background/60 py-1.5 pl-7 pr-6 text-xs font-bold focus:border-primary/50 focus:outline-none transition-all max-w-[175px] sm:max-w-[210px] truncate">
+                <option value="all" className="bg-background text-foreground">Todas as Contas</option>
+                {adAccounts.map((a: any) => <option key={a.id} value={a.id} className="bg-background text-foreground">{a.name}</option>)}
               </select>
               <ChevronDown className="pointer-events-none absolute right-2 top-1/2 h-3 w-3 -translate-y-1/2 text-muted-foreground" />
             </div>
-          )}
 
-          {/* Search */}
-          {view === "gestao" && (
-            <div className="relative flex-1 min-w-[140px]">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-3 w-3 -translate-y-1/2 text-muted-foreground" />
-              <input value={search} onChange={e => setSearch(e.target.value)} placeholder={`Buscar ${level}...`} className="w-full rounded-xl border border-border bg-background/60 py-1.5 pl-8 pr-3 text-xs font-semibold focus:border-primary/50 focus:outline-none transition-all placeholder:text-muted-foreground/50" />
-            </div>
-          )}
+            {/* Período */}
+            <DateRangePicker startDate={dateRange.startDate} endDate={dateRange.endDate} onChange={(s, e) => setDateRange({ startDate: s, endDate: e })} />
 
+            {/* Status (apenas na tab Gestão) */}
+            {view === "gestao" && (
+              <div className="relative shrink-0">
+                <select
+                  value={statusFilter}
+                  onChange={e => setStatusFilter(e.target.value as any)}
+                  className="appearance-none rounded-xl border border-border bg-background/60 py-1.5 pl-3 pr-7 text-xs font-semibold focus:border-primary/50 focus:outline-none transition-all cursor-pointer"
+                >
+                  <option value="ALL">Todos os status</option>
+                  <option value="ACTIVE">Ativos</option>
+                  <option value="PAUSED">Pausados</option>
+                </select>
+                <ChevronDown className="pointer-events-none absolute right-2 top-1/2 h-3 w-3 -translate-y-1/2 text-muted-foreground" />
+              </div>
+            )}
+
+            {/* Search desktop */}
+            {view === "gestao" && (
+              <div className="relative hidden sm:block flex-1 min-w-[140px]">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-3 w-3 -translate-y-1/2 text-muted-foreground" />
+                <input value={search} onChange={e => setSearch(e.target.value)} placeholder={`Buscar ${level}...`} className="w-full rounded-xl border border-border bg-background/60 py-1.5 pl-8 pr-3 text-xs font-semibold focus:border-primary/50 focus:outline-none transition-all placeholder:text-muted-foreground/50" />
+              </div>
+            )}
+          </div>
           {/* Ações */}
           <div className="flex items-center gap-2 ml-auto shrink-0">
             {(view === "analise" || view === "demograficos") && (

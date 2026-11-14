@@ -103,7 +103,7 @@ function PostMediaPreview({
       ) : (
         <>
           <ImageIcon className="w-7 h-7 text-muted-foreground/50" />
-          <span className="text-[10px] leading-snug">
+          <span className="text-xs leading-snug">
             Mídia externa protegida pela Meta. Use "Ver Post" para abrir no aplicativo.
           </span>
         </>
@@ -436,10 +436,10 @@ Responda de forma objetiva e tática em Markdown com:
     const item = payload[0]?.payload;
     return (
       <div className="bg-[#0c0c14]/95 border border-white/15 backdrop-blur-md rounded-xl px-3.5 py-2.5 shadow-xl text-xs space-y-1">
-        <p className="font-black text-white flex items-center justify-between gap-4">
+        <p className="font-bold text-white flex items-center justify-between gap-4">
           <span>{item.label} ({item.date})</span>
           {item.isSelectedRange && (
-            <span className="text-[9px] px-1.5 py-0.5 rounded bg-primary/20 text-primary uppercase">No filtro</span>
+            <span className="text-[11px] px-1.5 py-0.5 rounded bg-primary/20 text-primary uppercase">No filtro</span>
           )}
         </p>
         <p className="font-mono text-white font-bold">
@@ -449,7 +449,7 @@ Responda de forma objetiva e tática em Markdown com:
           </span>
         </p>
         {chartMetric === "newFollowers" && (
-          <p className="text-[10px] text-muted-foreground font-mono">
+          <p className="text-xs text-muted-foreground font-mono">
             IG: +{item.newFollowersIg} | FB: +{item.newFollowersFb}
           </p>
         )}
@@ -462,19 +462,19 @@ Responda de forma objetiva e tática em Markdown com:
       {/* Top Header */}
       <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 border-b border-white/5 pb-5">
         <div className="space-y-1">
-          <span className="label-mono text-primary text-[10px] uppercase tracking-widest font-black">
+          <span className="label-mono text-primary text-xs uppercase tracking-widest font-bold">
             Meta Graph API v21.0 • Dados Reais Verificados
           </span>
-          <h2 className="text-2xl font-black tracking-wider text-foreground uppercase flex items-center gap-2 mt-0.5">
+          <h2 className="text-2xl font-bold tracking-wider text-foreground uppercase flex items-center gap-2 mt-0.5">
             <BarChart3 className="h-6 w-6 text-primary" /> Performance do Meta
           </h2>
-          <div className="flex flex-wrap items-center gap-3 text-[10px] text-muted-foreground font-semibold">
+          <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground font-semibold">
             {isConnected ? (
-              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-0.5 font-black text-emerald-400">
+              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-0.5 font-bold text-emerald-400">
                 <Wifi className="w-2.5 h-2.5" /> API CONECTADA ({activePages.length} contas reais)
               </span>
             ) : (
-              <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/10 border border-amber-500/20 px-2.5 py-0.5 font-black text-amber-400">
+              <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/10 border border-amber-500/20 px-2.5 py-0.5 font-bold text-amber-400">
                 <WifiOff className="w-2.5 h-2.5" /> TOKEN META NÃO CONECTADO
               </span>
             )}
@@ -482,7 +482,7 @@ Responda de forma objetiva e tática em Markdown com:
             <span className="flex items-center gap-1">
               <Clock className="w-3 h-3" />
               Próximo sync{" "}
-              <strong className="text-white font-mono">
+              <strong className="text-foreground font-mono">
                 {Math.floor(countdown / 60)}:{String(countdown % 60).padStart(2, "0")}
               </strong>
             </span>
@@ -536,7 +536,7 @@ Responda de forma objetiva e tática em Markdown com:
           </div>
           <Link
             to="/config"
-            className="shrink-0 px-3 py-1.5 rounded-xl bg-amber-500 text-black text-xs font-black uppercase hover:opacity-90"
+            className="shrink-0 px-3 py-1.5 rounded-xl bg-amber-500 text-black text-xs font-bold uppercase hover:opacity-90"
           >
             Ir para Integrações
           </Link>
@@ -546,7 +546,7 @@ Responda de forma objetiva e tática em Markdown com:
       {/* Filtros de Escopo */}
       <div className="flex flex-wrap items-center justify-between gap-4 p-4 border border-white/5 bg-white/[0.01] rounded-2xl">
         <div className="flex items-center gap-3 flex-wrap">
-          <span className="text-xs text-muted-foreground font-black uppercase tracking-wider">Conta Conectada:</span>
+          <span className="text-xs text-muted-foreground font-bold uppercase tracking-wider">Conta Conectada:</span>
           <select
             value={selectedPage}
             onChange={(e) => {
@@ -570,7 +570,7 @@ Responda de forma objetiva e tática em Markdown com:
           )}
         </div>
         <div className="flex items-center gap-3">
-          <span className="text-xs text-muted-foreground font-black uppercase tracking-wider">Janela de Análise:</span>
+          <span className="text-xs text-muted-foreground font-bold uppercase tracking-wider">Janela de Análise:</span>
           <DateRangePicker
             startDate={dateRange.startDate}
             endDate={dateRange.endDate}
@@ -585,13 +585,13 @@ Responda de forma objetiva e tática em Markdown com:
         <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="glass-panel p-4 space-y-2 relative overflow-hidden">
           <div className="absolute top-0 left-0 w-full h-[2px] bg-gradient-to-r from-violet-500 to-indigo-500" />
           <div className="flex items-center justify-between text-muted-foreground">
-            <span className="text-[10px] font-bold uppercase tracking-wider">Alcance Instagram</span>
+            <span className="text-xs font-bold uppercase tracking-wider">Alcance Instagram</span>
             <Eye className="h-4 w-4 text-violet-400" />
           </div>
-          <p className="text-2xl font-black text-white tracking-tight">
+          <p className="text-2xl font-bold text-white tracking-tight">
             {kpis.reachIg.toLocaleString("pt-BR")}
           </p>
-          <div className="flex items-center justify-between text-[10px] pt-1">
+          <div className="flex items-center justify-between text-xs pt-1">
             <span className="text-muted-foreground">Contas únicas</span>
             {kpis.reachDeltaPct !== null ? (
               <span className={`font-bold ${kpis.reachDeltaPct >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
@@ -607,13 +607,13 @@ Responda de forma objetiva e tática em Markdown com:
         <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }} className="glass-panel p-4 space-y-2 relative overflow-hidden">
           <div className="absolute top-0 left-0 w-full h-[2px] bg-gradient-to-r from-amber-500 to-orange-500" />
           <div className="flex items-center justify-between text-muted-foreground">
-            <span className="text-[10px] font-bold uppercase tracking-wider">Visualizações</span>
+            <span className="text-xs font-bold uppercase tracking-wider">Visualizações</span>
             <Activity className="h-4 w-4 text-amber-400" />
           </div>
-          <p className="text-2xl font-black text-white tracking-tight">
+          <p className="text-2xl font-bold text-white tracking-tight">
             {totalViewsAll.toLocaleString("pt-BR")}
           </p>
-          <div className="flex items-center justify-between text-[10px] pt-1">
+          <div className="flex items-center justify-between text-xs pt-1">
             <span className="text-muted-foreground">IG: {kpis.viewsIg.toLocaleString("pt-BR")}</span>
             <span className="text-muted-foreground">FB: {kpis.viewsFb.toLocaleString("pt-BR")}</span>
           </div>
@@ -623,13 +623,13 @@ Responda de forma objetiva e tática em Markdown com:
         <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="glass-panel p-4 space-y-2 relative overflow-hidden">
           <div className="absolute top-0 left-0 w-full h-[2px] bg-gradient-to-r from-pink-500 to-rose-500" />
           <div className="flex items-center justify-between text-muted-foreground">
-            <span className="text-[10px] font-bold uppercase tracking-wider">Interações</span>
+            <span className="text-xs font-bold uppercase tracking-wider">Interações</span>
             <ThumbsUp className="h-4 w-4 text-pink-400" />
           </div>
-          <p className="text-2xl font-black text-white tracking-tight">
+          <p className="text-2xl font-bold text-white tracking-tight">
             {totalInteractionsAll.toLocaleString("pt-BR")}
           </p>
-          <div className="flex items-center justify-between text-[10px] pt-1">
+          <div className="flex items-center justify-between text-xs pt-1">
             <span className="text-muted-foreground">Engajadas: {kpis.accountsEngaged.toLocaleString("pt-BR")}</span>
             <span className="text-muted-foreground">FB: {kpis.interactionsFb.toLocaleString("pt-BR")}</span>
           </div>
@@ -639,13 +639,13 @@ Responda de forma objetiva e tática em Markdown com:
         <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }} className="glass-panel p-4 space-y-2 relative overflow-hidden">
           <div className="absolute top-0 left-0 w-full h-[2px] bg-gradient-to-r from-cyan-500 to-blue-500" />
           <div className="flex items-center justify-between text-muted-foreground">
-            <span className="text-[10px] font-bold uppercase tracking-wider">Seguidores Reais</span>
+            <span className="text-xs font-bold uppercase tracking-wider">Seguidores Reais</span>
             <UserPlus className="h-4 w-4 text-cyan-400" />
           </div>
-          <p className="text-2xl font-black text-white tracking-tight">
+          <p className="text-2xl font-bold text-white tracking-tight">
             {totalFollowersAll.toLocaleString("pt-BR")}
           </p>
-          <div className="flex items-center justify-between text-[10px] pt-1">
+          <div className="flex items-center justify-between text-xs pt-1">
             <span className="text-cyan-400 font-bold">
               {totalNewFollowersAll >= 0 ? `+${totalNewFollowersAll.toLocaleString("pt-BR")}` : totalNewFollowersAll.toLocaleString("pt-BR")} no período
             </span>
@@ -657,13 +657,13 @@ Responda de forma objetiva e tática em Markdown com:
         <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }} className="glass-panel p-4 space-y-2 relative overflow-hidden">
           <div className="absolute top-0 left-0 w-full h-[2px] bg-gradient-to-r from-emerald-500 to-teal-500" />
           <div className="flex items-center justify-between text-muted-foreground">
-            <span className="text-[10px] font-bold uppercase tracking-wider">Cliques no Site</span>
+            <span className="text-xs font-bold uppercase tracking-wider">Cliques no Site</span>
             <Globe className="h-4 w-4 text-emerald-400" />
           </div>
-          <p className="text-2xl font-black text-white tracking-tight">
+          <p className="text-2xl font-bold text-white tracking-tight">
             {kpis.websiteClicks.toLocaleString("pt-BR")}
           </p>
-          <div className="flex items-center justify-between text-[10px] pt-1">
+          <div className="flex items-center justify-between text-xs pt-1">
             <span className="text-muted-foreground">CTR Perfil: {bioCtr}%</span>
             <span className="text-muted-foreground">Bio / Link</span>
           </div>
@@ -673,13 +673,13 @@ Responda de forma objetiva e tática em Markdown com:
         <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.25 }} className="glass-panel p-4 space-y-2 relative overflow-hidden">
           <div className="absolute top-0 left-0 w-full h-[2px] bg-gradient-to-r from-purple-500 to-pink-500" />
           <div className="flex items-center justify-between text-muted-foreground">
-            <span className="text-[10px] font-bold uppercase tracking-wider">Visitas Perfil IG</span>
+            <span className="text-xs font-bold uppercase tracking-wider">Visitas Perfil IG</span>
             <Users className="h-4 w-4 text-purple-400" />
           </div>
-          <p className="text-2xl font-black text-white tracking-tight">
+          <p className="text-2xl font-bold text-white tracking-tight">
             {kpis.profileViews.toLocaleString("pt-BR")}
           </p>
-          <div className="flex items-center justify-between text-[10px] pt-1">
+          <div className="flex items-center justify-between text-xs pt-1">
             <span className="text-muted-foreground">No período filtrado</span>
             <span className="text-muted-foreground">Instagram</span>
           </div>
@@ -693,21 +693,21 @@ Responda de forma objetiva e tática em Markdown com:
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
             <div>
               <div className="flex items-center gap-2 flex-wrap">
-                <h4 className="text-xs font-black text-white uppercase tracking-wider">
+                <h4 className="text-xs font-bold text-foreground uppercase tracking-wider">
                   Evolução Diária do Perfil
                 </h4>
-                <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase bg-primary/15 text-primary border border-primary/25">
+                <span className="px-2 py-0.5 rounded-full text-[11px] font-bold uppercase bg-primary/15 text-primary border border-primary/25">
                   Janela de {chartDaysWindow} dias até {format(parseISO(dateTo), "dd/MM")}
                 </span>
               </div>
-              <p className="text-[10px] text-muted-foreground mt-0.5">
+              <p className="text-xs text-muted-foreground mt-0.5">
                 {chartMetricMeta[chartMetric].desc}.
               </p>
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
               {/* Seletor de métrica */}
-              <div className="flex bg-white/5 p-1 rounded-xl gap-1 text-[10px] font-bold">
+              <div className="flex bg-white/5 p-1 rounded-xl gap-1 text-xs font-bold">
                 {(Object.keys(chartMetricMeta) as ChartMetricKey[]).map((key) => (
                   <button
                     key={key}
@@ -725,7 +725,7 @@ Responda de forma objetiva e tática em Markdown com:
               </div>
 
               {/* Janela rápida do gráfico */}
-              <div className="flex bg-white/5 p-1 rounded-xl gap-1 text-[10px] font-bold">
+              <div className="flex bg-white/5 p-1 rounded-xl gap-1 text-xs font-bold">
                 {([7, 14, 30] as const).map((d) => (
                   <button
                     key={d}
@@ -747,26 +747,26 @@ Responda de forma objetiva e tática em Markdown com:
           {/* Barra de Resumo Imediato */}
           <div className="grid grid-cols-3 gap-3">
             <div className="rounded-xl bg-white/[0.02] border border-white/5 px-3 py-2">
-              <span className="text-[9px] uppercase font-bold text-muted-foreground block">
+              <span className="text-[11px] uppercase font-bold text-muted-foreground block">
                 Total ({chartDaysWindow}d)
               </span>
-              <span className="text-sm font-black font-mono text-white">
+              <span className="text-sm font-bold font-mono text-white">
                 {chartView.total.toLocaleString("pt-BR")}
               </span>
             </div>
             <div className="rounded-xl bg-white/[0.02] border border-white/5 px-3 py-2">
-              <span className="text-[9px] uppercase font-bold text-muted-foreground block">
+              <span className="text-[11px] uppercase font-bold text-muted-foreground block">
                 Média Diária
               </span>
-              <span className="text-sm font-black font-mono text-white">
+              <span className="text-sm font-bold font-mono text-white">
                 {chartView.avg.toLocaleString("pt-BR")}/dia
               </span>
             </div>
             <div className="rounded-xl bg-white/[0.02] border border-white/5 px-3 py-2">
-              <span className="text-[9px] uppercase font-bold text-muted-foreground block">
+              <span className="text-[11px] uppercase font-bold text-muted-foreground block">
                 Pico da Janela
               </span>
-              <span className="text-sm font-black font-mono text-emerald-400">
+              <span className="text-sm font-bold font-mono text-emerald-400">
                 {chartView.peak
                   ? `${chartView.peak.value.toLocaleString("pt-BR")} (${chartView.peak.label})`
                   : "—"}
@@ -835,8 +835,8 @@ Responda de forma objetiva e tática em Markdown com:
         {/* Funil de Conversão Social Real */}
         <div className="lg:col-span-4 glass-panel p-5 flex flex-col justify-between">
           <div>
-            <h4 className="text-xs font-black text-white uppercase tracking-wider">Funil de Conversão Social</h4>
-            <p className="text-[9px] text-muted-foreground mt-0.5">
+            <h4 className="text-xs font-bold text-foreground uppercase tracking-wider">Funil de Conversão Social</h4>
+            <p className="text-[11px] text-muted-foreground mt-0.5">
               Fluxo real da exposição até o clique no link da bio.
             </p>
           </div>
@@ -844,7 +844,7 @@ Responda de forma objetiva e tática em Markdown com:
           <div className="space-y-3.5 my-4 flex-1 flex flex-col justify-center">
             {funnelData.map((f, i) => (
               <div key={i} className="space-y-1.5">
-                <div className="flex items-center justify-between text-[10px] font-bold">
+                <div className="flex items-center justify-between text-xs font-bold">
                   <span className="text-muted-foreground flex items-center gap-1.5">
                     <span className="w-2 h-2 rounded-full" style={{ backgroundColor: f.fill }} />
                     {f.step}
@@ -867,7 +867,7 @@ Responda de forma objetiva e tática em Markdown com:
             ))}
           </div>
 
-          <div className="border-t border-white/5 pt-3 text-[10px] text-muted-foreground leading-relaxed">
+          <div className="border-t border-white/5 pt-3 text-xs text-muted-foreground leading-relaxed">
             <span className="text-primary font-bold">Resumo Real:</span>{" "}
             <strong className="text-white">{kpis.profileViews.toLocaleString("pt-BR")}</strong> visitas ao perfil converteram{" "}
             <strong className="text-white">{kpis.websiteClicks.toLocaleString("pt-BR")}</strong> cliques no site (
@@ -882,10 +882,10 @@ Responda de forma objetiva e tática em Markdown com:
         <div className="lg:col-span-8 glass-panel p-5 space-y-4">
           <div className="flex items-center justify-between gap-2 flex-wrap">
             <div>
-              <h4 className="text-xs font-black text-white uppercase tracking-wider">
+              <h4 className="text-xs font-bold text-foreground uppercase tracking-wider">
                 Mapa de Calor: Horários das Publicações Reais
               </h4>
-              <p className="text-[9px] text-muted-foreground mt-0.5">
+              <p className="text-[11px] text-muted-foreground mt-0.5">
                 Calculado exclusivamente sobre os horários e engajamento real das publicações carregadas abaixo.
               </p>
             </div>
@@ -895,7 +895,7 @@ Responda de forma objetiva e tática em Markdown com:
             <>
               <div className="overflow-x-auto">
                 <div className="min-w-[640px] space-y-1 pt-2">
-                  <div className="flex text-[9px] text-muted-foreground font-mono font-bold border-b border-white/5 pb-1">
+                  <div className="flex text-[11px] text-muted-foreground font-mono font-bold border-b border-white/5 pb-1">
                     <span className="w-10 shrink-0" />
                     <div className="flex-1 grid grid-cols-24 text-center">
                       {HOURS.map((h, i) => (
@@ -907,7 +907,7 @@ Responda de forma objetiva e tática em Markdown com:
                   </div>
                   {DAYS_OF_WEEK.map((dayName, dayIdx) => (
                     <div key={dayName} className="flex items-center">
-                      <span className="w-10 text-[10px] font-bold text-muted-foreground shrink-0">{dayName}</span>
+                      <span className="w-10 text-xs font-bold text-muted-foreground shrink-0">{dayName}</span>
                       <div className="flex-1 grid grid-cols-24 gap-1">
                         {heatmapMatrix[dayIdx].map((weight, hourIdx) => (
                           <div
@@ -931,7 +931,7 @@ Responda de forma objetiva e tática em Markdown com:
                   ))}
                 </div>
               </div>
-              <div className="flex items-center gap-3 justify-end text-[9px] text-muted-foreground pt-1.5 font-bold uppercase tracking-wider">
+              <div className="flex items-center gap-3 justify-end text-[11px] text-muted-foreground pt-1.5 font-bold uppercase tracking-wider">
                 <span>Sem Posts</span>
                 <div className="flex gap-0.5">
                   <div className="w-2.5 h-2.5 bg-white/5 rounded-[2px]" />
@@ -952,10 +952,10 @@ Responda de forma objetiva e tática em Markdown com:
         {/* Demográficos Reais (Meta follower_demographics) */}
         <div className="lg:col-span-4 glass-panel p-5 flex flex-col justify-between space-y-4">
           <div>
-            <h4 className="text-xs font-black text-white uppercase tracking-wider">
+            <h4 className="text-xs font-bold text-foreground uppercase tracking-wider">
               Distribuição Real por Gênero &amp; Idade
             </h4>
-            <p className="text-[9px] text-muted-foreground mt-0.5">
+            <p className="text-[11px] text-muted-foreground mt-0.5">
               Dados oficiais do `follower_demographics` no Instagram.
             </p>
           </div>
@@ -978,8 +978,8 @@ Responda de forma objetiva e tática em Markdown com:
                 </ResponsiveContainer>
               </div>
 
-              <div className="border-t border-white/5 pt-3 space-y-2 text-[10px]">
-                <div className="flex justify-between font-bold text-white">
+              <div className="border-t border-white/5 pt-3 space-y-2 text-xs">
+                <div className="flex justify-between font-bold text-foreground">
                   <span className="flex items-center gap-1.5 text-indigo-400">
                     <span className="w-2.5 h-2.5 rounded bg-primary shrink-0" />
                     Homens ({demographics.gender.male}%)
@@ -999,7 +999,7 @@ Responda de forma objetiva e tática em Markdown com:
             <div className="flex-1 rounded-xl border border-dashed border-white/10 flex flex-col items-center justify-center text-center p-4 space-y-1.5">
               <Users className="h-6 w-6 text-muted-foreground/40" />
               <p className="text-xs font-bold text-foreground">Sem demográficos liberados pela Meta</p>
-              <p className="text-[10px] text-muted-foreground leading-relaxed">
+              <p className="text-xs text-muted-foreground leading-relaxed">
                 A Meta API libera gênero e faixa etária apenas para contas do Instagram com pelo menos 100 seguidores ativos nesta janela.
               </p>
             </div>
@@ -1019,14 +1019,14 @@ Responda de forma objetiva e tática em Markdown com:
               <Bot className="h-5 w-5" />
             </div>
             <div>
-              <h4 className="text-xs font-black text-white uppercase tracking-wider">Victoria AI Advisor</h4>
-              <p className="text-[9px] text-muted-foreground mt-0.5">
+              <h4 className="text-xs font-bold text-foreground uppercase tracking-wider">Victoria AI Advisor</h4>
+              <p className="text-[11px] text-muted-foreground mt-0.5">
                 Diagnóstico gerado exclusivamente com as métricas e posts reais da conta selecionada.
               </p>
             </div>
           </div>
 
-          <div className="flex bg-white/5 p-1 rounded-xl gap-1 text-[9px] font-bold">
+          <div className="flex bg-white/5 p-1 rounded-xl gap-1 text-[11px] font-bold">
             <button
               onClick={() => setAiReportTab("general")}
               className={`px-3 py-1.5 rounded-lg transition-colors cursor-pointer ${
@@ -1050,21 +1050,21 @@ Responda de forma objetiva e tática em Markdown com:
           {aiReportTab === "public" ? (
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               <div className="bg-black/20 p-3 rounded-xl border border-white/5">
-                <span className="text-[9px] text-muted-foreground uppercase font-black">Seguidores Atuais</span>
+                <span className="text-[11px] text-muted-foreground uppercase font-bold">Seguidores Atuais</span>
                 <p className="font-bold text-white text-sm mt-0.5 font-mono">{totalFollowersAll.toLocaleString("pt-BR")}</p>
               </div>
               <div className="bg-black/20 p-3 rounded-xl border border-white/5">
-                <span className="text-[9px] text-muted-foreground uppercase font-black">Posts Reais Carregados</span>
+                <span className="text-[11px] text-muted-foreground uppercase font-bold">Posts Reais Carregados</span>
                 <p className="font-bold text-white text-sm mt-0.5 font-mono">{listPosts.length}</p>
               </div>
               <div className="bg-black/20 p-3 rounded-xl border border-white/5">
-                <span className="text-[9px] text-muted-foreground uppercase font-black">Público Masculino / Fem.</span>
+                <span className="text-[11px] text-muted-foreground uppercase font-bold">Público Masculino / Fem.</span>
                 <p className="font-bold text-white text-sm mt-0.5 font-mono">
                   {demographics.available ? `${demographics.gender.male}% / ${demographics.gender.female}%` : "—"}
                 </p>
               </div>
               <div className="bg-black/20 p-3 rounded-xl border border-white/5">
-                <span className="text-[9px] text-muted-foreground uppercase font-black">CTR Link na Bio</span>
+                <span className="text-[11px] text-muted-foreground uppercase font-bold">CTR Link na Bio</span>
                 <p className="font-bold text-emerald-400 text-sm mt-0.5 font-mono">{bioCtr}%</p>
               </div>
             </div>
@@ -1091,23 +1091,23 @@ Responda de forma objetiva e tática em Markdown com:
       </motion.div>
 
       {/* Tabela de Performance de Publicações Reais */}
-      <motion.div initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }} className="glass-panel p-5">
+      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.2 }} className="glass-panel p-5">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-white/5 pb-4 mb-4">
           <div>
-            <h4 className="text-xs font-black text-white uppercase tracking-wider flex items-center gap-2">
+            <h4 className="text-xs font-bold text-foreground uppercase tracking-wider flex items-center gap-2">
               Publicações Reais do Feed &amp; Reels
-              <span className="px-2 py-0.5 rounded-full bg-white/5 text-[10px] font-mono text-muted-foreground">
+              <span className="px-2 py-0.5 rounded-full bg-white/5 text-xs font-mono text-muted-foreground">
                 {listPosts.length} posts
               </span>
             </h4>
-            <p className="text-[9px] text-muted-foreground mt-0.5">
+            <p className="text-[11px] text-muted-foreground mt-0.5">
               Posts reais recuperados diretamente do Instagram &amp; Facebook com métricas oficiais e pré-visualização.
             </p>
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
             {/* Filtro por tipo de post */}
-            <div className="flex bg-white/5 p-1 rounded-xl gap-1 text-[9px] font-bold">
+            <div className="flex bg-white/5 p-1 rounded-xl gap-1 text-[11px] font-bold">
               {(["all", "reels", "image", "carousel"] as const).map((type) => (
                 <button
                   key={type}
@@ -1122,7 +1122,7 @@ Responda de forma objetiva e tática em Markdown com:
             </div>
 
             {/* Ordenador */}
-            <div className="flex bg-white/5 p-1 rounded-xl gap-1 text-[9px] font-bold">
+            <div className="flex bg-white/5 p-1 rounded-xl gap-1 text-[11px] font-bold">
               {(["recent", "reach", "likes", "comments", "engagement"] as const).map((opt) => (
                 <button
                   key={opt}
@@ -1167,7 +1167,7 @@ Responda de forma objetiva e tática em Markdown com:
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs border-collapse">
               <thead>
-                <tr className="border-b border-white/5 text-[9px] font-bold text-muted-foreground uppercase tracking-wider">
+                <tr className="border-b border-white/5 text-[11px] font-bold text-muted-foreground uppercase tracking-wider">
                   <th className="py-3 px-3">Publicação</th>
                   <th className="py-3 px-3">Conta / Canal</th>
                   <th className="py-3 px-3 text-center"><Heart className="w-3.5 h-3.5 inline text-pink-400 mr-1" />Curtidas</th>
@@ -1191,7 +1191,7 @@ Responda de forma objetiva e tática em Markdown com:
                         className="border-b border-white/[0.03] hover:bg-white/[0.02] transition-colors cursor-pointer"
                         onClick={() => setSelectedPostDetail(isExpanded ? null : post.id)}
                       >
-                        <td className="py-3 px-3 font-semibold text-white">
+                        <td className="py-3 px-3 font-semibold text-foreground">
                           <div className="flex items-center gap-3">
                             {thumbUrl ? (
                               <img
@@ -1213,7 +1213,7 @@ Responda de forma objetiva e tática em Markdown com:
                             )}
                             <div className="min-w-0">
                               <span className="truncate max-w-[260px] block text-xs font-bold">{post.title}</span>
-                              <span className="text-[10px] text-muted-foreground font-mono">
+                              <span className="text-xs text-muted-foreground font-mono">
                                 {post.published_at ? format(parseISO(post.published_at), "dd/MM/yyyy HH:mm") : "—"}
                               </span>
                             </div>
@@ -1222,15 +1222,15 @@ Responda de forma objetiva e tática em Markdown com:
                         <td className="py-3 px-3">
                           <div className="flex flex-col gap-1">
                             {post.platform === "facebook" ? (
-                              <span className="inline-flex items-center gap-1 w-fit text-[9px] font-bold text-blue-400 bg-blue-500/10 border border-blue-500/20 px-2 py-0.5 rounded-full">
+                              <span className="inline-flex items-center gap-1 w-fit text-[11px] font-bold text-blue-400 bg-blue-500/10 border border-blue-500/20 px-2 py-0.5 rounded-full">
                                 <Facebook className="w-2.5 h-2.5" /> Facebook
                               </span>
                             ) : (
-                              <span className="inline-flex items-center gap-1 w-fit text-[9px] font-bold text-pink-400 bg-pink-500/10 border border-pink-500/20 px-2 py-0.5 rounded-full">
+                              <span className="inline-flex items-center gap-1 w-fit text-[11px] font-bold text-pink-400 bg-pink-500/10 border border-pink-500/20 px-2 py-0.5 rounded-full">
                                 <Instagram className="w-2.5 h-2.5" /> Instagram
                               </span>
                             )}
-                            <span className="text-[10px] text-muted-foreground font-mono truncate max-w-[140px]">
+                            <span className="text-xs text-muted-foreground font-mono truncate max-w-[140px]">
                               {post.accountHandle}
                             </span>
                           </div>
@@ -1253,7 +1253,7 @@ Responda de forma objetiva e tática em Markdown com:
                         <td className="py-3 px-3 text-center">
                           {post.reach_count > 0 ? (
                             <span
-                              className={`px-2 py-0.5 rounded-full text-[10px] font-bold font-mono ${
+                              className={`px-2 py-0.5 rounded-full text-xs font-bold font-mono ${
                                 Number(engRate) >= 6
                                   ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
                                   : Number(engRate) >= 3
@@ -1264,7 +1264,7 @@ Responda de forma objetiva e tática em Markdown com:
                               {engRate}%
                             </span>
                           ) : (
-                            <span className="text-[10px] text-muted-foreground/60">—</span>
+                            <span className="text-xs text-muted-foreground/60">—</span>
                           )}
                         </td>
                         <td className="py-3 px-3 text-right">
@@ -1291,7 +1291,7 @@ Responda de forma objetiva e tática em Markdown com:
                                   {/* Coluna 1: Prévia Real do Criativo */}
                                   <div className="lg:col-span-4 flex flex-col items-center">
                                     <div className="w-full flex justify-between items-center mb-2 px-1">
-                                      <span className="text-[9px] text-muted-foreground uppercase font-black tracking-wider flex items-center gap-1.5">
+                                      <span className="text-[11px] text-muted-foreground uppercase font-bold tracking-wider flex items-center gap-1.5">
                                         <ImageIcon className="w-3 h-3 text-primary" /> Prévia Real do Criativo
                                       </span>
 
@@ -1300,7 +1300,7 @@ Responda de forma objetiva e tática em Markdown com:
                                           e.stopPropagation();
                                           setMediaFit((prev) => (prev === "cover" ? "contain" : "cover"));
                                         }}
-                                        className="text-[9px] font-bold text-primary hover:text-white px-2 py-0.5 rounded bg-primary/10 border border-primary/20 cursor-pointer"
+                                        className="text-[11px] font-bold text-primary hover:text-white px-2 py-0.5 rounded bg-primary/10 border border-primary/20 cursor-pointer"
                                       >
                                         {mediaFit === "cover" ? "Ajustar Mídia" : "Preencher Tela"}
                                       </button>
@@ -1310,11 +1310,11 @@ Responda de forma objetiva e tática em Markdown com:
                                       {/* Header Real da Conta */}
                                       <div className="flex items-center justify-between p-2.5 bg-neutral-900 border-b border-white/5 z-10 shrink-0">
                                         <div className="flex items-center gap-2 min-w-0">
-                                          <div className="w-5 h-5 rounded-full bg-primary/20 flex items-center justify-center text-[9px] font-bold text-primary shrink-0 uppercase">
+                                          <div className="w-5 h-5 rounded-full bg-primary/20 flex items-center justify-center text-[11px] font-bold text-primary shrink-0 uppercase">
                                             {post.accountHandle.replace("@", "").slice(0, 2)}
                                           </div>
                                           <div className="flex flex-col min-w-0">
-                                            <span className="text-[10px] font-bold text-white leading-tight truncate">
+                                            <span className="text-xs font-bold text-white leading-tight truncate">
                                               {post.accountHandle}
                                             </span>
                                             <span className="text-[8px] text-muted-foreground leading-none truncate">
@@ -1335,7 +1335,7 @@ Responda de forma objetiva e tática em Markdown com:
                                       </div>
 
                                       {/* Rodapé com Métricas Reais + Link Real */}
-                                      <div className="p-2.5 bg-neutral-900 border-t border-white/5 flex items-center justify-between text-[10px] shrink-0 z-10">
+                                      <div className="p-2.5 bg-neutral-900 border-t border-white/5 flex items-center justify-between text-xs shrink-0 z-10">
                                         <div className="flex items-center gap-3 text-muted-foreground font-mono">
                                           <span className="flex items-center gap-1">
                                             <Heart className="w-3.5 h-3.5 text-pink-400" /> {post.likes_count}
@@ -1351,7 +1351,7 @@ Responda de forma objetiva e tática em Markdown com:
                                             target="_blank"
                                             rel="noopener noreferrer"
                                             onClick={(e) => e.stopPropagation()}
-                                            className="flex items-center gap-1 text-[9px] font-bold text-primary hover:bg-primary/20 border border-primary/20 px-2 py-0.5 rounded-lg transition-all cursor-pointer"
+                                            className="flex items-center gap-1 text-[11px] font-bold text-primary hover:bg-primary/20 border border-primary/20 px-2 py-0.5 rounded-lg transition-all cursor-pointer"
                                           >
                                             Ver Post <ExternalLink className="w-2.5 h-2.5" />
                                           </a>
@@ -1362,16 +1362,16 @@ Responda de forma objetiva e tática em Markdown com:
 
                                   {/* Coluna 2: Legenda Real */}
                                   <div className="lg:col-span-4 flex flex-col">
-                                    <span className="text-[9px] text-muted-foreground uppercase font-black tracking-wider mb-2 flex items-center gap-1.5">
+                                    <span className="text-[11px] text-muted-foreground uppercase font-bold tracking-wider mb-2 flex items-center gap-1.5">
                                       <Layers className="w-3 h-3 text-amber-400" /> Legenda Oficial
                                     </span>
                                     <div className="flex-1 bg-white/[0.01] border border-white/5 rounded-2xl p-4 flex flex-col justify-between h-[420px]">
                                       <div className="overflow-y-auto text-[11px] leading-relaxed text-slate-200 pr-1 max-h-[340px] whitespace-pre-line font-medium custom-scrollbar">
                                         {post.content || "Publicação sem legenda textual."}
                                       </div>
-                                      <div className="border-t border-white/5 pt-2.5 flex items-center justify-between text-[9px] text-muted-foreground mt-2">
+                                      <div className="border-t border-white/5 pt-2.5 flex items-center justify-between text-[11px] text-muted-foreground mt-2">
                                         <span>Data da Publicação:</span>
-                                        <strong className="text-white font-mono">
+                                        <strong className="text-foreground font-mono">
                                           {post.published_at ? format(parseISO(post.published_at), "dd/MM/yyyy HH:mm") : "—"}
                                         </strong>
                                       </div>
@@ -1380,7 +1380,7 @@ Responda de forma objetiva e tática em Markdown com:
 
                                   {/* Coluna 3: Leitura de Performance Real */}
                                   <div className="lg:col-span-4 flex flex-col">
-                                    <span className="text-[9px] text-muted-foreground uppercase font-black tracking-wider mb-2 flex items-center gap-1.5">
+                                    <span className="text-[11px] text-muted-foreground uppercase font-bold tracking-wider mb-2 flex items-center gap-1.5">
                                       <Bot className="w-3 h-3 text-primary" /> Análise de Performance Real
                                     </span>
 
@@ -1389,32 +1389,32 @@ Responda de forma objetiva e tática em Markdown com:
                                         <div className="grid grid-cols-2 gap-2">
                                           <div className="rounded-xl bg-black/30 p-2.5 border border-white/5">
                                             <span className="text-[8px] uppercase text-muted-foreground block">Alcance Real</span>
-                                            <span className="text-sm font-black font-mono text-white">
+                                            <span className="text-sm font-bold font-mono text-white">
                                               {post.reach_count > 0 ? post.reach_count.toLocaleString("pt-BR") : "—"}
                                             </span>
                                           </div>
                                           <div className="rounded-xl bg-black/30 p-2.5 border border-white/5">
                                             <span className="text-[8px] uppercase text-muted-foreground block">Visualizações</span>
-                                            <span className="text-sm font-black font-mono text-white">
+                                            <span className="text-sm font-bold font-mono text-white">
                                               {post.views_count > 0 ? post.views_count.toLocaleString("pt-BR") : "—"}
                                             </span>
                                           </div>
                                           <div className="rounded-xl bg-black/30 p-2.5 border border-white/5">
                                             <span className="text-[8px] uppercase text-muted-foreground block">Salvos</span>
-                                            <span className="text-sm font-black font-mono text-cyan-400">
+                                            <span className="text-sm font-bold font-mono text-cyan-400">
                                               {post.saved_count.toLocaleString("pt-BR")}
                                             </span>
                                           </div>
                                           <div className="rounded-xl bg-black/30 p-2.5 border border-white/5">
                                             <span className="text-[8px] uppercase text-muted-foreground block">Compartilhamentos</span>
-                                            <span className="text-sm font-black font-mono text-emerald-400">
+                                            <span className="text-sm font-bold font-mono text-emerald-400">
                                               {post.shares_count.toLocaleString("pt-BR")}
                                             </span>
                                           </div>
                                         </div>
 
                                         <div className="space-y-1">
-                                          <p className="text-[10px] text-muted-foreground uppercase font-black">
+                                          <p className="text-xs text-muted-foreground uppercase font-bold">
                                             Recomendação Estratégica
                                           </p>
                                           <p className="text-[11px] leading-relaxed text-white/90 font-semibold">
@@ -1424,16 +1424,16 @@ Responda de forma objetiva e tática em Markdown com:
                                       </div>
 
                                       <div className="space-y-2.5 pt-3 border-t border-white/5 mt-4">
-                                        <div className="flex justify-between items-center text-[10px]">
-                                          <span className="text-muted-foreground uppercase font-black">Classificação</span>
-                                          <span className="px-2 py-0.5 rounded bg-primary/10 border border-primary/20 text-primary font-black uppercase tracking-wider text-[9px]">
+                                        <div className="flex justify-between items-center text-xs">
+                                          <span className="text-muted-foreground uppercase font-bold">Classificação</span>
+                                          <span className="px-2 py-0.5 rounded bg-primary/10 border border-primary/20 text-primary font-bold uppercase tracking-wider text-[11px]">
                                             {post.ai_sentiment}
                                           </span>
                                         </div>
 
                                         {post.reach_count > 0 && (
                                           <div className="space-y-1">
-                                            <div className="flex justify-between text-[9px] text-muted-foreground font-black uppercase">
+                                            <div className="flex justify-between text-[11px] text-muted-foreground font-bold uppercase">
                                               <span>Taxa de Engajamento Real</span>
                                               <span className="text-white font-mono">{engRate}%</span>
                                             </div>

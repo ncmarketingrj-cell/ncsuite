@@ -1445,10 +1445,10 @@ function Shell() {
             <div
               className={
                 isFullScreenApp
-                  ? "flex flex-1 flex-col w-full max-w-full overflow-x-hidden"
+                  ? "flex flex-1 flex-col w-full max-w-full overflow-x-clip"
                   : isVictoriaPage
-                  ? "mx-auto w-full max-w-full px-0 py-0 pb-16 lg:pb-8 sm:p-0 md:p-6 lg:p-8 overflow-x-hidden"
-                  : "mx-auto w-full max-w-full px-2.5 py-3 pb-24 sm:p-4 md:pb-8 md:p-6 lg:p-8 overflow-x-hidden"
+                  ? "mx-auto w-full max-w-full px-0 py-0 pb-16 lg:pb-8 sm:p-0 md:p-6 lg:p-8 overflow-x-clip"
+                  : "mx-auto w-full max-w-full px-2.5 py-3 pb-24 sm:p-4 md:pb-8 md:p-6 lg:p-8 overflow-x-clip"
               }
             >
               <Outlet />

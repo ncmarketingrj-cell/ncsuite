@@ -397,9 +397,9 @@ export default function SocialMediaPage() {
               <Share2 className="h-5 w-5" />
             </div>
             <div>
-              <h1 className="text-xl sm:text-2xl font-black tracking-tight text-foreground flex items-center gap-2">
+              <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-foreground flex items-center gap-2">
                 Planejador & Feed
-                <span className="text-[10px] font-black uppercase tracking-widest bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2 py-0.5 rounded-full">
+                <span className="text-[10px] font-bold uppercase tracking-widest bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2 py-0.5 rounded-full">
                   Meta API v21.0 Real
                 </span>
               </h1>
@@ -470,10 +470,10 @@ export default function SocialMediaPage() {
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
         <div className="glass-panel p-4 rounded-2xl border border-border/60 bg-card/60 backdrop-blur-md">
           <div className="flex items-center justify-between text-muted-foreground mb-1.5">
-            <span className="text-[10px] font-black uppercase tracking-wider">Agendados (Meta + Fila)</span>
+            <span className="text-[10px] font-bold uppercase tracking-wider">Agendados (Meta + Fila)</span>
             <Clock className="h-4 w-4 text-cyan-400" />
           </div>
-          <div className="text-xl sm:text-2xl font-black font-mono text-foreground">
+          <div className="text-xl sm:text-2xl font-bold font-mono text-foreground">
             {isLoadingPlanner ? "..." : stats.scheduledCount}
           </div>
           <p className="text-[10px] text-muted-foreground mt-0.5">
@@ -483,10 +483,10 @@ export default function SocialMediaPage() {
 
         <div className="glass-panel p-4 rounded-2xl border border-border/60 bg-card/60 backdrop-blur-md">
           <div className="flex items-center justify-between text-muted-foreground mb-1.5">
-            <span className="text-[10px] font-black uppercase tracking-wider">Publicados Carregados</span>
+            <span className="text-[10px] font-bold uppercase tracking-wider">Publicados Carregados</span>
             <CheckCircle2 className="h-4 w-4 text-emerald-400" />
           </div>
-          <div className="text-xl sm:text-2xl font-black font-mono text-foreground">
+          <div className="text-xl sm:text-2xl font-bold font-mono text-foreground">
             {isLoadingPlanner ? "..." : stats.publishedCount}
           </div>
           <p className="text-[10px] text-emerald-500 font-semibold mt-0.5">
@@ -496,10 +496,10 @@ export default function SocialMediaPage() {
 
         <div className="glass-panel p-4 rounded-2xl border border-border/60 bg-card/60 backdrop-blur-md">
           <div className="flex items-center justify-between text-muted-foreground mb-1.5">
-            <span className="text-[10px] font-black uppercase tracking-wider">Taxa Real de Engaj.</span>
+            <span className="text-[10px] font-bold uppercase tracking-wider">Taxa Real de Engaj.</span>
             <Flame className="h-4 w-4 text-amber-400" />
           </div>
-          <div className="text-xl sm:text-2xl font-black font-mono text-foreground">
+          <div className="text-xl sm:text-2xl font-bold font-mono text-foreground">
             {isLoadingPlanner ? "..." : `${stats.avgEngRate}%`}
           </div>
           <p className="text-[10px] text-muted-foreground mt-0.5">
@@ -509,10 +509,10 @@ export default function SocialMediaPage() {
 
         <div className="glass-panel p-4 rounded-2xl border border-border/60 bg-card/60 backdrop-blur-md">
           <div className="flex items-center justify-between text-muted-foreground mb-1.5">
-            <span className="text-[10px] font-black uppercase tracking-wider">Alcance nas Amostras IG</span>
+            <span className="text-[10px] font-bold uppercase tracking-wider">Alcance nas Amostras IG</span>
             <Eye className="h-4 w-4 text-primary" />
           </div>
-          <div className="text-xl sm:text-2xl font-black font-mono text-foreground">
+          <div className="text-xl sm:text-2xl font-bold font-mono text-foreground">
             {isLoadingPlanner ? "..." : stats.totalReach.toLocaleString("pt-BR")}
           </div>
           <p className="text-[10px] text-muted-foreground mt-0.5">
@@ -735,7 +735,7 @@ export default function SocialMediaPage() {
           <div className="w-full max-w-lg rounded-3xl border border-border/80 bg-card p-5 sm:p-6 shadow-2xl space-y-4 max-h-[85vh] flex flex-col">
             <div className="flex items-center justify-between border-b border-border/60 pb-3">
               <div>
-                <h3 className="text-sm font-black uppercase tracking-wider text-foreground">
+                <h3 className="text-sm font-bold uppercase tracking-wider text-foreground">
                   {format(dayModalDate, "EEEE, dd 'de' MMMM 'de' yyyy", { locale: ptBR })}
                 </h3>
                 <p className="text-[11px] text-muted-foreground">
@@ -786,11 +786,11 @@ export default function SocialMediaPage() {
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-1.5 flex-wrap">
-                          <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-full ${statusColor.badge}`}>
+                          <span className={`text-[11px] font-bold uppercase px-2 py-0.5 rounded-full ${statusColor.badge}`}>
                             {getStatusLabel(p.status)}
                           </span>
                           <span className="text-[10px] font-mono text-muted-foreground">{timeStr}</span>
-                          <span className="text-[9px] font-bold uppercase text-primary">
+                          <span className="text-[11px] font-bold uppercase text-primary">
                             {p.platform === "instagram" ? "IG" : p.platform === "facebook" ? "FB" : "IG+FB"} • {p.post_type}
                           </span>
                           {p.account_handle && (
@@ -924,12 +924,12 @@ function EditorialCalendarView({
       {/* Controles de Mês e Legenda */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
         <div className="flex items-center gap-3">
-          <h2 className="text-base sm:text-lg font-black uppercase tracking-wider text-foreground">
+          <h2 className="text-base sm:text-lg font-bold uppercase tracking-wider text-foreground">
             {format(currentDate, "MMMM 'de' yyyy", { locale: ptBR })}
           </h2>
           <button
             onClick={() => onDateChange(new Date())}
-            className="text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded-lg bg-primary/10 text-primary hover:bg-primary/20 transition cursor-pointer"
+            className="text-[10px] font-bold uppercase tracking-widest px-2.5 py-1 rounded-lg bg-primary/10 text-primary hover:bg-primary/20 transition cursor-pointer"
           >
             Hoje
           </button>
@@ -985,7 +985,7 @@ function EditorialCalendarView({
       {/* Grid de Dias da Semana */}
       <div className="grid grid-cols-7 gap-2">
         {weekDayNames.map((d, i) => (
-          <div key={i} className="text-center text-[10px] font-black text-muted-foreground py-1 tracking-widest">
+          <div key={i} className="text-center text-[10px] font-bold text-muted-foreground py-1 tracking-widest">
             {d}
           </div>
         ))}
@@ -1013,7 +1013,7 @@ function EditorialCalendarView({
               <div className="flex items-center justify-between">
                 <button
                   onClick={() => dayPosts.length > 0 && onOpenDay(day)}
-                  className={`text-xs font-black font-mono h-6 w-6 rounded-lg flex items-center justify-center ${
+                  className={`text-xs font-bold font-mono h-6 w-6 rounded-lg flex items-center justify-center ${
                     isCurrentDay
                       ? "bg-primary text-primary-foreground shadow-sm"
                       : "text-foreground"
@@ -1046,7 +1046,7 @@ function EditorialCalendarView({
                       className="p-1.5 rounded-lg border border-border/80 bg-background/80 hover:border-primary/50 hover:bg-card transition-all cursor-pointer text-left shadow-xs flex items-center gap-1.5 min-w-0"
                     >
                       <div className={`h-2 w-2 rounded-full shrink-0 ${statusColor.dot}`} />
-                      <span className="text-[9px] font-mono text-muted-foreground shrink-0">{timeStr}</span>
+                      <span className="text-[11px] font-mono text-muted-foreground shrink-0">{timeStr}</span>
                       <span className="text-[10px] text-muted-foreground shrink-0">{typeIcon}</span>
                       <p className="text-[10px] font-bold text-foreground truncate min-w-0">
                         {post.title || post.content.slice(0, 24)}
@@ -1058,7 +1058,7 @@ function EditorialCalendarView({
                 {dayPosts.length > 3 && (
                   <button
                     onClick={() => onOpenDay(day)}
-                    className="w-full text-[9px] font-bold text-primary text-center py-0.5 cursor-pointer hover:underline"
+                    className="w-full text-[11px] font-bold text-primary text-center py-0.5 cursor-pointer hover:underline"
                   >
                     +{dayPosts.length - 3} mais nesta data
                   </button>
@@ -1112,11 +1112,11 @@ function KanbanPipelineView({
                 <span className={`p-1.5 rounded-lg border ${col.color}`}>
                   <col.icon className="h-3.5 w-3.5" />
                 </span>
-                <span className="text-xs font-black uppercase tracking-wider text-foreground">
+                <span className="text-xs font-bold uppercase tracking-wider text-foreground">
                   {col.label}
                 </span>
               </div>
-              <span className="text-xs font-mono font-black px-2 py-0.5 rounded-full bg-muted text-muted-foreground">
+              <span className="text-xs font-mono font-bold px-2 py-0.5 rounded-full bg-muted text-muted-foreground">
                 {colPosts.length}
               </span>
             </div>
@@ -1135,11 +1135,11 @@ function KanbanPipelineView({
                         postType={post.post_type}
                         className="h-full w-full object-cover group-hover:scale-105 transition-transform duration-300"
                       />
-                      <div className="absolute top-2 left-2 flex items-center gap-1 bg-black/75 backdrop-blur-md px-2 py-0.5 rounded text-[9px] font-bold text-white uppercase">
+                      <div className="absolute top-2 left-2 flex items-center gap-1 bg-black/75 backdrop-blur-md px-2 py-0.5 rounded text-[11px] font-bold text-white uppercase">
                         {getTypeIcon(post.post_type)}
                         <span>{post.post_type}</span>
                       </div>
-                      <div className="absolute top-2 right-2 flex items-center gap-1 bg-black/75 backdrop-blur-md px-2 py-0.5 rounded text-[9px] font-bold text-white uppercase">
+                      <div className="absolute top-2 right-2 flex items-center gap-1 bg-black/75 backdrop-blur-md px-2 py-0.5 rounded text-[11px] font-bold text-white uppercase">
                         {post.platform === "instagram" ? "IG" : post.platform === "facebook" ? "FB" : "IG + FB"}
                       </div>
                     </div>
@@ -1147,10 +1147,10 @@ function KanbanPipelineView({
 
                   <div>
                     <div className="flex items-center justify-between gap-1 mb-0.5">
-                      <span className="text-[9px] font-bold text-primary truncate">
+                      <span className="text-[11px] font-bold text-primary truncate">
                         {post.account_handle ? `@${post.account_handle.replace(/^@/, "")}` : post.account_name || "Conta Social"}
                       </span>
-                      <span className="text-[8px] font-black uppercase px-1.5 py-0.5 rounded bg-muted text-muted-foreground shrink-0">
+                      <span className="text-[8px] font-bold uppercase px-1.5 py-0.5 rounded bg-muted text-muted-foreground shrink-0">
                         {post.source === "meta_live" ? "Meta Live" : "Planejador"}
                       </span>
                     </div>
@@ -1315,7 +1315,7 @@ function InstagramFeedSimulatorView({
         <div className="flex-1 text-center sm:text-left space-y-3">
           <div className="flex flex-col sm:flex-row sm:items-center gap-3 justify-between">
             <div className="flex items-center gap-2 justify-center sm:justify-start">
-              <h3 className="text-base sm:text-lg font-black text-foreground">@{handle}</h3>
+              <h3 className="text-base sm:text-lg font-bold text-foreground">@{handle}</h3>
             </div>
 
             <button
@@ -1367,7 +1367,7 @@ function InstagramFeedSimulatorView({
       </div>
 
       <div className="space-y-4">
-        <div className="flex items-center justify-between text-xs font-black uppercase tracking-wider text-muted-foreground border-b border-border/40 pb-2">
+        <div className="flex items-center justify-between text-xs font-bold uppercase tracking-wider text-muted-foreground border-b border-border/40 pb-2">
           <span>Grade Real do Feed (Agendados + Publicados)</span>
           <span className="text-primary font-mono">{feedPosts.length} itens carregados</span>
         </div>
@@ -1392,7 +1392,7 @@ function InstagramFeedSimulatorView({
               </div>
 
               {post.status === "scheduled" && (
-                <div className="absolute top-2 left-2 bg-cyan-500/90 text-white text-[8px] font-black uppercase px-1.5 py-0.5 rounded shadow">
+                <div className="absolute top-2 left-2 bg-cyan-500/90 text-white text-[8px] font-bold uppercase px-1.5 py-0.5 rounded shadow">
                   Agendado
                 </div>
               )}
@@ -1437,7 +1437,7 @@ function BestPostingTimesHeatmapView({ matrix, hasData, topSlots, onScheduleAtSl
     <div className="glass-panel p-6 sm:p-8 rounded-3xl border border-border/80 bg-card space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-border/60 pb-4">
         <div>
-          <h3 className="text-base font-black uppercase tracking-wider text-foreground flex items-center gap-2">
+          <h3 className="text-base font-bold uppercase tracking-wider text-foreground flex items-center gap-2">
             <Clock className="h-4 w-4 text-primary" />
             Mapa de Calor Real: Horários de Maior Engajamento
           </h3>
@@ -1466,7 +1466,7 @@ function BestPostingTimesHeatmapView({ matrix, hasData, topSlots, onScheduleAtSl
         <>
           <div className="overflow-x-auto custom-scrollbar pb-2">
             <div className="min-w-[700px]">
-              <div className="grid grid-cols-[80px_repeat(24,1fr)] gap-1 mb-1.5 text-center text-[9px] font-mono text-muted-foreground">
+              <div className="grid grid-cols-[80px_repeat(24,1fr)] gap-1 mb-1.5 text-center text-[11px] font-mono text-muted-foreground">
                 <div></div>
                 {hours.map((h) => (
                   <div key={h}>{h}h</div>
@@ -1491,7 +1491,7 @@ function BestPostingTimesHeatmapView({ matrix, hasData, topSlots, onScheduleAtSl
                           }
                           className={`h-7 rounded transition-all cursor-pointer hover:scale-110 hover:ring-2 hover:ring-primary flex items-center justify-center ${
                             pct >= 80
-                              ? "bg-primary text-primary-foreground font-black text-[9px]"
+                              ? "bg-primary text-primary-foreground font-bold text-[11px]"
                               : pct >= 55
                               ? "bg-primary/60"
                               : pct > 0
@@ -1521,7 +1521,7 @@ function BestPostingTimesHeatmapView({ matrix, hasData, topSlots, onScheduleAtSl
                       : "border-border/80 bg-card hover:bg-muted"
                   }`}
                 >
-                  <div className="flex items-center justify-between text-xs font-black uppercase">
+                  <div className="flex items-center justify-between text-xs font-bold uppercase">
                     <span className={i === 0 ? "text-primary" : "text-foreground"}>
                       #{i + 1} Melhor Janela ({slot.dayName})
                     </span>
@@ -1562,7 +1562,7 @@ function PerformanceLeaderboardView({ posts, onSelectPost }: PerformanceViewProp
       <div className="glass-panel p-6 rounded-3xl border border-border/80 bg-card">
         <div className="flex items-center justify-between mb-5">
           <div>
-            <h3 className="text-base font-black uppercase tracking-wider text-foreground flex items-center gap-2">
+            <h3 className="text-base font-bold uppercase tracking-wider text-foreground flex items-center gap-2">
               <Award className="h-4 w-4 text-amber-400" />
               Ranking Real de Publicações
             </h3>
@@ -1575,7 +1575,7 @@ function PerformanceLeaderboardView({ posts, onSelectPost }: PerformanceViewProp
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs border-collapse">
             <thead>
-              <tr className="border-b border-border/60 text-[10px] font-black uppercase tracking-wider text-muted-foreground">
+              <tr className="border-b border-border/60 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
                 <th className="py-3 px-3">Posição & Post</th>
                 <th className="py-3 px-3">Formato</th>
                 <th className="py-3 px-3">Plataforma</th>
@@ -1603,7 +1603,7 @@ function PerformanceLeaderboardView({ posts, onSelectPost }: PerformanceViewProp
                     <tr key={post.id} className="hover:bg-muted/40 transition">
                       <td className="py-3 px-3">
                         <div className="flex items-center gap-3">
-                          <span className="font-mono font-black text-xs text-muted-foreground w-5">
+                          <span className="font-mono font-bold text-xs text-muted-foreground w-5">
                             #{idx + 1}
                           </span>
                           <div className="h-10 w-10 rounded-lg overflow-hidden shrink-0 bg-muted">
@@ -1623,7 +1623,7 @@ function PerformanceLeaderboardView({ posts, onSelectPost }: PerformanceViewProp
                         </div>
                       </td>
                       <td className="py-3 px-3">
-                        <span className="inline-flex items-center gap-1 uppercase font-bold text-[9px] px-2 py-0.5 rounded bg-muted">
+                        <span className="inline-flex items-center gap-1 uppercase font-bold text-[11px] px-2 py-0.5 rounded bg-muted">
                           {getTypeIcon(post.post_type)}
                           {post.post_type}
                         </span>
@@ -1641,7 +1641,7 @@ function PerformanceLeaderboardView({ posts, onSelectPost }: PerformanceViewProp
                         {post.comments_count.toLocaleString("pt-BR")}
                       </td>
                       <td className="py-3 px-3">
-                        <span className="font-mono font-black text-xs text-emerald-500">
+                        <span className="font-mono font-bold text-xs text-emerald-500">
                           {engRate === "—" ? "—" : `${engRate}%`}
                         </span>
                       </td>
@@ -1876,7 +1876,7 @@ function CreatePostModal({
               <Sparkles className="h-5 w-5" />
             </div>
             <div>
-              <h3 className="text-base sm:text-lg font-black uppercase tracking-wider text-foreground">
+              <h3 className="text-base sm:text-lg font-bold uppercase tracking-wider text-foreground">
                 {initialPost?.id ? "Editar Publicação" : "Novo Post & Agendamento Real"}
               </h3>
               <p className="text-xs text-muted-foreground">
@@ -1897,7 +1897,7 @@ function CreatePostModal({
           <div className="lg:col-span-7 space-y-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
-                <label className="text-[10px] font-black uppercase tracking-wider text-muted-foreground block mb-1">
+                <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground block mb-1">
                   Conta de Destino
                 </label>
                 <select
@@ -1915,7 +1915,7 @@ function CreatePostModal({
               </div>
 
               <div>
-                <label className="text-[10px] font-black uppercase tracking-wider text-muted-foreground block mb-1">
+                <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground block mb-1">
                   Canal de Veiculação
                 </label>
                 <select
@@ -1932,7 +1932,7 @@ function CreatePostModal({
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
-                <label className="text-[10px] font-black uppercase tracking-wider text-muted-foreground block mb-1">
+                <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground block mb-1">
                   Formato da Publicação
                 </label>
                 <div className="grid grid-cols-3 gap-1.5 bg-background p-1 rounded-xl border border-border/80">
@@ -1981,7 +1981,7 @@ function CreatePostModal({
               </div>
 
               <div>
-                <label className="text-[10px] font-black uppercase tracking-wider text-muted-foreground block mb-1">
+                <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground block mb-1">
                   Mídia (Imagem ou Vídeo)
                 </label>
                 <div className="flex gap-2">
@@ -2014,7 +2014,7 @@ function CreatePostModal({
 
             <div className="p-3.5 rounded-2xl bg-muted/30 border border-border/80 space-y-2.5">
               <div className="flex items-center justify-between text-xs">
-                <span className="font-black uppercase tracking-wider text-primary flex items-center gap-1.5">
+                <span className="font-bold uppercase tracking-wider text-primary flex items-center gap-1.5">
                   <Sparkles className="h-3.5 w-3.5" />
                   Gerador de Legenda (Victoria AI)
                 </span>
@@ -2051,7 +2051,7 @@ function CreatePostModal({
             </div>
 
             <div>
-              <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-wider text-muted-foreground mb-1">
+              <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-1">
                 <span>Texto da Legenda & Hashtags</span>
                 <span className="font-mono">{content.length} / 2.200 caracteres</span>
               </div>
@@ -2080,7 +2080,7 @@ function CreatePostModal({
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
               <div>
-                <label className="text-[10px] font-black uppercase tracking-wider text-muted-foreground block mb-1">
+                <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground block mb-1">
                   Agendar para (Data e Hora)
                 </label>
                 <input
@@ -2092,7 +2092,7 @@ function CreatePostModal({
               </div>
 
               <div>
-                <label className="text-[10px] font-black uppercase tracking-wider text-muted-foreground block mb-1">
+                <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground block mb-1">
                   Título Interno (Opcional)
                 </label>
                 <input
@@ -2179,7 +2179,7 @@ function CreatePostModal({
                     <p className="text-[11px] font-bold text-white">
                       {selectedAccount?.instagram_handle || selectedAccount?.page_name || "conta"}
                     </p>
-                    <p className="text-[9px] text-zinc-400">
+                    <p className="text-[11px] text-zinc-400">
                       {previewDeviceMode === "facebook" ? "Página Facebook" : "Publicação Orgânica"}
                     </p>
                   </div>
@@ -2248,7 +2248,7 @@ function DeviceMockupModal({
         <div className="flex items-center justify-between border-b border-border/60 pb-3">
           <div className="flex items-center gap-2">
             <Smartphone className="h-4 w-4 text-primary" />
-            <h3 className="text-sm font-black uppercase tracking-wider text-foreground">
+            <h3 className="text-sm font-bold uppercase tracking-wider text-foreground">
               Detalhes da Publicação
             </h3>
           </div>
@@ -2278,7 +2278,7 @@ function DeviceMockupModal({
               </div>
             </div>
 
-            <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-full shrink-0 ${getStatusColor(post.status).badge}`}>
+            <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full shrink-0 ${getStatusColor(post.status).badge}`}>
               {getStatusLabel(post.status)}
             </span>
           </div>
@@ -2296,19 +2296,19 @@ function DeviceMockupModal({
           {post.status === "published" && (
             <div className="grid grid-cols-4 gap-2 text-center text-[11px] font-mono pt-2 border-t border-border/40 text-muted-foreground">
               <div>
-                <span className="block text-[9px]">Curtidas</span>
+                <span className="block text-[11px]">Curtidas</span>
                 <span className="font-bold text-foreground">{post.likes_count.toLocaleString("pt-BR")}</span>
               </div>
               <div>
-                <span className="block text-[9px]">Coment.</span>
+                <span className="block text-[11px]">Coment.</span>
                 <span className="font-bold text-foreground">{post.comments_count.toLocaleString("pt-BR")}</span>
               </div>
               <div>
-                <span className="block text-[9px]">Alcance</span>
+                <span className="block text-[11px]">Alcance</span>
                 <span className="font-bold text-foreground">{post.reach_count.toLocaleString("pt-BR")}</span>
               </div>
               <div>
-                <span className="block text-[9px]">Shares/Salvos</span>
+                <span className="block text-[11px]">Shares/Salvos</span>
                 <span className="font-bold text-foreground">
                   {((post.shares_count || 0) + (post.saves_count || 0)).toLocaleString("pt-BR")}
                 </span>
