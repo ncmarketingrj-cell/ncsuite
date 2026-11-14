@@ -72,6 +72,7 @@ export interface ContextItem {
     freq: number;
     cpm: number;
     cpc: number;
+    cpcAll?: number;
     clicks?: number;
     linkClicks?: number;
     allClicks?: number;
@@ -146,6 +147,10 @@ export const VictoriaFloatingChat: React.FC<VictoriaFloatingChatProps> = ({
   >([]);
 
   const sessionCtrlRef = useRef<VictoriaSessionController>(new VictoriaSessionController());
+  const conversationContextHashRef = useRef<string | null>(null);
+  const [responseOrigin, setResponseOrigin] = useState<"generative" | "deterministic_fallback" | null>(null);
+  const [fallbackReason, setFallbackReason] = useState<string | null>(null);
+  const [responseLatencyMs, setResponseLatencyMs] = useState<number | null>(null);
   const activeFlowSeqRef = useRef<number>(0);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -235,7 +240,11 @@ export const VictoriaFloatingChat: React.FC<VictoriaFloatingChatProps> = ({
     setInput("");
     setMessages([]);
     setRagSources([]);
+    setResponseOrigin(null);
+    setFallbackReason(null);
+    setResponseLatencyMs(null);
     setConversationId(null);
+    conversationContextHashRef.current = null;
 
     void initiateDiagnosis(activeContext, seq);
 
@@ -253,7 +262,11 @@ export const VictoriaFloatingChat: React.FC<VictoriaFloatingChatProps> = ({
     activeContext.analysis_context_hash,
   ]);
 
-  const initiateDiagnosis = async (ctxInput: VictoriaAnalysisContext, expectedSeq?: number) => {
+  const initiateDiagnosis = async (
+    ctxInput: VictoriaAnalysisContext,
+    expectedSeq?: number,
+    options?: { reuseConversation?: boolean }
+  ) => {
     const seq = expectedSeq ?? ++activeFlowSeqRef.current;
     const isStale = () => activeFlowSeqRef.current !== seq;
     const ctxSnapshot: VictoriaAnalysisContext = {
@@ -264,6 +277,9 @@ export const VictoriaFloatingChat: React.FC<VictoriaFloatingChatProps> = ({
 
     setIsLoading(true);
     setErrorState(null);
+    setResponseOrigin(null);
+    setFallbackReason(null);
+    setResponseLatencyMs(null);
 
     const targetName = ctxSnapshot.entity_name || accountName;
     const title = `Diagnóstico: ${targetName.slice(0, 36)}`;
@@ -281,8 +297,13 @@ export const VictoriaFloatingChat: React.FC<VictoriaFloatingChatProps> = ({
 
       const token = session?.access_token || null;
 
-      let convId: string | null = null;
-      if (user) {
+      const canReuseConversation =
+        Boolean(options?.reuseConversation) &&
+        Boolean(conversationId) &&
+        conversationContextHashRef.current === ctxSnapshot.analysis_context_hash;
+
+      let convId: string | null = canReuseConversation ? conversationId : null;
+      if (user && !convId) {
         const { data: conv } = await supabase
           .from("victoria_conversations" as any)
           .insert({
@@ -301,6 +322,7 @@ export const VictoriaFloatingChat: React.FC<VictoriaFloatingChatProps> = ({
         if (isStale()) return;
         if (conv?.id) {
           convId = conv.id;
+          conversationContextHashRef.current = ctxSnapshot.analysis_context_hash;
           setConversationId(convId);
         }
       }
@@ -356,6 +378,9 @@ export const VictoriaFloatingChat: React.FC<VictoriaFloatingChatProps> = ({
       }
 
       setRagSources(result.ragCitations || []);
+      setResponseOrigin(result.responseOrigin);
+      setFallbackReason(result.fallbackReason ?? null);
+      setResponseLatencyMs(result.latencyMs ?? null);
       setMessages([
         {
           id: `diag_${ctxSnapshot.request_id}`,
@@ -385,6 +410,8 @@ export const VictoriaFloatingChat: React.FC<VictoriaFloatingChatProps> = ({
       if (isStale()) return;
       console.error("[VICTORIA_FLOATING_DIAG_ERR]", err);
       const fallback = generateSeniorStructuredAnalysis(ctxSnapshot);
+      setResponseOrigin("deterministic_fallback");
+      setFallbackReason(err?.message || "Erro na chamada diagnóstica.");
       setMessages([
         {
           id: `diag_fallback_${ctxSnapshot.request_id}`,
@@ -516,6 +543,9 @@ export const VictoriaFloatingChat: React.FC<VictoriaFloatingChatProps> = ({
         ctxSnapshot
       );
 
+      setResponseOrigin(result.responseOrigin);
+      setFallbackReason(result.fallbackReason ?? null);
+      setResponseLatencyMs(result.latencyMs ?? null);
       if (result.ragCitations && result.ragCitations.length > 0) {
         setRagSources(result.ragCitations);
       }
@@ -675,7 +705,7 @@ export const VictoriaFloatingChat: React.FC<VictoriaFloatingChatProps> = ({
                 <button
                   onClick={() => {
                     sessionCtrlRef.current.clearCache();
-                    void initiateDiagnosis(activeContext);
+                    void initiateDiagnosis(activeContext, undefined, { reuseConversation: true });
                   }}
                   disabled={isLoading}
                   className="h-8 w-8 rounded-xl hover:bg-white/10 text-muted-foreground hover:text-primary transition-all flex items-center justify-center"
@@ -730,6 +760,24 @@ export const VictoriaFloatingChat: React.FC<VictoriaFloatingChatProps> = ({
               <div className="flex items-center gap-1 whitespace-nowrap">
                 <TrendingUp className="h-3 w-3 text-amber-400" />
                 <span>CTR Link {activeContext.raw_metrics.ctr_link.toFixed(2)}%</span>
+                {activeContext.raw_metrics.ctr_all > 0 && (
+                  <>
+                    <span>·</span>
+                    <span>CTR Todos {activeContext.raw_metrics.ctr_all.toFixed(2)}%</span>
+                  </>
+                )}
+                {activeContext.raw_metrics.cpc_link !== null && (
+                  <>
+                    <span>·</span>
+                    <span>CPC Link R$ {activeContext.raw_metrics.cpc_link.toFixed(2)}</span>
+                  </>
+                )}
+                {activeContext.raw_metrics.cpc_all !== null && (
+                  <>
+                    <span>·</span>
+                    <span>CPC Todos R$ {activeContext.raw_metrics.cpc_all.toFixed(2)}</span>
+                  </>
+                )}
               </div>
             </div>
 
@@ -761,9 +809,29 @@ export const VictoriaFloatingChat: React.FC<VictoriaFloatingChatProps> = ({
                   {showWhyRec ? <ChevronUp className="h-2.5 w-2.5" /> : <ChevronDown className="h-2.5 w-2.5" />}
                 </button>
               </div>
-              <span className="font-mono text-[8px] text-muted-foreground/60 truncate">
-                {activeContext.analysis_context_hash}
-              </span>
+              <div className="flex items-center gap-1.5 min-w-0">
+                {responseOrigin && (
+                  <span
+                    className={`rounded px-1.5 py-0.5 font-mono text-[8px] font-bold border ${
+                      responseOrigin === "generative"
+                        ? "bg-emerald-500/10 text-emerald-300 border-emerald-500/30"
+                        : "bg-amber-500/10 text-amber-300 border-amber-500/30"
+                    }`}
+                    title={fallbackReason || undefined}
+                  >
+                    {responseOrigin === "generative" ? "⚡ IA" : "🛡️ Fallback"}
+                    {responseLatencyMs ? ` ${(responseLatencyMs / 1000).toFixed(1)}s` : ""}
+                  </span>
+                )}
+                {ragSources.length > 0 && (
+                  <span className="rounded px-1.5 py-0.5 font-mono text-[8px] font-bold bg-violet-500/10 text-violet-300 border border-violet-500/30">
+                    📚 {ragSources.length}
+                  </span>
+                )}
+                <span className="font-mono text-[8px] text-muted-foreground/60 truncate">
+                  {activeContext.analysis_context_hash}
+                </span>
+              </div>
             </div>
 
             {/* PAINEL EXPANSÍVEL: DADOS USADOS */}
@@ -780,7 +848,10 @@ export const VictoriaFloatingChat: React.FC<VictoriaFloatingChatProps> = ({
                   Objetivo Oficial: <strong className="text-foreground">{activeContext.optimization.odax_objective}</strong> · Evento: {activeContext.optimization.official_result_event}
                 </p>
                 <p className="text-muted-foreground">
-                  Métricas Brutas: Spend R$ {activeContext.financial.spend.toFixed(2)} | Impr: {activeContext.raw_metrics.impressions.toLocaleString("pt-BR")} | Reach: {activeContext.raw_metrics.reach.toLocaleString("pt-BR")} | Link Clicks: {activeContext.raw_metrics.link_clicks} | All Clicks: {activeContext.raw_metrics.all_clicks} | CPM: R$ {activeContext.raw_metrics.cpm.toFixed(2)}
+                  Métricas Brutas: Spend R$ {activeContext.financial.spend.toFixed(2)} | Impr: {activeContext.raw_metrics.impressions.toLocaleString("pt-BR")} | Reach: {activeContext.raw_metrics.reach.toLocaleString("pt-BR")} | CTR Link: {activeContext.raw_metrics.ctr_link.toFixed(2)}% | CTR Todos: {activeContext.raw_metrics.ctr_all.toFixed(2)}% | CPC Link: {activeContext.raw_metrics.link_clicks > 0 ? `R$ ${activeContext.raw_metrics.cpc_link.toFixed(2)}` : "N/A"} | CPC Todos: {activeContext.raw_metrics.all_clicks > 0 ? `R$ ${activeContext.raw_metrics.cpc_all.toFixed(2)}` : "N/A"} | Link Clicks: {activeContext.raw_metrics.link_clicks} | All Clicks: {activeContext.raw_metrics.all_clicks} | CPM: R$ {activeContext.raw_metrics.cpm.toFixed(2)}
+                </p>
+                <p className="text-muted-foreground">
+                  Snapshot Sync: {activeContext.period.last_sync_at || "N/A"} ({activeContext.period.data_freshness}) · Origem: {responseOrigin === "generative" ? "Resposta Generativa (IA)" : responseOrigin === "deterministic_fallback" ? `Fallback Estruturado Determinístico${fallbackReason ? ` (${fallbackReason})` : ""}` : "Carregando..."}
                 </p>
                 <p className="text-muted-foreground">
                   Campos ausentes: {activeContext.missing_fields.join(", ") || "Nenhum"}
@@ -819,7 +890,7 @@ export const VictoriaFloatingChat: React.FC<VictoriaFloatingChatProps> = ({
                 </div>
                 <button
                   type="button"
-                  onClick={() => void initiateDiagnosis(activeContext)}
+                  onClick={() => void initiateDiagnosis(activeContext, undefined, { reuseConversation: true })}
                   className="px-2 py-0.5 rounded bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 font-bold shrink-0"
                 >
                   Tentar novamente

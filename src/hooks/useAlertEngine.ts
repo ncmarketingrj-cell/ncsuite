@@ -170,7 +170,7 @@ function getResultInfo(resultType: string | null | undefined): {
   if (["CONVERSIONS", "OUTCOME_SALES"].includes(t))
     return { label: "Compra", metricLabel: "CPA", emoji: "🛒" };
   if (["OUTCOME_TRAFFIC", "LINK_CLICKS"].includes(t))
-    return { label: "Clique no Link", metricLabel: "CPC", emoji: "🖱️" };
+    return { label: "Clique no Link", metricLabel: "CPC Link", emoji: "🖱️" };
   if (["VIDEO_VIEWS", "OUTCOME_VIDEO_VIEWS", "THRUPLAY"].includes(t))
     return { label: "Visualização", metricLabel: "CPV", emoji: "🎬" };
   if (["OUTCOME_AWARENESS", "REACH", "POST_REACH", "BRAND_AWARENESS"].includes(t))

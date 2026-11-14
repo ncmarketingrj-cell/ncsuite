@@ -736,8 +736,10 @@ export interface NormalizedCampaignItem extends RawCampaignMetricRow {
   classification: EventClassification;
   unitCost: number | null;
   ctr: number | null;
+  ctrAll: number | null;
   cpm: number | null;
   cpc: number | null;
+  cpcAll: number | null;
   frequency: number | null;
   cvr: CvrResult;
 }
@@ -745,7 +747,8 @@ export interface NormalizedCampaignItem extends RawCampaignMetricRow {
 export function normalizeCampaignItem(row: RawCampaignMetricRow): NormalizedCampaignItem {
   const cost = Number.isFinite(row.cost) ? Math.max(0, row.cost) : 0;
   const conversions = Number.isFinite(row.conversions) ? Math.max(0, row.conversions) : 0;
-  const clicks = Number.isFinite(row.clicks) ? Math.max(0, row.clicks) : 0;
+  const clicks = Number.isFinite(row.inlineLinkClicks ?? row.clicks) ? Math.max(0, Number(row.inlineLinkClicks ?? row.clicks ?? 0)) : 0;
+  const allClicks = Number.isFinite(row.allClicks ?? row.clicks) ? Math.max(0, Number(row.allClicks ?? row.clicks ?? 0)) : 0;
   const impressions = Number.isFinite(row.impressions) ? Math.max(0, row.impressions) : 0;
   const reach = Number.isFinite(row.reach) ? Math.max(0, row.reach) : 0;
 
@@ -766,13 +769,16 @@ export function normalizeCampaignItem(row: RawCampaignMetricRow): NormalizedCamp
     cost,
     conversions: effectiveResults,
     clicks,
+    allClicks,
     impressions,
     reach,
     classification,
     unitCost: computeUnitCost(cost, effectiveResults, classification.category),
     ctr: computeCtr(clicks, impressions),
+    ctrAll: computeCtr(allClicks, impressions),
     cpm: computeCpm(cost, impressions),
     cpc: computeCpc(cost, clicks),
+    cpcAll: allClicks > 0 ? computeCpc(cost, allClicks) : null,
     frequency: computeFrequency(impressions, reach),
     cvr: computeCvr(effectiveResults, clicks, classification.category),
   };
@@ -787,12 +793,15 @@ export interface EventGroupAggregate {
   spend: number;
   results: number;
   clicks: number;
+  allClicks: number;
   impressions: number;
   reachSum: number;
   unitCost: number | null; // Calculado estritamente sobre spend do grupo / results do grupo
   ctr: number | null;
+  ctrAll: number | null;
   cpm: number | null;
   cpc: number | null;
+  cpcAll: number | null;
   items: NormalizedCampaignItem[];
 }
 
@@ -810,6 +819,7 @@ export interface WeightedAggregateSummary {
   ctrAll: number | null;
   cpm: number | null;
   cpc: number | null;
+  cpcAll: number | null;
   // Separação estrita: apenas campanhas de conversão comercial direta (Mensagens, Cadastros, Compras)
   conversionSpend: number;
   conversionResults: number;
@@ -877,6 +887,7 @@ export function computeWeightedAggregates(
     const spend = items.reduce((s, x) => s + x.cost, 0);
     const results = items.reduce((s, x) => s + x.conversions, 0);
     const clicks = items.reduce((s, x) => s + (x.inlineLinkClicks ?? x.clicks), 0);
+    const groupAllClicks = items.reduce((s, x) => s + (x.allClicks ?? x.clicks), 0);
     const impressions = items.reduce((s, x) => s + x.impressions, 0);
     const reachSum = items.reduce((s, x) => s + x.reach, 0);
     const sample = items[0].classification;
@@ -889,12 +900,15 @@ export function computeWeightedAggregates(
       spend,
       results,
       clicks,
+      allClicks: groupAllClicks,
       impressions,
       reachSum,
       unitCost: computeUnitCost(spend, results, category),
       ctr: computeCtr(clicks, impressions),
+      ctrAll: computeCtr(groupAllClicks, impressions),
       cpm: computeCpm(spend, impressions),
       cpc: computeCpc(spend, clicks),
+      cpcAll: groupAllClicks > 0 ? computeCpc(spend, groupAllClicks) : null,
       items,
     };
   });
@@ -931,6 +945,7 @@ export function computeWeightedAggregates(
     ctrAll: computeCtr(totalAllClicks, totalImpressions),
     cpm: computeCpm(totalMediaSpend, totalImpressions),
     cpc: computeCpc(totalMediaSpend, totalClicks),
+    cpcAll: totalAllClicks > 0 ? computeCpc(totalMediaSpend, totalAllClicks) : null,
     conversionSpend,
     conversionResults,
     cpaEligible: conversionResults > 0 ? conversionSpend / conversionResults : null,
@@ -1842,4 +1857,154 @@ export function computeCampaignBudgetDistribution(
     sumSlicePercentage,
   };
 }
+
+export interface HomogeneousBenchmarkEntity {
+  id?: string | null;
+  external_id?: string | null;
+  entity_id?: string | null;
+  name?: string | null;
+  ad_account_id?: string | null;
+  entityLevel?: string | null;
+  type?: string | null;
+  objective?: string | null;
+  rawObjective?: string | null;
+  optimization_goal?: string | null;
+  result_type?: string | null;
+  resultType?: string | null;
+  category?: MetaConversionCategory | string | null;
+  result_indicator?: string | null;
+  cost?: number;
+  conversions?: number;
+  reach?: number;
+  t?: {
+    cost?: number;
+    conversions?: number;
+    reach?: number;
+  };
+  campaigns?: {
+    objective?: string | null;
+    name?: string | null;
+  };
+}
+
+export interface HomogeneousBenchmarkResult {
+  avg: number | null;
+  peerCount: number;
+  category: MetaConversionCategory;
+  costUnitLabel: string;
+  criteria: string;
+  reason: string | null;
+}
+
+/**
+ * Calcula benchmark homogêneo comparável EXCLUINDO obrigatoriamente a própria entidade alvo
+ * (evita auto-comparação como R$ 7,93 vs R$ 7,93).
+ * Considera apenas outras entidades no mesmo objetivo/unidade, mesmo nível e janela de cálculo.
+ */
+export function computeHomogeneousBenchmark(
+  target: HomogeneousBenchmarkEntity | null | undefined,
+  peers: HomogeneousBenchmarkEntity[] | null | undefined
+): HomogeneousBenchmarkResult {
+  if (!target) {
+    return {
+      avg: null,
+      peerCount: 0,
+      category: "UNKNOWN",
+      costUnitLabel: "Custo por resultado",
+      criteria: "Mesmo objetivo/unidade e nível de entidade",
+      reason: "Benchmark homogêneo indisponível: entidade alvo não informada.",
+    };
+  }
+
+  const targetCls = classifyMetaEvent({
+    campaignName: `${target.name || ""} ${target.campaigns?.name || ""}`,
+    rawObjective: target.rawObjective || target.objective || target.campaigns?.objective || undefined,
+    optimizationGoal: target.optimization_goal || undefined,
+    resultType: target.resultType || target.result_type || (target.category ? String(target.category) : undefined),
+    resultsIndicator: target.result_indicator || undefined,
+    isVehicleContext: false,
+  });
+
+  const targetIds = new Set(
+    [target.id, target.external_id, target.entity_id]
+      .filter((v) => v !== null && v !== undefined && String(v).trim() !== "")
+      .map((v) => String(v).trim())
+  );
+  const targetNormName = String(target.name || "").trim().toLowerCase();
+  const targetLevel = String(target.entityLevel || target.type || "").trim().toLowerCase();
+  const targetAccountId = target.ad_account_id ? String(target.ad_account_id).trim() : null;
+
+  const criteria = `Outras entidades comparáveis com mesmo objetivo/evento oficial (${targetCls.category} · ${targetCls.costUnitLabel})${
+    targetLevel ? `, mesmo nível (${targetLevel})` : ""
+  } e resultados > 0 na mesma janela.`;
+
+  const safePeers = Array.isArray(peers) ? peers : [];
+  const otherComparable = safePeers.filter((p) => {
+    if (!p) return false;
+    const pIds = [p.id, p.external_id, p.entity_id]
+      .filter((v) => v !== null && v !== undefined && String(v).trim() !== "")
+      .map((v) => String(v).trim());
+    if (pIds.some((pid) => targetIds.has(pid))) return false;
+    if (targetIds.size === 0 && targetNormName && String(p.name || "").trim().toLowerCase() === targetNormName) {
+      return false;
+    }
+
+    const pLevel = String(p.entityLevel || p.type || "").trim().toLowerCase();
+    if (targetLevel && pLevel && pLevel !== targetLevel) return false;
+
+    const pAccountId = p.ad_account_id ? String(p.ad_account_id).trim() : null;
+    if (targetAccountId && pAccountId && pAccountId !== targetAccountId) return false;
+
+    const pCls = classifyMetaEvent({
+      campaignName: `${p.name || ""} ${p.campaigns?.name || ""}`,
+      rawObjective: p.rawObjective || p.objective || p.campaigns?.objective || undefined,
+      optimizationGoal: p.optimization_goal || undefined,
+      resultType: p.resultType || p.result_type || (p.category ? String(p.category) : undefined),
+      resultsIndicator: p.result_indicator || undefined,
+      isVehicleContext: false,
+    });
+    if (pCls.category !== targetCls.category) return false;
+
+    const cost = Number(p.t?.cost ?? p.cost ?? 0);
+    if (cost <= 0) return false;
+
+    const reach = Number(p.t?.reach ?? p.reach ?? 0);
+    const conv = Number(p.t?.conversions ?? p.conversions ?? 0);
+    const denom = targetCls.category === "REACH" ? (reach > 0 ? reach : conv) : conv;
+    return denom > 0;
+  });
+
+  if (otherComparable.length < 1) {
+    return {
+      avg: null,
+      peerCount: 0,
+      category: targetCls.category,
+      costUnitLabel: targetCls.costUnitLabel,
+      criteria,
+      reason: "Benchmark homogêneo indisponível: não existem outras campanhas comparáveis suficientes no período.",
+    };
+  }
+
+  let totalCost = 0;
+  let totalDenom = 0;
+  for (const p of otherComparable) {
+    const cost = Number(p.t?.cost ?? p.cost ?? 0);
+    const reach = Number(p.t?.reach ?? p.reach ?? 0);
+    const conv = Number(p.t?.conversions ?? p.conversions ?? 0);
+    const denom = targetCls.category === "REACH" ? (reach > 0 ? reach : conv) : conv;
+    totalCost += cost;
+    totalDenom += denom;
+  }
+
+  const avg = computeUnitCost(totalCost, totalDenom, targetCls.category);
+  return {
+    avg,
+    peerCount: otherComparable.length,
+    category: targetCls.category,
+    costUnitLabel: targetCls.costUnitLabel,
+    criteria,
+    reason: avg === null ? "Benchmark homogêneo indisponível: denominador comparável zerado no período." : null,
+  };
+}
+
 

@@ -156,6 +156,7 @@ export function generateDeterministic10SectionAnalysis(
   const ind = ctx?.result_indicator || {};
   const cat = String(opt.category || "UNKNOWN");
   const daysCount = Number(p.days_count ?? p.days ?? 1);
+  const isShortSample = daysCount < 3;
   const dateFrom = p.date_from || p.start_date || "";
   const dateTo = p.date_to || p.end_date || dateFrom;
   const periodText =
@@ -170,27 +171,99 @@ export function generateDeterministic10SectionAnalysis(
       : m.cost_per_result_formatted || "—";
 
   const compAvg = ctx?.governance_and_benchmarks?.comparable_same_objective_avg ?? null;
+  const peerCount = ctx?.governance_and_benchmarks?.comparable_peer_count;
+  const compCriteria = ctx?.governance_and_benchmarks?.comparable_benchmark_criteria;
   const maxTarget = ctx?.governance_and_benchmarks?.account_max_cpl_target ?? null;
-  const homogeneousRef =
-    compAvg !== null
-      ? `Benchmark homogêneo na mesma unidade (${ind.cost_label || "custo por resultado"}): **${fmtBRL(Number(compAvg))}**.`
-      : maxTarget !== null
-      ? `Meta operacional configurada na conta (mesma unidade): **${fmtBRL(Number(maxTarget))}**.`
-      : "Não há benchmark homogêneo disponível para comparação.";
+
+  const benchParts: string[] = [];
+  if (compAvg !== null) {
+    benchParts.push(
+      `Benchmark homogêneo na mesma unidade (${ind.cost_label || "custo por resultado"}${
+        typeof peerCount === "number" && peerCount > 0 ? ` · ${peerCount} outra(s) entidade(s) comparável(is)` : ""
+      }): **${fmtBRL(Number(compAvg))}**${compCriteria ? ` (${compCriteria})` : ""}.`
+    );
+  } else {
+    benchParts.push(
+      `Benchmark homogêneo indisponível: não existem outras campanhas comparáveis suficientes no período${
+        compCriteria ? ` (${compCriteria})` : ""
+      }.`
+    );
+  }
+  if (maxTarget !== null) {
+    benchParts.push(`Meta operacional configurada na conta (mesma unidade): **${fmtBRL(Number(maxTarget))}**.`);
+  }
+  const homogeneousRef = benchParts.join(" ");
+
+  const linkClicks = Number(m.link_clicks || 0);
+  const allClicks = Number(m.all_clicks || 0);
+  const cpcLinkStr = linkClicks > 0 ? fmtBRL(Number(m.cpc_link || 0)) : "—";
+  const cpcAllStr = allClicks > 0 ? fmtBRL(Number(m.cpc_all || (Number(f.spend || 0) / allClicks))) : "Não disponível";
+  const clicksParityLine = `**CTR Link:** ${fmtPct(m.ctr_link)} (**${fmtNum(linkClicks)} cliques no link** · **CPC Link:** ${cpcLinkStr}) vs. **CTR Todos:** ${fmtPct(m.ctr_all)} (**${fmtNum(allClicks)} cliques totais** · **CPC Todos:** ${cpcAllStr})`;
+  const freqStr = Number(m.frequency || 0).toFixed(2).replace(".", ",");
+  const resultVal = Number(m.result_value || 0);
+  const spendVal = Number(f.spend || 0);
+  const spendZeroConv = spendVal > 0 && resultVal === 0;
+  const clickConvRatio = linkClicks > 0 ? (resultVal / linkClicks) * 100 : 0;
 
   const indicatorsLines =
     cat === "REACH"
       ? [
           `- **Indicador primário (fórmula explícita):** **${ind.cost_label || "Custo por 1.000 pessoas alcançadas"}** = **${costFormatted}** (\`(spend / reach) × 1.000\`).`,
-          `- **Indicadores de entrega e cobertura:** **${fmtNum(m.reach)} pessoas alcançadas**, **${fmtNum(m.impressions)} impressões**, **CPM** **${fmtBRL(m.cpm)}** e **frequência** **${Number(m.frequency || 0).toFixed(2).replace(".", ",")}x**.`,
-          `- **Indicadores secundários (cliques distintos):** **CTR (link)** **${fmtPct(m.ctr_link)}** (**${fmtNum(m.link_clicks)} cliques no link**) vs. **${fmtNum(m.all_clicks)} cliques totais** (\`CTR todos: ${fmtPct(m.ctr_all)}\`). Em Alcance, CTR de link é sinal estritamente secundário.`,
+          `- **Indicadores de entrega e cobertura:** **${fmtNum(m.reach)} pessoas alcançadas**, **${fmtNum(m.impressions)} impressões**, **CPM** **${fmtBRL(m.cpm)}** e **frequência** **${freqStr}x**.`,
+          `- **Indicadores secundários (cliques distintos):** ${clicksParityLine}. Em Alcance, CTR de link é sinal estritamente secundário.`,
           `- **Benchmark comparativo:** ${homogeneousRef}`,
         ]
       : [
           `- **Indicador primário (fórmula explícita):** **${ind.cost_label || "Custo por resultado"}** = **${costFormatted}** (\`${ind.unit || "BRL/resultado"}\`).`,
-          `- **Indicadores secundários:** **CTR (link)** **${fmtPct(m.ctr_link)}** (**${fmtNum(m.link_clicks)} cliques no link** · \`CPC link: ${Number(m.link_clicks || 0) > 0 ? fmtBRL(m.cpc_link) : "—"}\`) vs. **${fmtNum(m.all_clicks)} cliques totais**, **CPM** **${fmtBRL(m.cpm)}**, **frequência** **${Number(m.frequency || 0).toFixed(2).replace(".", ",")}x**.`,
+          `- **Indicadores secundários:** ${clicksParityLine}, **CPM** **${fmtBRL(m.cpm)}**, **frequência** **${freqStr}x**.`,
           `- **Benchmark comparativo:** ${homogeneousRef}`,
         ];
+
+  let hypothesesSection = "";
+  let recommendationsSection = "";
+  let validationSection = "";
+
+  if (cat === "REACH") {
+    hypothesesSection = [
+      `- **[HIPÓTESE 1 — Cobertura ampla e pressão de frequência]** **${costFormatted}** por 1.000 pessoas alcançadas com **CPM ${fmtBRL(m.cpm)}** e frequência **${freqStr}x** reflete distribuição ampla de leilão para \`${opt.optimization_goal || "REACH"}\`.`,
+      `- **[HIPÓTESE 2 — Separação entre atenção social e clique direcional]** **CTR Todos ${fmtPct(m.ctr_all)}** (\`CPC Todos: ${cpcAllStr}\`) vs **CTR Link ${fmtPct(m.ctr_link)}** (\`CPC Link: ${cpcLinkStr}\`) é esperado em entrega de Alcance e não deve ser julgado por CPL.`,
+    ].join("\n");
+    recommendationsSection = [
+      `- **[RECOMENDAÇÃO 1 — Controle de Frequência e Cobertura (Somente Leitura / Reversível)]** ${isShortSample ? "Manter orçamento/configuração intactos na janela curta (< 3 dias)." : "Acompanhar teto de frequência (<= 2,5x–3,0x) antes de expandir praça ou renovar peça."}`,
+    ].join("\n");
+    validationSection = `- Consolidar **3 a 7 dias** monitorando **Custo por 1.000 pessoas alcançadas**, **CPM** e **frequência** na mesma unidade oficial.`;
+  } else if (cat === "INSTAGRAM_PROFILE") {
+    hypothesesSection = [
+      `- **[HIPÓTESE 1 — Fluxo para o perfil do Instagram]** **${fmtNum(resultVal)} visitas ao perfil** (${costFormatted}) com **CTR Todos ${fmtPct(m.ctr_all)}** (\`CPC Todos: ${cpcAllStr}\`) vs **CTR Link ${fmtPct(m.ctr_link)}** (\`CPC Link: ${cpcLinkStr}\`) aponta para cliques/toques diretos no perfil dentro da rede.`,
+      `- **[HIPÓTESE 2 — Conversão orgânica dependente da bio/Direct]** Sem telemetria de novos seguidores ou DMs originadas na bio, não é possível inferir vendas finais apenas pelo anúncio.`,
+    ].join("\n");
+    recommendationsSection = [
+      `- **[RECOMENDAÇÃO 1 — Auditoria de Bio/Destaques sem Julgar por CPL (Somente Leitura)]** ${isShortSample ? "Preservar estrutura por 72h e alinhar CTA da bio/Direct com o anúncio." : "Cruzar ganho de seguidores e mensagens recebidas no Instagram antes de ajustar verba."}`,
+    ].join("\n");
+    validationSection = `- Validar em **3 a 7 dias** **Custo por visita ao perfil**, **CPC Todos/Link** e geração orgânica de DMs/seguidores no perfil.`;
+  } else if (cat === "LANDING_PAGE_VIEWS" || cat === "LINK_CLICKS") {
+    hypothesesSection = [
+      `- **[HIPÓTESE 1 — Desempenho de clique e carregamento pós-clique]** **${fmtNum(linkClicks)} cliques no link** (\`CPC Link: ${cpcLinkStr}\`) versus **${fmtNum(resultVal)} ${ind.label_plural || "resultados"}** e **${fmtNum(allClicks)} cliques totais** (\`CPC Todos: ${cpcAllStr}\`) indica atrito ou retenção entre o clique e a página.`,
+      `- **[HIPÓTESE 2 — Tráfego de saída em janela curta (${daysCount}d)]** Sem métricas de PageSpeed/analytics, a qualidade da sessão permanece lacuna observacional.`,
+    ].join("\n");
+    recommendationsSection = [
+      `- **[RECOMENDAÇÃO 1 — Auditoria de Velocidade/Pixel da URL (Somente Leitura)]** Validar carregamento mobile < 3s e disparo de \`PageView\` antes de escalar verba de tráfego.`,
+    ].join("\n");
+    validationSection = `- Acompanhar **3 a 7 dias** comparando **CPC Link**, razão \`${ind.code || "lpv"} / link_clicks\` e conversões no site.`;
+  } else {
+    hypothesesSection = [
+      `- **[HIPÓTESE 1 — Conversão pós-clique / WhatsApp]** ${
+        spendZeroConv
+          ? `Investimento de **${fmtBRL(spendVal)}** sem resultado oficial (${ind.label_plural || "resultados"}) apesar de **${fmtNum(linkClicks)} cliques no link** (\`CPC Link: ${cpcLinkStr}\`) sugere fricção pós-clique ou janela de atribuição insuficiente.`
+          : `Relação de **${fmtNum(resultVal)} ${ind.label_plural || "resultados"}** sobre **${fmtNum(linkClicks)} cliques no link** (**${clickConvRatio.toFixed(1).replace(".", ",")}%**) reflete o filtro entre interesse inicial (\`CPC Link: ${cpcLinkStr}\` vs \`CPC Todos: ${cpcAllStr}\`) e execução de \`${ind.code || "evento"}\`.`
+      }`,
+      `- **[HIPÓTESE 2 — Amostra curta (${daysCount} dia(s))]** Oscilações diárias de leilão impedem decisões definitivas em janela curta.`,
+    ].join("\n");
+    recommendationsSection = [
+      `- **[RECOMENDAÇÃO 1 — Preservação de Aprendizado e SLA Comercial (Somente Leitura)]** ${isShortSample ? "Manter orçamento e status inalterados por 72h; auditar velocidade de resposta no WhatsApp/CRM (< 5 min)." : "Validar conversão comercial no CRM antes de propor ajuste reversível (<= ±20%) em ACTION_PROPOSAL."}`,
+    ].join("\n");
+    validationSection = `- Acumular **3 a 7 dias** na mesma campanha e unidade (**${ind.cost_label || "custo por resultado"}**), validando funil **CPC Link → ${ind.label_plural || "resultado"}**.`;
+  }
 
   const ragDocs: ServerRagCitation[] =
     ragCitations.length > 0
@@ -204,7 +277,7 @@ export function generateDeterministic10SectionAnalysis(
       ? `- **Documentos RAG aprovados recuperados (${ragDocs.length}):** ${ragDocs
           .map((d) => `\`[${d.id}]\` **${d.title}** (\`${d.evidence_level}\` · v\`${d.version}\` · status \`${d.approval_status}\`)`)
           .join("; ")}.`
-      : `- **Base de conhecimento RAG:** Nenhum documento específico aplicável para este diagnóstico isolado; aplicado contrato canônico \`${VICTORIA_CONTRACT_VERSION}\`.`;
+      : `- **Base de conhecimento RAG:** Nenhum documento pertinente foi recuperado na base para este diagnóstico isolado; aplicado contrato canônico \`${VICTORIA_CONTRACT_VERSION}\`.`;
 
   const confidenceLevel =
     daysCount < 3 || Number(m.impressions || 0) < 500
@@ -217,15 +290,16 @@ export function generateDeterministic10SectionAnalysis(
     "",
     `#### 1. Escopo analisado`,
     `- **Conta:** ${ctx?.ad_account_name || "Conta Meta Ads"} (\`${ctx?.ad_account_id || "all"}\`) | **Entidade:** ${ctx?.entity_name || ""} (\`${ctx?.entity_level || "campaign"}\` · ID \`${ctx?.entity_id || ""}\`)`,
-    `- **Período:** ${periodText} | **Versão do contrato:** \`${VICTORIA_CONTRACT_VERSION}\` | **Prompt:** \`${VICTORIA_PROMPT_VERSION}\` | **Hash:** \`${ctx?.analysis_context_hash || ""}\``,
+    `- **Período:** ${periodText} | **Frescor do Snapshot:** ${p.last_sync_at ? `${p.last_sync_at} (\`${p.data_freshness || "unknown"}\`)` : `\`${p.data_freshness || "unknown"}\``}`,
+    `- **Contrato:** \`${VICTORIA_CONTRACT_VERSION}\` | **Prompt:** \`${VICTORIA_PROMPT_VERSION}\` | **Hash:** \`${ctx?.analysis_context_hash || ""}\``,
     "",
     `#### 2. Objetivo e evento oficial`,
     `- **O que esta campanha foi configurada para otimizar?** ${ind.label_plural || "resultados"} (evento \`${ind.code || "unknown"}\`, unidade oficial **${ind.cost_label || "Custo por resultado"}**).`,
     "",
     `#### 3. Leitura factual`,
-    `- **[FATO OBSERVADO]** Investimento: **${fmtBRL(f.spend)}** | Resultado oficial (**${ind.label_plural || "resultados"}**): **${fmtNum(m.result_value)}** | **${ind.cost_label || "Custo por resultado"}**: **${costFormatted}**`,
-    `- **[FATO OBSERVADO]** Impressões: **${fmtNum(m.impressions)}** | Alcance: **${fmtNum(m.reach)}** | Frequência: **${Number(m.frequency || 0).toFixed(2).replace(".", ",")}x** | CPM: **${fmtBRL(m.cpm)}**`,
-    `- **[FATO OBSERVADO]** Cliques no link: **${fmtNum(m.link_clicks)}** (\`CTR link: ${fmtPct(m.ctr_link)}\`) | Cliques totais: **${fmtNum(m.all_clicks)}** (\`CTR todos: ${fmtPct(m.ctr_all)}\`)`,
+    `- **[FATO OBSERVADO]** Investimento: **${fmtBRL(spendVal)}** | Resultado oficial (**${ind.label_plural || "resultados"}**): **${fmtNum(resultVal)}** | **${ind.cost_label || "Custo por resultado"}**: **${costFormatted}**`,
+    `- **[FATO OBSERVADO]** Impressões: **${fmtNum(m.impressions)}** | Alcance: **${fmtNum(m.reach)}** | Frequência: **${freqStr}x** | CPM: **${fmtBRL(m.cpm)}**`,
+    `- **[FATO OBSERVADO]** Cliques no link: **${fmtNum(linkClicks)}** (\`CTR Link: ${fmtPct(m.ctr_link)}\` · \`CPC Link: ${cpcLinkStr}\`) | Cliques totais: **${fmtNum(allClicks)}** (\`CTR Todos: ${fmtPct(m.ctr_all)}\` · \`CPC Todos: ${cpcAllStr}\`)`,
     "",
     `#### 4. Indicadores primários e secundários`,
     ...indicatorsLines,
@@ -237,15 +311,13 @@ export function generateDeterministic10SectionAnalysis(
     ).map((l: string) => `- ${l}`)),
     "",
     `#### 6. Hipóteses`,
-    cat === "REACH"
-      ? `- **[HIPÓTESE 1]** Custo por 1.000 pessoas alcançadas de **${costFormatted}** e CPM de **${fmtBRL(m.cpm)}** com frequência **${Number(m.frequency || 0).toFixed(2).replace(".", ",")}x** refletem cobertura ampla de leilão sem saturação na janela observada.`
-      : `- **[HIPÓTESE 1]** Relação entre **${fmtNum(m.link_clicks)}** cliques no link e **${fmtNum(m.result_value)}** ${ind.label_plural || "resultados"} depende da aderência pós-clique e latência de janela curta (**${daysCount} dia(s)**).`,
+    hypothesesSection,
     "",
     `#### 7. Recomendações seguras`,
-    `- **[RECOMENDAÇÃO 1 — Somente Leitura / Reversível]** Manter orçamento e configuração atuais sem mutações automáticas durante janela curta (< 3 dias) e acompanhar evolução na mesma unidade (**${ind.cost_label || "custo por resultado"}**).`,
+    recommendationsSection,
     "",
     `#### 8. Plano de validação`,
-    `- Acumular no mínimo **3 a 7 dias** na mesma campanha e unidade (**${ind.cost_label || "custo por resultado"}**) antes de propor ajuste reversível de orçamento ou pausa.`,
+    validationSection,
     "",
     `#### 9. Nível de confiança`,
     `- **${confidenceLevel}** — ${ctx?.confidence_justification || `Janela de ${daysCount} dia(s) com observabilidade parcial.`}`,
@@ -295,5 +367,26 @@ export function enforceServerPostLlmGuardrails(
       reasons,
     };
   }
-  return { text: sanitized, replacedByDeterministic: false, reasons: [] };
+
+  let finalOut = sanitized;
+  if (ragCitations.length > 0) {
+    const missingAnyDoc = ragCitations.some(
+      (d) => !finalOut.includes(d.id) && !finalOut.toLowerCase().includes(String(d.title || "").toLowerCase().slice(0, 28))
+    );
+    const falselyStatesNone = /nenhum\s+documento\s+(espec[íi]fico|pertinente|recuperado|utilizado)/i.test(finalOut);
+    if (missingAnyDoc || falselyStatesNone) {
+      const cleanBody = finalOut
+        .replace(/-?\s*\*?\*?Base de conhecimento RAG:\*?\*?[^\n]*nenhum documento[^\n]*/gi, "")
+        .trim();
+      const citationBullets = ragCitations
+        .map(
+          (d) =>
+            `- \`[${d.id}]\` **${d.title}** (\`${d.evidence_level}\` · v\`${d.version}\` · status \`${d.approval_status}\`)`
+        )
+        .join("\n");
+      finalOut = `${cleanBody}\n\n- **Fontes RAG curadas aplicadas (${ragCitations.length}):**\n${citationBullets}`;
+    }
+  }
+
+  return { text: finalOut, replacedByDeterministic: false, reasons: [] };
 }

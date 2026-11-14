@@ -14,6 +14,7 @@ import {
   evaluateCampaignHealth,
   normalizeCampaignItem,
   computeCampaignBudgetDistribution,
+  computeHomogeneousBenchmark,
 } from "../src/lib/metricsDomain.ts";
 import {
   buildSocialSourceTelemetry,
@@ -486,5 +487,137 @@ describe("Social Insights — Máquina de Estados & Governança Victoria AI", ()
       }),
       false
     );
+  });
+});
+
+describe("NC Metrics Domain — Benchmark Homogêneo & CPC Link vs CPC Todos", () => {
+  it("calcula CPC Link e CPC Todos separados em normalizeCampaignItem e computeWeightedAggregates", () => {
+    const flyMsg = normalizeCampaignItem({
+      id: "camp_fg_msg",
+      name: "NC - MSG - 29/06 — Cópia",
+      adAccountId: "act_3177396632405159",
+      resultType: "MESSAGES",
+      cost: 150.6,
+      conversions: 19,
+      impressions: 9437,
+      reach: 7196,
+      clicks: 137,
+      inlineLinkClicks: 137,
+      allClicks: 167,
+    });
+    assert.ok(Math.abs((flyMsg.cpc ?? 0) - 150.6 / 137) < 0.001);
+    assert.ok(Math.abs((flyMsg.cpcAll ?? 0) - 150.6 / 167) < 0.001);
+    assert.ok(Math.abs((flyMsg.ctr ?? 0) - (137 / 9437) * 100) < 0.001);
+    assert.ok(Math.abs((flyMsg.ctrAll ?? 0) - (167 / 9437) * 100) < 0.001);
+
+    const zeroClicks = normalizeCampaignItem({
+      id: "camp_zero_clk",
+      name: "Zero Clicks",
+      resultType: "REACH",
+      cost: 20,
+      conversions: 5000,
+      impressions: 6000,
+      reach: 5000,
+      clicks: 0,
+      inlineLinkClicks: 0,
+      allClicks: 0,
+    });
+    assert.equal(zeroClicks.cpc, null);
+    assert.equal(zeroClicks.cpcAll, null);
+
+    const agg = computeWeightedAggregates([
+      {
+        id: "1",
+        name: "A",
+        cost: 150.6,
+        conversions: 19,
+        impressions: 9437,
+        reach: 7196,
+        clicks: 137,
+        inlineLinkClicks: 137,
+        allClicks: 167,
+        resultType: "MESSAGES",
+      },
+      {
+        id: "2",
+        name: "B",
+        cost: 63.56,
+        conversions: 50013,
+        impressions: 52365,
+        reach: 50013,
+        clicks: 21,
+        inlineLinkClicks: 21,
+        allClicks: 52,
+        resultType: "REACH",
+      },
+    ]);
+    assert.ok(Math.abs((agg.cpc ?? 0) - 214.16 / 158) < 0.001);
+    assert.ok(Math.abs((agg.cpcAll ?? 0) - 214.16 / 219) < 0.001);
+  });
+
+  it("exclui estritamente a própria entidade do benchmark homogêneo (nunca self-benchmark)", () => {
+    const targetMsg = {
+      id: "camp_msg",
+      external_id: "120249884798220254",
+      name: "NC - MSG - 29/06 — Cópia",
+      category: "MESSAGES",
+      ad_account_id: "act_3177396632405159",
+      level: "campaign",
+      cost: 150.6,
+      conversions: 19,
+      reach: 7196,
+      clicks: 137,
+    };
+    const siblingReach = {
+      id: "camp_reach",
+      external_id: "120238955348150254",
+      name: "CMP | NC  - ALCANCE JOJO TODYNHO",
+      category: "REACH",
+      ad_account_id: "act_3177396632405159",
+      level: "campaign",
+      cost: 63.56,
+      conversions: 50013,
+      reach: 50013,
+      clicks: 21,
+    };
+
+    const singlePeerRes = computeHomogeneousBenchmark(targetMsg, [targetMsg, siblingReach]);
+    assert.equal(singlePeerRes.avg, null);
+    assert.equal(singlePeerRes.peerCount, 0);
+    assert.match(singlePeerRes.reason || "", /Benchmark homogêneo indisponível/i);
+
+    // Com mais duas campanhas de MESSAGES na mesma conta, calcula média ponderada apenas dos peers
+    const peerMsg2 = {
+      id: "camp_msg_2",
+      external_id: "12024999900001",
+      name: "NC - MSG Peer 2",
+      category: "MESSAGES",
+      ad_account_id: "act_3177396632405159",
+      level: "campaign",
+      cost: 100,
+      conversions: 10,
+      reach: 3000,
+      clicks: 80,
+    };
+    const peerMsg3 = {
+      id: "camp_msg_3",
+      external_id: "12024999900002",
+      name: "NC - MSG Peer 3",
+      category: "MESSAGES",
+      ad_account_id: "act_3177396632405159",
+      level: "campaign",
+      cost: 200,
+      conversions: 20,
+      reach: 6000,
+      clicks: 140,
+    };
+    const multiPeerRes = computeHomogeneousBenchmark(targetMsg, [
+      targetMsg,
+      siblingReach,
+      peerMsg2,
+      peerMsg3,
+    ]);
+    assert.equal(multiPeerRes.peerCount, 2);
+    assert.equal(multiPeerRes.avg, 10); // (100+200)/(10+20) = 10.00 (sem contaminar com 150.6/19 = 7.93)
   });
 });

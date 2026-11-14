@@ -1035,8 +1035,11 @@ function Dashboard() {
       {(() => {
         const totals = performanceData?.totals || { cost: 0, clicks: 0, inlineLinkClicks: 0, allClicks: 0, impressions: 0, conversions: 0, reach: 0, accountReach: 0 };
         const linkClk = totals.inlineLinkClicks ?? totals.clicks ?? 0;
+        const allClk = totals.allClicks ?? linkClk;
         const ctr = totals.impressions > 0 ? (linkClk / totals.impressions) * 100 : 0;
+        const ctrAll = totals.impressions > 0 ? (allClk / totals.impressions) * 100 : 0;
         const cpc = linkClk > 0 ? totals.cost / linkClk : 0;
+        const cpcAll = allClk > 0 ? totals.cost / allClk : 0;
         const cpa = performanceData?.cpl || 0;
         const cpm = totals.impressions > 0 ? (totals.cost / totals.impressions) * 1000 : 0;
         const hasAccountReach = (totals.accountReach || 0) > 0;
@@ -1086,8 +1089,11 @@ function Dashboard() {
                 <span className="font-bold text-foreground">R$ {cpm.toFixed(2)}</span>
               </div>
               <div className="bg-white/[0.03] border border-white/10 px-3 py-1.5 rounded-xl">
-                <span className="text-muted-foreground text-[9px] uppercase tracking-wider block font-sans font-bold">CPC Médio</span>
+                <span className="text-muted-foreground text-[9px] uppercase tracking-wider block font-sans font-bold">CPC Link</span>
                 <span className="font-bold text-foreground">R$ {cpc.toFixed(2)}</span>
+                {cpcAll > 0 && (
+                  <span className="text-[9px] text-muted-foreground font-mono block">Todos: R$ {cpcAll.toFixed(2)}</span>
+                )}
               </div>
               <div className="bg-white/[0.03] border border-white/10 px-3 py-1.5 rounded-xl">
                 <span className="text-muted-foreground text-[9px] uppercase tracking-wider block font-sans font-bold">

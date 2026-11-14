@@ -35,7 +35,7 @@ import { useAuth } from "@/lib/auth";
 import { hasPermissionAccess, isMasterAdmin } from "@/lib/userHierarchy";
 import { DateRangePicker } from "@/components/DateRangePicker";
 import { useGlobalDate } from "@/contexts/DateContext";
-import { EVENT_MODEL_VERSION } from "@/lib/metricsDomain";
+import { EVENT_MODEL_VERSION, computeHomogeneousBenchmark } from "@/lib/metricsDomain";
 import {
   buildMetaSnapshotKey,
   DEFAULT_META_TIMEZONE,
@@ -201,6 +201,7 @@ function processMetrics(item: any, rawData: any[], startStr: string, endStr: str
   const ctrAll      = impressions > 0 ? (allClicks / impressions) * 100 : 0;
   const cpm         = impressions > 0 ? (cost / impressions) * 1000 : 0;
   const cpc         = clicks > 0 ? cost / clicks : 0;
+  const cpcAll      = allClicks > 0 ? cost / allClicks : 0;
   const roas        = cost > 0 && purchaseVal > 0 ? purchaseVal / cost : null;
 
   const storedType = m.find((x: any) => x.result_type)?.result_type || item.result_type;
@@ -224,7 +225,7 @@ function processMetrics(item: any, rawData: any[], startStr: string, endStr: str
     result_type,
     result_indicator: resultIndicator,
     optimization_goal: optimizationGoal,
-    t: { cost, conversions, clicks, allClicks, impressions, reach, freq, cpl, ctr, ctrAll, cpm, cpc, roas, purchaseValue: purchaseVal },
+    t: { cost, conversions, clicks, allClicks, impressions, reach, freq, cpl, ctr, ctrAll, cpm, cpc, cpcAll, roas, purchaseValue: purchaseVal },
     _metrics: m,
   };
 }
@@ -274,38 +275,44 @@ function calcHealthScore(c: any, avgCpl: number): number {
   return Math.max(0, Math.min(100, score));
 }
 
-function computeHomogeneousSameObjectiveAvg(target: any, peers: any[]): number | null {
-  if (!target || !Array.isArray(peers) || peers.length === 0) return null;
-  const targetCls = classifyMetaEvent({
-    campaignName: target.name || "",
-    rawObjective: target.objective || target.campaigns?.objective,
-    optimizationGoal: target.optimization_goal,
-    resultType: target.result_type,
-    resultsIndicator: target.result_indicator,
-    isVehicleContext: false,
-  });
-  const comparable = peers.filter((p) => {
-    const cls = classifyMetaEvent({
-      campaignName: p.name || "",
-      rawObjective: p.objective || p.campaigns?.objective,
-      optimizationGoal: p.optimization_goal,
-      resultType: p.result_type,
-      resultsIndicator: p.result_indicator,
+function computeHomogeneousSameObjectiveBenchmark(target: any, peers: any[]) {
+  if (!target || !Array.isArray(peers) || peers.length === 0) {
+    return {
+      avg: null,
+      peerCount: 0,
+      criteria: null,
+      reason: "Benchmark homogêneo indisponível: não existem outras campanhas comparáveis suficientes no período.",
+    };
+  }
+  const classifyItem = (item: any) =>
+    classifyMetaEvent({
+      campaignName: item?.name || "",
+      rawObjective: item?.objective || item?.campaigns?.objective,
+      optimizationGoal: item?.optimization_goal,
+      resultType: item?.result_type,
+      resultsIndicator: item?.result_indicator,
       isVehicleContext: false,
-    });
-    return cls.category === targetCls.category && Number(p.t?.cost || 0) > 0;
+    }).category;
+
+  const toBenchEntity = (item: any) => ({
+    id: item?.id,
+    external_id: item?.external_id,
+    entity_id: item?.entity_id,
+    name: item?.name,
+    category: classifyItem(item),
+    ad_account_id: item?.ad_account_id || null,
+    level: item?.campaign_id && item?.adset_id ? "ad" : item?.campaign_id ? "adset" : "campaign",
+    cost: Number(item?.t?.cost || 0),
+    conversions: Number(item?.t?.conversions || 0),
+    reach: Number(item?.t?.reach || 0),
+    clicks: Number(item?.t?.clicks || 0),
   });
-  if (targetCls.category === "REACH" && comparable.length < 2) return null;
-  if (comparable.length === 0) return null;
-  const sumCost = comparable.reduce((s, p) => s + Number(p.t?.cost || 0), 0);
-  const sumRes = comparable.reduce((s, p) => {
-    const val = targetCls.category === "REACH"
-      ? (Number(p.t?.reach || 0) || Number(p.t?.conversions || 0))
-      : Number(p.t?.conversions || 0);
-    return s + val;
-  }, 0);
-  if (sumRes <= 0) return null;
-  return targetCls.category === "REACH" ? (sumCost / sumRes) * 1000 : sumCost / sumRes;
+
+  return computeHomogeneousBenchmark(toBenchEntity(target), peers.map(toBenchEntity));
+}
+
+function computeHomogeneousSameObjectiveAvg(target: any, peers: any[]): number | null {
+  return computeHomogeneousSameObjectiveBenchmark(target, peers).avg;
 }
 
 function getDecision(c: any, avgCpl: number, accountTargetCpl?: number | null, daysCount: number = 1): { label: string; tier: string; reason: string; action: string } {
@@ -852,6 +859,10 @@ function MetricasCampanhasPage() {
   const [inspectorShowData, setInspectorShowData] = useState(false);
   const [inspectorShowWhy, setInspectorShowWhy] = useState(false);
   const [inspectorTimedOut, setInspectorTimedOut] = useState(false);
+  const [inspectorResponseOrigin, setInspectorResponseOrigin] = useState<"generative" | "deterministic_fallback" | null>(null);
+  const [inspectorFallbackReason, setInspectorFallbackReason] = useState<string | null>(null);
+  const [inspectorLatencyMs, setInspectorLatencyMs] = useState<number | null>(null);
+  const [inspectorRagCitations, setInspectorRagCitations] = useState<Array<{ id: string; title: string; version: string; evidence_level: string; approval_status: string }>>([]);
   const inspectorSessionRef = useRef<VictoriaSessionController>(new VictoriaSessionController());
 
 
@@ -1422,6 +1433,7 @@ function MetricasCampanhasPage() {
         const ctrAll = impressions > 0 ? (allClicks / impressions) * 100 : 0;
         const cpm = impressions > 0 ? (cost / impressions) * 1000 : 0;
         const cpc = clicks > 0 ? cost / clicks : 0;
+        const cpcAll = allClicks > 0 ? cost / allClicks : 0;
         const purchaseVal = Number(c.t?.purchaseValue || 0);
         const roas = cost > 0 && purchaseVal > 0 ? purchaseVal / cost : null;
         
@@ -1432,7 +1444,7 @@ function MetricasCampanhasPage() {
           optimization_goal: optGoal,
           t: { 
             ...c.t, 
-            cost, conversions, clicks, allClicks, impressions, reach, freq, cpl, ctr, ctrAll, cpm, cpc, roas 
+            cost, conversions, clicks, allClicks, impressions, reach, freq, cpl, ctr, ctrAll, cpm, cpc, cpcAll, roas 
           } 
         };
       });
@@ -1474,9 +1486,10 @@ function MetricasCampanhasPage() {
         const ctrAll = impressions > 0 ? (allClicks / impressions) * 100 : 0;
         const cpm = impressions > 0 ? (cost / impressions) * 1000 : 0;
         const cpc = clicks > 0 ? cost / clicks : 0;
+        const cpcAll = allClicks > 0 ? cost / allClicks : 0;
         const purchaseVal = Number(c.t?.purchaseValue || 0);
         const roas = cost > 0 && purchaseVal > 0 ? purchaseVal / cost : null;
-        return { ...c, result_type: cat, result_indicator: resIndicator, optimization_goal: optGoal, t: { ...c.t, cost, conversions, clicks, allClicks, impressions, reach, freq, cpl, ctr, ctrAll, cpm, cpc, roas } };
+        return { ...c, result_type: cat, result_indicator: resIndicator, optimization_goal: optGoal, t: { ...c.t, cost, conversions, clicks, allClicks, impressions, reach, freq, cpl, ctr, ctrAll, cpm, cpc, cpcAll, roas } };
       });
     }
     return includeNoDelivery
@@ -1516,9 +1529,10 @@ function MetricasCampanhasPage() {
         const ctrAll = impressions > 0 ? (allClicks / impressions) * 100 : 0;
         const cpm = impressions > 0 ? (cost / impressions) * 1000 : 0;
         const cpc = clicks > 0 ? cost / clicks : 0;
+        const cpcAll = allClicks > 0 ? cost / allClicks : 0;
         const purchaseVal = Number(c.t?.purchaseValue || 0);
         const roas = cost > 0 && purchaseVal > 0 ? purchaseVal / cost : null;
-        return { ...c, result_type: cat, result_indicator: resIndicator, optimization_goal: optGoal, t: { ...c.t, cost, conversions, clicks, allClicks, impressions, reach, freq, cpl, ctr, ctrAll, cpm, cpc, roas } };
+        return { ...c, result_type: cat, result_indicator: resIndicator, optimization_goal: optGoal, t: { ...c.t, cost, conversions, clicks, allClicks, impressions, reach, freq, cpl, ctr, ctrAll, cpm, cpc, cpcAll, roas } };
       });
     }
     return includeNoDelivery
@@ -1636,7 +1650,9 @@ function MetricasCampanhasPage() {
         target.objective || target.campaigns?.objective,
         target.result_type
       );
-      const activeAccName = adAccounts.find((a: any) => a.id === (target.ad_account_id || accountFilter))?.name || "Conta Meta Ads";
+      const matchedAcc = adAccounts.find((a: any) => a.id === (target.ad_account_id || accountFilter));
+      const activeAccName = matchedAcc?.name || "Conta Meta Ads";
+      const homogeneousBench = computeHomogeneousSameObjectiveBenchmark(target, listData);
       const canonicalCtx = buildContextFromMetricasItem({
         item: {
           ...target,
@@ -1649,8 +1665,11 @@ function MetricasCampanhasPage() {
         accountName: activeAccName,
         dateFrom: startStr,
         dateTo: endStr,
+        lastSyncAt: matchedAcc?.last_sync || activeSnapshot?.committedAt || null,
         accountMaxCplTarget: maxCplThreshold,
-        sameObjectiveAvgCost: computeHomogeneousSameObjectiveAvg(target, listData),
+        sameObjectiveAvgCost: homogeneousBench.avg,
+        sameObjectivePeerCount: homogeneousBench.peerCount,
+        sameObjectiveBenchmarkCriteria: homogeneousBench.criteria,
         siblingEntities: listData,
         operationalMode: "READ_ONLY_ANALYSIS",
       });
@@ -1767,12 +1786,16 @@ function MetricasCampanhasPage() {
     setIsGeneratingInsight(true);
     setAiInsightText("");
     setInspectorTimedOut(false);
+    setInspectorResponseOrigin(null);
+    setInspectorFallbackReason(null);
+    setInspectorLatencyMs(null);
+    setInspectorRagCitations([]);
     setInspectorShowData(false);
     setInspectorShowWhy(false);
 
-    const activeAccName =
-      adAccounts.find((a: any) => a.id === (item.ad_account_id || accountFilter))?.name ||
-      "Conta Meta Ads";
+    const matchedAcc = adAccounts.find((a: any) => a.id === (item.ad_account_id || accountFilter));
+    const activeAccName = matchedAcc?.name || "Conta Meta Ads";
+    const homogeneousBench = computeHomogeneousSameObjectiveBenchmark(item, listData);
 
     const ctx = buildContextFromMetricasItem({
       item: {
@@ -1786,8 +1809,11 @@ function MetricasCampanhasPage() {
       accountName: activeAccName,
       dateFrom: startStr,
       dateTo: endStr,
+      lastSyncAt: matchedAcc?.last_sync || activeSnapshot?.committedAt || null,
       accountMaxCplTarget: maxCplThreshold,
-      sameObjectiveAvgCost: computeHomogeneousSameObjectiveAvg(item, listData),
+      sameObjectiveAvgCost: homogeneousBench.avg,
+      sameObjectivePeerCount: homogeneousBench.peerCount,
+      sameObjectiveBenchmarkCriteria: homogeneousBench.criteria,
       siblingEntities: listData,
       operationalMode: "READ_ONLY_ANALYSIS",
     });
@@ -1813,9 +1839,15 @@ function MetricasCampanhasPage() {
       if (res.timedOut) {
         setInspectorTimedOut(true);
       }
+      setInspectorResponseOrigin(res.responseOrigin);
+      setInspectorFallbackReason(res.fallbackReason ?? null);
+      setInspectorLatencyMs(res.latencyMs ?? null);
+      setInspectorRagCitations(res.ragCitations || []);
       setAiInsightText(res.text);
     } catch (e: any) {
       console.error("Erro na Victoria IA:", e);
+      setInspectorResponseOrigin("deterministic_fallback");
+      setInspectorFallbackReason(e?.message || "Erro inesperado na execução do diagnóstico.");
       setAiInsightText(generateSeniorStructuredAnalysis(ctx));
     } finally {
       setIsGeneratingInsight(false);
@@ -2032,6 +2064,12 @@ function MetricasCampanhasPage() {
           <SnapshotStatusBadge
             snapshotId={activeSnapshot.snapshotId}
             committedAt={activeSnapshot.committedAt}
+            lastSyncAt={
+              accountFilter !== "all"
+                ? (adAccounts.find((a: any) => a.id === accountFilter)?.last_sync || activeSnapshot.committedAt)
+                : (adAccounts.map((a: any) => a.last_sync).filter(Boolean).sort().pop() || activeSnapshot.committedAt)
+            }
+            hasSyncError={Boolean(syncMutation.isError)}
             isUpdating={isFetchingCamps || isFetchingAdSets || isFetchingAds || isFetchingPeriod || isFetchingAccPeriod || syncMutation.isPending}
           />
         </div>
@@ -2424,8 +2462,8 @@ function MetricasCampanhasPage() {
                             <th className="px-4 py-3 w-24 text-right text-[9px] font-black uppercase tracking-widest text-muted-foreground/70 whitespace-nowrap hidden xl:table-cell">Impressões</th>
                             <th className="px-4 py-3 w-32 text-right text-[9px] font-black uppercase tracking-widest text-violet-400/90 whitespace-nowrap">Resultados</th>
                             <th className="px-4 py-3 w-32 text-right text-[9px] font-black uppercase tracking-widest text-emerald-400/90 whitespace-nowrap">Custo por Res.</th>
-                            <th className="px-4 py-3 w-16 text-right text-[9px] font-black uppercase tracking-widest text-blue-400/80 whitespace-nowrap hidden lg:table-cell">CTR</th>
-                            <th className="px-4 py-3 w-20 text-right text-[9px] font-black uppercase tracking-widest text-muted-foreground/70 whitespace-nowrap hidden xl:table-cell">CPC</th>
+                            <th className="px-4 py-3 w-20 text-right text-[9px] font-black uppercase tracking-widest text-blue-400/80 whitespace-nowrap hidden lg:table-cell" title="CTR de Cliques no Link (CTR Todos abaixo quando disponível)">CTR Link</th>
+                            <th className="px-4 py-3 w-24 text-right text-[9px] font-black uppercase tracking-widest text-muted-foreground/70 whitespace-nowrap hidden xl:table-cell" title="Custo por Clique no Link (CPC Todos abaixo quando disponível)">CPC Link</th>
                             <th className="px-4 py-3 w-20 text-right text-[9px] font-black uppercase tracking-widest text-muted-foreground/70 whitespace-nowrap hidden xl:table-cell">CPM</th>
                             <th className="px-4 py-3 w-24 text-right text-[9px] font-black uppercase tracking-widest text-primary/80 whitespace-nowrap">Gasto</th>
                           </tr>
@@ -2581,7 +2619,18 @@ function MetricasCampanhasPage() {
                                   </div>
                                 </td>
                                 {/* cpc */}
-                                <td className="px-4 py-2.5 text-right font-mono text-[11px] text-muted-foreground hidden xl:table-cell whitespace-nowrap">{c.t.cpc > 0 ? `R$ ${c.t.cpc.toFixed(2)}` : "—"}</td>
+                                <td className="px-4 py-2.5 text-right font-mono text-[11px] text-muted-foreground hidden xl:table-cell whitespace-nowrap">
+                                  {c.t.cpc > 0 ? (
+                                    <div className="flex flex-col items-end leading-tight">
+                                      <span>R$ {c.t.cpc.toFixed(2)}</span>
+                                      {c.t.cpcAll > 0 && (
+                                        <span className="text-[9px] text-muted-foreground/60">Todos: R$ {c.t.cpcAll.toFixed(2)}</span>
+                                      )}
+                                    </div>
+                                  ) : c.t.cpcAll > 0 ? (
+                                    <span className="text-[10px] text-muted-foreground/80">Todos: R$ {c.t.cpcAll.toFixed(2)}</span>
+                                  ) : "—"}
+                                </td>
                                 {/* cpm */}
                                 <td className="px-4 py-2.5 text-right font-mono text-[11px] text-muted-foreground hidden xl:table-cell whitespace-nowrap">{c.t.cpm > 0 ? `R$ ${c.t.cpm.toFixed(2)}` : "—"}</td>
                                 {/* gasto */}
@@ -2801,8 +2850,8 @@ function MetricasCampanhasPage() {
                             </div>
                             {/* Oculto em telas menores mas exibido caso precise de mais contexto em MD */}
                             <div className="flex items-center justify-between pt-2 px-1">
-                              <span className="text-[9px] font-mono text-muted-foreground">CTR: {c.t.ctr > 0 ? `${c.t.ctr.toFixed(2)}%` : "—"}</span>
-                              <span className="text-[9px] font-mono text-muted-foreground">CPC: {c.t.cpc > 0 ? `R$ ${c.t.cpc.toFixed(2)}` : "—"}</span>
+                              <span className="text-[9px] font-mono text-muted-foreground">CTR Link: {c.t.ctr > 0 ? `${c.t.ctr.toFixed(2)}%` : "—"}{c.t.ctrAll > 0 ? ` (Todos ${c.t.ctrAll.toFixed(2)}%)` : ""}</span>
+                              <span className="text-[9px] font-mono text-muted-foreground">CPC Link: {c.t.cpc > 0 ? `R$ ${c.t.cpc.toFixed(2)}` : "—"}{c.t.cpcAll > 0 ? ` (Todos R$ ${c.t.cpcAll.toFixed(2)})` : ""}</span>
                               <span className="text-[9px] font-mono text-muted-foreground">CPM: {c.t.cpm > 0 ? `R$ ${c.t.cpm.toFixed(2)}` : "—"}</span>
                             </div>
                           </div>
@@ -3813,7 +3862,20 @@ function MetricasCampanhasPage() {
                           <h4 className="text-[10px] font-black uppercase text-muted-foreground/60 tracking-wider">Métricas de Saúde vs Benchmarks</h4>
                           <div className="grid grid-cols-2 gap-3">
                             {[
-                              { label: "CTR (Cliques/Impr.)", val: `${selectedFocusItem.t.ctr.toFixed(2)}%`, pct: Math.min(selectedFocusItem.t.ctr / 2 * 100, 100), desc: "Ideal: > 1.0%", color: selectedFocusItem.t.ctr >= 1.5 ? "bg-green-500" : selectedFocusItem.t.ctr >= 0.8 ? "bg-yellow-500" : "bg-red-500" },
+                              {
+                                label: "CTR Link",
+                                val: `${selectedFocusItem.t.ctr.toFixed(2)}%`,
+                                pct: Math.min(selectedFocusItem.t.ctr / 2 * 100, 100),
+                                desc: selectedFocusItem.t.ctrAll > 0 ? `CTR Todos: ${selectedFocusItem.t.ctrAll.toFixed(2)}%` : "Ideal: > 1.0%",
+                                color: selectedFocusItem.t.ctr >= 1.5 ? "bg-green-500" : selectedFocusItem.t.ctr >= 0.8 ? "bg-yellow-500" : "bg-red-500",
+                              },
+                              {
+                                label: "CPC Link",
+                                val: selectedFocusItem.t.cpc > 0 ? `R$ ${selectedFocusItem.t.cpc.toFixed(2)}` : "—",
+                                pct: selectedFocusItem.t.cpc > 0 ? Math.min(selectedFocusItem.t.cpc / 5 * 100, 100) : 0,
+                                desc: selectedFocusItem.t.cpcAll > 0 ? `CPC Todos: R$ ${selectedFocusItem.t.cpcAll.toFixed(2)}` : "Custo por clique no link",
+                                color: selectedFocusItem.t.cpc > 3 ? "bg-red-500" : selectedFocusItem.t.cpc > 1.5 ? "bg-yellow-500" : "bg-green-500",
+                              },
                               { label: "Frequência", val: `${selectedFocusItem.t.freq.toFixed(2)}x`, pct: Math.min(selectedFocusItem.t.freq / 4 * 100, 100), desc: "Ideal: 1.5x a 3.0x", color: selectedFocusItem.t.freq > 3.5 ? "bg-red-500" : selectedFocusItem.t.freq > 2.5 ? "bg-yellow-500" : "bg-green-500" },
                               { label: "CPM (Custo por Mil)", val: `R$ ${selectedFocusItem.t.cpm.toFixed(2)}`, pct: Math.min(selectedFocusItem.t.cpm / 50 * 100, 100), desc: "Ideal: R$ 15 a R$ 35", color: selectedFocusItem.t.cpm > 40 ? "bg-red-500" : selectedFocusItem.t.cpm > 25 ? "bg-yellow-500" : "bg-green-500" },
                               { label: focusDetail.costLabel, val: selectedFocusItem.t.cpl > 0 ? `R$ ${selectedFocusItem.t.cpl.toFixed(2)}` : "—", pct: selectedFocusItem.t.cpl > 0 ? Math.min(selectedFocusItem.t.cpl / 45 * 100, 100) : 0, desc: focusDetail.costLabel, color: selectedFocusItem.t.cpl > 35 ? "bg-red-500" : selectedFocusItem.t.cpl > 20 ? "bg-yellow-500" : "bg-green-500" },
@@ -3877,6 +3939,24 @@ function MetricasCampanhasPage() {
                             <span className="rounded-full bg-white/5 px-1.5 py-0.5 text-[8px] font-mono text-muted-foreground border border-white/10">
                               {inspectorContext.analysis_context_hash}
                             </span>
+                            {inspectorResponseOrigin && (
+                              <span
+                                className={`rounded-full px-1.5 py-0.5 text-[8px] font-mono font-bold border ${
+                                  inspectorResponseOrigin === "generative"
+                                    ? "bg-emerald-500/10 text-emerald-300 border-emerald-500/30"
+                                    : "bg-amber-500/10 text-amber-300 border-amber-500/30"
+                                }`}
+                                title={inspectorFallbackReason || undefined}
+                              >
+                                {inspectorResponseOrigin === "generative" ? "⚡ IA Generativa" : "🛡️ Fallback Determinístico"}
+                                {inspectorLatencyMs ? ` · ${(inspectorLatencyMs / 1000).toFixed(1)}s` : ""}
+                              </span>
+                            )}
+                            {inspectorRagCitations.length > 0 && (
+                              <span className="rounded-full bg-violet-500/10 px-1.5 py-0.5 text-[8px] font-mono font-bold text-violet-300 border border-violet-500/30">
+                                📚 {inspectorRagCitations.length} doc{inspectorRagCitations.length > 1 ? "s" : ""} RAG
+                              </span>
+                            )}
                           </>
                         )}
                       </div>
@@ -3940,8 +4020,13 @@ function MetricasCampanhasPage() {
                           Objetivo: <strong className="text-foreground">{inspectorContext.optimization.odax_objective}</strong> · Evento: {inspectorContext.optimization.official_result_event} · Unidade: {inspectorContext.result_indicator.cost_label} ({inspectorContext.result_indicator.unit})
                         </p>
                         <p className="text-muted-foreground">
-                          Spend: R$ {inspectorContext.financial.spend.toFixed(2)} | {inspectorContext.result_indicator.label_plural}: {inspectorContext.raw_metrics.result_value.toLocaleString("pt-BR")} | {inspectorContext.result_indicator.cost_label}: {inspectorContext.raw_metrics.cost_per_result_formatted} | Impr: {inspectorContext.raw_metrics.impressions.toLocaleString("pt-BR")} | Alcance: {inspectorContext.raw_metrics.reach.toLocaleString("pt-BR")} | Cliques Link: {inspectorContext.raw_metrics.link_clicks} | Cliques Totais: {inspectorContext.raw_metrics.all_clicks}
+                          Spend: R$ {inspectorContext.financial.spend.toFixed(2)} | {inspectorContext.result_indicator.label_plural}: {inspectorContext.raw_metrics.result_value.toLocaleString("pt-BR")} | {inspectorContext.result_indicator.cost_label}: {inspectorContext.raw_metrics.cost_per_result_formatted} | Impr: {inspectorContext.raw_metrics.impressions.toLocaleString("pt-BR")} | Alcance: {inspectorContext.raw_metrics.reach.toLocaleString("pt-BR")} | CTR Link: {inspectorContext.raw_metrics.ctr_link.toFixed(2)}% | CTR Todos: {inspectorContext.raw_metrics.ctr_all.toFixed(2)}% | CPC Link: {inspectorContext.raw_metrics.link_clicks > 0 ? `R$ ${inspectorContext.raw_metrics.cpc_link.toFixed(2)}` : "N/A"} | CPC Todos: {inspectorContext.raw_metrics.all_clicks > 0 ? `R$ ${inspectorContext.raw_metrics.cpc_all.toFixed(2)}` : "N/A"} | Cliques Link: {inspectorContext.raw_metrics.link_clicks} | Cliques Totais: {inspectorContext.raw_metrics.all_clicks} · Sync: {inspectorContext.period.last_sync_at || "N/A"} ({inspectorContext.period.data_freshness})
                         </p>
+                        {inspectorRagCitations.length > 0 && (
+                          <p className="text-violet-300">
+                            Fontes RAG ({inspectorRagCitations.length}): {inspectorRagCitations.map((d) => d.title).join(" | ")}
+                          </p>
+                        )}
                       </div>
                     )}
 

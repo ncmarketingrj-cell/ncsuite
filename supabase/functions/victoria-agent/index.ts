@@ -22,6 +22,67 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-victoria-contract-version, x-victoria-prompt-version, x-victoria-request-id, x-victoria-context-hash",
 };
 
+const EXPECTED_EMBEDDING_DIM = 768;
+
+async function generateGeminiEmbedding(
+  text: string,
+  apiKey: string
+): Promise<{ embedding: number[] | null; modelUsed: string | null; status: number; error?: string }> {
+  const inputText = String(text || "").trim().slice(0, 8000);
+  if (!inputText || !apiKey) {
+    return { embedding: null, modelUsed: null, status: 0, error: "empty_text_or_missing_key" };
+  }
+
+  const candidates = [
+    {
+      model: "gemini-embedding-001",
+      body: {
+        model: "models/gemini-embedding-001",
+        content: { parts: [{ text: inputText }] },
+        outputDimensionality: EXPECTED_EMBEDDING_DIM,
+      },
+    },
+    {
+      model: "text-embedding-004",
+      body: {
+        model: "models/text-embedding-004",
+        content: { parts: [{ text: inputText }] },
+      },
+    },
+  ];
+
+  let lastStatus = 0;
+  let lastError = "embedding_failed";
+
+  for (const cand of candidates) {
+    try {
+      const res = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${cand.model}:embedContent?key=${apiKey}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(cand.body),
+        }
+      );
+      lastStatus = res.status;
+      if (!res.ok) {
+        lastError = (await res.text().catch(() => "")).slice(0, 240) || `HTTP ${res.status}`;
+        continue;
+      }
+      const data = await res.json();
+      const values = data?.embedding?.values;
+      if (Array.isArray(values) && values.length === EXPECTED_EMBEDDING_DIM) {
+        return { embedding: values, modelUsed: cand.model, status: res.status };
+      }
+      lastError = `unexpected_dim_${Array.isArray(values) ? values.length : 0}`;
+    } catch (e: any) {
+      lastError = e?.message || "fetch_exception";
+    }
+  }
+
+  return { embedding: null, modelUsed: null, status: lastStatus, error: lastError };
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
@@ -237,25 +298,8 @@ serve(async (req) => {
 
       let embedding: number[] | null = null;
       if (GEMINI_API_KEY) {
-        try {
-          const embedRes = await fetch(
-            `https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent?key=${GEMINI_API_KEY}`,
-            {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                model: "models/text-embedding-004",
-                content: { parts: [{ text: `${docTitle}\n\n${docContent}` }] }
-              })
-            }
-          );
-          if (embedRes.ok) {
-            const embedData = await embedRes.json();
-            embedding = embedData.embedding?.values || null;
-          }
-        } catch (e) {
-          console.error("Falha ao gerar embedding:", e);
-        }
+        const embRes = await generateGeminiEmbedding(`${docTitle}\n\n${docContent}`, GEMINI_API_KEY);
+        embedding = embRes.embedding;
       }
 
       const insertPayload: any = {
@@ -323,31 +367,12 @@ serve(async (req) => {
         ? "Rejeitado automaticamente pela governança RAG: contém alegação numérica sem fonte primária auditável, promessa de crédito sensível ou HTML bruto."
         : null;
 
-      // 1. Obter o embedding do texto de conteúdo usando o Gemini text-embedding-004
-      const embedRes = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent?key=${GEMINI_API_KEY}`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            model: "models/text-embedding-004",
-            content: {
-              parts: [{ text: `${title}\n\n${content}` }]
-            }
-          })
-        }
-      );
-
-      if (!embedRes.ok) {
-        const errText = await embedRes.text();
-        throw new Error(`Erro ao gerar embedding: ${errText}`);
+      // 1. Obter embedding 768d usando helper unificado (gemini-embedding-001 -> text-embedding-004)
+      const embRes = await generateGeminiEmbedding(`${title}\n\n${content}`, GEMINI_API_KEY);
+      if (!embRes.embedding && approvalStatus === "APPROVED") {
+        throw new Error(`Erro ao gerar embedding: ${embRes.error || embRes.status}`);
       }
-
-      const embedData = await embedRes.json();
-      const embedding = embedData.embedding?.values;
-      if (!embedding) {
-        throw new Error("Resposta de embedding vazia do Gemini");
-      }
+      const embedding = approvalStatus === "APPROVED" ? embRes.embedding : null;
 
       // 2. Salvar na tabela victoria_knowledge
       const { data, error: insertErr } = await supabase
@@ -395,27 +420,8 @@ serve(async (req) => {
 
       let embedding: number[] | null = null;
       if (GEMINI_API_KEY) {
-        try {
-          const embedRes = await fetch(
-            `https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent?key=${GEMINI_API_KEY}`,
-            {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                model: "models/text-embedding-004",
-                content: {
-                  parts: [{ text: `${title}\n\n${content}` }]
-                }
-              })
-            }
-          );
-          if (embedRes.ok) {
-            const embedData = await embedRes.json();
-            embedding = embedData.embedding?.values || null;
-          }
-        } catch (e) {
-          console.error("Falha ao gerar embedding na atualização:", e);
-        }
+        const embRes = await generateGeminiEmbedding(`${title}\n\n${content}`, GEMINI_API_KEY);
+        embedding = embRes.embedding;
       }
 
       const updatePayload: Record<string, any> = {
@@ -592,43 +598,35 @@ Escreva em formato altamente profissional, com dados baseados na série de métr
       }
 
       let snippets: any[] = [];
+      let vectorStatus = "skipped";
       if (GEMINI_API_KEY) {
         try {
-          const embedRes = await fetch(
-            `https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent?key=${GEMINI_API_KEY}`,
-            {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                model: "models/text-embedding-004",
-                content: { parts: [{ text: q }] }
-              })
-            }
-          );
-
-          if (embedRes.ok) {
-            const embedData = await embedRes.json();
-            const embedding = embedData.embedding?.values;
-            if (embedding) {
-              const { data: matchData } = await supabase.rpc("match_victoria_knowledge", {
-                query_embedding: embedding,
-                match_threshold: 0.55,
-                match_count: 5,
-                p_user_id: user.id
-              });
-
-              snippets = (matchData || []).map((k: any) => ({
+          const embRes = await generateGeminiEmbedding(q, GEMINI_API_KEY);
+          if (embRes.embedding) {
+            const { data: matchData, error: matchErr } = await supabase.rpc("match_victoria_knowledge", {
+              query_embedding: embRes.embedding,
+              match_threshold: Number(body.match_threshold ?? 0.42),
+              match_count: Number(body.limit ?? 5),
+              p_user_id: user.id
+            });
+            vectorStatus = matchErr ? `rpc_err:${matchErr.message}` : `ok_${(matchData || []).length}`;
+            snippets = (matchData || [])
+              .filter((k: any) => k.approval_status !== "REJECTED" && k.evidence_level !== "UNVERIFIED" && k.evidence_level !== "OPINION")
+              .map((k: any) => ({
                 id: k.id,
                 title: k.title,
                 category: k.category,
+                similarity: k.similarity ?? null,
                 version: k.version || VICTORIA_CONTRACT_VERSION,
                 evidence_level: k.evidence_level || "INTERNAL_RULE",
                 approval_status: k.approval_status || "APPROVED",
                 content: (k.content || "").slice(0, 600)
               }));
-            }
+          } else {
+            vectorStatus = `embed_err:${embRes.error}`;
           }
-        } catch (vecErr) {
+        } catch (vecErr: any) {
+          vectorStatus = `exc:${vecErr?.message || "err"}`;
           console.warn("[VICTORIA] Vector search_knowledge falhou, usando fallback lexical curado:", vecErr);
         }
       }
@@ -643,19 +641,22 @@ Escreva em formato altamente profissional, com dados baseados na série de métr
           .or(`user_id.eq.${user.id},evidence_level.in.(OFFICIAL_DOC,INTERNAL_RULE)`)
           .order("priority", { ascending: false })
           .order("created_at", { ascending: false })
-          .limit(20);
+          .limit(30);
 
-        const tokens = q.toLowerCase().split(/\s+/).filter((w) => w.length >= 3);
+        const tokens = q.toLowerCase().split(/[^a-zà-ú0-9]+/i).filter((w) => w.length >= 3);
         const scored = (docs || [])
+          .filter((d: any) => d.approval_status === "APPROVED" && d.evidence_level !== "UNVERIFIED" && d.evidence_level !== "OPINION")
           .map((d: any) => {
             const hay = `${d.title || ""} ${d.content || ""} ${d.category || ""} ${d.objective || ""}`.toLowerCase();
-            const score = tokens.reduce((s, tok) => s + (hay.includes(tok) ? 2 : 0), 0) + (d.evidence_level === "OFFICIAL_DOC" ? 2 : 1);
-            return { doc: d, score };
+            const tokenHits = tokens.reduce((s, tok) => s + (hay.includes(tok) ? 2 : 0), 0);
+            const score = tokenHits + (tokenHits > 0 && d.evidence_level === "OFFICIAL_DOC" ? 2 : 0);
+            return { doc: d, score, tokenHits };
           })
-          .sort((a, b) => b.score - a.score)
-          .slice(0, 5);
+          .filter((entry: any) => entry.tokenHits > 0)
+          .sort((a: any, b: any) => b.score - a.score)
+          .slice(0, Number(body.limit ?? 5));
 
-        snippets = scored.map(({ doc: k }) => ({
+        snippets = scored.map(({ doc: k }: any) => ({
           id: k.id,
           title: k.title,
           category: k.category,
@@ -666,13 +667,13 @@ Escreva em formato altamente profissional, com dados baseados na série de métr
         }));
       }
 
-      return new Response(JSON.stringify({ snippets }), {
+      return new Response(JSON.stringify({ snippets, retrieval_status: vectorStatus }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" }
       });
     }
 
     // =========================================================================
-    // AÇÃO: backfill_embeddings (gera embeddings para docs APPROVED sem vetor)
+    // AÇÃO: backfill_embeddings (gera embeddings 768d apenas para docs APPROVED ativos)
     // =========================================================================
     if (action === "backfill_embeddings") {
       if (!GEMINI_API_KEY) {
@@ -680,42 +681,63 @@ Escreva em formato altamente profissional, com dados baseados na série de métr
           headers: { ...corsHeaders, "Content-Type": "application/json" }
         });
       }
-      const { data: pendingDocs } = await supabase
+      const forceReembed = body.force_reembed === true;
+      const limitCount = Math.min(50, Math.max(1, Number(body.limit ?? 30)));
+      let qPending = supabase
         .from("victoria_knowledge")
-        .select("id, title, content")
+        .select("id, title, content, approval_status, is_active, evidence_level")
         .eq("is_active", true)
         .eq("approval_status", "APPROVED")
-        .is("embedding", null)
-        .limit(25);
+        .not("evidence_level", "in", '("UNVERIFIED","OPINION")');
+      if (!forceReembed) {
+        qPending = qPending.is("embedding", null);
+      }
+      const { data: pendingDocs, error: pendingErr } = await qPending.limit(limitCount);
+
+      if (pendingErr) {
+        return new Response(JSON.stringify({ success: false, updated: 0, error: pendingErr.message }), {
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" }
+        });
+      }
 
       let updated = 0;
+      let modelUsed: string | null = null;
+      const errors: Array<{ id: string; error: string }> = [];
+
       for (const doc of pendingDocs || []) {
-        try {
-          const embedRes = await fetch(
-            `https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent?key=${GEMINI_API_KEY}`,
-            {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                model: "models/text-embedding-004",
-                content: { parts: [{ text: `${doc.title}\n\n${doc.content}` }] }
-              })
-            }
-          );
-          if (embedRes.ok) {
-            const embedData = await embedRes.json();
-            const vec = embedData.embedding?.values;
-            if (Array.isArray(vec) && vec.length > 0) {
-              const { error: uErr } = await supabase
-                .from("victoria_knowledge")
-                .update({ embedding: vec, version: VICTORIA_CONTRACT_VERSION })
-                .eq("id", doc.id);
-              if (!uErr) updated++;
-            }
+        if (
+          doc.approval_status !== "APPROVED" ||
+          doc.is_active !== true ||
+          doc.evidence_level === "UNVERIFIED" ||
+          doc.evidence_level === "OPINION"
+        ) {
+          continue;
+        }
+        const embRes = await generateGeminiEmbedding(`${doc.title}\n\n${doc.content}`, GEMINI_API_KEY);
+        if (embRes.embedding) {
+          modelUsed = embRes.modelUsed;
+          const { error: uErr } = await supabase
+            .from("victoria_knowledge")
+            .update({ embedding: embRes.embedding, version: VICTORIA_CONTRACT_VERSION })
+            .eq("id", doc.id);
+          if (!uErr) {
+            updated++;
+          } else {
+            errors.push({ id: doc.id, error: uErr.message });
           }
-        } catch {}
+        } else {
+          errors.push({ id: doc.id, error: embRes.error || `HTTP ${embRes.status}` });
+        }
       }
-      return new Response(JSON.stringify({ success: true, updated, scanned: (pendingDocs || []).length }), {
+
+      return new Response(JSON.stringify({
+        success: errors.length === 0 || updated > 0,
+        updated,
+        scanned: (pendingDocs || []).length,
+        model_used: modelUsed,
+        errors,
+      }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" }
       });
     }
@@ -801,20 +823,8 @@ Escreva em formato altamente profissional, com dados baseados na série de métr
         const batch = DOCS.slice(i, i + batchSize);
         await Promise.all(batch.map(async (doc) => {
           try {
-            const embedRes = await fetch(
-              `https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent?key=${GEMINI_API_KEY}`,
-              {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  model: "models/text-embedding-004",
-                  content: { parts: [{ text: `${doc.title}\n\n${doc.content}` }] }
-                })
-              }
-            );
-            if (!embedRes.ok) { errors.push(doc.title); return; }
-            const embedData = await embedRes.json();
-            const embedding = embedData.embedding?.values;
+            const embRes = await generateGeminiEmbedding(`${doc.title}\n\n${doc.content}`, GEMINI_API_KEY);
+            const embedding = embRes.embedding;
             if (!embedding) { errors.push(doc.title); return; }
 
             const { error } = await supabase.from("victoria_knowledge").insert({
@@ -1523,11 +1533,9 @@ Sua arquitetura mental é a síntese das maiores mentes do marketing estratégic
 9. **Arsenal Tecnológico Automotivo:** Targeted VIN Advertising (campanhas baseadas no chassi/VIN do estoque real), Streaming Media & Nitro Specials (ofertas agressivas em tempo real no site), otimização de feeds e gestão de reputação por IA.
 
 PERSONALIDADE E ATITUDE:
-- Você fala de forma natural e com extrema autoridade como uma estrategista sênior da NC Performance. Você é profissional, confiante e direta ao ponto.
-- REGRA CRÍTICA E INVIOLÁVEL: Dirija-se ao usuário SEMPRE pelo primeiro nome dele: **${userName}**. NUNCA o chame de "Comandante", "Chefe", "Usuário", "Gestor" ou qualquer outro apelido/termo genérico/robótico. Chame-o única e exclusivamente por **${userName}**.
-- Ao iniciar a conversa ou cumprimentar, use o nome dele: "Fala, ${userName}!", "Olá, ${userName}!", "Olha só, ${userName}". NUNCA use "Comandante".
-- Se ele falar algo como "tranquilo e calmo?", responda: "Tranquilo e calmo nada, ${userName}! A gente tá com leilão do Meta Ads fritando e CPL caindo a cada minuto. Tranquilidade pra mim é só quando o pátio de seminovos esvaziar e o comercial fechar venda atrás de venda! Vamo pro jogo!"
-- Se o usuário puxar assunto, responda como alguém do time: "Fala, ${userName}! Passei o fim de semana com o olho nos conjuntos de anúncios pra garantir que os leads caíssem quentes. Vamos pro que interessa, o que a gente vai otimizar hoje?"
+- Você fala de forma natural, sênior e objetiva como estrategista da NC Performance. Sem teatralidade, sem chavões ou desculpas.
+- REGRA CRÍTICA E INVIOLÁVEL: Dirija-se ao usuário SEMPRE pelo primeiro nome dele: **${userName}**. NUNCA o chame de "Comandante", "Chefe", "Usuário" ou apelidos.
+- Quando receber saudações simples (ex.: "oi", "tudo bem?"), responda de forma direta e profissional usando o nome **${userName}** e oferecendo leitura factual dos dados do período ou perguntando qual conta/campanha deseja auditar — PROIBIDO inventar histórias pessoais como "passei o fim de semana olhando os conjuntos".
 
 DIRETRIZES TÉCNICAS E ESTRATÉGICAS DE MARKETING AUTOMOTIVO:
 1. **Analise os Períodos com Precisão:**
@@ -1616,7 +1624,7 @@ REGRAS DE RESPOSTA (${VICTORIA_CONTRACT_VERSION}):
    - 💬 *Mensagens / WhatsApp (MESSAGES)* → resultado primário = **conversas iniciadas**, indicador oficial = **Custo por conversa**.
    - 📸 *Visitas ao Perfil do Instagram (INSTAGRAM_PROFILE)* → resultado primário = **visitas ao perfil**, indicador oficial = **Custo por visita ao perfil**. **PROIBIDO** usar "CPL".
    - 🌐 *Visualizações da Página de Destino (LANDING_PAGE_VIEWS)* → resultado primário = **visualizações da página de destino**, indicador oficial = **Custo por visualização da página de destino**.
-   - 👆 *Cliques no Link (LINK_CLICKS)* → resultado primário = **cliques no link**, indicador oficial = **CPC (custo por clique no link)**, distinto de todos os cliques (\`all_clicks\`).
+   - 👆 *Cliques no Link (LINK_CLICKS)* → resultado primário = **cliques no link**, indicadores oficiais = **CPC Link (custo por clique no link)** e **CPC Todos (custo por clique geral)**, sempre distinguidos (\`all_clicks\`).
    - 🎯 *Leads / Cadastros (LEADS)* → resultado primário = **leads**, indicador oficial = **CPL (custo por lead)**.
    - 🛒 *Compras (PURCHASES)* → resultado primário = **compras**, indicadores oficiais = **CPA (custo por compra)** e **ROAS**.
    - **PROIBIÇÃO DE COMPARAÇÃO ENTRE UNIDADES DIFERENTES:** Nunca compare grandezas de denominadores diferentes.
@@ -1712,46 +1720,54 @@ REGRAS DE RESPOSTA (${VICTORIA_CONTRACT_VERSION}):
       console.warn("[VICTORIA] Falha ao carregar base de conhecimento:", _kErr);
     }
 
-    let retrievedContext = externalContext || "";
-    if (!retrievedContext && GEMINI_API_KEY && messages && messages.length > 0) {
+    let ragRetrievalMode = "lexical_only";
+    let vectorMatchCount = 0;
+
+    // 3b. Busca vetorial prioritária usando embedding 768d (sem bloquear mesmo quando externalContext é enviado)
+    if (GEMINI_API_KEY && messages && messages.length > 0) {
       const lastUserMessage = String(messages[messages.length - 1]?.content || "").trim();
-      const semanticQuery = `${lastUserMessage} ${analysisContext?.result_indicator?.category || ""} ${analysisContext?.result_indicator?.cost_label || ""}`.trim();
+      const semanticQuery = [
+        lastUserMessage,
+        analysisContext?.result_indicator?.category || "",
+        analysisContext?.result_indicator?.cost_label || "",
+        analysisContext?.entity_name || "",
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .trim();
+
       if (semanticQuery) {
         try {
-          const embedRes = await fetch(
-            `https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent?key=${GEMINI_API_KEY}`,
-            {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                model: "models/text-embedding-004",
-                content: { parts: [{ text: semanticQuery }] }
-              })
-            }
-          );
+          const embRes = await generateGeminiEmbedding(semanticQuery, GEMINI_API_KEY);
+          if (embRes.embedding) {
+            const effectiveThreshold = Math.min(Number(userRagThreshold || 0.7), 0.44);
+            const { data: matchData, error: matchErr } = await supabase.rpc(
+              "match_victoria_knowledge",
+              {
+                query_embedding: embRes.embedding,
+                match_threshold: effectiveThreshold,
+                match_count: Math.max(4, userRagCount),
+                p_user_id: user.id
+              }
+            );
 
-          if (embedRes.ok) {
-            const embedData = await embedRes.json();
-            const embedding = embedData.embedding?.values;
-            if (embedding) {
-              const { data: matchData, error: matchErr } = await supabase.rpc(
-                "match_victoria_knowledge",
-                {
-                  query_embedding: embedding,
-                  match_threshold: userRagThreshold,
-                  match_count: userRagCount,
-                  p_user_id: user.id
-                }
+            if (matchErr) {
+              console.error("Erro na busca de similaridade RAG:", matchErr);
+            } else if (matchData && matchData.length > 0) {
+              const safeVectorDocs = matchData.filter(
+                (k: any) =>
+                  k.approval_status !== "REJECTED" &&
+                  k.evidence_level !== "UNVERIFIED" &&
+                  k.evidence_level !== "OPINION"
               );
-
-              if (matchErr) {
-                console.error("Erro na busca de similaridade RAG:", matchErr);
-              } else if (matchData && matchData.length > 0) {
-                matchData.forEach((k: any) => addCitation(k));
-                retrievedContext = matchData
-                  .map((k: any) => `[ID: ${k.id} | Categoria: ${k.category} | Evidência: ${k.evidence_level || "INTERNAL_RULE"}] ${k.title}: ${k.content}`)
-                  .join("\n\n");
-                console.log(`[VICTORIA] RAG Vetorial Ativado: ${matchData.length} blocos recuperados.`);
+              if (safeVectorDocs.length > 0) {
+                vectorMatchCount = safeVectorDocs.length;
+                ragRetrievalMode = "vector+lexical";
+                safeVectorDocs.forEach((k: any) => addCitation(k));
+                const vectorBlocks = safeVectorDocs
+                  .map((k: any) => `[ID: ${k.id} | VETOR sim=${Number(k.similarity || 0).toFixed(2)} | Categoria: ${k.category} | Evidência: ${k.evidence_level || "INTERNAL_RULE"}] ${k.title}: ${String(k.content || "").slice(0, 650)}`)
+                  .join("\n\n---\n\n");
+                knowledgeCtx = vectorBlocks + (knowledgeCtx ? `\n\n---\n\n${knowledgeCtx}` : "");
               }
             }
           }
@@ -1760,9 +1776,10 @@ REGRAS DE RESPOSTA (${VICTORIA_CONTRACT_VERSION}):
         }
       }
     }
+    const retrievedContext = externalContext || "";
 
     // =========================================================================
-    // 3b. WEB SEARCH — Gemini Google Grounding quando usuário pede pesquisa
+    // 3c. WEB SEARCH — Gemini Google Grounding quando usuário pede pesquisa
     // =========================================================================
     const hasSearchIntent = /pesquise|procure na internet|busque na web|buscar na internet|últimas tendências|novidades sobre|pesquisa sobre|o que está acontecendo com|pesquise sobre|me traga dados de|me traga informações sobre|tendências de mercado/.test(lastUserMsg);
 
@@ -1799,7 +1816,7 @@ REGRAS DE RESPOSTA (${VICTORIA_CONTRACT_VERSION}):
       ? normalizedSystemPrompt
       : (userSystemPrompt ? `${normalizedSystemPrompt}\n\nPREFERÊNCIA COMPLEMENTAR DO USUÁRIO (SUBORDINADA ÀS REGRAS CANÔNICAS):\n${userSystemPrompt}` : normalizedSystemPrompt);
 
-    promptWithRAG += `\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nREGRA MANDATÓRIA DE TRATAMENTO & PRECISÃO (${VICTORIA_CONTRACT_VERSION}):\n- Dirija-se ao usuário SEMPRE pelo primeiro nome dele: **${userName}**. PROIBIDO usar "Comandante", "Chefe" ou "Usuário".\n- SEMPRE preserve o evento oficial da entidade (ex: "conversas iniciadas", "visitas ao perfil", "visualizações de página", "pessoas alcançadas") e NUNCA converta para "CPL" quando o objetivo for alcance/visitas/mensagens/cliques.\n- Quando resultados forem 0 e custo não calculável, informe "Não calculável" e NUNCA R$ 0,00.\n- ${operationalMode === "ACTION_PROPOSAL" ? "Ações mutáveis exigem proposta estruturada com aprovação humana explícita." : "MODO READ_ONLY_ANALYSIS ATIVO: PROIBIDO emitir json:action ou propor alteração automática."}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+    promptWithRAG += `\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nREGRA MANDATÓRIA DE TRATAMENTO & PRECISÃO (${VICTORIA_CONTRACT_VERSION}):\n- Dirija-se ao usuário SEMPRE pelo primeiro nome dele: **${userName}**. PROIBIDO usar "Comandante", "Chefe" ou "Usuário".\n- SEMPRE preserve o evento oficial da entidade (ex: "conversas iniciadas", "visitas ao perfil", "visualizações de página", "pessoas alcançadas") e NUNCA converta para "CPL" quando o objetivo for alcance/visitas/mensagens/cliques.\n- SEMPRE separe e informe explicitamente **CTR Link / CPC Link** e **CTR Todos / CPC Todos**.\n- Quando \`comparable_same_objective_avg\` for \`null\`, afirme literalmente: "Benchmark homogêneo indisponível: não existem outras campanhas comparáveis suficientes no período." — NUNCA compare a campanha consigo mesma.\n- Quando resultados forem 0 e custo não calculável, informe "Não calculável" e NUNCA R$ 0,00.\n- Seja objetivo e direto (máximo ~900–1200 palavras) mantendo rigor factual e as 10 seções exatas.\n- ${operationalMode === "ACTION_PROPOSAL" ? "Ações mutáveis exigem proposta estruturada com aprovação humana explícita." : "MODO READ_ONLY_ANALYSIS ATIVO: PROIBIDO emitir json:action ou propor alteração automática."}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
 
     if (analysisContext && typeof analysisContext === "object") {
       const cat = String(analysisContext.result_indicator?.category || "UNKNOWN");
@@ -1807,28 +1824,33 @@ REGRAS DE RESPOSTA (${VICTORIA_CONTRACT_VERSION}):
       const forbidden = Array.isArray(analysisContext.result_indicator?.forbidden_labels)
         ? analysisContext.result_indicator.forbidden_labels.join(", ")
         : "";
-      const siblingList = Array.isArray(analysisContext.isolated_sibling_blocklist)
-        ? analysisContext.isolated_sibling_blocklist.join(" | ")
-        : "";
-      promptWithRAG += `\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nCONTRATO CANÔNICO DE CONTEXTO ATIVO (VictoriaAnalysisContext ${VICTORIA_CONTRACT_VERSION}):\n- Request ID: ${analysisContext.request_id || "n/a"} | Context Hash: ${analysisContext.analysis_context_hash || "n/a"}\n- Modo Operacional: ${operationalMode}\n- Entidade Analisada: [${analysisContext.entity_level || "campaign"}] ${analysisContext.entity_name || ""} (ID: ${analysisContext.entity_id || ""})\n- Conta: ${analysisContext.ad_account_name || ""} (${analysisContext.ad_account_id || ""})\n- Período: ${ctxDateFrom || startDateStr} a ${ctxDateTo || endDateStr} (${ctxDaysCount} dia(s))\n- Categoria / Evento Oficial: ${cat} | Indicador Oficial de Custo: **${costLbl}**\n- Métricas Oficiais no Contrato: ${JSON.stringify(analysisContext.metrics || {})}\n- Rótulos PROIBIDOS para esta entidade: ${forbidden || "Nenhum"}\n- Nível de Confiança Calibrado: **${String(analysisContext.confidence_level || "baixa").toUpperCase()}** (${analysisContext.confidence_justification || analysisContext.confidence_reason || ""})\n- Campos Ausentes: ${Array.isArray(analysisContext.missing_fields) ? analysisContext.missing_fields.join(", ") : "nenhum"}\n- REGRA DE ISOLAMENTO ABSOLUTO: Analise EXCLUSIVAMENTE a entidade "${analysisContext.entity_name || ""}". É TERMINANTEMENTE PROIBIDO citar estas entidades irmãs da conta: ${siblingList || "outras campanhas"}.\n- CITAÇÃO OBRIGATÓRIA DE FONTES (Seção 10): Cite os IDs/títulos reais dos documentos RAG recuperados abaixo.\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+      const siblingNamesRaw = Array.isArray(analysisContext.isolated_sibling_blocklist?.names)
+        ? analysisContext.isolated_sibling_blocklist.names
+        : Array.isArray(analysisContext.isolated_sibling_blocklist)
+        ? analysisContext.isolated_sibling_blocklist
+        : [];
+      const siblingList = siblingNamesRaw.join(" | ");
+      const rawMetricsSnapshot = analysisContext.raw_metrics || analysisContext.metrics || {};
+      const financialSnapshot = analysisContext.financial || {};
+      const benchSnapshot = analysisContext.governance_and_benchmarks || {};
+
+      promptWithRAG += `\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nCONTRATO CANÔNICO DE CONTEXTO ATIVO (VictoriaAnalysisContext ${VICTORIA_CONTRACT_VERSION}):\n- Request ID: ${analysisContext.request_id || "n/a"} | Context Hash: ${analysisContext.analysis_context_hash || "n/a"}\n- Modo Operacional: ${operationalMode}\n- Entidade Analisada: [${analysisContext.entity_level || "campaign"}] ${analysisContext.entity_name || ""} (ID: ${analysisContext.entity_id || ""})\n- Conta: ${analysisContext.ad_account_name || ""} (${analysisContext.ad_account_id || ""})\n- Período: ${ctxDateFrom || startDateStr} a ${ctxDateTo || endDateStr} (${ctxDaysCount} dia(s)) | Last Sync: ${analysisContext.period?.last_sync_at || "n/a"} (${analysisContext.period?.data_freshness || "unknown"})\n- Categoria / Evento Oficial: ${cat} | Indicador Oficial de Custo: **${costLbl}**\n- Financeiro Oficial: ${JSON.stringify(financialSnapshot)}\n- Métricas Oficiais no Contrato: ${JSON.stringify(rawMetricsSnapshot)}\n- Benchmarks Homogêneos: avg=${benchSnapshot.comparable_same_objective_avg ?? "null"}, comparáveis=${benchSnapshot.comparable_peer_count ?? 0}, meta_conta=${benchSnapshot.account_max_cpl_target ?? "null"}\n- Rótulos PROIBIDOS para esta entidade: ${forbidden || "Nenhum"}\n- Nível de Confiança Calibrado: **${String(analysisContext.confidence_level || "baixa").toUpperCase()}** (${analysisContext.confidence_justification || analysisContext.confidence_reason || ""})\n- Campos Ausentes: ${Array.isArray(analysisContext.missing_fields) ? analysisContext.missing_fields.join(", ") : "nenhum"}\n- REGRA DE ISOLAMENTO ABSOLUTO: Analise EXCLUSIVAMENTE a entidade "${analysisContext.entity_name || ""}". É TERMINANTEMENTE PROIBIDO citar estas entidades irmãs da conta: ${siblingList || "outras campanhas"}.\n- CITAÇÃO OBRIGATÓRIA DE FONTES (Seção 10): ${ragCitations.length > 0 ? `Cite explicitamente os ${ragCitations.length} documento(s) RAG recuperado(s) abaixo pelo título e ID.` : "Nenhum documento RAG recuperado; informe honestamente que aplicou o contrato canônico sem documentos extras."}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
     }
     if (knowledgeCtx) {
       promptWithRAG += `\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nBASE DE CONHECIMENTO CURADA NC PERFORMANCE (APENAS APPROVED — Prioridade: 1º Dados Reais da Conta > 2º Metas da Conta > 3º Documentos RAG abaixo):\n\n${knowledgeCtx}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
     }
     if (retrievedContext && retrievedContext !== knowledgeCtx) {
-      promptWithRAG += `\n\nCONHECIMENTO VETORIAL RECUPERADO (${ragCitations.length} doc(s)):\n${retrievedContext}`;
+      promptWithRAG += `\n\nCONTEXTO COMPLEMENTAR:\n${retrievedContext.slice(0, 3500)}`;
     }
     if (webSearchContext) {
       promptWithRAG += webSearchContext;
     }
 
     // =========================================================================
-    // 4. PREPARAÇÃO DO PAYLOAD NO PADRÃO OPENAI COMPATÍVEL
+    // 4. PREPARAÇÃO DO PAYLOAD & PROVEDORES COM FALLBACK AUTOMÁTICO
     // =========================================================================
     const openAiMessages = messages.map((m: any) => {
       const role = m.role === "assistant" ? "assistant" : "user";
-      
-      // Se tiver imagem na mensagem
       if (m.image || m.metadata?.image) {
         const img = m.image || m.metadata.image;
         return {
@@ -1839,44 +1861,59 @@ REGRAS DE RESPOSTA (${VICTORIA_CONTRACT_VERSION}):
           ]
         };
       }
-      
       return { role, content: m.content };
     });
 
-    // Injeta a instrução do sistema
     openAiMessages.unshift({
       role: "system",
       content: promptWithRAG
     });
 
-    let fetchUrl = "";
-    let fetchHeaders: Record<string, string> = { "Content-Type": "application/json" };
-    let fetchBody: any = {};
+    const maxTokens = isScopedSingleEntity ? 2400 : 3000;
+    const providerTargets: Array<{ name: string; url: string; headers: Record<string, string>; body: any }> = [];
 
     if (LOVABLE_API_KEY) {
-      fetchUrl = "https://ai.gateway.lovable.dev/v1/chat/completions";
-      fetchHeaders["Authorization"] = `Bearer ${LOVABLE_API_KEY}`;
       const finalModel = userModelName.startsWith("google/") ? userModelName : `google/${userModelName}`;
-      fetchBody = {
-        model: finalModel,
-        messages: openAiMessages,
-        temperature: userTemperature,
-        max_tokens: 8192,
-        stream: !shouldReturnJson
-      };
-    } else if (GEMINI_API_KEY) {
-      fetchUrl = `https://generativelanguage.googleapis.com/v1beta/openai/chat/completions`;
-      fetchHeaders["Authorization"] = `Bearer ${GEMINI_API_KEY}`;
-      fetchBody = {
-        model: userModelName,
-        messages: openAiMessages,
-        temperature: userTemperature,
-        max_tokens: 8192,
-        stream: !shouldReturnJson
-      };
+      providerTargets.push({
+        name: "lovable_gateway",
+        url: "https://ai.gateway.lovable.dev/v1/chat/completions",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${LOVABLE_API_KEY}`,
+        },
+        body: {
+          model: finalModel,
+          messages: openAiMessages,
+          temperature: userTemperature,
+          max_tokens: maxTokens,
+          stream: !shouldReturnJson,
+        },
+      });
     }
 
-    const finalizeTelemetry = async (opts: { usedFallback: boolean; validationStatus: string }) => {
+    if (GEMINI_API_KEY) {
+      providerTargets.push({
+        name: "gemini_direct",
+        url: "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${GEMINI_API_KEY}`,
+        },
+        body: {
+          model: userModelName.replace(/^google\//, ""),
+          messages: openAiMessages,
+          temperature: userTemperature,
+          max_tokens: maxTokens,
+          stream: !shouldReturnJson,
+        },
+      });
+    }
+
+    const finalizeTelemetry = async (opts: {
+      usedFallback: boolean;
+      validationStatus: string;
+      providerUsed?: string;
+    }) => {
       if (!analysisContext?.request_id) return;
       try {
         await supabase
@@ -1888,12 +1925,13 @@ REGRAS DE RESPOSTA (${VICTORIA_CONTRACT_VERSION}):
             retrieved_doc_ids: ragCitations.map((c) => c.id),
             rag_citations: ragCitations,
             action_mode: operationalMode,
+            model_version: opts.providerUsed ? `${userModelName}@${opts.providerUsed}` : String(userModelName),
           })
           .eq("request_id", String(analysisContext.request_id));
       } catch {}
     };
 
-    const buildResponseMetadata = () => ({
+    const buildResponseMetadata = (providerUsed?: string, usedFallback?: boolean) => ({
       request_id: analysisContext?.request_id || null,
       analysis_context_hash: analysisContext?.analysis_context_hash || null,
       ad_account_id: analysisContext?.ad_account_id || selectedAccountId || null,
@@ -1906,157 +1944,199 @@ REGRAS DE RESPOSTA (${VICTORIA_CONTRACT_VERSION}):
       prompt_version: VICTORIA_PROMPT_VERSION,
       operational_mode: operationalMode,
       model_version: userModelName,
+      provider_used: providerUsed || null,
       temperature: userTemperature,
       rag_citations: ragCitations,
+      rag_retrieval_mode: ragRetrievalMode,
+      vector_match_count: vectorMatchCount,
+      response_origin: usedFallback ? "deterministic_fallback" : "generative",
     });
 
-    if (fetchUrl) {
+    let activeStreamRes: Response | null = null;
+    let activeProviderName = "";
+    let lastProviderError = "";
+
+    for (const target of providerTargets) {
+      const connectCtrl = new AbortController();
+      const connectTimer = setTimeout(() => connectCtrl.abort("PROVIDER_CONNECT_TIMEOUT"), 14000);
       try {
-        const streamRes = await fetch(fetchUrl, {
+        const candidateRes = await fetch(target.url, {
           method: "POST",
-          headers: fetchHeaders,
-          body: JSON.stringify(fetchBody)
+          headers: target.headers,
+          body: JSON.stringify(target.body),
+          signal: connectCtrl.signal,
         });
+        clearTimeout(connectTimer);
+        if (candidateRes.ok) {
+          activeStreamRes = candidateRes;
+          activeProviderName = target.name;
+          break;
+        }
+        const errBody = await candidateRes.text().catch(() => "");
+        lastProviderError = `${target.name}_http_${candidateRes.status}:${errBody.slice(0, 140)}`;
+        console.warn("[VICTORIA] Provider failed, trying next if available:", lastProviderError);
+      } catch (pErr: any) {
+        clearTimeout(connectTimer);
+        lastProviderError = `${target.name}_err:${pErr?.message || "abort"}`;
+        console.warn("[VICTORIA] Provider fetch error, trying next:", lastProviderError);
+      }
+    }
 
-        if (streamRes.ok) {
-          if (shouldReturnJson) {
-            const jsonPayload = await streamRes.json();
-            const rawReply = jsonPayload?.choices?.[0]?.message?.content || "";
-            const guarded = enforceServerPostLlmGuardrails(
-              rawReply,
-              analysisContext,
-              ragCitations,
-              operationalMode,
-              requireFull10Sections
-            );
-            await finalizeTelemetry({
-              usedFallback: guarded.replacedByDeterministic,
-              validationStatus: guarded.replacedByDeterministic
-                ? `DETERMINISTIC_FALLBACK:${guarded.reasons.join("|")}`
-                : "PASSED",
-            });
-            return new Response(JSON.stringify({
-              reply: guarded.text,
-              diagnosis: guarded.text,
-              content: guarded.text,
-              replaced_by_deterministic: guarded.replacedByDeterministic,
-              guardrail_reasons: guarded.reasons,
-              ...buildResponseMetadata(),
-            }), {
-              headers: { ...corsHeaders, "Content-Type": "application/json" }
-            });
-          }
+    if (activeStreamRes) {
+      try {
+        if (shouldReturnJson) {
+          const jsonPayload = await activeStreamRes.json();
+          const rawReply = jsonPayload?.choices?.[0]?.message?.content || "";
+          const guarded = enforceServerPostLlmGuardrails(
+            rawReply,
+            analysisContext,
+            ragCitations,
+            operationalMode,
+            requireFull10Sections
+          );
+          await finalizeTelemetry({
+            usedFallback: guarded.replacedByDeterministic,
+            validationStatus: guarded.replacedByDeterministic
+              ? `DETERMINISTIC_FALLBACK:${guarded.reasons.join("|")}`
+              : "PASSED",
+            providerUsed: activeProviderName,
+          });
+          return new Response(JSON.stringify({
+            reply: guarded.text,
+            diagnosis: guarded.text,
+            content: guarded.text,
+            replaced_by_deterministic: guarded.replacedByDeterministic,
+            guardrail_reasons: guarded.reasons,
+            latency_ms: Date.now() - requestStartedAt,
+            ...buildResponseMetadata(activeProviderName, guarded.replacedByDeterministic),
+          }), {
+            headers: { ...corsHeaders, "Content-Type": "application/json" }
+          });
+        }
 
-          // Modo SSE: se há analysisContext de entidade única, validar pós-LLM antes de entregar ao cliente
-          if (analysisContext && analysisContext.entity_id && streamRes.body) {
-            const reader = streamRes.body.getReader();
-            const decoder = new TextDecoder();
-            let buffer = "";
-            let assembled = "";
-            while (true) {
-              const { done, value } = await reader.read();
-              if (done) break;
-              buffer += decoder.decode(value, { stream: true });
-              const lines = buffer.split("\n");
-              buffer = lines.pop() || "";
-              for (const line of lines) {
-                const trimmed = line.trim();
-                if (!trimmed.startsWith("data: ") || trimmed === "data: [DONE]") continue;
-                try {
-                  const parsed = JSON.parse(trimmed.slice(6));
-                  const delta = parsed?.choices?.[0]?.delta?.content;
-                  if (typeof delta === "string") assembled += delta;
-                } catch {}
+        // MODO SSE REAL STREAMING: entrega victoria_meta + tokens em tempo real e valida no encerramento
+        if (activeStreamRes.body) {
+          const upstreamBody = activeStreamRes.body;
+          const encoderSse = new TextEncoder();
+
+          const sseStream = new ReadableStream({
+            async start(controller) {
+              const sendSse = (obj: unknown) => {
+                controller.enqueue(encoderSse.encode(`data: ${JSON.stringify(obj)}\n\n`));
+              };
+
+              sendSse({ victoria_meta: buildResponseMetadata(activeProviderName, false) });
+
+              const reader = upstreamBody.getReader();
+              const decoder = new TextDecoder();
+              let buffer = "";
+              let assembled = "";
+
+              try {
+                while (true) {
+                  const { done, value } = await reader.read();
+                  if (done) break;
+
+                  buffer += decoder.decode(value, { stream: true });
+                  const lines = buffer.split("\n");
+                  buffer = lines.pop() || "";
+
+                  for (const line of lines) {
+                    const trimmed = line.trim();
+                    if (!trimmed.startsWith("data: ") || trimmed === "data: [DONE]") continue;
+                    try {
+                      const parsed = JSON.parse(trimmed.slice(6));
+                      const delta = parsed?.choices?.[0]?.delta?.content;
+                      if (typeof delta === "string" && delta.length > 0) {
+                        assembled += delta;
+                        const safeChunk = delta.replace(/\bComandante\b/gi, "Parceiro");
+                        sendSse({ choices: [{ delta: { content: safeChunk } }] });
+                      }
+                    } catch {}
+                  }
+                }
+              } catch (readErr: any) {
+                console.error("[VICTORIA] Erro lendo stream SSE upstream:", readErr?.message);
               }
-            }
-            const guarded = enforceServerPostLlmGuardrails(
-              assembled,
-              analysisContext,
-              ragCitations,
-              operationalMode,
-              requireFull10Sections
-            );
-            await finalizeTelemetry({
-              usedFallback: guarded.replacedByDeterministic,
-              validationStatus: guarded.replacedByDeterministic
-                ? `SSE_FALLBACK:${guarded.reasons.join("|")}`
-                : "SSE_PASSED",
-            });
-            const encoderSse = new TextEncoder();
-            const metaEvent = `data: ${JSON.stringify({ victoria_meta: buildResponseMetadata() })}\n\n`;
-            const contentEvent = `data: ${JSON.stringify({ choices: [{ delta: { content: guarded.text } }] })}\n\n`;
-            return new Response(encoderSse.encode(`${metaEvent}${contentEvent}data: [DONE]\n\n`), {
-              headers: {
-                ...corsHeaders,
-                "Content-Type": "text/event-stream",
-                "Cache-Control": "no-cache",
-                "Connection": "keep-alive",
-              }
-            });
-          }
 
-          // Repassa SSE para chat livre sem entity_id (ainda aplicando sanitização mínima por chunk se desejado)
-          await finalizeTelemetry({ usedFallback: false, validationStatus: "SSE_GENERAL_PASSED" });
-          return new Response(streamRes.body, {
+              const hasEntityScope = Boolean(analysisContext && analysisContext.entity_id);
+              if (hasEntityScope) {
+                const guarded = enforceServerPostLlmGuardrails(
+                  assembled,
+                  analysisContext,
+                  ragCitations,
+                  operationalMode,
+                  requireFull10Sections
+                );
+                const latencyMs = Date.now() - requestStartedAt;
+                await finalizeTelemetry({
+                  usedFallback: guarded.replacedByDeterministic,
+                  validationStatus: guarded.replacedByDeterministic
+                    ? `SSE_FALLBACK:${guarded.reasons.join("|")}`
+                    : "SSE_PASSED",
+                  providerUsed: activeProviderName,
+                });
+                sendSse({
+                  victoria_final: {
+                    response_origin: guarded.replacedByDeterministic ? "deterministic_fallback" : "generative",
+                    replaced_by_deterministic: guarded.replacedByDeterministic,
+                    guardrail_reasons: guarded.reasons,
+                    rag_citations: ragCitations,
+                    final_text: guarded.text,
+                    latency_ms: latencyMs,
+                    provider_used: activeProviderName,
+                  },
+                });
+              } else {
+                const cleanHubText = sanitizeVictoriaServerOutput(assembled, analysisContext, operationalMode);
+                const latencyMs = Date.now() - requestStartedAt;
+                await finalizeTelemetry({
+                  usedFallback: false,
+                  validationStatus: "SSE_GENERAL_PASSED",
+                  providerUsed: activeProviderName,
+                });
+                sendSse({
+                  victoria_final: {
+                    response_origin: "generative",
+                    replaced_by_deterministic: false,
+                    guardrail_reasons: [],
+                    rag_citations: ragCitations,
+                    final_text: cleanHubText,
+                    latency_ms: latencyMs,
+                    provider_used: activeProviderName,
+                  },
+                });
+              }
+
+              controller.enqueue(encoderSse.encode("data: [DONE]\n\n"));
+              controller.close();
+            },
+          });
+
+          return new Response(sseStream, {
             headers: {
               ...corsHeaders,
               "Content-Type": "text/event-stream",
               "Cache-Control": "no-cache",
-              "Connection": "keep-alive"
+              "Connection": "keep-alive",
             }
-          });
-        } else {
-          const errText = await streamRes.text();
-          console.error("[VICTORIA] Erro na stream do provedor:", streamRes.status, errText);
-          if (analysisContext && analysisContext.entity_id) {
-            const det = generateDeterministic10SectionAnalysis(analysisContext, ragCitations);
-            await finalizeTelemetry({ usedFallback: true, validationStatus: `PROVIDER_${streamRes.status}_FALLBACK` });
-            if (shouldReturnJson) {
-              return new Response(JSON.stringify({
-                reply: det,
-                diagnosis: det,
-                content: det,
-                replaced_by_deterministic: true,
-                guardrail_reasons: [`provider_http_${streamRes.status}`],
-                ...buildResponseMetadata(),
-              }), {
-                headers: { ...corsHeaders, "Content-Type": "application/json" }
-              });
-            }
-            const encDet = new TextEncoder();
-            const metaEvent = `data: ${JSON.stringify({ victoria_meta: buildResponseMetadata() })}\n\n`;
-            const contentEvent = `data: ${JSON.stringify({ choices: [{ delta: { content: det } }] })}\n\n`;
-            return new Response(encDet.encode(`${metaEvent}${contentEvent}data: [DONE]\n\n`), {
-              headers: { ...corsHeaders, "Content-Type": "text/event-stream" }
-            });
-          }
-          if (shouldReturnJson) {
-            return new Response(JSON.stringify({
-              error: `Erro do provedor (${streamRes.status}): ${errText.slice(0, 300)}`,
-              request_id: analysisContext?.request_id || null
-            }), {
-              status: 502,
-              headers: { ...corsHeaders, "Content-Type": "application/json" }
-            });
-          }
-          const encoder2 = new TextEncoder();
-          const debugMsg = `[ERRO ${streamRes.status}] ${errText.slice(0, 300)}`;
-          const debugSse = `data: ${JSON.stringify({ choices: [{ delta: { content: debugMsg } }] })}\n\ndata: [DONE]\n\n`;
-          return new Response(encoder2.encode(debugSse), {
-            headers: { ...corsHeaders, "Content-Type": "text/event-stream" }
           });
         }
       } catch (streamErr: any) {
-        console.error("[VICTORIA] Falha ao iniciar stream:", streamErr.message);
+        lastProviderError = streamErr?.message || "stream_processing_error";
+        console.error("[VICTORIA] Falha durante processamento de stream:", lastProviderError);
       }
     }
 
-    // Fallback determinístico completo se nenhuma stream estiver disponível
+    // Fallback determinístico completo se nenhum provedor respondeu
     const deterministicFallback = analysisContext && analysisContext.entity_id
       ? generateDeterministic10SectionAnalysis(analysisContext, ragCitations)
-      : `### Victoria AI (${VICTORIA_CONTRACT_VERSION})\n\nDesculpe, ${userName}, houve indisponibilidade momentânea do provedor de IA. Os dados oficiais continuam ativos — informe qual conta ou campanha deseja auditar.`;
+      : `### Victoria AI (${VICTORIA_CONTRACT_VERSION})\n\nDesculpe, ${userName}, houve indisponibilidade momentânea do provedor de IA (${lastProviderError || "sem conexão"}). Os dados oficiais continuam ativos — informe qual conta ou campanha deseja auditar.`;
 
-    await finalizeTelemetry({ usedFallback: true, validationStatus: "PROVIDER_UNAVAILABLE_FALLBACK" });
+    await finalizeTelemetry({
+      usedFallback: true,
+      validationStatus: `PROVIDER_UNAVAILABLE:${lastProviderError.slice(0, 80)}`,
+    });
 
     if (shouldReturnJson) {
       return new Response(JSON.stringify({
@@ -2064,20 +2144,31 @@ REGRAS DE RESPOSTA (${VICTORIA_CONTRACT_VERSION}):
         diagnosis: deterministicFallback,
         content: deterministicFallback,
         replaced_by_deterministic: true,
-        guardrail_reasons: ["provider_unavailable"],
-        ...buildResponseMetadata(),
+        guardrail_reasons: ["provider_unavailable", lastProviderError].filter(Boolean),
+        latency_ms: Date.now() - requestStartedAt,
+        ...buildResponseMetadata(activeProviderName || "deterministic", true),
       }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" }
       });
     }
 
     const encoder = new TextEncoder();
-    const metaFallback = `data: ${JSON.stringify({ victoria_meta: buildResponseMetadata() })}\n\n`;
+    const metaFallback = `data: ${JSON.stringify({ victoria_meta: buildResponseMetadata(activeProviderName || "deterministic", true) })}\n\n`;
     const sseChunk = `data: ${JSON.stringify({
       choices: [{ delta: { content: deterministicFallback } }]
     })}\n\n`;
+    const finalFallback = `data: ${JSON.stringify({
+      victoria_final: {
+        response_origin: "deterministic_fallback",
+        replaced_by_deterministic: true,
+        guardrail_reasons: ["provider_unavailable", lastProviderError].filter(Boolean),
+        rag_citations: ragCitations,
+        final_text: deterministicFallback,
+        latency_ms: Date.now() - requestStartedAt,
+      }
+    })}\n\n`;
 
-    return new Response(encoder.encode(`${metaFallback}${sseChunk}data: [DONE]\n\n`), {
+    return new Response(encoder.encode(`${metaFallback}${sseChunk}${finalFallback}data: [DONE]\n\n`), {
       headers: {
         ...corsHeaders,
         "Content-Type": "text/event-stream",

@@ -1401,11 +1401,16 @@ function RelatoriosPage() {
       if (linkCampaigns.length > 0) {
         const costLink = linkCampaigns.reduce((s, c) => s + c.cost, 0);
         const clicksLink = linkCampaigns.reduce((s, c) => s + c.clicks, 0);
+        const allClicksLink = linkCampaigns.reduce((s, c) => s + Number((c as any).allClicks ?? 0), 0);
         const cpcLink = clicksLink > 0 ? costLink / clicksLink : 0;
+        const cpcAll = allClicksLink > 0 ? costLink / allClicksLink : 0;
         txt += `*Campanha de Cliques no Link:*\n`;
         txt += `Investimento: ${fmtBRLWithSymbol(costLink)}\n`;
         txt += `Cliques no link: ${clicksLink.toLocaleString("pt-BR")}\n`;
-        txt += `CPC: ${clicksLink > 0 ? fmtBRLWithSymbol(cpcLink) : "Não calculável"}\n\n`;
+        if (allClicksLink > 0 && allClicksLink !== clicksLink) {
+          txt += `Cliques (Todos): ${allClicksLink.toLocaleString("pt-BR")}\n`;
+        }
+        txt += `CPC Link: ${clicksLink > 0 ? fmtBRLWithSymbol(cpcLink) : "Não calculável"}${cpcAll > 0 ? ` | CPC (Todos): ${fmtBRLWithSymbol(cpcAll)}` : ""}\n\n`;
       }
 
       if (!isTextManuallyEdited) {

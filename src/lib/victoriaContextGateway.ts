@@ -39,6 +39,8 @@ export interface MetricasItemAdapterInput {
   lastSyncAt?: string | null;
   accountMaxCplTarget?: number | null;
   sameObjectiveAvgCost?: number | null;
+  sameObjectivePeerCount?: number;
+  sameObjectiveBenchmarkCriteria?: string | null;
   ragDocuments?: CuratedRagDocument[];
   operationalMode?: VictoriaOperationalMode;
   siblingEntities?: any[];
@@ -97,7 +99,7 @@ export function buildContextFromMetricasItem(
     t.linkClicks ?? t.clicks ?? raw.inline_link_clicks ?? raw.clicks ?? 0
   );
   const allClicks = Number(
-    t.allClicks ?? raw.all_clicks ?? linkClicks
+    t.allClicks ?? raw.allClicks ?? raw.all_clicks ?? linkClicks
   );
   const conversions =
     cls.category === "REACH"
@@ -150,9 +152,15 @@ export function buildContextFromMetricasItem(
     has_crm_funnel_data: false,
     account_max_cpl_target: isComparableWithAccountCpl ? input.accountMaxCplTarget ?? null : null,
     comparable_same_objective_avg:
-      isComparableWithAccountCpl && input.sameObjectiveAvgCost && input.sameObjectiveAvgCost > 0
+      input.sameObjectiveAvgCost &&
+      input.sameObjectiveAvgCost > 0 &&
+      (typeof input.sameObjectivePeerCount === "number"
+        ? input.sameObjectivePeerCount > 0
+        : isComparableWithAccountCpl)
         ? input.sameObjectiveAvgCost
         : null,
+    comparable_peer_count: input.sameObjectivePeerCount,
+    comparable_benchmark_criteria: input.sameObjectiveBenchmarkCriteria ?? null,
     rag_documents: input.ragDocuments || [],
     operational_mode: input.operationalMode || VICTORIA_DEFAULT_OPERATIONAL_MODE,
     sibling_entities: (input.siblingEntities || []).map((sib: any) => ({
@@ -307,6 +315,9 @@ export interface ExecuteVictoriaDiagnosticResult {
   timedOut: boolean;
   fromCache: boolean;
   status: "SUCCESS" | "FALLBACK_STRUCTURED" | "INSUFFICIENT_DATA" | "ABORTED" | "TIMEOUT" | "CONTEXT_MISMATCH_BLOCKED";
+  responseOrigin: "generative" | "deterministic_fallback";
+  fallbackReason?: string | null;
+  latencyMs?: number;
   text: string;
   suggestedQuestions: string[];
   context: VictoriaAnalysisContext;
@@ -324,9 +335,9 @@ export interface ExecuteVictoriaDiagnosticResult {
  * Executa uma chamada governada à Victoria AI (Contrato 2026.11.4) com:
  * 1. Validação prévia do contrato VictoriaAnalysisContext
  * 2. Isolamento de sessão e cancelamento (AbortController) ao trocar de entidade
- * 3. Timeout estrito de 20 segundos
- * 4. Verificação estrita dos 10 campos de identidade (request_id, analysis_context_hash, ad_account_id, entity_level, entity_id, date_from, date_to, result_indicator, contract_version, prompt_version)
- * 5. Pós-validação server+client (unidade, bloqueio cross-campaign, READ_ONLY_ANALYSIS, 10 seções obrigatórias)
+ * 3. Streaming SSE real com timeout de conexão/primeiro token (20s) + orçamento total de stream (55s)
+ * 4. Verificação estrita dos 10 campos de identidade
+ * 5. Distinção explícita entre Resposta Generativa (IA) e Fallback Estruturado Determinístico
  */
 export async function executeGovernedVictoriaDiagnostic(
   params: ExecuteVictoriaDiagnosticParams
@@ -335,6 +346,7 @@ export async function executeGovernedVictoriaDiagnostic(
   const sessionCtrl = params.controller || globalVictoriaSessionController;
   const suggestedQuestions = buildSuggestedQuestionsForContext(ctx);
   const requireFull10 = params.requireFull10Sections !== false;
+  const callStartedAt = Date.now();
 
   // 1. Validar contrato antes de invocar modelo
   const validation = validateVictoriaAnalysisContext(ctx);
@@ -344,6 +356,9 @@ export async function executeGovernedVictoriaDiagnostic(
       timedOut: false,
       fromCache: false,
       status: "INSUFFICIENT_DATA",
+      responseOrigin: "deterministic_fallback",
+      fallbackReason: "insufficient_context_data",
+      latencyMs: Date.now() - callStartedAt,
       text: validation.degradedResponse,
       suggestedQuestions,
       context: ctx,
@@ -368,24 +383,36 @@ export async function executeGovernedVictoriaDiagnostic(
       aborted: false,
       timedOut: false,
       fromCache: true,
-      status: "SUCCESS",
+      status: cachedGuard.replacedByDeterministic ? "FALLBACK_STRUCTURED" : "SUCCESS",
+      responseOrigin: cachedGuard.replacedByDeterministic ? "deterministic_fallback" : "generative",
+      fallbackReason: cachedGuard.replacedByDeterministic ? cachedGuard.reasons.join(",") : null,
+      latencyMs: Date.now() - callStartedAt,
       text: cachedGuard.text,
       suggestedQuestions,
       context: ctx,
     };
   }
 
-  // 3. Configurar timeout de 20s acoplado ao AbortSignal da sessão
-  const timeoutMs = params.timeoutMs ?? VICTORIA_REQUEST_TIMEOUT_MS;
+  // 3. Dois timers: primeiro byte/token (20s) e orçamento total de conclusão do stream (55s)
+  const firstTokenTimeoutMs = params.timeoutMs ?? VICTORIA_REQUEST_TIMEOUT_MS;
+  const totalStreamTimeoutMs = Math.max(firstTokenTimeoutMs * 2.5, 55000);
   let timedOut = false;
+  let receivedFirstByte = false;
   const timeoutController = new AbortController();
   const onSessionAbort = () => timeoutController.abort("SESSION_SWITCHED");
   reqSession.signal.addEventListener("abort", onSessionAbort, { once: true });
 
-  const timer = setTimeout(() => {
+  const firstTokenTimer = setTimeout(() => {
+    if (!receivedFirstByte) {
+      timedOut = true;
+      timeoutController.abort("VICTORIA_FIRST_TOKEN_TIMEOUT");
+    }
+  }, firstTokenTimeoutMs);
+
+  const totalTimer = setTimeout(() => {
     timedOut = true;
-    timeoutController.abort("VICTORIA_TIMEOUT_20S");
-  }, timeoutMs);
+    timeoutController.abort("VICTORIA_TOTAL_STREAM_TIMEOUT");
+  }, totalStreamTimeoutMs);
 
   const structuredBaseline = generateSeniorStructuredAnalysis(ctx);
 
@@ -419,8 +446,9 @@ export async function executeGovernedVictoriaDiagnostic(
       },
       body: JSON.stringify({
         action: "chat",
-        mode: "json",
-        stream: false,
+        mode: "sse",
+        stream: true,
+        requireFull10Sections: requireFull10,
         readOnly: ctx.operational_mode !== "ACTION_PROPOSAL",
         operational_mode: ctx.operational_mode || VICTORIA_DEFAULT_OPERATIONAL_MODE,
         contract_version: VICTORIA_CONTRACT_VERSION,
@@ -433,6 +461,9 @@ export async function executeGovernedVictoriaDiagnostic(
       }),
     });
 
+    receivedFirstByte = true;
+    clearTimeout(firstTokenTimer);
+
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}`);
     }
@@ -441,6 +472,9 @@ export async function executeGovernedVictoriaDiagnostic(
     let rawAccumulated = "";
     let responseMeta: Record<string, any> | null = null;
     let ragCitations: ExecuteVictoriaDiagnosticResult["ragCitations"] = [];
+    let serverUsedFallback = false;
+    let serverFallbackReason: string | null = null;
+    let serverLatencyMs: number | undefined;
 
     if (contentType.includes("text/event-stream") && response.body) {
       const reader = response.body.getReader();
@@ -473,6 +507,9 @@ export async function executeGovernedVictoriaDiagnostic(
             timedOut: false,
             fromCache: false,
             status: "ABORTED",
+            responseOrigin: "deterministic_fallback",
+            fallbackReason: "entity_switched",
+            latencyMs: Date.now() - callStartedAt,
             text: "",
             suggestedQuestions,
             context: ctx,
@@ -492,8 +529,28 @@ export async function executeGovernedVictoriaDiagnostic(
             const parsed = JSON.parse(jsonStr);
             if (parsed.victoria_meta) {
               responseMeta = parsed.victoria_meta;
-              if (Array.isArray(parsed.victoria_meta.rag_citations)) {
-                ragCitations = parsed.victoria_meta.rag_citations;
+              const metaDocs = parsed.victoria_meta.rag_citations ?? parsed.victoria_meta.rag_docs;
+              if (Array.isArray(metaDocs) && metaDocs.length > 0) {
+                ragCitations = metaDocs;
+              }
+              if (parsed.victoria_meta.response_origin === "deterministic_fallback") {
+                serverUsedFallback = true;
+              }
+            }
+            if (parsed.victoria_final) {
+              const vf = parsed.victoria_final;
+              if (vf.response_origin === "deterministic_fallback" || vf.replaced_by_deterministic) {
+                serverUsedFallback = true;
+                serverFallbackReason = Array.isArray(vf.guardrail_reasons) ? vf.guardrail_reasons.join(", ") : "server_fallback";
+              }
+              if (Array.isArray(vf.rag_citations) && vf.rag_citations.length > 0) {
+                ragCitations = vf.rag_citations;
+              }
+              if (typeof vf.final_text === "string" && vf.final_text.trim()) {
+                rawAccumulated = vf.final_text;
+              }
+              if (typeof vf.latency_ms === "number") {
+                serverLatencyMs = vf.latency_ms;
               }
             }
             const chunk = parsed.choices?.[0]?.delta?.content || "";
@@ -526,6 +583,9 @@ export async function executeGovernedVictoriaDiagnostic(
       rawAccumulated =
         data?.diagnosis || data?.insight || data?.reply || data?.message || data?.content || "";
       if (data && typeof data === "object") {
+        serverUsedFallback = Boolean(data.replaced_by_deterministic || data.response_origin === "deterministic_fallback");
+        serverFallbackReason = Array.isArray(data.guardrail_reasons) ? data.guardrail_reasons.join(", ") : null;
+        serverLatencyMs = typeof data.latency_ms === "number" ? data.latency_ms : undefined;
         responseMeta = {
           request_id: data.request_id,
           analysis_context_hash: data.analysis_context_hash,
@@ -564,6 +624,9 @@ export async function executeGovernedVictoriaDiagnostic(
         timedOut: false,
         fromCache: false,
         status: "ABORTED",
+        responseOrigin: "deterministic_fallback",
+        fallbackReason: "entity_switched",
+        latencyMs: Date.now() - callStartedAt,
         text: "",
         suggestedQuestions,
         context: ctx,
@@ -591,6 +654,9 @@ export async function executeGovernedVictoriaDiagnostic(
           timedOut: false,
           fromCache: false,
           status: "CONTEXT_MISMATCH_BLOCKED",
+          responseOrigin: "deterministic_fallback",
+          fallbackReason: `context_mismatch:${idMatch.mismatches.join(",")}`,
+          latencyMs: Date.now() - callStartedAt,
           text: structuredBaseline,
           suggestedQuestions,
           context: ctx,
@@ -631,8 +697,14 @@ export async function executeGovernedVictoriaDiagnostic(
       requireFull10Sections: requireFull10,
     });
     const finalText = enforced.text;
+    const isDeterministic = serverUsedFallback || enforced.replacedByDeterministic;
+    const fallbackReason = serverUsedFallback
+      ? serverFallbackReason || "server_fallback"
+      : enforced.replacedByDeterministic
+      ? enforced.reasons.join(", ")
+      : null;
 
-    if (!params.userPrompt) {
+    if (!params.userPrompt && !isDeterministic) {
       sessionCtrl.commitResponse({
         cacheKey: reqSession.cacheKey,
         requestId: reqSession.requestId,
@@ -657,7 +729,10 @@ export async function executeGovernedVictoriaDiagnostic(
       aborted: false,
       timedOut: false,
       fromCache: false,
-      status: enforced.replacedByDeterministic ? "FALLBACK_STRUCTURED" : "SUCCESS",
+      status: isDeterministic ? "FALLBACK_STRUCTURED" : "SUCCESS",
+      responseOrigin: isDeterministic ? "deterministic_fallback" : "generative",
+      fallbackReason,
+      latencyMs: serverLatencyMs ?? (Date.now() - callStartedAt),
       text: finalText,
       suggestedQuestions,
       context: enrichedCtx,
@@ -671,6 +746,9 @@ export async function executeGovernedVictoriaDiagnostic(
         timedOut: false,
         fromCache: false,
         status: "ABORTED",
+        responseOrigin: "deterministic_fallback",
+        fallbackReason: "aborted",
+        latencyMs: Date.now() - callStartedAt,
         text: "",
         suggestedQuestions,
         context: ctx,
@@ -692,22 +770,6 @@ export async function executeGovernedVictoriaDiagnostic(
         promptVersion: ctx.prompt_version,
       })
     ) {
-      if (!params.userPrompt) {
-        sessionCtrl.commitResponse({
-          cacheKey: reqSession.cacheKey,
-          requestId: reqSession.requestId,
-          contextHash: reqSession.contextHash,
-          accountId: ctx.ad_account_id,
-          entityLevel: ctx.entity_level,
-          entityId: ctx.entity_id,
-          dateFrom: ctx.period.date_from,
-          dateTo: ctx.period.date_to,
-          resultIndicator: ctx.result_indicator.code,
-          contractVersion: ctx.contract_version,
-          promptVersion: ctx.prompt_version,
-          text: fallbackText,
-        });
-      }
       if (params.onToken) {
         params.onToken(fallbackText, ctx);
       }
@@ -718,12 +780,16 @@ export async function executeGovernedVictoriaDiagnostic(
       timedOut,
       fromCache: false,
       status: timedOut ? "TIMEOUT" : "FALLBACK_STRUCTURED",
+      responseOrigin: "deterministic_fallback",
+      fallbackReason: timedOut ? "connection_or_stream_timeout" : err?.message || "network_error",
+      latencyMs: Date.now() - callStartedAt,
       text: fallbackText,
       suggestedQuestions,
       context: ctx,
     };
   } finally {
-    clearTimeout(timer);
+    clearTimeout(firstTokenTimer);
+    clearTimeout(totalTimer);
     reqSession.signal.removeEventListener("abort", onSessionAbort);
   }
 }

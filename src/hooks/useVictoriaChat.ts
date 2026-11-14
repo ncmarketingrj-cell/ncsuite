@@ -689,6 +689,10 @@ export function useVictoriaChat(
 
       let responseText = "";
       let buffer = "";
+      let responseOrigin: "generative" | "deterministic_fallback" = "generative";
+      let fallbackReason: string | null = null;
+      let responseLatencyMs: number | null = null;
+      let streamRagCitations: any[] = [];
 
       while (true) {
         const { done, value } = await reader.read();
@@ -706,6 +710,28 @@ export function useVictoriaChat(
             try {
               const jsonStr = trimmed.slice(6);
               const parsed = JSON.parse(jsonStr);
+              if (parsed?.victoria_meta) {
+                if (parsed.victoria_meta.response_origin === "deterministic_fallback") {
+                  responseOrigin = "deterministic_fallback";
+                }
+                if (Array.isArray(parsed.victoria_meta.rag_docs) && parsed.victoria_meta.rag_docs.length > 0) {
+                  streamRagCitations = parsed.victoria_meta.rag_docs;
+                }
+                continue;
+              }
+              if (parsed?.victoria_final) {
+                if (parsed.victoria_final.used_fallback) {
+                  responseOrigin = "deterministic_fallback";
+                  fallbackReason = parsed.victoria_final.fallback_reason || null;
+                }
+                if (typeof parsed.victoria_final.latency_ms === "number") {
+                  responseLatencyMs = parsed.victoria_final.latency_ms;
+                }
+                if (Array.isArray(parsed.victoria_final.rag_citations) && parsed.victoria_final.rag_citations.length > 0) {
+                  streamRagCitations = parsed.victoria_final.rag_citations;
+                }
+                continue;
+              }
               const chunk = parsed.choices?.[0]?.delta?.content || "";
               if (chunk) {
                 responseText += chunk;
@@ -777,7 +803,13 @@ export function useVictoriaChat(
       }
 
       // 7. Salvar resposta no banco
-      const assistantMsgMetadata: any = { readOnly: isReadOnly };
+      const assistantMsgMetadata: any = {
+        readOnly: isReadOnly,
+        responseOrigin,
+        fallbackReason,
+        latencyMs: responseLatencyMs,
+        ragCitations: streamRagCitations,
+      };
       if (responseAction) {
         assistantMsgMetadata.action = responseAction;
         assistantMsgMetadata.actionStatus = "pending";

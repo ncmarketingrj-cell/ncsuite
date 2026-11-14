@@ -46,7 +46,7 @@ export const AVAILABLE_METRICS: MetricDefinition[] = [
   { key: "clicks", label: "Cliques", type: "number", color: "#06b6d4" },
   { key: "impressions", label: "Impressões", type: "number", color: "#f59e0b" },
   { key: "reach", label: "Alcance", type: "number", color: "#ec4899" },
-  { key: "cpc", label: "Custo por Clique (CPC)", type: "currency", color: "#3b82f6" },
+  { key: "cpc", label: "Custo por Clique no Link (CPC Link)", type: "currency", color: "#3b82f6" },
   { key: "cpm", label: "CPM", type: "currency", color: "#84cc16" },
   { key: "frequency", label: "Frequência", type: "float", color: "#a855f7" }
 ];

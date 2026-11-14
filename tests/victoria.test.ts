@@ -846,3 +846,326 @@ test("Contract 2026.11.4: strict 10-field context identity verification, legacy 
   assert.equal(enforced.text.includes("json:action"), false);
   assert.equal(hasAllMandatory10Sections(enforced.text), true);
 });
+
+// ============================================================================
+// 7. AUDIT GAPS 1–6 HARDENING TESTS (NO SELF-BENCHMARK, CPC SPLIT, OBJECTIVES, RAG, SSE ORIGIN)
+// ============================================================================
+
+test("Auditoria 6 Gaps: bloqueia auto-comparação (R$ 7,93 vs R$ 7,93), separa CPC Link vs CPC Todos e preserva frescor do snapshot", () => {
+  const ctx = buildContextFromMetricasItem({
+    item: {
+      id: "camp_msg_2906",
+      external_id: "120249884798220254",
+      name: "NC - MSG - 29/06 — Cópia",
+      status: "ACTIVE",
+      ad_account_id: "act_3177396632405159",
+      adAccountName: "NC - Fly Garage",
+      rawObjective: "OUTCOME_ENGAGEMENT",
+      optimizationGoal: "CONVERSATIONS",
+      resultType: "MESSAGES",
+      resultIndicator: "actions:onsite_conversion.messaging_conversation_started_7d",
+      cost: 150.6,
+      conversions: 19,
+      impressions: 9437,
+      reach: 7196,
+      clicks: 137,
+      allClicks: 167,
+    },
+    surface: "metricas",
+    route: "/metricas",
+    accountId: "act_3177396632405159",
+    accountName: "NC - Fly Garage",
+    dateFrom: "2026-11-13",
+    dateTo: "2026-11-13",
+    lastSyncAt: "2026-11-14T15:25:46.814Z",
+    sameObjectiveAvgCost: null,
+    sameObjectivePeerCount: 0,
+    operationalMode: "READ_ONLY_ANALYSIS",
+  });
+
+  assert.equal(ctx.governance_and_benchmarks.comparable_same_objective_avg, null);
+  assert.equal(ctx.governance_and_benchmarks.comparable_peer_count, 0);
+  assert.ok(Math.abs(ctx.raw_metrics.cpc_link - 150.6 / 137) < 0.001);
+  assert.ok(Math.abs(ctx.raw_metrics.cpc_all - 150.6 / 167) < 0.001);
+  assert.ok(ctx.period.last_sync_at?.includes("2026-11-14"));
+
+  const report = generateSeniorStructuredAnalysis(ctx);
+  assert.equal(hasAllMandatory10Sections(report), true);
+  assert.ok(report.includes("Benchmark homogêneo indisponível"));
+  assert.ok(report.includes("CPC Link"));
+  assert.ok(report.includes("CPC Todos"));
+  assert.ok(report.includes("CTR Link"));
+  assert.ok(report.includes("CTR Todos"));
+  assert.equal(report.includes("7,93** vs benchmark R$ 7,93"), false);
+});
+
+test("Auditoria Gap 5: recomendações (Seções 6–8) variam de forma específica por objetivo oficial", () => {
+  const objectives = [
+    {
+      name: "CMP | NC - ALCANCE JOJO TODYNHO",
+      rawObjective: "OUTCOME_AWARENESS",
+      optimizationGoal: "REACH",
+      resultType: "REACH" as MetaConversionCategory,
+      resultIndicator: "reach",
+      cost: 63.56,
+      conversions: 50013,
+      reach: 50013,
+      impressions: 52365,
+      clicks: 21,
+      allClicks: 52,
+      expectedSnippet: "1.000",
+    },
+    {
+      name: "NC | AUDIÊNCIA/SIGA",
+      rawObjective: "OUTCOME_ENGAGEMENT",
+      optimizationGoal: "PROFILE_VISIT",
+      resultType: "INSTAGRAM_PROFILE" as MetaConversionCategory,
+      resultIndicator: "profile_visit_view",
+      cost: 50.43,
+      conversions: 328,
+      reach: 4018,
+      impressions: 4175,
+      clicks: 334,
+      allClicks: 329,
+      expectedSnippet: "perfil",
+    },
+    {
+      name: "NC | TRÁFEGO LANDING PAGE",
+      rawObjective: "OUTCOME_TRAFFIC",
+      optimizationGoal: "LANDING_PAGE_VIEWS",
+      resultType: "LANDING_PAGE_VIEWS" as MetaConversionCategory,
+      resultIndicator: "actions:landing_page_view",
+      cost: 120,
+      conversions: 80,
+      reach: 6000,
+      impressions: 9000,
+      clicks: 110,
+      allClicks: 150,
+      expectedSnippet: "landing",
+    },
+    {
+      name: "NC | LEADS FORMULÁRIO",
+      rawObjective: "OUTCOME_LEADS",
+      optimizationGoal: "LEAD_GENERATION",
+      resultType: "LEADS" as MetaConversionCategory,
+      resultIndicator: "actions:lead",
+      cost: 200,
+      conversions: 20,
+      reach: 5000,
+      impressions: 7500,
+      clicks: 95,
+      allClicks: 120,
+      expectedSnippet: "lead",
+    },
+  ];
+
+  const outputs = objectives.map((obj) => {
+    const ctx = buildContextFromMetricasItem({
+      item: {
+        id: `obj_${obj.resultType}`,
+        name: obj.name,
+        status: "ACTIVE",
+        ad_account_id: "act_test",
+        adAccountName: "Conta Teste",
+        rawObjective: obj.rawObjective,
+        optimizationGoal: obj.optimizationGoal,
+        resultType: obj.resultType,
+        resultIndicator: obj.resultIndicator,
+        cost: obj.cost,
+        conversions: obj.conversions,
+        reach: obj.reach,
+        impressions: obj.impressions,
+        clicks: obj.clicks,
+        allClicks: obj.allClicks,
+      },
+      surface: "metricas",
+      route: "/metricas",
+      accountId: "act_test",
+      accountName: "Conta Teste",
+      dateFrom: "2026-11-13",
+      dateTo: "2026-11-13",
+      operationalMode: "READ_ONLY_ANALYSIS",
+    });
+    const text = generateSeniorStructuredAnalysis(ctx);
+    assert.equal(hasAllMandatory10Sections(text), true);
+    assert.ok(
+      text.toLowerCase().includes(obj.expectedSnippet.toLowerCase()),
+      `${obj.resultType} deveria conter '${obj.expectedSnippet}' nas recomendações`
+    );
+    return text;
+  });
+
+  // Garante que as seções 6–8 não são genéricas idênticas entre objetivos
+  assert.notEqual(outputs[0], outputs[1]);
+  assert.notEqual(outputs[1], outputs[2]);
+  assert.notEqual(outputs[2], outputs[3]);
+});
+
+test("Auditoria Gap 2: enforceVictoriaPostLlmGuardrails preserva citações RAG aprovadas e corrige falsa afirmação de 'Nenhum documento'", () => {
+  const ctx = buildContextFromMetricasItem({
+    item: {
+      id: "camp_rag_test",
+      name: "NC - MSG - TEST RAG",
+      status: "ACTIVE",
+      ad_account_id: "act_3177396632405159",
+      adAccountName: "NC - Fly Garage",
+      rawObjective: "OUTCOME_ENGAGEMENT",
+      optimizationGoal: "CONVERSATIONS",
+      resultType: "MESSAGES",
+      cost: 150.6,
+      conversions: 19,
+      impressions: 9437,
+      reach: 7196,
+      clicks: 137,
+      allClicks: 167,
+    },
+    surface: "floating_chat",
+    route: "/metricas",
+    accountId: "act_3177396632405159",
+    accountName: "NC - Fly Garage",
+    dateFrom: "2026-11-13",
+    dateTo: "2026-11-13",
+    operationalMode: "READ_ONLY_ANALYSIS",
+  });
+
+  const baseStructured = generateSeniorStructuredAnalysis(ctx);
+  const llmClaimingNoDocs = baseStructured.replace(
+    /## 10\. Evidências e rastreabilidade[\s\S]*$/,
+    "## 10. Evidências e rastreabilidade\n- **Base RAG Consultada:** Nenhum documento específico da base RAG foi retornado para este recorte.\n- **Contrato:** 2026.11.4"
+  );
+
+  const enforced = enforceVictoriaPostLlmGuardrails(llmClaimingNoDocs, ctx, {
+    requireFull10Sections: true,
+    approvedDocs: [
+      {
+        id: "doc-meta-1",
+        title: "Meta Ads Learning Phase & 50 Conversions Guideline",
+        version: "2026.1",
+        evidence_level: "OFFICIAL_DOCS",
+        approval_status: "APPROVED",
+      },
+    ],
+  });
+
+  assert.equal(enforced.replacedByDeterministic, false);
+  assert.ok(enforced.text.includes("Meta Ads Learning Phase & 50 Conversions Guideline"));
+  assert.equal(enforced.text.includes("Nenhum documento específico da base RAG foi retornado"), false);
+});
+
+test("Auditoria Gap 1: executeGovernedVictoriaDiagnostic distingue Resposta Generativa (SSE) de Fallback Determinístico", async () => {
+  const ctx = buildContextFromMetricasItem({
+    item: {
+      id: "camp_sse_test",
+      external_id: "120249884798220254",
+      name: "NC - MSG - 29/06 — Cópia",
+      status: "ACTIVE",
+      ad_account_id: "act_3177396632405159",
+      adAccountName: "NC - Fly Garage",
+      rawObjective: "OUTCOME_ENGAGEMENT",
+      optimizationGoal: "CONVERSATIONS",
+      resultType: "MESSAGES",
+      cost: 150.6,
+      conversions: 19,
+      impressions: 9437,
+      reach: 7196,
+      clicks: 137,
+      allClicks: 167,
+    },
+    surface: "floating_chat",
+    route: "/metricas",
+    accountId: "act_3177396632405159",
+    accountName: "NC - Fly Garage",
+    dateFrom: "2026-11-13",
+    dateTo: "2026-11-13",
+    operationalMode: "READ_ONLY_ANALYSIS",
+  });
+
+  const valid10SectionText = generateSeniorStructuredAnalysis(ctx);
+  const originalFetch = globalThis.fetch;
+
+  try {
+    // Caso 1: Streaming SSE generativo bem-sucedido com victoria_meta + delta + victoria_final
+    globalThis.fetch = (async () => {
+      const encoder = new TextEncoder();
+      const stream = new ReadableStream({
+        start(controller) {
+          controller.enqueue(
+            encoder.encode(
+              `data: ${JSON.stringify({
+                victoria_meta: {
+                  response_origin: "generative",
+                  rag_docs: [
+                    {
+                      id: "doc-1",
+                      title: "Playbook WhatsApp Automotivo",
+                      version: "2026.1",
+                      evidence_level: "EMPIRICAL_AUDIT",
+                      approval_status: "APPROVED",
+                    },
+                  ],
+                },
+              })}\n\n`
+            )
+          );
+          controller.enqueue(
+            encoder.encode(
+              `data: ${JSON.stringify({
+                choices: [{ delta: { content: valid10SectionText } }],
+              })}\n\n`
+            )
+          );
+          controller.enqueue(
+            encoder.encode(
+              `data: ${JSON.stringify({
+                victoria_final: {
+                  used_fallback: false,
+                  latency_ms: 1840,
+                },
+              })}\n\n`
+            )
+          );
+          controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+          controller.close();
+        },
+      });
+      return new Response(stream, {
+        status: 200,
+        headers: { "Content-Type": "text/event-stream" },
+      });
+    }) as typeof fetch;
+
+    const ctrl1 = new VictoriaSessionController();
+    const resGen = await executeGovernedVictoriaDiagnostic({
+      ctx,
+      controller: ctrl1,
+      endpointUrl: "https://example.supabase.co/functions/v1/victoria-agent",
+      anonKey: "anon",
+    });
+
+    assert.equal(resGen.responseOrigin, "generative");
+    assert.equal(resGen.timedOut, false);
+    assert.equal(resGen.ragCitations.length, 1);
+    assert.equal(resGen.ragCitations[0].title, "Playbook WhatsApp Automotivo");
+
+    // Caso 2: Erro HTTP -> fallback determinístico explícito
+    globalThis.fetch = (async () =>
+      new Response(JSON.stringify({ error: "Upstream unavailable" }), {
+        status: 503,
+        headers: { "Content-Type": "application/json" },
+      })) as typeof fetch;
+
+    const ctrl2 = new VictoriaSessionController();
+    const resFallback = await executeGovernedVictoriaDiagnostic({
+      ctx,
+      controller: ctrl2,
+      endpointUrl: "https://example.supabase.co/functions/v1/victoria-agent",
+      anonKey: "anon",
+    });
+
+    assert.equal(resFallback.responseOrigin, "deterministic_fallback");
+    assert.ok((resFallback.fallbackReason || "").length > 0);
+    assert.equal(hasAllMandatory10Sections(resFallback.text), true);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
