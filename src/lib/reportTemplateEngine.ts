@@ -21,6 +21,7 @@ export interface ReportCampaignItem {
   inlineLinkClicks?: number;
   allClicks?: number;
   conversions: number;
+  purchaseValue?: number;
   reach: number;
   objective: string;
   rawObjective?: string;
@@ -989,7 +990,18 @@ export function renderReportTemplateText(params: {
 
   const groupedTypes = new Map<
     string,
-    { cost: number; results: number; reach: number; impressions: number; linkClicks: number; unitPlural: string; isReach: boolean; isClick: boolean }
+    {
+      cost: number;
+      results: number;
+      purchaseValue: number;
+      reach: number;
+      impressions: number;
+      linkClicks: number;
+      unitPlural: string;
+      category: ReturnType<typeof classifyMetaEvent>["category"];
+      isReach: boolean;
+      isClick: boolean;
+    }
   >();
   const platforms = new Set<string>();
 
@@ -1014,15 +1026,18 @@ export function renderReportTemplateText(params: {
     const cur = groupedTypes.get(c.objective) || {
       cost: 0,
       results: 0,
+      purchaseValue: 0,
       reach: 0,
       impressions: 0,
       linkClicks: 0,
       unitPlural: ev.unitPlural,
+      category: ev.category,
       isReach: isReachBased,
       isClick: isClickBased,
     };
     cur.cost += c.cost;
     cur.results += resultValue;
+    cur.purchaseValue += Number(c.purchaseValue || 0);
     cur.reach += c.reach;
     cur.impressions += c.impressions;
     cur.linkClicks += linkClk;
@@ -1045,6 +1060,7 @@ export function renderReportTemplateText(params: {
       inlineLinkClicks: Number(c.inlineLinkClicks ?? c.clicks ?? 0),
       allClicks: Number(c.allClicks ?? c.clicks ?? 0),
       conversions: Number(c.conversions || 0),
+      purchaseValue: Number(c.purchaseValue || 0),
       rawObjective: c.rawObjective,
       optimizationGoal: c.optimizationGoal,
       resultType: c.resultType || c.objective,
@@ -1087,9 +1103,21 @@ export function renderReportTemplateText(params: {
   text = text.replace(/\{\{CLIQUES_NO_LINK\}\}/g, totalLinkClicks.toLocaleString("pt-BR"));
   text = text.replace(/\{\{AGENCIA\}\}/g, agencyName.toUpperCase());
 
+  const formatTemplateUnitCost = (costVal: number, resVal: number, cat: ReturnType<typeof classifyMetaEvent>["category"], zeroMsg = "Não calculável") => {
+    const unit = computeUnitCost(costVal, resVal, cat);
+    if (unit !== null) return fmtBRLWithSymbol(unit);
+    return costVal <= 0 && resVal > 0 ? "Não calculável (gasto zero)" : zeroMsg;
+  };
+
   // 2. Classificadores de Blocos Setoriais
   const isConsignado = (c: ReportCampaignItem) =>
     /consignado/i.test(c.name) || c.objective.toLowerCase().includes("consignado");
+  const isSalesCamp = (c: ReportCampaignItem) =>
+    c.resultType === "PURCHASES" ||
+    c.rawObjective === "OUTCOME_SALES" ||
+    c.rawObjective === "CONVERSIONS" ||
+    c.objective.includes("Compras") ||
+    c.objective.includes("Vendas");
   const isReachOrImpression = (c: ReportCampaignItem) =>
     c.objective.includes("Alcance") ||
     c.objective.includes("Thru-Play") ||
@@ -1108,22 +1136,19 @@ export function renderReportTemplateText(params: {
     c.objective.includes("veiculo") ||
     c.objective.includes("Mensagens") ||
     c.objective.includes("WhatsApp") ||
-    (!isConsignado(c) && !isReachOrImpression(c) && !isProfile(c) && !isPage(c));
+    (!isConsignado(c) && !isSalesCamp(c) && !isReachOrImpression(c) && !isProfile(c) && !isPage(c));
 
   // {{BLOCO_VEICULOS}}
   if (text.includes("{{BLOCO_VEICULOS}}")) {
-    const carCamps = selected.filter((c) => isCarMsg(c) && !isConsignado(c) && !isReachOrImpression(c));
+    const carCamps = selected.filter((c) => isCarMsg(c) && !isConsignado(c) && !isSalesCamp(c) && !isReachOrImpression(c));
     if (carCamps.length > 0) {
       const costMsg = carCamps.reduce((s, c) => s + c.cost, 0);
       const leadsMsg = carCamps.reduce((s, c) => s + Number(c.conversions || 0), 0);
-      const cplMsg = leadsMsg > 0 ? costMsg / leadsMsg : null;
       const heading = isVehicleContext
         ? `*Campanha de mensagens nos veiculos:*`
         : `*Campanha de Mensagens / WhatsApp:*`;
       const metricNoun = isVehicleContext ? "conversas / leads" : "conversas";
-      const costLine = cplMsg !== null
-        ? fmtBRLWithSymbol(cplMsg)
-        : "Não calculável (0 resultados)";
+      const costLine = formatTemplateUnitCost(costMsg, leadsMsg, "MESSAGES", "Não calculável (0 resultados)");
       const block = `${heading}\n Investimento: ${fmtBRLWithSymbol(costMsg)}\n Total de ${metricNoun}: ${leadsMsg.toLocaleString("pt-BR")}\n Custo por resultado: ${costLine}`;
       text = text.replace(/\{\{BLOCO_VEICULOS\}\}/g, block);
     } else {
@@ -1139,8 +1164,8 @@ export function renderReportTemplateText(params: {
       const peopleReached = reachCamps.reduce((s, c) => s + (c.reach > 0 ? c.reach : Number(c.conversions || 0)), 0);
       const impsReach = reachCamps.reduce((s, c) => s + c.impressions, 0);
       const costPer1kReach = computeUnitCost(costReach, peopleReached, "REACH");
-      const cpmReach = impsReach > 0 ? (costReach / impsReach) * 1000 : null;
-      const block = `*Campanha de Alcance e Impressões:*\nInvestimento: ${fmtBRLWithSymbol(costReach)}\nPessoas alcançadas: ${peopleReached.toLocaleString("pt-BR")}\nCusto por 1.000 contas alcançadas: ${costPer1kReach !== null ? fmtBRLWithSymbol(costPer1kReach) : "Não calculável"}\nImpressões: ${impsReach.toLocaleString("pt-BR")}${cpmReach !== null ? ` (CPM: ${fmtBRLWithSymbol(cpmReach)})` : ""}`;
+      const cpmReach = costReach > 0 && impsReach > 0 ? (costReach / impsReach) * 1000 : null;
+      const block = `*Campanha de Alcance e Impressões:*\nInvestimento: ${fmtBRLWithSymbol(costReach)}\nPessoas alcançadas: ${peopleReached.toLocaleString("pt-BR")}\nCusto por 1.000 contas alcançadas: ${costPer1kReach !== null ? fmtBRLWithSymbol(costPer1kReach) : (costReach <= 0 && peopleReached > 0 ? "Não calculável (gasto zero)" : "Não calculável")}\nImpressões: ${impsReach.toLocaleString("pt-BR")}${cpmReach !== null ? ` (CPM: ${fmtBRLWithSymbol(cpmReach)})` : ""}`;
       text = text.replace(/\{\{BLOCO_ALCANCE\}\}/g, block);
     } else {
       text = text.replace(/\{\{BLOCO_ALCANCE\}\}/g, "");
@@ -1153,8 +1178,8 @@ export function renderReportTemplateText(params: {
     if (consCamps.length > 0) {
       const costCons = consCamps.reduce((s, c) => s + c.cost, 0);
       const leadsCons = consCamps.reduce((s, c) => s + (c.conversions > 0 ? c.conversions : 0), 0);
-      const cplCons = leadsCons > 0 ? costCons / leadsCons : null;
-      const block = `*Campanha de consignado*\nTotal de leads: ${leadsCons.toLocaleString("pt-BR")}\nCusto por leads: ${cplCons !== null ? fmtBRLWithSymbol(cplCons) : "Não calculável"}\nInvestimento: ${fmtBRLWithSymbol(costCons)}`;
+      const costStr = formatTemplateUnitCost(costCons, leadsCons, "LEADS");
+      const block = `*Campanha de consignado*\nTotal de leads: ${leadsCons.toLocaleString("pt-BR")}\nCusto por leads: ${costStr}\nInvestimento: ${fmtBRLWithSymbol(costCons)}`;
       text = text.replace(/\{\{BLOCO_CONSIGNADO\}\}/g, block);
     } else {
       text = text.replace(/\{\{BLOCO_CONSIGNADO\}\}/g, "");
@@ -1169,8 +1194,8 @@ export function renderReportTemplateText(params: {
     if (profCamps.length > 0) {
       const costProf = profCamps.reduce((s, c) => s + c.cost, 0);
       const visitsProf = profCamps.reduce((s, c) => s + Number(c.conversions || 0), 0);
-      const cpvProf = visitsProf > 0 ? costProf / visitsProf : null;
-      const block = `*Campanha de Visitas ao Perfil:*\nInvestimento: ${fmtBRLWithSymbol(costProf)}\nVisitas ao perfil: ${visitsProf.toLocaleString("pt-BR")}\nCusto por visita: ${cpvProf !== null ? fmtBRLWithSymbol(cpvProf) : "Não calculável"}`;
+      const costStr = formatTemplateUnitCost(costProf, visitsProf, "INSTAGRAM_PROFILE");
+      const block = `*Campanha de Visitas ao Perfil:*\nInvestimento: ${fmtBRLWithSymbol(costProf)}\nVisitas ao perfil: ${visitsProf.toLocaleString("pt-BR")}\nCusto por visita: ${costStr}`;
       text = text.replace(/\{\{BLOCO_PERFIL\}\}/g, block);
     } else {
       text = text.replace(/\{\{BLOCO_PERFIL\}\}/g, "");
@@ -1188,8 +1213,8 @@ export function renderReportTemplateText(params: {
         (s, c) => s + (c.objective.includes("Cliques") ? Number(c.clicks || 0) : Number(c.conversions || 0)),
         0
       );
-      const cpView = visitsViews > 0 ? costViews / visitsViews : null;
-      const block = `*Visualizações na Página / Cliques:*\nInvestimento: ${fmtBRLWithSymbol(costViews)}\nResultados: ${visitsViews.toLocaleString("pt-BR")} visitas\nCusto por visita: ${cpView !== null ? fmtBRLWithSymbol(cpView) : "Não calculável"}`;
+      const costStr = formatTemplateUnitCost(costViews, visitsViews, "LANDING_PAGE_VIEWS");
+      const block = `*Visualizações na Página / Cliques:*\nInvestimento: ${fmtBRLWithSymbol(costViews)}\nResultados: ${visitsViews.toLocaleString("pt-BR")} visitas\nCusto por visita: ${costStr}`;
       text = text.replace(/\{\{BLOCO_PAGINA\}\}/g, block);
     } else {
       text = text.replace(/\{\{BLOCO_PAGINA\}\}/g, "");
@@ -1215,12 +1240,7 @@ export function renderReportTemplateText(params: {
       const isClick = data.isClick;
       const isReach = data.isReach;
 
-      const cpl =
-        data.results > 0
-          ? isReach
-            ? (data.cost / data.results) * 1000
-            : data.cost / data.results
-          : null;
+      const cpl = computeUnitCost(data.cost, data.results, data.category);
 
       let resultLabel = `Resultados (${data.unitPlural})`;
       if (isClick) resultLabel = "Cliques no link";
@@ -1233,14 +1253,22 @@ export function renderReportTemplateText(params: {
       const cplFormatted =
         cpl !== null
           ? fmtBRLWithSymbol(cpl)
-          : "Não calculável";
+          : data.cost <= 0 && data.results > 0
+            ? "Não calculável (gasto zero)"
+            : "Não calculável";
 
       typeText += `*${type}*\n`;
       typeText += `   💵 Investimento: ${fmtBRLWithSymbol(data.cost)}\n`;
       typeText += `   📈 ${resultLabel}: ${data.results.toLocaleString("pt-BR")}\n`;
       typeText += `   💲 ${costLabel}: ${cplFormatted}\n`;
+      if (data.purchaseValue > 0) {
+        typeText += `   💰 Receita (Compras): ${fmtBRLWithSymbol(data.purchaseValue)}${data.cost > 0 ? ` (ROAS ${(data.purchaseValue / data.cost).toFixed(2)}x)` : ""}\n`;
+      }
       if (isReach && data.impressions > 0) {
-        typeText += `   👁️ Impressões: ${data.impressions.toLocaleString("pt-BR")} (CPM: ${fmtBRLWithSymbol((data.cost / data.impressions) * 1000)})\n`;
+        typeText += `   👁️ Impressões: ${data.impressions.toLocaleString("pt-BR")}${data.cost > 0 ? ` (CPM: ${fmtBRLWithSymbol((data.cost / data.impressions) * 1000)})` : ""}\n`;
+      }
+      if (data.cost <= 0 && (data.results > 0 || data.purchaseValue > 0)) {
+        typeText += `   ℹ️ Resultados atribuídos pela janela de conversão Meta (não indicam entrega/gasto no período).\n`;
       }
       typeText += `\n`;
     });
@@ -1263,15 +1291,17 @@ export function renderReportTemplateText(params: {
       const isReach = ev.category === "REACH" || c.objective.includes("Alcance");
       const linkClk = Number(c.inlineLinkClicks ?? c.clicks ?? 0);
       const resultValue = isClick ? linkClk : isReach ? (c.reach > 0 ? c.reach : c.conversions) : c.conversions;
-      const costPerRes =
-        resultValue > 0 ? (isReach ? (c.cost / resultValue) * 1000 : c.cost / resultValue) : null;
+      const costPerRes = computeUnitCost(c.cost, resultValue, ev.category);
       const unitLabel = isReach ? "pessoas alc." : isClick ? "cliques link" : ev.unitPlural;
       const costUnit = isReach ? "Custo/1k alc." : ev.isConversionGoal ? "CPA" : "CPR";
       const costFormatted =
         costPerRes !== null
           ? fmtBRLWithSymbol(costPerRes)
-          : "Não calculável";
-      summaryText += `• *${c.name.toUpperCase()}*\n  💵 ${fmtBRLWithSymbol(c.cost)} | 📈 ${resultValue.toLocaleString("pt-BR")} ${unitLabel} (${costUnit}: ${costFormatted})\n\n`;
+          : c.cost <= 0 && resultValue > 0
+            ? "Não calculável (gasto zero)"
+            : "Não calculável";
+      const revPart = Number(c.purchaseValue || 0) > 0 ? ` | 💰 ${fmtBRLWithSymbol(Number(c.purchaseValue || 0))}` : "";
+      summaryText += `• *${c.name.toUpperCase()}*\n  💵 ${fmtBRLWithSymbol(c.cost)} | 📈 ${resultValue.toLocaleString("pt-BR")} ${unitLabel}${revPart} (${costUnit}: ${costFormatted})\n\n`;
     });
     text = text.replace(/\{\{LISTA_CAMPANHAS_RESUMO\}\}/g, summaryText.trim());
   }
@@ -1293,14 +1323,15 @@ export function renderReportTemplateText(params: {
       const linkClk = Number(c.inlineLinkClicks ?? c.clicks ?? 0);
 
       const resultValue = isClick ? linkClk : isReach ? (c.reach > 0 ? c.reach : c.conversions) : c.conversions;
-      const costPerRes =
-        resultValue > 0 ? (isReach ? (c.cost / resultValue) * 1000 : c.cost / resultValue) : null;
+      const costPerRes = computeUnitCost(c.cost, resultValue, ev.category);
       const costLabel = isReach ? "Custo por 1.000 contas alcançadas" : "Custo/Resultado";
       const platIcon = c.platform === "google" ? "🌐" : "🎯";
       const costFormatted =
         costPerRes !== null
           ? fmtBRLWithSymbol(costPerRes)
-          : "Não calculável";
+          : c.cost <= 0 && resultValue > 0
+            ? "Não calculável (gasto zero)"
+            : "Não calculável";
 
       listText += `${platIcon} *${c.name.toUpperCase()}*\n`;
       if (reportLevel === "adset" && c.campaignName) {
@@ -1312,7 +1343,14 @@ export function renderReportTemplateText(params: {
       listText += `   💵 Investimento: ${fmtBRLWithSymbol(c.cost)}\n`;
       listText += `   📈 Resultados: ${resultValue.toLocaleString("pt-BR")} ${ev.unitPlural}\n`;
       listText += `   💲 ${costLabel}: ${costFormatted}\n`;
-      if (linkClk > 0) listText += `   👆 Cliques no link: ${linkClk.toLocaleString("pt-BR")}\n`;
+      if (Number(c.purchaseValue || 0) > 0) {
+        const pv = Number(c.purchaseValue || 0);
+        listText += `   💰 Receita (Compras): ${fmtBRLWithSymbol(pv)}${c.cost > 0 ? ` (ROAS ${(pv / c.cost).toFixed(2)}x)` : ""}\n`;
+      }
+      if (c.cost <= 0 && (resultValue > 0 || Number(c.purchaseValue || 0) > 0)) {
+        listText += `   ℹ️ Resultado atribuído pela janela Meta sem gasto/entrega no período.\n`;
+      }
+      if (linkClk > 0 && !isClick) listText += `   👆 Cliques no link: ${linkClk.toLocaleString("pt-BR")}\n`;
       if (c.reach > 0 && !isReach) listText += `   👥 Alcance: ${c.reach.toLocaleString("pt-BR")}\n`;
       listText += `\n`;
     });

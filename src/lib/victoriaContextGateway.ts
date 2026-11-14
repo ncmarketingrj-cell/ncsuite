@@ -61,10 +61,10 @@ export function buildContextFromMetricasItem(
     raw.type === "adset" || raw.type === "conjunto"
       ? "adset"
       : raw.type === "ad" || raw.type === "anuncio"
-      ? "ad"
-      : raw.type === "account"
-      ? "account"
-      : "campaign";
+        ? "ad"
+        : raw.type === "account"
+          ? "account"
+          : "campaign";
 
   const entityId = String(
     raw.external_id || raw.id || raw.campaign_id || "unknown_entity"
@@ -120,7 +120,7 @@ export function buildContextFromMetricasItem(
     internal_id: raw.id ? String(raw.id) : null,
     external_id: raw.external_id ? String(raw.external_id) : null,
     entity_name: entityName,
-    effective_status: String(raw.delivery_status || raw.status || "ACTIVE"),
+    effective_status: String(raw.derived_status?.code || raw.delivery_status || raw.status || "ACTIVE"),
     parent_ids: {
       account_id: String(raw.ad_account_id || input.accountId || ""),
       campaign_id: raw.campaign_id ? String(raw.campaign_id) : null,
@@ -136,8 +136,8 @@ export function buildContextFromMetricasItem(
     result_type: resultType,
     result_indicator: resultIndicator,
     spend,
-    daily_budget: raw.daily_budget ? Number(raw.daily_budget) : raw.budget ? Number(raw.budget) : null,
-    lifetime_budget: raw.lifetime_budget ? Number(raw.lifetime_budget) : null,
+    daily_budget: Number(raw.daily_budget) > 0 ? Number(raw.daily_budget) : Number(raw.budget) > 0 ? Number(raw.budget) : null,
+    lifetime_budget: Number(raw.lifetime_budget) > 0 ? Number(raw.lifetime_budget) : null,
     impressions,
     reach,
     reach_scope: "deduplicated_entity",
@@ -154,10 +154,10 @@ export function buildContextFromMetricasItem(
     account_max_cpl_target: isComparableWithAccountCpl ? input.accountMaxCplTarget ?? null : null,
     comparable_same_objective_avg:
       input.sameObjectiveAvgCost &&
-      input.sameObjectiveAvgCost > 0 &&
-      (typeof input.sameObjectivePeerCount === "number"
-        ? input.sameObjectivePeerCount > 0
-        : isComparableWithAccountCpl)
+        input.sameObjectiveAvgCost > 0 &&
+        (typeof input.sameObjectivePeerCount === "number"
+          ? input.sameObjectivePeerCount > 0
+          : isComparableWithAccountCpl)
         ? input.sameObjectiveAvgCost
         : null,
     comparable_peer_count: input.sameObjectivePeerCount,
@@ -516,7 +516,7 @@ export async function executeGovernedVictoriaDiagnostic(
         ) {
           try {
             await reader.cancel();
-          } catch {}
+          } catch { }
           return {
             aborted: true,
             timedOut: false,
@@ -590,7 +590,7 @@ export async function executeGovernedVictoriaDiagnostic(
                 params.onToken(safePartial, ctx);
               }
             }
-          } catch {}
+          } catch { }
         }
       }
     } else {
@@ -684,28 +684,28 @@ export async function executeGovernedVictoriaDiagnostic(
     const enrichedCtx: VictoriaAnalysisContext =
       ragCitations && ragCitations.length > 0 && ctx.governance_and_benchmarks.rag_documents.length === 0
         ? {
-            ...ctx,
-            governance_and_benchmarks: {
-              ...ctx.governance_and_benchmarks,
-              rag_documents: ragCitations.map((c) => ({
-                id: c.id,
-                title: c.title,
-                author: "NC Performance Strategy Team",
-                source: "Base Curada RAG NC Suite",
-                url: null,
-                published_at: null,
-                ingested_at: new Date().toISOString(),
-                valid_until: null,
-                category: "rag",
-                region: "BR-RJ",
-                objective: ctx.optimization.category,
-                evidence_level: (c.evidence_level as any) || "INTERNAL_RULE",
-                version: c.version || VICTORIA_CONTRACT_VERSION,
-                approval_status: (c.approval_status as any) || "APPROVED",
-                content: "",
-              })),
-            },
-          }
+          ...ctx,
+          governance_and_benchmarks: {
+            ...ctx.governance_and_benchmarks,
+            rag_documents: ragCitations.map((c) => ({
+              id: c.id,
+              title: c.title,
+              author: "NC Performance Strategy Team",
+              source: "Base Curada RAG NC Suite",
+              url: null,
+              published_at: null,
+              ingested_at: new Date().toISOString(),
+              valid_until: null,
+              category: "rag",
+              region: "BR-RJ",
+              objective: ctx.optimization.category,
+              evidence_level: (c.evidence_level as any) || "INTERNAL_RULE",
+              version: c.version || VICTORIA_CONTRACT_VERSION,
+              approval_status: (c.approval_status as any) || "APPROVED",
+              content: "",
+            })),
+          },
+        }
         : ctx;
 
     const enforced = enforceVictoriaPostLlmGuardrails(rawAccumulated, enrichedCtx, {
@@ -716,8 +716,8 @@ export async function executeGovernedVictoriaDiagnostic(
     const fallbackReason = serverUsedFallback
       ? serverFallbackReason || "server_fallback"
       : enforced.replacedByDeterministic
-      ? enforced.reasons.join(", ")
-      : null;
+        ? enforced.reasons.join(", ")
+        : null;
 
     if (!params.userPrompt && !isDeterministic) {
       sessionCtrl.commitResponse({

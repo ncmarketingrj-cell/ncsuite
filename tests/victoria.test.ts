@@ -1233,4 +1233,40 @@ test("BM Bonne21 (OUTCOME_SALES com purchaseValue/ROAS & OUTCOME_ENGAGEMENT com 
     operationalMode: "READ_ONLY_ANALYSIS",
   });
   assert.equal(lpvCtx.optimization.category, "LANDING_PAGE_VIEWS");
+
+  // Resultado atribuído com gasto zero (BM Bonne21 2026-11-13) nunca exibe CPA R$ 0,00 na Victoria
+  const zeroSpendSalesCtx = buildContextFromMetricasItem({
+    item: {
+      id: "camp_bonne_zero_spend",
+      external_id: "120253223224110659",
+      name: "NC | CMP de Vendas (05/08) - HC — Cópia x6",
+      status: "ACTIVE",
+      stop_time: "2026-11-09T22:51:04+00:00",
+      derived_status: { code: "COMPLETED", label: "Concluída" },
+      ad_account_id: "act_904927503704788",
+      adAccountName: "BM Bonne21",
+      rawObjective: "OUTCOME_SALES",
+      optimizationGoal: "OFFSITE_CONVERSIONS",
+      resultType: "PURCHASES",
+      resultIndicator: "actions:offsite_conversion.fb_pixel_purchase",
+      cost: 0,
+      conversions: 3,
+      purchaseValue: 267.8,
+      impressions: 0,
+      reach: 0,
+      clicks: 0,
+    },
+    surface: "metricas",
+    route: "/metricas",
+    accountId: "act_904927503704788",
+    accountName: "BM Bonne21",
+    dateFrom: "2026-11-13",
+    dateTo: "2026-11-13",
+    operationalMode: "READ_ONLY_ANALYSIS",
+  });
+  assert.equal(zeroSpendSalesCtx.effective_status, "COMPLETED");
+  assert.equal(zeroSpendSalesCtx.raw_metrics.cost_per_result, null);
+  assert.equal(zeroSpendSalesCtx.raw_metrics.cost_per_result_formatted, "—");
+  assert.equal(zeroSpendSalesCtx.raw_metrics.purchase_value, 267.8);
+  assert.equal(zeroSpendSalesCtx.raw_metrics.roas, null);
 });

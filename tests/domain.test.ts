@@ -6,6 +6,8 @@ import {
   formatCivilDateBR,
   isDateWithinCivilRange,
   classifyMetaEvent,
+  classifyDeliveryState,
+  deriveEffectiveCampaignStatus,
   computeUnitCost,
   computeWeightedAggregates,
   computeCvr,
@@ -16,6 +18,7 @@ import {
   computeCampaignBudgetDistribution,
   computeHomogeneousBenchmark,
   hasEntityDelivery,
+  getCampaignSelectorResultDisplay,
 } from "../src/lib/metricsDomain.ts";
 import {
   buildSocialSourceTelemetry,
@@ -697,5 +700,116 @@ describe("NC Metrics Domain — Benchmark Homogêneo & CPC Link vs CPC Todos", (
     assert.equal(snap.summary.roasPurchases, 2.22);
     assert.ok(snap.whatsappText.includes("Receita (Valor de Compra)"));
     assert.ok(snap.whatsappText.includes("ROAS"));
+  });
+
+  it("BM Bonne21 (2026-11-13): resultado atribuído com gasto zero (3 compras, R$ 267,80), CPA null (nunca R$ 0,00), status Concluída e 4 estados de entrega", () => {
+    // 1. Fixture real BM Bonne21 (campanha 120253223224110659 em 2026-11-13)
+    const bonne21Row = {
+      id: "46f47b29-48b6-4868-a81e-d24979a91652",
+      name: "NC | CMP de Vendas (05/08) - HC — Cópia — Cópia — Cópia — Cópia — Cópia — Cópia",
+      rawObjective: "OUTCOME_SALES",
+      optimizationGoal: "OFFSITE_CONVERSIONS",
+      resultType: "PURCHASES",
+      resultsIndicator: "actions:offsite_conversion.fb_pixel_purchase",
+      cost: 0,
+      impressions: 0,
+      reach: 0,
+      clicks: 0,
+      conversions: 3,
+      purchaseValue: 267.8,
+    };
+
+    // Guard principal: CPA com gasto zero nunca retorna 0 (seria exibido como R$ 0,00)
+    assert.equal(computeUnitCost(0, 3, "PURCHASES"), null);
+    assert.equal(computeUnitCost(0, 0, "PURCHASES"), null);
+    assert.equal(computeUnitCost(12.5, 5, "PURCHASES"), 2.5);
+
+    const norm = normalizeCampaignItem(bonne21Row);
+    assert.equal(norm.cost, 0);
+    assert.equal(norm.conversions, 3);
+    assert.equal(norm.purchaseValue, 267.8);
+    assert.equal(norm.unitCost, null);
+    assert.equal(norm.roas, null);
+
+    // Status efetivo "Concluída" quando stop_time já encerrou (mesmo se Graph status="ACTIVE")
+    const effCompleted = deriveEffectiveCampaignStatus({
+      status: "active",
+      delivery_status: "ACTIVE",
+      stop_time: "2026-11-09T22:51:04+00:00",
+      now: new Date("2026-11-13T18:00:00Z"),
+    });
+    assert.equal(effCompleted.code, "COMPLETED");
+    assert.equal(effCompleted.label, "Concluída");
+    assert.equal(effCompleted.isCompleted, true);
+    assert.equal(effCompleted.isActive, false);
+
+    const effPaused = deriveEffectiveCampaignStatus({ status: "PAUSED" });
+    assert.equal(effPaused.code, "PAUSED");
+    assert.equal(effPaused.label, "Pausada");
+
+    const effArchived = deriveEffectiveCampaignStatus({ status: "ARCHIVED" });
+    assert.equal(effArchived.code, "ARCHIVED");
+    assert.equal(effArchived.label, "Arquivada");
+
+    // 4 estados operacionais distintos
+    assert.equal(
+      classifyDeliveryState({ cost: 0, impressions: 0, reach: 0, conversions: 0, purchaseValue: 0 }).code,
+      "no_delivery"
+    );
+    assert.equal(
+      classifyDeliveryState({ cost: 0, impressions: 150, reach: 120, conversions: 0, purchaseValue: 0 }).code,
+      "no_spend"
+    );
+    assert.equal(
+      classifyDeliveryState({ cost: 45, impressions: 1200, reach: 900, conversions: 0, purchaseValue: 0 }).code,
+      "no_results"
+    );
+    const attrZero = classifyDeliveryState(bonne21Row);
+    assert.equal(attrZero.code, "attributed_zero_spend");
+    assert.equal(attrZero.isAttributedOnly, true);
+    assert.equal(attrZero.hasActivity, true);
+
+    // Seletor e snapshot de relatório nunca exibem R$ 0,00 para CPA e trazem Receita + explicação de atribuição
+    const selectorDisp = getCampaignSelectorResultDisplay(bonne21Row);
+    assert.equal(selectorDisp.label, "Compras");
+    assert.equal(selectorDisp.value, 3);
+    assert.ok(selectorDisp.summaryText.includes("Receita: R$ 267,80"));
+    assert.ok(selectorDisp.summaryText.includes("Atribuído (gasto zero)"));
+
+    const zeroSpendReport = buildReportSnapshot({
+      clientName: "BM Bonne21",
+      accountName: "act_904927503704788",
+      dateFrom: "2026-11-13",
+      dateTo: "2026-11-13",
+      source: "api",
+      mode: "standard",
+      campaigns: [bonne21Row],
+    });
+    assert.equal(zeroSpendReport.summary.cpaEligible, null);
+    assert.equal(zeroSpendReport.summary.totalMediaSpend, 0);
+    assert.equal(zeroSpendReport.summary.conversionResults, 3);
+    assert.equal(zeroSpendReport.summary.totalPurchaseValue, 267.8);
+    assert.ok(zeroSpendReport.whatsappText.includes("Não calculável (gasto zero)"));
+    assert.ok(zeroSpendReport.whatsappText.includes("267,80"));
+    assert.ok(zeroSpendReport.whatsappText.includes("janela de conversão Meta"));
+    assert.ok(!zeroSpendReport.whatsappText.includes("CPA: R$ 0,00"));
+
+    // Consistência hierárquica por nível (2 anúncios somam 2+1 = 3 e 182.90+84.90 = 267.80) sem soma entre níveis
+    const adsAgg = computeWeightedAggregates([
+      { ...bonne21Row, id: "ad_bonne_meme_1", name: "Bonne Meme 1", conversions: 2, purchaseValue: 182.9 },
+      { ...bonne21Row, id: "ad_motoboy", name: "MOTOBOY", conversions: 1, purchaseValue: 84.9 },
+    ]);
+    assert.equal(adsAgg.conversionResults, 3);
+    assert.equal(adsAgg.totalPurchaseValue, 267.8);
+    assert.equal(adsAgg.cpaEligible, null);
+
+    // Caso de borda: compra atribuída sem purchase_value e gasto zero
+    const noValueAgg = computeWeightedAggregates([
+      { ...bonne21Row, conversions: 2, purchaseValue: 0 },
+    ]);
+    assert.equal(noValueAgg.conversionResults, 2);
+    assert.equal(noValueAgg.totalPurchaseValue, 0);
+    assert.equal(noValueAgg.roasPurchases, null);
+    assert.equal(noValueAgg.cpaEligible, null);
   });
 });

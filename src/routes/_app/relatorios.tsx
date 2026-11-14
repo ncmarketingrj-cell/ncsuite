@@ -20,8 +20,10 @@ import { calibrateCampaignMetricsArray, calibrateAdMetricsArray, ensureDatabaseC
 import { useGlobalDate, getLocalDateString } from "@/contexts/DateContext";
 import {
   buildReportSnapshot,
+  classifyDeliveryState,
   classifyMetaEvent,
   computeUnitCost,
+  deriveEffectiveCampaignStatus,
   formatMetricVectorSummary,
   formatPeriodLabel,
   getCampaignSelectionGroupLabel,
@@ -68,6 +70,11 @@ interface CampaignData {
   selected: boolean;
   campaignName?: string;
   adSetName?: string;
+  effectiveStatusLabel?: string;
+  isCompleted?: boolean;
+  deliveryStateCode?: string;
+  deliveryStateLabel?: string;
+  attributionNote?: string;
 }
 
 interface SavedReport {
@@ -767,10 +774,66 @@ function RelatoriosPage() {
            return allData;
         };
 
+        const fetchPeriodStatsByLevel = async (entityLevel: "campaign" | "adset" | "ad") => {
+          try {
+            let pq = (supabase as any)
+              .from("meta_period_stats")
+              .select("entity_id, ad_account_id, spend, impressions, reach, clicks, inline_link_clicks, all_clicks, conversions, purchase_value, result_type, result_indicator, optimization_goal")
+              .eq("entity_type", entityLevel)
+              .eq("start_date", startLimit)
+              .eq("end_date", endLimit);
+            if (selectedAccountId !== "all") {
+              pq = pq.eq("ad_account_id", selectedAccountId);
+            }
+            const { data, error } = await pq;
+            if (error || !Array.isArray(data)) return new Map<string, any>();
+            return new Map<string, any>(data.map((row: any) => [String(row.entity_id), row]));
+          } catch {
+            return new Map<string, any>();
+          }
+        };
+
+        const buildItemMeta = (params: {
+          status?: string | null;
+          delivery_status?: string | null;
+          stop_time?: string | null;
+          end_time?: string | null;
+          cost: number;
+          impressions: number;
+          reach: number;
+          conversions: number;
+          purchaseValue: number;
+        }) => {
+          const eff = deriveEffectiveCampaignStatus({
+            status: params.status,
+            delivery_status: params.delivery_status,
+            stop_time: params.stop_time,
+            end_time: params.end_time,
+          });
+          const ds = classifyDeliveryState({
+            cost: params.cost,
+            impressions: params.impressions,
+            reach: params.reach,
+            conversions: params.conversions,
+            purchaseValue: params.purchaseValue,
+          });
+          return {
+            effectiveStatusLabel: eff.code !== "ACTIVE" ? eff.label : undefined,
+            isCompleted: eff.isCompleted,
+            deliveryStateCode: ds.code,
+            deliveryStateLabel: ds.code === "attributed_zero_spend" ? ds.shortLabel : ds.code !== "active_with_results" ? ds.label : undefined,
+            attributionNote:
+              ds.code === "attributed_zero_spend"
+                ? "Resultado atribuído pela janela Meta no período com gasto R$ 0,00."
+                : undefined,
+          };
+        };
+
         if (reportLevel === "adset") {
+          const periodStatsMap = await fetchPeriodStatsByLevel("adset");
           let dbData = await fetchPaginated("ad_sets", `
-            id, name, campaign_id, optimization_goal,
-            campaigns!inner(id, name, ad_account_id, objective),
+            id, name, status, end_time, campaign_id, optimization_goal,
+            campaigns!inner(id, name, ad_account_id, objective, status, delivery_status, stop_time),
             asset_metrics(cost, conversions, impressions, clicks, inline_link_clicks, all_clicks, purchase_value, reach, result_type, result_indicator, optimization_goal, date)
           `, selectedAccountId);
           if (!dbData || dbData.length === 0) {
@@ -786,20 +849,39 @@ function RelatoriosPage() {
               if (!x.date) return true;
               return x.date >= startLimit && x.date <= endLimit;
             });
-            const cost = filteredMetrics.reduce((s: number, x: any) => s + Number(x.cost || 0), 0);
-            const conversions = filteredMetrics.reduce((s: number, x: any) => s + Number(x.conversions || 0), 0);
-            const purchaseValue = filteredMetrics.reduce((s: number, x: any) => s + Number(x.purchase_value || 0), 0);
-            const inlineLinkClicks = filteredMetrics.reduce((s: number, x: any) => s + Number(x.inline_link_clicks ?? x.clicks ?? 0), 0);
-            const allClicks = filteredMetrics.reduce((s: number, x: any) => s + Number(x.all_clicks ?? x.clicks ?? 0), 0);
-            const impressions = filteredMetrics.reduce((s: number, x: any) => s + Number(x.impressions || 0), 0);
-            const reach = filteredMetrics.reduce((s: number, x: any) => s + Number(x.reach || 0), 0);
-            const optGoal = filteredMetrics.find((x: any) => x.optimization_goal)?.optimization_goal || adset.optimization_goal || "";
-            const resType = filteredMetrics.find((x: any) => x.result_type)?.result_type || "";
-            const resInd = filteredMetrics.find((x: any) => x.result_indicator)?.result_indicator || "";
+            const ps = periodStatsMap.get(String(adset.id));
+            const cost = ps ? Number(ps.spend || 0) : filteredMetrics.reduce((s: number, x: any) => s + Number(x.cost || 0), 0);
+            const conversions = ps ? Number(ps.conversions || 0) : filteredMetrics.reduce((s: number, x: any) => s + Number(x.conversions || 0), 0);
+            const purchaseValue =
+              ps && ps.purchase_value !== undefined && ps.purchase_value !== null
+                ? Number(ps.purchase_value || 0)
+                : filteredMetrics.reduce((s: number, x: any) => s + Number(x.purchase_value || 0), 0);
+            const inlineLinkClicks = ps
+              ? Number(ps.inline_link_clicks ?? ps.clicks ?? 0)
+              : filteredMetrics.reduce((s: number, x: any) => s + Number(x.inline_link_clicks ?? x.clicks ?? 0), 0);
+            const allClicks = ps
+              ? Number(ps.all_clicks ?? ps.clicks ?? 0)
+              : filteredMetrics.reduce((s: number, x: any) => s + Number(x.all_clicks ?? x.clicks ?? 0), 0);
+            const impressions = ps ? Number(ps.impressions || 0) : filteredMetrics.reduce((s: number, x: any) => s + Number(x.impressions || 0), 0);
+            const reach = ps ? Number(ps.reach || 0) : filteredMetrics.reduce((s: number, x: any) => s + Number(x.reach || 0), 0);
+            const optGoal = ps?.optimization_goal || filteredMetrics.find((x: any) => x.optimization_goal)?.optimization_goal || adset.optimization_goal || "";
+            const resType = ps?.result_type || filteredMetrics.find((x: any) => x.result_type)?.result_type || "";
+            const resInd = ps?.result_indicator || filteredMetrics.find((x: any) => x.result_indicator)?.result_indicator || "";
 
             const adAccountId = adset.campaigns?.ad_account_id;
             const matchedAccount = accounts.find(a => a.id === adAccountId);
             const platformStr = matchedAccount?.platform === "Google Ads" ? "google" : "meta";
+            const metaInfo = buildItemMeta({
+              status: adset.status || adset.campaigns?.status,
+              delivery_status: adset.campaigns?.delivery_status,
+              stop_time: adset.campaigns?.stop_time,
+              end_time: adset.end_time,
+              cost,
+              impressions,
+              reach,
+              conversions,
+              purchaseValue,
+            });
 
             return {
               id: adset.id,
@@ -819,15 +901,17 @@ function RelatoriosPage() {
               resultIndicator: resInd || undefined,
               objective: detectCampaignObjective(adset.name, resType, isVehicleContext, adset.campaigns?.objective, optGoal, resInd),
               platform: platformStr as "meta" | "google",
-              selected: hasEntityDelivery({ cost, impressions, reach, conversions, purchaseValue })
+              selected: hasEntityDelivery({ cost, impressions, reach, conversions, purchaseValue }),
+              ...metaInfo,
             };
           }).filter((c: any) => hasEntityDelivery(c));
 
         } else if (reportLevel === "ad") {
+          const periodStatsMap = await fetchPeriodStatsByLevel("ad");
           let dbData = await fetchPaginated("ads", `
-            id, name, campaign_id, ad_set_id,
-            campaigns!inner(id, name, ad_account_id, objective),
-            ad_sets(id, name, optimization_goal),
+            id, name, status, campaign_id, ad_set_id,
+            campaigns!inner(id, name, ad_account_id, objective, status, delivery_status, stop_time),
+            ad_sets(id, name, optimization_goal, end_time),
             asset_metrics(cost, conversions, impressions, clicks, inline_link_clicks, all_clicks, purchase_value, reach, result_type, result_indicator, optimization_goal, date)
           `, selectedAccountId);
           if (!dbData || dbData.length === 0) {
@@ -845,20 +929,39 @@ function RelatoriosPage() {
               if (!x.date) return true;
               return x.date >= startLimit && x.date <= endLimit;
             });
-            const cost = filteredMetrics.reduce((s: number, x: any) => s + Number(x.cost || 0), 0);
-            const conversions = filteredMetrics.reduce((s: number, x: any) => s + Number(x.conversions || 0), 0);
-            const purchaseValue = filteredMetrics.reduce((s: number, x: any) => s + Number(x.purchase_value || 0), 0);
-            const inlineLinkClicks = filteredMetrics.reduce((s: number, x: any) => s + Number(x.inline_link_clicks ?? x.clicks ?? 0), 0);
-            const allClicks = filteredMetrics.reduce((s: number, x: any) => s + Number(x.all_clicks ?? x.clicks ?? 0), 0);
-            const impressions = filteredMetrics.reduce((s: number, x: any) => s + Number(x.impressions || 0), 0);
-            const reach = filteredMetrics.reduce((s: number, x: any) => s + Number(x.reach || 0), 0);
-            const optGoal = filteredMetrics.find((x: any) => x.optimization_goal)?.optimization_goal || ad.ad_sets?.optimization_goal || "";
-            const resType = filteredMetrics.find((x: any) => x.result_type)?.result_type || "";
-            const resInd = filteredMetrics.find((x: any) => x.result_indicator)?.result_indicator || "";
+            const ps = periodStatsMap.get(String(ad.id));
+            const cost = ps ? Number(ps.spend || 0) : filteredMetrics.reduce((s: number, x: any) => s + Number(x.cost || 0), 0);
+            const conversions = ps ? Number(ps.conversions || 0) : filteredMetrics.reduce((s: number, x: any) => s + Number(x.conversions || 0), 0);
+            const purchaseValue =
+              ps && ps.purchase_value !== undefined && ps.purchase_value !== null
+                ? Number(ps.purchase_value || 0)
+                : filteredMetrics.reduce((s: number, x: any) => s + Number(x.purchase_value || 0), 0);
+            const inlineLinkClicks = ps
+              ? Number(ps.inline_link_clicks ?? ps.clicks ?? 0)
+              : filteredMetrics.reduce((s: number, x: any) => s + Number(x.inline_link_clicks ?? x.clicks ?? 0), 0);
+            const allClicks = ps
+              ? Number(ps.all_clicks ?? ps.clicks ?? 0)
+              : filteredMetrics.reduce((s: number, x: any) => s + Number(x.all_clicks ?? x.clicks ?? 0), 0);
+            const impressions = ps ? Number(ps.impressions || 0) : filteredMetrics.reduce((s: number, x: any) => s + Number(x.impressions || 0), 0);
+            const reach = ps ? Number(ps.reach || 0) : filteredMetrics.reduce((s: number, x: any) => s + Number(x.reach || 0), 0);
+            const optGoal = ps?.optimization_goal || filteredMetrics.find((x: any) => x.optimization_goal)?.optimization_goal || ad.ad_sets?.optimization_goal || "";
+            const resType = ps?.result_type || filteredMetrics.find((x: any) => x.result_type)?.result_type || "";
+            const resInd = ps?.result_indicator || filteredMetrics.find((x: any) => x.result_indicator)?.result_indicator || "";
 
             const adAccountId = ad.campaigns?.ad_account_id;
             const matchedAccount = accounts.find(a => a.id === adAccountId);
             const platformStr = matchedAccount?.platform === "Google Ads" ? "google" : "meta";
+            const metaInfo = buildItemMeta({
+              status: ad.status || ad.campaigns?.status,
+              delivery_status: ad.campaigns?.delivery_status,
+              stop_time: ad.campaigns?.stop_time,
+              end_time: ad.ad_sets?.end_time,
+              cost,
+              impressions,
+              reach,
+              conversions,
+              purchaseValue,
+            });
 
             return {
               id: ad.id,
@@ -879,16 +982,18 @@ function RelatoriosPage() {
               resultIndicator: resInd || undefined,
               objective: detectCampaignObjective(ad.name, resType, isVehicleContext, ad.campaigns?.objective, optGoal, resInd),
               platform: platformStr as "meta" | "google",
-              selected: hasEntityDelivery({ cost, impressions, reach, conversions, purchaseValue })
+              selected: hasEntityDelivery({ cost, impressions, reach, conversions, purchaseValue }),
+              ...metaInfo,
             };
           }).filter((c: any) => hasEntityDelivery(c));
 
         } else {
           // Default: campaign level
           ensureDatabaseCalibrated(supabase).catch(() => {});
+          const periodStatsMap = await fetchPeriodStatsByLevel("campaign");
           let dbMetrics = await fetchPaginated("metrics", `
             campaign_id, cost, conversions, impressions, clicks, inline_link_clicks, all_clicks, purchase_value, reach, result_type, result_indicator, optimization_goal, date,
-            campaigns!inner(id, name, ad_account_id, objective, ad_sets(optimization_goal))
+            campaigns!inner(id, name, ad_account_id, objective, status, delivery_status, stop_time, ad_sets(optimization_goal))
           `, selectedAccountId, (q) => {
              return q.gte("date", startLimit).lte("date", endLimit);
           });
@@ -901,16 +1006,10 @@ function RelatoriosPage() {
             });
           }
 
-          if (!dbMetrics || dbMetrics.length === 0) {
-            if (!loadGuardRef.current.isCurrent(reqToken)) return;
-            setCampaignList([]);
-            return;
-          }
-
           // Agrupar métricas por campanha e identificar plataforma correta
-          const metricsMap = new Map<string, { id: string, name: string, platform: string, cost: number; impressions: number; clicks: number; inlineLinkClicks: number; allClicks: number; conversions: number; purchaseValue: number; reach: number; resultType?: string; resultIndicator?: string; optimizationGoal?: string; metaObjective?: string }>();
+          const metricsMap = new Map<string, { id: string, name: string, platform: string, cost: number; impressions: number; clicks: number; inlineLinkClicks: number; allClicks: number; conversions: number; purchaseValue: number; reach: number; resultType?: string; resultIndicator?: string; optimizationGoal?: string; metaObjective?: string; status?: string; deliveryStatus?: string; stopTime?: string }>();
           
-          dbMetrics.forEach((rawM: any) => {
+          (dbMetrics || []).forEach((rawM: any) => {
             const [m] = calibrateCampaignMetricsArray(rawM.campaigns?.name || "", [rawM]);
             const campId = m.campaign_id;
             const adAccountId = m.campaigns?.ad_account_id;
@@ -931,6 +1030,9 @@ function RelatoriosPage() {
                resultIndicator: m.result_indicator || undefined,
                optimizationGoal: m.optimization_goal || adSetOptGoal || undefined,
                metaObjective: m.campaigns?.objective || undefined,
+               status: m.campaigns?.status || undefined,
+               deliveryStatus: m.campaigns?.delivery_status || undefined,
+               stopTime: m.campaigns?.stop_time || undefined,
             };
             
             cur.cost += Number(m.cost || 0);
@@ -948,25 +1050,96 @@ function RelatoriosPage() {
             metricsMap.set(campId, cur);
           });
 
-          mapped = Array.from(metricsMap.values()).map(c => ({
-            id: c.id,
-            name: c.name,
-            cost: c.cost,
-            impressions: c.impressions,
-            clicks: c.inlineLinkClicks,
-            inlineLinkClicks: c.inlineLinkClicks,
-            allClicks: c.allClicks,
-            conversions: c.conversions,
-            purchaseValue: c.purchaseValue,
-            reach: c.reach,
-            rawObjective: c.metaObjective,
-            optimizationGoal: c.optimizationGoal,
-            resultType: c.resultType,
-            resultIndicator: c.resultIndicator,
-            objective: detectCampaignObjective(c.name, c.resultType, isVehicleContext, c.metaObjective, c.optimizationGoal, c.resultIndicator),
-            platform: c.platform as "meta" | "google",
-            selected: hasEntityDelivery(c)
-          }));
+          // Se houver campanhas em meta_period_stats ausentes nos registros diários (ou com alcance/conversões atribuídas mais completos), mescla no nível exato de campanha
+          if (periodStatsMap.size > 0) {
+            const missingIds = Array.from(periodStatsMap.keys()).filter((id) => !metricsMap.has(id));
+            if (missingIds.length > 0) {
+              try {
+                const { data: missingCamps } = await (supabase as any)
+                  .from("campaigns")
+                  .select("id, name, ad_account_id, objective, status, delivery_status, stop_time")
+                  .in("id", missingIds.slice(0, 200));
+                for (const mc of missingCamps || []) {
+                  const matchedAccount = accounts.find(a => a.id === mc.ad_account_id);
+                  metricsMap.set(mc.id, {
+                    id: mc.id,
+                    name: mc.name || "Sem Nome",
+                    platform: matchedAccount?.platform === "Google Ads" ? "google" : "meta",
+                    cost: 0,
+                    impressions: 0,
+                    clicks: 0,
+                    inlineLinkClicks: 0,
+                    allClicks: 0,
+                    conversions: 0,
+                    purchaseValue: 0,
+                    reach: 0,
+                    metaObjective: mc.objective || undefined,
+                    status: mc.status || undefined,
+                    deliveryStatus: mc.delivery_status || undefined,
+                    stopTime: mc.stop_time || undefined,
+                  });
+                }
+              } catch {
+                // fallback silencioso
+              }
+            }
+            for (const [campId, ps] of periodStatsMap.entries()) {
+              const cur = metricsMap.get(campId);
+              if (!cur) continue;
+              cur.cost = Number(ps.spend || 0);
+              cur.impressions = Number(ps.impressions || 0);
+              cur.reach = Number(ps.reach || 0);
+              cur.inlineLinkClicks = Number(ps.inline_link_clicks ?? ps.clicks ?? 0);
+              cur.clicks = cur.inlineLinkClicks;
+              cur.allClicks = Number(ps.all_clicks ?? ps.clicks ?? 0);
+              cur.conversions = Number(ps.conversions || 0);
+              if (ps.purchase_value !== undefined && ps.purchase_value !== null) {
+                cur.purchaseValue = Number(ps.purchase_value || 0);
+              }
+              if (ps.result_type) cur.resultType = ps.result_type;
+              if (ps.result_indicator) cur.resultIndicator = ps.result_indicator;
+              if (ps.optimization_goal) cur.optimizationGoal = ps.optimization_goal;
+            }
+          }
+
+          if (metricsMap.size === 0) {
+            if (!loadGuardRef.current.isCurrent(reqToken)) return;
+            setCampaignList([]);
+            return;
+          }
+
+          mapped = Array.from(metricsMap.values()).map(c => {
+            const metaInfo = buildItemMeta({
+              status: c.status,
+              delivery_status: c.deliveryStatus,
+              stop_time: c.stopTime,
+              cost: c.cost,
+              impressions: c.impressions,
+              reach: c.reach,
+              conversions: c.conversions,
+              purchaseValue: c.purchaseValue,
+            });
+            return {
+              id: c.id,
+              name: c.name,
+              cost: c.cost,
+              impressions: c.impressions,
+              clicks: c.inlineLinkClicks,
+              inlineLinkClicks: c.inlineLinkClicks,
+              allClicks: c.allClicks,
+              conversions: c.conversions,
+              purchaseValue: c.purchaseValue,
+              reach: c.reach,
+              rawObjective: c.metaObjective,
+              optimizationGoal: c.optimizationGoal,
+              resultType: c.resultType,
+              resultIndicator: c.resultIndicator,
+              objective: detectCampaignObjective(c.name, c.resultType, isVehicleContext, c.metaObjective, c.optimizationGoal, c.resultIndicator),
+              platform: c.platform as "meta" | "google",
+              selected: hasEntityDelivery(c),
+              ...metaInfo,
+            };
+          });
 
           // Buscar alcance deduplicado da conta no período se filtrado para conta única
           let fetchedAccReach: number | null = null;
@@ -1165,15 +1338,24 @@ function RelatoriosPage() {
       return `📊 *${title}*\n━━━━━━━━━━━━━━━━━━━━\n🏢 *Cliente:* ${clientName}\n📅 *Período:* ${displayPeriod}\n📱 *Plataformas:* ${platformString}\n\n`;
     };
 
+    const formatUnitCostText = (costVal: number, resVal: number, zeroResMsg = "Não calculável") => {
+      if (!Number.isFinite(costVal) || !Number.isFinite(resVal) || resVal <= 0) return zeroResMsg;
+      if (costVal <= 0) return "Não calculável (gasto zero)";
+      return fmtBRLWithSymbol(costVal / resVal);
+    };
+
     // Bloco de totais gerais — presente em TODOS os modos de relatório (sem soma heterogênea de unidades)
     const buildTotais = () => {
       let txt = `━━━━━━━━━━━━━━━━━━━━\n*📊 TOTAIS GERAIS*\n━━━━━━━━━━━━━━━━━━━━\n`;
       txt += `💵 *Investimento Total:* ${fmtBRLWithSymbol(totalCost)}\n`;
       if (snapSummary && snapSummary.conversionResults > 0) {
         txt += `📈 *Conversões Elegíveis:* ${snapSummary.conversionResults.toLocaleString("pt-BR")}\n`;
-        txt += `💲 *CPA (Conversões):* ${snapSummary.cpaEligible !== null ? fmtBRLWithSymbol(snapSummary.cpaEligible) : "Não calculável"}\n`;
+        txt += `💲 *CPA (Conversões):* ${snapSummary.cpaEligible !== null ? fmtBRLWithSymbol(snapSummary.cpaEligible) : (snapSummary.conversionSpend <= 0 ? "Não calculável (gasto zero)" : "Não calculável")}\n`;
       } else if (vectorSummary.length === 1) {
         txt += `📈 *${vectorSummary[0].label}:* ${vectorSummary[0].value.toLocaleString("pt-BR")}\n`;
+      }
+      if (snapSummary && snapSummary.totalPurchaseValue > 0) {
+        txt += `💰 *Receita (Compras):* ${fmtBRLWithSymbol(snapSummary.totalPurchaseValue)}${snapSummary.roasPurchases !== null ? ` (ROAS ${snapSummary.roasPurchases.toFixed(2)}x)` : ""}\n`;
       }
       if (vectorSummary.length > 1) {
         txt += `📊 *Resultados por tipo:* ${vectorSummary.map((e) => `${e.value.toLocaleString("pt-BR")} ${e.label}`).join(" | ")}\n`;
@@ -1204,7 +1386,7 @@ function RelatoriosPage() {
       groupedTypes.forEach((data, type) => {
         const isClick = data.isClick;
         const isReach = data.isReach;
-        const cpl = data.results > 0 ? (isReach ? (data.cost / data.results) * 1000 : data.cost / data.results) : null;
+        const cpl = computeUnitCost(data.cost, data.results, isReach ? "REACH" : isClick ? "LINK_CLICKS" : "PURCHASES");
 
         let resultLabel = `Resultados (${data.unitPlural})`;
         if (isClick) resultLabel = "Cliques no Link";
@@ -1217,11 +1399,14 @@ function RelatoriosPage() {
         txt += `${type}\n`;
         txt += `   💵 Investimento: ${fmtBRLWithSymbol(data.cost)}\n`;
         txt += `   📈 ${resultLabel}: ${data.results.toLocaleString("pt-BR")}\n`;
-        txt += `   💲 ${costLabel}: ${cpl !== null ? fmtBRLWithSymbol(cpl) : "Não calculável"}\n`;
+        txt += `   💲 ${costLabel}: ${cpl !== null ? fmtBRLWithSymbol(cpl) : (data.cost <= 0 && data.results > 0 ? "Não calculável (gasto zero)" : "Não calculável")}\n`;
         if (data.purchaseValue > 0) {
           txt += `   💰 Receita (Compras): ${fmtBRLWithSymbol(data.purchaseValue)}`;
           if (data.cost > 0) txt += ` (ROAS ${(data.purchaseValue / data.cost).toFixed(2)}x)`;
           txt += `\n`;
+        }
+        if (data.cost <= 0 && (data.results > 0 || data.purchaseValue > 0)) {
+          txt += `   ℹ️ Resultados atribuídos pela janela de conversão Meta (sem gasto/veiculação no período).\n`;
         }
         if (data.linkClicks > 0 && !isClick) txt += `   👆 Cliques no link: ${data.linkClicks.toLocaleString("pt-BR")}\n`;
         if (data.reach > 0 && !isReach) txt += `   👥 Alcance${selected.length > 1 ? " (soma)" : ""}: ${data.reach.toLocaleString("pt-BR")}\n`;
@@ -1262,11 +1447,11 @@ function RelatoriosPage() {
           const isReachObj = ev.category === "REACH" || c.objective.includes("Alcance");
           const linkClk = Number(c.inlineLinkClicks ?? c.clicks ?? 0);
           const resultValue = isClickObj ? linkClk : isReachObj ? (c.reach > 0 ? c.reach : c.conversions) : c.conversions;
-          const costPerRes = resultValue > 0 ? (isReachObj ? (c.cost / resultValue) * 1000 : c.cost / resultValue) : null;
+          const costPerRes = computeUnitCost(c.cost, resultValue, ev.category);
           const costLabel = isReachObj ? "Custo/1.000 contas alc." : "Custo/Resultado";
           const typeLabel = ev.unitPlural;
           
-          txt += `📌 *${c.name.toUpperCase()}*\n`;
+          txt += `📌 *${c.name.toUpperCase()}*${c.effectiveStatusLabel ? ` [${c.effectiveStatusLabel}]` : ""}\n`;
           if (reportLevel === "adset" && c.campaignName) {
             txt += `   📁 Campanha: ${c.campaignName}\n`;
           } else if (reportLevel === "ad") {
@@ -1275,10 +1460,13 @@ function RelatoriosPage() {
           }
           txt += `   💵 Invest: ${fmtBRLWithSymbol(c.cost)}\n`;
           txt += `   📈 Result: ${resultValue.toLocaleString("pt-BR")} (${typeLabel})\n`;
-          txt += `   💲 ${costLabel}: ${costPerRes !== null ? fmtBRLWithSymbol(costPerRes) : "Não calculável"}\n`;
+          txt += `   💲 ${costLabel}: ${costPerRes !== null ? fmtBRLWithSymbol(costPerRes) : (c.cost <= 0 && resultValue > 0 ? "Não calculável (gasto zero)" : "Não calculável")}\n`;
           if (Number(c.purchaseValue || 0) > 0) {
             const pv = Number(c.purchaseValue || 0);
-            txt += `   💰 Receita: ${fmtBRLWithSymbol(pv)}${c.cost > 0 ? ` (ROAS ${(pv / c.cost).toFixed(2)}x)` : ""}\n`;
+            txt += `   💰 Receita (Compras): ${fmtBRLWithSymbol(pv)}${c.cost > 0 ? ` (ROAS ${(pv / c.cost).toFixed(2)}x)` : ""}\n`;
+          }
+          if (c.cost <= 0 && (resultValue > 0 || Number(c.purchaseValue || 0) > 0)) {
+            txt += `   ℹ️ Resultado atribuído pela janela Meta sem gasto/entrega no período.\n`;
           }
           if (linkClk > 0 && !isClickObj) txt += `   👆 Cliques no link: ${linkClk.toLocaleString("pt-BR")}\n`;
           txt += `\n`;
@@ -1297,6 +1485,13 @@ function RelatoriosPage() {
 
       const isConsignado = (c: CampaignData) => 
         /consignado/i.test(c.name) || c.objective.toLowerCase().includes("consignado");
+
+      const isSales = (c: CampaignData) =>
+        c.resultType === "PURCHASES" ||
+        c.rawObjective === "OUTCOME_SALES" ||
+        c.rawObjective === "CONVERSIONS" ||
+        c.objective.includes("Compras") ||
+        c.objective.includes("Vendas");
 
       const isReachOrImpression = (c: CampaignData) => 
         c.objective.includes("Alcance") || 
@@ -1321,21 +1516,23 @@ function RelatoriosPage() {
         c.objective.includes("veículo") ||
         c.objective.includes("veiculo") ||
         c.objective.includes("Mensagens nos veículos") ||
-        (!isConsignado(c) && !isReachOrImpression(c) && !isProfile(c) && !isPage(c) && !isLink(c) && isVehicleContext);
+        (!isConsignado(c) && !isSales(c) && !isReachOrImpression(c) && !isProfile(c) && !isPage(c) && !isLink(c) && isVehicleContext);
 
       const isGeneralMsg = (c: CampaignData) =>
-        (c.objective.includes("Mensagens") || c.objective.includes("WhatsApp") || c.objective.includes("Direct")) && !isCarMsg(c);
+        (c.objective.includes("Mensagens") || c.objective.includes("WhatsApp") || c.objective.includes("Direct")) && !isCarMsg(c) && !isSales(c);
 
+      const salesStdCampaigns = selected.filter(c => isSales(c) && !isConsignado(c));
       const carMsgCampaigns = selected.filter(c => isCarMsg(c));
-      const reachCampaigns = selected.filter(c => isReachOrImpression(c) && !isConsignado(c));
+      const reachCampaigns = selected.filter(c => isReachOrImpression(c) && !isConsignado(c) && !isSales(c));
       const consignadoCampaigns = selected.filter(c => isConsignado(c));
-      const profileCampaigns = selected.filter(c => isProfile(c) && !isReachOrImpression(c) && !isConsignado(c));
-      const pageCampaigns = selected.filter(c => isPage(c) && !isReachOrImpression(c) && !isConsignado(c));
-      const linkCampaigns = selected.filter(c => isLink(c) && !isReachOrImpression(c) && !isConsignado(c));
+      const profileCampaigns = selected.filter(c => isProfile(c) && !isReachOrImpression(c) && !isConsignado(c) && !isSales(c));
+      const pageCampaigns = selected.filter(c => isPage(c) && !isReachOrImpression(c) && !isConsignado(c) && !isSales(c));
+      const linkCampaigns = selected.filter(c => isLink(c) && !isReachOrImpression(c) && !isConsignado(c) && !isSales(c));
       const generalMsgCampaigns = selected.filter(c => isGeneralMsg(c));
 
       // Se alguma campanha não entrou nas regras acima, aloca no bloco contextual principal
       const handledIds = new Set([
+        ...salesStdCampaigns.map(c => c.id),
         ...carMsgCampaigns.map(c => c.id),
         ...reachCampaigns.map(c => c.id),
         ...consignadoCampaigns.map(c => c.id),
@@ -1367,26 +1564,44 @@ function RelatoriosPage() {
       }
       txt += ` *Período:* ${activePeriod}\n\n`;
 
+      // 0. Compras / Vendas (E-commerce / Conversão de Compra)
+      if (salesStdCampaigns.length > 0) {
+        const costSalesStd = salesStdCampaigns.reduce((s, c) => s + c.cost, 0);
+        const purchasesStd = salesStdCampaigns.reduce((s, c) => s + Number(c.conversions || 0), 0);
+        const revenueStd = salesStdCampaigns.reduce((s, c) => s + Number(c.purchaseValue || 0), 0);
+        const cpaStd = computeUnitCost(costSalesStd, purchasesStd, "PURCHASES");
+        const roasStd = costSalesStd > 0 && revenueStd > 0 ? revenueStd / costSalesStd : null;
+        txt += `*Campanha de Compras / Vendas:*\n`;
+        txt += ` Investimento: ${fmtBRLWithSymbol(costSalesStd)}\n`;
+        txt += ` Compras atribuídas: ${purchasesStd.toLocaleString("pt-BR")}\n`;
+        txt += ` CPA (Custo por compra): ${cpaStd !== null ? fmtBRLWithSymbol(cpaStd) : (costSalesStd <= 0 && purchasesStd > 0 ? "Não calculável (gasto zero)" : "Não calculável (0 compras)")}\n`;
+        if (revenueStd > 0) {
+          txt += ` Valor de compra (Receita): ${fmtBRLWithSymbol(revenueStd)}${roasStd !== null ? ` (ROAS ${roasStd.toFixed(2)}x)` : ""}\n`;
+        }
+        if (costSalesStd <= 0 && (purchasesStd > 0 || revenueStd > 0)) {
+          txt += ` ℹ️ Resultados atribuídos pela janela de conversão Meta (não indicam entrega/gasto neste período).\n`;
+        }
+        txt += `\n`;
+      }
+
       // 1. Mensagens nos Veículos
       if (carMsgCampaigns.length > 0) {
         const costMsg = carMsgCampaigns.reduce((s, c) => s + c.cost, 0);
         const leadsMsg = carMsgCampaigns.reduce((s, c) => s + Number(c.conversions || 0), 0);
-        const cplMsg = leadsMsg > 0 ? costMsg / leadsMsg : null;
         txt += `*Campanha de mensagens nos veiculos:*\n`;
         txt += ` Investimento: ${fmtBRLWithSymbol(costMsg)}\n`;
         txt += ` Total de conversas / leads: ${leadsMsg.toLocaleString("pt-BR")}\n`;
-        txt += ` Custo por resultado: ${cplMsg !== null ? fmtBRLWithSymbol(cplMsg) : "Não calculável (0 resultados)"}\n\n`;
+        txt += ` Custo por resultado: ${formatUnitCostText(costMsg, leadsMsg, "Não calculável (0 resultados)")}\n\n`;
       }
 
       // 2. Mensagens / WhatsApp Geral (quando não for loja de veículos)
       if (generalMsgCampaigns.length > 0) {
         const costMsg = generalMsgCampaigns.reduce((s, c) => s + c.cost, 0);
         const leadsMsg = generalMsgCampaigns.reduce((s, c) => s + Number(c.conversions || 0), 0);
-        const cplMsg = leadsMsg > 0 ? costMsg / leadsMsg : null;
         txt += `*Campanha de Mensagens / WhatsApp:*\n`;
         txt += ` Investimento: ${fmtBRLWithSymbol(costMsg)}\n`;
         txt += ` Total de conversas: ${leadsMsg.toLocaleString("pt-BR")}\n`;
-        txt += ` Custo por conversa: ${cplMsg !== null ? fmtBRLWithSymbol(cplMsg) : "Não calculável (0 conversas)"}\n\n`;
+        txt += ` Custo por conversa: ${formatUnitCostText(costMsg, leadsMsg, "Não calculável (0 conversas)")}\n\n`;
       }
 
       // 3. Alcance e Impressões
@@ -1395,11 +1610,11 @@ function RelatoriosPage() {
         const reachedPeople = reachCampaigns.reduce((s, c) => s + (c.reach > 0 ? c.reach : Number(c.conversions || 0)), 0);
         const impsReach = reachCampaigns.reduce((s, c) => s + c.impressions, 0);
         const costPer1kReach = computeUnitCost(costReach, reachedPeople, "REACH");
-        const cpmReach = impsReach > 0 ? (costReach / impsReach) * 1000 : null;
+        const cpmReach = costReach > 0 && impsReach > 0 ? (costReach / impsReach) * 1000 : null;
         txt += `*Campanha de Alcance e Impressões:*\n`;
         txt += `Investimento: ${fmtBRLWithSymbol(costReach)}\n`;
         txt += `Pessoas alcançadas: ${reachedPeople.toLocaleString("pt-BR")}\n`;
-        txt += `Custo por 1.000 contas alcançadas: ${costPer1kReach !== null ? fmtBRLWithSymbol(costPer1kReach) : "Não calculável"}\n`;
+        txt += `Custo por 1.000 contas alcançadas: ${costPer1kReach !== null ? fmtBRLWithSymbol(costPer1kReach) : (costReach <= 0 && reachedPeople > 0 ? "Não calculável (gasto zero)" : "Não calculável")}\n`;
         if (impsReach > 0) {
           txt += `Impressões: ${impsReach.toLocaleString("pt-BR")}${cpmReach !== null ? ` (CPM: ${fmtBRLWithSymbol(cpmReach)})` : ""}\n`;
         }
@@ -1410,10 +1625,9 @@ function RelatoriosPage() {
       if (consignadoCampaigns.length > 0) {
         const costCons = consignadoCampaigns.reduce((s, c) => s + c.cost, 0);
         const leadsCons = consignadoCampaigns.reduce((s, c) => s + (c.conversions > 0 ? c.conversions : 0), 0);
-        const cplCons = leadsCons > 0 ? costCons / leadsCons : null;
         txt += `*Campanha de consignado* \n`;
         txt += `Total de leads: ${leadsCons.toLocaleString("pt-BR")}\n`;
-        txt += `Custo por leads: ${cplCons !== null ? fmtBRLWithSymbol(cplCons) : "Não calculável"}\n`;
+        txt += `Custo por leads: ${formatUnitCostText(costCons, leadsCons)}\n`;
         txt += `Investimento: ${fmtBRLWithSymbol(costCons)}\n\n`;
       }
 
@@ -1421,22 +1635,20 @@ function RelatoriosPage() {
       if (profileCampaigns.length > 0) {
         const costProf = profileCampaigns.reduce((s, c) => s + c.cost, 0);
         const visitsProf = profileCampaigns.reduce((s, c) => s + Number(c.conversions || 0), 0);
-        const cpvProf = visitsProf > 0 ? costProf / visitsProf : null;
         txt += `*Campanha de Visitas ao Perfil:*\n`;
         txt += `Investimento: ${fmtBRLWithSymbol(costProf)}\n`;
         txt += `Visitas ao perfil: ${visitsProf.toLocaleString("pt-BR")}\n`;
-        txt += `Custo por visita: ${cpvProf !== null ? fmtBRLWithSymbol(cpvProf) : "Não calculável"}\n\n`;
+        txt += `Custo por visita: ${formatUnitCostText(costProf, visitsProf)}\n\n`;
       }
 
       // 6. Visualizações na Página / Site
       if (pageCampaigns.length > 0) {
         const costViews = pageCampaigns.reduce((s, c) => s + c.cost, 0);
         const visitsViews = pageCampaigns.reduce((s, c) => s + Number(c.conversions || 0), 0);
-        const cpView = visitsViews > 0 ? costViews / visitsViews : null;
         txt += `*Visualizações na Página:*\n`;
         txt += `Investimento: ${fmtBRLWithSymbol(costViews)}\n`;
         txt += `Resultados: ${visitsViews.toLocaleString("pt-BR")} visitas\n`;
-        txt += `Custo por visualizações: ${cpView !== null ? fmtBRLWithSymbol(cpView) : "Não calculável"}\n\n`;
+        txt += `Custo por visualizações: ${formatUnitCostText(costViews, visitsViews)}\n\n`;
       }
 
       // 7. Cliques no Link / Tráfego
@@ -1444,15 +1656,15 @@ function RelatoriosPage() {
         const costLink = linkCampaigns.reduce((s, c) => s + c.cost, 0);
         const clicksLink = linkCampaigns.reduce((s, c) => s + c.clicks, 0);
         const allClicksLink = linkCampaigns.reduce((s, c) => s + Number((c as any).allClicks ?? 0), 0);
-        const cpcLink = clicksLink > 0 ? costLink / clicksLink : 0;
-        const cpcAll = allClicksLink > 0 ? costLink / allClicksLink : 0;
+        const cpcLink = computeUnitCost(costLink, clicksLink, "LINK_CLICKS");
+        const cpcAll = computeUnitCost(costLink, allClicksLink, "LINK_CLICKS");
         txt += `*Campanha de Cliques no Link:*\n`;
         txt += `Investimento: ${fmtBRLWithSymbol(costLink)}\n`;
         txt += `Cliques no link: ${clicksLink.toLocaleString("pt-BR")}\n`;
         if (allClicksLink > 0 && allClicksLink !== clicksLink) {
           txt += `Cliques (Todos): ${allClicksLink.toLocaleString("pt-BR")}\n`;
         }
-        txt += `CPC Link: ${clicksLink > 0 ? fmtBRLWithSymbol(cpcLink) : "Não calculável"}${cpcAll > 0 ? ` | CPC (Todos): ${fmtBRLWithSymbol(cpcAll)}` : ""}\n\n`;
+        txt += `CPC Link: ${cpcLink !== null ? fmtBRLWithSymbol(cpcLink) : (costLink <= 0 && clicksLink > 0 ? "Não calculável (gasto zero)" : "Não calculável")}${cpcAll !== null && cpcAll > 0 ? ` | CPC (Todos): ${fmtBRLWithSymbol(cpcAll)}` : ""}\n\n`;
       }
 
       if (!isTextManuallyEdited) {
@@ -1470,6 +1682,8 @@ function RelatoriosPage() {
         /site|cardapio|cardápio|página|destino|landing/i.test(c.name);
 
       const isSales = (c: CampaignData) =>
+        c.resultType === "PURCHASES" ||
+        c.rawObjective === "OUTCOME_SALES" ||
         c.objective.includes("Compras") ||
         c.objective.includes("Vendas") ||
         /compra|venda|vendas|purchase|pedido/i.test(c.name);
@@ -1485,15 +1699,15 @@ function RelatoriosPage() {
       // Visualizações na Página
       const investViews = pageViewCampaigns.reduce((s, c) => s + c.cost, 0);
       const visitsCount = pageViewCampaigns.reduce((s, c) => s + (c.objective.includes("Cliques") ? Number(c.clicks || 0) : Number(c.conversions || 0)), 0);
-      const costPerView = visitsCount > 0 ? investViews / visitsCount : null;
+      const costPerView = computeUnitCost(investViews, visitsCount, "LANDING_PAGE_VIEWS");
       const impsViews = pageViewCampaigns.reduce((s, c) => s + c.impressions, 0);
-      const cpmViews = impsViews > 0 ? (investViews / impsViews) * 1000 : null;
+      const cpmViews = investViews > 0 && impsViews > 0 ? (investViews / impsViews) * 1000 : null;
 
       // Conversões / Compras
       const investSales = salesCampaigns.reduce((s, c) => s + c.cost, 0);
       const purchasesMeta = salesCampaigns.reduce((s, c) => s + c.conversions, 0);
       const purchaseRevenueMeta = salesCampaigns.reduce((s, c) => s + Number(c.purchaseValue || 0), 0);
-      const cpaSales = purchasesMeta > 0 ? investSales / purchasesMeta : null;
+      const cpaSales = computeUnitCost(investSales, purchasesMeta, "PURCHASES");
       const roasMeta = investSales > 0 && purchaseRevenueMeta > 0 ? purchaseRevenueMeta / investSales : null;
       const reachSales = salesCampaigns.reduce((s, c) => s + c.reach, 0);
       const impsSales = salesCampaigns.reduce((s, c) => s + c.impressions, 0);
@@ -1957,11 +2171,11 @@ function RelatoriosPage() {
                   Marcar Todas
                 </button>
                 <button 
-                  onClick={() => setCampaignList(prev => prev.map(c => ({ ...c, selected: c.cost > 0 })))}
+                  onClick={() => setCampaignList(prev => prev.map(c => ({ ...c, selected: hasEntityDelivery(c) })))}
                   className="rounded-lg bg-white/5 border border-white/10 px-2.5 py-1 text-[9px] font-black uppercase text-white hover:bg-white/10 transition"
-                  title="Selecionar apenas campanhas com gasto acima de zero"
+                  title="Selecionar campanhas com entrega ou resultado atribuído no período (incluindo gasto zero com conversões)"
                 >
-                  Com Gasto
+                  Com Entrega / Res.
                 </button>
                 <button 
                   onClick={() => handleToggleSelectAll(false)}
@@ -2049,6 +2263,16 @@ function RelatoriosPage() {
                         <span className={`shrink-0 inline-flex rounded px-1.5 py-0.5 text-[8px] font-black uppercase tracking-wider ${c.platform === 'meta' ? 'bg-primary/20 text-primary border border-primary/30' : 'bg-secondary/20 text-secondary border border-secondary/30'}`}>
                           {c.platform === 'meta' ? 'Meta' : 'Google'}
                         </span>
+                        {c.effectiveStatusLabel && (
+                          <span className="shrink-0 inline-flex rounded px-1.5 py-0.5 text-[8px] font-black uppercase tracking-wider bg-slate-500/20 text-slate-300 border border-slate-500/30">
+                            {c.effectiveStatusLabel}
+                          </span>
+                        )}
+                        {c.deliveryStateCode === "attributed_zero_spend" && (
+                          <span className="shrink-0 inline-flex rounded px-1.5 py-0.5 text-[8px] font-black uppercase tracking-wider bg-amber-500/15 text-amber-300 border border-amber-500/30">
+                            Atribuído • Gasto R$ 0
+                          </span>
+                        )}
                       </div>
                       {c.campaignName && (
                         <p className="text-[9px] text-muted-foreground/80 font-medium mt-0.5 px-2">
@@ -2065,6 +2289,7 @@ function RelatoriosPage() {
                           resultsIndicator: c.resultIndicator,
                           cost: c.cost,
                           conversions: c.conversions,
+                          purchaseValue: c.purchaseValue,
                           clicks: c.inlineLinkClicks ?? c.clicks,
                           inlineLinkClicks: c.inlineLinkClicks ?? c.clicks,
                           allClicks: c.allClicks ?? c.clicks,
@@ -2283,9 +2508,11 @@ function RelatoriosPage() {
                   const audienceCamps = classifiedList.filter(x => !x.cls.isConversionGoal);
 
                   const totalConv = convCamps.reduce((sum, c) => sum + Number(c.conversions || 0), 0);
+                  const totalPurchaseValue = selectedCamps.reduce((sum, c) => sum + Number(c.purchaseValue || 0), 0);
                   const costConv = convCamps.reduce((sum, c) => sum + c.cost, 0);
                   const costAudience = audienceCamps.reduce((sum, x) => sum + x.raw.cost, 0);
-                  const cpaConv = totalConv > 0 ? costConv / totalConv : null;
+                  const cpaConv = costConv > 0 && totalConv > 0 ? costConv / totalConv : null;
+                  const hasAttributedZeroSpend = selectedCamps.some(c => c.cost <= 0 && (c.conversions > 0 || Number(c.purchaseValue || 0) > 0));
                   const nonConvSummary = formatMetricVectorSummary(
                     activeReportSnapshot?.summary?.metricVector || {
                       conversations: 0, leads: 0, websiteContacts: 0, purchases: 0, checkout: 0, addToCart: 0,
@@ -2319,7 +2546,11 @@ function RelatoriosPage() {
                           </p>
                           <p className="text-[8px] font-bold uppercase tracking-wider text-muted-foreground/80 print:text-black/50 mt-1">
                             {convCamps.length > 0
-                              ? (cpaConv !== null ? `CPA: ${fmtBRLWithSymbol(cpaConv)}` : "CPA não calculável (0 conv.)")
+                              ? (cpaConv !== null
+                                  ? `CPA: ${fmtBRLWithSymbol(cpaConv)}${totalPurchaseValue > 0 ? ` · Rec: ${fmtBRLWithSymbol(totalPurchaseValue)}` : ""}`
+                                  : costConv <= 0 && totalConv > 0
+                                    ? `CPA: — (gasto R$ 0,00)${totalPurchaseValue > 0 ? ` · Rec: ${fmtBRLWithSymbol(totalPurchaseValue)}` : ""}`
+                                    : "CPA não calculável (0 conv.)")
                               : (nonConvSummary.length > 1
                                 ? nonConvSummary.slice(1).map((e) => `${e.value.toLocaleString('pt-BR')} ${e.label}`).join(" · ")
                                 : (nonConvSummary[0]?.key === "reach" ? "Pessoas alcançadas" : "Sem mistura de cliques"))}
@@ -2372,7 +2603,8 @@ function RelatoriosPage() {
                             <p className="text-xs text-muted-foreground print:text-gray-700 leading-relaxed">
                               Investido: <strong className="text-foreground print:text-black font-mono">R$ {costConv.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</strong> •{" "}
                               Gerou <strong className="text-foreground print:text-black font-mono">{totalConv.toLocaleString('pt-BR')} conversões</strong>{" "}
-                              {cpaConv !== null ? <>a <strong className="text-foreground print:text-black font-mono">R$ {cpaConv.toFixed(2)}/conv.</strong></> : "(CPA não calculável)"}.
+                              {cpaConv !== null ? <>a <strong className="text-foreground print:text-black font-mono">R$ {cpaConv.toFixed(2)}/conv.</strong></> : (costConv <= 0 && totalConv > 0 ? "(CPA — • gasto zero no período)" : "(CPA não calculável)")}
+                              {totalPurchaseValue > 0 ? <> • Receita: <strong className="text-foreground print:text-black font-mono">{fmtBRLWithSymbol(totalPurchaseValue)}</strong></> : null}.
                             </p>
                           </div>
                           <div className="space-y-1">
@@ -2398,6 +2630,12 @@ function RelatoriosPage() {
                         </div>
                       )}
 
+                      {hasAttributedZeroSpend && (
+                        <div className="mb-4 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3.5 py-2.5 text-[11px] text-amber-200 print:border-amber-600/40 print:bg-amber-50 print:text-amber-900">
+                          <strong>Conversões atribuídas com gasto zero no período:</strong> os resultados exibidos refletem atribuição pela janela da Meta (ex.: 7 dias após o clique) e não indicam veiculação paga nem compra necessariamente ocorrida na mesma data da entrega.
+                        </div>
+                      )}
+
                       {/* Detalhamento Executivo de Campanhas */}
                       <div className="space-y-2 mt-6">
                         <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground print:text-black/60 mb-3 border-b border-white/10 pb-1.5 flex items-center justify-between">
@@ -2410,18 +2648,29 @@ function RelatoriosPage() {
                           const linkClk = Number(c.inlineLinkClicks ?? c.clicks ?? 0);
                           const resultCount = cls.category === "LINK_CLICKS" ? linkClk : isReach ? (c.reach > 0 ? c.reach : c.conversions) : c.conversions;
                           const resultUnit = cls.unitPlural;
-                          const cpa = resultCount > 0 ? (isReach ? (c.cost / resultCount) * 1000 : c.cost / resultCount) : null;
+                          const cpa = computeUnitCost(c.cost, resultCount, cls.category);
+                          const purchaseVal = Number(c.purchaseValue || 0);
 
                           return (
                             <div key={idx} className="flex items-center justify-between py-2 border-b border-white/5 print:border-gray-200 text-xs">
                               <div className="min-w-0 pr-4">
                                 <p className="font-bold text-white print:text-black truncate text-xs sm:text-sm">{c.name}</p>
-                                <div className="flex items-center gap-2 mt-0.5">
+                                <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                                   <span className={`text-[8px] font-black uppercase px-2 py-0.5 rounded ${
                                     isMsg ? "bg-emerald-500/10 text-emerald-400 print:bg-emerald-100 print:text-emerald-800" : "bg-blue-500/10 text-blue-400 print:bg-blue-100 print:text-blue-800"
                                   }`}>
                                     {c.objective || "Meta Ads"}
                                   </span>
+                                  {c.effectiveStatusLabel && (
+                                    <span className="text-[8px] font-black uppercase px-2 py-0.5 rounded bg-slate-500/15 text-slate-300 print:bg-gray-200 print:text-gray-800">
+                                      {c.effectiveStatusLabel}
+                                    </span>
+                                  )}
+                                  {c.deliveryStateCode === "attributed_zero_spend" && (
+                                    <span className="text-[8px] font-black uppercase px-2 py-0.5 rounded bg-amber-500/15 text-amber-300 print:bg-amber-100 print:text-amber-800">
+                                      Atribuído • Gasto R$ 0
+                                    </span>
+                                  )}
                                   <span className="text-[9px] font-mono text-muted-foreground print:text-gray-600">
                                     {c.reach.toLocaleString('pt-BR')} alcance • {c.impressions.toLocaleString('pt-BR')} impr.
                                   </span>
@@ -2434,12 +2683,17 @@ function RelatoriosPage() {
                                 <p className="text-[10px] font-mono text-muted-foreground print:text-gray-700">
                                   {resultCount > 0 ? (
                                     <span className="text-emerald-400 print:text-emerald-700 font-bold">
-                                      {resultCount.toLocaleString('pt-BR')} {resultUnit} {cpa !== null && cpa > 0 ? `(R$ ${cpa.toFixed(2)})` : ""}
+                                      {resultCount.toLocaleString('pt-BR')} {resultUnit} {cpa !== null && cpa > 0 ? `(R$ ${cpa.toFixed(2)})` : c.cost <= 0 ? "(CPA: —)" : ""}
                                     </span>
                                   ) : (
                                     <span className="text-muted-foreground/60">—</span>
                                   )}
                                 </p>
+                                {purchaseVal > 0 && (
+                                  <p className="text-[9px] font-mono font-bold text-emerald-300 print:text-emerald-800">
+                                    Receita: {fmtBRLWithSymbol(purchaseVal)}
+                                  </p>
+                                )}
                               </div>
                             </div>
                           );

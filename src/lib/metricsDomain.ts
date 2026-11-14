@@ -219,7 +219,7 @@ export interface ClassifyMetaEventInput {
   resultType?: string;
   destinationType?: string;
   resultsIndicator?: string;
-  actions?: Array<{ action_type?: string; value?: any; [k: string]: any }>;
+  actions?: Array<{ action_type?: string; value?: any;[k: string]: any }>;
   isVehicleContext?: boolean;
 }
 
@@ -252,8 +252,8 @@ function buildDetailFromCategory(
         editorialGroup: isConsignado
           ? "LEADS_CONSIGNADO"
           : input.isVehicleContext
-          ? "MESSAGES_VEHICLES"
-          : "MESSAGES_GENERAL",
+            ? "MESSAGES_VEHICLES"
+            : "MESSAGES_GENERAL",
         isConversionGoal: true,
         confidence,
         source,
@@ -643,15 +643,16 @@ export function roundPercent(value: number, decimals = 2): number {
 }
 
 /**
- * Calcula custo por unidade respeitando multiplicador x1000 para REACH e retornando null para resultado zero/inválido.
- * Nunca retorna R$ 0,00 quando results === 0 (Fixture C / D).
+ * Calcula custo por unidade respeitando multiplicador x1000 para REACH e retornando null
+ * quando resultado <= 0 ou investimento <= 0 (inclusive resultado atribuído com gasto zero).
+ * Nunca retorna R$ 0,00 quando results === 0 ou cost <= 0.
  */
 export function computeUnitCost(
   cost: number,
   results: number,
   category: MetaConversionCategory
 ): number | null {
-  if (!Number.isFinite(cost) || !Number.isFinite(results) || results <= 0 || cost < 0) {
+  if (!Number.isFinite(cost) || !Number.isFinite(results) || results <= 0 || cost <= 0) {
     return null;
   }
   if (category === "REACH") {
@@ -939,9 +940,9 @@ export function computeWeightedAggregates(
 
   const dedupReach =
     options.deduplicatedAccountReach !== undefined &&
-    options.deduplicatedAccountReach !== null &&
-    Number.isFinite(options.deduplicatedAccountReach) &&
-    options.deduplicatedAccountReach >= 0
+      options.deduplicatedAccountReach !== null &&
+      Number.isFinite(options.deduplicatedAccountReach) &&
+      options.deduplicatedAccountReach >= 0
       ? options.deduplicatedAccountReach
       : null;
   const singleCampDedup = dedupReach === null && normalized.length === 1 && Boolean(normalized[0]?.reachIsDeduplicated);
@@ -949,8 +950,8 @@ export function computeWeightedAggregates(
   const reachLabel = dedupReach !== null
     ? "Alcance da conta (deduplicado)"
     : singleCampDedup
-    ? "Alcance da campanha"
-    : "Alcance (soma não deduplicada por campanha)";
+      ? "Alcance da campanha"
+      : "Alcance (soma não deduplicada por campanha)";
 
   return {
     totalMediaSpend,
@@ -972,15 +973,152 @@ export function computeWeightedAggregates(
     cpcAll: totalAllClicks > 0 ? computeCpc(totalMediaSpend, totalAllClicks) : null,
     conversionSpend,
     conversionResults,
-    cpaEligible: conversionResults > 0 ? conversionSpend / conversionResults : null,
-    blendedMediaCostPerConversion: conversionResults > 0 ? totalMediaSpend / conversionResults : null,
+    cpaEligible: conversionSpend > 0 && conversionResults > 0 ? conversionSpend / conversionResults : null,
+    blendedMediaCostPerConversion: totalMediaSpend > 0 && conversionResults > 0 ? totalMediaSpend / conversionResults : null,
     messagesSpend,
     messagesCount,
-    cpaMessages: messagesCount > 0 ? messagesSpend / messagesCount : null,
+    cpaMessages: messagesSpend > 0 && messagesCount > 0 ? messagesSpend / messagesCount : null,
     hasMixedObjectives,
     groupsByCategory,
     metricVector,
   };
+}
+
+export type DeliveryStateCode =
+  | "no_delivery"
+  | "no_spend"
+  | "no_results"
+  | "attributed_zero_spend"
+  | "active_with_results";
+
+export interface DeliveryStateClassification {
+  code: DeliveryStateCode;
+  label: string;
+  shortLabel: string;
+  isAttributedOnly: boolean;
+  hasActivity: boolean;
+}
+
+/**
+ * Distingue explicitamente os 4 estados operacionais:
+ * - sem entrega (`no_delivery`)
+ * - sem gasto (`no_spend`, houve impressão/alcance sem custo cobrado)
+ * - sem resultados (`no_results`, houve gasto/entrega sem resultado oficial)
+ * - resultado atribuído com gasto zero (`attributed_zero_spend`, conversões/receita atribuídas pela janela Meta com spend = 0 no período)
+ * além do estado padrão com gasto e resultado (`active_with_results`).
+ */
+export function classifyDeliveryState(m: {
+  reach?: number | null;
+  impressions?: number | null;
+  cost?: number | null;
+  spend?: number | null;
+  conversions?: number | null;
+  purchaseValue?: number | null;
+  purchase_value?: number | null;
+}): DeliveryStateClassification {
+  const spend = Number(m.cost ?? m.spend ?? 0);
+  const impressions = Number(m.impressions || 0);
+  const reach = Number(m.reach || 0);
+  const conversions = Number(m.conversions || 0);
+  const purchaseValue = Number(m.purchaseValue ?? m.purchase_value ?? 0);
+
+  const hasDeliverySignals = impressions >= 1 || reach >= 1;
+  const hasAttributedResults = conversions > 0 || purchaseValue > 0;
+
+  if (spend <= 0 && hasAttributedResults) {
+    return {
+      code: "attributed_zero_spend",
+      label: "Resultado atribuído com gasto zero",
+      shortLabel: "Atribuído (gasto R$ 0)",
+      isAttributedOnly: !hasDeliverySignals,
+      hasActivity: true,
+    };
+  }
+  if (!hasDeliverySignals && spend <= 0 && !hasAttributedResults) {
+    return {
+      code: "no_delivery",
+      label: "Sem entrega",
+      shortLabel: "Sem entrega",
+      isAttributedOnly: false,
+      hasActivity: false,
+    };
+  }
+  if (spend <= 0 && hasDeliverySignals && !hasAttributedResults) {
+    return {
+      code: "no_spend",
+      label: "Sem gasto",
+      shortLabel: "Sem gasto",
+      isAttributedOnly: false,
+      hasActivity: true,
+    };
+  }
+  if (!hasAttributedResults) {
+    return {
+      code: "no_results",
+      label: "Sem resultados",
+      shortLabel: "Sem resultados",
+      isAttributedOnly: false,
+      hasActivity: true,
+    };
+  }
+  return {
+    code: "active_with_results",
+    label: "Com entrega e resultados",
+    shortLabel: "Ativa",
+    isAttributedOnly: false,
+    hasActivity: true,
+  };
+}
+
+export type EffectiveCampaignStatusCode = "ACTIVE" | "COMPLETED" | "PAUSED" | "ARCHIVED";
+
+export interface DerivedCampaignStatus {
+  code: EffectiveCampaignStatusCode;
+  label: "Ativa" | "Concluída" | "Pausada" | "Arquivada";
+  isActive: boolean;
+  isCompleted: boolean;
+  isPaused: boolean;
+  isArchived: boolean;
+  stopTimeIso: string | null;
+}
+
+/**
+ * Deriva o status efetivo alinhado ao Gerenciador de Anúncios da Meta:
+ * campanhas com `stop_time`/`end_time` já encerrado (ou `delivery_status === "COMPLETED"`)
+ * são tratadas como `COMPLETED` ("Concluída") mesmo quando o Graph retorna `status="ACTIVE"`.
+ */
+export function deriveEffectiveCampaignStatus(input: {
+  status?: string | null;
+  delivery_status?: string | null;
+  configured_status?: string | null;
+  stop_time?: string | null;
+  end_time?: string | null;
+  now?: Date;
+}): DerivedCampaignStatus {
+  const statusUpper = String(input.status || "").trim().toUpperCase();
+  const deliveryUpper = String(input.delivery_status || "").trim().toUpperCase();
+  const configuredUpper = String(input.configured_status || "").trim().toUpperCase();
+  const stopRaw = input.stop_time || input.end_time || null;
+  const stopMs = stopRaw ? Date.parse(stopRaw) : NaN;
+  const nowMs = (input.now || new Date()).getTime();
+  const stopTimeIso = !Number.isNaN(stopMs) ? new Date(stopMs).toISOString() : null;
+
+  if (statusUpper === "ARCHIVED" || deliveryUpper === "ARCHIVED" || configuredUpper === "ARCHIVED") {
+    return { code: "ARCHIVED", label: "Arquivada", isActive: false, isCompleted: false, isPaused: false, isArchived: true, stopTimeIso };
+  }
+  if (deliveryUpper === "COMPLETED" || statusUpper === "COMPLETED" || (!Number.isNaN(stopMs) && stopMs < nowMs)) {
+    return { code: "COMPLETED", label: "Concluída", isActive: false, isCompleted: true, isPaused: false, isArchived: false, stopTimeIso };
+  }
+  if (
+    statusUpper === "PAUSED" ||
+    configuredUpper === "PAUSED" ||
+    deliveryUpper === "PAUSED" ||
+    deliveryUpper === "CAMPAIGN_PAUSED" ||
+    deliveryUpper === "ADSET_PAUSED"
+  ) {
+    return { code: "PAUSED", label: "Pausada", isActive: false, isCompleted: false, isPaused: true, isArchived: false, stopTimeIso };
+  }
+  return { code: "ACTIVE", label: "Ativa", isActive: true, isCompleted: false, isPaused: false, isArchived: false, stopTimeIso };
 }
 
 /**
@@ -997,13 +1135,7 @@ export function hasEntityDelivery(m: {
   purchaseValue?: number | null;
   purchase_value?: number | null;
 }): boolean {
-  return (
-    Number(m.reach || 0) >= 1 ||
-    Number(m.impressions || 0) >= 1 ||
-    Number(m.cost ?? m.spend ?? 0) > 0 ||
-    Number(m.conversions || 0) > 0 ||
-    Number(m.purchaseValue ?? m.purchase_value ?? 0) > 0
-  );
+  return classifyDeliveryState(m).hasActivity;
 }
 
 export interface AccountMessageSummary {
@@ -1026,7 +1158,7 @@ export function computeAccountMessageSummary(rows: RawCampaignMetricRow[]): Acco
     totalAccountSpend: agg.totalMediaSpend,
     messageEligibleSpend,
     messageResults,
-    messageCpl: messageResults > 0 ? messageEligibleSpend / messageResults : null,
+    messageCpl: messageEligibleSpend > 0 && messageResults > 0 ? messageEligibleSpend / messageResults : null,
     hasMessagesCampaigns: agg.groupsByCategory.some((g) => g.category === "MESSAGES"),
   };
 }
@@ -1080,6 +1212,12 @@ export function getCampaignSelectorResultDisplay(
     `Cliques: ${(norm.inlineLinkClicks ?? norm.clicks).toLocaleString("pt-BR")}`,
     formattedPair,
   ];
+  if (norm.purchaseValue > 0) {
+    parts.push(`Receita: R$ ${norm.purchaseValue.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`);
+  }
+  if (norm.cost <= 0 && (norm.conversions > 0 || norm.purchaseValue > 0)) {
+    parts.push("Atribuído (gasto zero)");
+  }
   if (norm.classification.category !== "REACH" && norm.reach > 0) {
     parts.push(`Alcance: ${norm.reach.toLocaleString("pt-BR")}`);
   }
@@ -1170,57 +1308,67 @@ export function buildReportSnapshot(params: {
   lines.push("");
 
   if (mode === "standard") {
+    const unitCostDisplay = (unitCost: number | null, spend: number, results: number, zeroResMsg: string) =>
+      unitCost !== null
+        ? `R$ ${fmtBRL(unitCost)}`
+        : spend <= 0 && results > 0
+          ? "Não calculável (gasto zero)"
+          : zeroResMsg;
+
     for (const grp of summary.groupsByCategory) {
       if (grp.category === "MESSAGES") {
         lines.push("*Campanha de Mensagens / WhatsApp:*");
         lines.push(`Investimento: R$ ${fmtBRL(grp.spend)}`);
         lines.push(`Total de conversas iniciadas: ${fmtInt(grp.results)}`);
-        lines.push(`Custo por conversa: ${grp.unitCost !== null ? `R$ ${fmtBRL(grp.unitCost)}` : "Não calculável (0 conversas)"}`);
+        lines.push(`Custo por conversa: ${unitCostDisplay(grp.unitCost, grp.spend, grp.results, "Não calculável (0 conversas)")}`);
         lines.push("");
       } else if (grp.category === "LEADS") {
         lines.push("*Campanha de Cadastros / Leads:*");
         lines.push(`Investimento: R$ ${fmtBRL(grp.spend)}`);
         lines.push(`Total de cadastros: ${fmtInt(grp.results)}`);
-        lines.push(`Custo por cadastro: ${grp.unitCost !== null ? `R$ ${fmtBRL(grp.unitCost)}` : "Não calculável (0 cadastros)"}`);
+        lines.push(`Custo por cadastro: ${unitCostDisplay(grp.unitCost, grp.spend, grp.results, "Não calculável (0 cadastros)")}`);
         lines.push("");
       } else if (grp.category === "PURCHASES") {
         lines.push("*Campanha de Compras / Vendas:*");
         lines.push(`Investimento: R$ ${fmtBRL(grp.spend)}`);
         lines.push(`Total de compras: ${fmtInt(grp.results)}`);
-        lines.push(`CPA: ${grp.unitCost !== null ? `R$ ${fmtBRL(grp.unitCost)}` : "Não calculável"}`);
+        lines.push(`CPA: ${unitCostDisplay(grp.unitCost, grp.spend, grp.results, "Não calculável (0 compras)")}`);
         if (grp.purchaseValue > 0) {
           lines.push(`Receita (Valor de Compra): R$ ${fmtBRL(grp.purchaseValue)}${grp.roas !== null ? ` | ROAS: ${grp.roas.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}x` : ""}`);
+        }
+        if (grp.spend <= 0 && (grp.results > 0 || grp.purchaseValue > 0)) {
+          lines.push("ℹ️ Resultados atribuídos pela janela de conversão Meta (não indicam entrega/gasto neste dia).");
         }
         lines.push("");
       } else if (grp.category === "INSTAGRAM_PROFILE") {
         lines.push("*Campanha de Visitas ao Perfil:*");
         lines.push(`Investimento: R$ ${fmtBRL(grp.spend)}`);
         lines.push(`Visitas ao perfil: ${fmtInt(grp.results)}`);
-        lines.push(`Custo por visita: ${grp.unitCost !== null ? `R$ ${fmtBRL(grp.unitCost)}` : "Não calculável"}`);
+        lines.push(`Custo por visita: ${unitCostDisplay(grp.unitCost, grp.spend, grp.results, "Não calculável")}`);
         lines.push("");
       } else if (grp.category === "LANDING_PAGE_VIEWS") {
         lines.push("*Visualizações na Página:*");
         lines.push(`Investimento: R$ ${fmtBRL(grp.spend)}`);
         lines.push(`Visualizações: ${fmtInt(grp.results)}`);
-        lines.push(`Custo por visualização: ${grp.unitCost !== null ? `R$ ${fmtBRL(grp.unitCost)}` : "Não calculável"}`);
+        lines.push(`Custo por visualização: ${unitCostDisplay(grp.unitCost, grp.spend, grp.results, "Não calculável")}`);
         lines.push("");
       } else if (grp.category === "REACH") {
         lines.push("*Campanha de Alcance e Reconhecimento:*");
         lines.push(`Investimento: R$ ${fmtBRL(grp.spend)}`);
         lines.push(`Pessoas alcançadas: ${fmtInt(grp.results)} | Impressões: ${fmtInt(grp.impressions)}`);
-        lines.push(`Custo por 1.000 contas alcançadas: ${grp.unitCost !== null ? `R$ ${fmtBRL(grp.unitCost)}` : "Não calculável"}`);
+        lines.push(`Custo por 1.000 contas alcançadas: ${unitCostDisplay(grp.unitCost, grp.spend, grp.results, "Não calculável")}`);
         lines.push("");
       } else if (grp.category === "VIDEO_VIEWS") {
         lines.push("*Campanha de Visualizações de Vídeo:*");
         lines.push(`Investimento: R$ ${fmtBRL(grp.spend)}`);
         lines.push(`ThruPlays: ${fmtInt(grp.results)} | Impressões: ${fmtInt(grp.impressions)}`);
-        lines.push(`Custo por ThruPlay: ${grp.unitCost !== null ? `R$ ${fmtBRL(grp.unitCost)}` : "Não calculável"}`);
+        lines.push(`Custo por ThruPlay: ${unitCostDisplay(grp.unitCost, grp.spend, grp.results, "Não calculável")}`);
         lines.push("");
       } else if (grp.category === "ENGAGEMENT") {
         lines.push("*Campanha de Engajamento / Página:*");
         lines.push(`Investimento: R$ ${fmtBRL(grp.spend)}`);
         lines.push(`${grp.unitPlural}: ${fmtInt(grp.results)}`);
-        lines.push(`Custo unitário: ${grp.unitCost !== null ? `R$ ${fmtBRL(grp.unitCost)}` : "Não calculável"}`);
+        lines.push(`Custo unitário: ${unitCostDisplay(grp.unitCost, grp.spend, grp.results, "Não calculável")}`);
         lines.push("");
       } else if (grp.category === "LINK_CLICKS") {
         lines.push("*Campanha de Cliques no Link:*");
@@ -1242,7 +1390,12 @@ export function buildReportSnapshot(params: {
       lines.push(`📈 *Conversões Elegíveis:* ${fmtInt(summary.conversionResults)}`);
       if (summary.cpaEligible !== null) {
         lines.push(`💲 *CPA (Campanhas de Conversão):* R$ ${fmtBRL(summary.cpaEligible)}`);
+      } else if (summary.conversionSpend <= 0) {
+        lines.push(`💲 *CPA (Campanhas de Conversão):* Não calculável (gasto zero)`);
       }
+    }
+    if (summary.totalPurchaseValue > 0) {
+      lines.push(`💰 *Receita (Valor de Compra):* R$ ${fmtBRL(summary.totalPurchaseValue)}${summary.roasPurchases !== null ? ` | ROAS: ${summary.roasPurchases.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}x` : ""}`);
     }
     lines.push(`🖱️ *Cliques no Link:* ${fmtInt(summary.totalClicks)}`);
     lines.push(`👁️ *Impressões:* ${fmtInt(summary.totalImpressions)}`);
@@ -1363,9 +1516,9 @@ export function resolveTargetPrecedence(candidates: TargetCandidates): TargetRes
   // Default conservador explícito por tipo de evento (nunca sobrescrever tudo por um teto fixo único)
   const conservativeDefault =
     candidates.category === "LEADS" ? 18 :
-    candidates.category === "PURCHASES" ? 45 :
-    candidates.category === "MESSAGES" ? 25 :
-    15;
+      candidates.category === "PURCHASES" ? 45 :
+        candidates.category === "MESSAGES" ? 25 :
+          15;
 
   return {
     targetValue: conservativeDefault,
@@ -1984,9 +2137,8 @@ export function computeHomogeneousBenchmark(
   const targetLevel = String(target.entityLevel || target.type || "").trim().toLowerCase();
   const targetAccountId = target.ad_account_id ? String(target.ad_account_id).trim() : null;
 
-  const criteria = `Outras entidades comparáveis com mesmo objetivo/evento oficial (${targetCls.category} · ${targetCls.costUnitLabel})${
-    targetLevel ? `, mesmo nível (${targetLevel})` : ""
-  } e resultados > 0 na mesma janela.`;
+  const criteria = `Outras entidades comparáveis com mesmo objetivo/evento oficial (${targetCls.category} · ${targetCls.costUnitLabel})${targetLevel ? `, mesmo nível (${targetLevel})` : ""
+    } e resultados > 0 na mesma janela.`;
 
   const safePeers = Array.isArray(peers) ? peers : [];
   const otherComparable = safePeers.filter((p) => {

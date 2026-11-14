@@ -65,9 +65,11 @@ import {
   getMetaResultDetail,
 } from "@/lib/metaConversionCalibrator";
 import {
+  classifyDeliveryState,
   classifyMetaEvent,
   computeUnitCost,
   computeWeightedAggregates,
+  deriveEffectiveCampaignStatus,
   evaluateCampaignHealth,
   formatMetricVectorSummary,
   normalizeCampaignItem,
@@ -105,9 +107,9 @@ export const Route = createFileRoute("/_app/metricas")({
 
 // â"€â"€â"€ TIPOS â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 
-type Level      = "campanhas" | "conjuntos" | "anuncios";
-type ViewMode   = "gestao" | "analise" | "demograficos";
-type ModoId     = "geral" | "eficiencia" | "budget" | "audiencia" | "comparativo";
+type Level = "campanhas" | "conjuntos" | "anuncios";
+type ViewMode = "gestao" | "analise" | "demograficos";
+type ModoId = "geral" | "eficiencia" | "budget" | "audiencia" | "comparativo";
 type InsightLvl = "danger" | "warning" | "success" | "info";
 
 interface Insight { level: InsightLvl; title: string; detail: string; acao: string; camps?: string[]; }
@@ -115,22 +117,22 @@ interface Insight { level: InsightLvl; title: string; detail: string; acao: stri
 // â"€â"€â"€ CONSTANTES â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 
 const OBJECTIVE_MAP: Record<string, { label: string; color: string; icon: any }> = {
-  OUTCOME_LEADS:      { label: "Leads",      color: "text-violet-400 bg-violet-500/10 border-violet-500/20", icon: Target },
-  LEAD_GENERATION:    { label: "Leads",      color: "text-violet-400 bg-violet-500/10 border-violet-500/20", icon: Target },
-  MESSAGES:           { label: "Mensagens",  color: "text-blue-400 bg-blue-500/10 border-blue-500/20",       icon: MessageCircle },
-  OUTCOME_ENGAGEMENT: { label: "Engaj.",     color: "text-pink-400 bg-pink-500/10 border-pink-500/20",       icon: Zap },
-  ENGAGEMENT:         { label: "Engaj.",     color: "text-pink-400 bg-pink-500/10 border-pink-500/20",       icon: Zap },
-  OUTCOME_TRAFFIC:    { label: "Tráfego",    color: "text-amber-400 bg-amber-500/10 border-amber-500/20",    icon: Car },
-  LINK_CLICKS:        { label: "Tráfego",    color: "text-amber-400 bg-amber-500/10 border-amber-500/20",    icon: Car },
-  VIDEO_VIEWS:        { label: "Vídeo",      color: "text-cyan-400 bg-cyan-500/10 border-cyan-500/20",       icon: Video },
-  OUTCOME_AWARENESS:  { label: "Alcance",    color: "text-emerald-400 bg-emerald-500/10 border-emerald-500/20", icon: Users },
-  REACH:              { label: "Alcance",    color: "text-emerald-400 bg-emerald-500/10 border-emerald-500/20", icon: Users },
-  OUTCOME_SALES:      { label: "Vendas",     color: "text-primary bg-primary/10 border-primary/20",          icon: Target },
-  CONVERSIONS:        { label: "Conversões", color: "text-primary bg-primary/10 border-primary/20",          icon: Target },
+  OUTCOME_LEADS: { label: "Leads", color: "text-violet-400 bg-violet-500/10 border-violet-500/20", icon: Target },
+  LEAD_GENERATION: { label: "Leads", color: "text-violet-400 bg-violet-500/10 border-violet-500/20", icon: Target },
+  MESSAGES: { label: "Mensagens", color: "text-blue-400 bg-blue-500/10 border-blue-500/20", icon: MessageCircle },
+  OUTCOME_ENGAGEMENT: { label: "Engaj.", color: "text-pink-400 bg-pink-500/10 border-pink-500/20", icon: Zap },
+  ENGAGEMENT: { label: "Engaj.", color: "text-pink-400 bg-pink-500/10 border-pink-500/20", icon: Zap },
+  OUTCOME_TRAFFIC: { label: "Tráfego", color: "text-amber-400 bg-amber-500/10 border-amber-500/20", icon: Car },
+  LINK_CLICKS: { label: "Tráfego", color: "text-amber-400 bg-amber-500/10 border-amber-500/20", icon: Car },
+  VIDEO_VIEWS: { label: "Vídeo", color: "text-cyan-400 bg-cyan-500/10 border-cyan-500/20", icon: Video },
+  OUTCOME_AWARENESS: { label: "Alcance", color: "text-emerald-400 bg-emerald-500/10 border-emerald-500/20", icon: Users },
+  REACH: { label: "Alcance", color: "text-emerald-400 bg-emerald-500/10 border-emerald-500/20", icon: Users },
+  OUTCOME_SALES: { label: "Vendas", color: "text-primary bg-primary/10 border-primary/20", icon: Target },
+  CONVERSIONS: { label: "Conversões", color: "text-primary bg-primary/10 border-primary/20", icon: Target },
   VISIT_INSTAGRAM_PROFILE: { label: "Instagram", color: "text-pink-400 bg-pink-500/10 border-pink-500/20", icon: Zap },
-  INSTAGRAM_PROFILE:       { label: "Instagram", color: "text-pink-400 bg-pink-500/10 border-pink-500/20", icon: Zap },
-  LANDING_PAGE_VIEWS:      { label: "Pág. Destino", color: "text-emerald-400 bg-emerald-500/10 border-emerald-500/20", icon: Globe },
-  UNKNOWN:                 { label: "Revisar",   color: "text-amber-300 bg-amber-500/10 border-amber-500/30", icon: AlertTriangle },
+  INSTAGRAM_PROFILE: { label: "Instagram", color: "text-pink-400 bg-pink-500/10 border-pink-500/20", icon: Zap },
+  LANDING_PAGE_VIEWS: { label: "Pág. Destino", color: "text-emerald-400 bg-emerald-500/10 border-emerald-500/20", icon: Globe },
+  UNKNOWN: { label: "Revisar", color: "text-amber-300 bg-amber-500/10 border-amber-500/30", icon: AlertTriangle },
 };
 
 const PLACEMENT_MAP: Record<string, string> = {
@@ -150,62 +152,63 @@ const PUBLISHER_COLOR: Record<string, string> = {
 };
 
 const LEVEL_TABS: { id: Level; label: string; icon: any }[] = [
-  { id: "campanhas", label: "Campanhas",          icon: Megaphone },
+  { id: "campanhas", label: "Campanhas", icon: Megaphone },
   { id: "conjuntos", label: "Conjuntos de Anúncios", icon: LayoutGrid },
-  { id: "anuncios",  label: "Anúncios",            icon: ImageIcon },
+  { id: "anuncios", label: "Anúncios", icon: ImageIcon },
 ];
 
 const MODOS: Record<ModoId, { label: string; desc: string; icon: any; color: string; foco: string }> = {
-  geral:      { label: "Visão Geral",           desc: "Saúde, tendência e KPIs do período",                    icon: Activity,  color: "text-primary",       foco: "Panorama completo — onde a conta está e como chegou aqui." },
-  eficiencia: { label: "Diagnóstico",           desc: "Identifique campanhas que drenam budget sem retorno",    icon: Target,    color: "text-orange-400",    foco: "Campanhas com CPL alto, CTR baixo ou gasto sem conversão — pausar ou corrigir." },
-  budget:     { label: "Otimização de Budget",  desc: "Redistribua investimento para maximizar resultados",     icon: DollarSign,color: "text-green-400",     foco: "Quem consome mais budget vs quem entrega mais resultado — rebalancear." },
-  audiencia:  { label: "Alcance & Frequência",  desc: "Detecte saturação e oportunidades de escala",           icon: Users,     color: "text-violet-400",    foco: "Campanhas com frequência > 3x estão saturando a audiência." },
-  comparativo:{ label: "Ranking Comparativo",   desc: "Compare campanhas lado a lado em múltiplos KPIs",       icon: BarChart3, color: "text-blue-400",      foco: "Quais campanhas dominam cada métrica e onde há gaps de performance." },
+  geral: { label: "Visão Geral", desc: "Saúde, tendência e KPIs do período", icon: Activity, color: "text-primary", foco: "Panorama completo — onde a conta está e como chegou aqui." },
+  eficiencia: { label: "Diagnóstico", desc: "Identifique campanhas que drenam budget sem retorno", icon: Target, color: "text-orange-400", foco: "Campanhas com CPL alto, CTR baixo ou gasto sem conversão — pausar ou corrigir." },
+  budget: { label: "Otimização de Budget", desc: "Redistribua investimento para maximizar resultados", icon: DollarSign, color: "text-green-400", foco: "Quem consome mais budget vs quem entrega mais resultado — rebalancear." },
+  audiencia: { label: "Alcance & Frequência", desc: "Detecte saturação e oportunidades de escala", icon: Users, color: "text-violet-400", foco: "Campanhas com frequência > 3x estão saturando a audiência." },
+  comparativo: { label: "Ranking Comparativo", desc: "Compare campanhas lado a lado em múltiplos KPIs", icon: BarChart3, color: "text-blue-400", foco: "Quais campanhas dominam cada métrica e onde há gaps de performance." },
 };
 
 const INSIGHT_ICON: Record<InsightLvl, any> = { danger: XCircle, warning: AlertTriangle, success: CheckCircle2, info: Info };
 const INSIGHT_COLOR: Record<InsightLvl, string> = {
-  danger:  "border-red-500/30 bg-red-500/5 text-red-400",
+  danger: "border-red-500/30 bg-red-500/5 text-red-400",
   warning: "border-orange-400/30 bg-orange-400/5 text-orange-400",
   success: "border-green-500/30 bg-green-500/5 text-green-400",
-  info:    "border-blue-400/30 bg-blue-400/5 text-blue-400",
+  info: "border-blue-400/30 bg-blue-400/5 text-blue-400",
 };
 
-const CHART_COLORS = ["#6366f1","#8b5cf6","#06b6d4","#10b981","#f59e0b","#ef4444","#ec4899","#3b82f6"];
+const CHART_COLORS = ["#6366f1", "#8b5cf6", "#06b6d4", "#10b981", "#f59e0b", "#ef4444", "#ec4899", "#3b82f6"];
 
 const DECISION_COLORS: Record<string, string> = {
-  red:    "text-red-400 border-red-400/30 bg-red-400/5",
+  red: "text-red-400 border-red-400/30 bg-red-400/5",
   orange: "text-orange-400 border-orange-400/30 bg-orange-400/5",
   yellow: "text-yellow-400 border-yellow-400/30 bg-yellow-400/5",
-  green:  "text-green-400 border-green-400/30 bg-green-400/5",
-  blue:   "text-blue-400 border-blue-400/30 bg-blue-400/5",
+  green: "text-green-400 border-green-400/30 bg-green-400/5",
+  blue: "text-blue-400 border-blue-400/30 bg-blue-400/5",
 };
 
 // â"€â"€â"€ HELPERS â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 
 const fmtBRL = (v: number) => v.toLocaleString("pt-BR", { minimumFractionDigits: 2 });
-const fmtN   = (v: number) => v.toLocaleString("pt-BR");
-const getLocalDateStr = (d: Date) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+const fmtN = (v: number) => v.toLocaleString("pt-BR");
+const getLocalDateStr = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 
 function processMetrics(item: any, rawData: any[], startStr: string, endStr: string) {
   const m = (rawData || []).filter((x: any) => { if (!x.date) return true; const d = x.date.split("T")[0]; return d >= startStr && d <= endStr; });
-  const cost        = m.reduce((s: number, x: any) => s + Number(x.cost        || 0), 0);
+  const cost = m.reduce((s: number, x: any) => s + Number(x.cost || 0), 0);
   const conversions = m.reduce((s: number, x: any) => s + Number(x.conversions || 0), 0);
-  const clicks      = m.reduce((s: number, x: any) => s + Number(x.inline_link_clicks ?? x.clicks ?? 0), 0);
-  const allClicks   = m.reduce((s: number, x: any) => s + Number(x.all_clicks  ?? x.clicks ?? 0), 0);
+  const clicks = m.reduce((s: number, x: any) => s + Number(x.inline_link_clicks ?? x.clicks ?? 0), 0);
+  const allClicks = m.reduce((s: number, x: any) => s + Number(x.all_clicks ?? x.clicks ?? 0), 0);
   const impressions = m.reduce((s: number, x: any) => s + Number(x.impressions || 0), 0);
-  const reach       = m.reduce((s: number, x: any) => s + Number(x.reach       || 0), 0);
+  const reach = m.reduce((s: number, x: any) => s + Number(x.reach || 0), 0);
   const purchaseVal = m.reduce((s: number, x: any) => s + Number(x.purchase_value || 0), 0);
-  const freq        = reach > 0 ? impressions / reach : 0;
-  const ctr         = impressions > 0 ? (clicks / impressions) * 100 : 0;
-  const ctrAll      = impressions > 0 ? (allClicks / impressions) * 100 : 0;
-  const cpm         = impressions > 0 ? (cost / impressions) * 1000 : 0;
-  const cpc         = clicks > 0 ? cost / clicks : 0;
-  const cpcAll      = allClicks > 0 ? cost / allClicks : 0;
-  const roas        = cost > 0 && purchaseVal > 0 ? purchaseVal / cost : null;
+  const freq = reach > 0 ? impressions / reach : 0;
+  const ctr = impressions > 0 ? (clicks / impressions) * 100 : 0;
+  const ctrAll = impressions > 0 ? (allClicks / impressions) * 100 : 0;
+  const cpm = impressions > 0 ? (cost / impressions) * 1000 : 0;
+  const cpc = clicks > 0 ? cost / clicks : 0;
+  const cpcAll = allClicks > 0 ? cost / allClicks : 0;
+  const roas = cost > 0 && purchaseVal > 0 ? purchaseVal / cost : null;
 
   const storedType = m.find((x: any) => x.result_type)?.result_type || item.result_type;
   const resultIndicator = m.find((x: any) => x.result_indicator)?.result_indicator || item.result_indicator || null;
+  const attributionWindow = m.find((x: any) => x.attribution_window)?.attribution_window || item.attribution_window || null;
   const adSetGoal = Array.isArray(item.ad_sets)
     ? item.ad_sets.find((s: any) => s?.optimization_goal)?.optimization_goal
     : item.ad_sets?.optimization_goal;
@@ -222,12 +225,23 @@ function processMetrics(item: any, rawData: any[], startStr: string, endStr: str
   const unitCost = computeUnitCost(cost, effectiveResults, classification.category);
   const cpl = unitCost ?? 0;
   const result_type = classification.category;
+  const derivedStatus = deriveEffectiveCampaignStatus({
+    status: item.status,
+    configured_status: item.configured_status,
+    delivery_status: item.delivery_status || item.campaigns?.delivery_status,
+    stop_time: item.stop_time || item.campaigns?.stop_time,
+    end_time: item.end_time || item.ad_sets?.end_time,
+  });
+  const deliveryState = classifyDeliveryState({ cost, impressions, reach, conversions, purchaseValue: purchaseVal });
 
   return {
     ...item,
     result_type,
     result_indicator: resultIndicator,
+    attribution_window: attributionWindow,
     optimization_goal: optimizationGoal,
+    derived_status: derivedStatus,
+    delivery_state: deliveryState,
     t: { cost, conversions, clicks, allClicks, impressions, reach, freq, cpl, ctr, ctrAll, cpm, cpc, cpcAll, roas, purchaseValue: purchaseVal },
     _metrics: m,
   };
@@ -267,12 +281,14 @@ function applyPeriodStatsToEntity(c: any, statsMap: Map<string, any>, withParent
       ? Number(ps.purchase_value)
       : Number(c.t?.purchaseValue || 0);
   const roas = cost > 0 && purchaseVal > 0 ? purchaseVal / cost : null;
+  const deliveryState = classifyDeliveryState({ cost, impressions, reach, conversions, purchaseValue: purchaseVal });
 
   return {
     ...c,
     result_type: cat,
     result_indicator: resIndicator,
     optimization_goal: optGoal,
+    delivery_state: deliveryState,
     t: {
       ...c.t,
       cost,
@@ -299,17 +315,17 @@ function gerarInsights(camps: any[], totCost: number, totConv: number, avgCpl: n
   if (!camps.length) return ins;
   const convEligible = camps.filter(c => ["MESSAGES", "LEADS", "PURCHASES"].includes(c.result_type));
   const zeroConv = convEligible.filter(c => c.t.conversions === 0 && c.t.cost > totCost * 0.03 && c.t.cost > 50);
-  if (zeroConv.length) ins.push({ level: "danger", title: `${zeroConv.length} campanha${zeroConv.length>1?"s":""} gastando sem conversão`, detail: `Desperdiçado: R$ ${fmtBRL(zeroConv.reduce((s,c) => s+c.t.cost,0))}`, acao: "Pausar e revisar criativo e segmentação", camps: zeroConv.map(c=>c.name) });
+  if (zeroConv.length) ins.push({ level: "danger", title: `${zeroConv.length} campanha${zeroConv.length > 1 ? "s" : ""} gastando sem conversão`, detail: `Desperdiçado: R$ ${fmtBRL(zeroConv.reduce((s, c) => s + c.t.cost, 0))}`, acao: "Pausar e revisar criativo e segmentação", camps: zeroConv.map(c => c.name) });
   const highCpl = convEligible.filter(c => c.t.cpl > 0 && avgCpl > 0 && c.t.cpl > avgCpl * 1.8 && c.t.cost > 30);
-  if (highCpl.length) ins.push({ level: "warning", title: `${highCpl.length} campanha${highCpl.length>1?"s":""} com CPL acima de 80% da média`, detail: `Média: R$ ${avgCpl.toFixed(2)} — ${highCpl.slice(0,2).map(c=>`${c.name.substring(0,18)}: R$ ${c.t.cpl.toFixed(2)}`).join(", ")}`, acao: "Reduzir budget, testar criativos ou ajustar público", camps: highCpl.map(c=>c.name) });
+  if (highCpl.length) ins.push({ level: "warning", title: `${highCpl.length} campanha${highCpl.length > 1 ? "s" : ""} com CPL acima de 80% da média`, detail: `Média: R$ ${avgCpl.toFixed(2)} — ${highCpl.slice(0, 2).map(c => `${c.name.substring(0, 18)}: R$ ${c.t.cpl.toFixed(2)}`).join(", ")}`, acao: "Reduzir budget, testar criativos ou ajustar público", camps: highCpl.map(c => c.name) });
   const highFreq = camps.filter(c => c.t.freq > 3 && c.t.impressions > 500);
-  if (highFreq.length) ins.push({ level: "warning", title: `${highFreq.length} campanha${highFreq.length>1?"s":""} com frequência > 3x (saturação)`, detail: "Audiência vendo o mesmo anúncio repetidamente — CTR tende a cair", acao: "Expandir audiência, renovar criativos ou excluir convertidos", camps: highFreq.map(c=>c.name) });
+  if (highFreq.length) ins.push({ level: "warning", title: `${highFreq.length} campanha${highFreq.length > 1 ? "s" : ""} com frequência > 3x (saturação)`, detail: "Audiência vendo o mesmo anúncio repetidamente — CTR tende a cair", acao: "Expandir audiência, renovar criativos ou excluir convertidos", camps: highFreq.map(c => c.name) });
   const lowCtr = camps.filter(c => c.t.impressions > 1000 && c.t.ctr < 0.5 && c.t.cost > 20);
-  if (lowCtr.length) ins.push({ level: "warning", title: `${lowCtr.length} campanha${lowCtr.length>1?"s":""} com CTR abaixo de 0,5%`, detail: "Benchmark Meta Ads: 1—2%. Criativo ou segmentação fraco", acao: "Testar novos hooks, thumbnails e textos", camps: lowCtr.map(c=>c.name) });
+  if (lowCtr.length) ins.push({ level: "warning", title: `${lowCtr.length} campanha${lowCtr.length > 1 ? "s" : ""} com CTR abaixo de 0,5%`, detail: "Benchmark Meta Ads: 1—2%. Criativo ou segmentação fraco", acao: "Testar novos hooks, thumbnails e textos", camps: lowCtr.map(c => c.name) });
   const topEff = convEligible.filter(c => c.t.cpl > 0 && avgCpl > 0 && c.t.cpl < avgCpl * 0.7 && c.t.conversions >= 3 && c.t.cost > 0);
-  if (topEff.length) ins.push({ level: "success", title: `${topEff.length} campanha${topEff.length>1?"s":""} com CPL ${Math.round((1-topEff[0].t.cpl/avgCpl)*100)}% abaixo da média — prontas para escalar`, detail: `"${topEff[0].name.substring(0,35)}" — CPL R$ ${topEff[0].t.cpl.toFixed(2)} com ${topEff[0].t.conversions} conversões`, acao: "Aumentar budget 10—20% por dia e monitorar CPL", camps: topEff.map(c=>c.name) });
+  if (topEff.length) ins.push({ level: "success", title: `${topEff.length} campanha${topEff.length > 1 ? "s" : ""} com CPL ${Math.round((1 - topEff[0].t.cpl / avgCpl) * 100)}% abaixo da média — prontas para escalar`, detail: `"${topEff[0].name.substring(0, 35)}" — CPL R$ ${topEff[0].t.cpl.toFixed(2)} com ${topEff[0].t.conversions} conversões`, acao: "Aumentar budget 10—20% por dia e monitorar CPL", camps: topEff.map(c => c.name) });
   const goodCtr = camps.filter(c => c.t.ctr >= 2 && c.t.impressions > 500);
-  if (goodCtr.length && !topEff.some(c=>goodCtr.find(g=>g.id===c.id))) ins.push({ level: "success", title: `${goodCtr.length} campanha${goodCtr.length>1?"s":""} com CTR ≥ 2% — acima do benchmark`, detail: `Meta Ads benchmark: 1—1,5%. Campanhas: ${goodCtr.slice(0,2).map(c=>c.name.substring(0,18)).join(", ")}`, acao: "Escalar budget e testar variações do criativo", camps: goodCtr.map(c=>c.name) });
+  if (goodCtr.length && !topEff.some(c => goodCtr.find(g => g.id === c.id))) ins.push({ level: "success", title: `${goodCtr.length} campanha${goodCtr.length > 1 ? "s" : ""} com CTR ≥ 2% — acima do benchmark`, detail: `Meta Ads benchmark: 1—1,5%. Campanhas: ${goodCtr.slice(0, 2).map(c => c.name.substring(0, 18)).join(", ")}`, acao: "Escalar budget e testar variações do criativo", camps: goodCtr.map(c => c.name) });
   if (avgCpm > 25) ins.push({ level: "info", title: `CPM médio R$ ${avgCpm.toFixed(2)} — leilão competitivo`, detail: "CPM alto pode indicar público muito disputado ou segmentação restrita", acao: "Testar públicos mais amplos ou similares" });
   if (ins.length === 0 && totConv > 0) ins.push({ level: "info", title: "Conta saudável no período", detail: `${camps.length} campanhas, ${avgCpl > 0 ? `CPL médio R$ ${avgCpl.toFixed(2)}, ` : ""}CTR ${avgCtr.toFixed(2)}%`, acao: "Continue monitorando — considere testes A/B" });
   return ins;
@@ -427,12 +443,12 @@ function getDecision(c: any, avgCpl: number, accountTargetCpl?: number | null, d
     diag.status === "PAUSAR"
       ? "red"
       : diag.status === "OTIMIZAR"
-      ? "orange"
-      : diag.status === "ESCALAR"
-      ? "green"
-      : diag.status === "AGUARDAR_AMOSTRA"
-      ? "yellow"
-      : "blue";
+        ? "orange"
+        : diag.status === "ESCALAR"
+          ? "green"
+          : diag.status === "AGUARDAR_AMOSTRA"
+            ? "yellow"
+            : "blue";
 
   return {
     label: diag.status === "AGUARDAR_AMOSTRA" ? "MONITORAR" : diag.status,
@@ -502,8 +518,8 @@ export function getCampaignTemperature(c: any, avgCpl: number): {
       reason: convs === 0
         ? `Alerta: R$ ${cost.toFixed(2)} gastos sem nenhuma conversão`
         : cpl > avgCpl * 1.5
-        ? `CPL R$ ${cpl.toFixed(2)} (${Math.round((cpl / avgCpl - 1) * 100)}% acima da meta)`
-        : `Frequência ${freq.toFixed(1)}x saturando o leilão`
+          ? `CPL R$ ${cpl.toFixed(2)} (${Math.round((cpl / avgCpl - 1) * 100)}% acima da meta)`
+          : `Frequência ${freq.toFixed(1)}x saturando o leilão`
     };
   }
 
@@ -606,49 +622,49 @@ function ObjectiveBadge({ objective, name: _name, resultType }: { objective?: st
   const isEngagement = res === "ENGAGEMENT" || obj === "ENGAGEMENT";
 
   const effectiveObjective = isMsg ? "MESSAGES" :
-                             isInsta ? "INSTAGRAM_PROFILE" :
-                             isPurchases ? "OUTCOME_SALES" :
-                             isLp ? "LANDING_PAGE_VIEWS" :
-                             isLeads ? "OUTCOME_LEADS" :
-                             isReach ? "REACH" :
-                             isVideo ? "VIDEO_VIEWS" :
-                             isClicks ? "LINK_CLICKS" :
-                             isEngagement ? "ENGAGEMENT" :
-                             (OBJECTIVE_MAP[obj] ? obj : OBJECTIVE_MAP[res] ? res : "UNKNOWN");
+    isInsta ? "INSTAGRAM_PROFILE" :
+      isPurchases ? "OUTCOME_SALES" :
+        isLp ? "LANDING_PAGE_VIEWS" :
+          isLeads ? "OUTCOME_LEADS" :
+            isReach ? "REACH" :
+              isVideo ? "VIDEO_VIEWS" :
+                isClicks ? "LINK_CLICKS" :
+                  isEngagement ? "ENGAGEMENT" :
+                    (OBJECTIVE_MAP[obj] ? obj : OBJECTIVE_MAP[res] ? res : "UNKNOWN");
 
   if (!effectiveObjective) return null;
   const def = OBJECTIVE_MAP[effectiveObjective] || OBJECTIVE_MAP["UNKNOWN"];
-  if (!def) return <span className="text-[8px] font-mono text-muted-foreground/60 uppercase">{effectiveObjective.replace("OUTCOME_","")}</span>;
+  if (!def) return <span className="text-[8px] font-mono text-muted-foreground/60 uppercase">{effectiveObjective.replace("OUTCOME_", "")}</span>;
   const Icon = def.icon;
   return <span className={`inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[8px] font-black uppercase tracking-wider ${def.color}`}><Icon className="h-2.5 w-2.5" />{def.label}</span>;
 }
 
 function LearningBadge() {
-  return <span className="inline-flex items-center gap-1 rounded border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 text-[8px] font-black uppercase tracking-wider text-amber-500 animate-pulse"><BookOpen className="h-2.5 w-2.5"/>Aprendendo</span>;
+  return <span className="inline-flex items-center gap-1 rounded border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 text-[8px] font-black uppercase tracking-wider text-amber-500 animate-pulse"><BookOpen className="h-2.5 w-2.5" />Aprendendo</span>;
 }
 
-function ChartCard({ 
-  icon, 
-  title, 
-  badge, 
-  context, 
+function ChartCard({
+  icon,
+  title,
+  badge,
+  context,
   children,
   modoExplicativo,
   didaticInfo
-}: { 
-  icon: React.ReactNode; 
-  title: string; 
-  badge?: string; 
-  context?: string; 
+}: {
+  icon: React.ReactNode;
+  title: string;
+  badge?: string;
+  context?: string;
   children: React.ReactNode;
   modoExplicativo?: boolean;
   didaticInfo?: { analise: string; decisao: string };
 }) {
   const [showCtx, setShowCtx] = useState(false);
   return (
-    <motion.div 
-      initial={{ opacity: 0, y: 12 }} 
-      animate={{ opacity: 1, y: 0 }} 
+    <motion.div
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.35, ease: "easeOut" }}
       className="glass-panel card-sport p-5 border border-white/[0.08]"
     >
@@ -657,19 +673,19 @@ function ChartCard({
         <p className="text-xs font-black uppercase tracking-widest header-sport">{title}</p>
         <div className="ml-auto flex items-center gap-2">
           {badge && <span className="text-[9px] text-muted-foreground/50 font-mono hidden sm:inline">{badge}</span>}
-          {context && <button onClick={() => setShowCtx(v => !v)} className={`rounded-md p-1 transition-colors ${showCtx ? "text-primary bg-primary/10" : "text-muted-foreground/40 hover:text-primary"}`}><Info className="h-3.5 w-3.5"/></button>}
+          {context && <button onClick={() => setShowCtx(v => !v)} className={`rounded-md p-1 transition-colors ${showCtx ? "text-primary bg-primary/10" : "text-muted-foreground/40 hover:text-primary"}`}><Info className="h-3.5 w-3.5" /></button>}
         </div>
       </div>
       <AnimatePresence>
         {showCtx && <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} className="mb-3 rounded-xl border border-blue-400/20 bg-blue-400/5 px-4 py-3"><p className="text-[11px] text-blue-300 leading-snug">{context}</p></motion.div>}
       </AnimatePresence>
-      
+
       {children}
 
       {modoExplicativo && didaticInfo && (
-        <motion.div 
-          initial={{ opacity: 0, height: 0 }} 
-          animate={{ opacity: 1, height: "auto" }} 
+        <motion.div
+          initial={{ opacity: 0, height: 0 }}
+          animate={{ opacity: 1, height: "auto" }}
           className="mt-4 pt-3 border-t border-white/5 space-y-2 text-[10px] text-muted-foreground bg-white/[0.005] -mx-5 -mb-5 px-5 pb-5 rounded-b-xl"
         >
           <div className="flex items-start gap-1.5 leading-relaxed">
@@ -747,8 +763,8 @@ function KPIBar({
   const cplLabel = !isMixed && primaryEntry?.key === "reach"
     ? "Custo / 1k Alc."
     : isMixed
-    ? "CPA Elegível"
-    : "CPL / CPA";
+      ? "CPA Elegível"
+      : "CPL / CPA";
   const clicksSub = typeof totAllClicks === "number" && totAllClicks > totClicks
     ? `Todos: ${fmtN(totAllClicks)}`
     : undefined;
@@ -759,7 +775,7 @@ function KPIBar({
   const kpiItems = [
     { label: "Gasto",          value: isLoading ? "—" : `R$ ${fmtBRL(totCost)}`,                         color: "text-primary",          icon: DollarSign,    sub: undefined },
     { label: isMixed ? "Resultados (Tipo)" : "Resultados", value: isLoading ? "—" : resultsDisplay,      color: "text-violet-400",       icon: Target,        sub: isMixed && !isLoading ? "Sem soma mista" : undefined },
-    { label: cplLabel,         value: isLoading ? "—" : avgCpl > 0 ? `R$ ${avgCpl.toFixed(2)}` : "—",    color: "text-primary",          icon: Zap,           sub: undefined },
+    { label: cplLabel,         value: isLoading ? "—" : avgCpl > 0 ? `R$ ${avgCpl.toFixed(2)}` : "—",    color: "text-primary",          icon: Zap,           sub: !isLoading && totCost <= 0 && totConv > 0 ? "Gasto zero no período" : undefined },
     ...(totPurchaseValue > 0 ? [{
       label: "Receita (Compras)",
       value: isLoading ? "—" : `R$ ${fmtBRL(totPurchaseValue)}`,
@@ -770,7 +786,7 @@ function KPIBar({
     { label: "Impressões",     value: isLoading ? "—" : fmtN(totImpr),                                   color: "text-muted-foreground", icon: Eye,           sub: undefined },
     { label: reachLabel,       value: isLoading ? "—" : totReach > 0 ? fmtN(totReach) : "—",             color: "text-muted-foreground", icon: Users,         sub: undefined },
     { label: "Cliques (Link)", value: isLoading ? "—" : fmtN(totClicks),                                 color: "text-muted-foreground", icon: MousePointer2, sub: isLoading ? undefined : clicksSub },
-    { label: "CTR Link",       value: isLoading ? "—" : `${avgCtr.toFixed(2)}%`,                         color: avgCtr >= 1.5 ? "text-green-400" : "text-muted-foreground", icon: TrendingUp, sub: isLoading ? undefined : ctrSub },
+    { label: "CTR Link",       value: isLoading ? "—" : totImpr > 0 ? `${avgCtr.toFixed(2)}%` : "—",  color: totImpr > 0 && avgCtr >= 1.5 ? "text-green-400" : "text-muted-foreground", icon: TrendingUp, sub: isLoading ? undefined : (totImpr > 0 ? ctrSub : undefined) },
     { label: "CPM Médio",      value: isLoading ? "—" : avgCpm > 0 ? `R$ ${avgCpm.toFixed(2)}` : "—",    color: "text-muted-foreground", icon: BarChart3,     sub: undefined },
   ];
 
@@ -844,8 +860,8 @@ function MetricasCampanhasPage() {
     hasPermissionAccess(profileData?.permissions as any, "metricas");
 
   // â"€â"€ Estado global compartilhado â"€â"€
-  const [view,          setView]          = useState<ViewMode>("gestao");
-  const [level,         setLevel]         = useState<Level>("campanhas");
+  const [view, setView] = useState<ViewMode>("gestao");
+  const [level, setLevel] = useState<Level>("campanhas");
   const { dateFrom, dateTo, setDateFrom, setDateTo, accountId: globalAccountId, setAccountId: setGlobalAccountId } = useGlobalDate();
   const targetAccount = searchParams.account || searchParams.accountId || globalAccountId || "all";
   const targetCampaign = searchParams.campaign || searchParams.campId || null;
@@ -854,9 +870,9 @@ function MetricasCampanhasPage() {
     setAccountFilterState(acc);
     setGlobalAccountId(acc || "all");
   }, [setGlobalAccountId]);
-  const [statusFilter,  setStatusFilter]  = useState<"all"|"active"|"paused">("all");
+  const [statusFilter,  setStatusFilter]  = useState<"all"|"active"|"completed"|"paused">("all");
   const [selectedCampaignId, setSelectedCampaignId] = useState<string | null>(targetCampaign);
-  const [search,        setSearch]        = useState("");
+  const [search, setSearch] = useState("");
 
   const dateRange = useMemo(() => ({
     startDate: new Date(dateFrom + "T12:00:00"),
@@ -877,13 +893,13 @@ function MetricasCampanhasPage() {
   const [floatingChatContext, setFloatingChatContext] = useState<ContextItem | null>(null);
 
   // â"€â"€ Estado de seleção (tabela) â"€â"€
-  const [selectedCamps,  setSelectedCamps]  = useState<Set<string>>(new Set());
+  const [selectedCamps, setSelectedCamps] = useState<Set<string>>(new Set());
   const [selectedAdSets, setSelectedAdSets] = useState<Set<string>>(new Set());
-  const [selectedAds,    setSelectedAds]    = useState<Set<string>>(new Set());
-  const [changingId,     setChangingId]     = useState<string | null>(null);
-  const [auditData,      setAuditData]      = useState<any[]|null>(null);
-  const [isAuditing,     setIsAuditing]     = useState(false);
-  const [visibleCount,   setVisibleCount]   = useState(40);
+  const [selectedAds, setSelectedAds] = useState<Set<string>>(new Set());
+  const [changingId, setChangingId] = useState<string | null>(null);
+  const [auditData, setAuditData] = useState<any[] | null>(null);
+  const [isAuditing, setIsAuditing] = useState(false);
+  const [visibleCount, setVisibleCount] = useState(40);
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
   const [includeNoDelivery, setIncludeNoDelivery] = useState(false);
 
@@ -919,12 +935,12 @@ function MetricasCampanhasPage() {
   }, [activeAccountRules]);
 
   // â"€â"€ Estado de análise (charts) â"€â"€
-  const [modo,            setModo]            = useState<ModoId>("geral");
-  const [showSettings,    setShowSettings]    = useState(true);
-  const [expandedInsight, setExpandedInsight] = useState<number|null>(null);
+  const [modo, setModo] = useState<ModoId>("geral");
+  const [showSettings, setShowSettings] = useState(true);
+  const [expandedInsight, setExpandedInsight] = useState<number | null>(null);
   const [refreshInterval, setRefreshInterval] = useState(0);
-  const [lastRefresh,     setLastRefresh]     = useState(new Date());
-  const intervalRef    = useRef<ReturnType<typeof setInterval>|null>(null);
+  const [lastRefresh, setLastRefresh] = useState(new Date());
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // â"€â"€ Estado do Campaign Inspector â"€â"€
   const [selectedFocusItem, setSelectedFocusItem] = useState<any | null>(null);
@@ -987,7 +1003,7 @@ function MetricasCampanhasPage() {
   });
 
   const startStr = getLocalDateStr(dateRange.startDate);
-  const endStr   = getLocalDateStr(dateRange.endDate);
+  const endStr = getLocalDateStr(dateRange.endDate);
   const periodDaysCount = useMemo(() => {
     const startMs = Date.parse(`${startStr}T00:00:00Z`);
     const endMs = Date.parse(`${endStr}T00:00:00Z`);
@@ -1008,19 +1024,18 @@ function MetricasCampanhasPage() {
       eventModelVersion: EVENT_MODEL_VERSION,
     }),
     queryFn: async () => {
-      ensureDatabaseCalibrated(supabase).catch(() => {});
+      ensureDatabaseCalibrated(supabase).catch(() => { });
       const buildQuery = (withExtended: boolean) => {
         const metricsCols = withExtended
-          ? "cost, conversions, impressions, clicks, inline_link_clicks, all_clicks, optimization_goal, result_indicator, purchase_value, reach, frequency, date, result_type"
+          ? "cost, conversions, impressions, clicks, inline_link_clicks, all_clicks, optimization_goal, result_indicator, attribution_window, purchase_value, reach, frequency, date, result_type"
           : "cost, conversions, impressions, clicks, reach, frequency, date, result_type";
         const selectExpr = withExtended
-          ? `id, name, status, delivery_status, objective, daily_budget, lifetime_budget, budget_currency, external_id, ad_account_id, ad_account:ad_accounts(name), ad_sets(optimization_goal), metrics(${metricsCols})`
+          ? `id, name, status, configured_status, delivery_status, objective, start_time, stop_time, daily_budget, lifetime_budget, budget_currency, external_id, ad_account_id, ad_account:ad_accounts(name), ad_sets(optimization_goal), metrics(${metricsCols})`
           : `id, name, status, delivery_status, objective, daily_budget, lifetime_budget, budget_currency, external_id, ad_account_id, ad_account:ad_accounts(name), metrics(${metricsCols})`;
         let q = (supabase as any)
           .from("campaigns")
           .select(selectExpr);
         if (accountFilter !== "all") q = q.eq("ad_account_id", accountFilter);
-        if (statusFilter !== "all") q = q.ilike("status", statusFilter === "active" ? "ACTIVE" : "PAUSED");
         return q;
       };
       const all: any[] = [];
@@ -1036,9 +1051,17 @@ function MetricasCampanhasPage() {
         all.push(...data);
         if (data.length < 1000) break;
       }
-      return all.map((c: any) =>
+      const processed = all.map((c: any) =>
         processMetrics(c, calibrateCampaignMetricsArray(c.name, c.metrics), startStr, endStr)
       );
+      if (statusFilter === "all") return processed;
+      return processed.filter((c: any) => {
+        const effCode = c.derived_status?.code || deriveEffectiveCampaignStatus(c).code;
+        if (statusFilter === "active") return effCode === "ACTIVE";
+        if (statusFilter === "completed") return effCode === "COMPLETED";
+        if (statusFilter === "paused") return effCode === "PAUSED" || effCode === "ARCHIVED";
+        return true;
+      });
     },
     refetchInterval: 60 * 1000,
     refetchIntervalInBackground: false,
@@ -1087,11 +1110,13 @@ function MetricasCampanhasPage() {
         const metricCols = withExtended
           ? "cost, conversions, impressions, clicks, inline_link_clicks, all_clicks, optimization_goal, result_indicator, purchase_value, reach, date, result_type"
           : "cost, conversions, impressions, clicks, reach, date";
+        const selectExpr = withExtended
+          ? `id, name, status, budget, start_time, end_time, optimization_goal, external_id, campaign_id, campaigns(id, name, objective, status, delivery_status, stop_time), asset_metrics(${metricCols})`
+          : `id, name, status, budget, external_id, campaign_id, campaigns(id, name, objective), asset_metrics(${metricCols})`;
         let q = (supabase as any)
           .from("ad_sets")
-          .select(`id, name, status, budget, external_id, campaign_id, campaigns(id, name, objective), asset_metrics(${metricCols})`);
+          .select(selectExpr);
         if (chunkIds) q = q.in("campaign_id", chunkIds);
-        if (statusFilter !== "all") q = q.ilike("status", statusFilter === "active" ? "ACTIVE" : "PAUSED");
         return q;
       };
       const chunks: (string[] | null)[] = targetCampIds === null
@@ -1111,9 +1136,17 @@ function MetricasCampanhasPage() {
           if (!data || data.length < 1000) break;
         }
       }
-      return all.map((c: any) =>
+      const processed = all.map((c: any) =>
         processMetrics(c, calibrateAdSetMetricsArray(c.name, c.asset_metrics), startStr, endStr)
       );
+      if (statusFilter === "all") return processed;
+      return processed.filter((c: any) => {
+        const effCode = c.derived_status?.code || deriveEffectiveCampaignStatus(c).code;
+        if (statusFilter === "active") return effCode === "ACTIVE";
+        if (statusFilter === "completed") return effCode === "COMPLETED";
+        if (statusFilter === "paused") return effCode === "PAUSED" || effCode === "ARCHIVED";
+        return true;
+      });
     },
   });
 
@@ -1146,12 +1179,14 @@ function MetricasCampanhasPage() {
         const metricCols = withExtended
           ? "cost, conversions, impressions, clicks, inline_link_clicks, all_clicks, optimization_goal, result_indicator, purchase_value, reach, date, result_type"
           : "cost, conversions, impressions, clicks, reach, date";
+        const selectExpr = withExtended
+          ? `id, name, status, external_id, campaign_id, ad_set_id, creative_url, campaigns(id, name, objective, status, delivery_status, stop_time), ad_sets(id, name, end_time), asset_metrics(${metricCols})`
+          : `id, name, status, external_id, campaign_id, ad_set_id, creative_url, campaigns(id, name, objective), asset_metrics(${metricCols})`;
         let q = (supabase as any)
           .from("ads")
-          .select(`id, name, status, external_id, campaign_id, ad_set_id, creative_url, campaigns(id, name, objective), asset_metrics(${metricCols})`);
+          .select(selectExpr);
         if (chunkAdSetIds) q = q.in("ad_set_id", chunkAdSetIds);
         else if (chunkCampIds) q = q.in("campaign_id", chunkCampIds);
-        if (statusFilter !== "all") q = q.ilike("status", statusFilter === "active" ? "ACTIVE" : "PAUSED");
         return q;
       };
       const adSetChunks: (string[] | null)[] = selectedAdSets.size > 0
@@ -1159,8 +1194,8 @@ function MetricasCampanhasPage() {
         : [];
       const campChunks: (string[] | null)[] = selectedAdSets.size === 0
         ? (targetCampIds === null
-            ? [null]
-            : Array.from({ length: Math.ceil(targetCampIds.length / 200) }, (_, i) => targetCampIds.slice(i * 200, (i + 1) * 200)))
+          ? [null]
+          : Array.from({ length: Math.ceil(targetCampIds.length / 200) }, (_, i) => targetCampIds.slice(i * 200, (i + 1) * 200)))
         : [];
       const iterations = adSetChunks.length > 0
         ? adSetChunks.map(a => ({ adSets: a, camps: null as string[] | null }))
@@ -1180,9 +1215,17 @@ function MetricasCampanhasPage() {
           if (!data || data.length < 1000) break;
         }
       }
-      return all.map((c: any) =>
+      const processed = all.map((c: any) =>
         processMetrics(c, calibrateAdMetricsArray(c.name, c.asset_metrics), startStr, endStr)
       );
+      if (statusFilter === "all") return processed;
+      return processed.filter((c: any) => {
+        const effCode = c.derived_status?.code || deriveEffectiveCampaignStatus(c).code;
+        if (statusFilter === "active") return effCode === "ACTIVE";
+        if (statusFilter === "completed") return effCode === "COMPLETED";
+        if (statusFilter === "paused") return effCode === "PAUSED" || effCode === "ARCHIVED";
+        return true;
+      });
     },
   });
 
@@ -1402,23 +1445,23 @@ function MetricasCampanhasPage() {
       }
 
       const ageMap: Record<string, any> = {};
-      demoRows.forEach((r: any) => { if (!ageMap[r.age_range]) ageMap[r.age_range] = { name: r.age_range, conv: 0, cost: 0, impr: 0, clicks: 0 }; ageMap[r.age_range].conv += Number(r.conversions||0); ageMap[r.age_range].cost += Number(r.spend||0); ageMap[r.age_range].impr += Number(r.impressions||0); ageMap[r.age_range].clicks += Number(r.clicks||0); });
-      const ageData = Object.values(ageMap).filter((v: any) => v.name !== "unknown").map((v: any) => ({ ...v, cpl: v.conv > 0 ? v.cost/v.conv : 0, ctr: v.impr > 0 ? v.clicks/v.impr*100 : 0 })).sort((a: any, b: any) => a.name.localeCompare(b.name));
+      demoRows.forEach((r: any) => { if (!ageMap[r.age_range]) ageMap[r.age_range] = { name: r.age_range, conv: 0, cost: 0, impr: 0, clicks: 0 }; ageMap[r.age_range].conv += Number(r.conversions || 0); ageMap[r.age_range].cost += Number(r.spend || 0); ageMap[r.age_range].impr += Number(r.impressions || 0); ageMap[r.age_range].clicks += Number(r.clicks || 0); });
+      const ageData = Object.values(ageMap).filter((v: any) => v.name !== "unknown").map((v: any) => ({ ...v, cpl: v.conv > 0 ? v.cost / v.conv : 0, ctr: v.impr > 0 ? v.clicks / v.impr * 100 : 0 })).sort((a: any, b: any) => a.name.localeCompare(b.name));
       const genderMap: Record<string, any> = {};
-      demoRows.forEach((r: any) => { if (!genderMap[r.gender]) genderMap[r.gender] = { name: r.gender, value: 0, cost: 0 }; genderMap[r.gender].value += Number(r.conversions||0); genderMap[r.gender].cost += Number(r.spend||0); });
-      const genderData = Object.values(genderMap).filter((v: any) => v.name !== "unknown").map((g: any) => ({ ...g, name: g.name === "male" ? "Masculino" : g.name === "female" ? "Feminino" : g.name, cpl: g.value > 0 ? g.cost/g.value : 0 }));
+      demoRows.forEach((r: any) => { if (!genderMap[r.gender]) genderMap[r.gender] = { name: r.gender, value: 0, cost: 0 }; genderMap[r.gender].value += Number(r.conversions || 0); genderMap[r.gender].cost += Number(r.spend || 0); });
+      const genderData = Object.values(genderMap).filter((v: any) => v.name !== "unknown").map((g: any) => ({ ...g, name: g.name === "male" ? "Masculino" : g.name === "female" ? "Feminino" : g.name, cpl: g.value > 0 ? g.cost / g.value : 0 }));
       const platMap: Record<string, any> = {};
-      demoRows.forEach((r: any) => { if (!platMap[r.platform]) platMap[r.platform] = { name: r.platform, conv: 0, cost: 0, impr: 0 }; platMap[r.platform].conv += Number(r.conversions||0); platMap[r.platform].cost += Number(r.spend||0); platMap[r.platform].impr += Number(r.impressions||0); });
-      const platData = Object.values(platMap).filter((v: any) => v.name !== "unknown").map((v: any) => ({ ...v, name: v.name === "facebook" ? "Facebook" : v.name === "instagram" ? "Instagram" : v.name === "audience_network" ? "Audience Net." : v.name, cpl: v.conv > 0 ? v.cost/v.conv : 0 })).sort((a: any, b: any) => b.conv - a.conv);
-      const regionData = regionRows.map((r: any) => ({ name: r.region, conv: Number(r.conversions||0), cost: Number(r.spend||0), cpl: Number(r.conversions||0) > 0 ? Number(r.spend||0)/Number(r.conversions||0) : 0 })).sort((a: any, b: any) => b.conv - a.conv).slice(0, 10);
+      demoRows.forEach((r: any) => { if (!platMap[r.platform]) platMap[r.platform] = { name: r.platform, conv: 0, cost: 0, impr: 0 }; platMap[r.platform].conv += Number(r.conversions || 0); platMap[r.platform].cost += Number(r.spend || 0); platMap[r.platform].impr += Number(r.impressions || 0); });
+      const platData = Object.values(platMap).filter((v: any) => v.name !== "unknown").map((v: any) => ({ ...v, name: v.name === "facebook" ? "Facebook" : v.name === "instagram" ? "Instagram" : v.name === "audience_network" ? "Audience Net." : v.name, cpl: v.conv > 0 ? v.cost / v.conv : 0 })).sort((a: any, b: any) => b.conv - a.conv);
+      const regionData = regionRows.map((r: any) => ({ name: r.region, conv: Number(r.conversions || 0), cost: Number(r.spend || 0), cpl: Number(r.conversions || 0) > 0 ? Number(r.spend || 0) / Number(r.conversions || 0) : 0 })).sort((a: any, b: any) => b.conv - a.conv).slice(0, 10);
       const dowMap: Record<number, any> = {};
-      (hourlyRaw.data || []).forEach((r: any) => { const dow = new Date(r.date).getDay(); if (!dowMap[dow]) dowMap[dow] = { day: ["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"][dow], conv: 0, cost: 0 }; dowMap[dow].conv += Number(r.conversions||0); dowMap[dow].cost += Number(r.spend||0); });
-      const dayOfWeekData = [0,1,2,3,4,5,6].map(i => dowMap[i] || { day: ["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"][i], conv: 0, cost: 0 });
+      (hourlyRaw.data || []).forEach((r: any) => { const dow = new Date(r.date).getDay(); if (!dowMap[dow]) dowMap[dow] = { day: ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"][dow], conv: 0, cost: 0 }; dowMap[dow].conv += Number(r.conversions || 0); dowMap[dow].cost += Number(r.spend || 0); });
+      const dayOfWeekData = [0, 1, 2, 3, 4, 5, 6].map(i => dowMap[i] || { day: ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"][i], conv: 0, cost: 0 });
       const hourMap: Record<number, any> = {};
-      (hourlyRaw.data || []).forEach((r: any) => { const h = Number(r.hour||0); if (!hourMap[h]) hourMap[h] = { hour: h, conv: 0, cost: 0 }; hourMap[h].conv += Number(r.conversions||0); hourMap[h].cost += Number(r.spend||0); });
+      (hourlyRaw.data || []).forEach((r: any) => { const h = Number(r.hour || 0); if (!hourMap[h]) hourMap[h] = { hour: h, conv: 0, cost: 0 }; hourMap[h].conv += Number(r.conversions || 0); hourMap[h].cost += Number(r.spend || 0); });
       const hourlyData = Array.from({ length: 24 }, (_, i) => hourMap[i] || { hour: i, conv: 0, cost: 0 });
       const devMap: Record<string, any> = {};
-      deviceRows.forEach((r: any) => { const k = r.device || "other"; if (!devMap[k]) devMap[k] = { name: k, conv: 0, cost: 0, impr: 0 }; devMap[k].conv += Number(r.conversions||0); devMap[k].cost += Number(r.spend||0); devMap[k].impr += Number(r.impressions||0); });
+      deviceRows.forEach((r: any) => { const k = r.device || "other"; if (!devMap[k]) devMap[k] = { name: k, conv: 0, cost: 0, impr: 0 }; devMap[k].conv += Number(r.conversions || 0); devMap[k].cost += Number(r.spend || 0); devMap[k].impr += Number(r.impressions || 0); });
       const deviceData = Object.values(devMap).map((v: any) => ({ ...v, name: v.name === "mobile" ? "Mobile" : v.name === "desktop" ? "Desktop" : v.name }));
 
       const heatMapData = Array.from({ length: 7 }, () => Array.from({ length: 24 }, () => ({ conv: 0, cost: 0, cpl: 0 })));
@@ -1897,20 +1940,20 @@ function MetricasCampanhasPage() {
       const days = eachDayOfInterval({ start: dateRange.startDate, end: dateRange.endDate });
       return days.map(d => {
         const ds = getLocalDateStr(d);
-        const targetCamps = selectedCampaignId 
+        const targetCamps = selectedCampaignId
           ? enrichedCampaigns.filter((c: any) => c.id === selectedCampaignId)
           : enrichedCampaigns;
-          
-        const dayMetrics = targetCamps.flatMap((c: any) => 
+
+        const dayMetrics = targetCamps.flatMap((c: any) =>
           (c._metrics || []).filter((m: any) => (m.date || "").split("T")[0] === ds)
         );
-        
+
         const cost = dayMetrics.reduce((s: number, m: any) => s + Number(m.cost || 0), 0);
         const conversions = dayMetrics.reduce((s: number, m: any) => s + Number(m.conversions || 0), 0);
         const clicks = dayMetrics.reduce((s: number, m: any) => s + Number(m.clicks || 0), 0);
         const impressions = dayMetrics.reduce((s: number, m: any) => s + Number(m.impressions || 0), 0);
         const reach = dayMetrics.reduce((s: number, m: any) => s + Number(m.reach || 0), 0);
-        
+
         const cpl = conversions > 0 ? cost / conversions : 0;
         const ctr = impressions > 0 ? (clicks / impressions) * 100 : 0;
         const cpc = clicks > 0 ? cost / clicks : 0;
@@ -1943,8 +1986,8 @@ function MetricasCampanhasPage() {
       const days = eachDayOfInterval({ start: dateRange.startDate, end: dateRange.endDate }).slice(-14);
       return days.map(d => {
         const ds = getLocalDateStr(d);
-        const dayMetrics = enrichedCampaigns.flatMap((c: any) => (c._metrics || []).filter((m: any) => (m.date||"").split("T")[0] === ds));
-        return { date: format(d, "dd/MM", { locale: ptBR }), gasto: dayMetrics.reduce((s: number, m: any) => s + Number(m.cost||0), 0), conversoes: dayMetrics.reduce((s: number, m: any) => s + Number(m.conversions||0), 0) };
+        const dayMetrics = enrichedCampaigns.flatMap((c: any) => (c._metrics || []).filter((m: any) => (m.date || "").split("T")[0] === ds));
+        return { date: format(d, "dd/MM", { locale: ptBR }), gasto: dayMetrics.reduce((s: number, m: any) => s + Number(m.cost || 0), 0), conversoes: dayMetrics.reduce((s: number, m: any) => s + Number(m.conversions || 0), 0) };
       });
     } catch { return []; }
   }, [enrichedCampaigns, dateRange]);
@@ -1965,13 +2008,19 @@ function MetricasCampanhasPage() {
     } catch { return []; }
   }, [selectedFocusItem, dateRange]);
 
-  const barData = useMemo(() => [...enrichedCampaigns].filter((c: any) => c.t.cost > 0).sort((a: any, b: any) => b.t.cost - a.t.cost).slice(0, 10).map((c: any) => ({ name: c.name.length > 22 ? c.name.substring(0, 22) + "…" : c.name, gasto: Math.round(c.t.cost * 100) / 100, conversoes: c.t.conversions, cpl: Math.round(c.t.cpl * 100) / 100 })), [enrichedCampaigns]);
+  const barData = useMemo(() => [...enrichedCampaigns].filter((c: any) => hasEntityDelivery(c.t || {})).sort((a: any, b: any) => b.t.cost - a.t.cost).slice(0, 10).map((c: any) => ({ name: c.name.length > 22 ? c.name.substring(0, 22) + "…" : c.name, gasto: Math.round(c.t.cost * 100) / 100, conversoes: c.t.conversions, cpl: Math.round(c.t.cpl * 100) / 100 })), [enrichedCampaigns]);
 
   const scatterData = useMemo(() => enrichedCampaigns.filter((c: any) => c.t.cost > 0 && c.t.cpl > 0).map((c: any) => ({ x: Math.round(c.t.cost), y: Math.round(c.t.cpl * 100) / 100, z: c.t.conversions, name: c.name })), [enrichedCampaigns]);
 
   const pieData = useMemo(() => {
-    const active = enrichedCampaigns.filter((c: any) => c.status?.toUpperCase() === "ACTIVE").length;
-    return [{ name: "Ativas", value: active, color: "#6366f1" }, { name: "Pausadas", value: enrichedCampaigns.length - active, color: "#334155" }];
+    const active = enrichedCampaigns.filter((c: any) => (c.derived_status?.code || deriveEffectiveCampaignStatus(c).code) === "ACTIVE").length;
+    const completed = enrichedCampaigns.filter((c: any) => (c.derived_status?.code || deriveEffectiveCampaignStatus(c).code) === "COMPLETED").length;
+    const paused = Math.max(0, enrichedCampaigns.length - active - completed);
+    return [
+      { name: "Ativas", value: active, color: "#6366f1" },
+      ...(completed > 0 ? [{ name: "Concluídas", value: completed, color: "#f59e0b" }] : []),
+      { name: "Pausadas", value: paused, color: "#334155" },
+    ];
   }, [enrichedCampaigns]);
 
   const radarData = useMemo(() => {
@@ -1983,18 +2032,18 @@ function MetricasCampanhasPage() {
     const maxCpm = Math.max(...enrichedCampaigns.map((c: any) => c.t.cpm), 0.01);
     const avgFreq = enrichedCampaigns.reduce((s: number, c: any) => s + c.t.freq, 0) / (enrichedCampaigns.length || 1);
     return [
-      { metric: "CTR",         value: Math.min(100, (avgCtr / maxCtr) * 100) },
-      { metric: "CPL Efic.",   value: avgCpl > 0 && minCpl < Infinity ? Math.min(100, (minCpl / avgCpl) * 100) : 0 },
-      { metric: "Volume",      value: Math.min(100, (totConv / maxConv) * 100) },
-      { metric: "CPM Efic.",   value: avgCpm > 0 ? Math.min(100, (1 - avgCpm / maxCpm) * 100 + 30) : 0 },
-      { metric: "Alcance",     value: Math.min(100, (totReach / maxReach) * 100) },
-      { metric: "Freq. OK",    value: Math.min(100, Math.max(0, (1 - (avgFreq - 1) / 3) * 100)) },
+      { metric: "CTR", value: Math.min(100, (avgCtr / maxCtr) * 100) },
+      { metric: "CPL Efic.", value: avgCpl > 0 && minCpl < Infinity ? Math.min(100, (minCpl / avgCpl) * 100) : 0 },
+      { metric: "Volume", value: Math.min(100, (totConv / maxConv) * 100) },
+      { metric: "CPM Efic.", value: avgCpm > 0 ? Math.min(100, (1 - avgCpm / maxCpm) * 100 + 30) : 0 },
+      { metric: "Alcance", value: Math.min(100, (totReach / maxReach) * 100) },
+      { metric: "Freq. OK", value: Math.min(100, Math.max(0, (1 - (avgFreq - 1) / 3) * 100)) },
     ];
   }, [enrichedCampaigns, avgCtr, avgCpl, avgCpm, totConv, totReach]);
 
   const budgetData = useMemo(() => [...enrichedCampaigns].filter((c: any) => c.t.cost > 0).sort((a: any, b: any) => b.t.cost - a.t.cost).slice(0, 8).map((c: any) => ({ name: c.name.length > 18 ? c.name.substring(0, 18) + "…" : c.name, gasto: Math.round(c.t.cost), conversoes: c.t.conversions })), [enrichedCampaigns]);
 
-  const comparData = useMemo(() => [...enrichedCampaigns].filter((c: any) => c.t.impressions > 0).sort((a: any, b: any) => b.t.conversions - a.t.conversions).slice(0, 8).map((c: any) => {
+  const comparData = useMemo(() => [...enrichedCampaigns].filter((c: any) => hasEntityDelivery(c.t || {})).sort((a: any, b: any) => b.t.conversions - a.t.conversions).slice(0, 8).map((c: any) => {
     const maxCtr2 = Math.max(...enrichedCampaigns.map((x: any) => x.t.ctr), 0.01);
     const maxCpl2 = Math.max(...enrichedCampaigns.filter((x: any) => x.t.cpl > 0).map((x: any) => x.t.cpl), 0.01);
     return { name: c.name.length > 16 ? c.name.substring(0, 16) + "…" : c.name, ctr: Math.round((c.t.ctr / maxCtr2) * 100), cpl: c.t.cpl > 0 ? Math.round((1 - c.t.cpl / maxCpl2) * 100 + 20) : 0, freq: Math.max(0, Math.round((1 - (c.t.freq - 1) / 3) * 100)) };
@@ -2003,17 +2052,17 @@ function MetricasCampanhasPage() {
   const funnelData = useMemo(() => {
     const maxVal = Math.max(totImpr, 1);
     return [
-      { label: "Impressões",         value: totImpr,   rate: 100,                                                    widthPct: 100,                          color: "#6366f1" },
-      { label: "Alcance Único",       value: totReach,  rate: totImpr  > 0 ? (totReach  / totImpr)  * 100 : 0,       widthPct: (totReach  / maxVal) * 100,   color: "#8b5cf6" },
-      { label: "Cliques no Link",     value: totClicks, rate: totImpr  > 0 ? (totClicks / totImpr)  * 100 : 0,       widthPct: (totClicks / maxVal) * 100,   color: "#06b6d4" },
-      { label: "Leads / Conversões",  value: totConv,   rate: totClicks > 0 ? (totConv   / totClicks) * 100 : 0,     widthPct: (totConv   / maxVal) * 100,   color: "#10b981" },
+      { label: "Impressões", value: totImpr, rate: 100, widthPct: 100, color: "#6366f1" },
+      { label: "Alcance Único", value: totReach, rate: totImpr > 0 ? (totReach / totImpr) * 100 : 0, widthPct: (totReach / maxVal) * 100, color: "#8b5cf6" },
+      { label: "Cliques no Link", value: totClicks, rate: totImpr > 0 ? (totClicks / totImpr) * 100 : 0, widthPct: (totClicks / maxVal) * 100, color: "#06b6d4" },
+      { label: "Leads / Conversões", value: totConv, rate: totClicks > 0 ? (totConv / totClicks) * 100 : 0, widthPct: (totConv / maxVal) * 100, color: "#10b981" },
     ];
   }, [totImpr, totReach, totClicks, totConv]);
 
   const wastedSpend = useMemo(() =>
     enrichedCampaigns.filter((c: any) => c.t.conversions === 0 && c.t.cost > 20)
       .reduce((s: number, c: any) => s + c.t.cost, 0),
-  [enrichedCampaigns]);
+    [enrichedCampaigns]);
 
   const cplTrendData = useMemo(() => {
     try {
@@ -2030,7 +2079,7 @@ function MetricasCampanhasPage() {
 
   const campDecisions = useMemo(() =>
     enrichedCampaigns
-      .filter((c: any) => c.t.cost > 0 || c.t.impressions > 0)
+      .filter((c: any) => hasEntityDelivery(c.t || {}))
       .map((c: any) => {
         const sameObjAvg = computeHomogeneousSameObjectiveAvg(c, enrichedCampaigns) ?? 0;
         return {
@@ -2040,7 +2089,7 @@ function MetricasCampanhasPage() {
         };
       })
       .sort((a: any, b: any) => a.healthScore - b.healthScore),
-  [enrichedCampaigns, maxCplThreshold, periodDaysCount]);
+    [enrichedCampaigns, maxCplThreshold, periodDaysCount]);
 
   const overallHealthScore = useMemo(() => {
     const withSpend = campDecisions.filter((c: any) => c.t.cost > 0);
@@ -2054,7 +2103,7 @@ function MetricasCampanhasPage() {
 
   if (!hasAccess) return (
     <div className="flex flex-col items-center justify-center min-h-[60vh] gap-6 text-center px-4">
-      <div className="h-16 w-16 rounded-2xl bg-destructive/10 border border-destructive/20 flex items-center justify-center"><Lock className="h-7 w-7 text-destructive"/></div>
+      <div className="h-16 w-16 rounded-2xl bg-destructive/10 border border-destructive/20 flex items-center justify-center"><Lock className="h-7 w-7 text-destructive" /></div>
       <div><h2 className="text-2xl font-black tracking-tight mb-2">Acesso Restrito</h2><p className="text-muted-foreground text-sm max-w-xs">Solicite ao administrador o acesso às Métricas.</p></div>
       <button onClick={() => navigate({ to: "/dashboard" })} className="px-5 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-bold hover:opacity-90 transition">Voltar ao Dashboard</button>
     </div>
@@ -2134,9 +2183,9 @@ function MetricasCampanhasPage() {
           {/* View switcher */}
           <div className="flex items-center gap-0.5 rounded-xl border border-border bg-card/50 p-0.5 shrink-0">
             {([
-              { id: "gestao",       label: "Gestão",      icon: LayoutGrid },
-              { id: "analise",      label: "Análise",     icon: BarChart2 },
-              { id: "demograficos", label: "Demográficos",icon: Users },
+              { id: "gestao", label: "Gestão", icon: LayoutGrid },
+              { id: "analise", label: "Análise", icon: BarChart2 },
+              { id: "demograficos", label: "Demográficos", icon: Users },
             ] as const).map(v => (
               <button key={v.id} onClick={() => setView(v.id)} className={`flex items-center gap-1.5 rounded-lg px-2.5 sm:px-3 py-1.5 text-[11px] font-black uppercase tracking-wider transition-all ${view === v.id ? "bg-primary text-primary-foreground shadow-glow-sm" : "text-muted-foreground hover:text-foreground"}`}>
                 <v.icon className="h-3 w-3 shrink-0" />
@@ -2157,11 +2206,10 @@ function MetricasCampanhasPage() {
           <button
             type="button"
             onClick={() => setMobileFiltersOpen(v => !v)}
-            className={`sm:hidden flex items-center gap-1 rounded-xl border px-2.5 py-1.5 text-[11px] font-bold transition-all shrink-0 ${
-              mobileFiltersOpen || accountFilter !== "all" || statusFilter !== "all"
-                ? "border-primary/40 bg-primary/10 text-primary"
-                : "border-border bg-card/50 text-muted-foreground"
-            }`}
+            className={`sm:hidden flex items-center gap-1 rounded-xl border px-2.5 py-1.5 text-[11px] font-bold transition-all shrink-0 ${mobileFiltersOpen || accountFilter !== "all" || statusFilter !== "all"
+              ? "border-primary/40 bg-primary/10 text-primary"
+              : "border-border bg-card/50 text-muted-foreground"
+              }`}
             title="Filtros de conta, período e status"
           >
             <SlidersHorizontal className="h-3.5 w-3.5" />
@@ -2192,7 +2240,8 @@ function MetricasCampanhasPage() {
                 >
                   <option value="all">Todos os status</option>
                   <option value="active">Ativos</option>
-                  <option value="paused">Pausados</option>
+                  <option value="completed">Concluídos</option>
+                  <option value="paused">Pausados / Arquivados</option>
                 </select>
                 <ChevronDown className="pointer-events-none absolute right-2 top-1/2 h-3 w-3 -translate-y-1/2 text-muted-foreground" />
               </div>
@@ -2203,11 +2252,10 @@ function MetricasCampanhasPage() {
               <button
                 type="button"
                 onClick={() => setIncludeNoDelivery(v => !v)}
-                className={`flex items-center gap-1.5 rounded-xl border px-2.5 py-1.5 text-[11px] font-bold transition-all shrink-0 ${
-                  includeNoDelivery
-                    ? "border-primary/40 bg-primary/10 text-primary"
-                    : "border-border bg-card/50 text-muted-foreground hover:text-foreground"
-                }`}
+                className={`flex items-center gap-1.5 rounded-xl border px-2.5 py-1.5 text-[11px] font-bold transition-all shrink-0 ${includeNoDelivery
+                  ? "border-primary/40 bg-primary/10 text-primary"
+                  : "border-border bg-card/50 text-muted-foreground hover:text-foreground"
+                  }`}
                 title="Exibir ou ocultar campanhas, conjuntos e anúncios sem gasto ou entrega no período"
               >
                 <Eye className="h-3 w-3" />
@@ -2226,13 +2274,12 @@ function MetricasCampanhasPage() {
           {/* Ações */}
           <div className="flex items-center gap-2 ml-auto shrink-0">
             {(view === "analise" || view === "demograficos") && (
-              <button 
-                onClick={() => setModoExplicativo(v => !v)} 
-                className={`flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-[11px] font-black uppercase tracking-wider transition-all duration-300 ${
-                  modoExplicativo 
-                    ? "border-primary/40 bg-gradient-to-r from-primary/10 to-indigo-500/10 text-primary shadow-[0_0_12px_rgba(99,102,241,0.15)]" 
-                    : "border-white/10 bg-white/[0.02] text-muted-foreground hover:text-foreground hover:border-primary/20"
-                }`}
+              <button
+                onClick={() => setModoExplicativo(v => !v)}
+                className={`flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-[11px] font-black uppercase tracking-wider transition-all duration-300 ${modoExplicativo
+                  ? "border-primary/40 bg-gradient-to-r from-primary/10 to-indigo-500/10 text-primary shadow-[0_0_12px_rgba(99,102,241,0.15)]"
+                  : "border-white/10 bg-white/[0.02] text-muted-foreground hover:text-foreground hover:border-primary/20"
+                  }`}
                 title="Ativa explicações intuitivas sobre as métricas para tomada de decisões"
               >
                 <Sparkles className={`h-3.5 w-3.5 ${modoExplicativo ? "text-primary fill-primary animate-pulse" : ""}`} />
@@ -2241,16 +2288,15 @@ function MetricasCampanhasPage() {
             )}
             {view === "gestao" && (
               <>
-                <button 
+                <button
                   onClick={() => {
                     setTemperatureMode(v => !v);
                     if (temperatureMode) setTemperatureFilter("all");
-                  }} 
-                  className={`flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-[11px] font-bold transition-all ${
-                    temperatureMode 
-                      ? "border-rose-500/50 bg-gradient-to-r from-rose-500/20 to-amber-500/20 text-rose-300 shadow-[0_0_12px_rgba(244,63,94,0.3)] ring-1 ring-rose-500/40" 
-                      : "border-white/10 bg-white/[0.02] text-muted-foreground hover:text-foreground hover:border-white/20"
-                  }`}
+                  }}
+                  className={`flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-[11px] font-bold transition-all ${temperatureMode
+                    ? "border-rose-500/50 bg-gradient-to-r from-rose-500/20 to-amber-500/20 text-rose-300 shadow-[0_0_12px_rgba(244,63,94,0.3)] ring-1 ring-rose-500/40"
+                    : "border-white/10 bg-white/[0.02] text-muted-foreground hover:text-foreground hover:border-white/20"
+                    }`}
                   title="Auditoria Térmica do Leilão: filtrar e classificar campanhas por eficiência (Quentes, Mornas, Frias)"
                 >
                   <Flame className={`h-3.5 w-3.5 ${temperatureMode ? "text-rose-400 fill-rose-500/40 animate-pulse" : "text-muted-foreground"}`} />
@@ -2261,8 +2307,8 @@ function MetricasCampanhasPage() {
                     </span>
                   )}
                 </button>
-                <button 
-                  onClick={() => handleOpenVictoriaDiagnostic()} 
+                <button
+                  onClick={() => handleOpenVictoriaDiagnostic()}
                   className="flex items-center gap-1.5 rounded-xl border border-primary/40 bg-primary/10 px-3 py-1.5 text-[11px] font-bold text-primary hover:bg-primary/20 hover:border-primary/60 transition-all shadow-[0_0_12px_rgba(239,68,68,0.2)] group"
                   title="Abrir Diagnóstico Estratégico em tempo real com a Victoria AI"
                 >
@@ -2274,17 +2320,17 @@ function MetricasCampanhasPage() {
             )}
             {view === "analise" && (
               <button onClick={() => setShowSettings(v => !v)} className={`flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-[11px] font-bold transition-all ${showSettings ? "border-primary/40 bg-primary/10 text-primary" : "border-white/10 bg-white/[0.02] text-muted-foreground hover:text-foreground"}`}>
-                <Settings2 className="h-3 w-3"/><span className="hidden sm:inline">Configurar</span>
+                <Settings2 className="h-3 w-3" /><span className="hidden sm:inline">Configurar</span>
               </button>
             )}
             {syncConfig?.last_heartbeat_at && (
               <div className="hidden sm:flex items-center gap-1 text-[9px] font-mono text-muted-foreground/50 whitespace-nowrap" title="Última sincronização com Meta Ads">
                 <span className="h-1.5 w-1.5 rounded-full bg-green-500 opacity-80" />
-                {(() => { const diff = Math.round((Date.now() - new Date(syncConfig.last_heartbeat_at).getTime()) / 60000); return diff < 1 ? "agora" : diff < 60 ? `${diff}m atrás` : `${Math.round(diff/60)}h atrás`; })()}
+                {(() => { const diff = Math.round((Date.now() - new Date(syncConfig.last_heartbeat_at).getTime()) / 60000); return diff < 1 ? "agora" : diff < 60 ? `${diff}m atrás` : `${Math.round(diff / 60)}h atrás`; })()}
               </div>
             )}
             <button onClick={() => syncMutation.mutate()} disabled={syncMutation.isPending} title="Sincronizar dados com Meta Ads" className="flex items-center gap-1.5 rounded-xl border border-border bg-card/50 px-3 py-1.5 text-[11px] font-bold text-muted-foreground hover:text-foreground hover:border-primary/30 transition-all disabled:opacity-50">
-              {syncMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin"/> : <RefreshCw className="h-3.5 w-3.5"/>}
+              {syncMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
               <span className="hidden sm:inline">Sync</span>
             </button>
           </div>
@@ -2365,9 +2411,9 @@ function MetricasCampanhasPage() {
 
                   {/* Barra da Auditoria Térmica do Leilão */}
                   {temperatureMode && (
-                    <motion.div 
-                      initial={{ opacity: 0, y: -6 }} 
-                      animate={{ opacity: 1, y: 0 }} 
+                    <motion.div
+                      initial={{ opacity: 0, y: -6 }}
+                      animate={{ opacity: 1, y: 0 }}
                       className="border-b border-white/5 bg-gradient-to-r from-rose-950/20 via-background to-cyan-950/20 p-3 sm:p-4 space-y-2.5"
                     >
                       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -2393,11 +2439,10 @@ function MetricasCampanhasPage() {
                         {/* Todas */}
                         <button
                           onClick={() => setTemperatureFilter("all")}
-                          className={`flex flex-col p-2.5 rounded-xl border text-left transition-all ${
-                            temperatureFilter === "all"
-                              ? "border-primary/50 bg-primary/10 shadow-[0_0_10px_rgba(239,68,68,0.15)] ring-1 ring-primary/40"
-                              : "border-white/5 bg-white/[0.02] hover:bg-white/[0.04]"
-                          }`}
+                          className={`flex flex-col p-2.5 rounded-xl border text-left transition-all ${temperatureFilter === "all"
+                            ? "border-primary/50 bg-primary/10 shadow-[0_0_10px_rgba(239,68,68,0.15)] ring-1 ring-primary/40"
+                            : "border-white/5 bg-white/[0.02] hover:bg-white/[0.04]"
+                            }`}
                         >
                           <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Visão Geral</span>
                           <span className="text-sm font-extrabold text-foreground mt-0.5">{thermalStats.total} {level}</span>
@@ -2407,11 +2452,10 @@ function MetricasCampanhasPage() {
                         {/* Quentes */}
                         <button
                           onClick={() => setTemperatureFilter("hot")}
-                          className={`flex flex-col p-2.5 rounded-xl border text-left transition-all ${
-                            temperatureFilter === "hot"
-                              ? "border-rose-500/50 bg-rose-500/15 shadow-[0_0_12px_rgba(244,63,94,0.25)] ring-1 ring-rose-500/40"
-                              : "border-rose-500/20 bg-rose-500/5 hover:bg-rose-500/10"
-                          }`}
+                          className={`flex flex-col p-2.5 rounded-xl border text-left transition-all ${temperatureFilter === "hot"
+                            ? "border-rose-500/50 bg-rose-500/15 shadow-[0_0_12px_rgba(244,63,94,0.25)] ring-1 ring-rose-500/40"
+                            : "border-rose-500/20 bg-rose-500/5 hover:bg-rose-500/10"
+                            }`}
                         >
                           <div className="flex items-center justify-between">
                             <span className="text-[9px] font-black uppercase tracking-widest text-rose-400 flex items-center gap-1">
@@ -2426,11 +2470,10 @@ function MetricasCampanhasPage() {
                         {/* Mornas */}
                         <button
                           onClick={() => setTemperatureFilter("warm")}
-                          className={`flex flex-col p-2.5 rounded-xl border text-left transition-all ${
-                            temperatureFilter === "warm"
-                              ? "border-amber-500/50 bg-amber-500/15 shadow-[0_0_12px_rgba(245,158,11,0.25)] ring-1 ring-amber-500/40"
-                              : "border-amber-500/20 bg-amber-500/5 hover:bg-amber-500/10"
-                          }`}
+                          className={`flex flex-col p-2.5 rounded-xl border text-left transition-all ${temperatureFilter === "warm"
+                            ? "border-amber-500/50 bg-amber-500/15 shadow-[0_0_12px_rgba(245,158,11,0.25)] ring-1 ring-amber-500/40"
+                            : "border-amber-500/20 bg-amber-500/5 hover:bg-amber-500/10"
+                            }`}
                         >
                           <div className="flex items-center justify-between">
                             <span className="text-[9px] font-black uppercase tracking-widest text-amber-400 flex items-center gap-1">
@@ -2445,11 +2488,10 @@ function MetricasCampanhasPage() {
                         {/* Frias / Alerta */}
                         <button
                           onClick={() => setTemperatureFilter("cold")}
-                          className={`flex flex-col p-2.5 rounded-xl border text-left transition-all ${
-                            temperatureFilter === "cold"
-                              ? "border-cyan-500/50 bg-cyan-500/15 shadow-[0_0_12px_rgba(6,182,212,0.25)] ring-1 ring-cyan-500/40"
-                              : "border-cyan-500/20 bg-cyan-500/5 hover:bg-cyan-500/10"
-                          }`}
+                          className={`flex flex-col p-2.5 rounded-xl border text-left transition-all ${temperatureFilter === "cold"
+                            ? "border-cyan-500/50 bg-cyan-500/15 shadow-[0_0_12px_rgba(6,182,212,0.25)] ring-1 ring-cyan-500/40"
+                            : "border-cyan-500/20 bg-cyan-500/5 hover:bg-cyan-500/10"
+                            }`}
                         >
                           <div className="flex items-center justify-between">
                             <span className="text-[9px] font-black uppercase tracking-widest text-cyan-400 flex items-center gap-1">
@@ -2467,7 +2509,7 @@ function MetricasCampanhasPage() {
                   {/* Barra de seleção */}
                   {selSet.size > 0 && (
                     <div className="border-b border-white/5 bg-primary/5 px-4 py-2.5 flex items-center gap-4 overflow-x-auto scrollbar-hide text-xs">
-                      <span className="shrink-0 font-black text-primary uppercase tracking-widest text-[11px]">{selSet.size} selecionado{selSet.size>1?"s":""}</span>
+                      <span className="shrink-0 font-black text-primary uppercase tracking-widest text-[11px]">{selSet.size} selecionado{selSet.size > 1 ? "s" : ""}</span>
                       <span className="shrink-0 text-muted-foreground">Gasto <strong className="text-foreground font-mono">R$ {fmtBRL(totCost)}</strong></span>
                       {(() => {
                         const entries = formatMetricVectorSummary(metricVector);
@@ -2487,7 +2529,7 @@ function MetricasCampanhasPage() {
                   )}
 
                   {isLoadingCamps || isLoadingAdSets || isLoadingAds ? (
-                    <div className="flex justify-center py-24"><Loader2 className="h-8 w-8 animate-spin text-primary"/></div>
+                    <div className="flex justify-center py-24"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>
                   ) : filtered.length === 0 ? (
                     <div className="py-16 px-4 text-center space-y-3">
                       <p className="text-sm font-semibold text-foreground">
@@ -2552,7 +2594,9 @@ function MetricasCampanhasPage() {
                         </thead>
                         <tbody className={isFetchingCamps ? "opacity-50 pointer-events-none transition-opacity duration-200" : "transition-opacity duration-200"}>
                           {filtered.slice(0, visibleCount).map((c: any) => {
-                            const isActive   = c.status?.toUpperCase() === "ACTIVE";
+                            const effStatus  = c.derived_status || deriveEffectiveCampaignStatus(c);
+                            const delivState = c.delivery_state || classifyDeliveryState(c.t || {});
+                            const isActive   = effStatus.isActive;
                             const isLearning = c.delivery_status === "LEARNING";
                             const isChanging = changingId === c.id;
                             const isSel      = selSet.has(c.id);
@@ -2568,6 +2612,13 @@ function MetricasCampanhasPage() {
                               [],
                               c.optimization_goal
                             );
+                            const budgetDisplay = Number(c.daily_budget) > 0
+                              ? `R$ ${Number(c.daily_budget).toFixed(0)}/d`
+                              : Number(c.lifetime_budget) > 0
+                                ? `R$ ${Number(c.lifetime_budget).toFixed(0)} total`
+                                : Number(c.budget) > 0
+                                  ? `R$ ${Number(c.budget).toFixed(0)}/d`
+                                  : "—";
                             return (
                               <tr 
                                 id={`row-${c.id}`} 
@@ -2601,12 +2652,12 @@ function MetricasCampanhasPage() {
                                   <div className="flex flex-col gap-0.5 min-w-0">
                                     <div className="flex items-center gap-1.5">
                                       <button
-                                      onClick={() => setSelectedFocusItem({ ...c, type: level })}
-                                      className="font-bold text-foreground hover:text-primary transition truncate max-w-[240px] leading-tight text-left"
-                                      title="Clique para ver análise detalhada e diagnóstico de IA"
-                                    >
-                                      {c.name}
-                                    </button>
+                                        onClick={() => setSelectedFocusItem({ ...c, type: level })}
+                                        className="font-bold text-foreground hover:text-primary transition truncate max-w-[240px] leading-tight text-left"
+                                        title="Clique para ver análise detalhada e diagnóstico de IA"
+                                      >
+                                        {c.name}
+                                      </button>
                                       <button
                                         onClick={(e) => {
                                           e.stopPropagation();
@@ -2619,6 +2670,25 @@ function MetricasCampanhasPage() {
                                       </button>
                                     </div>
                                     <div className="flex items-center gap-1.5 flex-wrap">
+                                      {effStatus.code !== "ACTIVE" && (
+                                        <span className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-[8px] font-black border ${
+                                          effStatus.code === "COMPLETED"
+                                            ? "bg-amber-500/10 border-amber-500/25 text-amber-300"
+                                            : effStatus.code === "ARCHIVED"
+                                              ? "bg-white/5 border-white/15 text-muted-foreground"
+                                              : "bg-slate-500/15 border-slate-400/25 text-slate-300"
+                                        }`}>
+                                          {effStatus.label}
+                                        </span>
+                                      )}
+                                      {delivState.code === "attributed_zero_spend" && (
+                                        <span
+                                          className="inline-flex items-center rounded-full px-1.5 py-0.5 text-[8px] font-black bg-emerald-500/15 border border-emerald-500/30 text-emerald-300"
+                                          title="Resultado atribuído pela Meta com gasto R$ 0,00 no período"
+                                        >
+                                          Atribuído (gasto zero)
+                                        </span>
+                                      )}
                                       {isLearning && <LearningBadge/>}
                                       {c.ad_account && <span className="text-[9px] text-muted-foreground/40 font-mono leading-none">{(c.ad_account as any).name}</span>}
                                       {/* Regras da Campanha */}
@@ -2642,7 +2712,7 @@ function MetricasCampanhasPage() {
                                 {level === "campanhas" && <td className="px-3 py-2.5 text-center"><ObjectiveBadge objective={c.objective} name={c.name} resultType={c.result_type || (c.campaigns as any)?.objective}/></td>}
                                 {/* orçamento */}
                                 <td className="px-4 py-2.5 text-right font-mono text-[11px] text-muted-foreground hidden md:table-cell whitespace-nowrap">
-                                  {c.daily_budget ? `R$ ${Number(c.daily_budget).toFixed(0)}/d` : c.lifetime_budget ? `R$ ${Number(c.lifetime_budget).toFixed(0)} total` : c.budget ? `R$ ${Number(c.budget).toFixed(0)}/d` : "—"}
+                                  {budgetDisplay}
                                 </td>
                                 {/* freq */}
                                 <td className="px-4 py-2.5 text-right whitespace-nowrap">
@@ -2674,12 +2744,18 @@ function MetricasCampanhasPage() {
                                   <div className="flex flex-col items-end justify-center">
                                     {c.t.cpl > 0 ? (
                                       <>
-                                        <span className={`font-mono font-black text-xs leading-tight transition-colors ${
-                                          temperatureMode 
-                                            ? (cplOver ? "bg-red-500/20 text-red-400 px-2 py-0.5 rounded border border-red-500/30" : "bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded border border-emerald-500/30")
-                                            : (cplOver ? "text-red-400" : "text-green-400")
-                                        }`}>R$ {c.t.cpl.toFixed(2)}</span>
+                                        <span className={`font-mono font-black text-xs leading-tight transition-colors ${temperatureMode
+                                          ? (cplOver ? "bg-red-500/20 text-red-400 px-2 py-0.5 rounded border border-red-500/30" : "bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded border border-emerald-500/30")
+                                          : (cplOver ? "text-red-400" : "text-green-400")
+                                          }`}>R$ {c.t.cpl.toFixed(2)}</span>
                                         <span className="text-[8.5px] text-muted-foreground/70 font-medium leading-tight max-w-[170px] truncate" title={resultDetail.costLabel}>
+                                          {resultDetail.costLabel}
+                                        </span>
+                                      </>
+                                    ) : c.t.conversions > 0 && c.t.cost <= 0 ? (
+                                      <>
+                                        <span className="text-emerald-300/80 font-mono font-bold text-[10px] leading-tight" title="Não calculável: resultado atribuído com gasto R$ 0,00 no período">Não calc. (gasto R$ 0)</span>
+                                        <span className="text-[8.5px] text-muted-foreground/50 font-medium leading-tight max-w-[170px] truncate" title={resultDetail.costLabel}>
                                           {resultDetail.costLabel}
                                         </span>
                                       </>
@@ -2693,116 +2769,115 @@ function MetricasCampanhasPage() {
                                     )}
                                   </div>
                                 </td>
-                                {/* ctr (link + todos) */}
-                                <td className="px-4 py-2.5 text-right hidden lg:table-cell whitespace-nowrap">
-                                  <div className="flex flex-col items-end justify-center">
-                                    <span className={`font-mono font-bold text-xs transition-colors ${
-                                      temperatureMode
+                                  {/* ctr (link + todos) */}
+                                  <td className="px-4 py-2.5 text-right hidden lg:table-cell whitespace-nowrap">
+                                    <div className="flex flex-col items-end justify-center">
+                                      <span className={`font-mono font-bold text-xs transition-colors ${temperatureMode
                                         ? (c.t.ctr < 1 ? "bg-red-500/20 text-red-400 px-2 py-0.5 rounded border border-red-500/30" : c.t.ctr >= 2 ? "bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded border border-emerald-500/30" : "bg-amber-500/20 text-amber-400 px-2 py-0.5 rounded border border-amber-500/30")
                                         : (ctrGood ? "text-green-400" : c.t.ctr > 0 ? "text-blue-400" : "text-muted-foreground/30")
-                                    }`}>{c.t.ctr > 0 ? `${c.t.ctr.toFixed(2)}%` : "—"}</span>
-                                    {c.t.ctrAll > c.t.ctr && (
-                                      <span className="text-[8.5px] font-mono text-muted-foreground/60">
-                                        Todos: {c.t.ctrAll.toFixed(2)}%
-                                      </span>
-                                    )}
-                                  </div>
-                                </td>
-                                {/* cpc */}
-                                <td className="px-4 py-2.5 text-right font-mono text-[11px] text-muted-foreground hidden xl:table-cell whitespace-nowrap">
-                                  {c.t.cpc > 0 ? (
-                                    <div className="flex flex-col items-end leading-tight">
-                                      <span>R$ {c.t.cpc.toFixed(2)}</span>
-                                      {c.t.cpcAll > 0 && (
-                                        <span className="text-[9px] text-muted-foreground/60">Todos: R$ {c.t.cpcAll.toFixed(2)}</span>
+                                        }`}>{c.t.ctr > 0 ? `${c.t.ctr.toFixed(2)}%` : "—"}</span>
+                                      {c.t.ctrAll > c.t.ctr && (
+                                        <span className="text-[8.5px] font-mono text-muted-foreground/60">
+                                          Todos: {c.t.ctrAll.toFixed(2)}%
+                                        </span>
                                       )}
                                     </div>
-                                  ) : c.t.cpcAll > 0 ? (
-                                    <span className="text-[10px] text-muted-foreground/80">Todos: R$ {c.t.cpcAll.toFixed(2)}</span>
-                                  ) : "—"}
-                                </td>
-                                {/* cpm */}
-                                <td className="px-4 py-2.5 text-right font-mono text-[11px] text-muted-foreground hidden xl:table-cell whitespace-nowrap">{c.t.cpm > 0 ? `R$ ${c.t.cpm.toFixed(2)}` : "—"}</td>
-                                {/* gasto */}
-                                <td className="px-4 py-2.5 text-right whitespace-nowrap">
-                                  <span className={`font-mono font-black text-xs ${c.t.cost > 0 ? "text-primary" : "text-muted-foreground/30"}`}>{c.t.cost > 0 ? `R$ ${fmtBRL(c.t.cost)}` : "—"}</span>
-                                </td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                        <tfoot>
-                          <tr className="border-t border-white/10 bg-white/[0.03]">
-                            {/* checkbox */}
-                            <td className="px-4 py-3 w-8"/>
-                            {/* status */}
-                            <td className="px-2 py-3 w-14"/>
-                            {/* nome — label TOTAL */}
-                            <td className="px-4 py-3 text-[9px] font-black uppercase tracking-widest text-muted-foreground/50 whitespace-nowrap">TOTAL ({filtered.length} {level})</td>
-                            {/* objetivo — campanhas only */}
-                            {level === "campanhas" && <td className="px-3 py-3"/>}
-                            {/* orçamento — hidden md */}
-                            <td className="px-4 py-3 hidden md:table-cell"/>
-                            {/* freq — always */}
-                            <td className="px-4 py-3 text-right font-mono font-black text-amber-400 text-xs whitespace-nowrap">—</td>
-                            {/* alcance — hidden lg */}
-                            <td className="px-4 py-3 hidden lg:table-cell"/>
-                            {/* impressões — hidden xl */}
-                            <td className="px-4 py-3 text-right font-mono font-black text-muted-foreground text-xs hidden xl:table-cell whitespace-nowrap">{totImpr > 0 ? fmtN(totImpr) : "—"}</td>
-                            {/* resultados — always */}
-                            <td className="px-4 py-3 text-right whitespace-nowrap">
-                              {(() => {
-                                const entries = formatMetricVectorSummary(metricVector);
-                                const isVecMixed = entries.length > 1;
-                                const summaryTxt = entries.map(e => `${fmtN(e.value)} ${e.label.toLowerCase()}`).join(" • ");
-                                return (
-                                  <div className="flex flex-col items-end justify-center">
-                                    <span className="font-mono font-black text-violet-400 text-xs leading-tight max-w-[180px] truncate" title={isVecMixed ? summaryTxt : undefined}>
-                                      {isVecMixed
-                                        ? summaryTxt
-                                        : (entries[0]?.value ?? 0) > 0
-                                        ? fmtN(entries[0].value)
-                                        : totConv > 0
-                                        ? fmtN(totConv)
-                                        : "—"}
-                                    </span>
-                                    <span className="text-[8.5px] text-muted-foreground/60 font-medium leading-tight">
-                                      {isVecMixed ? "Separado por tipo" : "Total acumulado"}
-                                    </span>
-                                  </div>
-                                );
-                              })()}
-                            </td>
-                            {/* cpl — always */}
-                            <td className="px-4 py-3 text-right whitespace-nowrap">
-                              <div className="flex flex-col items-end justify-center">
-                                <span className="font-mono font-black text-green-400 text-xs leading-tight">{avgCpl > 0 ? `R$ ${avgCpl.toFixed(2)}` : "—"}</span>
-                                <span className="text-[8.5px] text-muted-foreground/60 font-medium leading-tight">
-                                  {formatMetricVectorSummary(metricVector).length > 1 ? "CPA elegível" : "Custo médio por res."}
-                                </span>
-                              </div>
-                            </td>
-                            {/* ctr — hidden lg */}
-                            <td className="px-4 py-3 text-right font-mono font-black text-blue-400 text-xs hidden lg:table-cell whitespace-nowrap">
-                              <div className="flex flex-col items-end justify-center">
-                                <span>{avgCtr > 0 ? `${avgCtr.toFixed(2)}%` : "—"}</span>
-                                {avgCtrAll > avgCtr && (
-                                  <span className="text-[8.5px] text-muted-foreground/60 font-medium">Todos: {avgCtrAll.toFixed(2)}%</span>
-                                )}
-                              </div>
-                            </td>
-                            {/* cpc — hidden xl */}
-                            <td className="px-4 py-3 hidden xl:table-cell"/>
-                            {/* cpm — hidden xl */}
-                            <td className="px-4 py-3 hidden xl:table-cell"/>
-                            {/* gasto — always */}
-                            <td className="px-4 py-3 text-right font-mono font-black text-primary text-xs whitespace-nowrap">R$ {fmtBRL(totCost)}</td>
-                          </tr>
-                        </tfoot>
-                      </table>
-                    </div>
+                                  </td>
+                                  {/* cpc */}
+                                  <td className="px-4 py-2.5 text-right font-mono text-[11px] text-muted-foreground hidden xl:table-cell whitespace-nowrap">
+                                    {c.t.cpc > 0 ? (
+                                      <div className="flex flex-col items-end leading-tight">
+                                        <span>R$ {c.t.cpc.toFixed(2)}</span>
+                                        {c.t.cpcAll > 0 && (
+                                          <span className="text-[9px] text-muted-foreground/60">Todos: R$ {c.t.cpcAll.toFixed(2)}</span>
+                                        )}
+                                      </div>
+                                    ) : c.t.cpcAll > 0 ? (
+                                      <span className="text-[10px] text-muted-foreground/80">Todos: R$ {c.t.cpcAll.toFixed(2)}</span>
+                                    ) : "—"}
+                                  </td>
+                                  {/* cpm */}
+                                  <td className="px-4 py-2.5 text-right font-mono text-[11px] text-muted-foreground hidden xl:table-cell whitespace-nowrap">{c.t.cpm > 0 ? `R$ ${c.t.cpm.toFixed(2)}` : "—"}</td>
+                                  {/* gasto */}
+                                  <td className="px-4 py-2.5 text-right whitespace-nowrap">
+                                    <span className={`font-mono font-black text-xs ${c.t.cost > 0 ? "text-primary" : "text-muted-foreground/30"}`}>{c.t.cost > 0 ? `R$ ${fmtBRL(c.t.cost)}` : "—"}</span>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                          <tfoot>
+                            <tr className="border-t border-white/10 bg-white/[0.03]">
+                              {/* checkbox */}
+                              <td className="px-4 py-3 w-8" />
+                              {/* status */}
+                              <td className="px-2 py-3 w-14" />
+                              {/* nome — label TOTAL */}
+                              <td className="px-4 py-3 text-[9px] font-black uppercase tracking-widest text-muted-foreground/50 whitespace-nowrap">TOTAL ({filtered.length} {level})</td>
+                              {/* objetivo — campanhas only */}
+                              {level === "campanhas" && <td className="px-3 py-3" />}
+                              {/* orçamento — hidden md */}
+                              <td className="px-4 py-3 hidden md:table-cell" />
+                              {/* freq — always */}
+                              <td className="px-4 py-3 text-right font-mono font-black text-amber-400 text-xs whitespace-nowrap">—</td>
+                              {/* alcance — hidden lg */}
+                              <td className="px-4 py-3 hidden lg:table-cell" />
+                              {/* impressões — hidden xl */}
+                              <td className="px-4 py-3 text-right font-mono font-black text-muted-foreground text-xs hidden xl:table-cell whitespace-nowrap">{totImpr > 0 ? fmtN(totImpr) : "—"}</td>
+                              {/* resultados — always */}
+                              <td className="px-4 py-3 text-right whitespace-nowrap">
+                                {(() => {
+                                  const entries = formatMetricVectorSummary(metricVector);
+                                  const isVecMixed = entries.length > 1;
+                                  const summaryTxt = entries.map(e => `${fmtN(e.value)} ${e.label.toLowerCase()}`).join(" • ");
+                                  return (
+                                    <div className="flex flex-col items-end justify-center">
+                                      <span className="font-mono font-black text-violet-400 text-xs leading-tight max-w-[180px] truncate" title={isVecMixed ? summaryTxt : undefined}>
+                                        {isVecMixed
+                                          ? summaryTxt
+                                          : (entries[0]?.value ?? 0) > 0
+                                            ? fmtN(entries[0].value)
+                                            : totConv > 0
+                                              ? fmtN(totConv)
+                                              : "—"}
+                                      </span>
+                                      <span className="text-[8.5px] text-muted-foreground/60 font-medium leading-tight">
+                                        {isVecMixed ? "Separado por tipo" : "Total acumulado"}
+                                      </span>
+                                    </div>
+                                  );
+                                })()}
+                              </td>
+                              {/* cpl — always */}
+                              <td className="px-4 py-3 text-right whitespace-nowrap">
+                                <div className="flex flex-col items-end justify-center">
+                                  <span className="font-mono font-black text-green-400 text-xs leading-tight">{avgCpl > 0 ? `R$ ${avgCpl.toFixed(2)}` : "—"}</span>
+                                  <span className="text-[8.5px] text-muted-foreground/60 font-medium leading-tight">
+                                    {formatMetricVectorSummary(metricVector).length > 1 ? "CPA elegível" : "Custo médio por res."}
+                                  </span>
+                                </div>
+                              </td>
+                              {/* ctr — hidden lg */}
+                              <td className="px-4 py-3 text-right font-mono font-black text-blue-400 text-xs hidden lg:table-cell whitespace-nowrap">
+                                <div className="flex flex-col items-end justify-center">
+                                  <span>{avgCtr > 0 ? `${avgCtr.toFixed(2)}%` : "—"}</span>
+                                  {avgCtrAll > avgCtr && (
+                                    <span className="text-[8.5px] text-muted-foreground/60 font-medium">Todos: {avgCtrAll.toFixed(2)}%</span>
+                                  )}
+                                </div>
+                              </td>
+                              {/* cpc — hidden xl */}
+                              <td className="px-4 py-3 hidden xl:table-cell" />
+                              {/* cpm — hidden xl */}
+                              <td className="px-4 py-3 hidden xl:table-cell" />
+                              {/* gasto — always */}
+                              <td className="px-4 py-3 text-right font-mono font-black text-primary text-xs whitespace-nowrap">R$ {fmtBRL(totCost)}</td>
+                            </tr>
+                          </tfoot>
+                        </table>
+                      </div>
 
-                    {/* --- MOBILE CARDS --- */}
+                      {/* --- MOBILE CARDS --- */}
                     <div className="flex flex-col gap-3 lg:hidden mt-2">
                       {/* Cabeçalho de Seleção Geral Mobile */}
                       <div className="flex items-center justify-between px-2 pb-2 border-b border-white/5">
@@ -2816,7 +2891,9 @@ function MetricasCampanhasPage() {
                       </div>
 
                       {filtered.slice(0, visibleCount).map((c: any) => {
-                        const isActive   = c.status?.toUpperCase() === "ACTIVE";
+                        const effStatus  = c.derived_status || deriveEffectiveCampaignStatus(c);
+                        const delivState = c.delivery_state || classifyDeliveryState(c.t || {});
+                        const isActive   = effStatus.isActive;
                         const isLearning = c.delivery_status === "LEARNING";
                         const isChanging = changingId === c.id;
                         const isSel      = selSet.has(c.id);
@@ -2890,6 +2967,21 @@ function MetricasCampanhasPage() {
                                       )}
                                     </button>
                                     {isLearning && <LearningBadge/>}
+                                    {effStatus.code !== "ACTIVE" && (
+                                      <span className="inline-flex items-center rounded-full border border-slate-400/30 bg-slate-500/15 px-1.5 py-0.5 text-[8px] font-black uppercase text-slate-300">
+                                        {effStatus.label}
+                                      </span>
+                                    )}
+                                    {delivState.code === "attributed_zero_spend" && (
+                                      <span className="inline-flex items-center rounded-full border border-amber-500/35 bg-amber-500/15 px-1.5 py-0.5 text-[8px] font-black text-amber-300">
+                                        {delivState.shortLabel}
+                                      </span>
+                                    )}
+                                    {(delivState.code === "no_delivery" || delivState.code === "no_spend") && (
+                                      <span className="inline-flex items-center rounded-full border border-white/10 bg-white/5 px-1.5 py-0.5 text-[8px] font-bold text-muted-foreground">
+                                        {delivState.label}
+                                      </span>
+                                    )}
                                     {level === "campanhas" && <ObjectiveBadge objective={c.objective} name={c.name}/>}
                                     {/* Regras vinculadas Mobile */}
                                     {(() => {
@@ -2931,10 +3023,10 @@ function MetricasCampanhasPage() {
                               </div>
                               <div className="bg-black/20 rounded-xl p-2.5 flex flex-col justify-between border border-white/5">
                                 <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/60">Custo por Res.</span>
-                                <span className={`font-mono font-black text-sm mt-0.5 ${c.t.cpl > 0 ? (cplOver ? "text-red-400" : "text-emerald-400") : "text-muted-foreground/40"}`}>
-                                  {c.t.cpl > 0 ? `R$ ${c.t.cpl.toFixed(2)}` : "—"}
+                                <span className={`font-mono font-black text-sm mt-0.5 ${c.t.cpl > 0 ? (cplOver ? "text-red-400" : "text-emerald-400") : c.t.conversions > 0 && c.t.cost <= 0 ? "text-emerald-300/80" : "text-muted-foreground/40"}`}>
+                                  {c.t.cpl > 0 ? `R$ ${c.t.cpl.toFixed(2)}` : c.t.conversions > 0 && c.t.cost <= 0 ? "Não calc. (gasto R$ 0)" : "—"}
                                 </span>
-                                <span className="text-[8.5px] text-muted-foreground/70 font-medium leading-tight truncate mt-0.5" title={resultDetail.costLabel}>
+                                <span className="text-[8.5px] text-muted-foreground/70 font-medium leading-tight truncate mt-0.5" title={c.t.cost <= 0 && c.t.conversions > 0 ? "Não calculável com gasto zero no período" : resultDetail.costLabel}>
                                   {resultDetail.costLabel}
                                 </span>
                               </div>
@@ -2954,7 +3046,7 @@ function MetricasCampanhasPage() {
                           </div>
                         );
                       })}
-                      
+
                       {/* Footer Totais Mobile */}
                       <div className="mt-2 rounded-2xl p-4 bg-primary/5 border border-primary/10">
                         <div className="flex flex-col gap-2">
@@ -2978,26 +3070,26 @@ function MetricasCampanhasPage() {
                           })()}
                           <div className="flex items-center justify-between">
                             <span className="text-xs text-muted-foreground font-bold">Custo por Res.</span>
-                            <span className="font-mono font-black text-emerald-400 text-sm">{avgCpl > 0 ? `R$ ${avgCpl.toFixed(2)}` : "—"}</span>
+                            <span className="font-mono font-black text-emerald-400 text-sm">{avgCpl > 0 ? `R$ ${avgCpl.toFixed(2)}` : totCost <= 0 && totConv > 0 ? "Não calc. (gasto R$ 0)" : "—"}</span>
                           </div>
                         </div>
                       </div>
 
-                    </div>
-                    {/* --- FIM MOBILE CARDS --- */}
-
-                    {/* --- BOTÃO MOSTRAR MAIS --- */}
-                    {visibleCount < filtered.length && (
-                      <div className="pt-6 pb-2 flex justify-center w-full">
-                        <button 
-                          onClick={() => setVisibleCount(v => v + 40)}
-                          className="rounded-full border border-white/10 bg-white/5 px-6 py-2.5 text-xs font-bold text-foreground hover:bg-white/10 hover:border-white/20 transition-all flex items-center gap-2"
-                        >
-                          Mostrar Mais ({filtered.length - visibleCount} ocultos)
-                        </button>
                       </div>
-                    )}
-                  </div>
+                      {/* --- FIM MOBILE CARDS --- */}
+
+                      {/* --- BOTÃO MOSTRAR MAIS --- */}
+                      {visibleCount < filtered.length && (
+                        <div className="pt-6 pb-2 flex justify-center w-full">
+                          <button
+                            onClick={() => setVisibleCount(v => v + 40)}
+                            className="rounded-full border border-white/10 bg-white/5 px-6 py-2.5 text-xs font-bold text-foreground hover:bg-white/10 hover:border-white/20 transition-all flex items-center gap-2"
+                          >
+                            Mostrar Mais ({filtered.length - visibleCount} ocultos)
+                          </button>
+                        </div>
+                      )}
+                    </div>
                   )}
                 </div>
               )}
@@ -3077,9 +3169,8 @@ function MetricasCampanhasPage() {
                         return (
                           <div
                             key={rule.id}
-                            className={`rounded-xl border p-3.5 bg-card/70 transition-all ${
-                              rule.is_active ? "border-rose-500/25 shadow-sm" : "border-border/60 opacity-60"
-                            }`}
+                            className={`rounded-xl border p-3.5 bg-card/70 transition-all ${rule.is_active ? "border-rose-500/25 shadow-sm" : "border-border/60 opacity-60"
+                              }`}
                           >
                             <div className="flex items-start justify-between gap-2">
                               <span className="rounded-full bg-muted/60 border border-border px-2 py-0.5 text-[8px] font-black uppercase text-foreground">
@@ -3116,7 +3207,7 @@ function MetricasCampanhasPage() {
               {auditData && auditData.length > 0 && (
                 <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="glass-panel card-sport overflow-hidden">
                   <div className="flex items-center gap-3 border-b border-white/5 px-5 py-3">
-                    <FlaskConical className="h-4 w-4 text-orange-400"/>
+                    <FlaskConical className="h-4 w-4 text-orange-400" />
                     <p className="text-xs font-black uppercase tracking-widest header-sport">Diagnóstico Meta</p>
                     <button onClick={() => setAuditData(null)} className="ml-auto text-muted-foreground/50 hover:text-foreground transition"><span className="text-[10px]">x</span></button>
                   </div>
@@ -3127,7 +3218,7 @@ function MetricasCampanhasPage() {
                         {auditData.map((a: any, i: number) => (
                           <tr key={i} className="border-b border-white/[0.03] hover:bg-white/[0.02]">
                             <td className="px-4 py-3 font-semibold max-w-[240px] truncate">{a.campaign_name || a.name}</td>
-                            <td className="px-4 py-3 text-center"><ObjectiveBadge objective={a.objective} name={a.name}/></td>
+                            <td className="px-4 py-3 text-center"><ObjectiveBadge objective={a.objective} name={a.name} /></td>
                             <td className="px-4 py-3 text-right font-mono text-primary">{a.app_conversions ?? "—"}</td>
                             <td className="px-4 py-3 text-right font-mono text-violet-400">{a.total_actions ?? "—"}</td>
                           </tr>
@@ -3142,14 +3233,14 @@ function MetricasCampanhasPage() {
               {level === "campanhas" && placementData.length > 0 && (
                 <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="glass-panel card-sport overflow-hidden">
                   <div className="flex items-center gap-3 border-b border-white/5 px-5 py-3">
-                    <Layers className="h-4 w-4 text-violet-400"/>
+                    <Layers className="h-4 w-4 text-violet-400" />
                     <p className="text-xs font-black uppercase tracking-widest header-sport">Breakdown por Placement</p>
                     <span className="ml-auto text-[9px] text-muted-foreground/50">{selectedCamps.size > 0 ? `${selectedCamps.size} campanha(s) selecionada(s)` : "Todas as campanhas"}</span>
                   </div>
                   <div className="overflow-x-auto">
                     <table className="w-full text-xs">
                       <thead><tr className="border-b border-white/5 bg-white/[0.02]">
-                        {["Placement","Plataforma","Impressões","CTR","Conversões","CPL","Gasto"].map(h => <th key={h} className={`px-4 py-2.5 text-[9px] font-black uppercase tracking-widest text-muted-foreground/50 ${h === "Placement" || h === "Plataforma" ? "text-left" : "text-right"}`}>{h}</th>)}
+                        {["Placement", "Plataforma", "Impressões", "CTR", "Conversões", "CPL", "Gasto"].map(h => <th key={h} className={`px-4 py-2.5 text-[9px] font-black uppercase tracking-widest text-muted-foreground/50 ${h === "Placement" || h === "Plataforma" ? "text-left" : "text-right"}`}>{h}</th>)}
                       </tr></thead>
                       <tbody className={isFetchingCamps ? "opacity-50 pointer-events-none transition-opacity duration-200" : "transition-opacity duration-200"}>
                         {placementData.map((p: any, i: number) => {
@@ -3164,7 +3255,7 @@ function MetricasCampanhasPage() {
                               <td className="px-4 py-3 text-right font-mono text-green-400">{p.cpl > 0 ? `R$ ${p.cpl.toFixed(2)}` : "—"}</td>
                               <td className="px-4 py-3 text-right">
                                 <div className="flex items-center justify-end gap-2">
-                                  <div className="h-1.5 w-16 rounded-full bg-white/5 overflow-hidden hidden sm:block"><div className="h-full rounded-full bg-primary/60" style={{ width: `${(p.spend / maxSpend) * 100}%` }}/></div>
+                                  <div className="h-1.5 w-16 rounded-full bg-white/5 overflow-hidden hidden sm:block"><div className="h-full rounded-full bg-primary/60" style={{ width: `${(p.spend / maxSpend) * 100}%` }} /></div>
                                   <span className="font-mono font-bold text-primary whitespace-nowrap">R$ {fmtBRL(p.spend)}</span>
                                 </div>
                               </td>
@@ -3193,14 +3284,14 @@ function MetricasCampanhasPage() {
                         <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/50 mb-3">Modo de Análise</p>
                         {(Object.entries(MODOS) as [ModoId, any][]).map(([id, m]) => (
                           <button key={id} onClick={() => setModo(id)} className={`w-full flex items-center gap-2.5 rounded-xl px-3 py-2.5 text-[11px] font-bold text-left transition-all ${modo === id ? `bg-primary/15 border border-primary/30 ${m.color}` : "text-muted-foreground hover:bg-white/5 border border-transparent"}`}>
-                            <m.icon className={`h-3.5 w-3.5 shrink-0 ${modo === id ? m.color : ""}`}/>
+                            <m.icon className={`h-3.5 w-3.5 shrink-0 ${modo === id ? m.color : ""}`} />
                             {m.label}
                           </button>
                         ))}
                         <div className="pt-3 border-t border-white/5 space-y-3">
                           <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/50">Refresh Auto</p>
                           <select value={refreshInterval} onChange={e => setRefreshInterval(Number(e.target.value))} className="w-full appearance-none rounded-xl border border-white/10 bg-background/40 px-3 py-1.5 text-xs font-bold focus:outline-none">
-                            {[{v:0,l:"Manual"},{v:30,l:"30s"},{v:60,l:"1 min"},{v:300,l:"5 min"}].map(o => <option key={o.v} value={o.v} className="bg-background">{o.l}</option>)}
+                            {[{ v: 0, l: "Manual" }, { v: 30, l: "30s" }, { v: 60, l: "1 min" }, { v: 300, l: "5 min" }].map(o => <option key={o.v} value={o.v} className="bg-background">{o.l}</option>)}
                           </select>
                           {refreshInterval > 0 && <p className="text-[9px] text-muted-foreground/50">Último sync: {format(lastRefresh, "HH:mm:ss")}</p>}
                         </div>
@@ -3214,7 +3305,7 @@ function MetricasCampanhasPage() {
 
                   {/* Foco do modo */}
                   <div className={`rounded-xl border p-3.5 flex items-start gap-3 ${INSIGHT_COLOR.info}`}>
-                    <Info className="h-4 w-4 mt-0.5 shrink-0"/>
+                    <Info className="h-4 w-4 mt-0.5 shrink-0" />
                     <div>
                       <p className="text-[11px] font-black uppercase tracking-wider mb-0.5">{MODOS[modo].label}</p>
                       <p className="text-[11px] leading-relaxed opacity-80">{MODOS[modo].foco}</p>
@@ -3283,7 +3374,7 @@ function MetricasCampanhasPage() {
                   {/* â"€â"€ Funil de Conversão â"€â"€ */}
                   {totImpr > 0 && (
                     <ChartCard
-                      icon={<Activity className="h-4 w-4 text-cyan-400"/>}
+                      icon={<Activity className="h-4 w-4 text-cyan-400" />}
                       title="Funil de Conversão da Conta"
                       badge="Impressões â†’ Leads"
                       context="Onde os leads estão sendo perdidos. CTR baixo = criativo ou segmentação fraca. Conv. cliquesâ†’leads baixa = oferta ou landing page fraca."
@@ -3298,17 +3389,16 @@ function MetricasCampanhasPage() {
                           <div key={i}>
                             <div className="flex justify-between items-center mb-1.5">
                               <div className="flex items-center gap-2">
-                                <div className="h-2 w-2 rounded-full flex-shrink-0" style={{ background: stage.color }}/>
+                                <div className="h-2 w-2 rounded-full flex-shrink-0" style={{ background: stage.color }} />
                                 <span className="text-[11px] font-bold text-foreground">{stage.label}</span>
                               </div>
                               <div className="flex items-center gap-3">
                                 <span className="text-[11px] font-mono font-bold text-foreground">{fmtN(stage.value)}</span>
                                 {i > 0 && stage.value > 0 && (
-                                  <span className={`text-[10px] font-black px-1.5 py-0.5 rounded whitespace-nowrap ${
-                                    i === 2 ? (stage.rate >= 1.5 ? "text-green-400 bg-green-400/10" : stage.rate >= 0.5 ? "text-yellow-400 bg-yellow-400/10" : "text-red-400 bg-red-400/10") :
+                                  <span className={`text-[10px] font-black px-1.5 py-0.5 rounded whitespace-nowrap ${i === 2 ? (stage.rate >= 1.5 ? "text-green-400 bg-green-400/10" : stage.rate >= 0.5 ? "text-yellow-400 bg-yellow-400/10" : "text-red-400 bg-red-400/10") :
                                     i === 3 ? (stage.rate >= 3 ? "text-green-400 bg-green-400/10" : stage.rate >= 1 ? "text-yellow-400 bg-yellow-400/10" : "text-red-400 bg-red-400/10") :
-                                    "text-muted-foreground bg-white/5"
-                                  }`}>{stage.rate.toFixed(i <= 1 ? 0 : 2)}%</span>
+                                      "text-muted-foreground bg-white/5"
+                                    }`}>{stage.rate.toFixed(i <= 1 ? 0 : 2)}%</span>
                                 )}
                               </div>
                             </div>
@@ -3335,14 +3425,14 @@ function MetricasCampanhasPage() {
                   {/* Insights */}
                   {insights.length > 0 && (
                     <div className="space-y-2">
-                      <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/50 flex items-center gap-1.5"><Sparkles className="h-3 w-3 text-primary"/>Insights Automáticos ({insights.length})</p>
+                      <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/50 flex items-center gap-1.5"><Sparkles className="h-3 w-3 text-primary" />Insights Automáticos ({insights.length})</p>
                       {insights.map((ins, i) => {
                         const Icon = INSIGHT_ICON[ins.level];
                         const isExp = expandedInsight === i;
                         return (
                           <div key={i} className={`rounded-xl border p-3 cursor-pointer transition-all ${INSIGHT_COLOR[ins.level]}`} onClick={() => setExpandedInsight(isExp ? null : i)}>
                             <div className="flex items-start gap-2.5">
-                              <Icon className="h-3.5 w-3.5 mt-0.5 shrink-0"/>
+                              <Icon className="h-3.5 w-3.5 mt-0.5 shrink-0" />
                               <div className="flex-1 min-w-0">
                                 <p className="text-[11px] font-bold leading-snug">{ins.title}</p>
                                 <AnimatePresence>
@@ -3350,12 +3440,12 @@ function MetricasCampanhasPage() {
                                     <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} className="mt-2 space-y-1.5">
                                       <p className="text-[10px] opacity-80">{ins.detail}</p>
                                       <p className="text-[10px] font-bold">â†’ {ins.acao}</p>
-                                      {ins.camps && ins.camps.length > 0 && <div className="flex flex-wrap gap-1 mt-1">{ins.camps.slice(0,4).map((n,j) => <span key={j} className="text-[9px] rounded px-1.5 py-0.5 bg-white/10 font-mono">{n.substring(0,25)}</span>)}</div>}
+                                      {ins.camps && ins.camps.length > 0 && <div className="flex flex-wrap gap-1 mt-1">{ins.camps.slice(0, 4).map((n, j) => <span key={j} className="text-[9px] rounded px-1.5 py-0.5 bg-white/10 font-mono">{n.substring(0, 25)}</span>)}</div>}
                                     </motion.div>
                                   )}
                                 </AnimatePresence>
                               </div>
-                              <ChevronRight className={`h-3.5 w-3.5 shrink-0 opacity-50 transition-transform ${isExp ? "rotate-90" : ""}`}/>
+                              <ChevronRight className={`h-3.5 w-3.5 shrink-0 opacity-50 transition-transform ${isExp ? "rotate-90" : ""}`} />
                             </div>
                           </div>
                         );
@@ -3371,7 +3461,7 @@ function MetricasCampanhasPage() {
                       {(!selectedCampaignId && campDecisions.length > 0) && (
                         <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="glass-panel card-sport overflow-hidden">
                           <div className="flex items-center gap-3 border-b border-white/5 px-5 py-3.5">
-                            <Target className="h-4 w-4 text-primary"/>
+                            <Target className="h-4 w-4 text-primary" />
                             <p className="text-xs font-black uppercase tracking-widest header-sport">Motor de Decisão por Campanha</p>
                             <span className="ml-auto text-[9px] text-muted-foreground/50 font-mono">{campDecisions.length} camp. Â· urgência decrescente</span>
                           </div>
@@ -3392,14 +3482,14 @@ function MetricasCampanhasPage() {
                                 {campDecisions.map((c: any) => {
                                   const dc = DECISION_COLORS[c.decision.tier] || DECISION_COLORS.blue;
                                   return (
-                                    <tr 
-                                      key={c.id} 
+                                    <tr
+                                      key={c.id}
                                       onClick={() => { setSelectedCampaignId(c.id); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
                                       className="border-b border-white/[0.03] hover:bg-white/[0.04] transition-colors cursor-pointer group"
                                     >
                                       <td className="px-4 py-3">
                                         <div className="flex items-center gap-2">
-                                          <div className={`h-1.5 w-1.5 rounded-full flex-shrink-0 ${c.status?.toUpperCase() === "ACTIVE" ? "bg-green-400" : "bg-white/20"}`}/>
+                                          <div className={`h-1.5 w-1.5 rounded-full flex-shrink-0 ${c.status?.toUpperCase() === "ACTIVE" ? "bg-green-400" : "bg-white/20"}`} />
                                           <div className="min-w-0">
                                             <p className="font-semibold text-[11px] text-foreground max-w-[200px] truncate group-hover:text-primary transition-colors">{c.name}</p>
                                             <p className="text-[9px] text-muted-foreground/50 mt-0.5 truncate max-w-[200px]">{c.decision.reason}</p>
@@ -3410,7 +3500,7 @@ function MetricasCampanhasPage() {
                                         {c.t.cpl > 0 ? (
                                           <div>
                                             <p className={`font-mono font-bold text-[11px] ${c.t.cpl < avgCpl * 0.7 ? "text-green-400" : c.t.cpl > avgCpl * 1.8 ? "text-red-400" : "text-yellow-400"}`}>R$ {c.t.cpl.toFixed(2)}</p>
-                                            {avgCpl > 0 && <p className="text-[9px] text-muted-foreground/50">{c.t.cpl < avgCpl ? `${Math.round((1-c.t.cpl/avgCpl)*100)}% abaixo` : `${Math.round((c.t.cpl/avgCpl-1)*100)}% acima`}</p>}
+                                            {avgCpl > 0 && <p className="text-[9px] text-muted-foreground/50">{c.t.cpl < avgCpl ? `${Math.round((1 - c.t.cpl / avgCpl) * 100)}% abaixo` : `${Math.round((c.t.cpl / avgCpl - 1) * 100)}% acima`}</p>}
                                           </div>
                                         ) : <span className="text-muted-foreground/30 font-mono">—</span>}
                                       </td>
@@ -3458,13 +3548,13 @@ function MetricasCampanhasPage() {
                         <div className="space-y-5">
                           {/* Timeline da Campanha */}
                           <ChartCard
-                            icon={<TrendingUp className="h-4 w-4 text-primary"/>}
+                            icon={<TrendingUp className="h-4 w-4 text-primary" />}
                             title="Linha do Tempo da Campanha (Evolução)"
                             badge="CPL vs CTR vs Frequência"
                           >
                             <div className="h-[250px] w-full mt-4">
                               <ResponsiveContainer width="100%" height="100%">
-                                <ComposedChart data={(selectedCampaignObj._metrics || []).slice().sort((a:any,b:any) => a.date.localeCompare(b.date)).map((m:any) => ({
+                                <ComposedChart data={(selectedCampaignObj._metrics || []).slice().sort((a: any, b: any) => a.date.localeCompare(b.date)).map((m: any) => ({
                                   date: format(new Date(m.date), "dd/MM", { locale: ptBR }),
                                   cpl: Number(m.conversions) > 0 ? Number(m.cost) / Number(m.conversions) : 0,
                                   ctr: Number(m.impressions) > 0 ? (Number(m.clicks) / Number(m.impressions)) * 100 : 0,
@@ -3477,8 +3567,8 @@ function MetricasCampanhasPage() {
                                   <YAxis yAxisId="right" orientation="right" stroke="#ffffff40" fontSize={10} tickFormatter={v => `${v}%`} />
                                   <Tooltip content={<CustomTooltip />} />
                                   <Legend wrapperStyle={{ fontSize: '10px' }} />
-                                  <Bar yAxisId="left" dataKey="cost" name="Gasto" fill="#6366f1" opacity={0.3} radius={[4,4,0,0]} />
-                                  <Line yAxisId="left" type="monotone" dataKey="cpl" name="CPL" stroke="#ec4899" strokeWidth={2} dot={{r: 3}} />
+                                  <Bar yAxisId="left" dataKey="cost" name="Gasto" fill="#6366f1" opacity={0.3} radius={[4, 4, 0, 0]} />
+                                  <Line yAxisId="left" type="monotone" dataKey="cpl" name="CPL" stroke="#ec4899" strokeWidth={2} dot={{ r: 3 }} />
                                   <Line yAxisId="right" type="monotone" dataKey="ctr" name="CTR %" stroke="#10b981" strokeWidth={2} />
                                   <Line yAxisId="right" type="monotone" dataKey="freq" name="Frequência" stroke="#f59e0b" strokeWidth={2} strokeDasharray="4 4" />
                                 </ComposedChart>
@@ -3489,7 +3579,7 @@ function MetricasCampanhasPage() {
                           {/* Motor de Decisão Meta Ads (Rankings de Qualidade) */}
                           <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="glass-panel card-sport overflow-hidden mt-5">
                             <div className="flex items-center gap-3 border-b border-white/5 px-5 py-3.5">
-                              <Target className="h-4 w-4 text-primary"/>
+                              <Target className="h-4 w-4 text-primary" />
                               <p className="text-xs font-black uppercase tracking-widest header-sport">Qualidade do Leilão (Meta Rankings)</p>
                               <span className="ml-auto text-[9px] text-muted-foreground/50 font-mono">Diagnóstico Algorítmico</span>
                             </div>
@@ -3510,7 +3600,7 @@ function MetricasCampanhasPage() {
                                     <tr><td colSpan={6} className="text-center py-6 text-muted-foreground text-[11px]">Nenhum anúncio encontrado ou rankings não disponíveis.</td></tr>
                                   ) : enrichedAds.map((ad: any) => {
                                     const stats = periodStats.find((p: any) => p.entity_type === 'ad' && p.entity_id === ad.id);
-                                    
+
                                     const formatRanking = (val: string) => {
                                       if (!val) return <span className="text-muted-foreground/40">—</span>;
                                       if (val.includes("BELOW")) return <span className="text-red-400 bg-red-400/10 border border-red-400/20 px-2 py-0.5 rounded uppercase text-[8px] font-black">Abaixo da Média</span>;
@@ -3522,7 +3612,7 @@ function MetricasCampanhasPage() {
                                       <tr key={ad.id} className="border-b border-white/[0.03] hover:bg-white/[0.02] transition-colors">
                                         <td className="px-4 py-3">
                                           <div className="flex items-center gap-2">
-                                            <div className={`h-1.5 w-1.5 rounded-full flex-shrink-0 ${ad.status?.toUpperCase() === "ACTIVE" ? "bg-green-400" : "bg-white/20"}`}/>
+                                            <div className={`h-1.5 w-1.5 rounded-full flex-shrink-0 ${ad.status?.toUpperCase() === "ACTIVE" ? "bg-green-400" : "bg-white/20"}`} />
                                             <p className="font-semibold text-[11px] text-foreground max-w-[200px] truncate">{ad.name}</p>
                                           </div>
                                         </td>
@@ -3637,12 +3727,12 @@ function MetricasCampanhasPage() {
             <motion.div key="demo" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-5">
               {loadingBreakdowns ? (
                 <div className="flex flex-col items-center gap-3 py-24">
-                  <Loader2 className="h-8 w-8 animate-spin text-primary"/>
+                  <Loader2 className="h-8 w-8 animate-spin text-primary" />
                   <p className="text-sm text-muted-foreground">Carregando dados demográficos...</p>
                 </div>
               ) : !breakdowns || breakdowns.hasRealData === false ? (
                 <div className="glass-panel py-20 text-center space-y-3">
-                  <Users className="h-10 w-10 text-muted-foreground/30 mx-auto"/>
+                  <Users className="h-10 w-10 text-muted-foreground/30 mx-auto" />
                   <p className="text-sm text-muted-foreground">Nenhum dado demográfico ou de breakdown retornado pelo Meta Ads para o período e filtro selecionados.</p>
                   <p className="text-xs text-muted-foreground/60">Clique em Sync após selecionar o período desejado para consultar os breakdowns disponíveis na Graph API.</p>
                 </div>
@@ -3652,7 +3742,7 @@ function MetricasCampanhasPage() {
                   {/* Banner de filtros ativos */}
                   {(selectedCamps.size > 0 || accountFilter !== "all") && (
                     <div className="flex flex-wrap items-center gap-2 mb-4 rounded-xl border border-primary/20 bg-primary/5 px-4 py-2.5 text-[11px]">
-                      <Layers className="h-3.5 w-3.5 text-primary shrink-0"/>
+                      <Layers className="h-3.5 w-3.5 text-primary shrink-0" />
                       <span className="font-black text-primary uppercase tracking-widest text-[10px]">Filtros Ativos:</span>
                       {accountFilter !== "all" && (
                         <span className="rounded-lg border border-white/10 bg-white/5 px-2 py-0.5 font-mono text-foreground">
@@ -3670,215 +3760,215 @@ function MetricasCampanhasPage() {
 
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
 
-                  {/* Guia Explicativo Demográficos */}
-                  {modoExplicativo && (
-                    <div className="lg:col-span-2">
-                      <motion.div
-                        initial={{ opacity: 0, y: -10 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        className="glass-panel p-5 border-l-4 border-l-pink-500 bg-gradient-to-r from-pink-500/5 via-violet-500/5 to-transparent rounded-xl space-y-3 relative overflow-hidden"
-                      >
-                        <div className="absolute right-4 top-4 text-pink-500/10 pointer-events-none">
-                          <Users className="h-20 w-20 animate-pulse" />
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <Sparkles className="h-4 w-4 text-pink-400 animate-spin" style={{ animationDuration: '3s' }} />
-                          <h4 className="text-xs font-black uppercase tracking-widest text-foreground">Guia de Interpretação — Dados Demográficos</h4>
-                          <span className="text-[9px] bg-pink-500/20 text-pink-400 px-2 py-0.5 rounded-full font-bold uppercase">Segmentação Inteligente</span>
-                        </div>
-                        <p className="text-[11px] text-muted-foreground leading-relaxed max-w-4xl">
-                          Os dados demográficos revelam quem é o seu público real e onde ele está — use estas informações para refinar sua segmentação e maximizar o retorno sobre investimento.
-                        </p>
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 pt-2">
-                          {[
-                            { t: "Gênero & CPL", d: "Revela qual gênero converte ao menor custo. Ajuste criativos e copy para focar no gênero de menor CPL.", e: "👥" },
-                            { t: "Faixa Etária", d: "Identifica grupos etários mais eficientes. Exclua faixas caras e intensifique nas faixas de menor CPL.", e: "🎯" },
-                            { t: "Plataforma (Facebook/Instagram)", d: "Compara conversões e CPL por rede social. Concentre orçamento na plataforma com menor custo por resultado.", e: "📱" },
-                            { t: "Top Regiões", d: "Estados e cidades que mais convertem. Exclua regiões ineficientes e escale nas de maior tração.", e: "📍" },
-                            { t: "Dia & Horário de Pico", d: "Janelas de maior engajamento. Programe anúncios para intensificar entrega nos momentos de mais conversão.", e: "⏰" },
-                            { t: "Dispositivo (Mobile/Desktop)", d: "Se conversões dominam mobile, sua landing page deve carregar em menos de 2 segundos no celular.", e: "💻" },
-                          ].map((item, idx) => (
-                            <div key={idx} className="bg-white/[0.015] border border-white/[0.04] rounded-lg p-2.5 hover:bg-white/[0.03] transition-colors">
-                              <div className="flex items-center gap-1.5 mb-1">
-                                <span className="text-[12px]">{item.e}</span>
-                                <span className="text-[10px] font-bold text-foreground">{item.t}</span>
-                              </div>
-                              <p className="text-[9px] text-muted-foreground leading-relaxed">{item.d}</p>
-                            </div>
-                          ))}
-                        </div>
-                      </motion.div>
-                    </div>
-                  )}
-
-                  {/* Gênero */}
-                  {breakdowns.genderData.length > 0 && (
-                    <ChartCard icon={<Users className="h-4 w-4 text-pink-400"/>} title="Conversões por Gênero" context="Distribuição de resultados por gênero — use para ajustar segmentação e criativos." modoExplicativo={modoExplicativo} didaticInfo={{ analise: "A afinidade do produto com o gênero dos usuários que converteram: proporção de resultados entre Masculino e Feminino.", decisao: "Ajuste criativos e copywriting para focar no gênero com melhor CPL. Se mulheres convertem a menor custo, concentre maior orçamento em conjuntos segmentados por público feminino." }}>
-                      <div className="flex items-stretch gap-4">
-                        <ResponsiveContainer width="55%" height={180}>
-                          <RechartsPieChart>
-                            <Pie data={breakdowns.genderData} cx="50%" cy="50%" innerRadius={45} outerRadius={75} paddingAngle={5} dataKey="value">
-                              {breakdowns.genderData.map((_: any, i: number) => <Cell key={i} fill={["#ec4899","#6366f1"][i % 2]}/>)}
-                            </Pie>
-                            <Tooltip content={<CustomTooltip/>}/>
-                          </RechartsPieChart>
-                        </ResponsiveContainer>
-                        <div className="flex-1 space-y-3 self-center">
-                          {breakdowns.genderData.map((g: any, i: number) => (
-                            <div key={i}>
-                              <div className="flex justify-between mb-1">
-                                <span className="text-[10px] font-bold">{g.name}</span>
-                                <span className="text-[10px] font-mono text-muted-foreground">{g.value} conv.</span>
-                              </div>
-                              <div className="h-1.5 rounded-full bg-white/5 overflow-hidden">
-                                <div className="h-full rounded-full" style={{ width: `${(g.value / Math.max(...breakdowns.genderData.map((x: any) => x.value), 1)) * 100}%`, background: ["#ec4899","#6366f1"][i%2] }}/>
-                              </div>
-                              {g.cpl > 0 && <p className="text-[9px] text-muted-foreground/60 mt-0.5">CPL: R$ {g.cpl.toFixed(2)}</p>}
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    </ChartCard>
-                  )}
-
-                  {/* Faixa etária */}
-                  {breakdowns.ageData.length > 0 && (
-                    <ChartCard icon={<Target className="h-4 w-4 text-amber-400"/>} title="CPL por Faixa Etária" context="Faixas com CPL mais baixo têm melhor custo por resultado — priorize na segmentação." modoExplicativo={modoExplicativo} didaticInfo={{ analise: "A eficiência financeira de cada faixa etária: quanto custou gerar uma conversão em cada grupo de idade.", decisao: "Negative faixas etárias com CPL muito acima da média ou crie conjuntos exclusivos para as faixas de melhor desempenho, alocando mais orçamento onde o custo por lead é menor." }}>
-                      <ResponsiveContainer width="100%" height={180}>
-                        <BarChart data={breakdowns.ageData}>
-                          <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)"/>
-                          <XAxis dataKey="name" tick={{ fontSize: 9, fill: "rgba(255,255,255,0.4)" }} axisLine={false} tickLine={false}/>
-                          <YAxis tick={{ fontSize: 9, fill: "rgba(255,255,255,0.4)" }} axisLine={false} tickLine={false} width={45}/>
-                          <Tooltip content={<CustomTooltip/>}/>
-                          <Bar dataKey="cpl" name="CPL R$" fill="#f59e0b" radius={[3,3,0,0]} opacity={0.85}/>
-                          <Bar dataKey="conv" name="Conversões" fill="#8b5cf6" radius={[3,3,0,0]} opacity={0.7}/>
-                        </BarChart>
-                      </ResponsiveContainer>
-                    </ChartCard>
-                  )}
-
-                  {/* Plataforma */}
-                  {breakdowns.platData.length > 0 && (
-                    <ChartCard icon={<Megaphone className="h-4 w-4 text-blue-400"/>} title="Performance por Plataforma" context="Instagram vs Facebook vs Audience Network — redirecione budget para onde o CPL é menor." modoExplicativo={modoExplicativo} didaticInfo={{ analise: "A distribuição de conversões e custo por resultado entre as redes de distribuição: Facebook, Instagram e Audience Network.", decisao: "Realoque orçamento para a plataforma com menor CPL. Se o Instagram entrega leads 30% mais baratos, ajuste os conjuntos para priorizar entrega no Instagram com maior proporção de budget." }}>
-                      <ResponsiveContainer width="100%" height={180}>
-                        <BarChart data={breakdowns.platData}>
-                          <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)"/>
-                          <XAxis dataKey="name" tick={{ fontSize: 9, fill: "rgba(255,255,255,0.4)" }} axisLine={false} tickLine={false}/>
-                          <YAxis tick={{ fontSize: 9, fill: "rgba(255,255,255,0.4)" }} axisLine={false} tickLine={false} width={45}/>
-                          <Tooltip content={<CustomTooltip/>}/>
-                          <Bar dataKey="conv" name="Conversões" fill="#3b82f6" radius={[3,3,0,0]} opacity={0.85}/>
-                          <Bar dataKey="cpl" name="CPL R$" fill="#06b6d4" radius={[3,3,0,0]} opacity={0.7}/>
-                        </BarChart>
-                      </ResponsiveContainer>
-                    </ChartCard>
-                  )}
-
-                  {/* Região */}
-                  {breakdowns.regionData.length > 0 && (
-                    <ChartCard icon={<Activity className="h-4 w-4 text-emerald-400"/>} title="Top Regiões" badge="Top 10" context="Estados que mais convertem — amplie público nessas regiões." modoExplicativo={modoExplicativo} didaticInfo={{ analise: "A dispersão geográfica das conversões: os 10 estados ou regiões com maior volume de resultados no período.", decisao: "Exclua estados com alto volume de impressões e zero conversões para reduzir desperdício. Crie conjuntos segmentados geograficamente para os top 3 estados, aumentando o lance ou orçamento nessas regiões de alta tração." }}>
-                      <div className="space-y-1.5 max-h-[200px] overflow-y-auto pr-1">
-                        {breakdowns.regionData.map((r: any, i: number) => (
-                          <div key={i} className="flex items-center gap-3">
-                            <span className="text-[9px] font-mono text-muted-foreground/50 w-4 shrink-0">{i+1}</span>
-                            <span className="text-[11px] font-semibold flex-1 truncate">{r.name}</span>
-                            <span className="text-[10px] font-mono text-violet-400 shrink-0">{r.conv} conv.</span>
-                            {r.cpl > 0 && <span className="text-[10px] font-mono text-green-400 shrink-0">R$ {r.cpl.toFixed(2)}</span>}
+                    {/* Guia Explicativo Demográficos */}
+                    {modoExplicativo && (
+                      <div className="lg:col-span-2">
+                        <motion.div
+                          initial={{ opacity: 0, y: -10 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          className="glass-panel p-5 border-l-4 border-l-pink-500 bg-gradient-to-r from-pink-500/5 via-violet-500/5 to-transparent rounded-xl space-y-3 relative overflow-hidden"
+                        >
+                          <div className="absolute right-4 top-4 text-pink-500/10 pointer-events-none">
+                            <Users className="h-20 w-20 animate-pulse" />
                           </div>
-                        ))}
-                      </div>
-                    </ChartCard>
-                  )}
-
-                  {/* Dia da semana */}
-                  {breakdowns.dayOfWeekData.length > 0 && (
-                    <ChartCard icon={<Eye className="h-4 w-4 text-violet-400"/>} title="Conversões por Dia da Semana" context="Dias com mais conversões — concentre budget e publicação de novos anúncios nesses dias." modoExplicativo={modoExplicativo} didaticInfo={{ analise: "Os padrões de comportamento do público ao longo dos 7 dias da semana, identificando quais dias geram mais conversões.", decisao: "Ative o agendamento de anúncios para intensificar a entrega nos dias de maior conversão. Pause ou reduza o orçamento nos dias de baixíssima performance para economizar verba e direcionar ao pico." }}>
-                      <ResponsiveContainer width="100%" height={180}>
-                        <BarChart data={breakdowns.dayOfWeekData}>
-                          <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)"/>
-                          <XAxis dataKey="day" tick={{ fontSize: 9, fill: "rgba(255,255,255,0.4)" }} axisLine={false} tickLine={false}/>
-                          <YAxis tick={{ fontSize: 9, fill: "rgba(255,255,255,0.4)" }} axisLine={false} tickLine={false} width={30}/>
-                          <Tooltip content={<CustomTooltip/>}/>
-                          <Bar dataKey="conv" name="Conversões" fill="#8b5cf6" radius={[3,3,0,0]} opacity={0.85}/>
-                        </BarChart>
-                      </ResponsiveContainer>
-                    </ChartCard>
-                  )}
-
-                  {/* Dispositivo */}
-                  {breakdowns.deviceData.length > 0 && (
-                    <ChartCard icon={<MousePointer2 className="h-4 w-4 text-cyan-400"/>} title="Performance por Dispositivo" context="Mobile vs Desktop — maioria das conversões no mobile indica necessidade de landing page responsiva." modoExplicativo={modoExplicativo} didaticInfo={{ analise: "A origem do tráfego convertido entre dispositivos móveis (celulares e tablets) e computadores desktop.", decisao: "Se conversões são massivas em mobile, garanta que a landing page carregue em menos de 2 segundos no celular. Use o PageSpeed Insights para verificar. CPL alto em mobile pode indicar lentidão na página ou formulário difícil de preencher." }}>
-                      <ResponsiveContainer width="100%" height={180}>
-                        <BarChart data={breakdowns.deviceData}>
-                          <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)"/>
-                          <XAxis dataKey="name" tick={{ fontSize: 9, fill: "rgba(255,255,255,0.4)" }} axisLine={false} tickLine={false}/>
-                          <YAxis tick={{ fontSize: 9, fill: "rgba(255,255,255,0.4)" }} axisLine={false} tickLine={false} width={30}/>
-                          <Tooltip content={<CustomTooltip/>}/>
-                          <Bar dataKey="conv" name="Conversões" fill="#06b6d4" radius={[3,3,0,0]} opacity={0.85}/>
-                          <Bar dataKey="cost" name="Gasto R$" fill="#6366f1" radius={[3,3,0,0]} opacity={0.7}/>
-                        </BarChart>
-                      </ResponsiveContainer>
-                    </ChartCard>
-                  )}
-
-                  {/* Heatmap Horário (7x24) */}
-                  {breakdowns.heatMapData && breakdowns.heatMapData.length === 7 && (
-                    <div className="lg:col-span-2">
-                      <ChartCard icon={<Zap className="h-4 w-4 text-yellow-400"/>} title="Densidade de Conversões (Mapa de Calor 7x24)" context="Custo por Lead (CPL) por dia e horário — programe seus anúncios para entregar mais nessas janelas." modoExplicativo={modoExplicativo} didaticInfo={{ analise: "A distribuição de custos e conversões ao longo de todos os horários da semana. Tons de verde indicam horários com baixo CPL (eficientes). Tons de vermelho indicam CPL alto (caros).", decisao: "Programe as campanhas no Meta Ads para pausar nas madrugadas sem conversões e concentre o orçamento nos blocos verdes de alta tração." }}>
-                        <div className="w-full mt-3 overflow-x-auto pb-4">
-                          <div className="min-w-[600px] flex flex-col gap-1 text-[9px] font-mono">
-                            <div className="flex gap-1 mb-1 ml-8">
-                              {Array.from({ length: 24 }).map((_, h) => (
-                                <div key={h} className="flex-1 text-center text-muted-foreground/60">{h}h</div>
-                              ))}
-                            </div>
-                            {["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"].map((dayName, d) => (
-                              <div key={d} className="flex gap-1 items-center">
-                                <div className="w-7 text-right pr-2 text-muted-foreground font-semibold">{dayName}</div>
-                                {breakdowns.heatMapData[d].map((cell: any, h: number) => {
-                                  const cpl = cell.cpl;
-                                  const conv = cell.conv;
-                                  let bgColor = "bg-white/[0.02]";
-                                  if (conv > 0) {
-                                    if (avgCpl > 0 && cpl < avgCpl * 0.7) bgColor = "bg-green-500/80";
-                                    else if (avgCpl > 0 && cpl < avgCpl * 1.3) bgColor = "bg-green-500/40";
-                                    else bgColor = "bg-red-500/60";
-                                  } else if (cell.cost > 0) {
-                                    bgColor = "bg-red-500/20";
-                                  }
-
-                                  return (
-                                    <div 
-                                      key={h} 
-                                      className={`flex-1 h-6 rounded-sm ${bgColor} flex items-center justify-center transition-all hover:ring-1 hover:ring-white/50 cursor-crosshair group relative`}
-                                    >
-                                      {conv > 0 && <span className="text-[7px] text-white/80">{conv}</span>}
-                                      {/* Tooltip on hover */}
-                                      <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block w-max bg-black/90 border border-white/10 p-2 rounded-lg z-50 shadow-xl pointer-events-none">
-                                        <p className="font-bold text-white mb-1">{dayName}, {h}h - {h+1}h</p>
-                                        <p className="text-white/70">Conversões: <span className="text-white font-bold">{conv}</span></p>
-                                        <p className="text-white/70">Gasto: <span className="text-white font-bold">R$ {cell.cost.toFixed(2)}</span></p>
-                                        <p className="text-white/70">CPL: <span className="text-white font-bold">R$ {cpl.toFixed(2)}</span></p>
-                                      </div>
-                                    </div>
-                                  );
-                                })}
+                          <div className="flex items-center gap-2">
+                            <Sparkles className="h-4 w-4 text-pink-400 animate-spin" style={{ animationDuration: '3s' }} />
+                            <h4 className="text-xs font-black uppercase tracking-widest text-foreground">Guia de Interpretação — Dados Demográficos</h4>
+                            <span className="text-[9px] bg-pink-500/20 text-pink-400 px-2 py-0.5 rounded-full font-bold uppercase">Segmentação Inteligente</span>
+                          </div>
+                          <p className="text-[11px] text-muted-foreground leading-relaxed max-w-4xl">
+                            Os dados demográficos revelam quem é o seu público real e onde ele está — use estas informações para refinar sua segmentação e maximizar o retorno sobre investimento.
+                          </p>
+                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 pt-2">
+                            {[
+                              { t: "Gênero & CPL", d: "Revela qual gênero converte ao menor custo. Ajuste criativos e copy para focar no gênero de menor CPL.", e: "👥" },
+                              { t: "Faixa Etária", d: "Identifica grupos etários mais eficientes. Exclua faixas caras e intensifique nas faixas de menor CPL.", e: "🎯" },
+                              { t: "Plataforma (Facebook/Instagram)", d: "Compara conversões e CPL por rede social. Concentre orçamento na plataforma com menor custo por resultado.", e: "📱" },
+                              { t: "Top Regiões", d: "Estados e cidades que mais convertem. Exclua regiões ineficientes e escale nas de maior tração.", e: "📍" },
+                              { t: "Dia & Horário de Pico", d: "Janelas de maior engajamento. Programe anúncios para intensificar entrega nos momentos de mais conversão.", e: "⏰" },
+                              { t: "Dispositivo (Mobile/Desktop)", d: "Se conversões dominam mobile, sua landing page deve carregar em menos de 2 segundos no celular.", e: "💻" },
+                            ].map((item, idx) => (
+                              <div key={idx} className="bg-white/[0.015] border border-white/[0.04] rounded-lg p-2.5 hover:bg-white/[0.03] transition-colors">
+                                <div className="flex items-center gap-1.5 mb-1">
+                                  <span className="text-[12px]">{item.e}</span>
+                                  <span className="text-[10px] font-bold text-foreground">{item.t}</span>
+                                </div>
+                                <p className="text-[9px] text-muted-foreground leading-relaxed">{item.d}</p>
                               </div>
                             ))}
                           </div>
-                          {avgCpl > 0 && (
-                            <div className="mt-4 flex items-center justify-center gap-4 text-[9px] text-muted-foreground">
-                              <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-sm bg-green-500/80"></div><span>CPL Ótimo (&lt; R$ {(avgCpl*0.7).toFixed(2)})</span></div>
-                              <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-sm bg-green-500/40"></div><span>CPL Médio</span></div>
-                              <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-sm bg-red-500/60"></div><span>CPL Alto (&gt; R$ {(avgCpl*1.3).toFixed(2)})</span></div>
-                              <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-sm bg-red-500/20"></div><span>Gasto sem Conversão</span></div>
-                            </div>
-                          )}
+                        </motion.div>
+                      </div>
+                    )}
+
+                    {/* Gênero */}
+                    {breakdowns.genderData.length > 0 && (
+                      <ChartCard icon={<Users className="h-4 w-4 text-pink-400" />} title="Conversões por Gênero" context="Distribuição de resultados por gênero — use para ajustar segmentação e criativos." modoExplicativo={modoExplicativo} didaticInfo={{ analise: "A afinidade do produto com o gênero dos usuários que converteram: proporção de resultados entre Masculino e Feminino.", decisao: "Ajuste criativos e copywriting para focar no gênero com melhor CPL. Se mulheres convertem a menor custo, concentre maior orçamento em conjuntos segmentados por público feminino." }}>
+                        <div className="flex items-stretch gap-4">
+                          <ResponsiveContainer width="55%" height={180}>
+                            <RechartsPieChart>
+                              <Pie data={breakdowns.genderData} cx="50%" cy="50%" innerRadius={45} outerRadius={75} paddingAngle={5} dataKey="value">
+                                {breakdowns.genderData.map((_: any, i: number) => <Cell key={i} fill={["#ec4899", "#6366f1"][i % 2]} />)}
+                              </Pie>
+                              <Tooltip content={<CustomTooltip />} />
+                            </RechartsPieChart>
+                          </ResponsiveContainer>
+                          <div className="flex-1 space-y-3 self-center">
+                            {breakdowns.genderData.map((g: any, i: number) => (
+                              <div key={i}>
+                                <div className="flex justify-between mb-1">
+                                  <span className="text-[10px] font-bold">{g.name}</span>
+                                  <span className="text-[10px] font-mono text-muted-foreground">{g.value} conv.</span>
+                                </div>
+                                <div className="h-1.5 rounded-full bg-white/5 overflow-hidden">
+                                  <div className="h-full rounded-full" style={{ width: `${(g.value / Math.max(...breakdowns.genderData.map((x: any) => x.value), 1)) * 100}%`, background: ["#ec4899", "#6366f1"][i % 2] }} />
+                                </div>
+                                {g.cpl > 0 && <p className="text-[9px] text-muted-foreground/60 mt-0.5">CPL: R$ {g.cpl.toFixed(2)}</p>}
+                              </div>
+                            ))}
+                          </div>
                         </div>
                       </ChartCard>
-                    </div>
-                  )}
+                    )}
 
-                </div>
+                    {/* Faixa etária */}
+                    {breakdowns.ageData.length > 0 && (
+                      <ChartCard icon={<Target className="h-4 w-4 text-amber-400" />} title="CPL por Faixa Etária" context="Faixas com CPL mais baixo têm melhor custo por resultado — priorize na segmentação." modoExplicativo={modoExplicativo} didaticInfo={{ analise: "A eficiência financeira de cada faixa etária: quanto custou gerar uma conversão em cada grupo de idade.", decisao: "Negative faixas etárias com CPL muito acima da média ou crie conjuntos exclusivos para as faixas de melhor desempenho, alocando mais orçamento onde o custo por lead é menor." }}>
+                        <ResponsiveContainer width="100%" height={180}>
+                          <BarChart data={breakdowns.ageData}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
+                            <XAxis dataKey="name" tick={{ fontSize: 9, fill: "rgba(255,255,255,0.4)" }} axisLine={false} tickLine={false} />
+                            <YAxis tick={{ fontSize: 9, fill: "rgba(255,255,255,0.4)" }} axisLine={false} tickLine={false} width={45} />
+                            <Tooltip content={<CustomTooltip />} />
+                            <Bar dataKey="cpl" name="CPL R$" fill="#f59e0b" radius={[3, 3, 0, 0]} opacity={0.85} />
+                            <Bar dataKey="conv" name="Conversões" fill="#8b5cf6" radius={[3, 3, 0, 0]} opacity={0.7} />
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </ChartCard>
+                    )}
+
+                    {/* Plataforma */}
+                    {breakdowns.platData.length > 0 && (
+                      <ChartCard icon={<Megaphone className="h-4 w-4 text-blue-400" />} title="Performance por Plataforma" context="Instagram vs Facebook vs Audience Network — redirecione budget para onde o CPL é menor." modoExplicativo={modoExplicativo} didaticInfo={{ analise: "A distribuição de conversões e custo por resultado entre as redes de distribuição: Facebook, Instagram e Audience Network.", decisao: "Realoque orçamento para a plataforma com menor CPL. Se o Instagram entrega leads 30% mais baratos, ajuste os conjuntos para priorizar entrega no Instagram com maior proporção de budget." }}>
+                        <ResponsiveContainer width="100%" height={180}>
+                          <BarChart data={breakdowns.platData}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
+                            <XAxis dataKey="name" tick={{ fontSize: 9, fill: "rgba(255,255,255,0.4)" }} axisLine={false} tickLine={false} />
+                            <YAxis tick={{ fontSize: 9, fill: "rgba(255,255,255,0.4)" }} axisLine={false} tickLine={false} width={45} />
+                            <Tooltip content={<CustomTooltip />} />
+                            <Bar dataKey="conv" name="Conversões" fill="#3b82f6" radius={[3, 3, 0, 0]} opacity={0.85} />
+                            <Bar dataKey="cpl" name="CPL R$" fill="#06b6d4" radius={[3, 3, 0, 0]} opacity={0.7} />
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </ChartCard>
+                    )}
+
+                    {/* Região */}
+                    {breakdowns.regionData.length > 0 && (
+                      <ChartCard icon={<Activity className="h-4 w-4 text-emerald-400" />} title="Top Regiões" badge="Top 10" context="Estados que mais convertem — amplie público nessas regiões." modoExplicativo={modoExplicativo} didaticInfo={{ analise: "A dispersão geográfica das conversões: os 10 estados ou regiões com maior volume de resultados no período.", decisao: "Exclua estados com alto volume de impressões e zero conversões para reduzir desperdício. Crie conjuntos segmentados geograficamente para os top 3 estados, aumentando o lance ou orçamento nessas regiões de alta tração." }}>
+                        <div className="space-y-1.5 max-h-[200px] overflow-y-auto pr-1">
+                          {breakdowns.regionData.map((r: any, i: number) => (
+                            <div key={i} className="flex items-center gap-3">
+                              <span className="text-[9px] font-mono text-muted-foreground/50 w-4 shrink-0">{i + 1}</span>
+                              <span className="text-[11px] font-semibold flex-1 truncate">{r.name}</span>
+                              <span className="text-[10px] font-mono text-violet-400 shrink-0">{r.conv} conv.</span>
+                              {r.cpl > 0 && <span className="text-[10px] font-mono text-green-400 shrink-0">R$ {r.cpl.toFixed(2)}</span>}
+                            </div>
+                          ))}
+                        </div>
+                      </ChartCard>
+                    )}
+
+                    {/* Dia da semana */}
+                    {breakdowns.dayOfWeekData.length > 0 && (
+                      <ChartCard icon={<Eye className="h-4 w-4 text-violet-400" />} title="Conversões por Dia da Semana" context="Dias com mais conversões — concentre budget e publicação de novos anúncios nesses dias." modoExplicativo={modoExplicativo} didaticInfo={{ analise: "Os padrões de comportamento do público ao longo dos 7 dias da semana, identificando quais dias geram mais conversões.", decisao: "Ative o agendamento de anúncios para intensificar a entrega nos dias de maior conversão. Pause ou reduza o orçamento nos dias de baixíssima performance para economizar verba e direcionar ao pico." }}>
+                        <ResponsiveContainer width="100%" height={180}>
+                          <BarChart data={breakdowns.dayOfWeekData}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
+                            <XAxis dataKey="day" tick={{ fontSize: 9, fill: "rgba(255,255,255,0.4)" }} axisLine={false} tickLine={false} />
+                            <YAxis tick={{ fontSize: 9, fill: "rgba(255,255,255,0.4)" }} axisLine={false} tickLine={false} width={30} />
+                            <Tooltip content={<CustomTooltip />} />
+                            <Bar dataKey="conv" name="Conversões" fill="#8b5cf6" radius={[3, 3, 0, 0]} opacity={0.85} />
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </ChartCard>
+                    )}
+
+                    {/* Dispositivo */}
+                    {breakdowns.deviceData.length > 0 && (
+                      <ChartCard icon={<MousePointer2 className="h-4 w-4 text-cyan-400" />} title="Performance por Dispositivo" context="Mobile vs Desktop — maioria das conversões no mobile indica necessidade de landing page responsiva." modoExplicativo={modoExplicativo} didaticInfo={{ analise: "A origem do tráfego convertido entre dispositivos móveis (celulares e tablets) e computadores desktop.", decisao: "Se conversões são massivas em mobile, garanta que a landing page carregue em menos de 2 segundos no celular. Use o PageSpeed Insights para verificar. CPL alto em mobile pode indicar lentidão na página ou formulário difícil de preencher." }}>
+                        <ResponsiveContainer width="100%" height={180}>
+                          <BarChart data={breakdowns.deviceData}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
+                            <XAxis dataKey="name" tick={{ fontSize: 9, fill: "rgba(255,255,255,0.4)" }} axisLine={false} tickLine={false} />
+                            <YAxis tick={{ fontSize: 9, fill: "rgba(255,255,255,0.4)" }} axisLine={false} tickLine={false} width={30} />
+                            <Tooltip content={<CustomTooltip />} />
+                            <Bar dataKey="conv" name="Conversões" fill="#06b6d4" radius={[3, 3, 0, 0]} opacity={0.85} />
+                            <Bar dataKey="cost" name="Gasto R$" fill="#6366f1" radius={[3, 3, 0, 0]} opacity={0.7} />
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </ChartCard>
+                    )}
+
+                    {/* Heatmap Horário (7x24) */}
+                    {breakdowns.heatMapData && breakdowns.heatMapData.length === 7 && (
+                      <div className="lg:col-span-2">
+                        <ChartCard icon={<Zap className="h-4 w-4 text-yellow-400" />} title="Densidade de Conversões (Mapa de Calor 7x24)" context="Custo por Lead (CPL) por dia e horário — programe seus anúncios para entregar mais nessas janelas." modoExplicativo={modoExplicativo} didaticInfo={{ analise: "A distribuição de custos e conversões ao longo de todos os horários da semana. Tons de verde indicam horários com baixo CPL (eficientes). Tons de vermelho indicam CPL alto (caros).", decisao: "Programe as campanhas no Meta Ads para pausar nas madrugadas sem conversões e concentre o orçamento nos blocos verdes de alta tração." }}>
+                          <div className="w-full mt-3 overflow-x-auto pb-4">
+                            <div className="min-w-[600px] flex flex-col gap-1 text-[9px] font-mono">
+                              <div className="flex gap-1 mb-1 ml-8">
+                                {Array.from({ length: 24 }).map((_, h) => (
+                                  <div key={h} className="flex-1 text-center text-muted-foreground/60">{h}h</div>
+                                ))}
+                              </div>
+                              {["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"].map((dayName, d) => (
+                                <div key={d} className="flex gap-1 items-center">
+                                  <div className="w-7 text-right pr-2 text-muted-foreground font-semibold">{dayName}</div>
+                                  {breakdowns.heatMapData[d].map((cell: any, h: number) => {
+                                    const cpl = cell.cpl;
+                                    const conv = cell.conv;
+                                    let bgColor = "bg-white/[0.02]";
+                                    if (conv > 0) {
+                                      if (avgCpl > 0 && cpl < avgCpl * 0.7) bgColor = "bg-green-500/80";
+                                      else if (avgCpl > 0 && cpl < avgCpl * 1.3) bgColor = "bg-green-500/40";
+                                      else bgColor = "bg-red-500/60";
+                                    } else if (cell.cost > 0) {
+                                      bgColor = "bg-red-500/20";
+                                    }
+
+                                    return (
+                                      <div
+                                        key={h}
+                                        className={`flex-1 h-6 rounded-sm ${bgColor} flex items-center justify-center transition-all hover:ring-1 hover:ring-white/50 cursor-crosshair group relative`}
+                                      >
+                                        {conv > 0 && <span className="text-[7px] text-white/80">{conv}</span>}
+                                        {/* Tooltip on hover */}
+                                        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block w-max bg-black/90 border border-white/10 p-2 rounded-lg z-50 shadow-xl pointer-events-none">
+                                          <p className="font-bold text-white mb-1">{dayName}, {h}h - {h + 1}h</p>
+                                          <p className="text-white/70">Conversões: <span className="text-white font-bold">{conv}</span></p>
+                                          <p className="text-white/70">Gasto: <span className="text-white font-bold">R$ {cell.cost.toFixed(2)}</span></p>
+                                          <p className="text-white/70">CPL: <span className="text-white font-bold">R$ {cpl.toFixed(2)}</span></p>
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              ))}
+                            </div>
+                            {avgCpl > 0 && (
+                              <div className="mt-4 flex items-center justify-center gap-4 text-[9px] text-muted-foreground">
+                                <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-sm bg-green-500/80"></div><span>CPL Ótimo (&lt; R$ {(avgCpl * 0.7).toFixed(2)})</span></div>
+                                <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-sm bg-green-500/40"></div><span>CPL Médio</span></div>
+                                <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-sm bg-red-500/60"></div><span>CPL Alto (&gt; R$ {(avgCpl * 1.3).toFixed(2)})</span></div>
+                                <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-sm bg-red-500/20"></div><span>Gasto sem Conversão</span></div>
+                              </div>
+                            )}
+                          </div>
+                        </ChartCard>
+                      </div>
+                    )}
+
+                  </div>
                 </>
               )}
             </motion.div>
@@ -3912,7 +4002,7 @@ function MetricasCampanhasPage() {
                     </div>
                     <h3 className="text-sm font-black text-foreground uppercase tracking-wide leading-snug">{selectedFocusItem.name}</h3>
                   </div>
-                  <button 
+                  <button
                     onClick={() => setSelectedFocusItem(null)}
                     className="rounded-lg border border-white/10 bg-white/5 p-1.5 text-muted-foreground hover:text-foreground transition"
                   >
@@ -3932,17 +4022,27 @@ function MetricasCampanhasPage() {
                       [],
                       selectedFocusItem.optimization_goal
                     );
+                    const focusStatus = selectedFocusItem.derived_status || deriveEffectiveCampaignStatus(selectedFocusItem);
+                    const focusDelivery = selectedFocusItem.delivery_state || classifyDeliveryState(selectedFocusItem.t || {});
+                    const focusBudget = Number(selectedFocusItem.daily_budget) > 0
+                      ? `R$ ${Number(selectedFocusItem.daily_budget).toFixed(0)}/d`
+                      : Number(selectedFocusItem.lifetime_budget) > 0
+                        ? `R$ ${Number(selectedFocusItem.lifetime_budget).toFixed(0)} total`
+                        : Number(selectedFocusItem.budget) > 0
+                          ? `R$ ${Number(selectedFocusItem.budget).toFixed(0)}`
+                          : "—";
                     return (
                       <>
                         <div className="grid grid-cols-3 gap-2 bg-white/[0.02] border border-white/5 rounded-xl p-3">
                           <div>
                             <span className="text-[9px] text-muted-foreground/60 uppercase">Status</span>
-                            <p className="text-xs font-bold text-foreground mt-0.5">{selectedFocusItem.delivery_status || selectedFocusItem.status || "Ativa"}</p>
+                            <p className="text-xs font-bold text-foreground mt-0.5">{focusStatus.label}</p>
+                            <span className="text-[8.5px] text-muted-foreground/70 block mt-0.5">{focusDelivery.label}</span>
                           </div>
                           <div>
                             <span className="text-[9px] text-muted-foreground/60 uppercase">Orçamento</span>
                             <p className="text-xs font-mono font-bold text-foreground mt-0.5">
-                              {selectedFocusItem.daily_budget ? `R$ ${selectedFocusItem.daily_budget.toFixed(0)}/d` : selectedFocusItem.lifetime_budget ? `R$ ${selectedFocusItem.lifetime_budget.toFixed(0)}` : selectedFocusItem.budget ? `R$ ${selectedFocusItem.budget.toFixed(0)}` : "—"}
+                              {focusBudget}
                             </p>
                           </div>
                           <div>
@@ -3953,8 +4053,22 @@ function MetricasCampanhasPage() {
                             <span className="text-[8px] text-muted-foreground/60 leading-none truncate block mt-0.5" title={focusDetail.resultLabel}>
                               {focusDetail.resultLabel}
                             </span>
+                            {selectedFocusItem.t.purchaseValue > 0 && (
+                              <span className="text-[9px] font-mono font-bold text-emerald-400 block mt-0.5">
+                                Receita: R$ {fmtBRL(selectedFocusItem.t.purchaseValue)}
+                              </span>
+                            )}
                           </div>
                         </div>
+
+                        {focusDelivery.code === "attributed_zero_spend" && (
+                          <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-[11px] text-amber-200 leading-relaxed">
+                            <strong className="font-bold">Resultado atribuído com gasto R$ 0,00 no período:</strong>{" "}
+                            as conversões exibidas ({fmtN(selectedFocusItem.t.conversions)}
+                            {selectedFocusItem.t.purchaseValue > 0 ? `, R$ ${fmtBRL(selectedFocusItem.t.purchaseValue)}` : ""}) refletem a janela de atribuição da Meta
+                            {selectedFocusItem.attribution_window ? ` (${selectedFocusItem.attribution_window})` : ""}. Isso não indica veiculação paga nem garante que a compra ocorreu exatamente nesta data.
+                          </div>
+                        )}
 
                         {/* Termômetros de Saúde */}
                         <div className="space-y-3">
@@ -3963,21 +4077,34 @@ function MetricasCampanhasPage() {
                             {[
                               {
                                 label: "CTR Link",
-                                val: `${selectedFocusItem.t.ctr.toFixed(2)}%`,
-                                pct: Math.min(selectedFocusItem.t.ctr / 2 * 100, 100),
+                                val: selectedFocusItem.t.impressions > 0 ? `${selectedFocusItem.t.ctr.toFixed(2)}%` : "—",
+                                pct: selectedFocusItem.t.impressions > 0 ? Math.min(selectedFocusItem.t.ctr / 2 * 100, 100) : 0,
                                 desc: selectedFocusItem.t.ctrAll > 0 ? `CTR Todos: ${selectedFocusItem.t.ctrAll.toFixed(2)}%` : "Ideal: > 1.0%",
-                                color: selectedFocusItem.t.ctr >= 1.5 ? "bg-green-500" : selectedFocusItem.t.ctr >= 0.8 ? "bg-yellow-500" : "bg-red-500",
+                                color: selectedFocusItem.t.impressions <= 0 ? "bg-white/10" : selectedFocusItem.t.ctr >= 1.5 ? "bg-green-500" : selectedFocusItem.t.ctr >= 0.8 ? "bg-yellow-500" : "bg-red-500",
                               },
                               {
                                 label: "CPC Link",
                                 val: selectedFocusItem.t.cpc > 0 ? `R$ ${selectedFocusItem.t.cpc.toFixed(2)}` : "—",
                                 pct: selectedFocusItem.t.cpc > 0 ? Math.min(selectedFocusItem.t.cpc / 5 * 100, 100) : 0,
                                 desc: selectedFocusItem.t.cpcAll > 0 ? `CPC Todos: R$ ${selectedFocusItem.t.cpcAll.toFixed(2)}` : "Custo por clique no link",
-                                color: selectedFocusItem.t.cpc > 3 ? "bg-red-500" : selectedFocusItem.t.cpc > 1.5 ? "bg-yellow-500" : "bg-green-500",
+                                color: selectedFocusItem.t.cpc <= 0 ? "bg-white/10" : selectedFocusItem.t.cpc > 3 ? "bg-red-500" : selectedFocusItem.t.cpc > 1.5 ? "bg-yellow-500" : "bg-green-500",
                               },
-                              { label: "Frequência", val: `${selectedFocusItem.t.freq.toFixed(2)}x`, pct: Math.min(selectedFocusItem.t.freq / 4 * 100, 100), desc: "Ideal: 1.5x a 3.0x", color: selectedFocusItem.t.freq > 3.5 ? "bg-red-500" : selectedFocusItem.t.freq > 2.5 ? "bg-yellow-500" : "bg-green-500" },
-                              { label: "CPM (Custo por Mil)", val: `R$ ${selectedFocusItem.t.cpm.toFixed(2)}`, pct: Math.min(selectedFocusItem.t.cpm / 50 * 100, 100), desc: "Ideal: R$ 15 a R$ 35", color: selectedFocusItem.t.cpm > 40 ? "bg-red-500" : selectedFocusItem.t.cpm > 25 ? "bg-yellow-500" : "bg-green-500" },
-                              { label: focusDetail.costLabel, val: selectedFocusItem.t.cpl > 0 ? `R$ ${selectedFocusItem.t.cpl.toFixed(2)}` : "—", pct: selectedFocusItem.t.cpl > 0 ? Math.min(selectedFocusItem.t.cpl / 45 * 100, 100) : 0, desc: focusDetail.costLabel, color: selectedFocusItem.t.cpl > 35 ? "bg-red-500" : selectedFocusItem.t.cpl > 20 ? "bg-yellow-500" : "bg-green-500" },
+                              { label: "Frequência", val: selectedFocusItem.t.freq > 0 ? `${selectedFocusItem.t.freq.toFixed(2)}x` : "—", pct: selectedFocusItem.t.freq > 0 ? Math.min(selectedFocusItem.t.freq / 4 * 100, 100) : 0, desc: "Ideal: 1.5x a 3.0x", color: selectedFocusItem.t.freq <= 0 ? "bg-white/10" : selectedFocusItem.t.freq > 3.5 ? "bg-red-500" : selectedFocusItem.t.freq > 2.5 ? "bg-yellow-500" : "bg-green-500" },
+                              { label: "CPM (Custo por Mil)", val: selectedFocusItem.t.cpm > 0 ? `R$ ${selectedFocusItem.t.cpm.toFixed(2)}` : "—", pct: selectedFocusItem.t.cpm > 0 ? Math.min(selectedFocusItem.t.cpm / 50 * 100, 100) : 0, desc: "Ideal: R$ 15 a R$ 35", color: selectedFocusItem.t.cpm <= 0 ? "bg-white/10" : selectedFocusItem.t.cpm > 40 ? "bg-red-500" : selectedFocusItem.t.cpm > 25 ? "bg-yellow-500" : "bg-green-500" },
+                              {
+                                label: focusDetail.costLabel,
+                                val: selectedFocusItem.t.cpl > 0 ? `R$ ${selectedFocusItem.t.cpl.toFixed(2)}` : "—",
+                                pct: selectedFocusItem.t.cpl > 0 ? Math.min(selectedFocusItem.t.cpl / 45 * 100, 100) : 0,
+                                desc: selectedFocusItem.t.cost <= 0 && selectedFocusItem.t.conversions > 0 ? "Não calculável (gasto zero)" : focusDetail.costLabel,
+                                color: selectedFocusItem.t.cpl <= 0 ? "bg-white/10" : selectedFocusItem.t.cpl > 35 ? "bg-red-500" : selectedFocusItem.t.cpl > 20 ? "bg-yellow-500" : "bg-green-500",
+                              },
+                              ...(selectedFocusItem.t.purchaseValue > 0 ? [{
+                                label: "Valor de Compra / ROAS",
+                                val: `R$ ${fmtBRL(selectedFocusItem.t.purchaseValue)}`,
+                                pct: selectedFocusItem.t.roas ? Math.min(selectedFocusItem.t.roas * 20, 100) : 0,
+                                desc: selectedFocusItem.t.roas !== null && selectedFocusItem.t.roas !== undefined ? `ROAS: ${selectedFocusItem.t.roas.toFixed(2)}x` : "ROAS indisponível (gasto zero)",
+                                color: "bg-emerald-500",
+                              }] : []),
                             ].map((item, idx) => (
                               <div key={idx} className="bg-white/[0.015] border border-white/[0.04] rounded-xl p-3 space-y-1">
                                 <span className="text-[9px] text-muted-foreground/60">{item.label}</span>
@@ -4005,8 +4132,8 @@ function MetricasCampanhasPage() {
                           <AreaChart data={itemTrendData}>
                             <defs>
                               <linearGradient id="colorGastoInspector" x1="0" y1="0" x2="0" y2="1">
-                                <stop offset="5%" stopColor="#6366f1" stopOpacity={0.2}/>
-                                <stop offset="95%" stopColor="#6366f1" stopOpacity={0}/>
+                                <stop offset="5%" stopColor="#6366f1" stopOpacity={0.2} />
+                                <stop offset="95%" stopColor="#6366f1" stopOpacity={0} />
                               </linearGradient>
                             </defs>
                             <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.03)" />
@@ -4040,11 +4167,10 @@ function MetricasCampanhasPage() {
                             </span>
                             {inspectorResponseOrigin && (
                               <span
-                                className={`rounded-full px-1.5 py-0.5 text-[8px] font-mono font-bold border ${
-                                  inspectorResponseOrigin === "generative"
-                                    ? "bg-emerald-500/10 text-emerald-300 border-emerald-500/30"
-                                    : "bg-amber-500/10 text-amber-300 border-amber-500/30"
-                                }`}
+                                className={`rounded-full px-1.5 py-0.5 text-[8px] font-mono font-bold border ${inspectorResponseOrigin === "generative"
+                                  ? "bg-emerald-500/10 text-emerald-300 border-emerald-500/30"
+                                  : "bg-amber-500/10 text-amber-300 border-amber-500/30"
+                                  }`}
                                 title={inspectorFallbackReason || undefined}
                               >
                                 {inspectorResponseOrigin === "generative" ? "⚡ IA Generativa" : "🛡️ Fallback Determinístico"}
@@ -4163,7 +4289,7 @@ function MetricasCampanhasPage() {
                           <span className="text-[9px] font-black uppercase tracking-wider text-muted-foreground">Victoria analisando dados...</span>
                         </div>
                       ) : null}
-                      
+
                       <div className="space-y-1">
                         {aiInsightText ? parseMarkdown(aiInsightText) : (
                           <p className="text-[11px] text-muted-foreground/50 text-center py-8">Nenhum diagnóstico gerado ainda.</p>
