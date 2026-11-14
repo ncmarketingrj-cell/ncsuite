@@ -36,6 +36,7 @@ import { DidacticUserAccessEditor } from "@/components/DidacticUserAccessEditor"
 import { TeamActivityMonitor } from "@/components/TeamActivityMonitor";
 import { isUserOnlineNow } from "@/lib/activityPixelService";
 import { getSyncStatus, SYNC_STATUS_EVENT, type SyncStatus } from "@/hooks/useAutoSync";
+import { formatSyncTimestampBRT, isLocalSyncLockActive } from "@/lib/syncStatusDomain";
 import { EVENT_MODEL_VERSION } from "@/lib/metricsDomain";
 
 export const Route = createFileRoute("/_app/config")({
@@ -814,7 +815,7 @@ function TabIntegracoes() {
                         </div>
                         <p className="text-[10px] text-muted-foreground mt-0.5">
                           Moeda: <strong className="text-foreground/80">{acc.currency || "BRL"}</strong> • {campCount} campanha{campCount !== 1 ? "s" : ""} carregada{campCount !== 1 ? "s" : ""}
-                          {acc.last_sync && ` • Último sync: ${new Date(acc.last_sync).toLocaleString("pt-BR")}`}
+                          {acc.last_sync ? ` • Último sync: ${formatSyncTimestampBRT(acc.last_sync)}` : " • Horário indisponível"}
                         </p>
                       </div>
                     </div>
@@ -1094,16 +1095,13 @@ function TabSistema() {
     },
   });
 
-  const isActivelySyncing = Boolean(
-    syncState.isSyncing &&
-    (!syncState.startedAt || Date.now() - new Date(syncState.startedAt).getTime() <= 120_000)
-  );
+  const isActivelySyncing = isLocalSyncLockActive(syncState);
 
   const lastSyncLabel = isActivelySyncing
-    ? "Sincronizando agora..."
+    ? "Sincronização Meta em andamento"
     : syncState.lastSync
-    ? `${new Date(syncState.lastSync).toLocaleString("pt-BR")} (${syncState.lastResult || "ok"})`
-    : "Sem registro nesta sessão";
+    ? `${formatSyncTimestampBRT(syncState.lastSync)} (${syncState.lastResult || "ok"})`
+    : "Horário indisponível";
 
   return (
     <div className="space-y-6">
@@ -1124,7 +1122,7 @@ function TabSistema() {
           {
             label: "Último Snapshot Faturamento Meta",
             value: systemHealth?.latestBillingAt
-              ? new Date(systemHealth.latestBillingAt).toLocaleString("pt-BR")
+              ? formatSyncTimestampBRT(systemHealth.latestBillingAt)
               : systemHealth?.billingError
               ? `Erro: ${systemHealth.billingError}`
               : "Sem snapshot recente",
@@ -1155,7 +1153,7 @@ function TabSistema() {
                   <p className="text-[10px] text-muted-foreground font-mono">{acc.id}</p>
                 </div>
                 <span className="text-[10px] font-mono text-muted-foreground shrink-0 ml-2">
-                  {acc.last_sync ? new Date(acc.last_sync).toLocaleString("pt-BR") : "Nunca sincronizada"}
+                  {acc.last_sync ? formatSyncTimestampBRT(acc.last_sync) : "Horário indisponível"}
                 </span>
               </div>
             ))}

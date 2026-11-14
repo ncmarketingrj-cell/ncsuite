@@ -1870,7 +1870,13 @@ function VictoriaHubPage() {
                     <SnapshotStatusBadge
                       snapshotId={activeSnapshot.snapshotId}
                       committedAt={activeSnapshot.committedAt}
-                      isUpdating={isFetchingAccounts}
+                      startedAt={activeSnapshot.startedAt}
+                      latestSyncRun={activeSnapshot.latestSyncRun}
+                      accounts={activeSnapshot.accounts?.length ? activeSnapshot.accounts : accounts}
+                      selectedAccountId={selectedAccountId || "all"}
+                      accountLastSyncAt={activeSnapshot.accountLastSyncAt}
+                      isPageLoading={isFetchingAccounts}
+                      isMetaSyncing={Boolean(activeSnapshot.isMetaSyncRunning)}
                     />
                   </div>
 

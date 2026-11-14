@@ -2759,7 +2759,13 @@ function CockpitPage() {
             <SnapshotStatusBadge
               snapshotId={activeSnapshot.snapshotId}
               committedAt={activeSnapshot.committedAt}
-              isUpdating={isLoading || isFetching}
+              startedAt={activeSnapshot.startedAt}
+              latestSyncRun={activeSnapshot.latestSyncRun}
+              accounts={activeSnapshot.accounts}
+              selectedAccountId={accountId}
+              accountLastSyncAt={activeSnapshot.accountLastSyncAt}
+              isPageLoading={Boolean(isLoading || isFetching)}
+              isMetaSyncing={Boolean(activeSnapshot.isMetaSyncRunning)}
             />
             <motion.div
             initial={{ opacity: 0, x: 20 }}

@@ -8,7 +8,8 @@ import { ptBR } from "date-fns/locale";
 import { useAuth } from "@/lib/auth";
 import { usePagePermission } from "@/hooks/usePagePermission";
 import { calibrateMetaConversionsFromGraph } from "@/lib/metaConversionCalibrator";
-import { fetchLatestCommittedSnapshot, invalidateMetaSnapshotConsumers } from "@/lib/metaSnapshotCache";
+import { fetchLatestCommittedSnapshot, invalidateMetaSnapshotConsumers, refreshSharedSyncTelemetry } from "@/lib/metaSnapshotCache";
+import { formatSyncTimeBRT, formatSyncTimestampBRT, normalizeTimestampToEpochMs } from "@/lib/syncStatusDomain";
 
 interface SyncButtonProps {
   mode?: "quick" | "full" | "max" | "month1" | "month2" | "month3";
@@ -48,13 +49,17 @@ export function SyncButton({ mode = "quick" }: SyncButtonProps) {
   const { data: lastSyncData, refetch: refetchSyncDate } = useQuery({
     queryKey: ["last-sync-date"],
     queryFn: async () => {
+      const snap = await fetchLatestCommittedSnapshot();
+      const ms = normalizeTimestampToEpochMs(snap.committedAt);
+      if (ms !== null) return new Date(ms);
       const { data, error } = await supabase
         .from("ad_accounts")
         .select("last_sync")
         .order("last_sync", { ascending: false, nullsFirst: false })
         .limit(1);
       if (error || !data?.length) return null;
-      return data[0].last_sync ? new Date(data[0].last_sync) : null;
+      const accMs = normalizeTimestampToEpochMs(data[0].last_sync);
+      return accMs !== null ? new Date(accMs) : null;
     },
     refetchInterval: 30000,
   });
@@ -127,8 +132,14 @@ export function SyncButton({ mode = "quick" }: SyncButtonProps) {
         isMonthMode ? `${monthRange!.label} sincronizado!` :
         "Sync completo concluído!"
       );
-      toast.success(msg, { id: t, duration: 8000 });
+      const isPartial = data?.status === "partial_success" || (Array.isArray(data?.partial_failures) && data.partial_failures.length > 0);
+      if (isPartial) {
+        toast.warning(`${msg} (${data.partial_failures.length} alerta(s) parcial(is))`, { id: t, duration: 9000 });
+      } else {
+        toast.success(msg, { id: t, duration: 8000 });
+      }
       setLastStatus("success");
+      await refreshSharedSyncTelemetry(true);
       await invalidateMetaSnapshotConsumers({
         queryClient: qc,
         accountId: "all",
@@ -156,14 +167,15 @@ export function SyncButton({ mode = "quick" }: SyncButtonProps) {
   };
 
   const getSyncLabel = () => {
-    if (!lastSyncData) return "Sem registros";
+    if (!lastSyncData) return "Horário indisponível";
     try {
       const distance = formatDistanceToNow(lastSyncData, { locale: ptBR, addSuffix: true });
-      const exactTime = format(lastSyncData, "HH:mm", { locale: ptBR });
-      if (distance.includes("menos de um minuto")) return "Atualizado agora mesmo";
-      return `Último sync: ${distance} (às ${exactTime})`;
+      const exactTime = formatSyncTimeBRT(lastSyncData);
+      if (exactTime === "Horário indisponível") return "Horário indisponível";
+      if (distance.includes("menos de um minuto")) return `Atualizado agora às ${exactTime}`;
+      return `Último sync: ${distance} (${exactTime} BRT · ${formatSyncTimestampBRT(lastSyncData)})`;
     } catch {
-      return "Dados sincronizados";
+      return "Horário indisponível";
     }
   };
 

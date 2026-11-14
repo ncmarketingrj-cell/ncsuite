@@ -434,13 +434,13 @@ function RelatoriosPage() {
     },
   });
 
-  const { data: latestSyncRun } = useQuery<any | null>({
+  const { data: latestSyncRunQuery } = useQuery<any | null>({
     queryKey: ["reports-latest-sync-run"],
     queryFn: async () => {
       try {
         const { data } = await (supabase as any)
           .from("sync_history")
-          .select("id, status, started_at, accounts_synced, accounts_total, partial_failures, error_message")
+          .select("id, status, started_at, completed_at, accounts_synced, campaigns_synced, metrics_synced, partial_failures, error_message, sync_coverage, triggered_by")
           .order("started_at", { ascending: false })
           .limit(1);
         return data?.[0] || null;
@@ -451,6 +451,7 @@ function RelatoriosPage() {
     enabled: source === "api",
     refetchInterval: 60 * 1000,
   });
+  const latestSyncRun = activeSnapshot.latestSyncRun || latestSyncRunQuery;
 
   const { data: templatesData, refetch: refetchTemplates } = useQuery<ReportTemplateRecord[]>({
     queryKey: ["report-templates"],
@@ -1864,7 +1865,13 @@ function RelatoriosPage() {
             <SnapshotStatusBadge
               snapshotId={activeSnapshot.snapshotId}
               committedAt={activeSnapshot.committedAt}
-              isUpdating={isLoadingData || isSyncingPeriod}
+              startedAt={activeSnapshot.startedAt}
+              latestSyncRun={latestSyncRun}
+              accounts={accounts?.length ? accounts : activeSnapshot.accounts}
+              selectedAccountId={selectedAccountId}
+              accountLastSyncAt={activeSnapshot.accountLastSyncAt}
+              isPageLoading={isLoadingData}
+              isMetaSyncing={Boolean(isSyncingPeriod || activeSnapshot.isMetaSyncRunning)}
               className="mt-1.5 w-fit"
             />
           </div>

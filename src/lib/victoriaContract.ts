@@ -6,6 +6,7 @@ import {
   type MetaConversionCategory,
   type MetricVector,
 } from "./metricsDomain.ts";
+import { normalizeTimestampToEpochMs } from "./syncStatusDomain.ts";
 
 export const VICTORIA_CONTRACT_VERSION = "2026.11.4";
 export const VICTORIA_PROMPT_VERSION = "2026.11.4-senior-10part";
@@ -800,8 +801,8 @@ export function buildVictoriaAnalysisContext(input: BuildVictoriaContextInput): 
 
   let dataFreshness: "fresh" | "recent" | "stale" | "unknown" = "unknown";
   if (input.last_sync_at) {
-    const syncMs = Date.parse(input.last_sync_at);
-    if (!Number.isNaN(syncMs)) {
+    const syncMs = normalizeTimestampToEpochMs(input.last_sync_at);
+    if (syncMs !== null) {
       const diffHours = (Date.now() - syncMs) / 3600000;
       dataFreshness = diffHours <= 2 ? "fresh" : diffHours <= 12 ? "recent" : "stale";
     }

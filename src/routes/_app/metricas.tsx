@@ -43,6 +43,10 @@ import {
   invalidateMetaSnapshotConsumers,
   useActiveMetaSnapshot,
 } from "@/lib/metaSnapshotCache";
+import {
+  formatSyncTimestampBRT,
+  normalizeTimestampToEpochMs,
+} from "@/lib/syncStatusDomain";
 import { SnapshotStatusBadge } from "@/components/SnapshotStatusBadge";
 import { PageHeader } from "@/components/PageHeader";
 import { useChartConfig } from "@/hooks/useChartConfig";
@@ -773,9 +777,9 @@ function KPIBar({
     : undefined;
 
   const kpiItems = [
-    { label: "Gasto",          value: isLoading ? "—" : `R$ ${fmtBRL(totCost)}`,                         color: "text-primary",          icon: DollarSign,    sub: undefined },
-    { label: isMixed ? "Resultados (Tipo)" : "Resultados", value: isLoading ? "—" : resultsDisplay,      color: "text-violet-400",       icon: Target,        sub: isMixed && !isLoading ? "Sem soma mista" : undefined },
-    { label: cplLabel,         value: isLoading ? "—" : avgCpl > 0 ? `R$ ${avgCpl.toFixed(2)}` : "—",    color: "text-primary",          icon: Zap,           sub: !isLoading && totCost <= 0 && totConv > 0 ? "Gasto zero no período" : undefined },
+    { label: "Gasto", value: isLoading ? "—" : `R$ ${fmtBRL(totCost)}`, color: "text-primary", icon: DollarSign, sub: undefined },
+    { label: isMixed ? "Resultados (Tipo)" : "Resultados", value: isLoading ? "—" : resultsDisplay, color: "text-violet-400", icon: Target, sub: isMixed && !isLoading ? "Sem soma mista" : undefined },
+    { label: cplLabel, value: isLoading ? "—" : avgCpl > 0 ? `R$ ${avgCpl.toFixed(2)}` : "—", color: "text-primary", icon: Zap, sub: !isLoading && totCost <= 0 && totConv > 0 ? "Gasto zero no período" : undefined },
     ...(totPurchaseValue > 0 ? [{
       label: "Receita (Compras)",
       value: isLoading ? "—" : `R$ ${fmtBRL(totPurchaseValue)}`,
@@ -783,11 +787,11 @@ function KPIBar({
       icon: DollarSign,
       sub: avgRoas !== null ? `ROAS ${avgRoas.toFixed(2)}x` : undefined,
     }] : []),
-    { label: "Impressões",     value: isLoading ? "—" : fmtN(totImpr),                                   color: "text-muted-foreground", icon: Eye,           sub: undefined },
-    { label: reachLabel,       value: isLoading ? "—" : totReach > 0 ? fmtN(totReach) : "—",             color: "text-muted-foreground", icon: Users,         sub: undefined },
-    { label: "Cliques (Link)", value: isLoading ? "—" : fmtN(totClicks),                                 color: "text-muted-foreground", icon: MousePointer2, sub: isLoading ? undefined : clicksSub },
-    { label: "CTR Link",       value: isLoading ? "—" : totImpr > 0 ? `${avgCtr.toFixed(2)}%` : "—",  color: totImpr > 0 && avgCtr >= 1.5 ? "text-green-400" : "text-muted-foreground", icon: TrendingUp, sub: isLoading ? undefined : (totImpr > 0 ? ctrSub : undefined) },
-    { label: "CPM Médio",      value: isLoading ? "—" : avgCpm > 0 ? `R$ ${avgCpm.toFixed(2)}` : "—",    color: "text-muted-foreground", icon: BarChart3,     sub: undefined },
+    { label: "Impressões", value: isLoading ? "—" : fmtN(totImpr), color: "text-muted-foreground", icon: Eye, sub: undefined },
+    { label: reachLabel, value: isLoading ? "—" : totReach > 0 ? fmtN(totReach) : "—", color: "text-muted-foreground", icon: Users, sub: undefined },
+    { label: "Cliques (Link)", value: isLoading ? "—" : fmtN(totClicks), color: "text-muted-foreground", icon: MousePointer2, sub: isLoading ? undefined : clicksSub },
+    { label: "CTR Link", value: isLoading ? "—" : totImpr > 0 ? `${avgCtr.toFixed(2)}%` : "—", color: totImpr > 0 && avgCtr >= 1.5 ? "text-green-400" : "text-muted-foreground", icon: TrendingUp, sub: isLoading ? undefined : (totImpr > 0 ? ctrSub : undefined) },
+    { label: "CPM Médio", value: isLoading ? "—" : avgCpm > 0 ? `R$ ${avgCpm.toFixed(2)}` : "—", color: "text-muted-foreground", icon: BarChart3, sub: undefined },
   ];
 
   return (
@@ -870,7 +874,7 @@ function MetricasCampanhasPage() {
     setAccountFilterState(acc);
     setGlobalAccountId(acc || "all");
   }, [setGlobalAccountId]);
-  const [statusFilter,  setStatusFilter]  = useState<"all"|"active"|"completed"|"paused">("all");
+  const [statusFilter, setStatusFilter] = useState<"all" | "active" | "completed" | "paused">("all");
   const [selectedCampaignId, setSelectedCampaignId] = useState<string | null>(targetCampaign);
   const [search, setSearch] = useState("");
 
@@ -1335,13 +1339,13 @@ function MetricasCampanhasPage() {
   });
 
   // Último histórico de sincronização (exibe diagnósticos explícitos de rate limit ou falha parcial)
-  const { data: latestSyncRun } = useQuery({
+  const { data: latestSyncRunQuery } = useQuery({
     queryKey: ["mc-latest-sync-run"],
     queryFn: async () => {
       try {
         const { data } = await (supabase as any)
           .from("sync_history")
-          .select("id, status, started_at, finished_at, accounts_synced, accounts_total, partial_failures, error_message, sync_coverage")
+          .select("id, status, started_at, completed_at, accounts_synced, campaigns_synced, metrics_synced, partial_failures, error_message, sync_coverage, triggered_by")
           .order("started_at", { ascending: false })
           .limit(1);
         return data?.[0] || null;
@@ -1351,6 +1355,7 @@ function MetricasCampanhasPage() {
     },
     refetchInterval: 60 * 1000,
   });
+  const latestSyncRun = activeSnapshot.latestSyncRun || latestSyncRunQuery;
 
   const { data: placementData = [] } = useQuery({
     queryKey: buildMetaSnapshotKey(
@@ -2126,13 +2131,18 @@ function MetricasCampanhasPage() {
           <SnapshotStatusBadge
             snapshotId={activeSnapshot.snapshotId}
             committedAt={activeSnapshot.committedAt}
-            lastSyncAt={
+            startedAt={activeSnapshot.startedAt}
+            latestSyncRun={latestSyncRun}
+            accounts={adAccounts?.length ? adAccounts : activeSnapshot.accounts}
+            selectedAccountId={accountFilter}
+            accountLastSyncAt={
               accountFilter !== "all"
-                ? (adAccounts.find((a: any) => a.id === accountFilter)?.last_sync || activeSnapshot.committedAt)
-                : (adAccounts.map((a: any) => a.last_sync).filter(Boolean).sort().pop() || activeSnapshot.committedAt)
+                ? (adAccounts.find((a: any) => a.id === accountFilter)?.last_sync || activeSnapshot.accountLastSyncAt || null)
+                : (activeSnapshot.accountLastSyncAt || null)
             }
             hasSyncError={Boolean(syncMutation.isError)}
-            isUpdating={isFetchingCamps || isFetchingAdSets || isFetchingAds || isFetchingPeriod || isFetchingAccPeriod || syncMutation.isPending}
+            isPageLoading={isFetchingCamps || isFetchingAdSets || isFetchingAds || isFetchingPeriod || isFetchingAccPeriod}
+            isMetaSyncing={Boolean(syncMutation.isPending || activeSnapshot.isMetaSyncRunning)}
           />
         </div>
 
@@ -2323,12 +2333,20 @@ function MetricasCampanhasPage() {
                 <Settings2 className="h-3 w-3" /><span className="hidden sm:inline">Configurar</span>
               </button>
             )}
-            {syncConfig?.last_heartbeat_at && (
-              <div className="hidden sm:flex items-center gap-1 text-[9px] font-mono text-muted-foreground/50 whitespace-nowrap" title="Última sincronização com Meta Ads">
-                <span className="h-1.5 w-1.5 rounded-full bg-green-500 opacity-80" />
-                {(() => { const diff = Math.round((Date.now() - new Date(syncConfig.last_heartbeat_at).getTime()) / 60000); return diff < 1 ? "agora" : diff < 60 ? `${diff}m atrás` : `${Math.round(diff / 60)}h atrás`; })()}
-              </div>
-            )}
+            {syncConfig?.last_heartbeat_at && (() => {
+              const heartbeatMs = normalizeTimestampToEpochMs(syncConfig.last_heartbeat_at);
+              const heartbeatBrt = formatSyncTimestampBRT(syncConfig.last_heartbeat_at);
+              const diff = heartbeatMs ? Math.max(0, Math.round((Date.now() - heartbeatMs) / 60000)) : null;
+              return (
+                <div
+                  className="hidden sm:flex items-center gap-1 text-[9px] font-mono text-muted-foreground/50 whitespace-nowrap"
+                  title={`Última sincronização com Meta Ads: ${heartbeatBrt}`}
+                >
+                  <span className="h-1.5 w-1.5 rounded-full bg-green-500 opacity-80" />
+                  {diff === null ? "Horário indisponível" : diff < 1 ? "agora" : diff < 60 ? `${diff}m atrás` : `${Math.round(diff / 60)}h atrás`}
+                </div>
+              );
+            })()}
             <button onClick={() => syncMutation.mutate()} disabled={syncMutation.isPending} title="Sincronizar dados com Meta Ads" className="flex items-center gap-1.5 rounded-xl border border-border bg-card/50 px-3 py-1.5 text-[11px] font-bold text-muted-foreground hover:text-foreground hover:border-primary/30 transition-all disabled:opacity-50">
               {syncMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
               <span className="hidden sm:inline">Sync</span>
@@ -2572,203 +2590,202 @@ function MetricasCampanhasPage() {
                       <div className="hidden lg:block overflow-x-auto">
                         <table className="w-full text-xs border-collapse">
 
-                        <thead>
-                          <tr className="border-b border-white/5 bg-white/[0.02] sticky top-0 z-10">
-                            <th className="px-3 py-3 w-10">
-                              <button onClick={toggleAll} className="text-muted-foreground hover:text-primary transition">{allSelected ? <CheckSquare className="h-4 w-4 text-primary"/> : someSelected ? <CheckSquare className="h-4 w-4 text-primary/40"/> : <Square className="h-4 w-4"/>}</button>
-                            </th>
-                            <th className="px-2 py-3 w-16 text-[9px] font-black uppercase tracking-widest text-muted-foreground/70 text-center">Status</th>
-                            <th className="px-4 py-3 text-left text-[9px] font-black uppercase tracking-widest text-muted-foreground/70">Nome</th>
-                            {level === "campanhas" && <th className="px-3 py-3 w-24 text-center text-[9px] font-black uppercase tracking-widest text-muted-foreground/70 whitespace-nowrap">Objetivo</th>}
-                            <th className="px-4 py-3 w-28 text-right text-[9px] font-black uppercase tracking-widest text-muted-foreground/70 whitespace-nowrap hidden md:table-cell">Orçamento</th>
-                            <th className="px-4 py-3 w-16 text-right text-[9px] font-black uppercase tracking-widest text-amber-400/80 whitespace-nowrap">Freq.</th>
-                            <th className="px-4 py-3 w-24 text-right text-[9px] font-black uppercase tracking-widest text-muted-foreground/70 whitespace-nowrap hidden lg:table-cell">Alcance</th>
-                            <th className="px-4 py-3 w-24 text-right text-[9px] font-black uppercase tracking-widest text-muted-foreground/70 whitespace-nowrap hidden xl:table-cell">Impressões</th>
-                            <th className="px-4 py-3 w-32 text-right text-[9px] font-black uppercase tracking-widest text-violet-400/90 whitespace-nowrap">Resultados</th>
-                            <th className="px-4 py-3 w-32 text-right text-[9px] font-black uppercase tracking-widest text-emerald-400/90 whitespace-nowrap">Custo por Res.</th>
-                            <th className="px-4 py-3 w-20 text-right text-[9px] font-black uppercase tracking-widest text-blue-400/80 whitespace-nowrap hidden lg:table-cell" title="CTR de Cliques no Link (CTR Todos abaixo quando disponível)">CTR Link</th>
-                            <th className="px-4 py-3 w-24 text-right text-[9px] font-black uppercase tracking-widest text-muted-foreground/70 whitespace-nowrap hidden xl:table-cell" title="Custo por Clique no Link (CPC Todos abaixo quando disponível)">CPC Link</th>
-                            <th className="px-4 py-3 w-20 text-right text-[9px] font-black uppercase tracking-widest text-muted-foreground/70 whitespace-nowrap hidden xl:table-cell">CPM</th>
-                            <th className="px-4 py-3 w-24 text-right text-[9px] font-black uppercase tracking-widest text-primary/80 whitespace-nowrap">Gasto</th>
-                          </tr>
-                        </thead>
-                        <tbody className={isFetchingCamps ? "opacity-50 pointer-events-none transition-opacity duration-200" : "transition-opacity duration-200"}>
-                          {filtered.slice(0, visibleCount).map((c: any) => {
-                            const effStatus  = c.derived_status || deriveEffectiveCampaignStatus(c);
-                            const delivState = c.delivery_state || classifyDeliveryState(c.t || {});
-                            const isActive   = effStatus.isActive;
-                            const isLearning = c.delivery_status === "LEARNING";
-                            const isChanging = changingId === c.id;
-                            const isSel      = selSet.has(c.id);
-                            const isHighlight= searchParams.campaign === c.id;
-                            const cplOver    = Boolean(maxCplThreshold && ["MESSAGES", "LEADS", "PURCHASES"].includes(c.result_type) && c.t.cpl > 0 && c.t.cpl > maxCplThreshold);
-                            const freqHigh   = c.t.freq >= 3;
-                            const ctrGood    = c.t.ctr >= 2;
-                            const resultDetail = getMetaResultDetail(
-                              c.t.conversions,
-                              c.name + " " + (c.campaigns?.name || ""),
-                              c.objective || c.campaigns?.objective,
-                              c.result_type,
-                              [],
-                              c.optimization_goal
-                            );
-                            const budgetDisplay = Number(c.daily_budget) > 0
-                              ? `R$ ${Number(c.daily_budget).toFixed(0)}/d`
-                              : Number(c.lifetime_budget) > 0
-                                ? `R$ ${Number(c.lifetime_budget).toFixed(0)} total`
-                                : Number(c.budget) > 0
-                                  ? `R$ ${Number(c.budget).toFixed(0)}/d`
-                                  : "—";
-                            return (
-                              <tr 
-                                id={`row-${c.id}`} 
-                                key={c.id} 
-                                onClick={() => toggleOne(c.id)}
-                                className={`cursor-pointer border-b border-white/[0.03] transition-colors duration-200 ${isHighlight ? "bg-destructive/10 ring-1 ring-inset ring-destructive/40" : isSel ? "bg-primary/10 shadow-[inset_4px_0_0_0_rgba(99,102,241,1)]" : "hover:bg-white/[0.03]"}`}
-                              >
-                                {/* checkbox */}
-                                <td className="px-3 py-3 text-center" onClick={e => e.stopPropagation()}>
-                                  <button onClick={() => toggleOne(c.id)} className="text-muted-foreground hover:text-primary transition">{isSel ? <CheckSquare className="h-4 w-4 text-primary"/> : <Square className="h-4 w-4"/>}</button>
-                                </td>
-                                {/* status toggle */}
-                                <td className="px-2 py-2.5 text-center" onClick={e => e.stopPropagation()}>
-                                  <button
-                                    onClick={() => !isChanging && toggleMutation.mutate({ id: c.id, externalId: c.external_id, currentStatus: c.status, type: level })}
-                                    disabled={isChanging}
-                                    className={`relative h-6 w-11 rounded-full transition-all duration-300 border ${isActive ? "bg-primary/20 border-primary/40 hover:bg-primary/30" : "bg-white/5 border-white/10 hover:bg-white/10"} disabled:opacity-40`}
-                                    title={isActive ? "Pausar" : "Ativar"}
-                                  >
-                                    {isChanging ? (
-                                      <Loader2 className="h-3 w-3 animate-spin absolute inset-0 m-auto text-primary"/>
-                                    ) : (
-                                      <span className={`absolute top-0.5 h-4.5 w-4.5 h-[18px] w-[18px] rounded-full transition-all duration-300 flex items-center justify-center ${isActive ? "left-[22px] bg-primary" : "left-0.5 bg-white/30"}`}>
-                                        {isActive ? <Play className="h-2 w-2 text-background fill-background"/> : <Pause className="h-2 w-2 text-white/60"/>}
-                                      </span>
-                                    )}
-                                  </button>
-                                </td>
-                                {/* nome */}
-                                <td className="px-4 py-2.5" onClick={e => e.stopPropagation()}>
-                                  <div className="flex flex-col gap-0.5 min-w-0">
-                                    <div className="flex items-center gap-1.5">
-                                      <button
-                                        onClick={() => setSelectedFocusItem({ ...c, type: level })}
-                                        className="font-bold text-foreground hover:text-primary transition truncate max-w-[240px] leading-tight text-left"
-                                        title="Clique para ver análise detalhada e diagnóstico de IA"
-                                      >
-                                        {c.name}
-                                      </button>
-                                      <button
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          handleOpenVictoriaDiagnostic(c);
-                                        }}
-                                        className="p-1 rounded-md text-primary/70 hover:text-primary hover:bg-primary/20 transition-all opacity-80 hover:opacity-100"
-                                        title="Abrir bate-papo de diagnóstico estratégico com a Victoria AI"
-                                      >
-                                        <Bot className="h-3.5 w-3.5" />
-                                      </button>
-                                    </div>
-                                    <div className="flex items-center gap-1.5 flex-wrap">
-                                      {effStatus.code !== "ACTIVE" && (
-                                        <span className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-[8px] font-black border ${
-                                          effStatus.code === "COMPLETED"
+                          <thead>
+                            <tr className="border-b border-white/5 bg-white/[0.02] sticky top-0 z-10">
+                              <th className="px-3 py-3 w-10">
+                                <button onClick={toggleAll} className="text-muted-foreground hover:text-primary transition">{allSelected ? <CheckSquare className="h-4 w-4 text-primary" /> : someSelected ? <CheckSquare className="h-4 w-4 text-primary/40" /> : <Square className="h-4 w-4" />}</button>
+                              </th>
+                              <th className="px-2 py-3 w-16 text-[9px] font-black uppercase tracking-widest text-muted-foreground/70 text-center">Status</th>
+                              <th className="px-4 py-3 text-left text-[9px] font-black uppercase tracking-widest text-muted-foreground/70">Nome</th>
+                              {level === "campanhas" && <th className="px-3 py-3 w-24 text-center text-[9px] font-black uppercase tracking-widest text-muted-foreground/70 whitespace-nowrap">Objetivo</th>}
+                              <th className="px-4 py-3 w-28 text-right text-[9px] font-black uppercase tracking-widest text-muted-foreground/70 whitespace-nowrap hidden md:table-cell">Orçamento</th>
+                              <th className="px-4 py-3 w-16 text-right text-[9px] font-black uppercase tracking-widest text-amber-400/80 whitespace-nowrap">Freq.</th>
+                              <th className="px-4 py-3 w-24 text-right text-[9px] font-black uppercase tracking-widest text-muted-foreground/70 whitespace-nowrap hidden lg:table-cell">Alcance</th>
+                              <th className="px-4 py-3 w-24 text-right text-[9px] font-black uppercase tracking-widest text-muted-foreground/70 whitespace-nowrap hidden xl:table-cell">Impressões</th>
+                              <th className="px-4 py-3 w-32 text-right text-[9px] font-black uppercase tracking-widest text-violet-400/90 whitespace-nowrap">Resultados</th>
+                              <th className="px-4 py-3 w-32 text-right text-[9px] font-black uppercase tracking-widest text-emerald-400/90 whitespace-nowrap">Custo por Res.</th>
+                              <th className="px-4 py-3 w-20 text-right text-[9px] font-black uppercase tracking-widest text-blue-400/80 whitespace-nowrap hidden lg:table-cell" title="CTR de Cliques no Link (CTR Todos abaixo quando disponível)">CTR Link</th>
+                              <th className="px-4 py-3 w-24 text-right text-[9px] font-black uppercase tracking-widest text-muted-foreground/70 whitespace-nowrap hidden xl:table-cell" title="Custo por Clique no Link (CPC Todos abaixo quando disponível)">CPC Link</th>
+                              <th className="px-4 py-3 w-20 text-right text-[9px] font-black uppercase tracking-widest text-muted-foreground/70 whitespace-nowrap hidden xl:table-cell">CPM</th>
+                              <th className="px-4 py-3 w-24 text-right text-[9px] font-black uppercase tracking-widest text-primary/80 whitespace-nowrap">Gasto</th>
+                            </tr>
+                          </thead>
+                          <tbody className={isFetchingCamps ? "opacity-50 pointer-events-none transition-opacity duration-200" : "transition-opacity duration-200"}>
+                            {filtered.slice(0, visibleCount).map((c: any) => {
+                              const effStatus = c.derived_status || deriveEffectiveCampaignStatus(c);
+                              const delivState = c.delivery_state || classifyDeliveryState(c.t || {});
+                              const isActive = effStatus.isActive;
+                              const isLearning = c.delivery_status === "LEARNING";
+                              const isChanging = changingId === c.id;
+                              const isSel = selSet.has(c.id);
+                              const isHighlight = searchParams.campaign === c.id;
+                              const cplOver = Boolean(maxCplThreshold && ["MESSAGES", "LEADS", "PURCHASES"].includes(c.result_type) && c.t.cpl > 0 && c.t.cpl > maxCplThreshold);
+                              const freqHigh = c.t.freq >= 3;
+                              const ctrGood = c.t.ctr >= 2;
+                              const resultDetail = getMetaResultDetail(
+                                c.t.conversions,
+                                c.name + " " + (c.campaigns?.name || ""),
+                                c.objective || c.campaigns?.objective,
+                                c.result_type,
+                                [],
+                                c.optimization_goal
+                              );
+                              const budgetDisplay = Number(c.daily_budget) > 0
+                                ? `R$ ${Number(c.daily_budget).toFixed(0)}/d`
+                                : Number(c.lifetime_budget) > 0
+                                  ? `R$ ${Number(c.lifetime_budget).toFixed(0)} total`
+                                  : Number(c.budget) > 0
+                                    ? `R$ ${Number(c.budget).toFixed(0)}/d`
+                                    : "—";
+                              return (
+                                <tr
+                                  id={`row-${c.id}`}
+                                  key={c.id}
+                                  onClick={() => toggleOne(c.id)}
+                                  className={`cursor-pointer border-b border-white/[0.03] transition-colors duration-200 ${isHighlight ? "bg-destructive/10 ring-1 ring-inset ring-destructive/40" : isSel ? "bg-primary/10 shadow-[inset_4px_0_0_0_rgba(99,102,241,1)]" : "hover:bg-white/[0.03]"}`}
+                                >
+                                  {/* checkbox */}
+                                  <td className="px-3 py-3 text-center" onClick={e => e.stopPropagation()}>
+                                    <button onClick={() => toggleOne(c.id)} className="text-muted-foreground hover:text-primary transition">{isSel ? <CheckSquare className="h-4 w-4 text-primary" /> : <Square className="h-4 w-4" />}</button>
+                                  </td>
+                                  {/* status toggle */}
+                                  <td className="px-2 py-2.5 text-center" onClick={e => e.stopPropagation()}>
+                                    <button
+                                      onClick={() => !isChanging && toggleMutation.mutate({ id: c.id, externalId: c.external_id, currentStatus: c.status, type: level })}
+                                      disabled={isChanging}
+                                      className={`relative h-6 w-11 rounded-full transition-all duration-300 border ${isActive ? "bg-primary/20 border-primary/40 hover:bg-primary/30" : "bg-white/5 border-white/10 hover:bg-white/10"} disabled:opacity-40`}
+                                      title={isActive ? "Pausar" : "Ativar"}
+                                    >
+                                      {isChanging ? (
+                                        <Loader2 className="h-3 w-3 animate-spin absolute inset-0 m-auto text-primary" />
+                                      ) : (
+                                        <span className={`absolute top-0.5 h-4.5 w-4.5 h-[18px] w-[18px] rounded-full transition-all duration-300 flex items-center justify-center ${isActive ? "left-[22px] bg-primary" : "left-0.5 bg-white/30"}`}>
+                                          {isActive ? <Play className="h-2 w-2 text-background fill-background" /> : <Pause className="h-2 w-2 text-white/60" />}
+                                        </span>
+                                      )}
+                                    </button>
+                                  </td>
+                                  {/* nome */}
+                                  <td className="px-4 py-2.5" onClick={e => e.stopPropagation()}>
+                                    <div className="flex flex-col gap-0.5 min-w-0">
+                                      <div className="flex items-center gap-1.5">
+                                        <button
+                                          onClick={() => setSelectedFocusItem({ ...c, type: level })}
+                                          className="font-bold text-foreground hover:text-primary transition truncate max-w-[240px] leading-tight text-left"
+                                          title="Clique para ver análise detalhada e diagnóstico de IA"
+                                        >
+                                          {c.name}
+                                        </button>
+                                        <button
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleOpenVictoriaDiagnostic(c);
+                                          }}
+                                          className="p-1 rounded-md text-primary/70 hover:text-primary hover:bg-primary/20 transition-all opacity-80 hover:opacity-100"
+                                          title="Abrir bate-papo de diagnóstico estratégico com a Victoria AI"
+                                        >
+                                          <Bot className="h-3.5 w-3.5" />
+                                        </button>
+                                      </div>
+                                      <div className="flex items-center gap-1.5 flex-wrap">
+                                        {effStatus.code !== "ACTIVE" && (
+                                          <span className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-[8px] font-black border ${effStatus.code === "COMPLETED"
                                             ? "bg-amber-500/10 border-amber-500/25 text-amber-300"
                                             : effStatus.code === "ARCHIVED"
                                               ? "bg-white/5 border-white/15 text-muted-foreground"
                                               : "bg-slate-500/15 border-slate-400/25 text-slate-300"
-                                        }`}>
-                                          {effStatus.label}
-                                        </span>
-                                      )}
-                                      {delivState.code === "attributed_zero_spend" && (
-                                        <span
-                                          className="inline-flex items-center rounded-full px-1.5 py-0.5 text-[8px] font-black bg-emerald-500/15 border border-emerald-500/30 text-emerald-300"
-                                          title="Resultado atribuído pela Meta com gasto R$ 0,00 no período"
-                                        >
-                                          Atribuído (gasto zero)
-                                        </span>
-                                      )}
-                                      {isLearning && <LearningBadge/>}
-                                      {c.ad_account && <span className="text-[9px] text-muted-foreground/40 font-mono leading-none">{(c.ad_account as any).name}</span>}
-                                      {/* Regras da Campanha */}
-                                      {(() => {
-                                        const campRules = campaignRulesMap.get(c.id) || (c.external_id ? campaignRulesMap.get(c.external_id) : []) || [];
-                                        if (campRules.length === 0) return null;
-                                        return (
-                                          <span
-                                            className="inline-flex items-center gap-1 rounded-full bg-red-500/10 border border-red-500/25 px-1.5 py-0.5 text-[8px] font-black text-red-400"
-                                            title={`Regra: ${campRules[0].title} — ${campRules[0].description}`}
-                                          >
-                                            <ShieldAlert className="h-2.5 w-2.5" />
-                                            {campRules.length} {campRules.length === 1 ? "Regra" : "Regras"}
+                                            }`}>
+                                            {effStatus.label}
                                           </span>
-                                        );
-                                      })()}
+                                        )}
+                                        {delivState.code === "attributed_zero_spend" && (
+                                          <span
+                                            className="inline-flex items-center rounded-full px-1.5 py-0.5 text-[8px] font-black bg-emerald-500/15 border border-emerald-500/30 text-emerald-300"
+                                            title="Resultado atribuído pela Meta com gasto R$ 0,00 no período"
+                                          >
+                                            Atribuído (gasto zero)
+                                          </span>
+                                        )}
+                                        {isLearning && <LearningBadge />}
+                                        {c.ad_account && <span className="text-[9px] text-muted-foreground/40 font-mono leading-none">{(c.ad_account as any).name}</span>}
+                                        {/* Regras da Campanha */}
+                                        {(() => {
+                                          const campRules = campaignRulesMap.get(c.id) || (c.external_id ? campaignRulesMap.get(c.external_id) : []) || [];
+                                          if (campRules.length === 0) return null;
+                                          return (
+                                            <span
+                                              className="inline-flex items-center gap-1 rounded-full bg-red-500/10 border border-red-500/25 px-1.5 py-0.5 text-[8px] font-black text-red-400"
+                                              title={`Regra: ${campRules[0].title} — ${campRules[0].description}`}
+                                            >
+                                              <ShieldAlert className="h-2.5 w-2.5" />
+                                              {campRules.length} {campRules.length === 1 ? "Regra" : "Regras"}
+                                            </span>
+                                          );
+                                        })()}
+                                      </div>
                                     </div>
-                                  </div>
-                                </td>
-                                {/* objetivo */}
-                                {level === "campanhas" && <td className="px-3 py-2.5 text-center"><ObjectiveBadge objective={c.objective} name={c.name} resultType={c.result_type || (c.campaigns as any)?.objective}/></td>}
-                                {/* orçamento */}
-                                <td className="px-4 py-2.5 text-right font-mono text-[11px] text-muted-foreground hidden md:table-cell whitespace-nowrap">
-                                  {budgetDisplay}
-                                </td>
-                                {/* freq */}
-                                <td className="px-4 py-2.5 text-right whitespace-nowrap">
-                                  <span className={`font-mono font-bold text-xs ${freqHigh ? "text-red-400" : c.t.freq > 0 ? "text-amber-400" : "text-muted-foreground/30"}`}>{c.t.freq > 0 ? c.t.freq.toFixed(1) : "—"}</span>
-                                </td>
-                                {/* alcance */}
-                                <td className="px-4 py-2.5 text-right font-mono text-[11px] text-muted-foreground hidden lg:table-cell whitespace-nowrap">{c.t.reach > 0 ? fmtN(c.t.reach) : "—"}</td>
-                                {/* impressões */}
-                                <td className="px-4 py-2.5 text-right font-mono text-[11px] text-muted-foreground hidden xl:table-cell whitespace-nowrap">{c.t.impressions > 0 ? fmtN(c.t.impressions) : "—"}</td>
-                                {/* resultados */}
-                                <td className="px-4 py-2.5 text-right whitespace-nowrap">
-                                  <div className="flex flex-col items-end justify-center">
-                                    <span className="font-mono font-black text-violet-400 leading-tight">
-                                      {c.t.conversions > 0 ? fmtN(c.t.conversions) : <span className="text-muted-foreground/30">—</span>}
-                                    </span>
-                                    <span className="text-[8.5px] text-muted-foreground/70 font-medium leading-tight max-w-[170px] truncate" title={resultDetail.resultLabel}>
-                                      {resultDetail.resultLabel}
-                                    </span>
-                                    {c.t.purchaseValue > 0 && (
-                                      <span className="text-[9px] font-mono font-bold text-emerald-400 leading-tight">
-                                        Receita: R$ {fmtBRL(c.t.purchaseValue)}
-                                        {c.t.roas !== null && c.t.roas !== undefined ? ` • ${c.t.roas.toFixed(2)}x` : ""}
+                                  </td>
+                                  {/* objetivo */}
+                                  {level === "campanhas" && <td className="px-3 py-2.5 text-center"><ObjectiveBadge objective={c.objective} name={c.name} resultType={c.result_type || (c.campaigns as any)?.objective} /></td>}
+                                  {/* orçamento */}
+                                  <td className="px-4 py-2.5 text-right font-mono text-[11px] text-muted-foreground hidden md:table-cell whitespace-nowrap">
+                                    {budgetDisplay}
+                                  </td>
+                                  {/* freq */}
+                                  <td className="px-4 py-2.5 text-right whitespace-nowrap">
+                                    <span className={`font-mono font-bold text-xs ${freqHigh ? "text-red-400" : c.t.freq > 0 ? "text-amber-400" : "text-muted-foreground/30"}`}>{c.t.freq > 0 ? c.t.freq.toFixed(1) : "—"}</span>
+                                  </td>
+                                  {/* alcance */}
+                                  <td className="px-4 py-2.5 text-right font-mono text-[11px] text-muted-foreground hidden lg:table-cell whitespace-nowrap">{c.t.reach > 0 ? fmtN(c.t.reach) : "—"}</td>
+                                  {/* impressões */}
+                                  <td className="px-4 py-2.5 text-right font-mono text-[11px] text-muted-foreground hidden xl:table-cell whitespace-nowrap">{c.t.impressions > 0 ? fmtN(c.t.impressions) : "—"}</td>
+                                  {/* resultados */}
+                                  <td className="px-4 py-2.5 text-right whitespace-nowrap">
+                                    <div className="flex flex-col items-end justify-center">
+                                      <span className="font-mono font-black text-violet-400 leading-tight">
+                                        {c.t.conversions > 0 ? fmtN(c.t.conversions) : <span className="text-muted-foreground/30">—</span>}
                                       </span>
-                                    )}
-                                  </div>
-                                </td>
-                                {/* custo por resultado / cpl */}
-                                <td className="px-4 py-2.5 text-right whitespace-nowrap">
-                                  <div className="flex flex-col items-end justify-center">
-                                    {c.t.cpl > 0 ? (
-                                      <>
-                                        <span className={`font-mono font-black text-xs leading-tight transition-colors ${temperatureMode
-                                          ? (cplOver ? "bg-red-500/20 text-red-400 px-2 py-0.5 rounded border border-red-500/30" : "bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded border border-emerald-500/30")
-                                          : (cplOver ? "text-red-400" : "text-green-400")
-                                          }`}>R$ {c.t.cpl.toFixed(2)}</span>
-                                        <span className="text-[8.5px] text-muted-foreground/70 font-medium leading-tight max-w-[170px] truncate" title={resultDetail.costLabel}>
-                                          {resultDetail.costLabel}
+                                      <span className="text-[8.5px] text-muted-foreground/70 font-medium leading-tight max-w-[170px] truncate" title={resultDetail.resultLabel}>
+                                        {resultDetail.resultLabel}
+                                      </span>
+                                      {c.t.purchaseValue > 0 && (
+                                        <span className="text-[9px] font-mono font-bold text-emerald-400 leading-tight">
+                                          Receita: R$ {fmtBRL(c.t.purchaseValue)}
+                                          {c.t.roas !== null && c.t.roas !== undefined ? ` • ${c.t.roas.toFixed(2)}x` : ""}
                                         </span>
-                                      </>
-                                    ) : c.t.conversions > 0 && c.t.cost <= 0 ? (
-                                      <>
-                                        <span className="text-emerald-300/80 font-mono font-bold text-[10px] leading-tight" title="Não calculável: resultado atribuído com gasto R$ 0,00 no período">Não calc. (gasto R$ 0)</span>
-                                        <span className="text-[8.5px] text-muted-foreground/50 font-medium leading-tight max-w-[170px] truncate" title={resultDetail.costLabel}>
-                                          {resultDetail.costLabel}
-                                        </span>
-                                      </>
-                                    ) : (
-                                      <>
-                                        <span className="text-muted-foreground/30 font-mono text-xs leading-tight">—</span>
-                                        <span className="text-[8.5px] text-muted-foreground/40 font-medium leading-tight max-w-[170px] truncate" title={resultDetail.costLabel}>
-                                          {resultDetail.costLabel}
-                                        </span>
-                                      </>
-                                    )}
-                                  </div>
-                                </td>
+                                      )}
+                                    </div>
+                                  </td>
+                                  {/* custo por resultado / cpl */}
+                                  <td className="px-4 py-2.5 text-right whitespace-nowrap">
+                                    <div className="flex flex-col items-end justify-center">
+                                      {c.t.cpl > 0 ? (
+                                        <>
+                                          <span className={`font-mono font-black text-xs leading-tight transition-colors ${temperatureMode
+                                            ? (cplOver ? "bg-red-500/20 text-red-400 px-2 py-0.5 rounded border border-red-500/30" : "bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded border border-emerald-500/30")
+                                            : (cplOver ? "text-red-400" : "text-green-400")
+                                            }`}>R$ {c.t.cpl.toFixed(2)}</span>
+                                          <span className="text-[8.5px] text-muted-foreground/70 font-medium leading-tight max-w-[170px] truncate" title={resultDetail.costLabel}>
+                                            {resultDetail.costLabel}
+                                          </span>
+                                        </>
+                                      ) : c.t.conversions > 0 && c.t.cost <= 0 ? (
+                                        <>
+                                          <span className="text-emerald-300/80 font-mono font-bold text-[10px] leading-tight" title="Não calculável: resultado atribuído com gasto R$ 0,00 no período">Não calc. (gasto R$ 0)</span>
+                                          <span className="text-[8.5px] text-muted-foreground/50 font-medium leading-tight max-w-[170px] truncate" title={resultDetail.costLabel}>
+                                            {resultDetail.costLabel}
+                                          </span>
+                                        </>
+                                      ) : (
+                                        <>
+                                          <span className="text-muted-foreground/30 font-mono text-xs leading-tight">—</span>
+                                          <span className="text-[8.5px] text-muted-foreground/40 font-medium leading-tight max-w-[170px] truncate" title={resultDetail.costLabel}>
+                                            {resultDetail.costLabel}
+                                          </span>
+                                        </>
+                                      )}
+                                    </div>
+                                  </td>
                                   {/* ctr (link + todos) */}
                                   <td className="px-4 py-2.5 text-right hidden lg:table-cell whitespace-nowrap">
                                     <div className="flex flex-col items-end justify-center">
@@ -2878,202 +2895,202 @@ function MetricasCampanhasPage() {
                       </div>
 
                       {/* --- MOBILE CARDS --- */}
-                    <div className="flex flex-col gap-3 lg:hidden mt-2">
-                      {/* Cabeçalho de Seleção Geral Mobile */}
-                      <div className="flex items-center justify-between px-2 pb-2 border-b border-white/5">
-                        <div className="flex items-center gap-2">
-                          <button onClick={toggleAll} className="text-muted-foreground hover:text-primary transition flex items-center gap-1.5">
-                            {allSelected ? <CheckSquare className="h-4 w-4 text-primary"/> : someSelected ? <CheckSquare className="h-4 w-4 text-primary/40"/> : <Square className="h-4 w-4"/>}
-                            <span className="text-[10px] font-bold uppercase tracking-widest">Selecionar Todos</span>
-                          </button>
+                      <div className="flex flex-col gap-3 lg:hidden mt-2">
+                        {/* Cabeçalho de Seleção Geral Mobile */}
+                        <div className="flex items-center justify-between px-2 pb-2 border-b border-white/5">
+                          <div className="flex items-center gap-2">
+                            <button onClick={toggleAll} className="text-muted-foreground hover:text-primary transition flex items-center gap-1.5">
+                              {allSelected ? <CheckSquare className="h-4 w-4 text-primary" /> : someSelected ? <CheckSquare className="h-4 w-4 text-primary/40" /> : <Square className="h-4 w-4" />}
+                              <span className="text-[10px] font-bold uppercase tracking-widest">Selecionar Todos</span>
+                            </button>
+                          </div>
+                          <span className="text-[10px] font-black uppercase text-muted-foreground/50">{filtered.length} Itens</span>
                         </div>
-                        <span className="text-[10px] font-black uppercase text-muted-foreground/50">{filtered.length} Itens</span>
-                      </div>
 
-                      {filtered.slice(0, visibleCount).map((c: any) => {
-                        const effStatus  = c.derived_status || deriveEffectiveCampaignStatus(c);
-                        const delivState = c.delivery_state || classifyDeliveryState(c.t || {});
-                        const isActive   = effStatus.isActive;
-                        const isLearning = c.delivery_status === "LEARNING";
-                        const isChanging = changingId === c.id;
-                        const isSel      = selSet.has(c.id);
-                        const isHighlight= searchParams.campaign === c.id;
-                        const cplOver    = Boolean(maxCplThreshold && ["MESSAGES", "LEADS", "PURCHASES"].includes(c.result_type) && c.t.cpl > 0 && c.t.cpl > maxCplThreshold);
-                        const freqHigh   = c.t.freq >= 3;
-                        const ctrGood    = c.t.ctr >= 2;
-                        const resultDetail = getMetaResultDetail(
-                          c.t.conversions,
-                          c.name + " " + (c.campaigns?.name || ""),
-                          c.objective || c.campaigns?.objective,
-                          c.result_type,
-                          [],
-                          c.optimization_goal
-                        );
+                        {filtered.slice(0, visibleCount).map((c: any) => {
+                          const effStatus = c.derived_status || deriveEffectiveCampaignStatus(c);
+                          const delivState = c.delivery_state || classifyDeliveryState(c.t || {});
+                          const isActive = effStatus.isActive;
+                          const isLearning = c.delivery_status === "LEARNING";
+                          const isChanging = changingId === c.id;
+                          const isSel = selSet.has(c.id);
+                          const isHighlight = searchParams.campaign === c.id;
+                          const cplOver = Boolean(maxCplThreshold && ["MESSAGES", "LEADS", "PURCHASES"].includes(c.result_type) && c.t.cpl > 0 && c.t.cpl > maxCplThreshold);
+                          const freqHigh = c.t.freq >= 3;
+                          const ctrGood = c.t.ctr >= 2;
+                          const resultDetail = getMetaResultDetail(
+                            c.t.conversions,
+                            c.name + " " + (c.campaigns?.name || ""),
+                            c.objective || c.campaigns?.objective,
+                            c.result_type,
+                            [],
+                            c.optimization_goal
+                          );
 
-                        return (
-                          <div 
-                            key={`mobile-${c.id}`}
-                            className={`flex flex-col gap-3 rounded-2xl p-4 border transition-all ${isHighlight ? "bg-destructive/10 border-destructive/40 shadow-glow-sm" : isSel ? "bg-primary/5 border-primary/30" : "bg-white/[0.02] border-white/5"}`}
-                          >
-                            <div className="flex items-start justify-between gap-3">
-                              <div className="flex items-start gap-2.5">
-                                <button onClick={() => toggleOne(c.id)} className="mt-1 text-muted-foreground hover:text-primary transition">
-                                  {isSel ? <CheckSquare className="h-4 w-4 text-primary"/> : <Square className="h-4 w-4"/>}
-                                </button>
-                                <div className="flex flex-col min-w-0">
-                                  <div className="flex items-center justify-between gap-2">
-                                    <button
-                                    onClick={() => setSelectedFocusItem({ ...c, type: level })}
-                                    className="font-bold text-sm text-foreground hover:text-primary transition text-left leading-tight line-clamp-2"
-                                  >
-                                    {c.name}
+                          return (
+                            <div
+                              key={`mobile-${c.id}`}
+                              className={`flex flex-col gap-3 rounded-2xl p-4 border transition-all ${isHighlight ? "bg-destructive/10 border-destructive/40 shadow-glow-sm" : isSel ? "bg-primary/5 border-primary/30" : "bg-white/[0.02] border-white/5"}`}
+                            >
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="flex items-start gap-2.5">
+                                  <button onClick={() => toggleOne(c.id)} className="mt-1 text-muted-foreground hover:text-primary transition">
+                                    {isSel ? <CheckSquare className="h-4 w-4 text-primary" /> : <Square className="h-4 w-4" />}
                                   </button>
-                                    <button
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        handleOpenVictoriaDiagnostic(c);
-                                      }}
-                                      className="flex items-center gap-1 px-2 py-0.5 rounded-lg border border-primary/30 bg-primary/10 text-primary text-[10px] font-bold shrink-0 hover:bg-primary/20 transition-all"
-                                      title="Diagnóstico Estratégico com Victoria AI"
-                                    >
-                                      <Bot className="h-3 w-3" />
-                                      IA
-                                    </button>
-                                  </div>
-                                  <div className="flex items-center gap-2 flex-wrap mt-1">
-                                    {/* Thermal badge */}
-                                    {(() => {
-                                      const tempInfo = getCampaignTemperature(c, accountBenchmarkCpl);
-                                      const TempIcon = tempInfo.icon;
-                                      return (
-                                        <span 
-                                          className={`inline-flex items-center gap-1 rounded-full px-1.5 py-0.2 text-[8.5px] font-bold border transition-all ${tempInfo.badgeClass}`}
-                                          title={tempInfo.reason}
-                                        >
-                                          <TempIcon className="h-2.5 w-2.5" />
-                                          {tempInfo.label}
+                                  <div className="flex flex-col min-w-0">
+                                    <div className="flex items-center justify-between gap-2">
+                                      <button
+                                        onClick={() => setSelectedFocusItem({ ...c, type: level })}
+                                        className="font-bold text-sm text-foreground hover:text-primary transition text-left leading-tight line-clamp-2"
+                                      >
+                                        {c.name}
+                                      </button>
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          handleOpenVictoriaDiagnostic(c);
+                                        }}
+                                        className="flex items-center gap-1 px-2 py-0.5 rounded-lg border border-primary/30 bg-primary/10 text-primary text-[10px] font-bold shrink-0 hover:bg-primary/20 transition-all"
+                                        title="Diagnóstico Estratégico com Victoria AI"
+                                      >
+                                        <Bot className="h-3 w-3" />
+                                        IA
+                                      </button>
+                                    </div>
+                                    <div className="flex items-center gap-2 flex-wrap mt-1">
+                                      {/* Thermal badge */}
+                                      {(() => {
+                                        const tempInfo = getCampaignTemperature(c, accountBenchmarkCpl);
+                                        const TempIcon = tempInfo.icon;
+                                        return (
+                                          <span
+                                            className={`inline-flex items-center gap-1 rounded-full px-1.5 py-0.2 text-[8.5px] font-bold border transition-all ${tempInfo.badgeClass}`}
+                                            title={tempInfo.reason}
+                                          >
+                                            <TempIcon className="h-2.5 w-2.5" />
+                                            {tempInfo.label}
+                                          </span>
+                                        );
+                                      })()}
+                                      <button
+                                        onClick={() => !isChanging && toggleMutation.mutate({ id: c.id, externalId: c.external_id, currentStatus: c.status, type: level })}
+                                        disabled={isChanging}
+                                        className={`relative h-5 w-9 rounded-full transition-all duration-300 border ${isActive ? "bg-primary/20 border-primary/40 hover:bg-primary/30" : "bg-white/5 border-white/10 hover:bg-white/10"} disabled:opacity-40 shrink-0`}
+                                      >
+                                        {isChanging ? (
+                                          <Loader2 className="h-2.5 w-2.5 animate-spin absolute inset-0 m-auto text-primary" />
+                                        ) : (
+                                          <span className={`absolute top-0.5 h-3.5 w-3.5 rounded-full transition-all duration-300 flex items-center justify-center ${isActive ? "left-[14px] bg-primary" : "left-0.5 bg-white/30"}`} />
+                                        )}
+                                      </button>
+                                      {isLearning && <LearningBadge />}
+                                      {effStatus.code !== "ACTIVE" && (
+                                        <span className="inline-flex items-center rounded-full border border-slate-400/30 bg-slate-500/15 px-1.5 py-0.5 text-[8px] font-black uppercase text-slate-300">
+                                          {effStatus.label}
                                         </span>
-                                      );
-                                    })()}
-                                    <button
-                                      onClick={() => !isChanging && toggleMutation.mutate({ id: c.id, externalId: c.external_id, currentStatus: c.status, type: level })}
-                                      disabled={isChanging}
-                                      className={`relative h-5 w-9 rounded-full transition-all duration-300 border ${isActive ? "bg-primary/20 border-primary/40 hover:bg-primary/30" : "bg-white/5 border-white/10 hover:bg-white/10"} disabled:opacity-40 shrink-0`}
-                                    >
-                                      {isChanging ? (
-                                        <Loader2 className="h-2.5 w-2.5 animate-spin absolute inset-0 m-auto text-primary"/>
-                                      ) : (
-                                        <span className={`absolute top-0.5 h-3.5 w-3.5 rounded-full transition-all duration-300 flex items-center justify-center ${isActive ? "left-[14px] bg-primary" : "left-0.5 bg-white/30"}`} />
                                       )}
-                                    </button>
-                                    {isLearning && <LearningBadge/>}
-                                    {effStatus.code !== "ACTIVE" && (
-                                      <span className="inline-flex items-center rounded-full border border-slate-400/30 bg-slate-500/15 px-1.5 py-0.5 text-[8px] font-black uppercase text-slate-300">
-                                        {effStatus.label}
-                                      </span>
-                                    )}
-                                    {delivState.code === "attributed_zero_spend" && (
-                                      <span className="inline-flex items-center rounded-full border border-amber-500/35 bg-amber-500/15 px-1.5 py-0.5 text-[8px] font-black text-amber-300">
-                                        {delivState.shortLabel}
-                                      </span>
-                                    )}
-                                    {(delivState.code === "no_delivery" || delivState.code === "no_spend") && (
-                                      <span className="inline-flex items-center rounded-full border border-white/10 bg-white/5 px-1.5 py-0.5 text-[8px] font-bold text-muted-foreground">
-                                        {delivState.label}
-                                      </span>
-                                    )}
-                                    {level === "campanhas" && <ObjectiveBadge objective={c.objective} name={c.name}/>}
-                                    {/* Regras vinculadas Mobile */}
-                                    {(() => {
-                                      const campRules = campaignRulesMap.get(c.id) || (c.external_id ? campaignRulesMap.get(c.external_id) : []) || [];
-                                      if (campRules.length === 0) return null;
-                                      return (
-                                        <span className="inline-flex items-center gap-1 rounded-full bg-red-500/10 border border-red-500/25 px-1.5 py-0.5 text-[8px] font-black text-red-400">
-                                          <ShieldAlert className="h-2.5 w-2.5" />
-                                          {campRules.length} Regra{campRules.length > 1 ? "s" : ""}
+                                      {delivState.code === "attributed_zero_spend" && (
+                                        <span className="inline-flex items-center rounded-full border border-amber-500/35 bg-amber-500/15 px-1.5 py-0.5 text-[8px] font-black text-amber-300">
+                                          {delivState.shortLabel}
                                         </span>
-                                      );
-                                    })()}
+                                      )}
+                                      {(delivState.code === "no_delivery" || delivState.code === "no_spend") && (
+                                        <span className="inline-flex items-center rounded-full border border-white/10 bg-white/5 px-1.5 py-0.5 text-[8px] font-bold text-muted-foreground">
+                                          {delivState.label}
+                                        </span>
+                                      )}
+                                      {level === "campanhas" && <ObjectiveBadge objective={c.objective} name={c.name} />}
+                                      {/* Regras vinculadas Mobile */}
+                                      {(() => {
+                                        const campRules = campaignRulesMap.get(c.id) || (c.external_id ? campaignRulesMap.get(c.external_id) : []) || [];
+                                        if (campRules.length === 0) return null;
+                                        return (
+                                          <span className="inline-flex items-center gap-1 rounded-full bg-red-500/10 border border-red-500/25 px-1.5 py-0.5 text-[8px] font-black text-red-400">
+                                            <ShieldAlert className="h-2.5 w-2.5" />
+                                            {campRules.length} Regra{campRules.length > 1 ? "s" : ""}
+                                          </span>
+                                        );
+                                      })()}
+                                    </div>
+                                    {c.ad_account && <span className="text-[9px] text-muted-foreground/50 font-mono mt-1.5">{(c.ad_account as any).name}</span>}
                                   </div>
-                                  {c.ad_account && <span className="text-[9px] text-muted-foreground/50 font-mono mt-1.5">{(c.ad_account as any).name}</span>}
                                 </div>
                               </div>
-                            </div>
 
-                            <div className="grid grid-cols-2 gap-2 mt-1">
-                              <div className="bg-black/20 rounded-xl p-2.5 flex flex-col justify-between border border-white/5">
-                                <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/60">Gasto</span>
-                                <span className={`font-mono font-black text-sm mt-0.5 ${c.t.cost > 0 ? "text-primary" : "text-muted-foreground/40"}`}>
-                                  {c.t.cost > 0 ? `R$ ${fmtBRL(c.t.cost)}` : "—"}
-                                </span>
-                              </div>
-                              <div className="bg-black/20 rounded-xl p-2.5 flex flex-col justify-between border border-white/5">
-                                <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/60">Resultados</span>
-                                <span className={`font-mono font-black text-sm mt-0.5 ${c.t.conversions > 0 ? "text-violet-400" : "text-muted-foreground/40"}`}>
-                                  {c.t.conversions > 0 ? fmtN(c.t.conversions) : "—"}
-                                </span>
-                                <span className="text-[8.5px] text-muted-foreground/70 font-medium leading-tight truncate mt-0.5" title={resultDetail.resultLabel}>
-                                  {resultDetail.resultLabel}
-                                </span>
-                                {c.t.purchaseValue > 0 && (
-                                  <span className="text-[9px] font-mono font-bold text-emerald-400 leading-tight mt-0.5">
-                                    R$ {fmtBRL(c.t.purchaseValue)}{c.t.roas !== null && c.t.roas !== undefined ? ` • ${c.t.roas.toFixed(2)}x` : ""}
+                              <div className="grid grid-cols-2 gap-2 mt-1">
+                                <div className="bg-black/20 rounded-xl p-2.5 flex flex-col justify-between border border-white/5">
+                                  <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/60">Gasto</span>
+                                  <span className={`font-mono font-black text-sm mt-0.5 ${c.t.cost > 0 ? "text-primary" : "text-muted-foreground/40"}`}>
+                                    {c.t.cost > 0 ? `R$ ${fmtBRL(c.t.cost)}` : "—"}
                                   </span>
-                                )}
+                                </div>
+                                <div className="bg-black/20 rounded-xl p-2.5 flex flex-col justify-between border border-white/5">
+                                  <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/60">Resultados</span>
+                                  <span className={`font-mono font-black text-sm mt-0.5 ${c.t.conversions > 0 ? "text-violet-400" : "text-muted-foreground/40"}`}>
+                                    {c.t.conversions > 0 ? fmtN(c.t.conversions) : "—"}
+                                  </span>
+                                  <span className="text-[8.5px] text-muted-foreground/70 font-medium leading-tight truncate mt-0.5" title={resultDetail.resultLabel}>
+                                    {resultDetail.resultLabel}
+                                  </span>
+                                  {c.t.purchaseValue > 0 && (
+                                    <span className="text-[9px] font-mono font-bold text-emerald-400 leading-tight mt-0.5">
+                                      R$ {fmtBRL(c.t.purchaseValue)}{c.t.roas !== null && c.t.roas !== undefined ? ` • ${c.t.roas.toFixed(2)}x` : ""}
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="bg-black/20 rounded-xl p-2.5 flex flex-col justify-between border border-white/5">
+                                  <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/60">Custo por Res.</span>
+                                  <span className={`font-mono font-black text-sm mt-0.5 ${c.t.cpl > 0 ? (cplOver ? "text-red-400" : "text-emerald-400") : c.t.conversions > 0 && c.t.cost <= 0 ? "text-emerald-300/80" : "text-muted-foreground/40"}`}>
+                                    {c.t.cpl > 0 ? `R$ ${c.t.cpl.toFixed(2)}` : c.t.conversions > 0 && c.t.cost <= 0 ? "Não calc. (gasto R$ 0)" : "—"}
+                                  </span>
+                                  <span className="text-[8.5px] text-muted-foreground/70 font-medium leading-tight truncate mt-0.5" title={c.t.cost <= 0 && c.t.conversions > 0 ? "Não calculável com gasto zero no período" : resultDetail.costLabel}>
+                                    {resultDetail.costLabel}
+                                  </span>
+                                </div>
+                                <div className="bg-black/20 rounded-xl p-2.5 flex flex-col justify-between border border-white/5">
+                                  <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/60">Frequência</span>
+                                  <span className={`font-mono font-black text-sm mt-0.5 ${freqHigh ? "text-red-400" : c.t.freq > 0 ? "text-amber-400" : "text-muted-foreground/40"}`}>
+                                    {c.t.freq > 0 ? c.t.freq.toFixed(2) + "x" : "—"}
+                                  </span>
+                                </div>
                               </div>
-                              <div className="bg-black/20 rounded-xl p-2.5 flex flex-col justify-between border border-white/5">
-                                <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/60">Custo por Res.</span>
-                                <span className={`font-mono font-black text-sm mt-0.5 ${c.t.cpl > 0 ? (cplOver ? "text-red-400" : "text-emerald-400") : c.t.conversions > 0 && c.t.cost <= 0 ? "text-emerald-300/80" : "text-muted-foreground/40"}`}>
-                                  {c.t.cpl > 0 ? `R$ ${c.t.cpl.toFixed(2)}` : c.t.conversions > 0 && c.t.cost <= 0 ? "Não calc. (gasto R$ 0)" : "—"}
-                                </span>
-                                <span className="text-[8.5px] text-muted-foreground/70 font-medium leading-tight truncate mt-0.5" title={c.t.cost <= 0 && c.t.conversions > 0 ? "Não calculável com gasto zero no período" : resultDetail.costLabel}>
-                                  {resultDetail.costLabel}
-                                </span>
-                              </div>
-                              <div className="bg-black/20 rounded-xl p-2.5 flex flex-col justify-between border border-white/5">
-                                <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/60">Frequência</span>
-                                <span className={`font-mono font-black text-sm mt-0.5 ${freqHigh ? "text-red-400" : c.t.freq > 0 ? "text-amber-400" : "text-muted-foreground/40"}`}>
-                                  {c.t.freq > 0 ? c.t.freq.toFixed(2) + "x" : "—"}
-                                </span>
+                              {/* Oculto em telas menores mas exibido caso precise de mais contexto em MD */}
+                              <div className="flex items-center justify-between pt-2 px-1">
+                                <span className="text-[9px] font-mono text-muted-foreground">CTR Link: {c.t.ctr > 0 ? `${c.t.ctr.toFixed(2)}%` : "—"}{c.t.ctrAll > 0 ? ` (Todos ${c.t.ctrAll.toFixed(2)}%)` : ""}</span>
+                                <span className="text-[9px] font-mono text-muted-foreground">CPC Link: {c.t.cpc > 0 ? `R$ ${c.t.cpc.toFixed(2)}` : "—"}{c.t.cpcAll > 0 ? ` (Todos R$ ${c.t.cpcAll.toFixed(2)})` : ""}</span>
+                                <span className="text-[9px] font-mono text-muted-foreground">CPM: {c.t.cpm > 0 ? `R$ ${c.t.cpm.toFixed(2)}` : "—"}</span>
                               </div>
                             </div>
-                            {/* Oculto em telas menores mas exibido caso precise de mais contexto em MD */}
-                            <div className="flex items-center justify-between pt-2 px-1">
-                              <span className="text-[9px] font-mono text-muted-foreground">CTR Link: {c.t.ctr > 0 ? `${c.t.ctr.toFixed(2)}%` : "—"}{c.t.ctrAll > 0 ? ` (Todos ${c.t.ctrAll.toFixed(2)}%)` : ""}</span>
-                              <span className="text-[9px] font-mono text-muted-foreground">CPC Link: {c.t.cpc > 0 ? `R$ ${c.t.cpc.toFixed(2)}` : "—"}{c.t.cpcAll > 0 ? ` (Todos R$ ${c.t.cpcAll.toFixed(2)})` : ""}</span>
-                              <span className="text-[9px] font-mono text-muted-foreground">CPM: {c.t.cpm > 0 ? `R$ ${c.t.cpm.toFixed(2)}` : "—"}</span>
-                            </div>
-                          </div>
-                        );
-                      })}
+                          );
+                        })}
 
-                      {/* Footer Totais Mobile */}
-                      <div className="mt-2 rounded-2xl p-4 bg-primary/5 border border-primary/10">
-                        <div className="flex flex-col gap-2">
-                          <span className="text-[10px] font-black uppercase tracking-widest text-primary">TOTAIS ({filtered.length} {level})</span>
-                          <div className="flex items-center justify-between border-b border-primary/10 pb-2">
-                            <span className="text-xs text-muted-foreground font-bold">Gasto</span>
-                            <span className="font-mono font-black text-primary text-sm">R$ {fmtBRL(totCost)}</span>
-                          </div>
-                          {(() => {
-                            const entries = formatMetricVectorSummary(metricVector);
-                            const isVecMixed = entries.length > 1;
-                            const summaryTxt = entries.map(e => `${fmtN(e.value)} ${e.label.toLowerCase()}`).join(" • ");
-                            return (
-                              <div className="flex items-center justify-between border-b border-primary/10 pb-2">
-                                <span className="text-xs text-muted-foreground font-bold">{isVecMixed ? "Resultados (Tipo)" : "Resultados"}</span>
-                                <span className="font-mono font-black text-violet-400 text-sm text-right">
-                                  {isVecMixed ? summaryTxt : (totConv > 0 ? fmtN(totConv) : "—")}
-                                </span>
-                              </div>
-                            );
-                          })()}
-                          <div className="flex items-center justify-between">
-                            <span className="text-xs text-muted-foreground font-bold">Custo por Res.</span>
-                            <span className="font-mono font-black text-emerald-400 text-sm">{avgCpl > 0 ? `R$ ${avgCpl.toFixed(2)}` : totCost <= 0 && totConv > 0 ? "Não calc. (gasto R$ 0)" : "—"}</span>
+                        {/* Footer Totais Mobile */}
+                        <div className="mt-2 rounded-2xl p-4 bg-primary/5 border border-primary/10">
+                          <div className="flex flex-col gap-2">
+                            <span className="text-[10px] font-black uppercase tracking-widest text-primary">TOTAIS ({filtered.length} {level})</span>
+                            <div className="flex items-center justify-between border-b border-primary/10 pb-2">
+                              <span className="text-xs text-muted-foreground font-bold">Gasto</span>
+                              <span className="font-mono font-black text-primary text-sm">R$ {fmtBRL(totCost)}</span>
+                            </div>
+                            {(() => {
+                              const entries = formatMetricVectorSummary(metricVector);
+                              const isVecMixed = entries.length > 1;
+                              const summaryTxt = entries.map(e => `${fmtN(e.value)} ${e.label.toLowerCase()}`).join(" • ");
+                              return (
+                                <div className="flex items-center justify-between border-b border-primary/10 pb-2">
+                                  <span className="text-xs text-muted-foreground font-bold">{isVecMixed ? "Resultados (Tipo)" : "Resultados"}</span>
+                                  <span className="font-mono font-black text-violet-400 text-sm text-right">
+                                    {isVecMixed ? summaryTxt : (totConv > 0 ? fmtN(totConv) : "—")}
+                                  </span>
+                                </div>
+                              );
+                            })()}
+                            <div className="flex items-center justify-between">
+                              <span className="text-xs text-muted-foreground font-bold">Custo por Res.</span>
+                              <span className="font-mono font-black text-emerald-400 text-sm">{avgCpl > 0 ? `R$ ${avgCpl.toFixed(2)}` : totCost <= 0 && totConv > 0 ? "Não calc. (gasto R$ 0)" : "—"}</span>
+                            </div>
                           </div>
                         </div>
-                      </div>
 
                       </div>
                       {/* --- FIM MOBILE CARDS --- */}

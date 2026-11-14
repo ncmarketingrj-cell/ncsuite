@@ -20,7 +20,9 @@ import { formatDistanceToNow } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { useTheme } from "./__root";
 import { toast } from "sonner";
-import { useAutoSync, getSyncStatus, SYNC_STATUS_EVENT, type SyncStatus } from "@/hooks/useAutoSync";
+import { useAutoSync, useAutoSyncStatus, getSyncStatus, SYNC_STATUS_EVENT, type SyncStatus } from "@/hooks/useAutoSync";
+import { useActiveMetaSnapshot } from "@/lib/metaSnapshotCache";
+import { formatSyncTimestampBRT } from "@/lib/syncStatusDomain";
 import { useAlertEngine } from "@/hooks/useAlertEngine";
 import { DateProvider } from "@/contexts/DateContext";
 import { usePagePermission } from "@/hooks/usePagePermission";
@@ -896,23 +898,33 @@ function Shell() {
           <div className="flex shrink-0 items-center gap-1">
 
             {/* Sync — ícone compacto com dot de status, tooltip com detalhes */}
-            <button
-              onClick={() => runSync("manual")}
-              disabled={syncStatus.isSyncing}
-              aria-label="Sincronizar contas Meta Ads"
-              className="hidden sm:flex relative h-8 w-8 items-center justify-center rounded-xl border border-border bg-card text-muted-foreground transition-all hover:border-primary/30 hover:text-primary active:scale-95 disabled:opacity-60"
-              title={syncStatus.isSyncing ? 'Sincronizando...' : syncStatus.lastSync
-                ? `Último sync: ${new Date(syncStatus.lastSync).toLocaleTimeString('pt-BR')}`
-                : 'Sincronizar agora'}
-            >
-              <RefreshCw className={`h-3.5 w-3.5 ${syncStatus.isSyncing ? 'animate-spin text-primary' : ''}`} />
-              {syncStatus.lastResult === 'success' && !syncStatus.isSyncing && (
-                <span className="absolute bottom-1 right-1 h-1.5 w-1.5 rounded-full bg-green-500" />
-              )}
-              {syncStatus.lastResult === 'error' && (
-                <span className="absolute bottom-1 right-1 h-1.5 w-1.5 rounded-full bg-destructive" />
-              )}
-            </button>
+            {(() => {
+              const effectiveSyncing = Boolean(syncStatus.isSyncing);
+              const lastSyncDisplay = syncStatus.lastSync ? formatSyncTimestampBRT(syncStatus.lastSync) : "Horário indisponível";
+              const syncTitle = effectiveSyncing
+                ? `Sincronização Meta em andamento (iniciado às ${formatSyncTimestampBRT(syncStatus.startedAt)})`
+                : `Último sync: ${lastSyncDisplay} — Clique para sincronizar agora`;
+              return (
+                <button
+                  onClick={() => runSync("manual")}
+                  disabled={effectiveSyncing}
+                  aria-label="Sincronizar contas Meta Ads"
+                  className="hidden sm:flex relative h-8 w-8 items-center justify-center rounded-xl border border-border bg-card text-muted-foreground transition-all hover:border-primary/30 hover:text-primary active:scale-95 disabled:opacity-60"
+                  title={syncTitle}
+                >
+                  <RefreshCw className={`h-3.5 w-3.5 ${effectiveSyncing ? 'animate-spin text-primary' : ''}`} />
+                  {syncStatus.lastResult === 'success' && !effectiveSyncing && (
+                    <span className="absolute bottom-1 right-1 h-1.5 w-1.5 rounded-full bg-green-500" />
+                  )}
+                  {syncStatus.lastResult === 'partial' && !effectiveSyncing && (
+                    <span className="absolute bottom-1 right-1 h-1.5 w-1.5 rounded-full bg-amber-400" />
+                  )}
+                  {syncStatus.lastResult === 'error' && !effectiveSyncing && (
+                    <span className="absolute bottom-1 right-1 h-1.5 w-1.5 rounded-full bg-destructive" />
+                  )}
+                </button>
+              );
+            })()}
 
             {/* Theme Toggle — visível tanto no desktop quanto no mobile */}
             <button

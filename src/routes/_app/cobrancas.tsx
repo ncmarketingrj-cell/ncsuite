@@ -248,7 +248,12 @@ function CobrancasPage() {
             <SnapshotStatusBadge
               snapshotId={activeSnapshot.snapshotId}
               committedAt={activeSnapshot.committedAt}
-              isUpdating={loadingSnapshots || fetchingSnapshots || loadingStats || fetchingStats || fetching}
+              startedAt={activeSnapshot.startedAt}
+              latestSyncRun={activeSnapshot.latestSyncRun}
+              accounts={activeSnapshot.accounts}
+              accountLastSyncAt={activeSnapshot.accountLastSyncAt}
+              isPageLoading={loadingSnapshots || fetchingSnapshots || loadingStats || fetchingStats}
+              isMetaSyncing={Boolean(fetching || activeSnapshot.isMetaSyncRunning)}
             />
             <DateRangePicker
               startDate={startDate}

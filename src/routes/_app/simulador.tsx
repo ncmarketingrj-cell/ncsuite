@@ -972,7 +972,13 @@ function SimuladorPage() {
             <SnapshotStatusBadge
               snapshotId={activeSnapshot.snapshotId}
               committedAt={activeSnapshot.committedAt}
-              isUpdating={isLoadingCampaigns || isFetchingCampaigns}
+              startedAt={activeSnapshot.startedAt}
+              latestSyncRun={activeSnapshot.latestSyncRun}
+              accounts={adAccounts?.length ? adAccounts : activeSnapshot.accounts}
+              selectedAccountId={accountId}
+              accountLastSyncAt={activeSnapshot.accountLastSyncAt}
+              isPageLoading={isLoadingCampaigns || isFetchingCampaigns}
+              isMetaSyncing={Boolean(activeSnapshot.isMetaSyncRunning)}
             />
             <button
               onClick={() => setShowDidacticGuide((v) => !v)}

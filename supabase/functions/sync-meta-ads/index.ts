@@ -664,6 +664,9 @@ serve(async (req) => {
       }
     }
 
+    const blockedAccountCoverage: Record<string, any> = {}
+    let blockedClientAccountsCount = 0
+
     // Verificar contas de clientes ativos que não apareceram em /me/adaccounts (lookup direto na Meta API)
     for (const cl of activeClientsData || []) {
       const actId = cl.meta_ad_account_id
@@ -677,6 +680,14 @@ serve(async (req) => {
         seenAccounts.add(probeRes.data.id)
         accountEntries.push({ acc: probeRes.data, token: probeToken, userId: cl.user_id || userId })
       } else {
+        blockedClientAccountsCount++
+        blockedAccountCoverage[String(actId)] = {
+          account_name: cl.name,
+          status: probeRes.errorKind || "permission_denied",
+          synced_at: null,
+          partial_errors: [probeRes.errorKind || "permission_denied"],
+          error: probeRes.error || "Conta ativa de cliente não visível no token atual",
+        }
         partialFailures.push({
           scope: "client_account_access",
           account_id: actId,
@@ -777,7 +788,7 @@ serve(async (req) => {
 
     const syncResults: any[] = []
     const apiErrors: string[] = []
-    const coverageByAccount: Record<string, any> = {}
+    const coverageByAccount: Record<string, any> = { ...blockedAccountCoverage }
     let totalMetrics = 0
     let totalDemographics = 0
     let totalCampaigns = 0
@@ -918,7 +929,22 @@ serve(async (req) => {
           }
         }
 
+        if (syncHistoryId) {
+          try {
+            await supabase
+              .from("sync_history")
+              .update({ heartbeat_at: new Date().toISOString() })
+              .eq("id", syncHistoryId)
+          } catch (_) {}
+        }
+
+        const coreDataSaved = Boolean(campaignsRes.ok && insightsRes.ok)
+
         coverageByAccount[acc.id] = {
+          account_name: acc.name,
+          status: !coreDataSaved ? "error" : stepFailures.length > 0 ? "partial_success" : "success",
+          synced_at: coreDataSaved ? new Date().toISOString() : null,
+          core_saved: coreDataSaved,
           campaigns_listed: campaignsWithBudgets.length,
           campaign_insights: insightsRes.data.length,
           adsets_listed: adsetsRes.data.length,
@@ -953,13 +979,21 @@ serve(async (req) => {
           adsetMetaById,
           primaryAdsetMetaByCampaign,
           hasPartialErrors: stepFailures.length > 0,
+          coreDataSaved,
         })
 
         await new Promise(r => setTimeout(r, 250))
       } catch (err: any) {
         console.error(`[SYNC] Erro na conta ${acc.id}:`, err.message)
         apiErrors.push(`Conta ${acc.id}: ${err.message}`)
-        partialFailures.push({ account_id: acc.id, step: "fetch", error: err.message })
+        partialFailures.push({ account_id: acc.id, account_name: acc.name, step: "fetch", error: err.message })
+        coverageByAccount[acc.id] = {
+          account_name: acc.name,
+          status: "error",
+          synced_at: null,
+          core_saved: false,
+          partial_errors: [err.message || "fetch_failed"],
+        }
       }
     }
 
@@ -987,6 +1021,7 @@ serve(async (req) => {
         adsetMetaById = new Map(),
         primaryAdsetMetaByCampaign = new Map(),
         hasPartialErrors,
+        coreDataSaved,
       } = item
 
       // 1. Consolidar TODAS as campanhas observadas (listagem + insights + adsets + ads) para zero perda silenciosa
@@ -1745,21 +1780,27 @@ serve(async (req) => {
         if (res.error) console.error(`[SYNC] Erro ad_metrics ${accountId}:`, res.error)
       }
 
-      // Atualizar last_sync da conta somente agora que os dados foram persistidos!
-      if (!hasPartialErrors) {
-        await supabase.from("ad_accounts").update({ last_sync: new Date().toISOString() }).eq("id", accountId)
+      // Atualizar last_sync da conta quando os dados principais foram persistidos (não punir a conta inteira por falha secundária de breakdown)
+      if (!hasPartialErrors || coreDataSaved) {
+        const persistedAtIso = new Date().toISOString()
+        await supabase.from("ad_accounts").update({ last_sync: persistedAtIso }).eq("id", accountId)
+        if (coverageByAccount[accountId]) {
+          coverageByAccount[accountId].synced_at = persistedAtIso
+        }
       }
     }
 
     // Atualizar heartbeat apenas dos user_ids envolvidos no sync
     const syncStatus = apiErrors.length > 0 || partialFailures.length > 0 ? "partial_success" : "success"
+    const completedAtIso = new Date().toISOString()
     for (const uid of involvedUserIds) {
       await supabase.from("meta_ads_configs").update({
         is_connected: true,
-        last_heartbeat_at: new Date().toISOString(),
+        last_heartbeat_at: completedAtIso,
         last_heartbeat_status: syncStatus,
         last_heartbeat_summary: {
           accounts: adAccounts.length,
+          accounts_total: adAccounts.length + blockedClientAccountsCount,
           campaigns: totalCampaigns,
           metrics: totalMetrics,
           demographic_records: totalDemographics,
@@ -1778,8 +1819,10 @@ serve(async (req) => {
           id: syncHistoryId,
           user_id: userId,
           status: syncStatus,
-          completed_at: new Date().toISOString(),
+          completed_at: completedAtIso,
+          heartbeat_at: completedAtIso,
           accounts_synced: adAccounts.length,
+          accounts_total: adAccounts.length + blockedClientAccountsCount,
           campaigns_synced: totalCampaigns,
           metrics_synced: totalMetrics,
           error_message: apiErrors.length > 0 ? apiErrors.join("; ") : null,
@@ -1788,7 +1831,7 @@ serve(async (req) => {
           sync_version: SYNC_VERSION,
         }],
         "id",
-        ["sync_coverage", "partial_failures", "sync_version"]
+        ["sync_coverage", "partial_failures", "sync_version", "accounts_total", "heartbeat_at"]
       )
     }
 

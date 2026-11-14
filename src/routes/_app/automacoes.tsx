@@ -18,6 +18,7 @@ import { toast } from "sonner";
 import { DiagnosisModal } from "@/components/victoria/DiagnosisModal";
 import { ThresholdModal } from "@/components/automacoes/ThresholdModal";
 import { getSyncStatus, useAutoSync } from "@/hooks/useAutoSync";
+import { formatSyncTimestampBRT } from "@/lib/syncStatusDomain";
 import {
   triggerEvaluation, getEvalStatus, EVAL_STATUS_EVENT, type EvalStatus,
   getSoundEnabled, setSoundEnabled, SOUND_CHANGED_EVENT,
@@ -1827,8 +1828,8 @@ function AutomationsPage() {
                 O motor busca métricas a cada 1 hora ou sob demanda manual. Todas as campanhas, conjuntos de anúncios e conversões do WhatsApp são calibrados diretamente pelo Graph API.
               </p>
               <div className="flex flex-wrap gap-4 text-xs font-mono text-muted-foreground pt-1">
-                <span>Último sync: {syncStatus.lastSync ? formatDistanceToNow(new Date(syncStatus.lastSync), { addSuffix: true, locale: ptBR }) : "Nunca"}</span>
-                <span>Status: <strong className="text-foreground">{syncStatus.isSyncing ? "Sincronizando..." : "Aguardando"}</strong></span>
+                <span>Último sync: {syncStatus.lastSync ? formatSyncTimestampBRT(syncStatus.lastSync) : "Horário indisponível"}</span>
+                <span>Status: <strong className="text-foreground">{syncStatus.isSyncing ? "Sincronização Meta em andamento" : "Aguardando"}</strong></span>
               </div>
             </div>
 
@@ -1861,16 +1862,22 @@ function AutomationsPage() {
                   <div key={s.id} className="p-4 flex items-center justify-between hover:bg-muted/20 transition">
                     <div className="space-y-0.5">
                       <p className="font-mono font-bold text-foreground">
-                        {new Date(s.started_at).toLocaleString("pt-BR")}
+                        Iniciado: {formatSyncTimestampBRT(s.started_at)}
+                        {s.completed_at ? ` • Concluído: ${formatSyncTimestampBRT(s.completed_at)}` : ""}
                       </p>
                       <p className="text-[11px] text-muted-foreground">
                         {s.accounts_synced ?? 0} contas • {s.campaigns_synced ?? 0} campanhas atualizadas
+                        {Array.isArray(s.partial_failures) && s.partial_failures.length > 0 ? ` • ${s.partial_failures.length} falha(s) parcial(is)` : ""}
                       </p>
                     </div>
                     <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-mono font-bold ${
                       s.status === "completed" || s.status === "success"
                         ? "bg-emerald-500/15 text-emerald-400"
-                        : "bg-destructive/15 text-destructive"
+                        : s.status === "partial_success" || s.status === "partial"
+                          ? "bg-amber-500/15 text-amber-400"
+                          : s.status === "running"
+                            ? "bg-primary/15 text-primary"
+                            : "bg-destructive/15 text-destructive"
                     }`}>
                       {s.status}
                     </span>

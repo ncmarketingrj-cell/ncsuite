@@ -769,7 +769,13 @@ function AuditoriaHub() {
           <SnapshotStatusBadge
             snapshotId={activeSnapshot.snapshotId}
             committedAt={activeSnapshot.committedAt}
-            isUpdating={loading}
+            startedAt={activeSnapshot.startedAt}
+            latestSyncRun={activeSnapshot.latestSyncRun}
+            accounts={activeSnapshot.accounts}
+            selectedAccountId={selectedAccountId}
+            accountLastSyncAt={activeSnapshot.accountLastSyncAt}
+            isPageLoading={loading}
+            isMetaSyncing={Boolean(activeSnapshot.isMetaSyncRunning)}
             className="mt-1.5 w-fit"
           />
         </div>
