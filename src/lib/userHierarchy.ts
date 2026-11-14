@@ -121,8 +121,35 @@ export function canUserManageUsers(
 }
 
 /**
+ * Define quem pode visualizar a central técnica de Integrações & Sincronização Meta.
+ * Restrito estritamente a Administradores ou à permissão explícita `gerenciar_integracoes`.
+ */
+export function canUserViewIntegrations(
+  profile?: { id?: string; email?: string; role?: string; position?: string; permissions?: Record<string, any> } | null
+): boolean {
+  if (!profile) return false;
+  if (isMasterAdmin(profile)) return true;
+  const role = (profile.role || "").toLowerCase().trim();
+  if (role === "admin" || role === "master_admin") return true;
+  return hasPermissionAccess(profile.permissions, "gerenciar_integracoes");
+}
+
+/**
+ * Define quem pode iniciar sincronizações manuais, salvar tokens Meta/Google ou alterar integrações.
+ */
+export function canUserManageIntegrations(
+  profile?: { id?: string; email?: string; role?: string; position?: string; permissions?: Record<string, any> } | null
+): boolean {
+  if (!profile) return false;
+  if (isMasterAdmin(profile)) return true;
+  const role = (profile.role || "").toLowerCase().trim();
+  if (role === "admin" || role === "master_admin") return true;
+  return hasPermissionEdit(profile.permissions, "gerenciar_integracoes");
+}
+
+/**
  * Define quem pode acessar a rota administrativa `/config`.
- * Remove falso-positivo com "Gestor de Tráfego" e respeita o bloqueio de `criar_usuarios`.
+ * Permite administradores, usuários com `criar_usuarios` ou quem possui `gerenciar_integracoes`.
  */
 export function canUserAccessConfig(
   profile?: { id?: string; email?: string; role?: string; position?: string; permissions?: Record<string, any> } | null
@@ -131,7 +158,10 @@ export function canUserAccessConfig(
   if (isMasterAdmin(profile)) return true;
   const role = (profile.role || "").toLowerCase().trim();
   if (role === "admin" || role === "ceo" || role === "diretor" || role === "master_admin") return true;
-  return hasPermissionAccess(profile.permissions, "criar_usuarios");
+  return (
+    hasPermissionAccess(profile.permissions, "criar_usuarios") ||
+    canUserViewIntegrations(profile)
+  );
 }
 
 /**
@@ -433,6 +463,7 @@ export const PERMISSION_MODULES_CATALOG: Array<{
   { key: "cobrancas", label: "Cobranças", hub: "gestao", mode: "full", hint: "Financeiro e mensalidades" },
   { key: "social", label: "Social Media & Planner", hub: "gestao", mode: "full", hint: "Feed, agendamento e Insights" },
   { key: "criar_usuarios", label: "Gestão de Usuários & Pixel", hub: "sistema", mode: "full", hint: "Criar contas, senhas e ver Pixel" },
+  { key: "gerenciar_integracoes", label: "Integrações & Sincronização", hub: "sistema", mode: "full", hint: "Ver telemetria de sync, tokens e iniciar sincronizações" },
 ];
 
 export const ROLE_CATALOG: RoleDefinition[] = [
@@ -564,7 +595,7 @@ export const CARGO_CATALOG: CargoDefinition[] = [
       dashboard: "edit", metricas: "edit", simulador: "edit", cockpit: "edit",
       clientes: "view", relatorios: "edit", criativos: "edit", social: "none",
       automacoes: "edit", reunioes: "none", cobrancas: "none", strategy_map: "edit",
-      agente: "edit", gestao_victoria: "none", auditoria: "edit", criar_usuarios: "none",
+      agente: "edit", gestao_victoria: "none", auditoria: "edit", criar_usuarios: "none", gerenciar_integracoes: "none",
     },
   },
   {
@@ -575,7 +606,7 @@ export const CARGO_CATALOG: CargoDefinition[] = [
       dashboard: "none", metricas: "none", simulador: "none", cockpit: "none",
       clientes: "view", relatorios: "edit", criativos: "edit", social: "edit",
       automacoes: "none", reunioes: "none", cobrancas: "none", strategy_map: "edit",
-      agente: "view", gestao_victoria: "none", auditoria: "none", criar_usuarios: "none",
+      agente: "view", gestao_victoria: "none", auditoria: "none", criar_usuarios: "none", gerenciar_integracoes: "none",
     },
   },
   {
@@ -586,7 +617,7 @@ export const CARGO_CATALOG: CargoDefinition[] = [
       dashboard: "none", metricas: "none", simulador: "none", cockpit: "none",
       clientes: "view", relatorios: "none", criativos: "edit", social: "view",
       automacoes: "none", reunioes: "none", cobrancas: "none", strategy_map: "edit",
-      agente: "view", gestao_victoria: "none", auditoria: "none", criar_usuarios: "none",
+      agente: "view", gestao_victoria: "none", auditoria: "none", criar_usuarios: "none", gerenciar_integracoes: "none",
     },
   },
   {
@@ -597,7 +628,7 @@ export const CARGO_CATALOG: CargoDefinition[] = [
       dashboard: "none", metricas: "none", simulador: "none", cockpit: "none",
       clientes: "view", relatorios: "none", criativos: "edit", social: "view",
       automacoes: "none", reunioes: "none", cobrancas: "none", strategy_map: "none",
-      agente: "view", gestao_victoria: "none", auditoria: "none", criar_usuarios: "none",
+      agente: "view", gestao_victoria: "none", auditoria: "none", criar_usuarios: "none", gerenciar_integracoes: "none",
     },
   },
   {
@@ -608,7 +639,7 @@ export const CARGO_CATALOG: CargoDefinition[] = [
       dashboard: "none", metricas: "none", simulador: "none", cockpit: "none",
       clientes: "view", relatorios: "none", criativos: "none", social: "none",
       automacoes: "none", reunioes: "edit", cobrancas: "none", strategy_map: "none",
-      agente: "view", gestao_victoria: "none", auditoria: "none", criar_usuarios: "none",
+      agente: "view", gestao_victoria: "none", auditoria: "none", criar_usuarios: "none", gerenciar_integracoes: "none",
     },
   },
   {
@@ -619,18 +650,18 @@ export const CARGO_CATALOG: CargoDefinition[] = [
       dashboard: "view", metricas: "view", simulador: "none", cockpit: "none",
       clientes: "edit", relatorios: "edit", criativos: "view", social: "edit",
       automacoes: "none", reunioes: "edit", cobrancas: "none", strategy_map: "edit",
-      agente: "edit", gestao_victoria: "none", auditoria: "view", criar_usuarios: "none",
+      agente: "edit", gestao_victoria: "none", auditoria: "view", criar_usuarios: "none", gerenciar_integracoes: "none",
     },
   },
   {
     name: "Desenvolvedor",
     recommendedRole: "desenvolvedor",
-    summary: "Acesso técnico amplo a Automações, Victoria AI e APIs — usuários bloqueados por padrão.",
+    summary: "Acesso técnico amplo a Automações, Victoria AI e APIs — usuários e integrações dependem de liberação.",
     defaultPermissions: {
       dashboard: "edit", metricas: "edit", simulador: "edit", cockpit: "edit",
       clientes: "edit", relatorios: "edit", criativos: "edit", social: "edit",
       automacoes: "edit", reunioes: "edit", cobrancas: "none", strategy_map: "edit",
-      agente: "edit", gestao_victoria: "edit", auditoria: "edit", criar_usuarios: "none",
+      agente: "edit", gestao_victoria: "edit", auditoria: "edit", criar_usuarios: "none", gerenciar_integracoes: "none",
     },
   },
   {
@@ -641,18 +672,18 @@ export const CARGO_CATALOG: CargoDefinition[] = [
       dashboard: "edit", metricas: "edit", simulador: "edit", cockpit: "edit",
       clientes: "edit", relatorios: "edit", criativos: "edit", social: "edit",
       automacoes: "edit", reunioes: "edit", cobrancas: "none", strategy_map: "edit",
-      agente: "edit", gestao_victoria: "view", auditoria: "edit", criar_usuarios: "none",
+      agente: "edit", gestao_victoria: "view", auditoria: "edit", criar_usuarios: "none", gerenciar_integracoes: "none",
     },
   },
   {
     name: "Gerente",
     recommendedRole: "gerente",
-    summary: "Supervisão geral da operação (gestão de usuários opcional, desativada por padrão por segurança).",
+    summary: "Supervisão geral da operação (gestão de usuários e integrações opcionais, desativadas por padrão).",
     defaultPermissions: {
       dashboard: "edit", metricas: "edit", simulador: "edit", cockpit: "edit",
       clientes: "edit", relatorios: "edit", criativos: "edit", social: "edit",
       automacoes: "view", reunioes: "edit", cobrancas: "none", strategy_map: "edit",
-      agente: "edit", gestao_victoria: "view", auditoria: "edit", criar_usuarios: "none",
+      agente: "edit", gestao_victoria: "view", auditoria: "edit", criar_usuarios: "none", gerenciar_integracoes: "none",
     },
   },
   {
@@ -663,7 +694,7 @@ export const CARGO_CATALOG: CargoDefinition[] = [
       dashboard: "edit", metricas: "edit", simulador: "edit", cockpit: "edit",
       clientes: "edit", relatorios: "edit", criativos: "edit", social: "edit",
       automacoes: "edit", reunioes: "edit", cobrancas: "edit", strategy_map: "edit",
-      agente: "edit", gestao_victoria: "edit", auditoria: "edit", criar_usuarios: "edit",
+      agente: "edit", gestao_victoria: "edit", auditoria: "edit", criar_usuarios: "edit", gerenciar_integracoes: "none",
     },
   },
   {
@@ -674,7 +705,7 @@ export const CARGO_CATALOG: CargoDefinition[] = [
       dashboard: "edit", metricas: "edit", simulador: "edit", cockpit: "edit",
       clientes: "edit", relatorios: "edit", criativos: "edit", social: "edit",
       automacoes: "edit", reunioes: "edit", cobrancas: "edit", strategy_map: "edit",
-      agente: "edit", gestao_victoria: "edit", auditoria: "edit", criar_usuarios: "edit",
+      agente: "edit", gestao_victoria: "edit", auditoria: "edit", criar_usuarios: "edit", gerenciar_integracoes: "edit",
     },
   },
   {
@@ -685,7 +716,7 @@ export const CARGO_CATALOG: CargoDefinition[] = [
       dashboard: "edit", metricas: "edit", simulador: "edit", cockpit: "edit",
       clientes: "edit", relatorios: "edit", criativos: "edit", social: "edit",
       automacoes: "edit", reunioes: "edit", cobrancas: "edit", strategy_map: "edit",
-      agente: "edit", gestao_victoria: "edit", auditoria: "edit", criar_usuarios: "edit",
+      agente: "edit", gestao_victoria: "edit", auditoria: "edit", criar_usuarios: "edit", gerenciar_integracoes: "edit",
     },
   },
   {
@@ -696,7 +727,7 @@ export const CARGO_CATALOG: CargoDefinition[] = [
       dashboard: "view", metricas: "none", simulador: "none", cockpit: "none",
       clientes: "none", relatorios: "none", criativos: "none", social: "none",
       automacoes: "none", reunioes: "none", cobrancas: "none", strategy_map: "none",
-      agente: "none", gestao_victoria: "none", auditoria: "none", criar_usuarios: "none",
+      agente: "none", gestao_victoria: "none", auditoria: "none", criar_usuarios: "none", gerenciar_integracoes: "none",
     },
   },
 ];

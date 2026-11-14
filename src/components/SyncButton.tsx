@@ -37,14 +37,8 @@ export function SyncButton({ mode = "quick" }: SyncButtonProps) {
   const [syncing, setSyncing] = useState(false);
   const [lastStatus, setLastStatus] = useState<"idle" | "success" | "error">("idle");
   const { user } = useAuth();
-  const { isAdmin, hasAccess, canEdit } = usePagePermission();
-  const canSyncTraffic =
-    isAdmin ||
-    canEdit("metricas") ||
-    canEdit("cockpit") ||
-    canEdit("dashboard") ||
-    hasAccess("metricas") ||
-    hasAccess("cockpit");
+  const { canManageIntegrations } = usePagePermission();
+  const canTriggerSync = canManageIntegrations;
 
   const { data: lastSyncData, refetch: refetchSyncDate } = useQuery({
     queryKey: ["last-sync-date"],
@@ -75,6 +69,10 @@ export function SyncButton({ mode = "quick" }: SyncButtonProps) {
   const monthRange = isMonthMode ? getMonthRange(monthsAgo) : null;
 
   const triggerSync = async () => {
+    if (!canTriggerSync) {
+      toast.error("Sem permissão para gerenciar integrações ou iniciar sincronizações.");
+      return;
+    }
     setSyncing(true);
     setLastStatus("idle");
 
@@ -214,7 +212,7 @@ export function SyncButton({ mode = "quick" }: SyncButtonProps) {
     ? `Busca todos os dados de ${monthRange!.label} (${monthRange!.since} a ${monthRange!.until}). Ideal para preencher lacunas de meses anteriores.`
     : "Busca 60 dias de histórico. Use na carga inicial ou ao começar um novo mês.";
 
-  if (!canSyncTraffic) {
+  if (!canTriggerSync) {
     return null;
   }
 

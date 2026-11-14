@@ -151,6 +151,7 @@ export const VictoriaFloatingChat: React.FC<VictoriaFloatingChatProps> = ({
   const [responseOrigin, setResponseOrigin] = useState<"generative" | "deterministic_fallback" | null>(null);
   const [fallbackReason, setFallbackReason] = useState<string | null>(null);
   const [responseLatencyMs, setResponseLatencyMs] = useState<number | null>(null);
+  const [ragCitations, setRagCitations] = useState<Array<{ id: string; title: string; source: string; category?: string }>>([]);
   const activeFlowSeqRef = useRef<number>(0);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -243,6 +244,7 @@ export const VictoriaFloatingChat: React.FC<VictoriaFloatingChatProps> = ({
     setResponseOrigin(null);
     setFallbackReason(null);
     setResponseLatencyMs(null);
+    setRagCitations([]);
     setConversationId(null);
     conversationContextHashRef.current = null;
 
@@ -378,9 +380,10 @@ export const VictoriaFloatingChat: React.FC<VictoriaFloatingChatProps> = ({
       }
 
       setRagSources(result.ragCitations || []);
+      setRagCitations(result.ragCitations || []);
       setResponseOrigin(result.responseOrigin);
-      setFallbackReason(result.fallbackReason ?? null);
-      setResponseLatencyMs(result.latencyMs ?? null);
+      setFallbackReason(result.fallbackReason);
+      setResponseLatencyMs(result.latencyMs);
       setMessages([
         {
           id: `diag_${ctxSnapshot.request_id}`,
@@ -544,10 +547,11 @@ export const VictoriaFloatingChat: React.FC<VictoriaFloatingChatProps> = ({
       );
 
       setResponseOrigin(result.responseOrigin);
-      setFallbackReason(result.fallbackReason ?? null);
-      setResponseLatencyMs(result.latencyMs ?? null);
+      setFallbackReason(result.fallbackReason);
+      setResponseLatencyMs(result.latencyMs);
       if (result.ragCitations && result.ragCitations.length > 0) {
         setRagSources(result.ragCitations);
+        setRagCitations(result.ragCitations);
       }
 
       if (result.timedOut) {
@@ -620,8 +624,8 @@ export const VictoriaFloatingChat: React.FC<VictoriaFloatingChatProps> = ({
     activeContext.confidence_level === "alta"
       ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/30"
       : activeContext.confidence_level === "media"
-      ? "bg-amber-500/15 text-amber-400 border-amber-500/30"
-      : "bg-orange-500/15 text-orange-300 border-orange-500/30";
+        ? "bg-amber-500/15 text-amber-400 border-amber-500/30"
+        : "bg-orange-500/15 text-orange-300 border-orange-500/30";
 
   return (
     <>
@@ -812,20 +816,19 @@ export const VictoriaFloatingChat: React.FC<VictoriaFloatingChatProps> = ({
               <div className="flex items-center gap-1.5 min-w-0">
                 {responseOrigin && (
                   <span
-                    className={`rounded px-1.5 py-0.5 font-mono text-[8px] font-bold border ${
-                      responseOrigin === "generative"
-                        ? "bg-emerald-500/10 text-emerald-300 border-emerald-500/30"
-                        : "bg-amber-500/10 text-amber-300 border-amber-500/30"
-                    }`}
+                    className={`rounded px-1.5 py-0.5 font-mono text-[8px] font-bold border ${responseOrigin === "generative"
+                      ? "bg-emerald-500/10 text-emerald-300 border-emerald-500/30"
+                      : "bg-amber-500/10 text-amber-300 border-amber-500/30"
+                      }`}
                     title={fallbackReason || undefined}
                   >
                     {responseOrigin === "generative" ? "⚡ IA" : "🛡️ Fallback"}
                     {responseLatencyMs ? ` ${(responseLatencyMs / 1000).toFixed(1)}s` : ""}
                   </span>
                 )}
-                {ragSources.length > 0 && (
+                {ragCitations.length > 0 && (
                   <span className="rounded px-1.5 py-0.5 font-mono text-[8px] font-bold bg-violet-500/10 text-violet-300 border border-violet-500/30">
-                    📚 {ragSources.length}
+                    📚 {ragCitations.length}
                   </span>
                 )}
                 <span className="font-mono text-[8px] text-muted-foreground/60 truncate">
@@ -851,7 +854,7 @@ export const VictoriaFloatingChat: React.FC<VictoriaFloatingChatProps> = ({
                   Métricas Brutas: Spend R$ {activeContext.financial.spend.toFixed(2)} | Impr: {activeContext.raw_metrics.impressions.toLocaleString("pt-BR")} | Reach: {activeContext.raw_metrics.reach.toLocaleString("pt-BR")} | CTR Link: {activeContext.raw_metrics.ctr_link.toFixed(2)}% | CTR Todos: {activeContext.raw_metrics.ctr_all.toFixed(2)}% | CPC Link: {activeContext.raw_metrics.link_clicks > 0 ? `R$ ${activeContext.raw_metrics.cpc_link.toFixed(2)}` : "N/A"} | CPC Todos: {activeContext.raw_metrics.all_clicks > 0 ? `R$ ${activeContext.raw_metrics.cpc_all.toFixed(2)}` : "N/A"} | Link Clicks: {activeContext.raw_metrics.link_clicks} | All Clicks: {activeContext.raw_metrics.all_clicks} | CPM: R$ {activeContext.raw_metrics.cpm.toFixed(2)}
                 </p>
                 <p className="text-muted-foreground">
-                  Snapshot Sync: {activeContext.period.last_sync_at || "N/A"} ({activeContext.period.data_freshness}) · Origem: {responseOrigin === "generative" ? "Resposta Generativa (IA)" : responseOrigin === "deterministic_fallback" ? `Fallback Estruturado Determinístico${fallbackReason ? ` (${fallbackReason})` : ""}` : "Carregando..."}
+                  Origem: {responseOrigin === "generative" ? "Resposta Generativa (IA)" : responseOrigin === "deterministic_fallback" ? `Fallback Estruturado Determinístico${fallbackReason ? ` (${fallbackReason})` : ""}` : "Carregando..."}
                 </p>
                 <p className="text-muted-foreground">
                   Campos ausentes: {activeContext.missing_fields.join(", ") || "Nenhum"}
@@ -931,11 +934,10 @@ export const VictoriaFloatingChat: React.FC<VictoriaFloatingChatProps> = ({
                       </div>
                     )}
                     <div
-                      className={`rounded-2xl p-3.5 max-w-[88%] leading-relaxed ${
-                        isAssistant
-                          ? "bg-card border border-white/10 text-foreground shadow-md"
-                          : "bg-primary text-background font-medium shadow-[0_4px_16px_rgba(220,38,38,0.25)]"
-                      }`}
+                      className={`rounded-2xl p-3.5 max-w-[88%] leading-relaxed ${isAssistant
+                        ? "bg-card border border-white/10 text-foreground shadow-md"
+                        : "bg-primary text-background font-medium shadow-[0_4px_16px_rgba(220,38,38,0.25)]"
+                        }`}
                     >
                       {isAssistant ? (
                         <div className="prose prose-invert prose-xs max-w-none space-y-2">
@@ -945,9 +947,8 @@ export const VictoriaFloatingChat: React.FC<VictoriaFloatingChatProps> = ({
                         <p className="whitespace-pre-wrap">{m.content}</p>
                       )}
                       <span
-                        className={`block text-[8px] font-mono mt-1.5 opacity-40 ${
-                          isAssistant ? "text-left" : "text-right"
-                        }`}
+                        className={`block text-[8px] font-mono mt-1.5 opacity-40 ${isAssistant ? "text-left" : "text-right"
+                          }`}
                       >
                         {new Date(m.created_at).toLocaleTimeString("pt-BR", {
                           hour: "2-digit",

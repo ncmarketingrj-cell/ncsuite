@@ -21,7 +21,6 @@ import {
   DEFAULT_META_TIMEZONE,
   useActiveMetaSnapshot,
 } from "@/lib/metaSnapshotCache";
-import { SnapshotStatusBadge } from "@/components/SnapshotStatusBadge";
 import {
   AreaChart, Area, XAxis, YAxis, ResponsiveContainer, Tooltip as RTooltip,
 } from "recharts";
@@ -2756,17 +2755,6 @@ function CockpitPage() {
             compact
           />
           <div className="flex items-center gap-2 flex-wrap">
-            <SnapshotStatusBadge
-              snapshotId={activeSnapshot.snapshotId}
-              committedAt={activeSnapshot.committedAt}
-              startedAt={activeSnapshot.startedAt}
-              latestSyncRun={activeSnapshot.latestSyncRun}
-              accounts={activeSnapshot.accounts}
-              selectedAccountId={accountId}
-              accountLastSyncAt={activeSnapshot.accountLastSyncAt}
-              isPageLoading={Boolean(isLoading || isFetching)}
-              isMetaSyncing={Boolean(activeSnapshot.isMetaSyncRunning)}
-            />
             <motion.div
             initial={{ opacity: 0, x: 20 }}
             animate={{ opacity: 1, x: 0 }}

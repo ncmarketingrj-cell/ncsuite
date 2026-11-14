@@ -1,10 +1,17 @@
 import { useAuth } from "@/lib/auth";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase-external/client";
-import { getCargoDefinition, hasPermissionAccess, hasPermissionEdit, isMasterAdmin } from "@/lib/userHierarchy";
+import {
+  canUserManageIntegrations,
+  canUserViewIntegrations,
+  getCargoDefinition,
+  hasPermissionAccess,
+  hasPermissionEdit,
+  isMasterAdmin,
+} from "@/lib/userHierarchy";
 import { resolveUserAvatar } from "@/lib/userService";
 
-const RESTRICTED_BY_DEFAULT = new Set(["criar_usuarios", "gestao_victoria"]);
+const RESTRICTED_BY_DEFAULT = new Set(["criar_usuarios", "gestao_victoria", "gerenciar_integracoes"]);
 
 export function usePagePermission() {
   const { user } = useAuth();
@@ -98,6 +105,19 @@ export function usePagePermission() {
     return hasPermissionEdit(perms, key);
   };
 
+  const resolvedProfileCheck = profile
+    ? {
+        id: user?.id,
+        email: (profile as any)?.email || user?.email,
+        role: (profile as any)?.role,
+        position: (profile as any)?.position,
+        permissions: perms,
+      }
+    : null;
+
+  const canViewIntegrations = !isLoading && canUserViewIntegrations(resolvedProfileCheck);
+  const canManageIntegrations = !isLoading && canUserManageIntegrations(resolvedProfileCheck);
+
   return {
     profile,
     isAdmin,
@@ -105,5 +125,7 @@ export function usePagePermission() {
     perms,
     hasAccess,
     canEdit,
+    canViewIntegrations,
+    canManageIntegrations,
   };
 }

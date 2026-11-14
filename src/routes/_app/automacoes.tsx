@@ -17,8 +17,6 @@ import { hasPermissionAccess, isMasterAdmin } from "@/lib/userHierarchy";
 import { toast } from "sonner";
 import { DiagnosisModal } from "@/components/victoria/DiagnosisModal";
 import { ThresholdModal } from "@/components/automacoes/ThresholdModal";
-import { getSyncStatus, useAutoSync } from "@/hooks/useAutoSync";
-import { formatSyncTimestampBRT } from "@/lib/syncStatusDomain";
 import {
   triggerEvaluation, getEvalStatus, EVAL_STATUS_EVENT, type EvalStatus,
   getSoundEnabled, setSoundEnabled, SOUND_CHANGED_EVENT,
@@ -52,8 +50,8 @@ const ADMIN_EMAILS = ["nc.marketingrj@gmail.com", "hc.marketing.dgt@gmail.com"];
 
 function AutomationsPage() {
   const search = Route.useSearch();
-  const [activeTab, setActiveTab] = useState<"automacoes" | "notificacoes" | "personalizacao" | "sync">(() => {
-    if (search.tab === "notificacoes" || search.tab === "personalizacao" || search.tab === "sync") {
+  const [activeTab, setActiveTab] = useState<"automacoes" | "notificacoes" | "personalizacao">(() => {
+    if (search.tab === "notificacoes" || search.tab === "personalizacao") {
       return search.tab as any;
     }
     return "automacoes";
@@ -79,9 +77,6 @@ function AutomationsPage() {
     profileData?.role === "admin" ||
     profileData?.role === "master_admin" ||
     hasPermissionAccess(profileData?.permissions as any, "automacoes");
-
-  const syncStatus = getSyncStatus();
-  const { runSync } = useAutoSync();
 
   // ── Eval status do motor ────────────────────────────────────────────────────
   const [evalStatus, setEvalStatus] = useState<EvalStatus>(getEvalStatus);
@@ -296,19 +291,6 @@ function AutomationsPage() {
     },
     onError: (err: any) => {
       toast.error(`Erro ao salvar: ${err.message}`);
-    },
-  });
-
-  // ── Histórico de sync ───────────────────────────────────────────────────────
-  const { data: syncHistory = [], isLoading: loadingSync } = useQuery({
-    queryKey: ["sync_history"],
-    queryFn: async () => {
-      const { data } = await (supabase as any)
-        .from("sync_history")
-        .select("*")
-        .order("started_at", { ascending: false })
-        .limit(20);
-      return (data as any[]) || [];
     },
   });
 
@@ -569,12 +551,6 @@ function AutomationsPage() {
             label: "Personalização & 10 Toques",
             badge: "Áudio & Push",
             icon: Music,
-          },
-          {
-            id: "sync",
-            label: "Sincronização Meta Ads",
-            badge: syncStatus.isSyncing ? "Sincronizando..." : "Meta API",
-            icon: Server,
           },
         ].map((tab) => {
           const isActive = activeTab === tab.id;
@@ -1817,78 +1793,6 @@ function AutomationsPage() {
       {/* ════════════════════════════════════════════════════════════════════════
           TAB 4: SINCRONIZAÇÃO META ADS
       ════════════════════════════════════════════════════════════════════════ */}
-      {activeTab === "sync" && (
-        <div className="space-y-6">
-          <div className="rounded-2xl border border-border bg-card p-6 flex flex-col md:flex-row gap-6 items-center justify-between">
-            <div className="space-y-2 text-center md:text-left">
-              <h3 className="text-base font-black uppercase text-foreground flex items-center gap-2 justify-center md:justify-start">
-                <Server className="h-5 w-5 text-primary" /> Motor de Sincronização Meta Ads
-              </h3>
-              <p className="text-xs text-muted-foreground max-w-xl">
-                O motor busca métricas a cada 1 hora ou sob demanda manual. Todas as campanhas, conjuntos de anúncios e conversões do WhatsApp são calibrados diretamente pelo Graph API.
-              </p>
-              <div className="flex flex-wrap gap-4 text-xs font-mono text-muted-foreground pt-1">
-                <span>Último sync: {syncStatus.lastSync ? formatSyncTimestampBRT(syncStatus.lastSync) : "Horário indisponível"}</span>
-                <span>Status: <strong className="text-foreground">{syncStatus.isSyncing ? "Sincronização Meta em andamento" : "Aguardando"}</strong></span>
-              </div>
-            </div>
-
-            <button
-              onClick={() => runSync("manual")}
-              disabled={syncStatus.isSyncing}
-              className="flex items-center gap-2 rounded-xl bg-primary px-5 py-3 text-xs font-bold text-background transition hover:opacity-90 active:scale-95 disabled:opacity-50 shrink-0"
-            >
-              {syncStatus.isSyncing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-              Forçar Sincronização Total
-            </button>
-          </div>
-
-          {/* Histórico de Sync */}
-          <div className="rounded-2xl border border-border bg-card overflow-hidden">
-            <div className="p-4 border-b border-border bg-muted/30 flex items-center justify-between">
-              <span className="text-xs font-black uppercase text-foreground">Histórico de Execuções Recentes</span>
-              <span className="text-xs font-mono text-muted-foreground">{syncHistory.length} registros</span>
-            </div>
-
-            {loadingSync ? (
-              <div className="flex justify-center py-12">
-                <Loader2 className="h-6 w-6 animate-spin text-primary/50" />
-              </div>
-            ) : !syncHistory.length ? (
-              <div className="py-12 text-center text-xs text-muted-foreground">Nenhum log de sync registrado.</div>
-            ) : (
-              <div className="divide-y divide-border text-xs">
-                {syncHistory.map((s: any) => (
-                  <div key={s.id} className="p-4 flex items-center justify-between hover:bg-muted/20 transition">
-                    <div className="space-y-0.5">
-                      <p className="font-mono font-bold text-foreground">
-                        Iniciado: {formatSyncTimestampBRT(s.started_at)}
-                        {s.completed_at ? ` • Concluído: ${formatSyncTimestampBRT(s.completed_at)}` : ""}
-                      </p>
-                      <p className="text-[11px] text-muted-foreground">
-                        {s.accounts_synced ?? 0} contas • {s.campaigns_synced ?? 0} campanhas atualizadas
-                        {Array.isArray(s.partial_failures) && s.partial_failures.length > 0 ? ` • ${s.partial_failures.length} falha(s) parcial(is)` : ""}
-                      </p>
-                    </div>
-                    <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-mono font-bold ${
-                      s.status === "completed" || s.status === "success"
-                        ? "bg-emerald-500/15 text-emerald-400"
-                        : s.status === "partial_success" || s.status === "partial"
-                          ? "bg-amber-500/15 text-amber-400"
-                          : s.status === "running"
-                            ? "bg-primary/15 text-primary"
-                            : "bg-destructive/15 text-destructive"
-                    }`}>
-                      {s.status}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
       {/* Modal Novo / Editar Threshold */}
       <AnimatePresence>
         {modal && (

@@ -27,16 +27,72 @@ const supabase = createClient(
 const META_API_BASE = META_GRAPH_BASE
 const INSIGHT_ATTRIBUTION_WINDOWS = JSON.stringify(["7d_click", "1d_view", "1d_click", "default"])
 
-async function requireAuth(req: Request): Promise<{ user: any | null, errorResponse: Response | null }> {
+async function requireAuth(req: Request): Promise<{ user: any | null, isServiceRole: boolean, errorResponse: Response | null }> {
   const authHeader = req.headers.get("Authorization");
   if (!authHeader?.startsWith("Bearer ")) {
-    return { user: null, errorResponse: new Response(JSON.stringify({ error: "Unauthorized" }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }) };
+    return {
+      user: null,
+      isServiceRole: false,
+      errorResponse: new Response(JSON.stringify({ error: "Unauthorized", code: "UNAUTHORIZED" }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      }),
+    };
   }
-  const { data: { user }, error } = await supabase.auth.getUser(authHeader.replace("Bearer ", ""));
+  const token = authHeader.replace("Bearer ", "").trim();
+  const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
+  if (serviceRoleKey && token === serviceRoleKey) {
+    return { user: null, isServiceRole: true, errorResponse: null };
+  }
+  const { data: { user }, error } = await supabase.auth.getUser(token);
   if (error || !user) {
-    return { user: null, errorResponse: new Response(JSON.stringify({ error: "Unauthorized" }), { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }) };
+    return {
+      user: null,
+      isServiceRole: false,
+      errorResponse: new Response(JSON.stringify({ error: "Unauthorized", code: "UNAUTHORIZED" }), {
+        status: 401,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      }),
+    };
   }
-  return { user, errorResponse: null };
+  return { user, isServiceRole: false, errorResponse: null };
+}
+
+function getPermissionLevel(permissions: Record<string, any> | null | undefined, key: string): "none" | "view" | "edit" {
+  const val = permissions?.[key];
+  if (val === true || val === "edit") return "edit";
+  if (val === "view") return "view";
+  return "none";
+}
+
+function hasUserIntegrationSyncPermission(profile: {
+  role?: string | null;
+  cargo?: string | null;
+  permissions?: Record<string, any> | null;
+  active?: boolean | null;
+} | null | undefined): boolean {
+  if (!profile || profile.active === false) return false;
+  const roleLower = String(profile.role || "").toLowerCase();
+  if (roleLower === "master_admin" || roleLower === "admin") return true;
+  if (getPermissionLevel(profile.permissions, "gerenciar_integracoes") === "edit") return true;
+  const cargoLower = String(profile.cargo || "").toLowerCase();
+  if (!profile.permissions && (cargoLower === "administrador" || cargoLower === "ceo")) return true;
+  return false;
+}
+
+function hasUserTrafficEditPermission(profile: {
+  role?: string | null;
+  cargo?: string | null;
+  permissions?: Record<string, any> | null;
+  active?: boolean | null;
+} | null | undefined): boolean {
+  if (hasUserIntegrationSyncPermission(profile)) return true;
+  if (!profile || profile.active === false) return false;
+  return (
+    getPermissionLevel(profile.permissions, "metricas") === "edit" ||
+    getPermissionLevel(profile.permissions, "cockpit") === "edit" ||
+    getPermissionLevel(profile.permissions, "dashboard") === "edit"
+  );
 }
 
 function emptyPaginatedResult<T = any>(error: string | null = null): MetaPaginatedResult<T> {
@@ -334,7 +390,8 @@ serve(async (req) => {
   console.log(`[SYNC ${syncId}] Iniciando sincronização integral NC Performance...`)
 
   try {
-    const { user: authUser } = await requireAuth(req);
+    const { user: authUser, isServiceRole, errorResponse } = await requireAuth(req);
+    if (errorResponse) return errorResponse;
     if (authUser?.id) involvedUserIds = [authUser.id];
 
     // 1. Ler parâmetros — Padrão: últimos 2 dias (hoje + ontem) no fuso de Brasília
@@ -391,6 +448,44 @@ serve(async (req) => {
       if (body.action === "audit") action = "audit"
     } catch (_) {
       console.log(`[SYNC ${syncId}] Body vazio — usando janela padrão D0+D-1 (${yesterdayStr} → ${todayStr})`)
+    }
+
+    if (!isServiceRole) {
+      if (!authUser?.id) {
+        return new Response(JSON.stringify({ error: "Unauthorized", code: "UNAUTHORIZED" }), {
+          status: 401,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      const { data: callerProfile, error: profileErr } = await supabase
+        .from("profiles")
+        .select("role, cargo, permissions, active")
+        .eq("user_id", authUser.id)
+        .maybeSingle();
+
+      if (profileErr) {
+        return new Response(JSON.stringify({ error: "Falha ao validar permissões do usuário.", code: "PERMISSION_CHECK_FAILED" }), {
+          status: 403,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const isCampaignEditAction = action === "toggle-status" || action === "update-budget";
+      const authorized = isCampaignEditAction
+        ? hasUserTrafficEditPermission(callerProfile)
+        : hasUserIntegrationSyncPermission(callerProfile);
+
+      if (!authorized) {
+        return new Response(JSON.stringify({
+          error: isCampaignEditAction
+            ? "Permissão insuficiente para alterar campanhas Meta Ads."
+            : "Permissão insuficiente para gerenciar integrações ou sincronizar Meta Ads.",
+          code: isCampaignEditAction ? "FORBIDDEN_TRAFFIC_EDIT" : "FORBIDDEN_INTEGRATION_SYNC",
+        }), {
+          status: 403,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
     }
 
     const utcMinute = new Date().getUTCMinutes()

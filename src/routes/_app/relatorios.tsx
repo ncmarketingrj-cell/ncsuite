@@ -34,10 +34,8 @@ import {
 } from "@/lib/metricsDomain";
 import {
   createMonotonicRequestGuard,
-  invalidateMetaSnapshotConsumers,
   useActiveMetaSnapshot,
 } from "@/lib/metaSnapshotCache";
-import { SnapshotStatusBadge } from "@/components/SnapshotStatusBadge";
 import { formatCurrencyBRLStrict } from "@/lib/metaIntegrationCore";
 
 function fmtBRLWithSymbol(v: number | null | undefined): string {
@@ -375,7 +373,6 @@ function RelatoriosPage() {
   const [campaignSearch, setCampaignSearch] = useState("");
   const [visibleCount, setVisibleCount] = useState(40);
   const [isGenerating, setIsGenerating] = useState(false);
-  const [isSyncingPeriod, setIsSyncingPeriod] = useState(false);
   const [isLoadingData, setIsLoadingData] = useState(false);
   const loadGuardRef = useRef(createMonotonicRequestGuard());
   const activeSnapshot = useActiveMetaSnapshot({ accountId: selectedAccountId });
@@ -433,25 +430,6 @@ function RelatoriosPage() {
       }));
     },
   });
-
-  const { data: latestSyncRunQuery } = useQuery<any | null>({
-    queryKey: ["reports-latest-sync-run"],
-    queryFn: async () => {
-      try {
-        const { data } = await (supabase as any)
-          .from("sync_history")
-          .select("id, status, started_at, completed_at, accounts_synced, campaigns_synced, metrics_synced, partial_failures, error_message, sync_coverage, triggered_by")
-          .order("started_at", { ascending: false })
-          .limit(1);
-        return data?.[0] || null;
-      } catch {
-        return null;
-      }
-    },
-    enabled: source === "api",
-    refetchInterval: 60 * 1000,
-  });
-  const latestSyncRun = activeSnapshot.latestSyncRun || latestSyncRunQuery;
 
   const { data: templatesData, refetch: refetchTemplates } = useQuery<ReportTemplateRecord[]>({
     queryKey: ["report-templates"],
@@ -1180,40 +1158,6 @@ function RelatoriosPage() {
     }
   };
 
-  const handleSyncPeriod = async () => {
-    if (source !== "api") return;
-    setIsSyncingPeriod(true);
-    try {
-      const getLocalDateStr = (d: Date) => {
-        const y = d.getFullYear();
-        const m = String(d.getMonth() + 1).padStart(2, "0");
-        const day = String(d.getDate()).padStart(2, "0");
-        return `${y}-${m}-${day}`;
-      };
-      const timeRange = {
-        since: getLocalDateStr(dateRange.startDate),
-        until: getLocalDateStr(dateRange.endDate),
-      };
-      const [metaSyncRes] = await Promise.all([
-        supabase.functions.invoke("sync-meta-ads", { body: { triggered_by: "manual_report", time_range: timeRange } }),
-        supabase.functions.invoke("sync-google-ads", { body: { triggered_by: "manual_report", time_range: timeRange } }),
-      ]);
-      await invalidateMetaSnapshotConsumers({
-        queryClient,
-        accountId: selectedAccountId,
-        dateFrom: globalDateFrom,
-        dateTo: globalDateTo,
-        snapshotId: metaSyncRes?.data?.sync_id || undefined,
-      });
-      toast.success("Sincronização do período concluída! Recarregando dados...");
-      await loadData();
-    } catch (err: any) {
-      toast.error("Falha ao sincronizar período: " + (err.message ?? "erro desconhecido"));
-    } finally {
-      setIsSyncingPeriod(false);
-    }
-  };
-
   useEffect(() => {
     loadData();
   }, [source, selectedAccountId, globalDateFrom, globalDateTo, reportLevel, activeSnapshot.snapshotId]);
@@ -1799,8 +1743,8 @@ function RelatoriosPage() {
   }, [campaignList, reportMode, clientName, periodText, templatesData, reportLevel, salesRevenue, salesOrders, dateRange, selectedAccountId, globalDateFrom, globalDateTo, source, isTextManuallyEdited, regenerateNonce]);
 
   const handleGenerate = () => {
-    if (isLoadingData || isSyncingPeriod) {
-      toast.warning("Atualizando dados do snapshot — aguarde concluir antes de gerar ou salvar.");
+    if (isLoadingData) {
+      toast.warning("Carregando dados — aguarde concluir antes de gerar ou salvar.");
       return;
     }
     const selected = campaignList.filter(c => c.selected);
@@ -1862,18 +1806,6 @@ function RelatoriosPage() {
               <p className="label-mono text-primary font-bold tracking-widest uppercase text-[11px]">Módulo Performance AI</p>
             </div>
             <h1 className="text-2xl sm:text-3xl font-black tracking-tighter text-gradient uppercase mt-0.5 leading-tight">Motor de Relatórios</h1>
-            <SnapshotStatusBadge
-              snapshotId={activeSnapshot.snapshotId}
-              committedAt={activeSnapshot.committedAt}
-              startedAt={activeSnapshot.startedAt}
-              latestSyncRun={latestSyncRun}
-              accounts={accounts?.length ? accounts : activeSnapshot.accounts}
-              selectedAccountId={selectedAccountId}
-              accountLastSyncAt={activeSnapshot.accountLastSyncAt}
-              isPageLoading={isLoadingData}
-              isMetaSyncing={Boolean(isSyncingPeriod || activeSnapshot.isMetaSyncRunning)}
-              className="mt-1.5 w-fit"
-            />
           </div>
         </div>
 
@@ -2010,34 +1942,6 @@ function RelatoriosPage() {
                     <option value="ad">Anúncios</option>
                   </select>
                 </div>
-
-                {/* Botão de re-sincronização do período — resolve dados parciais/faltando */}
-                <button
-                  onClick={handleSyncPeriod}
-                  disabled={isSyncingPeriod}
-                  className="w-full flex items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-[10px] font-black uppercase tracking-widest text-muted-foreground hover:text-foreground hover:bg-white/10 transition disabled:opacity-50"
-                  title="Força o download de todos os dados do período selecionado direto da Meta/Google — útil quando o relatório mostra valores menores do que o esperado."
-                >
-                  {isSyncingPeriod
-                    ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Sincronizando período...</>
-                    : <><RefreshCw className="h-3.5 w-3.5" /> Re-sincronizar Período</>
-                  }
-                </button>
-                {(() => {
-                  const partialFailures: any[] = Array.isArray(latestSyncRun?.partial_failures) ? latestSyncRun.partial_failures : [];
-                  const matched = selectedAccountId !== "all"
-                    ? partialFailures.find((f: any) => f?.ad_account_id === selectedAccountId || f?.account_id === selectedAccountId)
-                    : partialFailures[0];
-                  if (!matched && latestSyncRun?.status !== "error") return null;
-                  return (
-                    <div className="flex items-start gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-200">
-                      <AlertCircle className="h-3.5 w-3.5 text-amber-400 shrink-0 mt-0.5" />
-                      <span>
-                        Sync Meta com alerta: {matched?.error || matched?.reason || latestSyncRun?.error_message || `${partialFailures.length} falha(s) parcial(is)`}
-                      </span>
-                    </div>
-                  );
-                })()}
               </>
             )}
 

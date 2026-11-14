@@ -4,6 +4,7 @@ import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { Settings, User, Building2, Plug, BookOpen, Cpu, Plus, Trash2, Globe, Check, X, Loader2, Wifi, WifiOff, ChevronDown, Zap, Brain, LayoutDashboard, FileText, Target, Upload, Send, Users, Database, Lock, MessageSquareWarning, Bug, Lightbulb, Frown, HelpCircle, StickyNote, Filter, Eye, Clock, Megaphone, Share2, RefreshCw, Instagram, Sparkles, Crown, Shield, ShieldCheck, Key, EyeOff, Copy, UserCheck, UserX, Award, Briefcase, Phone, Palette, ArrowUpDown, ChevronRight, AlertTriangle, Mail } from "lucide-react";
 import { SyncButton } from "@/components/SyncButton";
+import { SnapshotStatusBadge } from "@/components/SnapshotStatusBadge";
 import { toast } from "sonner";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { PageHeader } from "@/components/PageHeader";
@@ -20,6 +21,8 @@ import {
   isMasterAdmin,
   canUserManageUsers,
   canUserAccessConfig,
+  canUserViewIntegrations,
+  canUserManageIntegrations,
   getCargoDefinition,
 } from "@/lib/userHierarchy";
 import {
@@ -36,7 +39,15 @@ import { DidacticUserAccessEditor } from "@/components/DidacticUserAccessEditor"
 import { TeamActivityMonitor } from "@/components/TeamActivityMonitor";
 import { isUserOnlineNow } from "@/lib/activityPixelService";
 import { getSyncStatus, SYNC_STATUS_EVENT, type SyncStatus } from "@/hooks/useAutoSync";
-import { formatSyncTimestampBRT, isLocalSyncLockActive } from "@/lib/syncStatusDomain";
+import { useActiveMetaSnapshot } from "@/lib/metaSnapshotCache";
+import {
+  formatShortSnapshotId,
+  formatSyncDuration,
+  formatSyncTimestampBRT,
+  isLocalSyncLockActive,
+  isSyncJobActivelyRunning,
+  summarizeSyncCoverage,
+} from "@/lib/syncStatusDomain";
 import { EVENT_MODEL_VERSION } from "@/lib/metricsDomain";
 
 export const Route = createFileRoute("/_app/config")({
@@ -52,7 +63,7 @@ const TABS = [
   { id: "sac", label: "SAC / Feedback", icon: MessageSquareWarning, adminOnly: false },
   { id: "usuarios", label: "Gestão de Usuários", icon: Users, adminOnly: true },
   { id: "clientes", label: "Gestão de Clientes", icon: Building2, adminOnly: true },
-  { id: "integracoes", label: "Integrações Master", icon: Plug, adminOnly: true },
+  { id: "integracoes", label: "Integrações & Sincronização", icon: Plug, adminOnly: true },
   { id: "automacoes", label: "Regras de Automação", icon: Zap, adminOnly: true },
   { id: "sistema", label: "Status do Sistema", icon: Cpu, adminOnly: true },
 ] as const;
@@ -80,11 +91,11 @@ function ConfigPage() {
     navigate({ search: { tab: newTab } as any, replace: true });
   };
 
-  const { data: profile } = useQuery({
+  const { data: profile, isLoading: profileLoading } = useQuery({
     queryKey: ["current_user_profile", user?.id],
     queryFn: async () => {
       if (!user?.id) return null;
-      let { data } = await (supabase as any).from("profiles").select("role, permissions, position").eq("id", user.id).maybeSingle();
+      let { data } = await (supabase as any).from("profiles").select("role, permissions, position, cargo").eq("id", user.id).maybeSingle();
 
       // Auto-fix master admin permissions if they were somehow demoted
       if (user?.email === "nc.marketingrj@gmail.com" && data?.role !== "admin") {
@@ -96,12 +107,12 @@ function ConfigPage() {
             "relatorios": "edit", "criativos": "edit", "social": "edit",
             "automacoes": "edit", "reunioes": "edit", "cobrancas": "edit",
             "strategy_map": "edit", "agente": "edit", "auditoria": "edit",
-            "criar_usuarios": "edit"
+            "criar_usuarios": "edit", "gerenciar_integracoes": "edit"
           }
         }).eq("id", user.id);
 
         // Refetch after fix
-        const retry = await (supabase as any).from("profiles").select("role, permissions, position").eq("id", user.id).maybeSingle();
+        const retry = await (supabase as any).from("profiles").select("role, permissions, position, cargo").eq("id", user.id).maybeSingle();
         data = retry.data;
       }
       return data;
@@ -116,17 +127,26 @@ function ConfigPage() {
     profile?.role === "admin" ||
     profile?.role === "master_admin" ||
     (user?.email ? ADMIN_EMAILS.includes(user.email) : false);
-  const userLevel = getUserLevel({ email: user?.email, role: profile?.role, position: profile?.position });
-  const isStaff = isAdmin || userLevel >= 80;
   const callerProfileCheck = {
     id: user?.id,
     email: user?.email,
     role: profile?.role,
     position: profile?.position,
+    cargo: (profile as any)?.cargo,
     permissions: (profile as any)?.permissions ?? {},
   };
-  const canManageUsers = canUserManageUsers(callerProfileCheck);
-  const canAccessConfig = canUserAccessConfig(callerProfileCheck);
+  const canManageUsers = !profileLoading && canUserManageUsers(callerProfileCheck);
+  const canAccessConfig = !profileLoading && canUserAccessConfig(callerProfileCheck);
+  const canViewIntegrations = !profileLoading && (isAdmin || canUserViewIntegrations(callerProfileCheck));
+  const canManageIntegrations = !profileLoading && (isAdmin || canUserManageIntegrations(callerProfileCheck));
+
+  if (profileLoading) {
+    return (
+      <div className="flex min-h-[40vh] items-center justify-center">
+        <Loader2 className="h-6 w-6 animate-spin text-primary" />
+      </div>
+    );
+  }
 
   if (!canAccessConfig) {
     return (
@@ -154,9 +174,16 @@ function ConfigPage() {
   const visibleTabs = TABS.filter(t => {
     if (!t.adminOnly) return true;
     if (t.id === "usuarios") return canManageUsers;
-    if (t.id === "integracoes") return isStaff;
+    if (t.id === "integracoes") return canViewIntegrations;
     return isAdmin;
   });
+
+  const isTabAuthorized =
+    tab === "conta" ||
+    tab === "sac" ||
+    (tab === "usuarios" && canManageUsers) ||
+    (tab === "integracoes" && canViewIntegrations) ||
+    ((tab === "clientes" || tab === "automacoes" || tab === "sistema") && isAdmin);
 
   return (
     <div className="mx-auto max-w-5xl space-y-6 sm:space-y-8 min-w-0 overflow-x-hidden">
@@ -207,10 +234,21 @@ function ConfigPage() {
             </Link>
           </div>
         )}
+        {!isTabAuthorized && (
+          <div className="mx-auto max-w-md py-12 text-center space-y-4">
+            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl border border-amber-500/30 bg-amber-500/10 text-amber-400">
+              <Lock className="h-6 w-6" />
+            </div>
+            <h3 className="text-base font-black text-foreground uppercase">Acesso Restrito</h3>
+            <p className="text-xs text-muted-foreground leading-relaxed">
+              Seu perfil não possui permissão para acessar esta área técnica do sistema.
+            </p>
+          </div>
+        )}
         {tab === "sac" && <TabSac isAdmin={isAdmin} userId={user?.id ?? ""} />}
         {tab === "usuarios" && canManageUsers && <TabUsuarios isAdmin={isAdmin} currentUserProfile={profile} />}
         {tab === "clientes" && isAdmin && <TabClientes />}
-        {tab === "integracoes" && isStaff && <TabIntegracoes />}
+        {tab === "integracoes" && canViewIntegrations && <TabIntegracoes canManage={canManageIntegrations} />}
         {tab === "automacoes" && isAdmin && <TabAutomacoes />}
         {tab === "sistema" && isAdmin && <TabSistema />}
       </motion.div>
@@ -329,8 +367,43 @@ function TabClientes() {
   );
 }
 
-function TabIntegracoes() {
+export function TabIntegracoes({ canManage = false }: { canManage?: boolean }) {
   const qc = useQueryClient();
+  const activeSnapshot = useActiveMetaSnapshot({ accountId: "all" });
+  const [syncLocalState, setSyncLocalState] = useState<SyncStatus>(() => getSyncStatus());
+  useEffect(() => {
+    const handler = (e: CustomEvent) => setSyncLocalState(e.detail || getSyncStatus());
+    window.addEventListener(SYNC_STATUS_EVENT, handler as EventListener);
+    return () => window.removeEventListener(SYNC_STATUS_EVENT, handler as EventListener);
+  }, []);
+
+  const { data: syncHistoryRuns = [], isLoading: loadingSyncHistory, refetch: refetchSyncHistory } = useQuery({
+    queryKey: ["integrations_sync_history"],
+    queryFn: async () => {
+      const { data, error } = await (supabase as any)
+        .from("sync_history")
+        .select("id, status, started_at, completed_at, accounts_synced, campaigns_synced, metrics_synced, triggered_by, partial_failures, error_message, sync_coverage, sync_version")
+        .order("started_at", { ascending: false })
+        .limit(20);
+      if (error) throw error;
+      return (data || []) as any[];
+    },
+    refetchInterval: 30_000,
+  });
+
+  const latestTelemetryRun = syncHistoryRuns[0] || activeSnapshot.latestSyncRun || null;
+  const telemetryCoverage = useMemo(
+    () =>
+      summarizeSyncCoverage({
+        syncCoverage: latestTelemetryRun?.sync_coverage,
+        partialFailures: latestTelemetryRun?.partial_failures,
+        accounts: activeSnapshot.accounts,
+        selectedAccountId: "all",
+      }),
+    [latestTelemetryRun, activeSnapshot.accounts]
+  );
+  const remoteLockActive = isSyncJobActivelyRunning(latestTelemetryRun);
+  const localLockActive = isLocalSyncLockActive(syncLocalState);
   const [token, setToken] = useState("");
   const [testing, setTesting] = useState(false);
   const [connected, setConnected] = useState<boolean | null>(null);
@@ -415,6 +488,10 @@ function TabIntegracoes() {
   });
 
   const handleDeleteAdAccount = async (account: any) => {
+    if (!canManage) {
+      toast.error("Sem permissão de edição para remover contas conectadas.");
+      return;
+    }
     if (!window.confirm(`Tem certeza que deseja desvincular e EXCLUIR a conta "${account.name}" (${account.id}) do sistema?\n\nTodas as campanhas e métricas salvas desta conta serão apagadas permanentemente.`)) {
       return;
     }
@@ -496,6 +573,10 @@ function TabIntegracoes() {
   }, []);
 
   const fetchPages = async () => {
+    if (!canManage) {
+      toast.error("Sem permissão para alterar ou sincronizar páginas Meta.");
+      return;
+    }
     if (!token.trim()) {
       toast.error("Insira o Meta Access Token primeiro.");
       return;
@@ -517,6 +598,10 @@ function TabIntegracoes() {
   };
 
   const syncSocialMetrics = async () => {
+    if (!canManage) {
+      toast.error("Sem permissão para sincronizar métricas sociais.");
+      return;
+    }
     setSyncingSocialMetrics(true);
     try {
       const { data, error } = await supabase.functions.invoke("sync-social-media", {
@@ -533,6 +618,10 @@ function TabIntegracoes() {
   };
 
   const save = async () => {
+    if (!canManage) {
+      toast.error("Sem permissão para alterar configurações de integração.");
+      return;
+    }
     if (!token.trim()) { toast.error("Preencha o Token"); return; }
     try {
       const { data: u } = await supabase.auth.getUser();
@@ -586,21 +675,26 @@ function TabIntegracoes() {
         <div className="space-y-2">
           <div className="flex items-center justify-between">
             <label className="label-mono text-[10px] text-muted-foreground uppercase">Meta Access Token (Long-Lived — System User)</label>
-            <button onClick={() => setShowTokenPlain(v => !v)} className="text-[10px] text-muted-foreground hover:text-primary transition">
-              {showTokenPlain ? "ocultar" : "mostrar"} token
-            </button>
+            {canManage && (
+              <button onClick={() => setShowTokenPlain(v => !v)} className="text-[10px] text-muted-foreground hover:text-primary transition">
+                {showTokenPlain ? "ocultar" : "mostrar"} token
+              </button>
+            )}
           </div>
           <div className="flex gap-2">
             <input
               value={token}
               onChange={(e) => setToken(e.target.value)}
-              type={showTokenPlain ? "text" : "password"}
+              type={canManage && showTokenPlain ? "text" : "password"}
+              disabled={!canManage}
               placeholder="EAANmoU71vRU..."
-              className="flex-1 rounded-lg border border-white/10 bg-background/50 px-3 py-2 text-sm focus:border-primary focus:outline-none font-mono"
+              className="flex-1 rounded-lg border border-white/10 bg-background/50 px-3 py-2 text-sm focus:border-primary focus:outline-none font-mono disabled:opacity-60"
             />
-            <button onClick={save} className="inline-flex items-center justify-center gap-2 rounded-lg bg-primary px-6 py-2 text-xs font-bold text-primary-foreground hover:shadow-glow transition whitespace-nowrap">
-              <Check className="h-3.5 w-3.5" /> SALVAR TOKEN
-            </button>
+            {canManage && (
+              <button onClick={save} className="inline-flex items-center justify-center gap-2 rounded-lg bg-primary px-6 py-2 text-xs font-bold text-primary-foreground hover:shadow-glow transition whitespace-nowrap">
+                <Check className="h-3.5 w-3.5" /> SALVAR TOKEN
+              </button>
+            )}
           </div>
         </div>
 
@@ -721,6 +815,152 @@ function TabIntegracoes() {
           <div className="flex-1 h-px bg-primary/20" />
         </div>
 
+        {/* ══════════ CENTRAL TÉCNICA DE TELEMETRIA, SNAPSHOTS & HISTÓRICO DE SYNC ══════════ */}
+        <div className="rounded-2xl border border-primary/25 bg-primary/[0.04] p-5 space-y-5">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <h4 className="text-sm font-black uppercase tracking-wider text-foreground">
+                  Telemetria Técnica &amp; Controle de Sincronização
+                </h4>
+                <SnapshotStatusBadge
+                  snapshotId={activeSnapshot.snapshotId}
+                  committedAt={activeSnapshot.committedAt}
+                  startedAt={activeSnapshot.startedAt}
+                  latestSyncRun={latestTelemetryRun}
+                  accounts={connectedAdAccounts?.length ? connectedAdAccounts : activeSnapshot.accounts}
+                  selectedAccountId="all"
+                  isMetaSyncing={Boolean(remoteLockActive || localLockActive || activeSnapshot.isMetaSyncRunning)}
+                />
+              </div>
+              <p className="text-xs text-muted-foreground mt-1">
+                Snapshot efetivo: <span className="font-mono text-foreground">{activeSnapshot.snapshotId || "—"}</span>
+                {" "}({formatShortSnapshotId(activeSnapshot.snapshotId)}) • Locks:{" "}
+                <span className="font-mono text-foreground">
+                  {remoteLockActive ? "remoto ativo" : "remoto livre"} / {localLockActive ? "local ativo" : "local livre"}
+                </span>
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                void refetchSyncHistory();
+                void refetchAdAccounts();
+              }}
+              disabled={loadingSyncHistory}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-bold text-muted-foreground hover:text-foreground transition shrink-0"
+            >
+              <RefreshCw className={`h-3.5 w-3.5 ${loadingSyncHistory ? "animate-spin" : ""}`} />
+              Atualizar Telemetria
+            </button>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="rounded-xl border border-white/10 bg-black/25 p-3">
+              <p className="text-[10px] font-black uppercase tracking-wider text-muted-foreground">Último Sync Iniciado</p>
+              <p className="mt-1 text-xs font-mono font-bold text-foreground">
+                {latestTelemetryRun?.started_at ? formatSyncTimestampBRT(latestTelemetryRun.started_at) : "Horário indisponível"}
+              </p>
+            </div>
+            <div className="rounded-xl border border-white/10 bg-black/25 p-3">
+              <p className="text-[10px] font-black uppercase tracking-wider text-muted-foreground">Último Sync Concluído</p>
+              <p className="mt-1 text-xs font-mono font-bold text-foreground">
+                {latestTelemetryRun?.completed_at ? formatSyncTimestampBRT(latestTelemetryRun.completed_at) : "Horário indisponível"}
+              </p>
+            </div>
+            <div className="rounded-xl border border-white/10 bg-black/25 p-3">
+              <p className="text-[10px] font-black uppercase tracking-wider text-muted-foreground">Duração &amp; Origem</p>
+              <p className="mt-1 text-xs font-mono font-bold text-foreground">
+                {formatSyncDuration(latestTelemetryRun?.started_at, latestTelemetryRun?.completed_at)} • {latestTelemetryRun?.triggered_by || "auto"}
+              </p>
+            </div>
+            <div className="rounded-xl border border-white/10 bg-black/25 p-3">
+              <p className="text-[10px] font-black uppercase tracking-wider text-muted-foreground">Cobertura de Contas</p>
+              <p className="mt-1 text-xs font-mono font-bold text-foreground">
+                {telemetryCoverage.totalAccounts > 0
+                  ? `${telemetryCoverage.completedAccounts}/${telemetryCoverage.totalAccounts} OK`
+                  : `${latestTelemetryRun?.accounts_synced ?? 0} conta(s)`}
+                {telemetryCoverage.partialAccounts > 0 ? ` • ${telemetryCoverage.partialAccounts} parcial` : ""}
+                {telemetryCoverage.failedAccounts > 0 ? ` • ${telemetryCoverage.failedAccounts} erro` : ""}
+              </p>
+            </div>
+          </div>
+
+          {telemetryCoverage.issues.length > 0 && (
+            <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3.5 space-y-1.5">
+              <p className="text-xs font-bold text-amber-300 flex items-center gap-1.5">
+                <AlertTriangle className="h-4 w-4 shrink-0" />
+                Falhas Parciais / Limites da API Meta ({telemetryCoverage.issues.length})
+              </p>
+              <div className="space-y-1 max-h-36 overflow-y-auto text-[11px] font-mono text-amber-100/90">
+                {telemetryCoverage.issues.map((issue, idx) => (
+                  <p key={`${issue.accountId}-${idx}`}>
+                    • [{issue.kind}] {issue.accountName} ({issue.accountId}): {issue.message}
+                  </p>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {canManage ? (
+            <div className="flex flex-wrap items-center gap-3 pt-1">
+              <SyncButton mode="quick" />
+              <SyncButton mode="full" />
+            </div>
+          ) : (
+            <p className="text-[11px] text-amber-300/90">
+              Modo somente leitura: você pode inspecionar telemetria e histórico, mas não possui permissão de edição para disparar sincronizações manuais ou alterar tokens.
+            </p>
+          )}
+
+          <div className="rounded-xl border border-white/10 bg-black/20 overflow-hidden">
+            <div className="px-4 py-2.5 border-b border-white/10 flex items-center justify-between text-xs">
+              <span className="font-black uppercase tracking-wider text-foreground">Histórico Recente (`sync_history`)</span>
+              <span className="font-mono text-muted-foreground">{syncHistoryRuns.length} execuções</span>
+            </div>
+            {loadingSyncHistory ? (
+              <div className="py-6 flex justify-center">
+                <Loader2 className="h-4 w-4 animate-spin text-primary" />
+              </div>
+            ) : syncHistoryRuns.length === 0 ? (
+              <div className="py-6 text-center text-xs text-muted-foreground">Nenhuma execução registrada.</div>
+            ) : (
+              <div className="divide-y divide-white/5 max-h-72 overflow-y-auto text-xs">
+                {syncHistoryRuns.map((run: any) => {
+                  const partialCount = Array.isArray(run.partial_failures) ? run.partial_failures.length : 0;
+                  return (
+                    <div key={run.id} className="px-4 py-2.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                      <div className="min-w-0 space-y-0.5">
+                        <p className="font-mono text-[11px] font-bold text-foreground truncate">
+                          {formatShortSnapshotId(run.id)} • Início: {formatSyncTimestampBRT(run.started_at)}
+                          {run.completed_at ? ` • Fim: ${formatSyncTimestampBRT(run.completed_at)}` : ""}
+                          {` • Duração: ${formatSyncDuration(run.started_at, run.completed_at)}`}
+                        </p>
+                        <p className="text-[10px] text-muted-foreground font-mono">
+                          Gatilho: {run.triggered_by || "auto"} • {run.accounts_synced ?? 0} contas • {run.campaigns_synced ?? 0} campanhas • {run.metrics_synced ?? 0} métricas
+                          {partialCount > 0 ? ` • ${partialCount} falha(s) parcial(is)` : ""}
+                          {run.error_message ? ` • Erro: ${run.error_message}` : ""}
+                        </p>
+                      </div>
+                      <span className={`shrink-0 rounded-full px-2.5 py-0.5 text-[10px] font-mono font-bold ${
+                        run.status === "completed" || run.status === "success"
+                          ? "bg-emerald-500/15 text-emerald-400"
+                          : run.status === "partial_success" || run.status === "partial"
+                            ? "bg-amber-500/15 text-amber-400"
+                            : run.status === "running"
+                              ? "bg-primary/15 text-primary"
+                              : "bg-destructive/15 text-destructive"
+                      }`}>
+                        {run.status}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+
         {/* Sync por Mês */}
         <div className="rounded-2xl border border-violet-500/20 bg-violet-500/5 p-4 space-y-3">
           <div className="flex items-start gap-3">
@@ -733,27 +973,31 @@ function TabIntegracoes() {
               </p>
             </div>
           </div>
-          <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
-            <SyncButton mode="month1" />
-            <SyncButton mode="month2" />
-            <SyncButton mode="month3" />
-          </div>
+          {canManage && (
+            <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+              <SyncButton mode="month1" />
+              <SyncButton mode="month2" />
+              <SyncButton mode="month3" />
+            </div>
+          )}
         </div>
 
         {/* Sync Máximo */}
-        <div className="rounded-2xl border border-red-500/20 bg-red-500/5 p-4 space-y-3">
-          <div className="flex items-start gap-3">
-            <Database className="h-5 w-5 text-red-400 shrink-0 mt-0.5" />
-            <div>
-              <p className="text-sm font-bold text-foreground">Sincronização Máxima</p>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                Busca o máximo de histórico disponível para todas as contas vinculadas ao token.
-                Use somente na carga inicial ou ao adicionar contas novas — não há necessidade de rodar novamente após o mês estar carregado.
-              </p>
+        {canManage && (
+          <div className="rounded-2xl border border-red-500/20 bg-red-500/5 p-4 space-y-3">
+            <div className="flex items-start gap-3">
+              <Database className="h-5 w-5 text-red-400 shrink-0 mt-0.5" />
+              <div>
+                <p className="text-sm font-bold text-foreground">Sincronização Máxima</p>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Busca o máximo de histórico disponível para todas as contas vinculadas ao token.
+                  Use somente na carga inicial ou ao adicionar contas novas — não há necessidade de rodar novamente após o mês estar carregado.
+                </p>
+              </div>
             </div>
+            <SyncButton mode="max" />
           </div>
-          <SyncButton mode="max" />
-        </div>
+        )}
 
         {/* ══════════ SEÇÃO: GERENCIAMENTO DE CONTAS CONECTADAS ══════════ */}
         <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-5 space-y-4">
@@ -820,19 +1064,21 @@ function TabIntegracoes() {
                       </div>
                     </div>
 
-                    <button
-                      onClick={() => handleDeleteAdAccount(acc)}
-                      disabled={isDeleting}
-                      className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg border border-red-500/30 bg-red-500/10 hover:bg-red-500/20 text-red-400 text-xs font-bold transition-all shrink-0 active:scale-95 disabled:opacity-50"
-                      title="Excluir conta e dados associados"
-                    >
-                      {isDeleting ? (
-                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                      ) : (
-                        <Trash2 className="h-3.5 w-3.5" />
-                      )}
-                      <span>{isDeleting ? "Excluindo..." : "Excluir Conta"}</span>
-                    </button>
+                    {canManage && (
+                      <button
+                        onClick={() => handleDeleteAdAccount(acc)}
+                        disabled={isDeleting}
+                        className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg border border-red-500/30 bg-red-500/10 hover:bg-red-500/20 text-red-400 text-xs font-bold transition-all shrink-0 active:scale-95 disabled:opacity-50"
+                        title="Excluir conta e dados associados"
+                      >
+                        {isDeleting ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <Trash2 className="h-3.5 w-3.5" />
+                        )}
+                        <span>{isDeleting ? "Excluindo..." : "Excluir Conta"}</span>
+                      </button>
+                    )}
                   </div>
                 );
               })}
@@ -926,7 +1172,7 @@ function TabIntegracoes() {
           <div className="flex gap-2 flex-wrap">
             <button
               onClick={fetchPages}
-              disabled={loadingPages || !token}
+              disabled={!canManage || loadingPages || !token}
               type="button"
               className="inline-flex items-center gap-2 rounded-xl bg-white/5 border border-white/10 px-4 py-2 text-xs font-medium hover:bg-white/10 transition disabled:opacity-50 cursor-pointer"
             >
@@ -935,7 +1181,7 @@ function TabIntegracoes() {
             </button>
             <button
               onClick={syncSocialMetrics}
-              disabled={syncingSocialMetrics || socialPages.length === 0}
+              disabled={!canManage || syncingSocialMetrics || socialPages.length === 0}
               type="button"
               title={socialPages.length === 0 ? "Sincronize as páginas primeiro" : "Busca seguidores, alcance e engajamento das páginas conectadas"}
               className="inline-flex items-center gap-2 rounded-xl bg-pink-500/10 border border-pink-500/20 px-4 py-2 text-xs font-medium text-pink-500 hover:bg-pink-500/20 transition disabled:opacity-50 cursor-pointer"

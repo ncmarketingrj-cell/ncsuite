@@ -444,7 +444,7 @@ function RegrasPage() {
                 qc.invalidateQueries({ queryKey: ["ad_account_rules"] });
                 qc.invalidateQueries({ queryKey: ["ad_account_notes"] });
                 qc.invalidateQueries({ queryKey: ["account_mind_maps"] });
-                toast.success("Dados da conta sincronizados!");
+                toast.success("Dados da conta atualizados!");
               }}
               title="Recarregar dados"
               className="h-10 w-10 rounded-xl border border-border bg-card flex items-center justify-center text-muted-foreground hover:text-foreground hover:border-primary/40 transition-colors"

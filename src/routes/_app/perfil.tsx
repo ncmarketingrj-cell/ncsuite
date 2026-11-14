@@ -197,6 +197,14 @@ export const PERMISSION_MODULES: PermissionModuleDef[] = [
     hubLabel: "Hub Gestão & Clientes",
     mode: "full",
   },
+  {
+    key: "gerenciar_integracoes",
+    label: "Integrações & Sync",
+    description: "Telemetria de sincronização, tokens e disparo manual Meta/Google",
+    hub: "gestao",
+    hubLabel: "Hub Gestão & Clientes",
+    mode: "full",
+  },
 ];
 
 export const HUBS_DEFINITIONS = [
@@ -224,61 +232,61 @@ const CARGO_DEFAULT_PERMISSIONS: Record<string, Record<string, "none" | "view" |
     dashboard: "view", metricas: "view", simulador: "view", cockpit: "edit",
     clientes: "view", relatorios: "edit", criativos: "edit", social: "none",
     automacoes: "edit", reunioes: "none", cobrancas: "none", strategy_map: "edit",
-    agente: "edit", gestao_victoria: "none", auditoria: "view", criar_usuarios: "none",
+    agente: "edit", gestao_victoria: "none", auditoria: "view", criar_usuarios: "none", gerenciar_integracoes: "none",
   },
   "Social Media": {
     dashboard: "view", metricas: "none", simulador: "none", cockpit: "none",
     clientes: "view", relatorios: "edit", criativos: "edit", social: "edit",
     automacoes: "none", reunioes: "none", cobrancas: "none", strategy_map: "edit",
-    agente: "view", gestao_victoria: "none", auditoria: "none", criar_usuarios: "none",
+    agente: "view", gestao_victoria: "none", auditoria: "none", criar_usuarios: "none", gerenciar_integracoes: "none",
   },
   "Gerente": {
     dashboard: "view", metricas: "view", simulador: "view", cockpit: "edit",
     clientes: "edit", relatorios: "edit", criativos: "edit", social: "edit",
     automacoes: "view", reunioes: "edit", cobrancas: "none", strategy_map: "edit",
-    agente: "edit", gestao_victoria: "view", auditoria: "view", criar_usuarios: "view",
+    agente: "edit", gestao_victoria: "view", auditoria: "view", criar_usuarios: "view", gerenciar_integracoes: "none",
   },
   "Diretor": {
     dashboard: "view", metricas: "view", simulador: "view", cockpit: "edit",
     clientes: "edit", relatorios: "edit", criativos: "edit", social: "edit",
     automacoes: "edit", reunioes: "edit", cobrancas: "edit", strategy_map: "edit",
-    agente: "edit", gestao_victoria: "edit", auditoria: "edit", criar_usuarios: "edit",
+    agente: "edit", gestao_victoria: "edit", auditoria: "edit", criar_usuarios: "edit", gerenciar_integracoes: "none",
   },
   "CEO": {
     dashboard: "view", metricas: "view", simulador: "view", cockpit: "edit",
     clientes: "edit", relatorios: "edit", criativos: "edit", social: "edit",
     automacoes: "edit", reunioes: "edit", cobrancas: "edit", strategy_map: "edit",
-    agente: "edit", gestao_victoria: "edit", auditoria: "edit", criar_usuarios: "edit",
+    agente: "edit", gestao_victoria: "edit", auditoria: "edit", criar_usuarios: "edit", gerenciar_integracoes: "edit",
   },
   "Administrador": {
     dashboard: "view", metricas: "view", simulador: "view", cockpit: "edit",
     clientes: "edit", relatorios: "edit", criativos: "edit", social: "edit",
     automacoes: "edit", reunioes: "edit", cobrancas: "edit", strategy_map: "edit",
-    agente: "edit", gestao_victoria: "edit", auditoria: "edit", criar_usuarios: "edit",
+    agente: "edit", gestao_victoria: "edit", auditoria: "edit", criar_usuarios: "edit", gerenciar_integracoes: "edit",
   },
   "Desenvolvedor": {
     dashboard: "view", metricas: "view", simulador: "view", cockpit: "edit",
     clientes: "edit", relatorios: "edit", criativos: "edit", social: "edit",
     automacoes: "edit", reunioes: "edit", cobrancas: "edit", strategy_map: "edit",
-    agente: "edit", gestao_victoria: "edit", auditoria: "edit", criar_usuarios: "edit",
+    agente: "edit", gestao_victoria: "edit", auditoria: "edit", criar_usuarios: "edit", gerenciar_integracoes: "none",
   },
   "Designer": {
     dashboard: "view", metricas: "none", simulador: "none", cockpit: "none",
     clientes: "view", relatorios: "none", criativos: "edit", social: "view",
     automacoes: "none", reunioes: "none", cobrancas: "none", strategy_map: "edit",
-    agente: "view", gestao_victoria: "none", auditoria: "none", criar_usuarios: "none",
+    agente: "view", gestao_victoria: "none", auditoria: "none", criar_usuarios: "none", gerenciar_integracoes: "none",
   },
   "SDR": {
     dashboard: "view", metricas: "none", simulador: "none", cockpit: "none",
     clientes: "view", relatorios: "none", criativos: "none", social: "none",
     automacoes: "none", reunioes: "edit", cobrancas: "none", strategy_map: "none",
-    agente: "view", gestao_victoria: "none", auditoria: "none", criar_usuarios: "none",
+    agente: "view", gestao_victoria: "none", auditoria: "none", criar_usuarios: "none", gerenciar_integracoes: "none",
   },
   "Outros": {
     dashboard: "view", metricas: "none", simulador: "none", cockpit: "none",
     clientes: "none", relatorios: "none", criativos: "none", social: "none",
     automacoes: "none", reunioes: "none", cobrancas: "none", strategy_map: "none",
-    agente: "none", gestao_victoria: "none", auditoria: "none", criar_usuarios: "none",
+    agente: "none", gestao_victoria: "none", auditoria: "none", criar_usuarios: "none", gerenciar_integracoes: "none",
   },
 };
 

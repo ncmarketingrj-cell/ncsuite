@@ -175,7 +175,15 @@ async function pollRemoteSyncUntilTerminal(
   return null;
 }
 
-export function useAutoSync() {
+export interface UseAutoSyncOptions {
+  enabled?: boolean;
+}
+
+export function useAutoSync(options: UseAutoSyncOptions = {}) {
+  const enabled = options.enabled === true;
+  const enabledRef = useRef(enabled);
+  enabledRef.current = enabled;
+
   const qc = useQueryClient();
   const isSyncingRef = useRef(false);
   const syncSeqRef = useRef(0);
@@ -191,6 +199,9 @@ export function useAutoSync() {
   }, [qc]);
 
   const runSync = useCallback(async (triggeredBy: "auto" | "manual" = "auto") => {
+    if (!enabledRef.current) {
+      return { status: "forbidden" as const };
+    }
     if (isSyncingRef.current) {
       return;
     }
@@ -466,7 +477,16 @@ export function useAutoSync() {
   }, [qc]);
 
   useEffect(() => {
+    if (!enabled) {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
+      return;
+    }
+
     const checkAndSync = () => {
+      if (!enabledRef.current) return;
       if (
         typeof window !== "undefined" &&
         window.location.pathname.includes("/social-insights") &&
@@ -514,7 +534,7 @@ export function useAutoSync() {
       window.removeEventListener("focus", onVisibilityOrFocus);
       document.removeEventListener("visibilitychange", onVisibilityOrFocus);
     };
-  }, [runSync]);
+  }, [enabled, runSync]);
 
   return { runSync };
 }

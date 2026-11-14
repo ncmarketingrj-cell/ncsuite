@@ -17,9 +17,6 @@ import {
   DEFAULT_META_TIMEZONE,
   useActiveMetaSnapshot,
 } from "@/lib/metaSnapshotCache";
-import { summarizeSyncCoverage } from "@/lib/syncStatusDomain";
-import { SnapshotStatusBadge } from "@/components/SnapshotStatusBadge";
-import { useAutoSyncStatus } from "@/hooks/useAutoSync";
 import { useState, useMemo, useRef, useEffect } from "react";
 import {
   FileText, BarChart3, ArrowUpRight, Activity, Layers,
@@ -143,7 +140,6 @@ function Dashboard() {
   });
 
   const activeSnapshot = useActiveMetaSnapshot({ accountId: selectedAccountId });
-  const { isSyncing: isAutoSyncing } = useAutoSyncStatus();
 
   const { data: performanceData, isLoading: isLoadingPerf, isFetching: isFetchingPerf } = useQuery({
     queryKey: buildMetaSnapshotKey("dash-performance-custom", {
@@ -801,24 +797,6 @@ function Dashboard() {
     });
   }, [filteredAccounts]);
 
-  const { data: latestSyncRunQuery } = useQuery({
-    queryKey: ["dashboard-latest-sync-run"],
-    queryFn: async () => {
-      try {
-        const { data } = await (supabase as any)
-          .from("sync_history")
-          .select("id, status, started_at, completed_at, accounts_synced, campaigns_synced, metrics_synced, partial_failures, error_message, sync_coverage, triggered_by")
-          .order("started_at", { ascending: false })
-          .limit(1);
-        return data?.[0] || null;
-      } catch {
-        return null;
-      }
-    },
-    refetchInterval: 60 * 1000,
-  });
-  const latestSyncRun = activeSnapshot.latestSyncRun || latestSyncRunQuery;
-
   const selectedAccount = accounts.find(a => a.id === selectedAccountId);
 
   return (
@@ -976,67 +954,6 @@ function Dashboard() {
           </div>
         </div>
 
-        {/* Stats Layer (Dinâmico) */}
-        {(() => {
-          const isPageLoadingData = isLoadingTable || isLoadingPerf || isFetchingPerf || isFetchingTable;
-          const isRemoteSyncActive = Boolean(isAutoSyncing || activeSnapshot.isMetaSyncRunning);
-          return (
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              {isRemoteSyncActive ? (
-                <div className="flex items-center gap-2 text-xs text-primary font-mono">
-                  <div className="h-3 w-3 rounded-full bg-primary/70 animate-pulse" />
-                  Sincronização Meta em andamento{isPageLoadingData ? " • Carregando consulta" : " • Exibindo snapshot anterior"}
-                </div>
-              ) : isPageLoadingData ? (
-                <div className="flex items-center gap-2 text-xs text-sky-300 font-mono">
-                  <div className="h-3 w-3 rounded-full bg-sky-400/70 animate-pulse" />
-                  Carregando dados desta tela...
-                </div>
-              ) : (
-                <div />
-              )}
-              <SnapshotStatusBadge
-                snapshotId={activeSnapshot.snapshotId}
-                committedAt={activeSnapshot.committedAt}
-                startedAt={activeSnapshot.startedAt}
-                latestSyncRun={latestSyncRun}
-                accounts={activeSnapshot.accounts}
-                selectedAccountId={selectedAccountId}
-                accountLastSyncAt={activeSnapshot.accountLastSyncAt}
-                isPageLoading={isPageLoadingData}
-                isMetaSyncing={isRemoteSyncActive}
-              />
-            </div>
-          );
-        })()}
-        {(() => {
-          const partialFailures: any[] = Array.isArray(latestSyncRun?.partial_failures) ? latestSyncRun.partial_failures : [];
-          const hasFailure = latestSyncRun?.status === "error" || latestSyncRun?.status === "partial_success" || latestSyncRun?.status === "partial" || partialFailures.length > 0;
-          if (!hasFailure) return null;
-          const coverage = summarizeSyncCoverage({
-            syncCoverage: latestSyncRun?.sync_coverage,
-            partialFailures: latestSyncRun?.partial_failures,
-            accounts: activeSnapshot.accounts,
-            selectedAccountId,
-          });
-          const syncedCount =
-            coverage.totalAccounts > 0
-              ? coverage.completedAccounts + coverage.partialAccounts
-              : (latestSyncRun?.accounts_synced ?? "?");
-          const countLabel =
-            coverage.totalAccounts > 0
-              ? `${syncedCount}/${coverage.totalAccounts} contas`
-              : `${syncedCount} contas`;
-          return (
-            <div className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-[11px] ${latestSyncRun?.status === "error" ? "border-rose-500/35 bg-rose-500/10 text-rose-200" : "border-amber-500/30 bg-amber-500/10 text-amber-200"}`}>
-              <AlertCircle className={`h-3.5 w-3.5 shrink-0 ${latestSyncRun?.status === "error" ? "text-rose-400" : "text-amber-400"}`} />
-              <span className="truncate">
-                Último sync Meta com alerta ({countLabel}):{" "}
-                {partialFailures[0]?.error || partialFailures[0]?.reason || latestSyncRun?.error_message || `${partialFailures.length} falha(s) parcial(is)`}
-              </span>
-            </div>
-          );
-        })()}
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard
           label="Investimento"

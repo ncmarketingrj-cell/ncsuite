@@ -1,52 +1,57 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { motion } from "framer-motion";
-import { Zap, Wifi, ArrowRight } from "lucide-react";
+import { Loader2, Lock } from "lucide-react";
 import { PageHeader } from "@/components/PageHeader";
+import { usePagePermission } from "@/hooks/usePagePermission";
+import { TabIntegracoes } from "./config";
 
 export const Route = createFileRoute("/_app/integrations")({
-  head: () => ({ meta: [{ title: "Integrações — NC Suite" }] }),
+  head: () => ({ meta: [{ title: "Integrações & Sincronização — NC Suite" }] }),
   component: IntegrationsPage,
 });
 
 function IntegrationsPage() {
+  const { isLoading, canViewIntegrations, canManageIntegrations } = usePagePermission();
+
+  if (isLoading) {
+    return (
+      <div className="flex min-h-[40vh] items-center justify-center">
+        <Loader2 className="h-6 w-6 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  if (!canViewIntegrations) {
+    return (
+      <div className="mx-auto max-w-lg text-center py-20 space-y-5">
+        <div className="h-16 w-16 mx-auto rounded-3xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-500 shadow-lg">
+          <Lock className="h-8 w-8" />
+        </div>
+        <div className="space-y-2">
+          <h2 className="text-xl font-black text-foreground">Acesso Restrito</h2>
+          <p className="text-xs text-muted-foreground leading-relaxed">
+            Seu perfil não possui permissão para acessar integrações, tokens ou telemetria de sincronização.
+          </p>
+        </div>
+        <Link
+          to="/dashboard"
+          className="inline-flex items-center gap-2 rounded-xl bg-primary px-6 py-3 text-xs font-black uppercase tracking-wider text-primary-foreground shadow-glow transition active:scale-95"
+        >
+          Voltar ao Command Center
+        </Link>
+      </div>
+    );
+  }
+
   return (
-    <div className="mx-auto max-w-4xl space-y-8">
-      <PageHeader eyebrow="Sistema" title="Integrações" description="Conecte plataformas externas para sincronização de dados." />
-
-      <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="glass-panel card-sport p-6">
-        <div className="flex items-start gap-4">
-          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-primary/20 to-secondary/20">
-            <Zap className="h-6 w-6 text-primary" />
-          </div>
-          <div className="flex-1">
-            <h3 className="header-sport font-display text-lg font-semibold">Meta Ads (Graph API v21.0)</h3>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Sincronize campanhas, métricas e insights diretamente do gerenciador de anúncios do Meta.
-            </p>
-            <div className="mt-4 flex items-center gap-3 flex-wrap">
-              <Link to="/config" className="inline-flex items-center gap-1.5 rounded-full bg-primary/10 border border-primary/20 px-4 py-2 text-xs font-bold text-primary hover:bg-primary/20 transition">
-                Configurações de Token <ArrowRight className="h-3 w-3" />
-              </Link>
-              <Link to="/config" className="inline-flex items-center gap-1.5 rounded-full border border-white/10 px-4 py-2 text-xs font-medium hover:bg-white/5 transition">
-                Sync Máximo <ArrowRight className="h-3 w-3" />
-              </Link>
-            </div>
-          </div>
-        </div>
-      </motion.div>
-
-      <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }} className="glass-panel card-sport p-6 opacity-50">
-        <div className="flex items-start gap-4">
-          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-muted/30">
-            <Wifi className="h-6 w-6 text-muted-foreground" />
-          </div>
-          <div className="flex-1">
-            <h3 className="header-sport font-display text-lg font-semibold">Google Ads</h3>
-            <p className="mt-1 text-sm text-muted-foreground">Em breve — integração com Google Ads para campanhas de Search e Display.</p>
-            <span className="mt-3 inline-block rounded-full bg-muted px-3 py-1 text-[10px] font-semibold text-muted-foreground">Em breve</span>
-          </div>
-        </div>
-      </motion.div>
+    <div className="mx-auto max-w-5xl space-y-6">
+      <PageHeader
+        eyebrow="Sistema"
+        title="Integrações & Sincronização"
+        description="Central técnica de conexões Meta/Google, snapshots, cobertura por conta e histórico de execuções."
+      />
+      <div className="glass-panel p-4 sm:p-8 min-w-0 overflow-hidden">
+        <TabIntegracoes canManage={canManageIntegrations} />
+      </div>
     </div>
   );
 }

@@ -20,9 +20,9 @@ import { formatDistanceToNow } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { useTheme } from "./__root";
 import { toast } from "sonner";
-import { useAutoSync, useAutoSyncStatus, getSyncStatus, SYNC_STATUS_EVENT, type SyncStatus } from "@/hooks/useAutoSync";
+import { useAutoSync, getSyncStatus, SYNC_STATUS_EVENT, type SyncStatus } from "@/hooks/useAutoSync";
 import { useActiveMetaSnapshot } from "@/lib/metaSnapshotCache";
-import { formatSyncTimestampBRT } from "@/lib/syncStatusDomain";
+import { resolveHeaderSpinnerState } from "@/lib/syncStatusDomain";
 import { useAlertEngine } from "@/hooks/useAlertEngine";
 import { DateProvider } from "@/contexts/DateContext";
 import { usePagePermission } from "@/hooks/usePagePermission";
@@ -147,7 +147,15 @@ function Shell() {
     nav({ to: "/login", replace: true });
   };
 
-  const { profile, isAdmin, isLoading: profileLoading, perms, hasAccess } = usePagePermission();
+  const {
+    profile,
+    isAdmin,
+    isLoading: profileLoading,
+    perms,
+    hasAccess,
+    canViewIntegrations,
+    canManageIntegrations,
+  } = usePagePermission();
 
   const headerIdentity = resolveUserHeaderIdentity({
     profileLoading,
@@ -180,8 +188,10 @@ function Shell() {
 
   const hasPageAccess = (pathname: string) => {
     if (pathname.startsWith("/perfil")) return true;
+    if (profileLoading) return true;
+    if (pathname.startsWith("/integrations")) return canViewIntegrations;
     if (pathname.startsWith("/config")) return canAccessConfig;
-    if (profileLoading || isAdmin) return true;
+    if (isAdmin) return true;
     
     if (pathname.startsWith("/metricas")) return hasAccess("metricas");
     if (pathname.startsWith("/automacoes")) return hasAccess("automacoes");
@@ -284,8 +294,32 @@ function Shell() {
   const { theme, toggleTheme } = useTheme();
   const qc = useQueryClient();
 
-  // ── Auto-Sync a cada 30 minutos ──────────────────────────────────────────────
-  const { runSync } = useAutoSync();
+  // ── Auto-Sync automático restrito a perfis com gerenciar_integracoes/admin ──
+  useAutoSync({ enabled: canManageIntegrations });
+  const activeMetaSnapshot = useActiveMetaSnapshot({ accountId: "all" });
+  const [spinnerNowMs, setSpinnerNowMs] = useState(() => Date.now());
+  const spinnerCandidateActive = Boolean(
+    activeMetaSnapshot.isMetaSyncRunning || syncStatus.isSyncing
+  );
+  useEffect(() => {
+    if (!spinnerCandidateActive) return;
+    setSpinnerNowMs(Date.now());
+    const timer = setInterval(() => setSpinnerNowMs(Date.now()), 15_000);
+    return () => clearInterval(timer);
+  }, [spinnerCandidateActive]);
+
+  const headerSpinner = resolveHeaderSpinnerState({
+    latestSyncRun: activeMetaSnapshot.latestSyncRun ?? null,
+    localLock: syncStatus.isSyncing
+      ? {
+          isSyncing: syncStatus.isSyncing,
+          startedAt: syncStatus.startedAt,
+          heartbeatAt: syncStatus.heartbeatAt,
+        }
+      : null,
+    isMetaSyncRunning: activeMetaSnapshot.isMetaSyncRunning,
+    nowMs: spinnerNowMs,
+  });
 
   // ── Motor de Alertas Sonoros ──────────────────────────────────────────────────
   const { acknowledgeAll, soundEnabled, toggleSound, alertInterval } = useAlertEngine();
@@ -897,34 +931,20 @@ function Shell() {
           {/* RIGHT: Actions — largura fixa ~220px, zero breakpoints, estável em qualquer zoom */}
           <div className="flex shrink-0 items-center gap-1">
 
-            {/* Sync — ícone compacto com dot de status, tooltip com detalhes */}
-            {(() => {
-              const effectiveSyncing = Boolean(syncStatus.isSyncing);
-              const lastSyncDisplay = syncStatus.lastSync ? formatSyncTimestampBRT(syncStatus.lastSync) : "Horário indisponível";
-              const syncTitle = effectiveSyncing
-                ? `Sincronização Meta em andamento (iniciado às ${formatSyncTimestampBRT(syncStatus.startedAt)})`
-                : `Último sync: ${lastSyncDisplay} — Clique para sincronizar agora`;
-              return (
-                <button
-                  onClick={() => runSync("manual")}
-                  disabled={effectiveSyncing}
-                  aria-label="Sincronizar contas Meta Ads"
-                  className="hidden sm:flex relative h-8 w-8 items-center justify-center rounded-xl border border-border bg-card text-muted-foreground transition-all hover:border-primary/30 hover:text-primary active:scale-95 disabled:opacity-60"
-                  title={syncTitle}
-                >
-                  <RefreshCw className={`h-3.5 w-3.5 ${effectiveSyncing ? 'animate-spin text-primary' : ''}`} />
-                  {syncStatus.lastResult === 'success' && !effectiveSyncing && (
-                    <span className="absolute bottom-1 right-1 h-1.5 w-1.5 rounded-full bg-green-500" />
-                  )}
-                  {syncStatus.lastResult === 'partial' && !effectiveSyncing && (
-                    <span className="absolute bottom-1 right-1 h-1.5 w-1.5 rounded-full bg-amber-400" />
-                  )}
-                  {syncStatus.lastResult === 'error' && !effectiveSyncing && (
-                    <span className="absolute bottom-1 right-1 h-1.5 w-1.5 rounded-full bg-destructive" />
-                  )}
-                </button>
-              );
-            })()}
+            {/* Sync — indicador passivo com slot fixo (zero layout shift), sem botão ou texto */}
+            <div
+              role="status"
+              aria-live="polite"
+              aria-label={headerSpinner.ariaLabel ?? undefined}
+              className="hidden sm:flex h-8 w-8 shrink-0 items-center justify-center"
+            >
+              {headerSpinner.showSpinner && (
+                <>
+                  <RefreshCw className="h-3.5 w-3.5 animate-spin text-primary" aria-hidden="true" />
+                  <span className="sr-only">Sincronização em andamento</span>
+                </>
+              )}
+            </div>
 
             {/* Theme Toggle — visível tanto no desktop quanto no mobile */}
             <button
@@ -1334,14 +1354,6 @@ function Shell() {
                         >
                           {theme === "dark" ? <Sun className="h-3.5 w-3.5 text-amber-400" /> : <Moon className="h-3.5 w-3.5 text-blue-400" />}
                           {theme === "dark" ? "Modo Claro" : "Modo Escuro"}
-                        </button>
-                        <button
-                          onClick={() => { runSync("manual"); setShowUserMenu(false); }}
-                          disabled={syncStatus.isSyncing}
-                          className="w-full flex items-center gap-2.5 rounded-xl px-3 py-2 text-[12px] font-medium text-foreground hover:bg-muted/50 transition-all"
-                        >
-                          <RefreshCw className={`h-3.5 w-3.5 text-primary ${syncStatus.isSyncing ? "animate-spin" : ""}`} />
-                          {syncStatus.isSyncing ? "Sincronizando..." : "Sincronizar Meta"}
                         </button>
                       </div>
 

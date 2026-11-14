@@ -39,15 +39,8 @@ import { EVENT_MODEL_VERSION, computeHomogeneousBenchmark, hasEntityDelivery } f
 import {
   buildMetaSnapshotKey,
   DEFAULT_META_TIMEZONE,
-  fetchLatestCommittedSnapshot,
-  invalidateMetaSnapshotConsumers,
   useActiveMetaSnapshot,
 } from "@/lib/metaSnapshotCache";
-import {
-  formatSyncTimestampBRT,
-  normalizeTimestampToEpochMs,
-} from "@/lib/syncStatusDomain";
-import { SnapshotStatusBadge } from "@/components/SnapshotStatusBadge";
 import { PageHeader } from "@/components/PageHeader";
 import { useChartConfig } from "@/hooks/useChartConfig";
 import { ChartEngine } from "@/components/charts/ChartEngine";
@@ -65,7 +58,6 @@ import {
   calibrateAdMetricsArray,
   calibratePeriodStatsInMemory,
   ensureDatabaseCalibrated,
-  calibrateMetaConversionsFromGraph,
   getMetaResultDetail,
 } from "@/lib/metaConversionCalibrator";
 import {
@@ -1308,16 +1300,6 @@ function MetricasCampanhasPage() {
     refetchIntervalInBackground: false,
   });
 
-  // Timestamp do último sync (exibido na UI)
-  const { data: syncConfig } = useQuery({
-    queryKey: ["meta-sync-config"],
-    queryFn: async () => {
-      const { data } = await (supabase as any).from("meta_ads_configs").select("last_heartbeat_at").order("created_at", { ascending: false }).limit(1);
-      return data?.[0] || null;
-    },
-    refetchInterval: 30 * 1000,
-  });
-
   // Saldo / status financeiro recente da conta selecionada (para diagnóstico de entrega pausada / saldo R$ 0)
   const { data: accountBillingSnapshot } = useQuery({
     queryKey: ["mc-billing-snapshot", accountFilter],
@@ -1337,25 +1319,6 @@ function MetricasCampanhasPage() {
     },
     refetchInterval: 120 * 1000,
   });
-
-  // Último histórico de sincronização (exibe diagnósticos explícitos de rate limit ou falha parcial)
-  const { data: latestSyncRunQuery } = useQuery({
-    queryKey: ["mc-latest-sync-run"],
-    queryFn: async () => {
-      try {
-        const { data } = await (supabase as any)
-          .from("sync_history")
-          .select("id, status, started_at, completed_at, accounts_synced, campaigns_synced, metrics_synced, partial_failures, error_message, sync_coverage, triggered_by")
-          .order("started_at", { ascending: false })
-          .limit(1);
-        return data?.[0] || null;
-      } catch {
-        return null;
-      }
-    },
-    refetchInterval: 60 * 1000,
-  });
-  const latestSyncRun = activeSnapshot.latestSyncRun || latestSyncRunQuery;
 
   const { data: placementData = [] } = useQuery({
     queryKey: buildMetaSnapshotKey(
@@ -1491,44 +1454,6 @@ function MetricasCampanhasPage() {
   });
 
   // â"€â"€â"€ MUTATIONS â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
-
-  const syncMutation = useMutation({
-    mutationFn: async () => {
-      const payload: any = { time_range: { since: startStr, until: endStr } };
-      if (accountFilter !== "all") payload.account_id = accountFilter;
-      const { data, error } = await supabase.functions.invoke("sync-meta-ads", { body: payload });
-      if (error) {
-        // FunctionsHttpError esconde o corpo da resposta em error.context —
-        // extrai a mensagem real em vez do genérico "non-2xx status code"
-        let msg = error.message;
-        try {
-          const body = await (error as any).context?.json?.();
-          if (body?.error) msg = String(body.error).split("\n")[0];
-        } catch (_) { /* mantém msg genérica */ }
-        throw new Error(msg);
-      }
-      if (data?.error) throw new Error(data.error);
-      // Calibra conversões reais de WhatsApp diretamente via Meta Graph API após o sync
-      await calibrateMetaConversionsFromGraph(supabase, startStr, endStr, accountFilter);
-      return data;
-    },
-    onSuccess: async (data: any) => {
-      const confirmed = await fetchLatestCommittedSnapshot({
-        accountId: accountFilter,
-        fallbackSnapshotId: data?.sync_id || undefined,
-      });
-      await invalidateMetaSnapshotConsumers({
-        queryClient: qc,
-        accountId: accountFilter,
-        dateFrom: startStr,
-        dateTo: endStr,
-        snapshotId: confirmed.snapshotId,
-        committedAt: confirmed.committedAt,
-      });
-      toast.success("Sincronizado com Meta Ads!");
-    },
-    onError: (e: any) => toast.error(`Erro: ${e.message}`),
-  });
 
   const toggleMutation = useMutation({
     mutationFn: async ({ id, externalId, currentStatus, type }: any) => {
@@ -2128,22 +2053,6 @@ function MetricasCampanhasPage() {
             description="Gestão de campanhas, conjuntos e anúncios. Acompanhamento detalhado de métricas e conversões."
             compact
           />
-          <SnapshotStatusBadge
-            snapshotId={activeSnapshot.snapshotId}
-            committedAt={activeSnapshot.committedAt}
-            startedAt={activeSnapshot.startedAt}
-            latestSyncRun={latestSyncRun}
-            accounts={adAccounts?.length ? adAccounts : activeSnapshot.accounts}
-            selectedAccountId={accountFilter}
-            accountLastSyncAt={
-              accountFilter !== "all"
-                ? (adAccounts.find((a: any) => a.id === accountFilter)?.last_sync || activeSnapshot.accountLastSyncAt || null)
-                : (activeSnapshot.accountLastSyncAt || null)
-            }
-            hasSyncError={Boolean(syncMutation.isError)}
-            isPageLoading={isFetchingCamps || isFetchingAdSets || isFetchingAds || isFetchingPeriod || isFetchingAccPeriod}
-            isMetaSyncing={Boolean(syncMutation.isPending || activeSnapshot.isMetaSyncRunning)}
-          />
         </div>
 
         <KPIBar
@@ -2333,24 +2242,6 @@ function MetricasCampanhasPage() {
                 <Settings2 className="h-3 w-3" /><span className="hidden sm:inline">Configurar</span>
               </button>
             )}
-            {syncConfig?.last_heartbeat_at && (() => {
-              const heartbeatMs = normalizeTimestampToEpochMs(syncConfig.last_heartbeat_at);
-              const heartbeatBrt = formatSyncTimestampBRT(syncConfig.last_heartbeat_at);
-              const diff = heartbeatMs ? Math.max(0, Math.round((Date.now() - heartbeatMs) / 60000)) : null;
-              return (
-                <div
-                  className="hidden sm:flex items-center gap-1 text-[9px] font-mono text-muted-foreground/50 whitespace-nowrap"
-                  title={`Última sincronização com Meta Ads: ${heartbeatBrt}`}
-                >
-                  <span className="h-1.5 w-1.5 rounded-full bg-green-500 opacity-80" />
-                  {diff === null ? "Horário indisponível" : diff < 1 ? "agora" : diff < 60 ? `${diff}m atrás` : `${Math.round(diff / 60)}h atrás`}
-                </div>
-              );
-            })()}
-            <button onClick={() => syncMutation.mutate()} disabled={syncMutation.isPending} title="Sincronizar dados com Meta Ads" className="flex items-center gap-1.5 rounded-xl border border-border bg-card/50 px-3 py-1.5 text-[11px] font-bold text-muted-foreground hover:text-foreground hover:border-primary/30 transition-all disabled:opacity-50">
-              {syncMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
-              <span className="hidden sm:inline">Sync</span>
-            </button>
           </div>
         </div>
 
@@ -2380,33 +2271,21 @@ function MetricasCampanhasPage() {
           {view === "gestao" && (
             <motion.div key="gestao" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-5">
 
-              {/* Diagnóstico explícito de saldo zero ou falha parcial de sincronização */}
+              {/* Aviso de negócio quando conta pré-paga está com saldo esgotado */}
               {(() => {
                 const isZeroPrepay =
                   accountFilter !== "all" &&
                   accountBillingSnapshot &&
                   Number(accountBillingSnapshot.balance ?? 999) <= 1;
-                const partialFailures: any[] = Array.isArray(latestSyncRun?.partial_failures) ? latestSyncRun.partial_failures : [];
-                const matchedFailure =
-                  accountFilter !== "all"
-                    ? partialFailures.find((f: any) => f?.ad_account_id === accountFilter || f?.account_id === accountFilter)
-                    : null;
-                if (!isZeroPrepay && !matchedFailure && latestSyncRun?.status !== "error") return null;
+                if (!isZeroPrepay) return null;
                 return (
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-2.5 text-xs text-amber-200">
                     <div className="flex items-start gap-2 min-w-0">
                       <AlertTriangle className="h-4 w-4 text-amber-400 shrink-0 mt-0.5" />
                       <div className="space-y-0.5">
-                        {isZeroPrepay && (
-                          <p className="font-semibold">
-                            Saldo Meta esgotado (R$ {fmtBRL(Number(accountBillingSnapshot.balance || 0))}) — entrega pausada; conversões de janela de atribuição (7d) ainda podem aparecer sem novo gasto.
-                          </p>
-                        )}
-                        {(matchedFailure || latestSyncRun?.status === "error") && (
-                          <p className="text-[11px] text-amber-300/90">
-                            Sync Meta: {matchedFailure?.error || matchedFailure?.reason || latestSyncRun?.error_message || "Falha parcial registrada na última execução."}
-                          </p>
-                        )}
+                        <p className="font-semibold">
+                          Saldo Meta esgotado (R$ {fmtBRL(Number(accountBillingSnapshot.balance || 0))}) — entrega pausada; conversões de janela de atribuição (7d) ainda podem aparecer sem novo gasto.
+                        </p>
                       </div>
                     </div>
                   </div>
@@ -2557,13 +2436,11 @@ function MetricasCampanhasPage() {
                       </p>
                       <p className="text-xs text-muted-foreground max-w-lg mx-auto">
                         {hiddenNoDeliveryCount > 0
-                          ? `Existem ${hiddenNoDeliveryCount} ${level} sincronizados sem impressões ou gasto no recorte selecionado.`
-                          : latestSyncRun?.status === "error" || (Array.isArray(latestSyncRun?.partial_failures) && latestSyncRun.partial_failures.length > 0)
-                            ? "O último ciclo de sincronização registrou alertas parciais na API Meta. Verifique ou dispare uma nova sincronização."
-                            : "Ajuste o período no seletor acima ou execute Sync para consultar a Graph API da Meta."}
+                          ? `Existem ${hiddenNoDeliveryCount} ${level} sem impressões ou gasto no recorte selecionado.`
+                          : "Ajuste o período ou os filtros selecionados acima para visualizar os dados."}
                       </p>
-                      <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
-                        {hiddenNoDeliveryCount > 0 && !includeNoDelivery && (
+                      {hiddenNoDeliveryCount > 0 && !includeNoDelivery && (
+                        <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
                           <button
                             type="button"
                             onClick={() => setIncludeNoDelivery(true)}
@@ -2572,17 +2449,8 @@ function MetricasCampanhasPage() {
                             <Eye className="h-3.5 w-3.5" />
                             Exibir {hiddenNoDeliveryCount} sem entrega
                           </button>
-                        )}
-                        <button
-                          type="button"
-                          onClick={() => syncMutation.mutate()}
-                          disabled={syncMutation.isPending}
-                          className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-white/5 px-3 py-1.5 text-xs font-bold text-foreground hover:bg-white/10 transition disabled:opacity-50"
-                        >
-                          <RefreshCw className={`h-3.5 w-3.5 ${syncMutation.isPending ? "animate-spin" : ""}`} />
-                          Sincronizar Período
-                        </button>
-                      </div>
+                        </div>
+                      )}
                     </div>
                   ) : (
                     <div className="w-full">
@@ -3310,7 +3178,7 @@ function MetricasCampanhasPage() {
                           <select value={refreshInterval} onChange={e => setRefreshInterval(Number(e.target.value))} className="w-full appearance-none rounded-xl border border-white/10 bg-background/40 px-3 py-1.5 text-xs font-bold focus:outline-none">
                             {[{ v: 0, l: "Manual" }, { v: 30, l: "30s" }, { v: 60, l: "1 min" }, { v: 300, l: "5 min" }].map(o => <option key={o.v} value={o.v} className="bg-background">{o.l}</option>)}
                           </select>
-                          {refreshInterval > 0 && <p className="text-[9px] text-muted-foreground/50">Último sync: {format(lastRefresh, "HH:mm:ss")}</p>}
+                          {refreshInterval > 0 && <p className="text-[9px] text-muted-foreground/50">Atualizado às {format(lastRefresh, "HH:mm:ss")}</p>}
                         </div>
                       </div>
                     </motion.aside>

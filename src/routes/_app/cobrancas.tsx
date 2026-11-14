@@ -18,7 +18,6 @@ import { DiagnosisModal } from "@/components/victoria/DiagnosisModal";
 import { getLocalDateString } from "@/contexts/DateContext";
 import { EVENT_MODEL_VERSION } from "@/lib/metricsDomain";
 import { buildMetaSnapshotKey, DEFAULT_META_TIMEZONE, useActiveMetaSnapshot } from "@/lib/metaSnapshotCache";
-import { SnapshotStatusBadge } from "@/components/SnapshotStatusBadge";
 
 export const Route = createFileRoute("/_app/cobrancas")({
   head: () => ({ meta: [{ title: "Faturamento & Verba Meta — NC Suite" }] }),
@@ -92,7 +91,6 @@ const FUNDING_TYPE_LABEL: Record<string, string> = {
 function CobrancasPage() {
   const [expandedAccount, setExpandedAccount] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"todos" | "meta" | "google">("todos");
-  const [fetching, setFetching] = useState(false);
   const [startDate, setStartDate] = useState<Date>(() => subDays(new Date(), 30));
   const [endDate, setEndDate] = useState<Date>(() => new Date());
   const [selectedDiagnoseCampId, setSelectedDiagnoseCampId] = useState<string | null>(null);
@@ -203,27 +201,6 @@ function CobrancasPage() {
     }
   });
 
-  const lastFetch = snapshots.length > 0
-    ? snapshots.reduce((a: any, b: any) =>
-        new Date(a.fetched_at) > new Date(b.fetched_at) ? a : b
-      ).fetched_at
-    : null;
-
-  // Atualiza dados na API Meta
-  const handleFetch = async () => {
-    setFetching(true);
-    try {
-      const { error } = await supabase.functions.invoke("get-meta-billing");
-      if (error) throw error;
-      await refetchSnapshots();
-      toast.success("Dados de cobrança sincronizados!");
-    } catch (err: any) {
-      toast.error(err.message ?? "Erro ao buscar dados de cobrança.");
-    } finally {
-      setFetching(false);
-    }
-  };
-
   // Filtragem
   const filteredSnapshots = snapshots.filter((snap: any) => {
     if (activeTab === "meta") return snap.ad_account_id.startsWith("act_") || !snap.ad_account_id.includes("-");
@@ -242,46 +219,22 @@ function CobrancasPage() {
       <PageHeader
         eyebrow="Mídia & Contas de Anúncios"
         title="Faturamento & Verba Meta"
-        description="Consumo das campanhas no período e snapshots de faturamento/saldo das contas de anúncios (fuso horário local do painel)."
+        description="Consumo e saldo das contas de anúncios no período selecionado."
         actions={
           <div className="flex items-center gap-2 flex-wrap justify-end">
-            <SnapshotStatusBadge
-              snapshotId={activeSnapshot.snapshotId}
-              committedAt={activeSnapshot.committedAt}
-              startedAt={activeSnapshot.startedAt}
-              latestSyncRun={activeSnapshot.latestSyncRun}
-              accounts={activeSnapshot.accounts}
-              accountLastSyncAt={activeSnapshot.accountLastSyncAt}
-              isPageLoading={loadingSnapshots || fetchingSnapshots || loadingStats || fetchingStats}
-              isMetaSyncing={Boolean(fetching || activeSnapshot.isMetaSyncRunning)}
-            />
             <DateRangePicker
               startDate={startDate}
               endDate={endDate}
               onChange={(s, e) => { setStartDate(s); setEndDate(e); }}
             />
-            <button
-              onClick={handleFetch}
-              disabled={fetching}
-              className="inline-flex items-center gap-2 rounded-full bg-primary px-4 py-2.5 text-xs font-bold text-primary-foreground hover:shadow-glow transition disabled:opacity-60 cursor-pointer"
-            >
-              <RefreshCw className={`h-3.5 w-3.5 ${fetching ? "animate-spin" : ""}`} />
-              {fetching ? "Sincronizando..." : "Sincronizar"}
-            </button>
           </div>
         }
       />
 
-      {lastFetch && (
-        <p className="text-[10px] text-muted-foreground font-mono -mt-6">
-          Última atualização de faturamento: {fmtDate(lastFetch)} (Sincronização automática a cada 3 minutos; escopo: métricas de anúncios da conta)
-        </p>
-      )}
-
       {(snapshotsError || statsError) && (
         <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-xs text-red-300 flex items-center gap-2">
           <AlertCircle className="h-4 w-4 shrink-0" />
-          <span>Falha ao atualizar faturamento: {(snapshotsError as any)?.message || (statsError as any)?.message}</span>
+          <span>Não foi possível carregar os dados de faturamento no momento.</span>
         </div>
       )}
 

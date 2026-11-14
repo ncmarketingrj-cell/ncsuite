@@ -14,7 +14,6 @@ import {
 } from "@/lib/metaConversionCalibrator";
 import { classifyMetaEvent, computeCvr, computeUnitCost, EVENT_MODEL_VERSION } from "@/lib/metricsDomain";
 import { buildMetaSnapshotKey, DEFAULT_META_TIMEZONE, useActiveMetaSnapshot } from "@/lib/metaSnapshotCache";
-import { SnapshotStatusBadge } from "@/components/SnapshotStatusBadge";
 import {
   SIM_OBJECTIVES,
   DIDACTIC_SIMULATION_PRESETS,
@@ -969,17 +968,6 @@ function SimuladorPage() {
           />
 
           <div className="flex flex-wrap items-center gap-2">
-            <SnapshotStatusBadge
-              snapshotId={activeSnapshot.snapshotId}
-              committedAt={activeSnapshot.committedAt}
-              startedAt={activeSnapshot.startedAt}
-              latestSyncRun={activeSnapshot.latestSyncRun}
-              accounts={adAccounts?.length ? adAccounts : activeSnapshot.accounts}
-              selectedAccountId={accountId}
-              accountLastSyncAt={activeSnapshot.accountLastSyncAt}
-              isPageLoading={isLoadingCampaigns || isFetchingCampaigns}
-              isMetaSyncing={Boolean(activeSnapshot.isMetaSyncRunning)}
-            />
             <button
               onClick={() => setShowDidacticGuide((v) => !v)}
               className={`flex items-center gap-1.5 rounded-xl border px-3 py-2 text-[10px] font-black uppercase tracking-wider transition-all ${
@@ -1150,9 +1138,9 @@ function SimuladorPage() {
                   {isLoadingAccounts
                     ? "Carregando contas de anúncios..."
                     : isAccountsError
-                    ? "Erro ao carregar contas sincronizadas"
+                    ? "Erro ao carregar contas"
                     : adAccounts.length === 0
-                    ? "Nenhuma conta sincronizada"
+                    ? "Nenhuma conta disponível"
                     : `Todas as Contas Conectadas (${adAccounts.length})`}
                 </option>
                 {adAccounts.map((acc: any) => (
@@ -1279,7 +1267,7 @@ function SimuladorPage() {
           <div className="lg:col-span-3 rounded-2xl border border-border bg-card/90 p-5 space-y-4 shadow-sm">
             {isAccountsError && (
               <div className="rounded-xl border border-rose-500/40 bg-rose-500/10 p-3 text-[11px] font-bold text-rose-400">
-                Falha ao carregar contas sincronizadas no Supabase. Projeção impedida de reivindicar baseline real da conta.
+                Falha ao carregar contas no momento. Projeção impedida de reivindicar baseline real da conta.
               </div>
             )}
             {!isAccountsError && baseline.sourceType === "benchmark_demo" && !isLoadingCampaigns && (

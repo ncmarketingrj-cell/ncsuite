@@ -27,7 +27,6 @@ import {
   resolveTargetPrecedence,
 } from "@/lib/metricsDomain";
 import { createMonotonicRequestGuard, useActiveMetaSnapshot } from "@/lib/metaSnapshotCache";
-import { SnapshotStatusBadge } from "@/components/SnapshotStatusBadge";
 
 export const Route = createFileRoute("/_app/auditoria")({
   component: AuditoriaHub,
@@ -766,18 +765,6 @@ function AuditoriaHub() {
           <p className="text-xs text-muted-foreground uppercase tracking-widest font-mono">
             Diagnóstico Analítico de Performance, CPC, CPM e Desvios de Mídia
           </p>
-          <SnapshotStatusBadge
-            snapshotId={activeSnapshot.snapshotId}
-            committedAt={activeSnapshot.committedAt}
-            startedAt={activeSnapshot.startedAt}
-            latestSyncRun={activeSnapshot.latestSyncRun}
-            accounts={activeSnapshot.accounts}
-            selectedAccountId={selectedAccountId}
-            accountLastSyncAt={activeSnapshot.accountLastSyncAt}
-            isPageLoading={loading}
-            isMetaSyncing={Boolean(activeSnapshot.isMetaSyncRunning)}
-            className="mt-1.5 w-fit"
-          />
         </div>
 
         {/* Filtros e Controles */}

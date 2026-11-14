@@ -348,7 +348,7 @@ Atualmente, estamos gerenciando **${activeCount} campanhas ativas** com um inves
     setActionLoading(action.campaignId);
     try {
       if (!action.externalId) {
-        throw new Error("ID externo da campanha ausente. Sincronize a conta para obter o ID.");
+        throw new Error("Identificador externo da campanha indisponível no momento.");
       }
 
       if (action.type === "update_budget") {

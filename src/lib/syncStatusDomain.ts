@@ -669,3 +669,76 @@ export function resolveSyncBadgePresentation(input: ResolveSyncBadgeInput): Sync
     tooltip: tooltipLines.join(" | "),
   };
 }
+
+export const MAX_HEADER_SPINNER_DURATION_MS = DEFAULT_REMOTE_JOB_LOCK_TTL_MS;
+
+export interface HeaderSpinnerState {
+  showSpinner: boolean;
+  ariaLabel: string | null;
+}
+
+export function formatSyncDuration(
+  startedAt: string | number | Date | null | undefined,
+  completedAt: string | number | Date | null | undefined,
+  nowMs?: number
+): string {
+  const startMs = normalizeTimestampToEpochMs(startedAt);
+  if (startMs === null) return UNAVAILABLE_TIME_LABEL;
+  const endMs =
+    completedAt !== undefined && completedAt !== null
+      ? normalizeTimestampToEpochMs(completedAt)
+      : typeof nowMs === "number" && Number.isFinite(nowMs)
+        ? nowMs
+        : null;
+  if (endMs === null || endMs < startMs) return UNAVAILABLE_TIME_LABEL;
+  const diffSec = Math.round((endMs - startMs) / 1000);
+  if (diffSec < 1) return "< 1s";
+  if (diffSec < 60) return `${diffSec}s`;
+  const totalMin = Math.floor(diffSec / 60);
+  const remSec = diffSec % 60;
+  if (totalMin < 60) {
+    return remSec > 0 ? `${totalMin}m ${remSec}s` : `${totalMin}m`;
+  }
+  const hours = Math.floor(totalMin / 60);
+  const remMin = totalMin % 60;
+  return remMin > 0 ? `${hours}h ${String(remMin).padStart(2, "0")}m` : `${hours}h`;
+}
+
+/**
+ * Regra estrita do spinner discreto da barra superior:
+ * - Nunca gira durante carregamento de tela/consulta (`isPageLoading`).
+ * - Só gira quando há confirmação de execução ativa dentro da janela de timeout visual.
+ * - Jobs expirados/zumbis, concluídos ou com falha nunca deixam o spinner preso.
+ */
+export function resolveHeaderSpinnerState(input: {
+  latestSyncRun?: SyncRunRecord | null;
+  localLock?: LocalSyncLockLike | null;
+  isMetaSyncRunning?: boolean;
+  isPageLoading?: boolean;
+  nowMs?: number;
+  maxVisualDurationMs?: number;
+}): HeaderSpinnerState {
+  const nowMs = input.nowMs ?? Date.now();
+  const maxVisualMs = input.maxVisualDurationMs ?? MAX_HEADER_SPINNER_DURATION_MS;
+
+  const hasRemoteEvidence = input.latestSyncRun !== undefined;
+  const hasLocalEvidence = input.localLock !== undefined;
+
+  const remoteActive = hasRemoteEvidence
+    ? isSyncJobActivelyRunning(input.latestSyncRun, nowMs, maxVisualMs)
+    : false;
+  const localActive = hasLocalEvidence
+    ? isLocalSyncLockActive(input.localLock, nowMs, Math.min(maxVisualMs, DEFAULT_LOCAL_SYNC_LOCK_TTL_MS))
+    : false;
+
+  const fallbackFlagActive =
+    !hasRemoteEvidence && !hasLocalEvidence && Boolean(input.isMetaSyncRunning);
+
+  const showSpinner = Boolean(remoteActive || localActive || fallbackFlagActive);
+
+  return {
+    showSpinner,
+    ariaLabel: showSpinner ? "Sincronização em andamento" : null,
+  };
+}
+

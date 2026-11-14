@@ -18,6 +18,7 @@ import { toast } from "sonner";
 import { format, parseISO } from "date-fns";
 import { useGlobalDate, getLocalDateString } from "@/contexts/DateContext";
 import { DateRangePicker } from "@/components/DateRangePicker";
+import { usePagePermission } from "@/hooks/usePagePermission";
 import { supabase } from "@/integrations/supabase-external/client";
 import {
   fetchLiveSocialAccounts,
@@ -185,6 +186,7 @@ const STATE_BADGE_META: Record<
 
 function SocialInsightsPage() {
   const qc = useQueryClient();
+  const { canViewIntegrations } = usePagePermission();
   const initialUrlParams = useMemo(() => {
     if (typeof window === "undefined") return { account: "all", fault: null as SimulatedSocialFault, onlyPeriod: false };
     const sp = new URLSearchParams(window.location.search);
@@ -1156,49 +1158,11 @@ Responda de forma objetiva e tática em Markdown com:
       <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 border-b border-white/5 pb-5">
         <div className="space-y-1">
           <span className="label-mono text-primary text-xs uppercase tracking-widest font-bold">
-            Meta Graph API v21.0 • Dados Reais Verificados
+            Social &amp; Performance Orgânica
           </span>
           <h2 className="text-2xl font-bold tracking-wider text-foreground uppercase flex items-center gap-2 mt-0.5">
             <BarChart3 className="h-6 w-6 text-primary" /> Performance do Meta
           </h2>
-          <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground font-semibold">
-            {loadingAccounts ? (
-              <span className="inline-flex items-center gap-1 rounded-full bg-slate-500/10 border border-slate-500/20 px-2.5 py-0.5 font-bold text-slate-300">
-                <Loader2 className="w-2.5 h-2.5 animate-spin" /> VALIDANDO CONEXÃO META...
-              </span>
-            ) : isConnected ? (
-              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-0.5 font-bold text-emerald-400">
-                <Wifi className="w-2.5 h-2.5" /> API CONECTADA ({activePages.length} contas reais)
-              </span>
-            ) : hasMasterToken ? (
-              <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/10 border border-amber-500/20 px-2.5 py-0.5 font-bold text-amber-400">
-                <WifiOff className="w-2.5 h-2.5" /> TOKEN ATIVO · SEM PÁGINAS OU BLOQUEIO DE REDE
-              </span>
-            ) : (
-              <span className="inline-flex items-center gap-1 rounded-full bg-rose-500/15 border border-rose-500/30 px-2.5 py-0.5 font-bold text-rose-300">
-                <WifiOff className="w-2.5 h-2.5" /> {accountsTelemetry.state === "token_expired" ? "TOKEN EXPIRADO OU INVÁLIDO" : "TOKEN META NÃO CONECTADO"}
-              </span>
-            )}
-            <span>·</span>
-            <span
-              data-testid="social-overall-state"
-              data-state={overallSocialState}
-              className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 font-bold text-[11px] uppercase ${STATE_BADGE_META[overallSocialState].className}`}
-            >
-              Estado Final: {STATE_BADGE_META[overallSocialState].label} ({overallSocialState})
-            </span>
-            <span>·</span>
-            <SocialSyncCountdown
-              onExpire={refetchAllSocial}
-              resetTrigger={lastSync ? lastSync.getTime() : 0}
-            />
-            {lastSync && (
-              <>
-                <span>·</span>
-                <span>Atualizado às {format(lastSync, "HH:mm:ss")}</span>
-              </>
-            )}
-          </div>
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
@@ -1210,22 +1174,13 @@ Responda de forma objetiva e tática em Markdown com:
             <span>Planejador &amp; Feed</span>
           </Link>
           <button
-            data-testid="social-manual-sync-btn"
-            onClick={handleManualSync}
-            disabled={isSyncing}
-            className="flex items-center gap-2 rounded-xl border border-white/10 bg-card px-4 py-2.5 text-xs font-bold text-muted-foreground hover:text-foreground hover:bg-white/5 active:scale-95 transition disabled:opacity-50 cursor-pointer"
-          >
-            <RefreshCw className={`h-3.5 w-3.5 ${isSyncing ? "animate-spin" : ""}`} />
-            {isSyncing ? "Sincronizando Social..." : "Sincronizar Agora"}
-          </button>
-          <button
             data-testid="social-victoria-btn"
             onClick={generateAiInsights}
             disabled={isGeneratingAi || !canUseVictoria}
             title={
               canUseVictoria
                 ? "Executar diagnóstico contextual da Victoria AI"
-                : "Aguardando contexto válido ou resolução de erro crítico de conexão"
+                : "Aguardando contexto válido de conta social"
             }
             className="flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-xs font-bold text-primary-foreground shadow-glow hover:opacity-90 active:scale-95 transition cursor-pointer disabled:opacity-50"
           >
@@ -1235,98 +1190,7 @@ Responda de forma objetiva e tática em Markdown com:
         </div>
       </div>
 
-      {/* Painel de Máquina de Estados Determinística por Fonte */}
-      <div
-        data-testid="social-state-machine-panel"
-        className="rounded-2xl border border-white/10 bg-white/[0.015] p-3.5 space-y-2.5"
-      >
-        <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
-          <div className="flex items-center gap-2">
-            <Gauge className="h-4 w-4 text-primary" />
-            <span className="font-bold uppercase tracking-wider text-foreground">
-              Telemetria &amp; Estado Final por Fonte
-            </span>
-            {isShowingCachedSnapshot && (
-              <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/15 border border-amber-500/30 px-2 py-0.5 text-[11px] font-bold text-amber-300">
-                <Database className="h-3 w-3" /> Exibindo Último Snapshot Válido Preservado
-              </span>
-            )}
-          </div>
-          {simulatedFault && (
-            <div className="flex items-center gap-2">
-              <span className="px-2 py-0.5 rounded bg-rose-500/20 border border-rose-500/40 text-rose-200 font-mono text-[11px] font-bold">
-                Modo de Teste Ativo: sim_fault={simulatedFault}
-              </span>
-              <button
-                onClick={() => {
-                  setSimulatedFault(null);
-                  if (typeof window !== "undefined") {
-                    const url = new URL(window.location.href);
-                    url.searchParams.delete("sim_fault");
-                    window.history.replaceState({}, "", url.toString());
-                  }
-                }}
-                className="px-2 py-0.5 rounded bg-white/10 hover:bg-white/20 text-white text-[11px] font-bold cursor-pointer"
-              >
-                Limpar Simulação
-              </button>
-            </div>
-          )}
-        </div>
-
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
-          {sourceTelemetryList.map(({ telemetry, onRetry }) => {
-            const badge = STATE_BADGE_META[telemetry.state] || STATE_BADGE_META.error;
-            const isFailed = ["error", "permission_denied", "token_expired", "rate_limited", "partial"].includes(
-              telemetry.state
-            );
-            return (
-              <div
-                key={telemetry.source}
-                data-testid={`social-source-${telemetry.source}`}
-                data-state={telemetry.state}
-                className="rounded-xl border border-white/10 bg-black/25 px-3 py-2 flex flex-col justify-between gap-1.5 text-[11px]"
-              >
-                <div className="flex items-center justify-between gap-1">
-                  <span className="font-bold text-foreground truncate">{telemetry.label}</span>
-                  <span className={`px-1.5 py-0.5 rounded border text-[10px] font-bold uppercase shrink-0 ${badge.className}`}>
-                    {telemetry.state}
-                  </span>
-                </div>
-                <div className="text-muted-foreground font-mono text-[10px] flex items-center justify-between gap-1">
-                  <span>
-                    {telemetry.durationMs !== null ? `${telemetry.durationMs}ms` : telemetry.state === "loading" ? "em curso..." : "—"}
-                    {" / "}
-                    {Math.round(telemetry.timeoutMs / 1000)}s max
-                  </span>
-                  <span>{telemetry.itemCount} itens</span>
-                </div>
-                <div className="text-muted-foreground/80 font-mono text-[10px] flex items-center justify-between gap-1">
-                  <span className="truncate">
-                    {telemetry.fromCache ? "cache/snapshot" : telemetry.dataSource}
-                  </span>
-                  {(isFailed || telemetry.state !== "loading") && telemetry.source !== "manualSync" && (
-                    <button
-                      type="button"
-                      onClick={onRetry}
-                      className="text-primary hover:underline font-sans font-bold cursor-pointer shrink-0"
-                    >
-                      Tentar
-                    </button>
-                  )}
-                </div>
-                {telemetry.error && (
-                  <p className="text-[10px] text-amber-300/90 line-clamp-2 leading-tight" title={telemetry.error}>
-                    {telemetry.error}
-                  </p>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Aviso honesto se não houver Token configurado ou se houver erro crítico de autenticação/permissão/rate-limit */}
+      {/* Aviso não técnico se não houver contas conectadas ou dados indisponíveis */}
       {!loadingAccounts && (!isConnected || ["token_expired", "permission_denied", "rate_limited"].includes(overallSocialState)) && (
         <div
           data-testid="social-critical-banner"
@@ -1336,19 +1200,10 @@ Responda de forma objetiva e tática em Markdown com:
             <AlertCircle className="h-5 w-5 text-amber-400 shrink-0" />
             <div className="text-xs">
               <p className="font-bold text-amber-300">
-                {overallSocialState === "token_expired"
-                  ? "Token Meta expirado ou inválido (token_expired)"
-                  : overallSocialState === "permission_denied"
-                  ? "Permissão negada na API Meta (permission_denied)"
-                  : overallSocialState === "rate_limited"
-                  ? "Limite de requisições da API Meta atingido (rate_limited)"
-                  : "Conexão Meta necessária para exibir métricas reais"}
+                Dados sociais indisponíveis no momento
               </p>
               <p className="text-muted-foreground">
-                {overviewTelemetry.error ||
-                  postsTelemetry.error ||
-                  liveAccountsData?.error ||
-                  "Configure seu Token Master em Configurações → Integrações Master."}
+                Nenhuma conta conectada disponível ou dados temporariamente indisponíveis para exibição.
               </p>
             </div>
           </div>
@@ -1362,12 +1217,15 @@ Responda de forma objetiva e tática em Markdown com:
             >
               Tentar Novamente
             </button>
-            <Link
-              to="/config"
-              className="shrink-0 px-3 py-1.5 rounded-xl bg-amber-500 text-black text-xs font-bold uppercase hover:opacity-90"
-            >
-              Ir para Integrações
-            </Link>
+            {canViewIntegrations && (
+              <Link
+                to="/config"
+                search={{ tab: "integracoes" } as any}
+                className="shrink-0 px-3 py-1.5 rounded-xl bg-amber-500 text-black text-xs font-bold uppercase hover:opacity-90"
+              >
+                Ir para Integrações
+              </Link>
+            )}
           </div>
         </div>
       )}
@@ -1445,19 +1303,11 @@ Responda de forma objetiva e tática em Markdown com:
           <span className="text-muted-foreground font-mono text-[11px]">
             Janela: {overviewQueryData?.windowUsed?.dateFrom || dateFrom} → {overviewQueryData?.windowUsed?.dateTo || dateTo} ({overviewQueryData?.chartWindowDays || chartDaysWindow}d série)
           </span>
-          {effectiveSnapshotIso && (
-            <span className="text-muted-foreground font-mono text-[11px]">
-              Snapshot: {format(parseISO(effectiveSnapshotIso), "dd/MM HH:mm:ss")}
-              {isShowingCachedSnapshot ? " (último snapshot válido preservado)" : ""}
-            </span>
-          )}
         </div>
-        {(overviewErrorState || followersErrorState || postsErrorState || allEndpointLogs.length > 0) && (
+        {(overviewErrorState || followersErrorState || postsErrorState) && (
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-amber-300 font-semibold">
-              {allEndpointLogs[0]
-                ? `${allEndpointLogs[0].accountName} (${allEndpointLogs[0].endpoint}): ${allEndpointLogs[0].message}`
-                : "Falha parcial em endpoints Meta — exibindo dados disponíveis."}
+              Alguns indicadores estão temporariamente indisponíveis — exibindo dados disponíveis.
             </span>
             <button
               onClick={() => void refetchAllSocial()}
