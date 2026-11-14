@@ -43,9 +43,7 @@ import {
   calibratePeriodStatsInMemory,
   ensureDatabaseCalibrated,
   calibrateMetaConversionsFromGraph,
-  getCalibratedAdConversion20261111,
   getMetaResultDetail,
-  detectConversionCategory,
 } from "@/lib/metaConversionCalibrator";
 import {
   classifyMetaEvent,
@@ -109,6 +107,7 @@ const OBJECTIVE_MAP: Record<string, { label: string; color: string; icon: any }>
   VISIT_INSTAGRAM_PROFILE: { label: "Instagram", color: "text-pink-400 bg-pink-500/10 border-pink-500/20", icon: Zap },
   INSTAGRAM_PROFILE:       { label: "Instagram", color: "text-pink-400 bg-pink-500/10 border-pink-500/20", icon: Zap },
   LANDING_PAGE_VIEWS:      { label: "Pág. Destino", color: "text-emerald-400 bg-emerald-500/10 border-emerald-500/20", icon: Globe },
+  UNKNOWN:                 { label: "Revisar",   color: "text-amber-300 bg-amber-500/10 border-amber-500/30", icon: AlertTriangle },
 };
 
 const PLACEMENT_MAP: Record<string, string> = {
@@ -169,21 +168,23 @@ function processMetrics(item: any, rawData: any[], startStr: string, endStr: str
   const m = (rawData || []).filter((x: any) => { if (!x.date) return true; const d = x.date.split("T")[0]; return d >= startStr && d <= endStr; });
   const cost        = m.reduce((s: number, x: any) => s + Number(x.cost        || 0), 0);
   const conversions = m.reduce((s: number, x: any) => s + Number(x.conversions || 0), 0);
-  const clicks      = m.reduce((s: number, x: any) => s + Number(x.clicks      || 0), 0);
+  const clicks      = m.reduce((s: number, x: any) => s + Number(x.inline_link_clicks ?? x.clicks ?? 0), 0);
+  const allClicks   = m.reduce((s: number, x: any) => s + Number(x.all_clicks  ?? x.clicks ?? 0), 0);
   const impressions = m.reduce((s: number, x: any) => s + Number(x.impressions || 0), 0);
   const reach       = m.reduce((s: number, x: any) => s + Number(x.reach       || 0), 0);
+  const purchaseVal = m.reduce((s: number, x: any) => s + Number(x.purchase_value || 0), 0);
   const freq        = reach > 0 ? impressions / reach : 0;
   const ctr  = impressions > 0 ? (clicks / impressions) * 100 : 0;
   const cpm  = impressions > 0 ? (cost / impressions) * 1000 : 0;
   const cpc  = clicks > 0 ? cost / clicks : 0;
-  const roas = cost > 0 ? (conversions * 150) / cost : 0;
+  const roas = cost > 0 && purchaseVal > 0 ? purchaseVal / cost : null;
 
   const storedType = m.find((x: any) => x.result_type)?.result_type || item.result_type;
   const classification = classifyMetaEvent({
     campaignName: item.name + (item.campaigns?.name ? ` ${item.campaigns.name}` : ""),
     rawObjective: item.objective || item.campaigns?.objective,
     resultType: storedType,
-    isVehicleContext: true,
+    isVehicleContext: false,
   });
   const effectiveResults = classification.category === "REACH" ? (reach > 0 ? reach : conversions) : conversions;
   const unitCost = computeUnitCost(cost, effectiveResults, classification.category);
@@ -193,7 +194,7 @@ function processMetrics(item: any, rawData: any[], startStr: string, endStr: str
   return {
     ...item,
     result_type,
-    t: { cost, conversions, clicks, impressions, reach, freq, cpl, ctr, cpm, cpc, roas },
+    t: { cost, conversions, clicks, allClicks, impressions, reach, freq, cpl, ctr, cpm, cpc, roas, purchaseValue: purchaseVal },
     _metrics: m,
   };
 }
@@ -467,42 +468,31 @@ function parseBold(text: string) {
 
 // â"€â"€â"€ SUB-COMPONENTES â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 
-function ObjectiveBadge({ objective, name, resultType }: { objective?: string; name?: string; resultType?: string }) {
-  const n = (name || "").toUpperCase();
+function ObjectiveBadge({ objective, name: _name, resultType }: { objective?: string; name?: string; resultType?: string }) {
   const res = (resultType || "").toUpperCase();
   const obj = (objective || "").toUpperCase();
 
-  const isMsg = res === "MESSAGES" || obj === "MESSAGES" ||
-                (obj === "OUTCOME_ENGAGEMENT" && !n.includes("INSTA") && !n.includes("PERFIL") && !n.includes("POST")) ||
-                n.includes("MSG") || n.includes("MENSAGEM") || n.includes("MENSAGENS") ||
-                n.includes("WPP") || n.includes("WHATSAPP") || n.includes("DIRECT") ||
-                n.includes("CONVERSA") || n.includes("CONVERSAS") || n.includes("ZAP") ||
-                n.includes("VICTOR") || n.includes("YURI") || n.includes("TAYNA") || n.includes("RUTH") ||
-                n.includes("6720") || n.includes("7243");
-
-  const isInsta = res === "INSTAGRAM_PROFILE" || obj === "VISIT_INSTAGRAM_PROFILE" || obj === "INSTAGRAM_PROFILE" ||
-                  n.includes("INSTA") || n.includes("PERFIL") || n.includes("SEGUIDOR") || n.includes("TRAFEGO NC");
-
-  const isPurchases = res === "PURCHASES" || obj === "OUTCOME_SALES" || obj === "CONVERSIONS" ||
-                      n.includes("COMPRA") || n.includes("VENDA") || n.includes("PURCHASE") || n.includes("BONNE");
-
-  const isLp = res === "LANDING_PAGE_VIEWS" || obj === "LANDING_PAGE_VIEWS" ||
-               n.includes("GRUPO") || n.includes("VENDEDORES") || n.includes("LP") ||
-               n.includes("LANDING") || n.includes("SITE") || n.includes("DESTINO") ||
-               n.includes("CARDAPIO") || n.includes("CARDÁPIO") || n.includes("DELIVERY");
-
-  const isLeads = res === "LEADS" || obj === "OUTCOME_LEADS" || obj === "LEAD_GENERATION" ||
-                  n.includes("LEAD") || n.includes("CADASTRO");
+  const isMsg = res === "MESSAGES" || obj === "MESSAGES";
+  const isInsta = res === "INSTAGRAM_PROFILE" || obj === "VISIT_INSTAGRAM_PROFILE" || obj === "INSTAGRAM_PROFILE";
+  const isPurchases = res === "PURCHASES" || obj === "OUTCOME_SALES" || obj === "CONVERSIONS";
+  const isLp = res === "LANDING_PAGE_VIEWS" || obj === "LANDING_PAGE_VIEWS";
+  const isLeads = res === "LEADS" || obj === "OUTCOME_LEADS" || obj === "LEAD_GENERATION";
+  const isReach = res === "REACH" || obj === "OUTCOME_AWARENESS";
+  const isVideo = res === "VIDEO_VIEWS" || obj === "VIDEO_VIEWS";
+  const isClicks = res === "LINK_CLICKS";
 
   const effectiveObjective = isMsg ? "MESSAGES" :
                              isInsta ? "INSTAGRAM_PROFILE" :
                              isPurchases ? "OUTCOME_SALES" :
                              isLp ? "LANDING_PAGE_VIEWS" :
                              isLeads ? "OUTCOME_LEADS" :
-                             (obj === "OUTCOME_TRAFFIC" || res === "LINK_CLICKS" ? (n.includes("INSTA") || n.includes("PERFIL") ? "INSTAGRAM_PROFILE" : "LANDING_PAGE_VIEWS") : (res || obj || "MESSAGES"));
+                             isReach ? "OUTCOME_AWARENESS" :
+                             isVideo ? "VIDEO_VIEWS" :
+                             isClicks ? "LINK_CLICKS" :
+                             (OBJECTIVE_MAP[obj] ? obj : OBJECTIVE_MAP[res] ? res : "UNKNOWN");
 
   if (!effectiveObjective) return null;
-  const def = OBJECTIVE_MAP[effectiveObjective] || OBJECTIVE_MAP["MESSAGES"];
+  const def = OBJECTIVE_MAP[effectiveObjective] || OBJECTIVE_MAP["UNKNOWN"];
   if (!def) return <span className="text-[8px] font-mono text-muted-foreground/60 uppercase">{effectiveObjective.replace("OUTCOME_","")}</span>;
   const Icon = def.icon;
   return <span className={`inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[8px] font-black uppercase tracking-wider ${def.color}`}><Icon className="h-2.5 w-2.5" />{def.label}</span>;
@@ -588,9 +578,10 @@ interface KPIBarProps {
   totClicks: number;
   avgCtr: number;
   avgCpm: number;
+  reachLabel?: string;
 }
 
-function KPIBar({ totCost, totConv, avgCpl, totImpr, totReach, totClicks, avgCtr, avgCpm }: KPIBarProps) {
+function KPIBar({ totCost, totConv, avgCpl, totImpr, totReach, totClicks, avgCtr, avgCpm, reachLabel = "Alcance" }: KPIBarProps) {
   const [scrolled, setScrolled] = useState(false);
 
   useEffect(() => {
@@ -604,7 +595,7 @@ function KPIBar({ totCost, totConv, avgCpl, totImpr, totReach, totClicks, avgCtr
     { label: "Resultados", value: fmtN(totConv),                                             color: "text-violet-400",           icon: Target },
     { label: "CPL / CPA",  value: avgCpl > 0 ? `R$ ${avgCpl.toFixed(2)}` : "—",              color: "text-primary",              icon: Zap },
     { label: "Impressões", value: fmtN(totImpr),                                             color: "text-muted-foreground",     icon: Eye },
-    { label: "Alcance",    value: totReach > 0 ? fmtN(totReach) : "—",                       color: "text-muted-foreground",     icon: Users },
+    { label: reachLabel,   value: totReach > 0 ? fmtN(totReach) : "—",                       color: "text-muted-foreground",     icon: Users },
     { label: "Cliques",    value: fmtN(totClicks),                                           color: "text-muted-foreground",     icon: MousePointer2 },
     { label: "CTR Médio",  value: `${avgCtr.toFixed(2)}%`,                                   color: avgCtr >= 1.5 ? "text-green-400" : "text-muted-foreground", icon: TrendingUp },
     { label: "CPM Médio",  value: avgCpm > 0 ? `R$ ${avgCpm.toFixed(2)}` : "—",              color: "text-muted-foreground",     icon: BarChart3 },
@@ -720,6 +711,7 @@ function MetricasCampanhasPage() {
   const [isAuditing,     setIsAuditing]     = useState(false);
   const [visibleCount,   setVisibleCount]   = useState(40);
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
+  const [includeNoDelivery, setIncludeNoDelivery] = useState(false);
 
   useEffect(() => {
     setVisibleCount(40);
@@ -819,10 +811,21 @@ function MetricasCampanhasPage() {
     placeholderData: (prev) => prev,
     queryFn: async () => {
       ensureDatabaseCalibrated(supabase).catch(() => {});
-      let q = (supabase as any).from("campaigns").select(`id, name, status, delivery_status, objective, daily_budget, lifetime_budget, budget_currency, external_id, ad_account_id, ad_account:ad_accounts(name), metrics(cost, conversions, impressions, clicks, reach, frequency, date, result_type)`);
-      if (accountFilter !== "all") q = q.eq("ad_account_id", accountFilter);
-      if (statusFilter !== "all") q = q.ilike("status", statusFilter === "active" ? "ACTIVE" : "PAUSED");
-      const { data, error } = await q.order("name");
+      const buildQuery = (withExtended: boolean) => {
+        const metricsCols = withExtended
+          ? "cost, conversions, impressions, clicks, inline_link_clicks, all_clicks, purchase_value, reach, frequency, date, result_type"
+          : "cost, conversions, impressions, clicks, reach, frequency, date, result_type";
+        let q = (supabase as any)
+          .from("campaigns")
+          .select(`id, name, status, delivery_status, objective, daily_budget, lifetime_budget, budget_currency, external_id, ad_account_id, ad_account:ad_accounts(name), metrics(${metricsCols})`);
+        if (accountFilter !== "all") q = q.eq("ad_account_id", accountFilter);
+        if (statusFilter !== "all") q = q.ilike("status", statusFilter === "active" ? "ACTIVE" : "PAUSED");
+        return q.order("name");
+      };
+      let { data, error } = await buildQuery(true);
+      if (error && (error.code === "42703" || error.code === "PGRST204" || String(error.message || "").includes("column"))) {
+        ({ data, error } = await buildQuery(false));
+      }
       if (error) throw error;
       return (data || []).map((c: any) =>
         processMetrics(c, calibrateCampaignMetricsArray(c.name, c.metrics), startStr, endStr)
@@ -837,38 +840,86 @@ function MetricasCampanhasPage() {
     return campaigns.find((c: any) => c.id === selectedCampaignId) || null;
   }, [selectedCampaignId, campaigns]);
 
+  const campaignIdsInAccount = useMemo(
+    () => campaigns.map((c: any) => c.id).filter(Boolean),
+    [campaigns]
+  );
+
   const { data: adSets = [], isLoading: isLoadingAdSets } = useQuery({
-    queryKey: ["mc-adsets", selectedCampaignId || Array.from(selectedCamps).join(","), statusFilter, startStr, endStr],
+    queryKey: ["mc-adsets", accountFilter, selectedCampaignId || Array.from(selectedCamps).join(","), campaignIdsInAccount.length, statusFilter, startStr, endStr],
     enabled: level === "conjuntos" || level === "anuncios" || !!selectedCampaignId,
     placeholderData: (prev) => prev,
     queryFn: async () => {
-      if (selectedCamps.size === 0 && !selectedCampaignId) return [];
-      let q = (supabase as any).from("ad_sets").select(`id, name, status, budget, external_id, campaign_id, campaigns(id, name, objective), asset_metrics(cost, conversions, impressions, clicks, reach, date)`);
-      q = q.in("campaign_id", selectedCampaignId ? [selectedCampaignId] : Array.from(selectedCamps));
-      if (statusFilter !== "all") q = q.ilike("status", statusFilter === "active" ? "ACTIVE" : "PAUSED");
-      const { data, error } = await q.order("name");
-      if (error) throw error;
-      return (data || []).map((c: any) =>
+      const targetCampIds = selectedCampaignId
+        ? [selectedCampaignId]
+        : selectedCamps.size > 0
+          ? Array.from(selectedCamps)
+          : accountFilter !== "all"
+            ? campaignIdsInAccount
+            : null;
+      if (targetCampIds !== null && targetCampIds.length === 0) return [];
+      const buildQuery = (withExtended: boolean) => {
+        const metricCols = withExtended
+          ? "cost, conversions, impressions, clicks, inline_link_clicks, all_clicks, purchase_value, reach, date"
+          : "cost, conversions, impressions, clicks, reach, date";
+        let q = (supabase as any)
+          .from("ad_sets")
+          .select(`id, name, status, budget, external_id, campaign_id, campaigns(id, name, objective), asset_metrics(${metricCols})`);
+        if (targetCampIds) q = q.in("campaign_id", targetCampIds);
+        if (statusFilter !== "all") q = q.ilike("status", statusFilter === "active" ? "ACTIVE" : "PAUSED");
+        return q;
+      };
+      const all: any[] = [];
+      let useExtended = true;
+      for (let from = 0; from < 10000; from += 1000) {
+        let { data, error } = await buildQuery(useExtended).order("name").order("id").range(from, from + 999);
+        if (error && useExtended && (error.code === "42703" || error.code === "PGRST204" || String(error.message || "").includes("column"))) {
+          useExtended = false;
+          ({ data, error } = await buildQuery(false).order("name").order("id").range(from, from + 999));
+        }
+        if (error) throw error;
+        all.push(...(data || []));
+        if (!data || data.length < 1000) break;
+      }
+      return all.map((c: any) =>
         processMetrics(c, calibrateAdSetMetricsArray(c.name, c.asset_metrics), startStr, endStr)
       );
     },
   });
 
   const { data: ads = [], isLoading: isLoadingAds } = useQuery({
-    queryKey: ["mc-ads", Array.from(selectedAdSets).join(","), selectedCampaignId || Array.from(selectedCamps).join(","), statusFilter, startStr, endStr],
-    enabled: true, // sempre carrega: a reconciliação por campanha depende da soma dos anúncios,
+    queryKey: ["mc-ads", accountFilter, Array.from(selectedAdSets).join(","), selectedCampaignId || Array.from(selectedCamps).join(","), campaignIdsInAccount.length, statusFilter, startStr, endStr],
+    enabled: true,
     placeholderData: (prev) => prev,
     queryFn: async () => {
-      let q = (supabase as any).from("ads").select(`id, name, status, external_id, campaign_id, ad_set_id, creative_url, campaigns(id, name, objective), asset_metrics(cost, conversions, impressions, clicks, reach, date)`);
-      if (selectedAdSets.size > 0) q = q.in("ad_set_id", Array.from(selectedAdSets));
-      else if (selectedCampaignId) q = q.eq("campaign_id", selectedCampaignId);
-      else if (selectedCamps.size > 0) q = q.in("campaign_id", Array.from(selectedCamps));
-      if (statusFilter !== "all") q = q.ilike("status", statusFilter === "active" ? "ACTIVE" : "PAUSED");
-      // Paginação: sem filtro de campanha a lista de anúncios passa de 1000 linhas (limite do PostgREST),
-      // o que truncava a soma por campanha e mostrava resultados menores até selecionar a campanha.
+      const targetCampIds = selectedCampaignId
+        ? [selectedCampaignId]
+        : selectedCamps.size > 0
+          ? Array.from(selectedCamps)
+          : accountFilter !== "all"
+            ? campaignIdsInAccount
+            : null;
+      if (selectedAdSets.size === 0 && targetCampIds !== null && targetCampIds.length === 0) return [];
+      const buildQuery = (withExtended: boolean) => {
+        const metricCols = withExtended
+          ? "cost, conversions, impressions, clicks, inline_link_clicks, all_clicks, purchase_value, reach, date"
+          : "cost, conversions, impressions, clicks, reach, date";
+        let q = (supabase as any)
+          .from("ads")
+          .select(`id, name, status, external_id, campaign_id, ad_set_id, creative_url, campaigns(id, name, objective), asset_metrics(${metricCols})`);
+        if (selectedAdSets.size > 0) q = q.in("ad_set_id", Array.from(selectedAdSets));
+        else if (targetCampIds) q = q.in("campaign_id", targetCampIds);
+        if (statusFilter !== "all") q = q.ilike("status", statusFilter === "active" ? "ACTIVE" : "PAUSED");
+        return q;
+      };
       const all: any[] = [];
+      let useExtended = true;
       for (let from = 0; from < 20000; from += 1000) {
-        const { data, error } = await q.order("name").order("id").range(from, from + 999);
+        let { data, error } = await buildQuery(useExtended).order("name").order("id").range(from, from + 999);
+        if (error && useExtended && (error.code === "42703" || error.code === "PGRST204" || String(error.message || "").includes("column"))) {
+          useExtended = false;
+          ({ data, error } = await buildQuery(false).order("name").order("id").range(from, from + 999));
+        }
         if (error) throw error;
         all.push(...(data || []));
         if (!data || data.length < 1000) break;
@@ -892,6 +943,29 @@ function MetricasCampanhasPage() {
       if (accountFilter !== "all") q = q.eq("ad_account_id", accountFilter);
       const { data } = await q;
       return data || [];
+    },
+    refetchInterval: 60 * 1000,
+    refetchIntervalInBackground: false,
+  });
+
+  // Alcance deduplicado oficial da conta no período (meta_account_period_stats)
+  const { data: accountPeriodStats = [] } = useQuery({
+    queryKey: ["mc-account-period-stats", accountFilter, startStr, endStr],
+    placeholderData: (prev) => prev,
+    queryFn: async () => {
+      try {
+        let q = (supabase as any)
+          .from("meta_account_period_stats")
+          .select("ad_account_id, reach, impressions, spend, frequency, conversions, clicks, inline_link_clicks, purchase_value")
+          .eq("start_date", startStr)
+          .eq("end_date", endStr);
+        if (accountFilter !== "all") q = q.eq("ad_account_id", accountFilter);
+        const { data, error } = await q;
+        if (error) return [];
+        return data || [];
+      } catch {
+        return [];
+      }
     },
     refetchInterval: 60 * 1000,
     refetchIntervalInBackground: false,
@@ -959,117 +1033,18 @@ function MetricasCampanhasPage() {
       const isRealDataEmpty = demoRows.length === 0 && regionRows.length === 0 && deviceRows.length === 0 && hourlyRows.length === 0;
 
       if (isRealDataEmpty) {
-        let totalCostVal = 500;
-        let totalConvVal = 25;
-        let totalClicksVal = 180;
-        let totalImprVal = 12000;
-        
-        try {
-          let statsQ = (supabase as any).from("meta_period_stats").select("entity_type, entity_id, spend, conversions, clicks, impressions").eq("start_date", startStr).eq("end_date", endStr);
-          if (accountFilter !== "all") statsQ = statsQ.eq("ad_account_id", accountFilter);
-          const { data: statsData } = await statsQ;
-          const targetStats = (statsData || []).filter((p: any) => p.entity_type === 'campaign' && (!campFilter || campIds.includes(p.entity_id)));
-          
-          const costSum = targetStats.reduce((s: number, c: any) => s + Number(c.spend || 0), 0);
-          const convSum = targetStats.reduce((s: number, c: any) => s + Number(c.conversions || 0), 0);
-          const clicksSum = targetStats.reduce((s: number, c: any) => s + Number(c.clicks || 0), 0);
-          const imprSum = targetStats.reduce((s: number, c: any) => s + Number(c.impressions || 0), 0);
-          
-          if (costSum > 0 || convSum > 0) {
-            totalCostVal = costSum;
-            totalConvVal = convSum > 0 ? convSum : Math.round(costSum / 20);
-            totalClicksVal = clicksSum > 0 ? clicksSum : Math.round(costSum / 2);
-            totalImprVal = imprSum > 0 ? imprSum : Math.round(costSum * 50);
-          }
-        } catch (e) {
-          console.error("Erro ao obter totais consolidados para simulador:", e);
-        }
-        
-        if (totalConvVal === 0) totalConvVal = 1;
-
-        const ageData = [
-          { name: "18-24", conv: Math.round(totalConvVal * 0.10), cost: totalCostVal * 0.12, impr: Math.round(totalImprVal * 0.15), clicks: Math.round(totalClicksVal * 0.15), cpl: 0, ctr: 0 },
-          { name: "25-34", conv: Math.round(totalConvVal * 0.35), cost: totalCostVal * 0.28, impr: Math.round(totalImprVal * 0.30), clicks: Math.round(totalClicksVal * 0.35), cpl: 0, ctr: 0 },
-          { name: "35-44", conv: Math.round(totalConvVal * 0.30), cost: totalCostVal * 0.27, impr: Math.round(totalImprVal * 0.28), clicks: Math.round(totalClicksVal * 0.26), cpl: 0, ctr: 0 },
-          { name: "45-54", conv: Math.round(totalConvVal * 0.15), cost: totalCostVal * 0.18, impr: Math.round(totalImprVal * 0.16), clicks: Math.round(totalClicksVal * 0.14), cpl: 0, ctr: 0 },
-          { name: "55-64", conv: Math.round(totalConvVal * 0.07), cost: totalCostVal * 0.10, impr: Math.round(totalImprVal * 0.08), clicks: Math.round(totalClicksVal * 0.07), cpl: 0, ctr: 0 },
-          { name: "65+",   conv: Math.round(totalConvVal * 0.03), cost: totalCostVal * 0.05, impr: Math.round(totalImprVal * 0.03), clicks: Math.round(totalClicksVal * 0.03), cpl: 0, ctr: 0 },
-        ].map(v => ({
-          ...v,
-          cpl: v.conv > 0 ? v.cost / v.conv : 0,
-          ctr: v.impr > 0 ? (v.clicks / v.impr) * 100 : 0
-        }));
-
-        const genderData = [
-          { name: "Feminino", value: Math.round(totalConvVal * 0.58), cost: totalCostVal * 0.52, cpl: 0 },
-          { name: "Masculino", value: Math.round(totalConvVal * 0.42), cost: totalCostVal * 0.48, cpl: 0 },
-        ].map(g => ({
-          ...g,
-          cpl: g.value > 0 ? g.cost / g.value : 0
-        }));
-
-        const platData = [
-          { name: "Instagram", conv: Math.round(totalConvVal * 0.65), cost: totalCostVal * 0.60, impr: Math.round(totalImprVal * 0.62), cpl: 0 },
-          { name: "Facebook", conv: Math.round(totalConvVal * 0.30), cost: totalCostVal * 0.35, impr: Math.round(totalImprVal * 0.33), cpl: 0 },
-          { name: "Audience Net.", conv: Math.round(totalConvVal * 0.05), cost: totalCostVal * 0.05, impr: Math.round(totalImprVal * 0.05), cpl: 0 },
-        ].map(v => ({
-          ...v,
-          cpl: v.conv > 0 ? v.cost / v.conv : 0
-        })).sort((a, b) => b.conv - a.conv);
-
-        const regionData = [
-          { name: "São Paulo", conv: Math.round(totalConvVal * 0.35), cost: totalCostVal * 0.32, cpl: 0 },
-          { name: "Rio de Janeiro", conv: Math.round(totalConvVal * 0.20), cost: totalCostVal * 0.22, cpl: 0 },
-          { name: "Minas Gerais", conv: Math.round(totalConvVal * 0.15), cost: totalCostVal * 0.16, cpl: 0 },
-          { name: "Paraná", conv: Math.round(totalConvVal * 0.08), cost: totalCostVal * 0.09, cpl: 0 },
-          { name: "Rio Grande do Sul", conv: Math.round(totalConvVal * 0.07), cost: totalCostVal * 0.07, cpl: 0 },
-          { name: "Santa Catarina", conv: Math.round(totalConvVal * 0.05), cost: totalCostVal * 0.05, cpl: 0 },
-          { name: "Bahia", conv: Math.round(totalConvVal * 0.04), cost: totalCostVal * 0.04, cpl: 0 },
-          { name: "Goiás", conv: Math.round(totalConvVal * 0.03), cost: totalCostVal * 0.03, cpl: 0 },
-          { name: "Pernambuco", conv: Math.round(totalConvVal * 0.02), cost: totalCostVal * 0.015, cpl: 0 },
-          { name: "Distrito Federal", conv: Math.round(totalConvVal * 0.01), cost: totalCostVal * 0.005, cpl: 0 },
-        ].map(r => ({
-          ...r,
-          cpl: r.conv > 0 ? r.cost / r.conv : 0
-        })).sort((a, b) => b.conv - a.conv);
-
-        const dayOfWeekData = [
-          { day: "Seg", conv: Math.round(totalConvVal * 0.14), cost: totalCostVal * 0.14 },
-          { day: "Ter", conv: Math.round(totalConvVal * 0.18), cost: totalCostVal * 0.16 },
-          { day: "Qua", conv: Math.round(totalConvVal * 0.19), cost: totalCostVal * 0.17 },
-          { day: "Qui", conv: Math.round(totalConvVal * 0.17), cost: totalCostVal * 0.16 },
-          { day: "Sex", conv: Math.round(totalConvVal * 0.14), cost: totalCostVal * 0.15 },
-          { day: "Sáb", conv: Math.round(totalConvVal * 0.10), cost: totalCostVal * 0.12 },
-          { day: "Dom", conv: Math.round(totalConvVal * 0.08), cost: totalCostVal * 0.10 },
-        ];
-
-        const hourlyData = Array.from({ length: 24 }, (_, h) => {
-          let pct = 0.01;
-          if (h >= 7 && h <= 23) {
-            pct = Math.sin((h - 7) / 16 * Math.PI) * 0.08 + 0.02;
-          }
-          return {
-            hour: h,
-            conv: Math.round(totalConvVal * pct),
-            cost: totalCostVal * pct
-          };
-        });
-
-        const deviceData = [
-          { name: "Mobile", conv: Math.round(totalConvVal * 0.88), cost: totalCostVal * 0.82, impr: Math.round(totalImprVal * 0.85) },
-          { name: "Desktop", conv: Math.round(totalConvVal * 0.12), cost: totalCostVal * 0.18, impr: Math.round(totalImprVal * 0.15) }
-        ];
-
-        const heatMapData = Array.from({ length: 7 }, (_, d) => {
-          return Array.from({ length: 24 }, (_, h) => {
-            const isPeak = (d > 0 && d < 5) && (h >= 10 && h <= 18);
-            const conv = isPeak ? Math.round(Math.random() * 5 + 2) : Math.round(Math.random() * 2);
-            const cost = conv > 0 ? conv * (Math.random() * 10 + 15) : Math.random() * 5;
-            return { day: d, hour: h, conv, cost, cpl: conv > 0 ? cost / conv : 0 };
-          });
-        });
-
-        return { ageData, genderData, platData, regionData, dayOfWeekData, hourlyData, deviceData, heatMapData, isSimulated: true };
+        return {
+          ageData: [],
+          genderData: [],
+          platData: [],
+          regionData: [],
+          dayOfWeekData: [],
+          hourlyData: [],
+          deviceData: [],
+          heatMapData: [],
+          isSimulated: false,
+          hasRealData: false,
+        };
       }
 
       const ageMap: Record<string, any> = {};
@@ -1109,7 +1084,7 @@ function MetricasCampanhasPage() {
         }
       }
 
-      return { ageData, genderData, platData, regionData, dayOfWeekData, hourlyData, deviceData, heatMapData, isSimulated: false };
+      return { ageData, genderData, platData, regionData, dayOfWeekData, hourlyData, deviceData, heatMapData, isSimulated: false, hasRealData: true };
     },
   });
 
@@ -1196,13 +1171,14 @@ function MetricasCampanhasPage() {
         const reach = Number(ps.reach || 0);
 
         const freq = reach > 0 ? impressions / reach : 0;
-        const cat = c.result_type || classifyMetaEvent({ campaignName: c.name, rawObjective: c.objective, isVehicleContext: true }).category;
+        const cat = c.result_type || classifyMetaEvent({ campaignName: c.name, rawObjective: c.objective, isVehicleContext: false }).category;
         const effectiveRes = cat === "REACH" ? (reach > 0 ? reach : conversions) : conversions;
         const cpl = computeUnitCost(cost, effectiveRes, cat) ?? 0;
         const ctr = impressions > 0 ? (clicks / impressions) * 100 : 0;
         const cpm = impressions > 0 ? (cost / impressions) * 1000 : 0;
         const cpc = clicks > 0 ? cost / clicks : 0;
-        const roas = cost > 0 ? (conversions * 150) / cost : 0;
+        const purchaseVal = Number(c.t?.purchaseValue || 0);
+        const roas = cost > 0 && purchaseVal > 0 ? purchaseVal / cost : null;
         
         return { 
           ...c, 
@@ -1213,8 +1189,10 @@ function MetricasCampanhasPage() {
         };
       });
     }
-    return base.filter((c: any) => (c.t?.reach || 0) >= 1 || (c.t?.impressions || 0) >= 1 || (c.t?.cost || 0) > 0);
-  }, [campaigns, calibratedPeriodStats]);
+    return includeNoDelivery
+      ? base
+      : base.filter((c: any) => (c.t?.reach || 0) >= 1 || (c.t?.impressions || 0) >= 1 || (c.t?.cost || 0) > 0);
+  }, [campaigns, calibratedPeriodStats, includeNoDelivery]);
 
   const enrichedAdSets = useMemo(() => {
     let base = adSets;
@@ -1231,18 +1209,21 @@ function MetricasCampanhasPage() {
         const reach = Number(ps.reach || 0);
 
         const freq = reach > 0 ? impressions / reach : 0;
-        const cat = c.result_type || classifyMetaEvent({ campaignName: c.name + " " + (c.campaigns?.name || ""), rawObjective: c.objective || c.campaigns?.objective, isVehicleContext: true }).category;
+        const cat = c.result_type || classifyMetaEvent({ campaignName: c.name + " " + (c.campaigns?.name || ""), rawObjective: c.objective || c.campaigns?.objective, isVehicleContext: false }).category;
         const effectiveRes = cat === "REACH" ? (reach > 0 ? reach : conversions) : conversions;
         const cpl = computeUnitCost(cost, effectiveRes, cat) ?? 0;
         const ctr = impressions > 0 ? (clicks / impressions) * 100 : 0;
         const cpm = impressions > 0 ? (cost / impressions) * 1000 : 0;
         const cpc = clicks > 0 ? cost / clicks : 0;
-        const roas = cost > 0 ? (conversions * 150) / cost : 0;
+        const purchaseVal = Number(c.t?.purchaseValue || 0);
+        const roas = cost > 0 && purchaseVal > 0 ? purchaseVal / cost : null;
         return { ...c, t: { ...c.t, cost, conversions, clicks, impressions, reach, freq, cpl, ctr, cpm, cpc, roas } };
       });
     }
-    return base.filter((c: any) => (c.t?.reach || 0) >= 1 || (c.t?.impressions || 0) >= 1 || (c.t?.cost || 0) > 0);
-  }, [adSets, calibratedPeriodStats]);
+    return includeNoDelivery
+      ? base
+      : base.filter((c: any) => (c.t?.reach || 0) >= 1 || (c.t?.impressions || 0) >= 1 || (c.t?.cost || 0) > 0);
+  }, [adSets, calibratedPeriodStats, includeNoDelivery]);
 
   const enrichedAds = useMemo(() => {
     let base = ads;
@@ -1259,20 +1240,23 @@ function MetricasCampanhasPage() {
         const reach = Number(ps.reach || 0);
 
         const freq = reach > 0 ? impressions / reach : 0;
-        const cat = c.result_type || classifyMetaEvent({ campaignName: c.name + " " + (c.campaigns?.name || ""), rawObjective: c.objective || c.campaigns?.objective, isVehicleContext: true }).category;
+        const cat = c.result_type || classifyMetaEvent({ campaignName: c.name + " " + (c.campaigns?.name || ""), rawObjective: c.objective || c.campaigns?.objective, isVehicleContext: false }).category;
         const effectiveRes = cat === "REACH" ? (reach > 0 ? reach : conversions) : conversions;
         const cpl = computeUnitCost(cost, effectiveRes, cat) ?? 0;
         const ctr = impressions > 0 ? (clicks / impressions) * 100 : 0;
         const cpm = impressions > 0 ? (cost / impressions) * 1000 : 0;
         const cpc = clicks > 0 ? cost / clicks : 0;
-        const roas = cost > 0 ? (conversions * 150) / cost : 0;
+        const purchaseVal = Number(c.t?.purchaseValue || 0);
+        const roas = cost > 0 && purchaseVal > 0 ? purchaseVal / cost : null;
         return { ...c, t: { ...c.t, cost, conversions, clicks, impressions, reach, freq, cpl, ctr, cpm, cpc, roas } };
       });
     }
-    return base.filter((c: any) => (c.t?.reach || 0) >= 1 || (c.t?.impressions || 0) >= 1 || (c.t?.cost || 0) > 0);
-  }, [ads, calibratedPeriodStats]);
+    return includeNoDelivery
+      ? base
+      : base.filter((c: any) => (c.t?.reach || 0) >= 1 || (c.t?.impressions || 0) >= 1 || (c.t?.cost || 0) > 0);
+  }, [ads, calibratedPeriodStats, includeNoDelivery]);
 
-  // Reconciliação: o resultado da campanha = soma dos resultados dos seus anúncios (fonte confiável, igual ao Gerenciador)
+  // Preserva números oficiais do Meta no nível campanha e anexa soma dos anúncios para diagnóstico sem sobrescrita destrutiva
   const enrichedCampaigns = useMemo(() => {
     const sumByCamp = new Map<string, number>();
     for (const ad of enrichedAds as any[]) {
@@ -1280,14 +1264,21 @@ function MetricasCampanhasPage() {
       sumByCamp.set(ad.campaign_id, (sumByCamp.get(ad.campaign_id) || 0) + Number(ad.t?.conversions || 0));
     }
     return (enrichedCampaignsBase as any[]).map((c: any) => {
-      const adSum = sumByCamp.get(c.id) || 0;
-      if (adSum <= 0 || adSum === Number(c.t?.conversions || 0)) return c;
-      const cost = Number(c.t?.cost || 0);
-      const cat = c.result_type || classifyMetaEvent({ campaignName: c.name, rawObjective: c.objective, isVehicleContext: true }).category;
-      const unitCpl = computeUnitCost(cost, adSum, cat) ?? 0;
-      return { ...c, t: { ...c.t, conversions: adSum, cpl: unitCpl, roas: cost > 0 ? (adSum * 150) / cost : 0 } };
+      const adSum = sumByCamp.get(c.id);
+      if (adSum === undefined) return c;
+      const campConv = Number(c.t?.conversions || 0);
+      return {
+        ...c,
+        adResultsSum: adSum,
+        hasAdDivergence: Math.abs(adSum - campConv) > 0,
+      };
     });
   }, [enrichedCampaignsBase, enrichedAds]);
+
+  const hiddenNoDeliveryCount = useMemo(() => {
+    const src = level === "campanhas" ? campaigns : level === "conjuntos" ? adSets : ads;
+    return src.filter((c: any) => (c.t?.reach || 0) < 1 && (c.t?.impressions || 0) < 1 && (c.t?.cost || 0) <= 0).length;
+  }, [level, campaigns, adSets, ads]);
 
   const listData = useMemo(() => {
     if (level === "campanhas") return enrichedCampaigns;
@@ -1392,13 +1383,27 @@ function MetricasCampanhasPage() {
   const toggleAll = useCallback(() => allSelected ? setSelSet(new Set()) : setSelSet(new Set(filtered.map((c: any) => c.id))), [allSelected, filtered, setSelSet]);
   const toggleOne = useCallback((id: string) => { const s = new Set(selSet); s.has(id) ? s.delete(id) : s.add(id); setSelSet(s); }, [selSet, setSelSet]);
 
-  const { sel, totCost, totConv, totImpr, totReach, totClicks, avgCpl, avgCtr, avgCpm } = useMemo(() => {
+  const { sel, totCost, totConv, totImpr, totReach, reachLabel, totClicks, avgCpl, avgCtr, avgCpm } = useMemo(() => {
     const s = selSet.size > 0 ? filtered.filter((c: any) => selSet.has(c.id)) : filtered;
     const cost = s.reduce((sum: number, c: any) => sum + c.t.cost, 0);
     const conv = s.reduce((sum: number, c: any) => sum + c.t.conversions, 0);
     const impr = s.reduce((sum: number, c: any) => sum + c.t.impressions, 0);
-    const reach = s.reduce((sum: number, c: any) => sum + c.t.reach, 0);
+    const summedReach = s.reduce((sum: number, c: any) => sum + c.t.reach, 0);
     const clicks = s.reduce((sum: number, c: any) => sum + c.t.clicks, 0);
+
+    const canUseAccountReach =
+      level === "campanhas" &&
+      selSet.size === 0 &&
+      !search &&
+      statusFilter === "all" &&
+      accountFilter !== "all" &&
+      Array.isArray(accountPeriodStats) &&
+      accountPeriodStats.length === 1 &&
+      Number(accountPeriodStats[0]?.reach || 0) > 0;
+
+    const deduplicatedAccountReach = canUseAccountReach
+      ? Number(accountPeriodStats[0].reach)
+      : null;
 
     const summary = computeWeightedAggregates(
       s.map((c: any) => ({
@@ -1411,8 +1416,9 @@ function MetricasCampanhasPage() {
         reach: c.t.reach,
         rawObjective: c.objective || c.campaigns?.objective,
         resultType: c.result_type,
-        isVehicleContext: true,
-      }))
+        isVehicleContext: false,
+      })),
+      { deduplicatedAccountReach }
     );
 
     const isPureReach =
@@ -1429,19 +1435,20 @@ function MetricasCampanhasPage() {
     } else {
       computedAvgCpl = conv > 0 ? cost / conv : 0;
     }
-    
+
     return {
       sel: s,
       totCost: cost,
       totConv: conv,
       totImpr: impr,
-      totReach: reach,
+      totReach: deduplicatedAccountReach ?? summedReach,
+      reachLabel: deduplicatedAccountReach !== null ? "Alcance (Conta)" : "Alcance (Soma)",
       totClicks: clicks,
       avgCpl: computedAvgCpl,
       avgCtr: impr > 0 ? (clicks / impr) * 100 : 0,
       avgCpm: impr > 0 ? (cost / impr) * 1000 : 0,
     };
-  }, [selSet, filtered]);
+  }, [selSet, filtered, level, search, statusFilter, accountFilter, accountPeriodStats]);
 
   const maxCplThreshold = useMemo(() => {
     if (accountFilter === "all") return null;
@@ -1687,6 +1694,7 @@ function MetricasCampanhasPage() {
           avgCpl={avgCpl}
           totImpr={totImpr}
           totReach={totReach}
+          reachLabel={reachLabel}
           totClicks={totClicks}
           avgCtr={avgCtr}
           avgCpm={avgCpm}
@@ -1783,6 +1791,23 @@ function MetricasCampanhasPage() {
                 </select>
                 <ChevronDown className="pointer-events-none absolute right-2 top-1/2 h-3 w-3 -translate-y-1/2 text-muted-foreground" />
               </div>
+            )}
+
+            {/* Incluir objetos sem veiculação no período */}
+            {view === "gestao" && (hiddenNoDeliveryCount > 0 || includeNoDelivery) && (
+              <button
+                type="button"
+                onClick={() => setIncludeNoDelivery(v => !v)}
+                className={`flex items-center gap-1.5 rounded-xl border px-2.5 py-1.5 text-[11px] font-bold transition-all shrink-0 ${
+                  includeNoDelivery
+                    ? "border-primary/40 bg-primary/10 text-primary"
+                    : "border-border bg-card/50 text-muted-foreground hover:text-foreground"
+                }`}
+                title="Exibir ou ocultar campanhas, conjuntos e anúncios sem gasto ou entrega no período"
+              >
+                <Eye className="h-3 w-3" />
+                <span>Sem entrega ({hiddenNoDeliveryCount})</span>
+              </button>
             )}
 
             {/* Search desktop */}
@@ -1886,16 +1911,18 @@ function MetricasCampanhasPage() {
           {view === "gestao" && (
             <motion.div key="gestao" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="space-y-5">
 
-              {/* Sem seleção de nível superior */}
-              {((level === "conjuntos" && selectedCamps.size === 0) || (level === "anuncios" && selectedCamps.size === 0 && selectedAdSets.size === 0)) && (
-                <div className="glass-panel flex flex-col items-center justify-center gap-5 py-28 text-center border border-dashed border-white/10">
-                  <div className="h-16 w-16 rounded-2xl bg-white/5 flex items-center justify-center ring-1 ring-white/10">{level === "conjuntos" ? <LayoutGrid className="h-8 w-8 text-muted-foreground"/> : <ImageIcon className="h-8 w-8 text-muted-foreground"/>}</div>
-                  <div><h3 className="header-sport text-lg font-bold uppercase tracking-tight mb-2">Selecione o nível superior</h3><p className="text-sm text-muted-foreground max-w-md mx-auto">Para ver {level}, marque o checkbox dos itens na aba anterior.</p></div>
+              {/* Aviso de escopo direto quando não há campanha/conjunto marcado */}
+              {((level === "conjuntos" && selectedCamps.size === 0 && !selectedCampaignId) || (level === "anuncios" && selectedCamps.size === 0 && selectedAdSets.size === 0 && !selectedCampaignId)) && (
+                <div className="flex flex-wrap items-center gap-2 rounded-xl border border-border bg-card/40 px-4 py-2 text-[11px] text-muted-foreground">
+                  <Layers className="h-3.5 w-3.5 text-primary shrink-0" />
+                  <span>
+                    Exibindo todos os {level} {accountFilter === "all" ? "das contas conectadas" : "da conta selecionada"}. Marque itens na aba anterior para filtrar o escopo.
+                  </span>
                 </div>
               )}
 
               {/* Tabela */}
-              {!((level === "conjuntos" && selectedCamps.size === 0) || (level === "anuncios" && selectedCamps.size === 0 && selectedAdSets.size === 0)) && (
+              {true && (
                 <div className="glass-panel card-sport overflow-hidden">
 
                   {/* Barra da Auditoria Térmica do Leilão */}
@@ -3063,23 +3090,14 @@ function MetricasCampanhasPage() {
                   <Loader2 className="h-8 w-8 animate-spin text-primary"/>
                   <p className="text-sm text-muted-foreground">Carregando dados demográficos...</p>
                 </div>
-              ) : !breakdowns ? (
+              ) : !breakdowns || breakdowns.hasRealData === false ? (
                 <div className="glass-panel py-20 text-center space-y-3">
                   <Users className="h-10 w-10 text-muted-foreground/30 mx-auto"/>
-                  <p className="text-sm text-muted-foreground">Nenhum dado demográfico disponível para o período selecionado.</p>
-                  <p className="text-xs text-muted-foreground/60">Sincronize os dados e aguarde a coleta de breakdowns.</p>
+                  <p className="text-sm text-muted-foreground">Nenhum dado demográfico ou de breakdown retornado pelo Meta Ads para o período e filtro selecionados.</p>
+                  <p className="text-xs text-muted-foreground/60">Clique em Sync após selecionar o período desejado para consultar os breakdowns disponíveis na Graph API.</p>
                 </div>
               ) : (
                 <>
-                  {breakdowns?.isSimulated && (
-                    <div className="flex items-start gap-2.5 mb-4 rounded-xl border border-blue-500/25 bg-blue-500/5 p-4 text-[11px] text-blue-300 leading-normal">
-                      <Sparkles className="h-4 w-4 text-blue-400 animate-pulse shrink-0 mt-0.5" />
-                      <div>
-                        <strong className="text-foreground font-black uppercase tracking-wider block mb-0.5">Modo Simulador Educativo Ativo</strong>
-                        Como as tabelas do Meta Ads não retornaram segmentações demográficas de privacidade para este perfil e período de data selecionado, a Victoria IA projetou esta distribuição estatística com base nas métricas consolidadas reais da sua conta para manter a interface de análise didática ativa.
-                      </div>
-                    </div>
-                  )}
 
                   {/* Banner de filtros ativos */}
                   {(selectedCamps.size > 0 || accountFilter !== "all") && (

@@ -579,7 +579,7 @@ function SimuladorPage() {
         dailyCost,
         conversions: useFunnel ? periodFunnelConv : periodConv,
         impressions: periodImpr,
-        reach: periodReach > 0 ? periodReach : Math.round(periodImpr / freq),
+        reach: periodReach,
         clicks: periodClicks,
         cpl,
         ctr: Math.max(0.002, ctr),

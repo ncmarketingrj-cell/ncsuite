@@ -886,7 +886,7 @@ Responda de forma objetiva e tática em Markdown com:
                 Mapa de Calor: Horários das Publicações Reais
               </h4>
               <p className="text-[11px] text-muted-foreground mt-0.5">
-                Calculado exclusivamente sobre os horários e engajamento real das publicações carregadas abaixo.
+                Amostra real: <strong className="text-foreground font-mono">{realInsights?.heatmapSampleSize ?? realInsights?.posts?.length ?? 0}</strong> publicações carregadas na janela selecionada (sem valores simulados).
               </p>
             </div>
           </div>

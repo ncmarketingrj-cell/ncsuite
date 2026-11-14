@@ -3,6 +3,7 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0"
+import { META_GRAPH_BASE, metaFetchPaginatedWithStatus } from "../_shared/metaCore.ts"
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -15,7 +16,7 @@ const supabase = createClient(
   Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
 )
 
-const META_API_BASE = "https://graph.facebook.com/v21.0"
+const META_API_BASE = META_GRAPH_BASE
 
 // Função auxiliar para publicação real/simulada no Facebook e Instagram
 async function publishPostInternal(post: any) {
@@ -296,13 +297,12 @@ serve(async (req) => {
       // Limpar páginas inventadas (mock_*) que possam ter sido salvas anteriormente
       await supabase.from("social_pages").delete().eq("user_id", configUserId).like("page_id", "mock_%")
 
-      // Buscar páginas reais do Meta
+      // Buscar páginas reais do Meta com paginação completa
       try {
-        const pagesRes = await fetch(`${META_API_BASE}/me/accounts?access_token=${tokenToUse}`)
-        const pagesData = await pagesRes.json()
-        if (pagesData.error) throw new Error(pagesData.error.message)
+        const pagesRes = await metaFetchPaginatedWithStatus("/me/accounts", tokenToUse, { limit: "100" }, { maxPages: 25 })
+        if (!pagesRes.ok && pagesRes.data.length === 0) throw new Error(pagesRes.error || "Falha ao listar páginas")
 
-        const fbPages = pagesData.data || []
+        const fbPages = pagesRes.data || []
         const pagesList: any[] = []
 
         for (const p of fbPages) {
@@ -457,54 +457,112 @@ serve(async (req) => {
         .select("access_token")
         .maybeSingle()
 
+      const { data: pagesTokens } = await supabase
+        .from("social_pages")
+        .select("page_id, access_token")
+
+      const pageTokenMap = new Map<string, string>(
+        (pagesTokens || []).filter((p: any) => p.page_id && p.access_token).map((p: any) => [p.page_id, p.access_token])
+      )
+
+      const warnings: string[] = []
+      let updatedCount = 0
+
       for (const post of posts) {
-        // Se for um ID simulado ou se não temos o token de acesso
-        if (!config?.access_token || post.meta_post_id?.startsWith("mock_")) {
-          // Gerar métricas simuladas premium para o mockup de demonstração funcionar
-          const randomFactor = Math.floor(Math.random() * 10)
+        if (!config?.access_token || !post.meta_post_id || post.meta_post_id.startsWith("mock_")) {
+          // Nunca inventar reach/impressions para posts locais ou sem token real
           await supabase
             .from("social_posts")
             .update({
-              likes_count: (post.likes_count || 0) + randomFactor + 2,
-              comments_count: (post.comments_count || 0) + Math.floor(randomFactor / 3),
-              reach_count: (post.reach_count || 0) + randomFactor * 50 + 15,
-              impressions_count: (post.impressions_count || 0) + randomFactor * 65 + 20
+              reach_state: "indisponivel",
+              impressions_state: "indisponivel",
             })
             .eq("id", post.id)
+            .then(() => undefined, () => undefined)
           continue
         }
 
-        // Caso real: chama a API do Facebook e Instagram para sincronizar métricas
-        const ids = post.meta_post_id.split(",")
-        let totalLikes = 0
-        let totalComments = 0
+        const postToken = pageTokenMap.get(post.page_id) || config.access_token
+        const ids = post.meta_post_id.split(",").map((s: string) => s.trim()).filter(Boolean)
+        let totalLikes: number | null = null
+        let totalComments: number | null = null
+        let totalShares: number | null = null
+        let totalSaved: number | null = null
+        let totalReach: number | null = null
+        let totalImpressions: number | null = null
 
         for (const metaId of ids) {
           try {
-            const res = await fetch(`${META_API_BASE}/${metaId}?fields=like_count,comments_count,shares&access_token=${config.access_token}`)
+            const res = await fetch(`${META_API_BASE}/${metaId}?fields=like_count,comments_count,shares&access_token=${postToken}`)
             const data = await res.json()
             if (!data.error) {
-              totalLikes += data.like_count || data.likes?.summary?.total_count || 0
-              totalComments += data.comments_count || data.comments?.summary?.total_count || 0
+              const l = data.like_count ?? data.likes?.summary?.total_count
+              const c = data.comments_count ?? data.comments?.summary?.total_count
+              const s = data.shares?.count
+              if (typeof l === "number") totalLikes = (totalLikes ?? 0) + l
+              if (typeof c === "number") totalComments = (totalComments ?? 0) + c
+              if (typeof s === "number") totalShares = (totalShares ?? 0) + s
             }
-          } catch (e) {
-            console.error(`Erro ao puxar métricas do post ${metaId}:`, e.message)
+
+            // Buscar alcance/impressões reais via insights do objeto (IG media ou FB page post)
+            const metricList = metaId.includes("_")
+              ? "post_impressions_unique,post_impressions"
+              : "reach,views,saved,shares"
+            const insRes = await fetch(`${META_API_BASE}/${metaId}/insights?metric=${metricList}&access_token=${postToken}`)
+            const insData = await insRes.json()
+            if (!insData.error && Array.isArray(insData.data)) {
+              for (const ins of insData.data) {
+                const v = ins.values?.[0]?.value
+                if (typeof v !== "number") continue
+                if (ins.name === "post_impressions_unique" || ins.name === "reach") {
+                  totalReach = (totalReach ?? 0) + v
+                } else if (ins.name === "post_impressions" || ins.name === "views") {
+                  totalImpressions = (totalImpressions ?? 0) + v
+                } else if (ins.name === "saved") {
+                  totalSaved = (totalSaved ?? 0) + v
+                } else if (ins.name === "shares") {
+                  totalShares = (totalShares ?? 0) + v
+                }
+              }
+            } else if (insData.error) {
+              warnings.push(`Insights indisponíveis para ${metaId}: ${insData.error.message}`)
+            }
+          } catch (e: any) {
+            warnings.push(`Erro ao consultar post ${metaId}: ${e.message}`)
           }
         }
 
-        // Atualizar banco
-        await supabase
+        const updatePayload: Record<string, any> = {
+          reach_state: totalReach !== null ? "observado" : "indisponivel",
+          impressions_state: totalImpressions !== null ? "observado" : "indisponivel",
+        }
+        if (totalLikes !== null) updatePayload.likes_count = totalLikes
+        if (totalComments !== null) updatePayload.comments_count = totalComments
+        if (totalShares !== null) updatePayload.shares_count = totalShares
+        if (totalSaved !== null) updatePayload.saved_count = totalSaved
+        if (totalReach !== null) updatePayload.reach_count = totalReach
+        if (totalImpressions !== null) updatePayload.impressions_count = totalImpressions
+
+        const { error: updErr } = await supabase
           .from("social_posts")
-          .update({
-            likes_count: totalLikes || post.likes_count,
-            comments_count: totalComments || post.comments_count,
-            reach_count: Math.max(post.reach_count, totalLikes * 12 + 20),
-            impressions_count: Math.max(post.impressions_count, totalLikes * 15 + 35)
-          })
+          .update(updatePayload)
           .eq("id", post.id)
+        if (updErr) {
+          // Fallback caso colunas novas da migration ainda não existam
+          const { shares_count: _s, saved_count: _sv, reach_state: _rs, impressions_state: _is, ...legacyPayload } = updatePayload
+          if (Object.keys(legacyPayload).length > 0) {
+            await supabase.from("social_posts").update(legacyPayload).eq("id", post.id)
+          }
+        }
+        updatedCount++
       }
 
-      return new Response(JSON.stringify({ success: true, message: "Métricas sincronizadas com sucesso." }), {
+      return new Response(JSON.stringify({
+        success: true,
+        updated: updatedCount,
+        warnings,
+        message: "Métricas reais sincronizadas sem valores simulados.",
+      }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" }
       })
     }
@@ -568,9 +626,26 @@ serve(async (req) => {
           const fbFanData = await fbFanRes.json()
           if (!fbFanData.error) results.fb_followers = fbFanData.followers_count || fbFanData.fan_count || 0
 
-          const fbPostsRes = await fetch(`${META_API_BASE}/${fbPageId}/posts?fields=id,message,created_time,full_picture,permalink_url,likes.summary(true),comments.summary(true),shares&limit=15&access_token=${token}`)
-          const fbPostsData = await fbPostsRes.json()
-          results.fb_posts = fbPostsData.data || []
+          const fbPostsRes = await metaFetchPaginatedWithStatus(`/${fbPageId}/posts`, token, {
+            fields: "id,message,created_time,full_picture,permalink_url,likes.summary(true),comments.summary(true),shares",
+            limit: "50",
+          }, { maxPages: 5 })
+          const fbPostsList = fbPostsRes.data || []
+          await Promise.all(
+            fbPostsList.slice(0, 50).map(async (fp: any) => {
+              try {
+                const fpIns = await fetch(`${META_API_BASE}/${fp.id}/insights?metric=post_impressions_unique,post_impressions&access_token=${token}`)
+                const fpInsData = await fpIns.json()
+                if (!fpInsData.error && Array.isArray(fpInsData.data)) {
+                  for (const ins of fpInsData.data) {
+                    if (ins.name === "post_impressions_unique") fp.reach = ins.values?.[0]?.value ?? null
+                    if (ins.name === "post_impressions") fp.views = ins.values?.[0]?.value ?? null
+                  }
+                }
+              } catch { /* indisponivel por permissao */ }
+            })
+          )
+          results.fb_posts = fbPostsList
         } catch (e: any) { console.error("Erro FB insights:", e.message) }
       }
 
@@ -592,25 +667,31 @@ serve(async (req) => {
           const igTotalsData = await igTotalsRes.json()
           if (!igTotalsData.error) results.ig_totals = igTotalsData.data || []
 
-          const igMediaRes = await fetch(`${META_API_BASE}/${igAccountId}/media?fields=id,caption,media_type,media_product_type,thumbnail_url,media_url,permalink,timestamp,like_count,comments_count&limit=18&access_token=${token}`)
-          const igMediaData = await igMediaRes.json()
-          const igMediaList = igMediaData.data || []
+          const igMediaRes = await metaFetchPaginatedWithStatus(`/${igAccountId}/media`, token, {
+            fields: "id,caption,media_type,media_product_type,thumbnail_url,media_url,permalink,timestamp,like_count,comments_count",
+            limit: "50",
+          }, { maxPages: 5 })
+          const igMediaList = igMediaRes.data || []
 
-          // Buscar insights individuais de cada post (v21.0)
-          for (const media of igMediaList.slice(0, 15)) {
-            try {
-              const mediaInsRes = await fetch(`${META_API_BASE}/${media.id}/insights?metric=reach,views,saved,shares,total_interactions&access_token=${token}`)
-              const mediaInsData = await mediaInsRes.json()
-              if (!mediaInsData.error && mediaInsData.data) {
-                for (const ins of mediaInsData.data) {
-                  if (ins.name === "views") media.views = ins.values?.[0]?.value || 0
-                  if (ins.name === "reach") media.reach = ins.values?.[0]?.value || 0
-                  if (ins.name === "saved") media.saved = ins.values?.[0]?.value || 0
-                  if (ins.name === "shares") media.shares = ins.values?.[0]?.value || 0
-                  if (ins.name === "total_interactions") media.total_interactions = ins.values?.[0]?.value || 0
-                }
-              }
-            } catch (e) { /* ignorar erros por post */ }
+          // Buscar insights individuais de TODOS os posts carregados (em lotes de 10 para respeitar rate-limit)
+          for (let i = 0; i < igMediaList.length; i += 10) {
+            await Promise.all(
+              igMediaList.slice(i, i + 10).map(async (media: any) => {
+                try {
+                  const mediaInsRes = await fetch(`${META_API_BASE}/${media.id}/insights?metric=reach,views,saved,shares,total_interactions&access_token=${token}`)
+                  const mediaInsData = await mediaInsRes.json()
+                  if (!mediaInsData.error && mediaInsData.data) {
+                    for (const ins of mediaInsData.data) {
+                      if (ins.name === "views") media.views = ins.values?.[0]?.value ?? null
+                      if (ins.name === "reach") media.reach = ins.values?.[0]?.value ?? null
+                      if (ins.name === "saved") media.saved = ins.values?.[0]?.value ?? null
+                      if (ins.name === "shares") media.shares = ins.values?.[0]?.value ?? null
+                      if (ins.name === "total_interactions") media.total_interactions = ins.values?.[0]?.value ?? null
+                    }
+                  }
+                } catch { /* indisponivel */ }
+              })
+            )
           }
           results.ig_media = igMediaList
         } catch (e: any) { console.error("Erro IG insights:", e.message) }

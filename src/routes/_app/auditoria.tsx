@@ -551,8 +551,12 @@ function AuditoriaHub() {
         if (campIds.length > 0) {
           metricsQ = metricsQ.in("campaign_id", campIds);
         } else {
-          setIsSimulated(true);
-          generateMockStats(selectedAccountId, selectedCampaignId);
+          setIsSimulated(false);
+          setKpis({ spend: 0, impressions: 0, reach: 0, clicks: 0, conversions: 0, cpl: 0, cpm: 0, ctr: 0, sales: 0 });
+          setCorrelationData([]);
+          setTrendMetrics([]);
+          setDropoffData([]);
+          setAuctionPressure(0);
           setLoading(false);
           return;
         }
@@ -577,12 +581,21 @@ function AuditoriaHub() {
         processTrafficMetrics(campaignsList, dbMetrics, accountThresholdCpl);
       } else {
         setIsSimulated(true);
-        generateMockStats(selectedAccountId, selectedCampaignId);
+        setKpis({ spend: 0, impressions: 0, reach: 0, clicks: 0, conversions: 0, cpl: 0, cpm: 0, ctr: 0, sales: 0 });
+        setCorrelationData([]);
+        setTrendMetrics([]);
+        setDropoffData([]);
+        setAuctionPressure(0);
       }
     } catch (err) {
       console.error("Erro ao carregar dados da auditoria:", err);
+      toast.error("Erro ao carregar métricas reais da auditoria.");
       setIsSimulated(true);
-      generateMockStats(selectedAccountId, selectedCampaignId);
+      setKpis({ spend: 0, impressions: 0, reach: 0, clicks: 0, conversions: 0, cpl: 0, cpm: 0, ctr: 0, sales: 0 });
+      setCorrelationData([]);
+      setTrendMetrics([]);
+      setDropoffData([]);
+      setAuctionPressure(0);
     } finally {
       setLoading(false);
     }
@@ -686,14 +699,14 @@ function AuditoriaHub() {
   return (
     <div className="flex-1 space-y-6 p-4 md:p-8 bg-background text-foreground min-h-screen">
       
-      {/* 💡 Banner informativo de dados simulados */}
+      {/* 💡 Banner informativo de ausência de dados */}
       {isSimulated && (
-        <div className="bg-blue-500/10 border border-blue-500/20 rounded-2xl p-4 flex items-start gap-3">
-          <Info className="h-5 w-5 text-blue-500 shrink-0 mt-0.5" />
+        <div className="bg-amber-500/10 border border-amber-500/20 rounded-2xl p-4 flex items-start gap-3">
+          <Info className="h-5 w-5 text-amber-500 shrink-0 mt-0.5" />
           <div className="space-y-0.5">
-            <p className="text-xs font-black uppercase text-blue-500 tracking-wider">Modo Projeção Educativa Ativo</p>
+            <p className="text-xs font-black uppercase text-amber-500 tracking-wider">Sem dados sincronizados no período</p>
             <p className="text-xs text-muted-foreground/90">
-              Não foram encontrados logs brutos de campanhas para os filtros e datas selecionadas no banco. Exibindo projeções de tráfego baseadas nos totais da conta de anúncios.
+              Não foram encontradas métricas reais para os filtros e datas selecionadas no banco. Nenhum dado fictício foi preenchido; execute a sincronização com o Meta Ads se desejar importar este intervalo.
             </p>
           </div>
         </div>

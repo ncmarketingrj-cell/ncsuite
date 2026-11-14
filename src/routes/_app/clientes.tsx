@@ -417,7 +417,7 @@ function ClientCard({ client, metrics, account, dateLabel }: {
         ) : null}
 
         {/* ROAS */}
-        {(client.target_roas || metrics?.roas) ? (
+        {(client.target_roas || (metrics?.roas ?? 0) > 0) ? (
           <div className="flex items-center justify-between">
             <span className="text-[10px] text-muted-foreground font-semibold flex items-center gap-1">
               <TrendingUp className="h-3 w-3" /> ROAS
@@ -425,7 +425,7 @@ function ClientCard({ client, metrics, account, dateLabel }: {
             <div className="flex items-center gap-1.5">
               <StatusDot value={metrics?.roas ?? 0} target={client.target_roas ?? 0} />
               <span className="text-[10px] font-black text-foreground">
-                {metrics ? `${metrics.roas.toFixed(2)}x` : "—"}
+                {metrics && metrics.roas > 0 ? `${metrics.roas.toFixed(2)}x` : "—"}
                 {client.target_roas ? <span className="text-[9px] text-muted-foreground font-mono"> / {client.target_roas}x</span> : null}
               </span>
             </div>

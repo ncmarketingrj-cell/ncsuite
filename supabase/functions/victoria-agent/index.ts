@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.43.1";
+import { detectStrictConversionCategory } from "../_shared/metaCore.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -822,38 +823,41 @@ Escreva em formato altamente profissional, com dados baseados na série de métr
       else dbMetrics = data || [];
     }
 
-    // Classificador alinhado ao domínio compartilhado preservando evento real (ID 12)
-    const classifyEventForVictoria = (campName: string, rawObj = "", resultType = ""): {
+    // Classificador estrito alinhado a metaCore.ts (sem inferência por nome de cliente/campanha)
+    const classifyEventForVictoria = (_campName: string, rawObj = "", resultType = ""): {
       badge: string;
-      category: "MESSAGES" | "PROFILE_VISITS" | "LANDING_PAGE_VIEWS" | "LINK_CLICKS" | "LEADS" | "REACH" | "PURCHASE" | "OTHER";
+      category: "MESSAGES" | "PROFILE_VISITS" | "LANDING_PAGE_VIEWS" | "LINK_CLICKS" | "LEADS" | "REACH" | "PURCHASE" | "UNKNOWN";
       unitPlural: string;
       costLabel: string;
     } => {
-      const rt = (resultType || "").toUpperCase();
-      const obj = (rawObj || "").toUpperCase();
-      const n = (campName || "").toUpperCase();
-      if (/PROFILE_VISIT|IG_PROFILE|VISITA.*PERFIL/.test(rt) || /VISITAS AO PERFIL|SEGUIDORES|PERFIL/.test(n)) {
-        return { badge: "👤 Visitas ao Perfil", category: "PROFILE_VISITS", unitPlural: "visitas ao perfil", costLabel: "Custo/Visita ao Perfil" };
+      const cat = detectStrictConversionCategory({
+        rawObjective: rawObj || null,
+        storedResultType: resultType || null,
+      });
+      switch (cat) {
+        case "INSTAGRAM_PROFILE":
+          return { badge: "👤 Visitas ao Perfil", category: "PROFILE_VISITS", unitPlural: "visitas ao perfil", costLabel: "Custo/Visita ao Perfil" };
+        case "LANDING_PAGE_VIEWS":
+          return { badge: "🌐 Page Views", category: "LANDING_PAGE_VIEWS", unitPlural: "visualizações de página", costLabel: "Custo/Page View" };
+        case "MESSAGES":
+          return { badge: "💬 Conversas Meta", category: "MESSAGES", unitPlural: "conversas iniciadas (Meta)", costLabel: "CPA/Conversa" };
+        case "LEADS":
+          return { badge: "🎯 Leads/Cadastros", category: "LEADS", unitPlural: "leads/cadastros", costLabel: "CPL/Cadastro" };
+        case "PURCHASES":
+        case "CHECKOUT":
+        case "ADD_TO_CART":
+          return { badge: "🛒 Compras/Conversões", category: "PURCHASE", unitPlural: "conversões de compra", costLabel: "CPA/Compra" };
+        case "REACH":
+          return { badge: "👁️ Alcance", category: "REACH", unitPlural: "pessoas alcançadas", costLabel: "Custo por 1.000 alcançados" };
+        case "LINK_CLICKS":
+          return { badge: "👆 Cliques", category: "LINK_CLICKS", unitPlural: "cliques no link", costLabel: "CPC" };
+        case "VIDEO_VIEWS":
+          return { badge: "🎬 Vídeo/ThruPlay", category: "UNKNOWN", unitPlural: "visualizações ThruPlay", costLabel: "CPV/ThruPlay" };
+        case "ENGAGEMENT":
+          return { badge: "❤️ Engajamento", category: "UNKNOWN", unitPlural: "engajamentos", costLabel: "CPE" };
+        default:
+          return { badge: "❓ Revisar Objetivo", category: "UNKNOWN", unitPlural: "resultados (revisar)", costLabel: "Custo/Resultado" };
       }
-      if (/LANDING_PAGE|OMNICHANNEL_LPV|LPV/.test(rt) || (obj.includes("TRAFFIC") && /LPV|SITE/.test(n))) {
-        return { badge: "🌐 Page Views", category: "LANDING_PAGE_VIEWS", unitPlural: "visualizações de página", costLabel: "Custo/Page View" };
-      }
-      if (/MESSAGING_CONVERSATION|WHATSAPP|MENSAGEM/.test(rt) || /MSG|WPP|WHATSAPP|MENSAG/.test(n)) {
-        return { badge: "💬 Conversas Meta", category: "MESSAGES", unitPlural: "conversas iniciadas (Meta)", costLabel: "CPA/Conversa" };
-      }
-      if (/LEAD|CADASTRO/.test(rt) || obj.includes("LEAD")) {
-        return { badge: "🎯 Leads/Cadastros", category: "LEADS", unitPlural: "leads/cadastros", costLabel: "CPL/Cadastro" };
-      }
-      if (/PURCHASE|COMPRA|CHECKOUT/.test(rt) || obj.includes("SALES") || /COMPRA|VENDA/.test(n)) {
-        return { badge: "🛒 Compras/Conversões", category: "PURCHASE", unitPlural: "conversões de compra", costLabel: "CPA/Compra" };
-      }
-      if (/REACH|ALCANCE|IMPRESSION/.test(rt) || obj.includes("AWARENESS") || /ALCANCE|RECONHECIMENTO|AWARENESS|REACH/.test(n)) {
-        return { badge: "👁️ Alcance", category: "REACH", unitPlural: "pessoas alcançadas", costLabel: "Custo por 1.000 alcançados" };
-      }
-      if (/LINK_CLICK|CLIQUE/.test(rt) || obj.includes("TRAFFIC") || /CLIQUE|TRAFEGO|VISITA/.test(n)) {
-        return { badge: "👆 Cliques", category: "LINK_CLICKS", unitPlural: "cliques no link", costLabel: "CPC" };
-      }
-      return { badge: "📊 Resultados", category: "OTHER", unitPlural: "resultados", costLabel: "Custo/Resultado" };
     };
 
     // 4. Process metrics — campaign map com evento e unidade reais (IDs 11 e 12)
@@ -979,11 +983,11 @@ Escreva em formato altamente profissional, com dados baseados na série de métr
       byObj.forEach((d, obj) => {
         const isReach = obj.includes("Alcance");
         const isClick = obj.includes("Cliques");
-        const cpa = d.results > 0 ? (isReach ? (d.cost / d.results) * 1000 : d.cost / d.results) : 0;
+        const cpa: number | null = d.results > 0 ? (isReach ? (d.cost / d.results) * 1000 : d.cost / d.results) : null;
         const rLabel = isClick ? "Visitas" : isReach ? "Impressões" : "Resultados";
         const cLabel = isClick ? "Custo/Visita" : isReach ? "CPM" : "CPA/CPL";
-        tpl += `${obj}\n   💵 Investimento: R$ ${fmt(d.cost)}\n   📈 ${rLabel}: ${fmtN(d.results)}\n   💲 ${cLabel}: R$ ${fmt(cpa)}\n`;
-        if (d.reach > 0 && !isReach) tpl += `   👥 Alcance: ${fmtN(d.reach)}\n`;
+        tpl += `${obj}\n   💵 Investimento: R$ ${fmt(d.cost)}\n   📈 ${rLabel}: ${fmtN(d.results)}\n   💲 ${cLabel}: ${cpa !== null ? `R$ ${fmt(cpa)}` : "Não calculável"}\n`;
+        if (d.reach > 0 && !isReach) tpl += `   👥 Alcance (soma diária não deduplicada): ${fmtN(d.reach)}\n`;
         tpl += `\n`;
       });
       tpl += `━━━━━━━━━━━━━━━━━━━━\n*DETALHAMENTO DE CAMPANHAS*\n━━━━━━━━━━━━━━━━━━━━\n\n`;
@@ -993,7 +997,7 @@ Escreva em formato altamente profissional, com dados baseados na série de métr
         tpl += `   💵 Invest: R$ ${fmt(c.totals.cost)}\n`;
         tpl += `   📈 ${c.totals.resultLabel}: ${fmtN(c.totals.resultValue)}${isReach ? " alc." : ""}\n`;
         tpl += `   💲 ${c.totals.costLabel}: ${c.totals.costPerRes !== null ? `R$ ${fmt(c.totals.costPerRes)}` : "Não calculável"}\n`;
-        if (c.totals.reach > 0) tpl += `   👥 Alcance: ${fmtN(c.totals.reach)}\n`;
+        if (c.totals.reach > 0) tpl += `   👥 Alcance (soma diária): ${fmtN(c.totals.reach)}\n`;
         tpl += `\n`;
       });
       tpl += `━━━━━━━━━━━━━━━━━━━━\n💰 *TOTAL INVESTIDO: R$ ${fmt(totalInvest)}*\n⚡ Relatório gerado pela Victoria AI — NC Performance`;

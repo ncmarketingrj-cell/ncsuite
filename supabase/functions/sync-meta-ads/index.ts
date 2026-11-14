@@ -1,8 +1,17 @@
 // supabase/functions/sync-meta-ads/index.ts
-// NC Performance Suite — Motor de Sincronização com Budgets e Histórico
+// NC Performance Suite — Motor de Sincronização Integral Meta Graph API v21.0
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.43.1"
+import {
+  META_GRAPH_BASE,
+  extractMetaInsightMetrics,
+  metaFetchJsonWithRetry,
+  metaFetchPaginatedWithStatus,
+  type MetaPaginatedResult,
+} from "../_shared/metaCore.ts"
+
+const SYNC_VERSION = "2026-11-14-integral-v1"
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -15,7 +24,8 @@ const supabase = createClient(
   Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
 )
 
-const META_API_BASE = "https://graph.facebook.com/v21.0"
+const META_API_BASE = META_GRAPH_BASE
+const INSIGHT_ATTRIBUTION_WINDOWS = JSON.stringify(["7d_click", "1d_view", "1d_click", "default"])
 
 async function requireAuth(req: Request): Promise<{ user: any | null, errorResponse: Response | null }> {
   const authHeader = req.headers.get("Authorization");
@@ -29,592 +39,242 @@ async function requireAuth(req: Request): Promise<{ user: any | null, errorRespo
   return { user, errorResponse: null };
 }
 
-async function metaGet(path: string, token: string, params: Record<string, string> = {}) {
-  const url = new URL(`${META_API_BASE}${path}`)
-  url.searchParams.set("access_token", token)
-  for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v)
-  const res = await fetch(url.toString())
-  const data = await res.json()
-  if (data.error) throw new Error(`Meta API [${path}]: ${data.error.message}`)
-  return data
+function emptyPaginatedResult<T = any>(error: string | null = null): MetaPaginatedResult<T> {
+  return {
+    ok: false,
+    data: [],
+    pagesFetched: 0,
+    truncated: false,
+    statusCode: null,
+    attempts: 0,
+    error,
+    errorCode: null,
+    errorKind: error ? "unknown" : "none",
+    rateLimitUsagePct: null,
+  }
 }
 
-// ─── NOVO: Meta API Helper com Paginação Automática ──────────────────────────
-async function metaGetPaginated(path: string, token: string, params: Record<string, string> = {}) {
-  let allData: any[] = [];
-  const url = new URL(`${META_API_BASE}${path}`)
-  url.searchParams.set("access_token", token)
-  for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v)
-  
-  let nextUrl = url.toString();
-  let pages = 0;
-  
-  while (nextUrl && pages < 50) { // limite de segurança de 50 páginas
-    const res = await fetch(nextUrl)
-    const data = await res.json()
-    if (data.error) throw new Error(`Meta API Paginated [${path}]: ${data.error.message}`)
-    
-    if (data.data && Array.isArray(data.data)) {
-      allData = allData.concat(data.data);
+async function safePaginatedFetch(
+  path: string,
+  token: string,
+  params: Record<string, string>,
+  label: string,
+  maxPages = 100
+): Promise<MetaPaginatedResult<any>> {
+  try {
+    const res = await metaFetchPaginatedWithStatus<any>(path, token, params, {
+      maxRetries: 4,
+      baseDelayMs: 600,
+      maxDelayMs: 10000,
+      maxPages,
+    })
+    if (!res.ok || res.truncated) {
+      console.warn(`[SYNC] Fetch parcial/erro em ${label} (${path}): ok=${res.ok}, truncated=${res.truncated}, error=${res.error}`)
     }
-    
-    if (data.paging && data.paging.next) {
-      nextUrl = data.paging.next;
-      pages++;
-    } else {
-      nextUrl = "";
-    }
+    return res
+  } catch (e: any) {
+    console.error(`[SYNC] Exceção em ${label} (${path}):`, e?.message || String(e))
+    return emptyPaginatedResult(e?.message || String(e))
   }
-  
-  return allData;
+}
+
+async function safeUpsertWithExtendedColumns(
+  table: string,
+  rows: Record<string, any>[],
+  onConflict: string,
+  extendedKeys: string[],
+  selectCols?: string
+): Promise<{ data: any[] | null; error: string | null; degradedSchema: boolean; missingTable: boolean }> {
+  if (rows.length === 0) return { data: [], error: null, degradedSchema: false, missingTable: false }
+
+  const execUpsert = async (payload: Record<string, any>[]) => {
+    const q = supabase.from(table).upsert(payload, { onConflict })
+    if (selectCols) return await q.select(selectCols)
+    return await q
+  }
+
+  const primary = await execUpsert(rows)
+  if (!primary.error) {
+    return { data: (primary as any).data || [], error: null, degradedSchema: false, missingTable: false }
+  }
+
+  const msg = String(primary.error.message || "")
+  const code = String((primary.error as any).code || "")
+
+  if (code === "42P01" || code === "PGRST205" || msg.includes("does not exist") || msg.includes("Could not find the table")) {
+    return { data: null, error: msg, degradedSchema: true, missingTable: true }
+  }
+
+  if (code === "PGRST204" || msg.includes("Could not find") || msg.includes("column")) {
+    const stripped = rows.map((row) => {
+      const clone: Record<string, any> = {}
+      for (const [k, v] of Object.entries(row)) {
+        if (!extendedKeys.includes(k)) clone[k] = v
+      }
+      return clone
+    })
+    const fallback = await execUpsert(stripped)
+    if (!fallback.error) {
+      console.warn(`[SYNC] Schema legado detectado na tabela ${table}; gravado sem colunas estendidas (${msg}).`)
+      return { data: (fallback as any).data || [], error: null, degradedSchema: true, missingTable: false }
+    }
+    return { data: null, error: fallback.error.message, degradedSchema: true, missingTable: false }
+  }
+
+  return { data: null, error: primary.error.message, degradedSchema: false, missingTable: false }
 }
 
 // ─── Buscar todas as contas vinculadas ao token ───────────────────────────────
-async function fetchAdAccounts(token: string) {
-  return await metaGetPaginated("/me/adaccounts", token, {
-    fields: "name,currency,account_status,id,timezone_name",
-    limit: "50"
-  })
+async function fetchAdAccountsWithStatus(token: string) {
+  return await safePaginatedFetch("/me/adaccounts", token, {
+    fields: "name,currency,account_status,disable_reason,id,timezone_name",
+    limit: "100"
+  }, "me/adaccounts")
 }
 
-// ─── NOVO: Buscar campanhas com orçamentos + objetivo + status de entrega ─────
-async function fetchCampaignsWithBudgets(adAccountId: string, token: string): Promise<any[]> {
-  try {
-    const data = await metaGet(`/${adAccountId}/campaigns`, token, {
-      fields: "id,name,status,effective_status,daily_budget,lifetime_budget,objective",
-      limit: "500"
-    })
-    return data.data || []
-  } catch (e: any) {
-    console.error(`[SYNC] Erro ao buscar campanhas com orçamento de ${adAccountId}:`, e.message)
-    return []
-  }
+// ─── Buscar campanhas com orçamentos + objetivo + metadados completos ────────
+async function fetchCampaignsWithBudgets(adAccountId: string, token: string): Promise<MetaPaginatedResult<any>> {
+  return await safePaginatedFetch(`/${adAccountId}/campaigns`, token, {
+    fields: "id,name,status,effective_status,configured_status,buying_type,bid_strategy,daily_budget,lifetime_budget,budget_remaining,spend_cap,start_time,stop_time,special_ad_categories,objective",
+    limit: "250"
+  }, `campaigns:${adAccountId}`)
+}
+
+// ─── Insights diários em nível de conta (alcance deduplicado por dia) ────────
+async function fetchAccountInsightsDaily(adAccountId: string, token: string, timeParams: Record<string, string>): Promise<MetaPaginatedResult<any>> {
+  return await safePaginatedFetch(`/${adAccountId}/insights`, token, {
+    level: "account",
+    fields: "account_id,spend,reach,impressions,frequency,clicks,inline_link_clicks,ctr,cpc,cpm,date_start,date_stop",
+    time_increment: "1",
+    use_unified_attribution_setting: "true",
+    limit: "250",
+    ...timeParams
+  }, `account_daily:${adAccountId}`)
+}
+
+// ─── Insights de período em nível de conta (alcance deduplicado do período) ──
+async function fetchAccountInsightsPeriod(adAccountId: string, token: string, timeParams: Record<string, string>): Promise<MetaPaginatedResult<any>> {
+  return await safePaginatedFetch(`/${adAccountId}/insights`, token, {
+    level: "account",
+    fields: "account_id,spend,reach,impressions,frequency,clicks,inline_link_clicks,actions,action_values,results,date_start,date_stop",
+    use_unified_attribution_setting: "true",
+    action_attribution_windows: INSIGHT_ATTRIBUTION_WINDOWS,
+    limit: "100",
+    ...timeParams
+  }, `account_period:${adAccountId}`)
 }
 
 // ─── Buscar insights diários de campanha ─────────────────────────────────────
-async function fetchCampaignInsights(adAccountId: string, token: string, timeParams: Record<string, string>): Promise<any[]> {
-  try {
-    return await metaGetPaginated(`/${adAccountId}/insights`, token, {
-      level: "campaign",
-      fields: "campaign_id,campaign_name,objective,optimization_goal,results,cost_per_result,spend,actions,reach,impressions,frequency,inline_link_clicks,date_start,date_stop",
-      time_increment: "1",
-      use_unified_attribution_setting: "true",
-      limit: "500",
-      ...timeParams
-    })
-  } catch (e: any) {
-    console.error(`[SYNC] Erro ao buscar insights de ${adAccountId}:`, e.message)
-    return []
-  }
+async function fetchCampaignInsights(adAccountId: string, token: string, timeParams: Record<string, string>): Promise<MetaPaginatedResult<any>> {
+  return await safePaginatedFetch(`/${adAccountId}/insights`, token, {
+    level: "campaign",
+    fields: "campaign_id,campaign_name,objective,optimization_goal,results,cost_per_result,spend,actions,action_values,reach,impressions,frequency,clicks,inline_link_clicks,ctr,cpc,cpm,date_start,date_stop",
+    time_increment: "1",
+    use_unified_attribution_setting: "true",
+    action_attribution_windows: INSIGHT_ATTRIBUTION_WINDOWS,
+    limit: "500",
+    ...timeParams
+  }, `campaign_insights:${adAccountId}`)
 }
 
-// ─── Buscar insights diários de adsets ─────────────────────────────────────
-async function fetchAdSetInsights(adAccountId: string, token: string, timeParams: Record<string, string>): Promise<any[]> {
-  try {
-    return await metaGetPaginated(`/${adAccountId}/insights`, token, {
-      level: "adset",
-      fields: "adset_id,adset_name,campaign_id,campaign_name,optimization_goal,results,cost_per_result,spend,actions,reach,impressions,frequency,inline_link_clicks,video_p25_watched_actions,video_p50_watched_actions,video_p75_watched_actions,video_p95_watched_actions,date_start",
-      time_increment: "1",
-      use_unified_attribution_setting: "true",
-      limit: "500",
-      ...timeParams
-    })
-  } catch (e: any) {
-    console.error(`[SYNC] Erro adsets de ${adAccountId}:`, e.message)
-    return []
-  }
+// ─── Buscar insights diários de adsets ───────────────────────────────────────
+async function fetchAdSetInsights(adAccountId: string, token: string, timeParams: Record<string, string>): Promise<MetaPaginatedResult<any>> {
+  return await safePaginatedFetch(`/${adAccountId}/insights`, token, {
+    level: "adset",
+    fields: "adset_id,adset_name,campaign_id,campaign_name,objective,optimization_goal,results,cost_per_result,spend,actions,action_values,reach,impressions,frequency,clicks,inline_link_clicks,video_p25_watched_actions,video_p50_watched_actions,video_p75_watched_actions,video_p95_watched_actions,date_start,date_stop",
+    time_increment: "1",
+    use_unified_attribution_setting: "true",
+    action_attribution_windows: INSIGHT_ATTRIBUTION_WINDOWS,
+    limit: "500",
+    ...timeParams
+  }, `adset_insights:${adAccountId}`)
 }
 
-// ─── Buscar insights diários de ads ─────────────────────────────────────
-async function fetchAdInsights(adAccountId: string, token: string, timeParams: Record<string, string>): Promise<any[]> {
-  try {
-    return await metaGetPaginated(`/${adAccountId}/insights`, token, {
-      level: "ad",
-      fields: "ad_id,ad_name,adset_id,campaign_id,campaign_name,optimization_goal,results,cost_per_result,spend,actions,reach,impressions,frequency,inline_link_clicks,video_p25_watched_actions,video_p50_watched_actions,video_p75_watched_actions,video_p95_watched_actions,date_start",
-      time_increment: "1",
-      use_unified_attribution_setting: "true",
-      limit: "500",
-      ...timeParams
-    })
-  } catch (e: any) {
-    console.error(`[SYNC] Erro ads de ${adAccountId}:`, e.message)
-    return []
-  }
+// ─── Buscar insights diários de ads ──────────────────────────────────────────
+async function fetchAdInsights(adAccountId: string, token: string, timeParams: Record<string, string>): Promise<MetaPaginatedResult<any>> {
+  return await safePaginatedFetch(`/${adAccountId}/insights`, token, {
+    level: "ad",
+    fields: "ad_id,ad_name,adset_id,campaign_id,campaign_name,objective,optimization_goal,results,cost_per_result,spend,actions,action_values,reach,impressions,frequency,clicks,inline_link_clicks,video_p25_watched_actions,video_p50_watched_actions,video_p75_watched_actions,video_p95_watched_actions,date_start,date_stop",
+    time_increment: "1",
+    use_unified_attribution_setting: "true",
+    action_attribution_windows: INSIGHT_ATTRIBUTION_WINDOWS,
+    limit: "500",
+    ...timeParams
+  }, `ad_insights:${adAccountId}`)
 }
 
-// ─── Buscar status real de todos os conjuntos de anúncios da conta ────────────
-// Necessário pois o endpoint de insights não retorna status — fixa "active" sem isso
-async function fetchAdSetsWithStatus(adAccountId: string, token: string): Promise<any[]> {
-  try {
-    return await metaGetPaginated(`/${adAccountId}/adsets`, token, {
-      fields: "id,name,status,campaign_id,daily_budget,lifetime_budget",
-      limit: "500"
-    })
-  } catch (e: any) {
-    console.error(`[SYNC] Erro ao buscar status de adsets de ${adAccountId}:`, e.message)
-    return []
-  }
+// ─── Buscar metadados completos de conjuntos de anúncios ─────────────────────
+async function fetchAdSetsWithStatus(adAccountId: string, token: string): Promise<MetaPaginatedResult<any>> {
+  return await safePaginatedFetch(`/${adAccountId}/adsets`, token, {
+    fields: "id,name,status,effective_status,configured_status,campaign_id,daily_budget,lifetime_budget,budget_remaining,optimization_goal,billing_event,bid_strategy,bid_amount,destination_type,attribution_spec,promoted_object,targeting,start_time,end_time",
+    limit: "250"
+  }, `adsets:${adAccountId}`)
 }
 
-// ─── Buscar status real de todos os anúncios da conta ────────────────────────
-// Necessário pois o endpoint de insights não retorna status — fixa "active" sem isso
-async function fetchAdsWithStatus(adAccountId: string, token: string): Promise<any[]> {
-  try {
-    return await metaGetPaginated(`/${adAccountId}/ads`, token, {
-      fields: "id,name,status,adset_id,campaign_id",
-      limit: "500"
-    })
-  } catch (e: any) {
-    console.error(`[SYNC] Erro ao buscar status de ads de ${adAccountId}:`, e.message)
-    return []
-  }
+// ─── Buscar metadados completos de anúncios + criativo ───────────────────────
+async function fetchAdsWithStatus(adAccountId: string, token: string): Promise<MetaPaginatedResult<any>> {
+  return await safePaginatedFetch(`/${adAccountId}/ads`, token, {
+    fields: "id,name,status,effective_status,configured_status,adset_id,campaign_id,creative{id,name,effective_object_story_id,call_to_action_type,thumbnail_url}",
+    limit: "250"
+  }, `ads:${adAccountId}`)
 }
 
 async function fetchDemographicBreakdowns(adAccountId: string, token: string, timeParams: Record<string, string>) {
-  try {
-    const [dataAgeGender, dataPlatform, dataHourly, dataRegion] = await Promise.all([
-      metaGetPaginated(`/${adAccountId}/insights`, token, {
-        level: "campaign",
-        fields: "campaign_id,campaign_name,spend,actions,reach,impressions,inline_link_clicks,date_start",
-        breakdowns: "age,gender",
-        time_increment: "1",
-        limit: "500",
-        ...timeParams
-      }),
-      metaGetPaginated(`/${adAccountId}/insights`, token, {
-        level: "campaign",
-        fields: "campaign_id,campaign_name,spend,actions,reach,impressions,inline_link_clicks,date_start",
-        breakdowns: "publisher_platform",
-        time_increment: "1",
-        limit: "500",
-        ...timeParams
-      }),
-      metaGetPaginated(`/${adAccountId}/insights`, token, {
-        level: "campaign",
-        fields: "campaign_id,campaign_name,spend,actions,reach,impressions,inline_link_clicks,date_start",
-        breakdowns: "hourly_stats_aggregated_by_advertiser_time_zone",
-        time_increment: "1",
-        limit: "500",
-        ...timeParams
-      }),
-      metaGetPaginated(`/${adAccountId}/insights`, token, {
-        level: "campaign",
-        fields: "campaign_id,campaign_name,spend,actions,reach,impressions,inline_link_clicks,date_start",
-        breakdowns: "region",
-        time_increment: "1",
-        limit: "500",
-        ...timeParams
-      })
-    ]);
+  const [dataAgeGender, dataPlatform, dataHourly, dataRegion] = await Promise.all([
+    safePaginatedFetch(`/${adAccountId}/insights`, token, {
+      level: "campaign",
+      fields: "campaign_id,campaign_name,objective,optimization_goal,results,spend,actions,action_values,reach,impressions,clicks,inline_link_clicks,date_start",
+      breakdowns: "age,gender",
+      time_increment: "1",
+      use_unified_attribution_setting: "true",
+      action_attribution_windows: INSIGHT_ATTRIBUTION_WINDOWS,
+      limit: "500",
+      ...timeParams
+    }, `breakdown_age_gender:${adAccountId}`),
+    safePaginatedFetch(`/${adAccountId}/insights`, token, {
+      level: "campaign",
+      fields: "campaign_id,campaign_name,objective,optimization_goal,results,spend,actions,action_values,reach,impressions,clicks,inline_link_clicks,date_start",
+      breakdowns: "publisher_platform",
+      time_increment: "1",
+      use_unified_attribution_setting: "true",
+      action_attribution_windows: INSIGHT_ATTRIBUTION_WINDOWS,
+      limit: "500",
+      ...timeParams
+    }, `breakdown_platform:${adAccountId}`),
+    safePaginatedFetch(`/${adAccountId}/insights`, token, {
+      level: "campaign",
+      fields: "campaign_id,campaign_name,objective,optimization_goal,results,spend,actions,action_values,reach,impressions,clicks,inline_link_clicks,date_start",
+      breakdowns: "hourly_stats_aggregated_by_advertiser_time_zone",
+      time_increment: "1",
+      use_unified_attribution_setting: "true",
+      action_attribution_windows: INSIGHT_ATTRIBUTION_WINDOWS,
+      limit: "500",
+      ...timeParams
+    }, `breakdown_hourly:${adAccountId}`),
+    safePaginatedFetch(`/${adAccountId}/insights`, token, {
+      level: "campaign",
+      fields: "campaign_id,campaign_name,objective,optimization_goal,results,spend,actions,action_values,reach,impressions,clicks,inline_link_clicks,date_start",
+      breakdowns: "region",
+      time_increment: "1",
+      use_unified_attribution_setting: "true",
+      action_attribution_windows: INSIGHT_ATTRIBUTION_WINDOWS,
+      limit: "500",
+      ...timeParams
+    }, `breakdown_region:${adAccountId}`)
+  ]);
 
-    return { 
-      demographics: [...dataAgeGender, ...dataPlatform], 
-      hourly: dataHourly, 
-      region: dataRegion 
-    }
-  } catch (e: any) {
-    console.error(`[SYNC-DEMO] Erro ao buscar breakdowns de ${adAccountId}:`, e.message)
-    return { demographics: [], hourly: [], region: [] }
-  }
-}
-
-// ─── Extrair conversões — espelha exatamente a coluna "Resultados" do Gerenciador Meta ──
-//
-// REGRA DO META ADS MANAGER:
-//   O Gerenciador mostra o "evento de otimização primário" da campanha / anúncio.
-//   Para campanhas automotivas e de tráfego para WhatsApp, o Resultado é EXCLUSIVAMENTE
-//   "Conversas por mensagem iniciadas" (onsite_conversion.messaging_conversation_started).
-//
-function parseMetaActionValue(a: any): number {
-  if (!a) return 0;
-
-  // 1. Prioridade absoluta para as janelas de atribuição oficiais configuradas no Ad Set
-  // No Gerenciador de Anúncios, a coluna "Resultados" reflete a atribuição ativa (ex: 7d_click + 1d_view).
-  const click7d = a["7d_click"] !== undefined && a["7d_click"] !== null ? parseInt(String(a["7d_click"]), 10) : null;
-  const view1d = a["1d_view"] !== undefined && a["1d_view"] !== null ? parseInt(String(a["1d_view"]), 10) : null;
-  if ((click7d !== null && !isNaN(click7d)) || (view1d !== null && !isNaN(view1d))) {
-    const totalWin = (click7d && click7d > 0 ? click7d : 0) + (view1d && view1d > 0 ? view1d : 0);
-    if (totalWin > 0) return totalWin;
-  }
-
-  // Outras janelas suportadas pelo Meta
-  for (const win of ["1d_click", "28d_click", "default"]) {
-    if (a[win] !== undefined && a[win] !== null) {
-      const parsed = parseInt(String(a[win]), 10);
-      if (!isNaN(parsed) && parsed > 0) return parsed;
-    }
-  }
-
-  // 2. Valor agregado padrão
-  if (typeof a.value === "number" && !isNaN(a.value)) return a.value;
-  if (typeof a.value === "string" && a.value.trim() !== "") {
-    const parsed = parseInt(a.value, 10);
-    if (!isNaN(parsed) && parsed > 0) return parsed;
-  }
-
-  return 0;
-}
-
-function getMessagingConversationsStarted(actions: any[] = []): number {
-  if (!Array.isArray(actions) || actions.length === 0) return 0;
-
-  // A coluna "Resultados" do Meta Ads Manager para campanhas de mensagem é ESTRITAMENTE:
-  // "onsite_conversion.messaging_conversation_started_7d" (ou messaging_conversation_started).
-  // Se esse action_type não existir no array actions, significa que 0 conversas foram iniciadas.
-  // NUNCA usar first_reply, conexões de mensagem ou cliques como fallback.
-  for (const a of actions) {
-    const act = String(a.action_type || "").toLowerCase();
-    if (act.includes("messaging_conversation_started")) {
-      const val = parseMetaActionValue(a);
-      if (val > 0) return val;
-    }
-  }
-
-  for (const a of actions) {
-    const act = String(a.action_type || "").toLowerCase();
-    if (act === "whatsapp_conversation_started" || act === "messaging_conversation_started_7d") {
-      const val = parseMetaActionValue(a);
-      if (val > 0) return val;
-    }
-  }
-
-  return 0;
-}
-
-function detectConversionCategory(
-  name?: string,
-  objective?: string,
-  actions: any[] = [],
-  results?: any[],
-  optimizationGoal?: string
-): string {
-  const indicator = results?.[0]?.indicator ? String(results[0].indicator).toLowerCase() : "";
-  const opt = String(optimizationGoal || "").toUpperCase();
-  const obj = String(objective || "").toUpperCase();
-  const n = String(name || "").toUpperCase();
-
-  // 0. Mensagens têm prioridade absoluta (ações de landing_page_view existem em qualquer anúncio com link)
-  if (
-    !indicator.includes("purchase") &&
-    !indicator.includes("profile") &&
-    (indicator.includes("messaging") ||
-      opt === "REPLIES" ||
-      opt === "CONVERSATIONS" ||
-      obj === "MESSAGES" ||
-      /(^|[^A-Z])MSG([^A-Z]|$)/.test(n) ||
-      n.includes("MENSAGEM") ||
-      n.includes("MENSAGENS") ||
-      n.includes("WHATSAPP") ||
-      n.includes("WPP"))
-  ) {
-    return "MESSAGES";
-  }
-
-  // 1. Visitas ao Perfil do Instagram (Tráfego pro perfil IG)
-  if (
-    indicator.includes("profile_visit") ||
-    indicator.includes("instagram_profile") ||
-    opt === "PROFILE_VISIT" ||
-    opt === "PROFILE_AND_PAGE_ENGAGEMENT" ||
-    opt === "VISIT_INSTAGRAM_PROFILE" ||
-    obj === "VISIT_INSTAGRAM_PROFILE" ||
-    obj === "INSTAGRAM_PROFILE" ||
-    n.includes("TRAFEGO NC") ||
-    n.includes("TRÁFEGO NC") ||
-    n.includes("PERFIL") ||
-    n.includes("INSTA") ||
-    n.includes("SEGUIDOR") ||
-    (actions && actions.some((a: any) => {
-      const act = String(a.action_type || "").toLowerCase();
-      return act.includes("profile_visit") || act.includes("instagram_profile") || act.includes("profile_visit_view");
-    }))
-  ) {
-    return "INSTAGRAM_PROFILE";
-  }
-
-  // 2. Compras no site / Pixel / E-commerce (ex: Bonne21 Pixel)
-  if (
-    indicator.includes("purchase") ||
-    opt === "PURCHASE" ||
-    opt === "PURCHASES" ||
-    obj === "OUTCOME_SALES" ||
-    obj === "CONVERSIONS" ||
-    obj === "CATALOG_SALES" ||
-    n.includes("COMPRA") ||
-    n.includes("VENDA") ||
-    n.includes("PURCHASE") ||
-    n.includes("ECOMMERCE") ||
-    (actions && actions.some((a: any) => String(a.action_type || "").toLowerCase().includes("purchase")))
-  ) {
-    return "PURCHASES";
-  }
-
-  // 3. Visualizações da Página de Destino (Landing Page / Site / Cardápio / Grupo de vendedores)
-  if (
-    indicator.includes("landing_page_view") ||
-    indicator.includes("omni_landing_page_view") ||
-    opt === "LANDING_PAGE_VIEWS" ||
-    obj === "LANDING_PAGE_VIEWS" ||
-    n.includes("GRUPO") ||
-    n.includes("VENDEDORES") ||
-    n.includes("CARDAPIO") ||
-    n.includes("CARDÁPIO") ||
-    n.includes("DELIVERY") ||
-    n.includes("LP") ||
-    n.includes("LANDING") ||
-    n.includes("SITE") ||
-    n.includes("DESTINO") ||
-    (actions && actions.some((a: any) => {
-      const act = String(a.action_type || "").toLowerCase();
-      return act.includes("landing_page_view") || act.includes("omni_landing_page_view");
-    }))
-  ) {
-    return "LANDING_PAGE_VIEWS";
-  }
-
-  // 4. Cadastros / Leads / Formulários
-  if (
-    indicator.includes("lead") ||
-    indicator.includes("registration") ||
-    opt === "LEAD" ||
-    opt === "LEADS" ||
-    opt === "LEAD_GENERATION" ||
-    opt === "QUALITY_LEAD" ||
-    obj === "OUTCOME_LEADS" ||
-    obj === "LEAD_GENERATION" ||
-    n.includes("LEAD") ||
-    n.includes("CADASTRO") ||
-    n.includes("FORMULARIO") ||
-    n.includes("FORMULÁRIO") ||
-    (actions && actions.some((a: any) => {
-      const act = String(a.action_type || "").toLowerCase();
-      return act.includes("lead") || act.includes("complete_registration");
-    }))
-  ) {
-    return "LEADS";
-  }
-
-  // 5. Mensagens (WhatsApp / Messenger / Direct — Falcão, 13Car, etc.)
-  if (
-    indicator.includes("messaging_conversation_started") ||
-    indicator.includes("messaging") ||
-    indicator.includes("contact") ||
-    opt === "REPLIES" ||
-    opt === "CONVERSATIONS" ||
-    obj === "MESSAGES" ||
-    obj === "OUTCOME_ENGAGEMENT" || // Campanhas de WhatsApp utilizam OUTCOME_ENGAGEMENT
-    n.includes("MSG") ||
-    n.includes("MENSAGEM") ||
-    n.includes("MENSAGENS") ||
-    n.includes("WPP") ||
-    n.includes("WHATSAPP") ||
-    n.includes("DIRECT") ||
-    n.includes("CONVERSA") ||
-    n.includes("CONVERSAS") ||
-    n.includes("ZAP") ||
-    n.includes("VICTOR") ||
-    n.includes("YURI") ||
-    n.includes("TAYNA") ||
-    n.includes("RUTH") ||
-    n.includes("6720") ||
-    n.includes("7243") ||
-    (actions && actions.some((a: any) => {
-      const act = String(a.action_type || "").toLowerCase();
-      return act.includes("messaging") || act.includes("whatsapp") || act.includes("contact");
-    }))
-  ) {
-    return "MESSAGES";
-  }
-
-  // 6. Vídeo / ThruPlay
-  if (
-    indicator.includes("thruplay") ||
-    indicator.includes("video_view") ||
-    opt === "THRUPLAY" ||
-    opt === "VIDEO_VIEWS" ||
-    obj === "VIDEO_VIEWS" ||
-    n.includes("VIDEO") ||
-    n.includes("VÍDEO") ||
-    n.includes("THRUPLAY")
-  ) {
-    return "VIDEO_VIEWS";
-  }
-
-  // 7. Alcance / Reconhecimento
-  if (
-    indicator === "reach" ||
-    opt === "REACH" ||
-    obj === "REACH" ||
-    obj === "OUTCOME_AWARENESS" ||
-    obj === "AWARENESS" ||
-    n.includes("ALCANCE")
-  ) {
-    return "REACH";
-  }
-
-  // 8. Engajamento
-  if (
-    indicator.includes("post_engagement") ||
-    opt === "POST_ENGAGEMENT" ||
-    obj === "POST_ENGAGEMENT" ||
-    n.includes("CURTIDAS") ||
-    n.includes("POST")
-  ) {
-    return "ENGAGEMENT";
-  }
-
-  // 9. Se for OUTCOME_TRAFFIC sem outro objetivo:
-  if (obj === "OUTCOME_TRAFFIC" || opt === "LINK_CLICKS") {
-    if (n.includes("INSTA") || n.includes("PERFIL") || n.includes("NC")) {
-      return "INSTAGRAM_PROFILE";
-    }
-    return "LANDING_PAGE_VIEWS";
-  }
-
-  if (obj === "OUTCOME_ENGAGEMENT") {
-    return "MESSAGES";
-  }
-
-  return "MESSAGES";
-}
-
-function extractConversions(
-  actions: any[] = [],
-  objective?: string,
-  reach: number = 0,
-  campaignName?: string,
-  results?: any[],
-  optimizationGoal?: string
-): number {
-  // 1. Prioridade máxima: valor nativo do array results da Meta Graph API
-  if (Array.isArray(results) && results.length > 0) {
-    const valStr = results[0]?.values?.[0]?.value;
-    if (valStr !== undefined && valStr !== null && !isNaN(parseFloat(valStr))) {
-      return parseFloat(valStr);
-    }
-    // Se a Meta retornou o indicator mas sem values (ex: 0 conversões registradas):
-    if (results[0]?.indicator) {
-      return 0;
-    }
-  }
-
-  const category = detectConversionCategory(campaignName, objective, actions, results, optimizationGoal);
-
-  if (category === "REACH") {
-    return reach;
-  }
-
-  if (!Array.isArray(actions) || actions.length === 0) return 0;
-
-  const getVal = (type: string): number => {
-    const a = actions.find((x: any) => String(x.action_type || "").toLowerCase() === type.toLowerCase());
-    return parseMetaActionValue(a);
-  };
-
-  switch (category) {
-    case "MESSAGES": {
-      return getMessagingConversationsStarted(actions);
-    }
-
-    case "INSTAGRAM_PROFILE": {
-      const visits = Math.max(
-        getVal("profile_visit"),
-        getVal("instagram_profile_visit"),
-        getVal("instagram_profile_view"),
-        getVal("visit_instagram_profile"),
-        getVal("onsite_conversion.instagram_profile_visit")
-      );
-      if (visits > 0) return visits;
-
-      for (const a of actions) {
-        const act = String(a.action_type || "").toLowerCase();
-        if (act.includes("profile") && (act.includes("visit") || act.includes("view"))) {
-          const val = parseMetaActionValue(a);
-          if (val > 0) return val;
-        }
-      }
-
-      const lpv = Math.max(getVal("landing_page_view"), getVal("onsite_conversion.landing_page_view"));
-      if (lpv > 0) return lpv;
-
-      return 0;
-    }
-
-    case "LANDING_PAGE_VIEWS": {
-      return Math.max(
-        getVal("landing_page_view"),
-        getVal("onsite_conversion.landing_page_view")
-      );
-    }
-
-    case "PURCHASES": {
-      const onsite = Math.max(getVal("onsite_conversion.purchase"), getVal("purchase"));
-      const offsite = Math.max(
-        getVal("offsite_conversion.fb_pixel_purchase"),
-        getVal("offsite_conversion.fb_pixel_custom.PURCHASE")
-      );
-      const omni = getVal("omni_purchase");
-      let customPurchase = 0;
-      for (const a of actions) {
-        const act = String(a.action_type || "").toLowerCase();
-        if (act.startsWith("offsite_conversion.custom.") && act.includes("purchase")) {
-          customPurchase += parseMetaActionValue(a);
-        }
-      }
-      return Math.max(onsite, offsite, omni, customPurchase, onsite + offsite);
-    }
-
-    case "LEADS": {
-      const onsite = Math.max(getVal("onsite_conversion.lead"), getVal("leadgen_grouped"));
-      const offsite = Math.max(
-        getVal("offsite_conversion.fb_pixel_lead"),
-        getVal("complete_registration"),
-        getVal("offsite_conversion.fb_pixel_complete_registration"),
-        getVal("offsite_conversion.fb_pixel_custom.LEAD")
-      );
-      let customLead = 0;
-      for (const a of actions) {
-        const act = String(a.action_type || "").toLowerCase();
-        if (act.startsWith("offsite_conversion.custom.") && act.includes("lead")) {
-          customLead += parseMetaActionValue(a);
-        }
-      }
-      return Math.max(getVal("lead"), onsite + offsite, customLead);
-    }
-
-    case "VIDEO_VIEWS": {
-      return Math.max(
-        getVal("thruplay"),
-        getVal("video_thruplay_watched_actions"),
-        getVal("video_view")
-      );
-    }
-
-    case "ENGAGEMENT": {
-      return Math.max(
-        getVal("post_engagement"),
-        getVal("page_engagement"),
-        getVal("post_reaction")
-      );
-    }
-
-    case "REACH": {
-      return reach;
-    }
-
-    case "LINK_CLICKS": {
-      return getVal("link_click");
-    }
-
-    default: {
-      return 0; // NUNCA retornar link_click por fallback!
-    }
+  return {
+    demographics: [...dataAgeGender.data, ...dataPlatform.data],
+    hourly: dataHourly.data,
+    region: dataRegion.data,
+    failures: [dataAgeGender, dataPlatform, dataHourly, dataRegion]
+      .filter((r) => !r.ok || r.truncated)
+      .map((r) => r.error || "breakdown_truncated"),
   }
 }
 
 // ─── Extrair métrica de vídeo (p25/p50/p75/p95) de actions ou campo dedicado ─
 function extractVideoMetric(row: any, fieldName: string): number {
-  // Meta retorna video_pXX_watched_actions como array de { action_type, value }
   const arr = row[fieldName];
   if (Array.isArray(arr) && arr.length > 0) {
     return parseInt(arr[0]?.value || "0") || 0;
@@ -624,48 +284,43 @@ function extractVideoMetric(row: any, fieldName: string): number {
 
 // ─── Buscar placement breakdown (Feed vs Stories vs Reels vs Marketplace) ────
 async function fetchPlacementBreakdowns(adAccountId: string, token: string, timeParams: Record<string, string>) {
-  try {
-    return await metaGetPaginated(`/${adAccountId}/insights`, token, {
-      level: "campaign",
-      fields: "campaign_id,campaign_name,spend,actions,reach,impressions,inline_link_clicks,date_start",
-      breakdowns: "publisher_platform,placement",
-      time_increment: "1",
-      limit: "500",
-      ...timeParams
-    })
-  } catch (e: any) {
-    console.error(`[SYNC] Erro placement breakdown de ${adAccountId}:`, e.message)
-    return []
-  }
+  return await safePaginatedFetch(`/${adAccountId}/insights`, token, {
+    level: "campaign",
+    fields: "campaign_id,campaign_name,objective,optimization_goal,results,spend,actions,action_values,reach,impressions,clicks,inline_link_clicks,date_start",
+    breakdowns: "publisher_platform,placement",
+    time_increment: "1",
+    use_unified_attribution_setting: "true",
+    action_attribution_windows: INSIGHT_ATTRIBUTION_WINDOWS,
+    limit: "500",
+    ...timeParams
+  }, `breakdown_placement:${adAccountId}`)
 }
 
 // ─── Buscar breakdown por dispositivo (mobile/desktop) ───────────────────────
 async function fetchDeviceBreakdowns(adAccountId: string, token: string, timeParams: Record<string, string>) {
-  try {
-    return await metaGetPaginated(`/${adAccountId}/insights`, token, {
-      level: "campaign",
-      fields: "campaign_id,campaign_name,spend,actions,reach,impressions,inline_link_clicks,date_start",
-      breakdowns: "publisher_platform,impression_device",
-      time_increment: "1",
-      limit: "500",
-      ...timeParams
-    })
-  } catch (e: any) {
-    console.error(`[SYNC] Erro device breakdown de ${adAccountId}:`, e.message)
-    return []
-  }
+  return await safePaginatedFetch(`/${adAccountId}/insights`, token, {
+    level: "campaign",
+    fields: "campaign_id,campaign_name,objective,optimization_goal,results,spend,actions,action_values,reach,impressions,clicks,inline_link_clicks,date_start",
+    breakdowns: "publisher_platform,impression_device",
+    time_increment: "1",
+    use_unified_attribution_setting: "true",
+    action_attribution_windows: INSIGHT_ATTRIBUTION_WINDOWS,
+    limit: "500",
+    ...timeParams
+  }, `breakdown_device:${adAccountId}`)
 }
 
-// ─── Extrair cliques — espelha "Cliques no link" do Gerenciador Meta ─────────
-//
-// O campo inline_link_clicks usa janela fixa de 1 dia.
-// O Gerenciador usa action_type "link_click" com a janela de atribuição da campanha
-// (padrão: 7 dias clique + 1 dia visualização). A diferença pode ser 10–30%.
-// Usamos link_click da array actions como primário, com fallback para inline_link_clicks.
-function extractClicks(actions: any[] = [], inlineLinkClicks: string | number = 0): number {
-  const linkClickAction = actions?.find((a: any) => a.action_type === "link_click");
-  if (linkClickAction?.value) return parseInt(linkClickAction.value) || 0;
-  return parseInt(String(inlineLinkClicks) || "0") || 0;
+function summarizeAttributionSpec(spec: any): string {
+  if (!Array.isArray(spec) || spec.length === 0) return "unified_or_default";
+  return spec
+    .map((s: any) => `${s.event_type || "EVENT"}:${s.window_days ?? "?"}d`)
+    .join("+");
+}
+
+function parseMetaTimestamp(val: any): string | null {
+  if (!val) return null;
+  const d = new Date(val);
+  return Number.isNaN(d.getTime()) ? null : d.toISOString();
 }
 
 // ─── Sync principal ───────────────────────────────────────────────────────────
@@ -674,12 +329,14 @@ serve(async (req) => {
 
   const syncId = crypto.randomUUID()
   let syncHistoryId: string | null = null
-  console.log(`[SYNC ${syncId}] Iniciando sincronização NC Performance...`)
+  let involvedUserIds: string[] = []
+  console.log(`[SYNC ${syncId}] Iniciando sincronização integral NC Performance...`)
 
   try {
     const { user: authUser } = await requireAuth(req);
-    // 1. Ler parâmetros
-    // Padrão: últimos 2 dias (hoje + ontem) no fuso de Brasília
+    if (authUser?.id) involvedUserIds = [authUser.id];
+
+    // 1. Ler parâmetros — Padrão: últimos 2 dias (hoje + ontem) no fuso de Brasília
     const brtFormatter = new Intl.DateTimeFormat('pt-BR', {
       timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit'
     })
@@ -691,7 +348,7 @@ serve(async (req) => {
     const yesterdayDate = new Date(new Date().getTime() - 3 * 60 * 60 * 1000 - 24 * 60 * 60 * 1000)
     const yParts = brtFormatter.formatToParts(yesterdayDate)
     const yesterdayStr = `${yParts.find(p => p.type === 'year')?.value}-${yParts.find(p => p.type === 'month')?.value}-${yParts.find(p => p.type === 'day')?.value}`
-    
+
     let timeParams: Record<string, string> = {
       time_range: JSON.stringify({ since: yesterdayStr, until: todayStr })
     }
@@ -717,7 +374,6 @@ serve(async (req) => {
           budget: body.budget
         }
       }
-      // Se veio um range explícito do frontend (seletor de datas), respeitar
       if (body.time_range) {
         timeParams = { time_range: JSON.stringify(body.time_range) }
       } else if (body.date_preset) {
@@ -732,9 +388,7 @@ serve(async (req) => {
       console.log(`[SYNC ${syncId}] Body vazio — usando janela padrão D0+D-1 (${yesterdayStr} → ${todayStr})`)
     }
 
-    // 2. Buscar TODAS as configurações com token — a agência pode ter múltiplos
-    // tokens (BMs diferentes), cada um enxergando um conjunto distinto de contas.
-    // Usar apenas um token deixava contas dos outros BMs permanentemente sem sync.
+    // 2. Buscar TODAS as configurações com token
     const { data: allConfigs, error: configErr } = await supabase
       .from("meta_ads_configs")
       .select("access_token, user_id")
@@ -745,56 +399,87 @@ serve(async (req) => {
       throw new Error("Meta Token não configurado. Acesse Configurações → Integrações.")
     }
 
-    // Token do usuário logado tem prioridade (primário para toggle/budget)
     const orderedConfigs = authUser?.id
       ? [...allConfigs].sort((a, b) => (b.user_id === authUser.id ? 1 : 0) - (a.user_id === authUser.id ? 1 : 0))
       : allConfigs;
 
     const token = orderedConfigs[0].access_token
     const userId = orderedConfigs[0].user_id
+    involvedUserIds = [...new Set(orderedConfigs.map((c: any) => c.user_id).filter(Boolean))]
 
-    // ─── MODO AUDITORIA — retorna o que o Meta está enviando sem salvar nada ─────
-    // Útil para diagnosticar divergências: mostra todos os action_types recebidos por
-    // campanha e o que o extractConversions escolheria — comparar com Meta Ads Manager
+    // ─── MODO AUDITORIA — retorna o payload bruto normalizado sem gravar no DB ─
     if (action === "audit") {
-      console.log(`[AUDIT ${syncId}] Iniciando auditoria de action_types...`)
+      console.log(`[AUDIT ${syncId}] Iniciando auditoria integral de objetos & action_types...`)
       let auditEntries: { acc: any; token: string }[] = []
       const auditSeen = new Set<string>()
+      const auditErrors: string[] = []
+
       for (const cfg of orderedConfigs) {
-        try {
-          const accounts = await fetchAdAccounts(cfg.access_token)
-          for (const acc of accounts) {
-            if (auditSeen.has(acc.id)) continue
-            auditSeen.add(acc.id)
-            auditEntries.push({ acc, token: cfg.access_token })
-          }
-        } catch (e: any) {
-          console.error(`[AUDIT ${syncId}] Token falhou ao listar contas:`, e.message)
+        const res = await fetchAdAccountsWithStatus(cfg.access_token)
+        if (!res.ok || res.truncated) {
+          auditErrors.push(`Token ${cfg.user_id}: ${res.error || "listagem truncada"}`)
+        }
+        for (const acc of res.data) {
+          if (auditSeen.has(acc.id)) continue
+          auditSeen.add(acc.id)
+          auditEntries.push({ acc, token: cfg.access_token })
         }
       }
       if (targetAccountId) auditEntries = auditEntries.filter(e => e.acc.id === targetAccountId)
 
       const auditResult: any[] = []
       for (const { acc, token: accToken } of auditEntries) {
-        const campaignsData = await fetchCampaignsWithBudgets(acc.id, accToken)
-        const objectiveMap = new Map(campaignsData.map((c: any) => [c.id, c.objective as string | undefined]))
-        const insights = await fetchCampaignInsights(acc.id, accToken, timeParams)
+        const [campaignsRes, adsetsRes, insightsRes, accountPeriodRes] = await Promise.all([
+          fetchCampaignsWithBudgets(acc.id, accToken),
+          fetchAdSetsWithStatus(acc.id, accToken),
+          fetchCampaignInsights(acc.id, accToken, timeParams),
+          fetchAccountInsightsPeriod(acc.id, accToken, timeParams),
+        ])
+        const objectiveMap = new Map(campaignsRes.data.map((c: any) => [c.id, c.objective as string | undefined]))
+        const adsetGoalByCampaign = new Map<string, { optimizationGoal: string | null; destinationType: string | null }>()
+        for (const s of adsetsRes.data) {
+          if (s.campaign_id && !adsetGoalByCampaign.has(s.campaign_id)) {
+            adsetGoalByCampaign.set(s.campaign_id, {
+              optimizationGoal: s.optimization_goal || null,
+              destinationType: s.destination_type || null,
+            })
+          }
+        }
 
-        for (const row of insights) {
+        const acctPeriodRow = accountPeriodRes.data[0] || null
+        for (const row of insightsRes.data) {
           const actions: any[] = row.actions || []
-          const objective = objectiveMap.get(row.campaign_id)
-          const reach = parseInt(row.reach) || 0
-          const pickedConversions = extractConversions(actions, objective, reach, row.campaign_name)
+          const rawObjective = row.objective || objectiveMap.get(row.campaign_id) || null
+          const adsetCtx = adsetGoalByCampaign.get(row.campaign_id)
+          const extracted = extractMetaInsightMetrics(row, {
+            rawObjective,
+            optimizationGoal: row.optimization_goal || adsetCtx?.optimizationGoal || null,
+            destinationType: adsetCtx?.destinationType || null,
+          })
           auditResult.push({
             account: acc.name,
             account_id: acc.id,
+            account_period_dedup_reach: acctPeriodRow ? parseInt(acctPeriodRow.reach || "0", 10) : null,
             campaign_id: row.campaign_id,
             campaign_name: row.campaign_name,
-            objective: objective ?? null,
+            raw_objective: rawObjective,
+            optimization_goal: row.optimization_goal || adsetCtx?.optimizationGoal || null,
+            destination_type: adsetCtx?.destinationType || null,
             date: row.date_start,
-            spend: parseFloat(row.spend) || 0,
-            impressions: parseInt(row.impressions) || 0,
-            app_conversions: pickedConversions,
+            spend: extracted.spend,
+            impressions: extracted.impressions,
+            reach: extracted.reach,
+            inline_link_clicks: extracted.inlineLinkClicks,
+            all_clicks: extracted.allClicks,
+            ctr_link_pct: extracted.ctrLink,
+            ctr_all_pct: extracted.ctrAll,
+            normalized_category: extracted.category,
+            result_count: extracted.resultCount,
+            result_indicator: extracted.resultIndicator,
+            result_source: extracted.resultSource,
+            purchase_value: extracted.purchaseValue,
+            roas: extracted.roas,
+            raw_results: row.results || [],
             all_actions: actions.map((a: any) => ({
               action_type: a.action_type,
               value: a.value,
@@ -805,33 +490,32 @@ serve(async (req) => {
         }
       }
 
-      return new Response(JSON.stringify({ audit: auditResult, time_range: timeParams }, null, 2), {
+      return new Response(JSON.stringify({
+        audit: auditResult,
+        errors: auditErrors,
+        time_range: timeParams,
+        sync_version: SYNC_VERSION,
+      }, null, 2), {
         headers: { ...corsHeaders, "Content-Type": "application/json" }
       })
     }
 
-    // Se for ação de toggle de status, executa diretamente no Facebook Ads e encerra!
+    // ─── Toggle status no Meta ────────────────────────────────────────────────
     if (action === "toggle-status" && togglePayload) {
       console.log(`[TOGGLE ${syncId}] Alterando status do objeto ${togglePayload.external_id} para ${togglePayload.status} no Meta...`)
-      
       const res = await fetch(`${META_API_BASE}/${togglePayload.external_id}`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           status: togglePayload.status,
           access_token: token
         })
       })
-      
       const resData = await res.json()
       if (resData.error) {
         console.error(`[TOGGLE ${syncId}] Erro na API do Meta:`, resData.error)
         throw new Error(`Erro na API do Meta: ${resData.error.message}`)
       }
-      
-      console.log(`[TOGGLE ${syncId}] Status alterado no Meta com sucesso!`)
       return new Response(JSON.stringify({
         success: true,
         external_id: togglePayload.external_id,
@@ -841,28 +525,22 @@ serve(async (req) => {
       })
     }
 
-    // Se for ação de atualizar orçamento, executa diretamente no Facebook Ads e encerra!
+    // ─── Update budget no Meta ────────────────────────────────────────────────
     if (action === "update-budget" && budgetPayload) {
       console.log(`[BUDGET ${syncId}] Alterando orçamento do objeto ${budgetPayload.external_id} para R$ ${budgetPayload.budget} no Meta...`)
-      
       const res = await fetch(`${META_API_BASE}/${budgetPayload.external_id}`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           daily_budget: Math.round(budgetPayload.budget * 100),
           access_token: token
         })
       })
-      
       const resData = await res.json()
       if (resData.error) {
         console.error(`[BUDGET ${syncId}] Erro na API do Meta:`, resData.error)
         throw new Error(`Erro na API do Meta: ${resData.error.message}`)
       }
-      
-      console.log(`[BUDGET ${syncId}] Orçamento alterado no Meta com sucesso!`)
       return new Response(JSON.stringify({
         success: true,
         external_id: budgetPayload.external_id,
@@ -876,40 +554,46 @@ serve(async (req) => {
     const { data: syncRecord } = await supabase.from("sync_history").insert({
       user_id: userId,
       status: "running",
-      triggered_by: triggeredBy
+      triggered_by: triggeredBy,
     }).select("id").maybeSingle()
-    
+
     syncHistoryId = syncRecord?.id || null
 
-    // 4. Montar lista de contas autorizadas pelo token atual diretamente da Meta API
+    // 4. Listar contas autorizadas com controle explícito de completude (nunca purgar se parcial!)
     const configByUser = new Map(orderedConfigs.map((c: any) => [c.user_id, c.access_token]))
     const accountEntries: { acc: any; token: string; userId: string }[] = []
     const seenAccounts = new Set<string>()
+    const partialFailures: any[] = []
+    let allAccountListingsComplete = true
 
-    console.log(`[SYNC ${syncId}] Buscando lista oficial de contas na Meta API para os tokens configurados...`)
+    console.log(`[SYNC ${syncId}] Buscando lista oficial de contas na Meta API...`)
     for (const cfg of orderedConfigs) {
-      try {
-        const accounts = await fetchAdAccounts(cfg.access_token)
-        for (const acc of accounts) {
-          if (seenAccounts.has(acc.id)) continue
-          seenAccounts.add(acc.id)
-          accountEntries.push({ acc, token: cfg.access_token, userId: cfg.user_id })
-        }
-      } catch (e: any) {
-        console.error(`[SYNC ${syncId}] Token de ${cfg.user_id} falhou ao listar contas:`, e.message)
+      const accountsRes = await fetchAdAccountsWithStatus(cfg.access_token)
+      if (!accountsRes.ok || accountsRes.truncated) {
+        allAccountListingsComplete = false
+        partialFailures.push({
+          scope: "ad_accounts",
+          user_id: cfg.user_id,
+          error: accountsRes.error || "listagem truncada",
+          errorKind: accountsRes.errorKind,
+        })
+      }
+      for (const acc of accountsRes.data) {
+        if (seenAccounts.has(acc.id)) continue
+        seenAccounts.add(acc.id)
+        accountEntries.push({ acc, token: cfg.access_token, userId: cfg.user_id })
       }
     }
 
-    // Se a listagem pela API foi bem-sucedida, PURGA do banco qualquer conta que não pertença mais ao token
-    if (accountEntries.length > 0 && !targetAccountId) {
+    // Somente purga contas órfãs quando TODAS as listagens de token foram 100% íntegras (sem erros ou truncamentos)
+    if (allAccountListingsComplete && accountEntries.length > 0 && !targetAccountId) {
       const activeIds = new Set(accountEntries.map(e => e.acc.id))
       const { data: dbAccounts } = await supabase.from("ad_accounts").select("id")
       const obsoleteIds = (dbAccounts || []).map((a: any) => a.id).filter((id: string) => !activeIds.has(id))
 
       if (obsoleteIds.length > 0) {
-        console.log(`[SYNC ${syncId}] 🧹 Purgando ${obsoleteIds.length} conta(s) órfã(s) que não pertencem ao token ativo: ${obsoleteIds.join(", ")}...`)
+        console.log(`[SYNC ${syncId}] Purgando ${obsoleteIds.length} conta(s) órfã(s): ${obsoleteIds.join(", ")}`)
         try {
-          // 1. Limpar tabelas analíticas vinculadas às contas obsoletas
           await supabase.from("meta_device_metrics").delete().in("ad_account_id", obsoleteIds)
           await supabase.from("meta_placement_metrics").delete().in("ad_account_id", obsoleteIds)
           await supabase.from("device_metrics").delete().in("ad_account_id", obsoleteIds)
@@ -924,7 +608,6 @@ serve(async (req) => {
           await supabase.from("automation_rules").delete().in("ad_account_id", obsoleteIds)
           await supabase.from("client_accounts").delete().in("ad_account_id", obsoleteIds)
 
-          // 2. Localizar e limpar campanhas, conjuntos, anúncios e métricas
           const { data: obsoleteCamps } = await supabase.from("campaigns").select("id").in("ad_account_id", obsoleteIds)
           const obsoleteCampIds = (obsoleteCamps || []).map((c: any) => c.id)
 
@@ -940,19 +623,13 @@ serve(async (req) => {
             await supabase.from("campaigns").delete().in("id", obsoleteCampIds)
           }
 
-          // 3. Deletar as contas de anúncios órfãs
-          const { error: delErr } = await supabase.from("ad_accounts").delete().in("id", obsoleteIds)
-          if (delErr) {
-            console.error(`[SYNC ${syncId}] Falha ao deletar ad_accounts:`, delErr.message)
-          } else {
-            console.log(`[SYNC ${syncId}] ✅ Contas obsoletas removidas com sucesso: ${obsoleteIds.join(", ")}`)
-          }
+          await supabase.from("ad_accounts").delete().in("id", obsoleteIds)
         } catch (purgeErr: any) {
           console.error(`[SYNC ${syncId}] Erro ao purgar contas antigas:`, purgeErr.message)
+          partialFailures.push({ scope: "purge_orphans", error: purgeErr.message })
         }
       }
     } else if (accountEntries.length === 0) {
-      // Fallback de emergência (apenas se a Meta API retornar erro de rede/rate limit na listagem)
       const { data: dbAccounts } = await supabase.from("ad_accounts").select("id, name, currency, status, user_id")
       for (const a of dbAccounts || []) {
         const cfgToken = configByUser.get(a.user_id)
@@ -973,11 +650,14 @@ serve(async (req) => {
     let entriesToSync = accountEntries
     if (targetAccountId) {
       entriesToSync = accountEntries.filter(e => e.acc.id === targetAccountId)
-      if (entriesToSync.length === 0) throw new Error(`A conta ${targetAccountId} não é visível por nenhum token configurado. Reconecte em Configurações → Integrações a conta Meta que tem acesso a ela.`)
+      if (entriesToSync.length === 0) {
+        throw new Error(`A conta ${targetAccountId} não é visível por nenhum token configurado.`)
+      }
     }
 
     const adAccounts = entriesToSync.map(e => e.acc)
 
+    // Registrar metadados básicos da conta SEM marcar last_sync ainda (só marca após sync bem-sucedido)
     await supabase.from("ad_accounts").upsert(
       entriesToSync.map(({ acc, userId: accUserId }) => ({
         id: acc.id,
@@ -985,46 +665,37 @@ serve(async (req) => {
         currency: acc.currency,
         status: acc.account_status,
         user_id: accUserId,
-        last_sync: new Date().toISOString()
-      }))
+      })),
+      { onConflict: "id" }
     )
 
-    console.log(`[SYNC ${syncId}] ${entriesToSync.length} contas. Sincronizando...`)
+    console.log(`[SYNC ${syncId}] ${entriesToSync.length} contas. Iniciando coleta integral...`)
 
-    const syncResults = []
+    const syncResults: any[] = []
     const apiErrors: string[] = []
+    const coverageByAccount: Record<string, any> = {}
     let totalMetrics = 0
     let totalDemographics = 0
     let totalCampaigns = 0
 
-    for (const { acc, token: accToken } of entriesToSync) {
+    for (const { acc, token: accToken, userId: accUserId } of entriesToSync) {
       try {
-        console.log(`[SYNC] Conta: ${acc.id}`)
+        console.log(`[SYNC] Coletando conta ${acc.id} (${acc.name})...`)
 
-        // Buscar campanhas com orçamentos (sempre)
-        const campaignsWithBudgets = await fetchCampaignsWithBudgets(acc.id, accToken)
-        const budgetMap = new Map(campaignsWithBudgets.map((c: any) => {
-          const n = (c.name || "").toUpperCase();
-          const isMsg = n.includes("MSG") || n.includes("MENSAGEM") || n.includes("MENSAGENS") || n.includes("WPP") || n.includes("WHATSAPP") || n.includes("DIRECT") || n.includes("CONVERSA") || n.includes("CONVERSAS") || n.includes("ZAP");
-          const effObjective = isMsg ? "MESSAGES" : (c.objective || null);
-          return [c.id, {
-            name: c.name || "Campanha Meta",
-            status: c.status ? c.status.toLowerCase() : "active",
-            daily_budget: c.daily_budget ? parseFloat(c.daily_budget) / 100 : 0,
-            lifetime_budget: c.lifetime_budget ? parseFloat(c.lifetime_budget) / 100 : 0,
-            budget_currency: acc.currency || 'BRL',
-            objective: effObjective,
-          }];
-        }))
-        // Mapa de objective por external_id para usar em adsets e ads
-        const campaignObjectiveMap = new Map(campaignsWithBudgets.map((c: any) => {
-          const n = (c.name || "").toUpperCase();
-          const isMsg = n.includes("MSG") || n.includes("MENSAGEM") || n.includes("MENSAGENS") || n.includes("WPP") || n.includes("WHATSAPP") || n.includes("DIRECT") || n.includes("CONVERSA") || n.includes("CONVERSAS") || n.includes("ZAP");
-          return [c.id, (isMsg ? "MESSAGES" : (c.objective as string | undefined))];
-        }))
-
-        // Buscar TUDO em paralelo — insights (range selecionado) + status completo (toda a conta)
-        const [insights, breakDownsData, adsetInsights, adInsights, adsetsWithStatus, adsWithStatus, placementData, deviceData] = await Promise.all([
+        const [
+          campaignsRes,
+          insightsRes,
+          breakDownsData,
+          adsetInsightsRes,
+          adInsightsRes,
+          adsetsRes,
+          adsRes,
+          placementRes,
+          deviceRes,
+          accountDailyRes,
+          accountPeriodRes,
+        ] = await Promise.all([
+          fetchCampaignsWithBudgets(acc.id, accToken),
           fetchCampaignInsights(acc.id, accToken, timeParams),
           fetchDemographicBreakdowns(acc.id, accToken, timeParams),
           fetchAdSetInsights(acc.id, accToken, timeParams),
@@ -1032,367 +703,684 @@ serve(async (req) => {
           fetchAdSetsWithStatus(acc.id, accToken),
           fetchAdsWithStatus(acc.id, accToken),
           fetchPlacementBreakdowns(acc.id, accToken, timeParams),
-          fetchDeviceBreakdowns(acc.id, accToken, timeParams)
+          fetchDeviceBreakdowns(acc.id, accToken, timeParams),
+          fetchAccountInsightsDaily(acc.id, accToken, timeParams),
+          fetchAccountInsightsPeriod(acc.id, accToken, timeParams),
         ])
 
-        const { demographics = [], hourly = [], region = [] } = breakDownsData;
+        const stepFailures: string[] = []
+        const trackRes = (name: string, r: MetaPaginatedResult<any>) => {
+          if (!r.ok || r.truncated) {
+            const msg = `${name}: ${r.error || "truncado"}`
+            stepFailures.push(msg)
+            partialFailures.push({
+              account_id: acc.id,
+              step: name,
+              error: r.error || "paginação truncada",
+              errorKind: r.errorKind,
+              statusCode: r.statusCode,
+            })
+          }
+        }
+        trackRes("campaigns", campaignsRes)
+        trackRes("campaign_insights", insightsRes)
+        trackRes("adset_insights", adsetInsightsRes)
+        trackRes("ad_insights", adInsightsRes)
+        trackRes("adsets", adsetsRes)
+        trackRes("ads", adsRes)
+        trackRes("placement_breakdowns", placementRes)
+        trackRes("device_breakdowns", deviceRes)
+        trackRes("account_daily_insights", accountDailyRes)
+        trackRes("account_period_insights", accountPeriodRes)
+        if (breakDownsData.failures.length > 0) {
+          stepFailures.push(`breakdowns: ${breakDownsData.failures.join(", ")}`)
+          partialFailures.push({ account_id: acc.id, step: "breakdowns", errors: breakDownsData.failures })
+        }
 
-        console.log(`[SYNC] Conta ${acc.id} (${triggeredBy}): ${insights.length} insights + ${demographics.length} demo + ${hourly.length} hourly + ${region.length} region + ${adInsights.length} ads`)
+        const campaignsWithBudgets = campaignsRes.data
+        // Preserva o objetivo nativo da Meta Graph API sem inventar nem sobrescrever por nome
+        const budgetMap = new Map(campaignsWithBudgets.map((c: any) => [
+          c.id,
+          {
+            name: c.name || "Campanha Meta",
+            status: c.status ? String(c.status).toLowerCase() : "active",
+            daily_budget: c.daily_budget ? parseFloat(c.daily_budget) / 100 : 0,
+            lifetime_budget: c.lifetime_budget ? parseFloat(c.lifetime_budget) / 100 : 0,
+            budget_currency: acc.currency || 'BRL',
+            objective: c.objective || null,
+          }
+        ]))
+        const campaignObjectiveMap = new Map(campaignsWithBudgets.map((c: any) => [c.id, (c.objective as string | null) || null]))
+
+        const adsetMetaById = new Map<string, { optimizationGoal: string | null; destinationType: string | null; attributionWindow: string }>()
+        for (const s of adsetsRes.data) {
+          adsetMetaById.set(s.id, {
+            optimizationGoal: s.optimization_goal || null,
+            destinationType: s.destination_type || null,
+            attributionWindow: summarizeAttributionSpec(s.attribution_spec),
+          })
+        }
+
+        const primaryAdsetMetaByCampaign = new Map<string, { optimizationGoal: string | null; destinationType: string | null; attributionWindow: string }>()
+        for (const s of adsetsRes.data) {
+          if (s.campaign_id && !primaryAdsetMetaByCampaign.has(s.campaign_id)) {
+            primaryAdsetMetaByCampaign.set(s.campaign_id, {
+              optimizationGoal: s.optimization_goal || null,
+              destinationType: s.destination_type || null,
+              attributionWindow: summarizeAttributionSpec(s.attribution_spec),
+            })
+          }
+        }
+
+        coverageByAccount[acc.id] = {
+          campaigns_listed: campaignsWithBudgets.length,
+          campaign_insights: insightsRes.data.length,
+          adsets_listed: adsetsRes.data.length,
+          adset_insights: adsetInsightsRes.data.length,
+          ads_listed: adsRes.data.length,
+          ad_insights: adInsightsRes.data.length,
+          account_daily_rows: accountDailyRes.data.length,
+          account_period_rows: accountPeriodRes.data.length,
+          partial_errors: stepFailures,
+        }
 
         syncResults.push({
           accountId: acc.id,
           accountName: acc.name,
+          accountUserId: accUserId,
           accountToken: accToken,
-          insights,
-          demographics,
-          hourly,
-          region,
-          placementData,
-          deviceData,
-          adsetInsights,
-          adInsights,
-          adsetsWithStatus,
-          adsWithStatus,
+          insights: insightsRes.data,
+          demographics: breakDownsData.demographics || [],
+          hourly: breakDownsData.hourly || [],
+          region: breakDownsData.region || [],
+          placementData: placementRes.data,
+          deviceData: deviceRes.data,
+          adsetInsights: adsetInsightsRes.data,
+          adInsights: adInsightsRes.data,
+          adsetsWithStatus: adsetsRes.data,
+          adsWithStatus: adsRes.data,
+          accountDailyRows: accountDailyRes.data,
+          accountPeriodRows: accountPeriodRes.data,
           budgetMap,
           campaignsWithBudgets,
           campaignObjectiveMap,
+          adsetMetaById,
+          primaryAdsetMetaByCampaign,
+          hasPartialErrors: stepFailures.length > 0,
         })
-        
-        await new Promise(r => setTimeout(r, 300))
+
+        await new Promise(r => setTimeout(r, 250))
       } catch (err: any) {
         console.error(`[SYNC] Erro na conta ${acc.id}:`, err.message)
         apiErrors.push(`Conta ${acc.id}: ${err.message}`)
+        partialFailures.push({ account_id: acc.id, step: "fetch", error: err.message })
       }
     }
 
-    for (const { accountId, accountToken, insights, demographics, hourly, region, placementData = [], deviceData = [], adsetInsights, adInsights, adsetsWithStatus = [], adsWithStatus = [], budgetMap, campaignsWithBudgets = [], campaignObjectiveMap = new Map() } of syncResults) {
-      // Upsert campanhas com status reais
-      const campaignMap = new Map<string, any>()
+    const nowIso = new Date().toISOString()
 
-      // 1. Alimentar o mapa primeiro com TODAS as campanhas retornadas na listagem real do Facebook Ads (status real)
+    for (const item of syncResults) {
+      const {
+        accountId,
+        accountToken,
+        insights,
+        demographics,
+        hourly,
+        region,
+        placementData = [],
+        deviceData = [],
+        adsetInsights,
+        adInsights,
+        adsetsWithStatus = [],
+        adsWithStatus = [],
+        accountDailyRows = [],
+        accountPeriodRows = [],
+        budgetMap,
+        campaignsWithBudgets = [],
+        campaignObjectiveMap = new Map(),
+        adsetMetaById = new Map(),
+        primaryAdsetMetaByCampaign = new Map(),
+        hasPartialErrors,
+      } = item
+
+      // 1. Consolidar TODAS as campanhas observadas (listagem + insights + adsets + ads) para zero perda silenciosa
+      const campaignMap = new Map<string, any>()
       for (const c of campaignsWithBudgets) {
-        // effective_status = LEARNING | ELIGIBLE | LIMITED | ACTIVE | PAUSED (estado real de entrega)
-        const deliveryStatus = c.effective_status ? c.effective_status.toUpperCase() : null
+        const deliveryStatus = c.effective_status ? String(c.effective_status).toUpperCase() : null
         campaignMap.set(c.id, {
           name: c.name || "Campanha Meta",
           platform: "Meta Ads",
-          status: c.status ? c.status.toLowerCase() : "active",
+          status: c.status ? String(c.status).toLowerCase() : "active",
           delivery_status: deliveryStatus,
+          configured_status: c.configured_status ? String(c.configured_status).toUpperCase() : null,
+          buying_type: c.buying_type || null,
+          bid_strategy: c.bid_strategy || null,
           objective: c.objective || null,
           external_id: c.id,
           ad_account_id: accountId,
           daily_budget: c.daily_budget ? parseFloat(c.daily_budget) / 100 : 0,
           lifetime_budget: c.lifetime_budget ? parseFloat(c.lifetime_budget) / 100 : 0,
-          budget_currency: budgetMap.get(c.id)?.budget_currency || 'BRL'
+          budget_remaining: c.budget_remaining !== undefined && c.budget_remaining !== null ? parseFloat(c.budget_remaining) / 100 : null,
+          spend_cap: c.spend_cap !== undefined && c.spend_cap !== null ? parseFloat(c.spend_cap) / 100 : null,
+          budget_currency: budgetMap.get(c.id)?.budget_currency || 'BRL',
+          start_time: parseMetaTimestamp(c.start_time),
+          stop_time: parseMetaTimestamp(c.stop_time),
+          special_ad_categories: Array.isArray(c.special_ad_categories) ? c.special_ad_categories : [],
+          meta_synced_at: nowIso,
         })
       }
 
-      // 2. Adicionar redundâncias vindas dos insights de histórico
       for (const row of [...insights, ...demographics, ...hourly, ...region, ...placementData, ...deviceData]) {
-        if (!campaignMap.has(row.campaign_id)) {
+        if (row.campaign_id && !campaignMap.has(row.campaign_id)) {
           const budget: any = budgetMap.get(row.campaign_id) || {}
           campaignMap.set(row.campaign_id, {
-            name: row.campaign_name,
+            name: row.campaign_name || `Campanha ${row.campaign_id}`,
             platform: "Meta Ads",
             status: budget.status || "active",
             delivery_status: null,
+            configured_status: null,
+            buying_type: null,
+            bid_strategy: null,
             objective: row.objective || budget.objective || null,
             external_id: row.campaign_id,
             ad_account_id: accountId,
             daily_budget: budget.daily_budget || 0,
             lifetime_budget: budget.lifetime_budget || 0,
-            budget_currency: budget.budget_currency || 'BRL'
+            budget_remaining: null,
+            spend_cap: null,
+            budget_currency: budget.budget_currency || 'BRL',
+            start_time: null,
+            stop_time: null,
+            special_ad_categories: [],
+            meta_synced_at: nowIso,
           })
         }
       }
-      for (const row of [...adsetInsights, ...adInsights]) {
+
+      for (const row of [...adsetsWithStatus, ...adsWithStatus, ...adsetInsights, ...adInsights]) {
         if (row.campaign_id && !campaignMap.has(row.campaign_id)) {
           const budget: any = budgetMap.get(row.campaign_id) || {}
           campaignMap.set(row.campaign_id, {
-            name: `Campanha Desconhecida (${row.campaign_id})`,
+            name: row.campaign_name || `Campanha (${row.campaign_id})`,
             platform: "Meta Ads",
             status: budget.status || "active",
             delivery_status: null,
-            objective: budget.objective || null,
+            configured_status: null,
+            buying_type: null,
+            bid_strategy: null,
+            objective: row.objective || budget.objective || null,
             external_id: row.campaign_id,
             ad_account_id: accountId,
             daily_budget: budget.daily_budget || 0,
             lifetime_budget: budget.lifetime_budget || 0,
-            budget_currency: budget.budget_currency || 'BRL'
+            budget_remaining: null,
+            spend_cap: null,
+            budget_currency: budget.budget_currency || 'BRL',
+            start_time: null,
+            stop_time: null,
+            special_ad_categories: [],
+            meta_synced_at: nowIso,
           })
         }
       }
 
       let syncedCamps: any[] = []
       if (campaignMap.size > 0) {
-        const { data, error: campErr } = await supabase
-          .from("campaigns")
-          .upsert(Array.from(campaignMap.values()), { onConflict: "external_id" })
-          .select("id, external_id")
-
-        if (campErr) {
-          console.error(`[SYNC] Erro campanhas ${accountId}:`, campErr.message)
+        const campUpsert = await safeUpsertWithExtendedColumns(
+          "campaigns",
+          Array.from(campaignMap.values()),
+          "external_id",
+          ["configured_status", "buying_type", "bid_strategy", "budget_remaining", "spend_cap", "start_time", "stop_time", "special_ad_categories", "meta_synced_at"],
+          "id, external_id"
+        )
+        if (campUpsert.error) {
+          console.error(`[SYNC] Erro campanhas ${accountId}:`, campUpsert.error)
+          apiErrors.push(`Campanhas ${accountId}: ${campUpsert.error}`)
           continue
         }
-        syncedCamps = data || []
+        syncedCamps = campUpsert.data || []
       }
 
       totalCampaigns += syncedCamps.length
       const idMap = new Map(syncedCamps.map(c => [c.external_id, c.id]))
 
-      // Upsert AdSets — status real via fetchAdSetsWithStatus (não mais "active" fixo)
-      const adsetStatusMap = new Map(adsetsWithStatus.map((a: any) => [a.id, a.status?.toLowerCase() || "active"]))
+      // 2. Upsert AdSets (listagem completa + insights + pais referenciados por ads)
+      const adsetStatusMap = new Map(adsetsWithStatus.map((a: any) => [a.id, String(a.status || "active").toLowerCase()]))
       const adsetMap = new Map<string, any>()
 
-      // 1. Todos os adsets da conta (inclui pausados que não aparecem em insights)
       for (const a of adsetsWithStatus) {
         const campaign_id = idMap.get(a.campaign_id)
-        if (campaign_id) {
-          adsetMap.set(a.id, {
-            campaign_id,
-            name: a.name || `Conjunto ${a.id}`,
-            external_id: a.id,
-            status: a.status?.toLowerCase() || "active",
-            budget: a.daily_budget ? parseFloat(a.daily_budget) / 100 : (a.lifetime_budget ? parseFloat(a.lifetime_budget) / 100 : 0)
-          })
-        }
+        if (!campaign_id) continue
+        const dailyB = a.daily_budget ? parseFloat(a.daily_budget) / 100 : 0
+        const lifeB = a.lifetime_budget ? parseFloat(a.lifetime_budget) / 100 : 0
+        adsetMap.set(a.id, {
+          campaign_id,
+          ad_account_id: accountId,
+          name: a.name || `Conjunto ${a.id}`,
+          external_id: a.id,
+          status: a.status ? String(a.status).toLowerCase() : "active",
+          delivery_status: a.effective_status ? String(a.effective_status).toUpperCase() : null,
+          configured_status: a.configured_status ? String(a.configured_status).toUpperCase() : null,
+          budget: dailyB > 0 ? dailyB : lifeB,
+          daily_budget: dailyB,
+          lifetime_budget: lifeB,
+          budget_remaining: a.budget_remaining !== undefined && a.budget_remaining !== null ? parseFloat(a.budget_remaining) / 100 : null,
+          optimization_goal: a.optimization_goal || null,
+          billing_event: a.billing_event || null,
+          bid_strategy: a.bid_strategy || null,
+          bid_amount: a.bid_amount ? parseFloat(a.bid_amount) / 100 : null,
+          destination_type: a.destination_type || null,
+          attribution_spec: Array.isArray(a.attribution_spec) ? a.attribution_spec : null,
+          promoted_object: a.promoted_object || null,
+          targeting: a.targeting || null,
+          start_time: parseMetaTimestamp(a.start_time),
+          end_time: parseMetaTimestamp(a.end_time),
+          meta_synced_at: nowIso,
+        })
       }
-      // 2. Complementa com adsets que aparecem em insights mas não na lista de status
-      for (const row of [...adsetInsights, ...adInsights]) {
-        if (row.adset_id && !adsetMap.has(row.adset_id)) {
-          const campaign_id = idMap.get(row.campaign_id)
-          if (campaign_id) {
-            adsetMap.set(row.adset_id, {
-              campaign_id,
-              name: row.adset_name || `Conjunto ${row.adset_id}`,
-              external_id: row.adset_id,
-              status: adsetStatusMap.get(row.adset_id) || "active",
-              budget: 0 // Default since we don't have budget from insights
-            })
-          }
-        }
+
+      for (const row of [...adsetInsights, ...adInsights, ...adsWithStatus]) {
+        if (!row.adset_id || adsetMap.has(row.adset_id)) continue
+        const campaign_id = idMap.get(row.campaign_id)
+        if (!campaign_id) continue
+        adsetMap.set(row.adset_id, {
+          campaign_id,
+          ad_account_id: accountId,
+          name: row.adset_name || `Conjunto ${row.adset_id}`,
+          external_id: row.adset_id,
+          status: adsetStatusMap.get(row.adset_id) || "active",
+          delivery_status: null,
+          configured_status: null,
+          budget: 0,
+          daily_budget: 0,
+          lifetime_budget: 0,
+          budget_remaining: null,
+          optimization_goal: row.optimization_goal || null,
+          billing_event: null,
+          bid_strategy: null,
+          bid_amount: null,
+          destination_type: null,
+          attribution_spec: null,
+          promoted_object: null,
+          targeting: null,
+          start_time: null,
+          end_time: null,
+          meta_synced_at: nowIso,
+        })
       }
+
       let syncedAdsets: any[] = []
       if (adsetMap.size > 0) {
-        const { data, error: adsetErr } = await supabase
-          .from("ad_sets")
-          .upsert(Array.from(adsetMap.values()), { onConflict: "external_id" })
-          .select("id, external_id")
-        if (adsetErr) console.error(`[SYNC] Erro adsets ${accountId}:`, adsetErr.message)
-        syncedAdsets = data || []
+        const adsetUpsert = await safeUpsertWithExtendedColumns(
+          "ad_sets",
+          Array.from(adsetMap.values()),
+          "external_id",
+          ["ad_account_id", "delivery_status", "configured_status", "optimization_goal", "billing_event", "bid_strategy", "bid_amount", "destination_type", "attribution_spec", "promoted_object", "targeting", "daily_budget", "lifetime_budget", "budget_remaining", "start_time", "end_time", "meta_synced_at"],
+          "id, external_id"
+        )
+        if (adsetUpsert.error) console.error(`[SYNC] Erro adsets ${accountId}:`, adsetUpsert.error)
+        syncedAdsets = adsetUpsert.data || []
       }
-      
-      const adsetIdMap = new Map((syncedAdsets || []).map(a => [a.external_id, a.id]))
+      const adsetIdMap = new Map(syncedAdsets.map(a => [a.external_id, a.id]))
 
-      // Upsert Ads — status real via fetchAdsWithStatus (não mais "active" fixo)
-      const adStatusMap = new Map(adsWithStatus.map((a: any) => [a.id, a.status?.toLowerCase() || "active"]))
+      // 3. Upsert Ads (com metadados de entrega e criativo)
+      const adStatusMap = new Map(adsWithStatus.map((a: any) => [a.id, String(a.status || "active").toLowerCase()]))
       const adMap = new Map<string, any>()
 
-      // 1. Todos os anúncios da conta (inclui pausados que não aparecem em insights)
       for (const a of adsWithStatus) {
         const ad_set_id = adsetIdMap.get(a.adset_id)
         const campaign_id = idMap.get(a.campaign_id)
-        if (ad_set_id && campaign_id) {
-          adMap.set(a.id, {
-            ad_set_id,
-            campaign_id,
-            name: a.name || `Anúncio ${a.id}`,
-            external_id: a.id,
-            status: a.status?.toLowerCase() || "active"
-          })
-        }
+        if (!ad_set_id || !campaign_id) continue
+        adMap.set(a.id, {
+          ad_set_id,
+          campaign_id,
+          ad_account_id: accountId,
+          name: a.name || `Anúncio ${a.id}`,
+          external_id: a.id,
+          status: a.status ? String(a.status).toLowerCase() : "active",
+          delivery_status: a.effective_status ? String(a.effective_status).toUpperCase() : null,
+          configured_status: a.configured_status ? String(a.configured_status).toUpperCase() : null,
+          creative_id: a.creative?.id || null,
+          creative_name: a.creative?.name || null,
+          effective_object_story_id: a.creative?.effective_object_story_id || null,
+          call_to_action_type: a.creative?.call_to_action_type || null,
+          thumbnail_url: a.creative?.thumbnail_url || null,
+          meta_synced_at: nowIso,
+        })
       }
-      // 2. Complementa com ads que aparecem em insights mas não na lista de status
+
       for (const row of adInsights) {
-        if (row.ad_id && !adMap.has(row.ad_id)) {
-          const ad_set_id = adsetIdMap.get(row.adset_id)
-          const campaign_id = idMap.get(row.campaign_id)
-          if (ad_set_id && campaign_id) {
-            adMap.set(row.ad_id, {
-              ad_set_id,
-              campaign_id,
-              name: row.ad_name || `Anúncio ${row.ad_id}`,
-              external_id: row.ad_id,
-              status: adStatusMap.get(row.ad_id) || "active"
-            })
-          }
-        }
+        if (!row.ad_id || adMap.has(row.ad_id)) continue
+        const ad_set_id = adsetIdMap.get(row.adset_id)
+        const campaign_id = idMap.get(row.campaign_id)
+        if (!ad_set_id || !campaign_id) continue
+        adMap.set(row.ad_id, {
+          ad_set_id,
+          campaign_id,
+          ad_account_id: accountId,
+          name: row.ad_name || `Anúncio ${row.ad_id}`,
+          external_id: row.ad_id,
+          status: adStatusMap.get(row.ad_id) || "active",
+          delivery_status: null,
+          configured_status: null,
+          creative_id: null,
+          creative_name: null,
+          effective_object_story_id: null,
+          call_to_action_type: null,
+          thumbnail_url: null,
+          meta_synced_at: nowIso,
+        })
       }
+
       let syncedAds: any[] = []
       if (adMap.size > 0) {
-        const { data, error: adErr } = await supabase
-          .from("ads")
-          .upsert(Array.from(adMap.values()), { onConflict: "external_id" })
-          .select("id, external_id")
-        if (adErr) console.error(`[SYNC] Erro ads ${accountId}:`, adErr.message)
-        syncedAds = data || []
+        const adUpsert = await safeUpsertWithExtendedColumns(
+          "ads",
+          Array.from(adMap.values()),
+          "external_id",
+          ["ad_account_id", "delivery_status", "configured_status", "creative_id", "creative_name", "effective_object_story_id", "call_to_action_type", "thumbnail_url", "meta_synced_at"],
+          "id, external_id"
+        )
+        if (adUpsert.error) console.error(`[SYNC] Erro ads ${accountId}:`, adUpsert.error)
+        syncedAds = adUpsert.data || []
+      }
+      const adIdMap = new Map(syncedAds.map(a => [a.external_id, a.id]))
+
+      // 4. Upsert Account-level daily deduplicated reach
+      if (accountDailyRows.length > 0) {
+        const accountDailyToUpsert = accountDailyRows.map((row: any) => ({
+          ad_account_id: accountId,
+          date: row.date_start,
+          reach: parseInt(row.reach || "0", 10) || 0,
+          impressions: parseInt(row.impressions || "0", 10) || 0,
+          frequency: parseFloat(row.frequency || "0") || 0,
+          spend: parseFloat(row.spend || "0") || 0,
+          clicks: parseInt(row.clicks || "0", 10) || 0,
+          inline_link_clicks: parseInt(row.inline_link_clicks || "0", 10) || 0,
+          synced_at: nowIso,
+        }))
+        const accDailyRes = await safeUpsertWithExtendedColumns(
+          "meta_account_daily_stats",
+          accountDailyToUpsert,
+          "ad_account_id,date",
+          [],
+        )
+        if (accDailyRes.error && !accDailyRes.missingTable) {
+          console.warn(`[SYNC] meta_account_daily_stats ${accountId}: ${accDailyRes.error}`)
+        }
       }
 
-      const adIdMap = new Map((syncedAds || []).map(a => [a.external_id, a.id]))
-
-      // Upsert métricas diárias de campanhas
-      const metricsToUpsert = insights.map(row => {
+      // 5. Upsert métricas diárias de campanhas (sem heurísticas de nome)
+      const metricsToUpsert = insights.map((row: any) => {
         const campaign_id = idMap.get(row.campaign_id)
         if (!campaign_id) return null
-        const campObj = campaignObjectiveMap.get(row.campaign_id);
-        const campName = row.campaign_name || budgetMap.get(row.campaign_id)?.name;
-        const resultType = detectConversionCategory(campName, campObj, row.actions, row.results, row.optimization_goal);
-        const conv = extractConversions(row.actions, resultType, parseInt(row.reach) || 0, campName, row.results, row.optimization_goal);
+        const rawObjective = row.objective || campaignObjectiveMap.get(row.campaign_id) || null
+        const campCtx = primaryAdsetMetaByCampaign.get(row.campaign_id)
+        const optGoal = row.optimization_goal || campCtx?.optimizationGoal || null
+        const extracted = extractMetaInsightMetrics(row, {
+          rawObjective,
+          optimizationGoal: optGoal,
+          destinationType: campCtx?.destinationType || null,
+        })
         return {
           campaign_id,
           date: row.date_start,
-          impressions: parseInt(row.impressions) || 0,
-          clicks: extractClicks(row.actions, row.inline_link_clicks),
-          cost: parseFloat(row.spend) || 0,
-          reach: parseInt(row.reach) || 0,
-          frequency: parseFloat(row.frequency || "0") || 0,
-          conversions: conv,
-          result_type: resultType
+          impressions: extracted.impressions,
+          clicks: extracted.inlineLinkClicks,
+          inline_link_clicks: extracted.inlineLinkClicks,
+          all_clicks: extracted.allClicks,
+          cost: extracted.spend,
+          reach: extracted.reach,
+          frequency: extracted.frequency,
+          conversions: extracted.resultCount ?? 0,
+          result_type: extracted.category,
+          raw_objective: rawObjective,
+          optimization_goal: optGoal,
+          result_indicator: extracted.resultIndicator,
+          attribution_window: campCtx?.attributionWindow || "unified_or_default",
+          purchase_value: extracted.purchaseValue ?? 0,
+          actions_json: Array.isArray(row.actions) ? row.actions : null,
+          results_json: Array.isArray(row.results) ? row.results : null,
+          cost_per_result_json: Array.isArray(row.cost_per_result) ? row.cost_per_result : null,
+          sync_version: SYNC_VERSION,
         }
-      }).filter(Boolean)
+      }).filter(Boolean) as Record<string, any>[]
 
       if (metricsToUpsert.length > 0) {
-        const { error } = await supabase
-          .from("metrics")
-          .upsert(metricsToUpsert, { onConflict: "campaign_id,date" })
-        if (error) console.error(`[SYNC] Erro métricas ${accountId}:`, error.message)
+        const metricsRes = await safeUpsertWithExtendedColumns(
+          "metrics",
+          metricsToUpsert,
+          "campaign_id,date",
+          ["raw_objective", "optimization_goal", "result_indicator", "attribution_window", "inline_link_clicks", "all_clicks", "purchase_value", "actions_json", "results_json", "cost_per_result_json", "sync_version"]
+        )
+        if (metricsRes.error) console.error(`[SYNC] Erro métricas ${accountId}:`, metricsRes.error)
         else totalMetrics += metricsToUpsert.length
       }
 
-      // ── Period stats (sem time_increment) → alcance e frequência reais do período ──
-      // Esta query retorna um único row por campanha com o total do período completo,
-      // que é exatamente o que o Gerenciador de Anúncios mostra.
+      // 6. Period stats (nível account + campaign + adset + ad — sem time_increment → alcance real deduplicado)
       try {
         let periodStart = yesterdayStr
-        let periodEnd   = todayStr
+        let periodEnd = todayStr
         try {
           if (timeParams.time_range) {
             const tr = JSON.parse(timeParams.time_range)
             periodStart = tr.since
-            periodEnd   = tr.until
+            periodEnd = tr.until
           }
         } catch (_) {}
 
-        const [campaignPeriodRaw, adsetPeriodRaw, adPeriodRaw] = await Promise.all([
-          metaGetPaginated(`/${accountId}/insights`, accountToken, {
-            level: "campaign",
-            fields: "campaign_id,campaign_name,optimization_goal,results,cost_per_result,spend,reach,impressions,frequency,actions,inline_link_clicks,date_start,date_stop",
-            use_unified_attribution_setting: "true",
-            limit: "500",
-            ...timeParams
-          }),
-          metaGetPaginated(`/${accountId}/insights`, accountToken, {
-            level: "adset",
-            fields: "adset_id,campaign_id,campaign_name,optimization_goal,results,cost_per_result,spend,reach,impressions,frequency,actions,inline_link_clicks,date_start,date_stop",
-            use_unified_attribution_setting: "true",
-            limit: "500",
-            ...timeParams
-          }),
-          metaGetPaginated(`/${accountId}/insights`, accountToken, {
-            level: "ad",
-            fields: "ad_id,campaign_id,campaign_name,optimization_goal,results,cost_per_result,spend,reach,impressions,frequency,actions,inline_link_clicks,quality_ranking,engagement_rate_ranking,conversion_rate_ranking,date_start,date_stop",
-            use_unified_attribution_setting: "true",
-            limit: "500",
-            ...timeParams
+        if (accountPeriodRows.length > 0) {
+          const accountPeriodToUpsert = accountPeriodRows.map((row: any) => {
+            const extracted = extractMetaInsightMetrics(row, {})
+            return {
+              ad_account_id: accountId,
+              start_date: row.date_start || periodStart,
+              end_date: row.date_stop || periodEnd,
+              reach: extracted.reach,
+              impressions: extracted.impressions,
+              frequency: extracted.frequency,
+              spend: extracted.spend,
+              clicks: extracted.allClicks,
+              inline_link_clicks: extracted.inlineLinkClicks,
+              conversions: extracted.resultCount ?? 0,
+              purchase_value: extracted.purchaseValue ?? 0,
+              attribution_window: "unified_or_default",
+              synced_at: nowIso,
+            }
           })
+          const accPeriodUpsert = await safeUpsertWithExtendedColumns(
+            "meta_account_period_stats",
+            accountPeriodToUpsert,
+            "ad_account_id,start_date,end_date",
+            []
+          )
+          if (accPeriodUpsert.error && !accPeriodUpsert.missingTable) {
+            console.warn(`[SYNC] meta_account_period_stats ${accountId}: ${accPeriodUpsert.error}`)
+          }
+        }
+
+        const [campPeriodRes, adsetPeriodRes, adPeriodRes] = await Promise.all([
+          safePaginatedFetch(`/${accountId}/insights`, accountToken, {
+            level: "campaign",
+            fields: "campaign_id,campaign_name,objective,optimization_goal,results,cost_per_result,spend,reach,impressions,frequency,actions,action_values,clicks,inline_link_clicks,date_start,date_stop",
+            use_unified_attribution_setting: "true",
+            action_attribution_windows: INSIGHT_ATTRIBUTION_WINDOWS,
+            limit: "500",
+            ...timeParams
+          }, `period_campaign:${accountId}`),
+          safePaginatedFetch(`/${accountId}/insights`, accountToken, {
+            level: "adset",
+            fields: "adset_id,adset_name,campaign_id,campaign_name,objective,optimization_goal,results,cost_per_result,spend,reach,impressions,frequency,actions,action_values,clicks,inline_link_clicks,date_start,date_stop",
+            use_unified_attribution_setting: "true",
+            action_attribution_windows: INSIGHT_ATTRIBUTION_WINDOWS,
+            limit: "500",
+            ...timeParams
+          }, `period_adset:${accountId}`),
+          safePaginatedFetch(`/${accountId}/insights`, accountToken, {
+            level: "ad",
+            fields: "ad_id,ad_name,adset_id,campaign_id,campaign_name,objective,optimization_goal,results,cost_per_result,spend,reach,impressions,frequency,actions,action_values,clicks,inline_link_clicks,quality_ranking,engagement_rate_ranking,conversion_rate_ranking,date_start,date_stop",
+            use_unified_attribution_setting: "true",
+            action_attribution_windows: INSIGHT_ATTRIBUTION_WINDOWS,
+            limit: "500",
+            ...timeParams
+          }, `period_ad:${accountId}`),
         ])
 
-        const periodStatsToUpsert: any[] = []
+        for (const [lvl, pr] of [["period_campaign", campPeriodRes], ["period_adset", adsetPeriodRes], ["period_ad", adPeriodRes]] as const) {
+          if (!pr.ok || pr.truncated) {
+            partialFailures.push({ account_id: accountId, step: lvl, error: pr.error || "truncado" })
+          }
+        }
 
-        campaignPeriodRaw.forEach((row: any) => {
+        const periodStatsToUpsert: Record<string, any>[] = []
+
+        for (const row of campPeriodRes.data) {
           const campaign_id = idMap.get(row.campaign_id)
-          if (!campaign_id) return
-          const reach = parseInt(row.reach) || 0
-          const impressions = parseInt(row.impressions) || 0
-          const campObj = campaignObjectiveMap.get(row.campaign_id);
-          const campName = row.campaign_name || budgetMap.get(row.campaign_id)?.name;
-          const resultType = detectConversionCategory(campName, campObj, row.actions, row.results, row.optimization_goal);
-          const conv = extractConversions(row.actions, resultType, reach, campName, row.results, row.optimization_goal);
+          if (!campaign_id) continue
+          const rawObj = row.objective || campaignObjectiveMap.get(row.campaign_id) || null
+          const campCtx = primaryAdsetMetaByCampaign.get(row.campaign_id)
+          const optGoal = row.optimization_goal || campCtx?.optimizationGoal || null
+          const extracted = extractMetaInsightMetrics(row, {
+            rawObjective: rawObj,
+            optimizationGoal: optGoal,
+            destinationType: campCtx?.destinationType || null,
+          })
           periodStatsToUpsert.push({
             entity_type: 'campaign',
             entity_id: campaign_id,
             ad_account_id: accountId,
-            start_date:   row.date_start || periodStart,
-            end_date:     row.date_stop  || periodEnd,
-            reach,
-            impressions,
-            frequency:    reach > 0 ? impressions / reach : (parseFloat(row.frequency || "0") || 0),
-            spend:        parseFloat(row.spend || "0") || 0,
-            conversions:  conv,
-            clicks:       extractClicks(row.actions, row.inline_link_clicks),
-            synced_at:    new Date().toISOString(),
+            start_date: row.date_start || periodStart,
+            end_date: row.date_stop || periodEnd,
+            reach: extracted.reach,
+            impressions: extracted.impressions,
+            frequency: extracted.frequency,
+            spend: extracted.spend,
+            conversions: extracted.resultCount ?? 0,
+            clicks: extracted.inlineLinkClicks,
+            inline_link_clicks: extracted.inlineLinkClicks,
+            all_clicks: extracted.allClicks,
+            result_type: extracted.category,
+            result_indicator: extracted.resultIndicator,
+            optimization_goal: optGoal,
+            attribution_window: campCtx?.attributionWindow || "unified_or_default",
+            purchase_value: extracted.purchaseValue ?? 0,
+            actions_json: Array.isArray(row.actions) ? row.actions : null,
+            results_json: Array.isArray(row.results) ? row.results : null,
+            synced_at: nowIso,
           })
-        })
+        }
 
-        adsetPeriodRaw.forEach((row: any) => {
+        for (const row of adsetPeriodRes.data) {
           const ad_set_id = adsetIdMap.get(row.adset_id)
-          if (!ad_set_id) return
-          const reach = parseInt(row.reach) || 0
-          const impressions = parseInt(row.impressions) || 0
-          const campObj = campaignObjectiveMap.get(row.campaign_id);
-          const name = `${row.adset_name || ""} ${row.campaign_name || ""}`.trim();
-          const conv = extractConversions(row.actions, campObj, reach, name, row.results, row.optimization_goal);
+          if (!ad_set_id) continue
+          const rawObj = row.objective || campaignObjectiveMap.get(row.campaign_id) || null
+          const adsetCtx = adsetMetaById.get(row.adset_id)
+          const optGoal = row.optimization_goal || adsetCtx?.optimizationGoal || null
+          const extracted = extractMetaInsightMetrics(row, {
+            rawObjective: rawObj,
+            optimizationGoal: optGoal,
+            destinationType: adsetCtx?.destinationType || null,
+          })
           periodStatsToUpsert.push({
             entity_type: 'adset',
             entity_id: ad_set_id,
             ad_account_id: accountId,
-            start_date:   row.date_start || periodStart,
-            end_date:     row.date_stop  || periodEnd,
-            reach,
-            impressions,
-            frequency:    reach > 0 ? impressions / reach : (parseFloat(row.frequency || "0") || 0),
-            spend:        parseFloat(row.spend || "0") || 0,
-            conversions:  conv,
-            clicks:       extractClicks(row.actions, row.inline_link_clicks),
-            synced_at:    new Date().toISOString(),
+            start_date: row.date_start || periodStart,
+            end_date: row.date_stop || periodEnd,
+            reach: extracted.reach,
+            impressions: extracted.impressions,
+            frequency: extracted.frequency,
+            spend: extracted.spend,
+            conversions: extracted.resultCount ?? 0,
+            clicks: extracted.inlineLinkClicks,
+            inline_link_clicks: extracted.inlineLinkClicks,
+            all_clicks: extracted.allClicks,
+            result_type: extracted.category,
+            result_indicator: extracted.resultIndicator,
+            optimization_goal: optGoal,
+            attribution_window: adsetCtx?.attributionWindow || "unified_or_default",
+            purchase_value: extracted.purchaseValue ?? 0,
+            actions_json: Array.isArray(row.actions) ? row.actions : null,
+            results_json: Array.isArray(row.results) ? row.results : null,
+            synced_at: nowIso,
           })
-        })
+        }
 
-        adPeriodRaw.forEach((row: any) => {
+        for (const row of adPeriodRes.data) {
           const ad_id = adIdMap.get(row.ad_id)
-          if (!ad_id) return
-          const reach = parseInt(row.reach) || 0
-          const impressions = parseInt(row.impressions) || 0
-          const campObj = campaignObjectiveMap.get(row.campaign_id);
-          const name = `${row.ad_name || ""} ${row.campaign_name || ""}`.trim();
-          const conv = extractConversions(row.actions, campObj, reach, name, row.results, row.optimization_goal);
+          if (!ad_id) continue
+          const rawObj = row.objective || campaignObjectiveMap.get(row.campaign_id) || null
+          const adsetCtx = adsetMetaById.get(row.adset_id) || primaryAdsetMetaByCampaign.get(row.campaign_id)
+          const optGoal = row.optimization_goal || adsetCtx?.optimizationGoal || null
+          const extracted = extractMetaInsightMetrics(row, {
+            rawObjective: rawObj,
+            optimizationGoal: optGoal,
+            destinationType: adsetCtx?.destinationType || null,
+          })
           periodStatsToUpsert.push({
             entity_type: 'ad',
             entity_id: ad_id,
             ad_account_id: accountId,
-            start_date:   row.date_start || periodStart,
-            end_date:     row.date_stop  || periodEnd,
-            reach,
-            impressions,
-            frequency:    reach > 0 ? impressions / reach : (parseFloat(row.frequency || "0") || 0),
-            spend:        parseFloat(row.spend || "0") || 0,
-            conversions:  conv,
-            clicks:       extractClicks(row.actions, row.inline_link_clicks),
+            start_date: row.date_start || periodStart,
+            end_date: row.date_stop || periodEnd,
+            reach: extracted.reach,
+            impressions: extracted.impressions,
+            frequency: extracted.frequency,
+            spend: extracted.spend,
+            conversions: extracted.resultCount ?? 0,
+            clicks: extracted.inlineLinkClicks,
+            inline_link_clicks: extracted.inlineLinkClicks,
+            all_clicks: extracted.allClicks,
+            result_type: extracted.category,
+            result_indicator: extracted.resultIndicator,
+            optimization_goal: optGoal,
+            attribution_window: adsetCtx?.attributionWindow || "unified_or_default",
+            purchase_value: extracted.purchaseValue ?? 0,
+            actions_json: Array.isArray(row.actions) ? row.actions : null,
+            results_json: Array.isArray(row.results) ? row.results : null,
             quality_ranking: row.quality_ranking || null,
             engagement_rate_ranking: row.engagement_rate_ranking || null,
             conversion_rate_ranking: row.conversion_rate_ranking || null,
-            synced_at:    new Date().toISOString(),
+            synced_at: nowIso,
           })
-        })
+        }
 
         if (periodStatsToUpsert.length > 0) {
           const chunkSize = 500
           for (let i = 0; i < periodStatsToUpsert.length; i += chunkSize) {
             const chunk = periodStatsToUpsert.slice(i, i + chunkSize)
-            const { error } = await supabase
-              .from("meta_period_stats")
-              .upsert(chunk, { onConflict: "entity_type,entity_id,start_date,end_date" })
-            if (error) console.warn(`[SYNC] Period stats upsert: ${error.message}`)
+            const psRes = await safeUpsertWithExtendedColumns(
+              "meta_period_stats",
+              chunk,
+              "entity_type,entity_id,start_date,end_date",
+              ["result_type", "result_indicator", "optimization_goal", "attribution_window", "inline_link_clicks", "all_clicks", "purchase_value", "actions_json", "results_json"]
+            )
+            if (psRes.error) {
+              console.warn(`[SYNC] Period stats upsert: ${psRes.error}`)
+              partialFailures.push({ account_id: accountId, step: "meta_period_stats_upsert", error: psRes.error })
+            }
           }
         }
       } catch (periodErr: any) {
         console.warn(`[SYNC] Period stats fetch failed for ${accountId}:`, periodErr.message)
+        partialFailures.push({ account_id: accountId, step: "meta_period_stats", error: periodErr.message })
       }
 
-      // Upsert breakdowns demográficos
-      const demoToUpsert = demographics.map(row => {
+      const breakdownExtract = (row: any) => {
+        const rawObj = row.objective || campaignObjectiveMap.get(row.campaign_id) || null
+        const campCtx = primaryAdsetMetaByCampaign.get(row.campaign_id)
+        return extractMetaInsightMetrics(row, {
+          rawObjective: rawObj,
+          optimizationGoal: row.optimization_goal || campCtx?.optimizationGoal || null,
+          destinationType: campCtx?.destinationType || null,
+        })
+      }
+
+      // 7. Upsert breakdowns
+      const demoToUpsert = demographics.map((row: any) => {
         const campaign_id = idMap.get(row.campaign_id)
         if (!campaign_id) return null
+        const ex = breakdownExtract(row)
         return {
           campaign_id,
           ad_account_id: accountId,
@@ -1400,11 +1388,11 @@ serve(async (req) => {
           age_range: row.age || "unknown",
           gender: row.gender || "unknown",
           platform: row.publisher_platform || "facebook",
-          impressions: parseInt(row.impressions) || 0,
-          clicks: extractClicks(row.actions, row.inline_link_clicks),
-          spend: parseFloat(row.spend) || 0,
-          conversions: extractConversions(row.actions, campaignObjectiveMap.get(row.campaign_id), parseInt(row.reach) || 0, row.campaign_name || budgetMap.get(row.campaign_id)?.name),
-          reach: parseInt(row.reach) || 0
+          impressions: ex.impressions,
+          clicks: ex.inlineLinkClicks,
+          spend: ex.spend,
+          conversions: ex.resultCount ?? 0,
+          reach: ex.reach,
         }
       }).filter(Boolean)
 
@@ -1416,20 +1404,20 @@ serve(async (req) => {
         else totalDemographics += demoToUpsert.length
       }
 
-      // Upsert hourly metrics
-      const hourlyToUpsert = (hourly || []).map(row => {
+      const hourlyToUpsert = (hourly || []).map((row: any) => {
         const campaign_id = idMap.get(row.campaign_id)
         if (!campaign_id) return null
+        const ex = breakdownExtract(row)
         return {
           campaign_id,
           ad_account_id: accountId,
           date: row.date_start,
           hour: row.hourly_stats_aggregated_by_advertiser_time_zone || "unknown",
-          impressions: parseInt(row.impressions) || 0,
-          clicks: extractClicks(row.actions, row.inline_link_clicks),
-          spend: parseFloat(row.spend) || 0,
-          conversions: extractConversions(row.actions, campaignObjectiveMap.get(row.campaign_id), parseInt(row.reach) || 0, row.campaign_name || budgetMap.get(row.campaign_id)?.name),
-          reach: parseInt(row.reach) || 0
+          impressions: ex.impressions,
+          clicks: ex.inlineLinkClicks,
+          spend: ex.spend,
+          conversions: ex.resultCount ?? 0,
+          reach: ex.reach,
         }
       }).filter(Boolean)
 
@@ -1440,21 +1428,21 @@ serve(async (req) => {
         if (error) console.error(`[SYNC] Erro hourly_metrics ${accountId}:`, error.message)
       }
 
-      // Upsert Placement Metrics
-      const placementToUpsert = (placementData || []).map(row => {
+      const placementToUpsert = (placementData || []).map((row: any) => {
         const campaign_id = idMap.get(row.campaign_id)
         if (!campaign_id) return null
+        const ex = breakdownExtract(row)
         return {
           campaign_id,
           ad_account_id: accountId,
           date: row.date_start,
           platform: row.publisher_platform || "facebook",
           placement: row.placement || "unknown",
-          impressions: parseInt(row.impressions) || 0,
-          clicks: extractClicks(row.actions, row.inline_link_clicks),
-          spend: parseFloat(row.spend) || 0,
-          conversions: extractConversions(row.actions, campaignObjectiveMap.get(row.campaign_id), parseInt(row.reach) || 0, row.campaign_name || budgetMap.get(row.campaign_id)?.name),
-          reach: parseInt(row.reach) || 0
+          impressions: ex.impressions,
+          clicks: ex.inlineLinkClicks,
+          spend: ex.spend,
+          conversions: ex.resultCount ?? 0,
+          reach: ex.reach,
         }
       }).filter(Boolean)
 
@@ -1465,21 +1453,21 @@ serve(async (req) => {
         if (error) console.error(`[SYNC] Erro placement_metrics ${accountId}:`, error.message)
       }
 
-      // Upsert Device Metrics
-      const deviceToUpsert = (deviceData || []).map(row => {
+      const deviceToUpsert = (deviceData || []).map((row: any) => {
         const campaign_id = idMap.get(row.campaign_id)
         if (!campaign_id) return null
+        const ex = breakdownExtract(row)
         return {
           campaign_id,
           ad_account_id: accountId,
           date: row.date_start,
           platform: row.publisher_platform || "facebook",
           device: row.impression_device || "unknown",
-          impressions: parseInt(row.impressions) || 0,
-          clicks: extractClicks(row.actions, row.inline_link_clicks),
-          spend: parseFloat(row.spend) || 0,
-          conversions: extractConversions(row.actions, campaignObjectiveMap.get(row.campaign_id), parseInt(row.reach) || 0, row.campaign_name || budgetMap.get(row.campaign_id)?.name),
-          reach: parseInt(row.reach) || 0
+          impressions: ex.impressions,
+          clicks: ex.inlineLinkClicks,
+          spend: ex.spend,
+          conversions: ex.resultCount ?? 0,
+          reach: ex.reach,
         }
       }).filter(Boolean)
 
@@ -1490,21 +1478,20 @@ serve(async (req) => {
         if (error) console.error(`[SYNC] Erro device_metrics ${accountId}:`, error.message)
       }
 
-
-      // Upsert region metrics
-      const regionToUpsert = (region || []).map(row => {
+      const regionToUpsert = (region || []).map((row: any) => {
         const campaign_id = idMap.get(row.campaign_id)
         if (!campaign_id) return null
+        const ex = breakdownExtract(row)
         return {
           campaign_id,
           ad_account_id: accountId,
           date: row.date_start,
           region: row.region || "unknown",
-          impressions: parseInt(row.impressions) || 0,
-          clicks: extractClicks(row.actions, row.inline_link_clicks),
-          spend: parseFloat(row.spend) || 0,
-          conversions: extractConversions(row.actions, campaignObjectiveMap.get(row.campaign_id), parseInt(row.reach) || 0, row.campaign_name || budgetMap.get(row.campaign_id)?.name),
-          reach: parseInt(row.reach) || 0
+          impressions: ex.impressions,
+          clicks: ex.inlineLinkClicks,
+          spend: ex.spend,
+          conversions: ex.resultCount ?? 0,
+          reach: ex.reach,
         }
       }).filter(Boolean)
 
@@ -1515,120 +1502,162 @@ serve(async (req) => {
         if (error) console.error(`[SYNC] Erro region_metrics ${accountId}:`, error.message)
       }
 
-      // Upsert asset_metrics (AdSets e Ads)
-      const assetMetricsToUpsert: any[] = []
-      
+      // 8. Upsert asset_metrics (AdSets e Ads) com contexto completo de optimization_goal & purchase_value
+      const adsetMetricsToUpsert: Record<string, any>[] = []
+      const adMetricsToUpsert: Record<string, any>[] = []
+
       for (const row of adsetInsights) {
         const ad_set_id = adsetIdMap.get(row.adset_id)
-        if (ad_set_id) {
-          const campObj = campaignObjectiveMap.get(row.campaign_id);
-          const name = `${row.adset_name || ""} ${row.campaign_name || budgetMap.get(row.campaign_id)?.name || ""}`.trim();
-          const conv = extractConversions(row.actions, campObj, parseInt(row.reach) || 0, name, row.results, row.optimization_goal);
-          assetMetricsToUpsert.push({
-            ad_set_id,
-            date: row.date_start,
-            impressions: parseInt(row.impressions) || 0,
-            clicks: extractClicks(row.actions, row.inline_link_clicks),
-            cost: parseFloat(row.spend) || 0,
-            conversions: conv,
-            reach: parseInt(row.reach) || 0,
-            frequency: parseFloat(row.frequency || "0") || 0,
-            video_p25: extractVideoMetric(row, "video_p25_watched_actions"),
-            video_p50: extractVideoMetric(row, "video_p50_watched_actions"),
-            video_p75: extractVideoMetric(row, "video_p75_watched_actions"),
-            video_p95: extractVideoMetric(row, "video_p95_watched_actions"),
-            video_views: extractVideoMetric(row, "video_view")
-          })
-        }
+        if (!ad_set_id) continue
+        const rawObj = row.objective || campaignObjectiveMap.get(row.campaign_id) || null
+        const adsetCtx = adsetMetaById.get(row.adset_id)
+        const optGoal = row.optimization_goal || adsetCtx?.optimizationGoal || null
+        const ex = extractMetaInsightMetrics(row, {
+          rawObjective: rawObj,
+          optimizationGoal: optGoal,
+          destinationType: adsetCtx?.destinationType || null,
+        })
+        adsetMetricsToUpsert.push({
+          ad_set_id,
+          date: row.date_start,
+          impressions: ex.impressions,
+          clicks: ex.inlineLinkClicks,
+          inline_link_clicks: ex.inlineLinkClicks,
+          all_clicks: ex.allClicks,
+          cost: ex.spend,
+          conversions: ex.resultCount ?? 0,
+          reach: ex.reach,
+          frequency: ex.frequency,
+          raw_objective: rawObj,
+          optimization_goal: optGoal,
+          result_type: ex.category,
+          result_indicator: ex.resultIndicator,
+          attribution_window: adsetCtx?.attributionWindow || "unified_or_default",
+          purchase_value: ex.purchaseValue ?? 0,
+          actions_json: Array.isArray(row.actions) ? row.actions : null,
+          results_json: Array.isArray(row.results) ? row.results : null,
+          sync_version: SYNC_VERSION,
+          video_p25: extractVideoMetric(row, "video_p25_watched_actions"),
+          video_p50: extractVideoMetric(row, "video_p50_watched_actions"),
+          video_p75: extractVideoMetric(row, "video_p75_watched_actions"),
+          video_p95: extractVideoMetric(row, "video_p95_watched_actions"),
+          video_views: extractVideoMetric(row, "video_view")
+        })
       }
 
       for (const row of adInsights) {
         const ad_id = adIdMap.get(row.ad_id)
-        if (ad_id) {
-          const campObj = campaignObjectiveMap.get(row.campaign_id);
-          const name = `${row.ad_name || ""} ${row.campaign_name || budgetMap.get(row.campaign_id)?.name || ""}`.trim();
-          const conv = extractConversions(row.actions, campObj, parseInt(row.reach) || 0, name, row.results, row.optimization_goal);
-          assetMetricsToUpsert.push({
-            ad_id,
-            date: row.date_start,
-            impressions: parseInt(row.impressions) || 0,
-            clicks: extractClicks(row.actions, row.inline_link_clicks),
-            cost: parseFloat(row.spend) || 0,
-            conversions: conv,
-            reach: parseInt(row.reach) || 0,
-            frequency: parseFloat(row.frequency || "0") || 0,
-            video_p25: extractVideoMetric(row, "video_p25_watched_actions"),
-            video_p50: extractVideoMetric(row, "video_p50_watched_actions"),
-            video_p75: extractVideoMetric(row, "video_p75_watched_actions"),
-            video_p95: extractVideoMetric(row, "video_p95_watched_actions"),
-            video_views: extractVideoMetric(row, "video_view")
-          })
-        }
+        if (!ad_id) continue
+        const rawObj = row.objective || campaignObjectiveMap.get(row.campaign_id) || null
+        const adsetCtx = adsetMetaById.get(row.adset_id) || primaryAdsetMetaByCampaign.get(row.campaign_id)
+        const optGoal = row.optimization_goal || adsetCtx?.optimizationGoal || null
+        const ex = extractMetaInsightMetrics(row, {
+          rawObjective: rawObj,
+          optimizationGoal: optGoal,
+          destinationType: adsetCtx?.destinationType || null,
+        })
+        adMetricsToUpsert.push({
+          ad_id,
+          date: row.date_start,
+          impressions: ex.impressions,
+          clicks: ex.inlineLinkClicks,
+          inline_link_clicks: ex.inlineLinkClicks,
+          all_clicks: ex.allClicks,
+          cost: ex.spend,
+          conversions: ex.resultCount ?? 0,
+          reach: ex.reach,
+          frequency: ex.frequency,
+          raw_objective: rawObj,
+          optimization_goal: optGoal,
+          result_type: ex.category,
+          result_indicator: ex.resultIndicator,
+          attribution_window: adsetCtx?.attributionWindow || "unified_or_default",
+          purchase_value: ex.purchaseValue ?? 0,
+          actions_json: Array.isArray(row.actions) ? row.actions : null,
+          results_json: Array.isArray(row.results) ? row.results : null,
+          sync_version: SYNC_VERSION,
+          video_p25: extractVideoMetric(row, "video_p25_watched_actions"),
+          video_p50: extractVideoMetric(row, "video_p50_watched_actions"),
+          video_p75: extractVideoMetric(row, "video_p75_watched_actions"),
+          video_p95: extractVideoMetric(row, "video_p95_watched_actions"),
+          video_views: extractVideoMetric(row, "video_view")
+        })
       }
 
-      if (assetMetricsToUpsert.length > 0) {
-        const chunkSize = 500
-        for (let i = 0; i < assetMetricsToUpsert.length; i += chunkSize) {
-          const chunk = assetMetricsToUpsert.slice(i, i + chunkSize)
-          const adSetChunk = chunk.filter(c => c.ad_set_id);
-          const adChunk = chunk.filter(c => c.ad_id);
-          
-          if (adSetChunk.length > 0) {
-             const { error } = await supabase.from("asset_metrics").upsert(adSetChunk, { onConflict: "ad_set_id, date" })
-             if (error) console.error(`[SYNC] Erro adset_metrics ${accountId}:`, error.message)
-          }
-          if (adChunk.length > 0) {
-             const { error } = await supabase.from("asset_metrics").upsert(adChunk, { onConflict: "ad_id, date" })
-             if (error) console.error(`[SYNC] Erro ad_metrics ${accountId}:`, error.message)
-          }
-        }
+      const extendedAssetKeys = ["raw_objective", "optimization_goal", "result_type", "result_indicator", "attribution_window", "inline_link_clicks", "all_clicks", "purchase_value", "actions_json", "results_json", "sync_version"]
+      const chunkSize = 500
+      for (let i = 0; i < adsetMetricsToUpsert.length; i += chunkSize) {
+        const res = await safeUpsertWithExtendedColumns("asset_metrics", adsetMetricsToUpsert.slice(i, i + chunkSize), "ad_set_id, date", extendedAssetKeys)
+        if (res.error) console.error(`[SYNC] Erro adset_metrics ${accountId}:`, res.error)
+      }
+      for (let i = 0; i < adMetricsToUpsert.length; i += chunkSize) {
+        const res = await safeUpsertWithExtendedColumns("asset_metrics", adMetricsToUpsert.slice(i, i + chunkSize), "ad_id, date", extendedAssetKeys)
+        if (res.error) console.error(`[SYNC] Erro ad_metrics ${accountId}:`, res.error)
       }
 
-      // Antiga notificação diária por conta foi removida daqui e transferida para o run-automations (Resumo D-1 unificado às 08h).
+      // Atualizar last_sync da conta somente agora que os dados foram persistidos!
+      if (!hasPartialErrors) {
+        await supabase.from("ad_accounts").update({ last_sync: new Date().toISOString() }).eq("id", accountId)
+      }
     }
 
-    // Atualizar heartbeat de todas as configs cujas contas participaram do sync
-    const involvedUserIds = [...new Set(entriesToSync.map(e => e.userId))]
+    // Atualizar heartbeat apenas dos user_ids envolvidos no sync
+    const syncStatus = apiErrors.length > 0 || partialFailures.length > 0 ? "partial_success" : "success"
     for (const uid of involvedUserIds) {
       await supabase.from("meta_ads_configs").update({
         is_connected: true,
         last_heartbeat_at: new Date().toISOString(),
-        last_heartbeat_status: "success",
+        last_heartbeat_status: syncStatus,
         last_heartbeat_summary: {
           accounts: adAccounts.length,
           campaigns: totalCampaigns,
           metrics: totalMetrics,
           demographic_records: totalDemographics,
-          sync_id: syncId
+          partial_failures_count: partialFailures.length,
+          sync_id: syncId,
+          sync_version: SYNC_VERSION,
         }
       }).eq("user_id", uid)
     }
 
-    // Atualizar histórico de sync
+    // Atualizar histórico de sync com cobertura e eventuais falhas parciais
     if (syncHistoryId) {
-      await supabase.from("sync_history").update({
-        status: apiErrors.length > 0 ? "partial_success" : "success",
-        completed_at: new Date().toISOString(),
-        accounts_synced: adAccounts.length,
-        campaigns_synced: totalCampaigns,
-        metrics_synced: totalMetrics,
-        error_message: apiErrors.length > 0 ? apiErrors.join("; ") : null
-      }).eq("id", syncHistoryId)
+      await safeUpsertWithExtendedColumns(
+        "sync_history",
+        [{
+          id: syncHistoryId,
+          user_id: userId,
+          status: syncStatus,
+          completed_at: new Date().toISOString(),
+          accounts_synced: adAccounts.length,
+          campaigns_synced: totalCampaigns,
+          metrics_synced: totalMetrics,
+          error_message: apiErrors.length > 0 ? apiErrors.join("; ") : null,
+          sync_coverage: coverageByAccount,
+          partial_failures: partialFailures,
+          sync_version: SYNC_VERSION,
+        }],
+        "id",
+        ["sync_coverage", "partial_failures", "sync_version"]
+      )
     }
 
     const summary = {
       sync_id: syncId,
-      status: apiErrors.length > 0 ? "partial_success" : "success",
-      message: `✅ Sync concluído: ${adAccounts.length} contas, ${totalCampaigns} campanhas, ${totalMetrics} métricas diárias, ${totalDemographics} demográficos.`,
+      sync_version: SYNC_VERSION,
+      status: syncStatus,
+      message: `Sync concluído: ${adAccounts.length} contas, ${totalCampaigns} campanhas, ${totalMetrics} métricas diárias, ${totalDemographics} demográficos.`,
       accounts: adAccounts.length,
       campaigns: totalCampaigns,
       metrics: totalMetrics,
       demographic_records: totalDemographics,
+      coverage: coverageByAccount,
+      partial_failures: partialFailures,
       errors: apiErrors,
       timestamp: new Date().toISOString()
     }
 
-    console.log(`[SYNC ${syncId}] Concluído:`, JSON.stringify(summary))
+    console.log(`[SYNC ${syncId}] Concluído:`, JSON.stringify({ status: summary.status, accounts: summary.accounts, campaigns: summary.campaigns, metrics: summary.metrics, partial_failures: partialFailures.length }))
 
     return new Response(JSON.stringify(summary), {
       headers: { ...corsHeaders, "Content-Type": "application/json" }
@@ -1636,7 +1665,7 @@ serve(async (req) => {
 
   } catch (error: any) {
     console.error(`[SYNC ${syncId}] ERRO FATAL:`, error.message)
-    
+
     if (syncHistoryId) {
       await supabase.from("sync_history").update({
         status: "error",
@@ -1645,19 +1674,20 @@ serve(async (req) => {
       }).eq("id", syncHistoryId)
     }
 
-    try {
-      await supabase.from("meta_ads_configs").update({
-        last_heartbeat_at: new Date().toISOString(),
-        last_heartbeat_status: "error",
-        last_heartbeat_summary: { error: error.message, sync_id: syncId }
-      }).neq("id", "00000000-0000-0000-0000-000000000000")
-    } catch(_) {}
+    // Somente marca erro nos user_ids realmente envolvidos nesta execução (nunca sobrescreve globalmente)
+    if (involvedUserIds.length > 0) {
+      try {
+        await supabase.from("meta_ads_configs").update({
+          last_heartbeat_at: new Date().toISOString(),
+          last_heartbeat_status: "error",
+          last_heartbeat_summary: { error: error.message, sync_id: syncId, sync_version: SYNC_VERSION }
+        }).in("user_id", involvedUserIds)
+      } catch (_) {}
+    }
 
-    // Return status 500 with detailed error so the frontend can display it
     return new Response(JSON.stringify({ error: error.stack || error.message, sync_id: syncId }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
       status: 500
     })
   }
 })
-

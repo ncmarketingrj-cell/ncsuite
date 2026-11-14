@@ -79,22 +79,23 @@ async function getCampaignMetrics(campaignId: string, timeWindow: string) {
 }
 
 // ─── Calcular valor atual de uma métrica ──────────────────────────────────────
-function calculateMetricValue(metrics: any[], metricKey: string): number {
-  if (metrics.length === 0) return 0
+function calculateMetricValue(metrics: any[], metricKey: string): number | null {
+  if (metrics.length === 0) return null
 
-  const totalCost = metrics.reduce((s, m) => s + (m.cost || 0), 0)
-  const totalConv = metrics.reduce((s, m) => s + (m.conversions || 0), 0)
-  const totalClicks = metrics.reduce((s, m) => s + (m.clicks || 0), 0)
-  const totalImpressions = metrics.reduce((s, m) => s + (m.impressions || 0), 0)
+  const totalCost = metrics.reduce((s, m) => s + Number(m.cost || 0), 0)
+  const totalConv = metrics.reduce((s, m) => s + Number(m.conversions || 0), 0)
+  const totalClicks = metrics.reduce((s, m) => s + Number(m.inline_link_clicks ?? m.clicks ?? 0), 0)
+  const totalImpressions = metrics.reduce((s, m) => s + Number(m.impressions || 0), 0)
+  const totalPurchaseValue = metrics.reduce((s, m) => s + Number(m.purchase_value || 0), 0)
 
   switch (metricKey) {
     case "cpl":
-    case "cpa": return totalConv > 0 ? totalCost / totalConv : 0
-    case "ctr": return totalImpressions > 0 ? (totalClicks / totalImpressions) * 100 : 0
+    case "cpa": return totalConv > 0 ? totalCost / totalConv : null
+    case "ctr": return totalImpressions > 0 ? (totalClicks / totalImpressions) * 100 : null
     case "spend": return totalCost
-    case "roas": return totalCost > 0 ? (totalConv * 50) / totalCost : 0
-    case "cpc": return totalClicks > 0 ? totalCost / totalClicks : 0
-    default: return 0
+    case "roas": return totalCost > 0 && totalPurchaseValue > 0 ? totalPurchaseValue / totalCost : null
+    case "cpc": return totalClicks > 0 ? totalCost / totalClicks : null
+    default: return null
   }
 }
 
@@ -321,6 +322,7 @@ serve(async (req) => {
         if (metrics.length === 0) continue
 
         const currentValue = calculateMetricValue(metrics, rule.metric)
+        if (currentValue === null) continue
         const isTriggered = evaluateCondition(currentValue, rule.condition, rule.value)
 
         if (!isTriggered) continue

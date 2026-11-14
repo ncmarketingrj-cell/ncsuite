@@ -477,7 +477,7 @@ export default function SocialMediaPage() {
             {isLoadingPlanner ? "..." : stats.scheduledCount}
           </div>
           <p className="text-[10px] text-muted-foreground mt-0.5">
-            {stats.metaScheduledCount} no Meta Business • {stats.pendingCount} pendente(s)
+            {stats.metaScheduledCount} no Facebook + fila NC Suite • {stats.pendingCount} pendente(s) (IG nativo não listado pela API)
           </p>
         </div>
 
@@ -710,6 +710,7 @@ export default function SocialMediaPage() {
             <BestPostingTimesHeatmapView
               matrix={heatmapMatrix}
               hasData={hasPostsForHeatmap}
+              sampleSize={plannerData?.heatmapSampleSize || 0}
               topSlots={topTimeSlots}
               onScheduleAtSlot={(_dayName, hour) => openNewPostForDate(new Date(), hour)}
             />
@@ -1425,11 +1426,12 @@ function InstagramFeedSimulatorView({
 interface HeatmapProps {
   matrix: number[][];
   hasData: boolean;
+  sampleSize?: number;
   topSlots: BestSlotItem[];
   onScheduleAtSlot: (dayName: string, hour: number) => void;
 }
 
-function BestPostingTimesHeatmapView({ matrix, hasData, topSlots, onScheduleAtSlot }: HeatmapProps) {
+function BestPostingTimesHeatmapView({ matrix, hasData, sampleSize = 0, topSlots, onScheduleAtSlot }: HeatmapProps) {
   const days = ["Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"];
   const hours = Array.from({ length: 24 }, (_, i) => i);
 
@@ -1442,7 +1444,9 @@ function BestPostingTimesHeatmapView({ matrix, hasData, topSlots, onScheduleAtSl
             Mapa de Calor Real: Horários de Maior Engajamento
           </h3>
           <p className="text-xs text-muted-foreground mt-0.5">
-            Calculado exclusivamente com base nos horários e interações reais das publicações carregadas da Meta.
+            Calculado exclusivamente sobre os horários e interações reais de{" "}
+            <strong className="text-foreground font-mono">{sampleSize}</strong>{" "}
+            publicações carregadas da Meta (sem interpolação).
           </p>
         </div>
 
@@ -1632,7 +1636,7 @@ function PerformanceLeaderboardView({ posts, onSelectPost }: PerformanceViewProp
                         <span className="text-xs font-semibold capitalize text-foreground">{post.platform}</span>
                       </td>
                       <td className="py-3 px-3 font-mono font-bold text-foreground">
-                        {post.reach_count.toLocaleString("pt-BR")}
+                        {post.reach_count > 0 ? post.reach_count.toLocaleString("pt-BR") : "—"}
                       </td>
                       <td className="py-3 px-3 font-mono text-foreground">
                         {post.likes_count.toLocaleString("pt-BR")}
@@ -2339,7 +2343,9 @@ function DeviceMockupModal({
               </div>
               <div>
                 <span className="block text-[11px]">Alcance</span>
-                <span className="font-bold text-foreground">{post.reach_count.toLocaleString("pt-BR")}</span>
+                <span className="font-bold text-foreground">
+                  {post.reach_count > 0 ? post.reach_count.toLocaleString("pt-BR") : "Indisp."}
+                </span>
               </div>
               <div>
                 <span className="block text-[11px]">Shares/Salvos</span>

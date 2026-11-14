@@ -1,8 +1,15 @@
 // supabase/functions/get-meta-billing/index.ts
-// NC Performance Suite — Dados de Cobrança das Contas Meta Ads
+// NC Performance Suite — Dados de Cobrança das Contas Meta Ads (Paginado, Normalizado & Sem Omissões)
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.43.1"
+import {
+  META_GRAPH_BASE,
+  metaFetchJsonWithRetry,
+  metaFetchPaginatedWithStatus,
+  normalizeMetaBillingAccount,
+  parseMetaMoneyMinorUnit,
+} from "../_shared/metaCore.ts"
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -10,28 +17,28 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 }
 
-const META_API_BASE = "https://graph.facebook.com/v21.0"
+const META_API_BASE = META_GRAPH_BASE
 
 const supabase = createClient(
   Deno.env.get("SUPABASE_URL")!,
   Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
 )
 
-async function metaGet(path: string, token: string, params: Record<string, string> = {}) {
+async function metaGetJson(path: string, token: string, params: Record<string, string> = {}) {
   const url = new URL(`${META_API_BASE}${path}`)
   url.searchParams.set("access_token", token)
   for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v)
-  const res = await fetch(url.toString())
-  const data = await res.json()
-  if (data.error) throw new Error(`Meta API [${path}]: ${data.error.message}`)
-  return data
+  const res = await metaFetchJsonWithRetry(url.toString(), { maxRetries: 3, baseDelayMs: 500 })
+  if (!res.ok || res.data?.error) {
+    throw new Error(res.error || res.data?.error?.message || `Meta API HTTP ${res.statusCode}`)
+  }
+  return res.data
 }
 
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders })
 
   try {
-    // ── Auth ─────────────────────────────────────────────────────────────────
     const authHeader = req.headers.get("Authorization")
     if (!authHeader?.startsWith("Bearer ")) {
       return new Response(JSON.stringify({ error: "Não autorizado." }), {
@@ -47,55 +54,49 @@ serve(async (req) => {
       })
     }
 
-    // ── Token Meta ────────────────────────────────────────────────────────────
-    // MESMO padrão do sync-meta-ads: busca qualquer token disponível na tabela,
-    // SEM filtrar por user_id — o token pode estar salvo sob o user_id do admin/master
-    // e o usuário logado ter um UUID diferente. O sync-meta-ads já usa esse padrão.
-    const { data: config } = await supabase
+    const { data: configs } = await supabase
       .from("meta_ads_configs")
-      .select("access_token")
+      .select("access_token, user_id")
       .not("access_token", "is", null)
-      .maybeSingle()
+      .order("created_at", { ascending: false })
 
-    if (!config?.access_token) {
+    if (!configs || configs.length === 0) {
       return new Response(JSON.stringify({ accounts: [], error: "Token Meta Ads não configurado. Acesse Configurações → Integrações." }), {
         status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
       })
     }
 
-    const token = config.access_token
+    // Agrega contas de todos os tokens configurados sem deduplicação indevida
+    const accountEntries: { acc: any; token: string }[] = []
+    const seenIds = new Set<string>()
+    const globalWarnings: string[] = []
 
-    // ── Busca todas as contas vinculadas ─────────────────────────────────────
-    const accountsData = await metaGet("/me/adaccounts", token, {
-      fields: "id,name,currency,account_status",
-      limit: "100",
-    })
+    for (const cfg of configs) {
+      if (!cfg.access_token) continue
+      const accountsRes = await metaFetchPaginatedWithStatus("/me/adaccounts", cfg.access_token, {
+        fields: "id,name,currency,account_status,disable_reason",
+        limit: "100",
+      }, { maxRetries: 3, baseDelayMs: 500, maxPages: 50 })
 
-    const accounts: any[] = accountsData.data ?? []
+      if (!accountsRes.ok || accountsRes.truncated) {
+        globalWarnings.push(`Listagem de contas (${cfg.user_id}): ${accountsRes.error || "paginação truncada"}`)
+      }
 
-    if (accounts.length === 0) {
-      return new Response(JSON.stringify({ accounts: [] }), {
+      for (const acc of accountsRes.data) {
+        if (!acc?.id || seenIds.has(acc.id)) continue
+        seenIds.add(acc.id)
+        accountEntries.push({ acc, token: cfg.access_token })
+      }
+    }
+
+    if (accountEntries.length === 0) {
+      return new Response(JSON.stringify({ accounts: [], warnings: globalWarnings }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       })
     }
 
-    // ── Busca billing de cada conta em paralelo ───────────────────────────────
-    // Campos separados em dois grupos:
-    // - safeFields: universais, não exigem permissão especial
-    // - extendedFields: podem falhar se o token não tiver ads_management
-    const safeFields = "id,name,currency,amount_spent,balance,spend_cap,is_prepay_account"
-    const extendedFields = "funding_source_details,bill_amount_immature"
-
-    // Meta retorna amount_spent e balance na menor unidade (centavos em BRL),
-    // salvo quando string já traz separador decimal.
-    const parseAmount = (v: any): number | null => {
-      if (v === undefined || v === null || v === "") return null
-      const s = String(v).trim()
-      if (s === "0") return 0
-      const n = parseFloat(s)
-      if (isNaN(n)) return null
-      return s.includes(".") ? n : n / 100
-    }
+    const safeFields = "id,name,currency,account_status,disable_reason,amount_spent,balance,spend_cap,is_prepay_account"
+    const extendedFields = "funding_source_details,bill_amount_immature,min_billing_threshold"
 
     const FUNDING_CODE_LABEL: Record<string, string> = {
       "1": "Cartão de Crédito",
@@ -106,79 +107,102 @@ serve(async (req) => {
     }
 
     const results = await Promise.allSettled(
-      accounts.map(async (acc: any) => {
-        const accountId = acc.id // já vem no formato "act_XXXXXX"
+      accountEntries.map(async ({ acc, token }) => {
+        const accountId = acc.id
+        const permissionGaps: string[] = []
 
-        // 1) Campos seguros — não devem falhar para nenhuma conta
-        let accountBilling: any = { id: accountId, name: acc.name, currency: acc.currency }
-        try {
-          const res = await metaGet(`/${accountId}`, token, { fields: safeFields })
-          Object.assign(accountBilling, res)
-        } catch (e) {
-          accountBilling._safe_error = (e as Error).message
+        const accountBilling: any = {
+          id: accountId,
+          name: acc.name,
+          currency: acc.currency || "BRL",
+          account_status: acc.account_status,
+          disable_reason: acc.disable_reason,
         }
 
-        // 2) Campos estendidos — tenta, mas ignora se o token não tiver permissão
         try {
-          const res = await metaGet(`/${accountId}`, token, { fields: extendedFields })
+          const res = await metaGetJson(`/${accountId}`, token, { fields: safeFields })
+          Object.assign(accountBilling, res)
+        } catch (e: any) {
+          permissionGaps.push(`basic_billing: ${e?.message || "indisponível"}`)
+        }
+
+        try {
+          const res = await metaGetJson(`/${accountId}`, token, { fields: extendedFields })
           if (res.funding_source_details) accountBilling.funding_source_details = res.funding_source_details
           if (res.bill_amount_immature !== undefined) accountBilling.bill_amount_immature = res.bill_amount_immature
-        } catch {
-          // sem permissão para billing avançado — normal em tokens de leitura
+          if (res.min_billing_threshold !== undefined) accountBilling.min_billing_threshold = res.min_billing_threshold
+        } catch (e: any) {
+          permissionGaps.push(`extended_billing: ${e?.message || "permissão ads_management/financeira ausente"}`)
         }
 
-        // 3) Histórico de transações (últimas 50)
-        let transactions: any[] = []
-        try {
-          const txData = await metaGet(`/${accountId}/transactions`, token, {
-            fields: "id,amount,billing_reason,currency,status,time_created,payment_option",
-            limit: "50",
-          })
-          transactions = txData.data ?? []
-        } catch {
-          // contas sem histórico ou sem permissão — ignora
+        const txRes = await metaFetchPaginatedWithStatus(`/${accountId}/transactions`, token, {
+          fields: "id,amount,billing_reason,currency,status,time_created,payment_option",
+          limit: "50",
+        }, { maxRetries: 2, baseDelayMs: 500, maxPages: 5 })
+
+        if (!txRes.ok || txRes.truncated) {
+          permissionGaps.push(`transactions: ${txRes.error || "histórico truncado"}`)
         }
 
-        const normalizedFunding = accountBilling.funding_source_details
+        const norm = normalizeMetaBillingAccount(accountBilling, permissionGaps)
+        const baseFunding = accountBilling.funding_source_details
           ? {
               ...accountBilling.funding_source_details,
-              is_prepay_account: Boolean(accountBilling.is_prepay_account),
+              is_prepay_account: Boolean(norm.isPrepayAccount),
               type_label:
                 FUNDING_CODE_LABEL[String(accountBilling.funding_source_details.type ?? "")] ||
                 String(accountBilling.funding_source_details.type || "Não informado"),
             }
-          : accountBilling.is_prepay_account !== undefined
-          ? { is_prepay_account: Boolean(accountBilling.is_prepay_account) }
-          : null
+          : norm.isPrepayAccount !== null
+          ? { is_prepay_account: Boolean(norm.isPrepayAccount) }
+          : {}
+
+        const normalizedFunding = {
+          ...baseFunding,
+          spend_cap_state: norm.spendCapState,
+        }
 
         const snapshot = {
-          user_id:          user.id,
-          ad_account_id:    accountId,
-          ad_account_name:  accountBilling.name ?? acc.name,
-          fetched_at:       new Date().toISOString(),
-          balance:          parseAmount(accountBilling.balance),
-          amount_spent:     parseAmount(accountBilling.amount_spent),
-          spend_cap:        parseAmount(accountBilling.spend_cap),
-          currency:         accountBilling.currency ?? acc.currency ?? "BRL",
-          funding_source:   normalizedFunding,
-          bill_immature:    parseAmount(accountBilling.bill_amount_immature),
-          transactions:     transactions.map(tx => ({
-            id:             tx.id,
-            amount:         parseAmount(tx.amount),
+          user_id: user.id,
+          ad_account_id: accountId,
+          ad_account_name: accountBilling.name ?? acc.name,
+          fetched_at: new Date().toISOString(),
+          balance: norm.balance,
+          amount_spent: norm.amountSpent,
+          spend_cap: norm.spendCap,
+          currency: norm.currency,
+          funding_source: Object.keys(normalizedFunding).length > 0 ? normalizedFunding : null,
+          bill_immature: norm.billImmature,
+          account_status: norm.accountStatus,
+          disable_reason: norm.disableReason,
+          min_billing_threshold: norm.minBillingThreshold,
+          permission_gaps: permissionGaps,
+          is_partial: permissionGaps.length > 0,
+          transactions: (txRes.data || []).map((tx: any) => ({
+            id: tx.id,
+            amount: parseMetaMoneyMinorUnit(tx.amount, tx.currency || norm.currency),
             billing_reason: tx.billing_reason,
-            currency:       tx.currency,
-            status:         tx.status,
-            created_at:     tx.time_created
-                              ? new Date(Number(tx.time_created) * 1000).toISOString()
-                              : null,
+            currency: tx.currency || norm.currency,
+            status: tx.status,
+            created_at: tx.time_created
+              ? new Date(Number(tx.time_created) * 1000).toISOString()
+              : null,
             payment_option: tx.payment_option ?? null,
           })),
         }
 
-        // Salva no banco
-        await supabase.from("billing_snapshots").insert(snapshot)
+        const { error: insertErr } = await supabase.from("billing_snapshots").insert(snapshot)
+        if (insertErr) {
+          // Fallback para schema sem colunas novas da migration
+          const { account_status: _a, disable_reason: _d, min_billing_threshold: _m, permission_gaps: _p, is_partial: _i, ...legacySnapshot } = snapshot
+          await supabase.from("billing_snapshots").insert(legacySnapshot)
+        }
 
-        return { ...snapshot, _raw: accountBilling }
+        return {
+          ...snapshot,
+          spend_cap_state: norm.spendCapState,
+          _raw: accountBilling,
+        }
       })
     )
 
@@ -190,7 +214,11 @@ serve(async (req) => {
       .filter(r => r.status === "rejected")
       .map(r => (r as PromiseRejectedResult).reason?.message)
 
-    return new Response(JSON.stringify({ accounts: successful, errors }), {
+    return new Response(JSON.stringify({
+      accounts: successful,
+      errors,
+      warnings: globalWarnings,
+    }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     })
 

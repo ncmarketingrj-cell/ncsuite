@@ -407,7 +407,7 @@ function TabGoals({ client, metrics }: { client: ClientFull; metrics: MetricRow[
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
           <GoalBar label="Leads/dia" current={avgPeriod ? Math.round(avgPeriod.leads) : null} goal={client.daily_leads_goal} color="bg-violet-500" />
           <GoalBar label="Compras/dia" current={avgPeriod ? parseFloat(avgPeriod.purchases.toFixed(1)) : null} goal={client.daily_purchases_goal} color="bg-emerald-500" />
-          <GoalBar label="ROAS" current={avgPeriod ? parseFloat(avgPeriod.roas.toFixed(2)) : null} goal={client.target_roas} color="bg-blue-500" />
+          <GoalBar label="ROAS" current={avgPeriod && avgPeriod.roas > 0 ? parseFloat(avgPeriod.roas.toFixed(2)) : null} goal={client.target_roas} color="bg-blue-500" />
           <GoalBar label="CPA máx (R$)" current={avgPeriod ? parseFloat(avgPeriod.cpa.toFixed(2)) : null} goal={client.target_cpa} inverse color="bg-amber-500" />
           <GoalBar label="CTR mín (%)" current={avgPeriod ? parseFloat(avgPeriod.ctr.toFixed(2)) : null} goal={client.target_ctr} unit="%" color="bg-cyan-500" />
           <GoalBar label="CPM máx (R$)" current={avgPeriod ? parseFloat(avgPeriod.cpm.toFixed(2)) : null} goal={client.target_cpm} inverse color="bg-rose-500" />

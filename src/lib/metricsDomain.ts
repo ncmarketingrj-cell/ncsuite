@@ -460,7 +460,6 @@ export function classifyMetaEvent(input: ClassifyMetaEventInput): EventClassific
   const opt = (input.optimizationGoal || "").toUpperCase();
   const obj = (input.rawObjective || "").toUpperCase();
   const dest = (input.destinationType || "").toUpperCase();
-  const name = (input.campaignName || "").toUpperCase();
   const actions = Array.isArray(input.actions) ? input.actions : [];
 
   // 1. Meta API results[0].indicator (fonte oficial de mais alta confiança)
@@ -509,12 +508,14 @@ export function classifyMetaEvent(input: ClassifyMetaEventInput): EventClassific
     return buildDetailFromCategory(rtUpper as MetaConversionCategory, input, "high", "result_type");
   }
 
-  // Também aceita rótulos em PT armazenados em result_type
+  // Também aceita rótulos em PT ou indicadores Meta exatos armazenados em result_type
   if (rtLower) {
     if (rtLower.includes("mensagem") || rtLower.includes("conversa") || rtLower.includes("whatsapp") || rtLower.includes("messaging")) {
       return buildDetailFromCategory("MESSAGES", input, "high", "result_type");
     }
-    if (rtLower.includes("perfil")) return buildDetailFromCategory("INSTAGRAM_PROFILE", input, "high", "result_type");
+    if (rtLower.includes("perfil") || rtLower.includes("profile_visit") || rtLower.includes("instagram_profile")) {
+      return buildDetailFromCategory("INSTAGRAM_PROFILE", input, "high", "result_type");
+    }
     if (rtLower.includes("página") || rtLower.includes("pagina") || rtLower.includes("landing_page")) {
       return buildDetailFromCategory("LANDING_PAGE_VIEWS", input, "high", "result_type");
     }
@@ -530,7 +531,7 @@ export function classifyMetaEvent(input: ClassifyMetaEventInput): EventClassific
     if (rtLower.includes("thruplay") || rtLower.includes("vídeo") || rtLower.includes("video")) {
       return buildDetailFromCategory("VIDEO_VIEWS", input, "high", "result_type");
     }
-    if (rtLower.includes("engajamento") || rtLower.includes("curtida")) {
+    if (rtLower.includes("engajamento") || rtLower.includes("curtida") || rtLower.includes("post_engagement")) {
       return buildDetailFromCategory("ENGAGEMENT", input, "high", "result_type");
     }
     if (rtLower.includes("clique") || rtLower.includes("link_click")) {
@@ -574,61 +575,14 @@ export function classifyMetaEvent(input: ClassifyMetaEventInput): EventClassific
   }
 
   if (obj === "OUTCOME_LEADS" || obj === "LEAD_GENERATION") {
-    // Em alguns fluxos antigos, campanhas de WhatsApp podem usar OUTCOME_LEADS com "MSG/WPP" no nome
-    if (/(^|[^A-Z])(MSG|WPP|WHATSAPP|MENSAGEM|MENSAGENS)([^A-Z]|$)/.test(name)) {
-      return buildDetailFromCategory("MESSAGES", input, "medium", "meta_objective");
-    }
     return buildDetailFromCategory("LEADS", input, "medium", "meta_objective");
   }
 
   if (obj === "OUTCOME_TRAFFIC" || obj === "LINK_CLICKS") {
-    if (name.includes("PERFIL") || name.includes("INSTA") || name.includes("TRAFEGO NC") || name.includes("TRÁFEGO NC")) {
-      return buildDetailFromCategory("INSTAGRAM_PROFILE", input, "medium", "meta_objective");
-    }
-    if (name.includes("SITE") || name.includes("LP") || name.includes("LANDING") || name.includes("CARDAPIO") || name.includes("CARDÁPIO")) {
-      return buildDetailFromCategory("LANDING_PAGE_VIEWS", input, "medium", "meta_objective");
-    }
     return buildDetailFromCategory("LINK_CLICKS", input, "medium", "meta_objective");
   }
 
-  if (obj === "OUTCOME_ENGAGEMENT") {
-    if (name.includes("PERFIL") || name.includes("INSTA") || name.includes("SEGUIDOR")) {
-      return buildDetailFromCategory("INSTAGRAM_PROFILE", input, "medium", "name_heuristic");
-    }
-    if (name.includes("SITE") || name.includes("LP") || name.includes("LANDING")) {
-      return buildDetailFromCategory("LANDING_PAGE_VIEWS", input, "medium", "name_heuristic");
-    }
-    if (name.includes("CURTIDA") || name.includes("ENGAJAMENTO") || name.includes("POST")) {
-      return buildDetailFromCategory("ENGAGEMENT", input, "medium", "name_heuristic");
-    }
-    // No Meta ODIN, OUTCOME_ENGAGEMENT sem sinal contrário costuma ser Mensagens (WhatsApp/Direct)
-    return buildDetailFromCategory("MESSAGES", input, "medium", "meta_objective");
-  }
-
-  // 5. Heurísticas de nome explícitas (somente quando metadados Meta não resolveram)
-  if (/(^|[^A-Z])(MSG|WPP|WHATSAPP|MENSAGEM|MENSAGENS|DIRECT|CONVERSA)([^A-Z]|$)/.test(name)) {
-    return buildDetailFromCategory("MESSAGES", input, "low", "name_heuristic");
-  }
-  if (/PERFIL|INSTAGRAM|SEGUIDOR|TRAFEGO NC|TRÁFEGO NC/.test(name)) {
-    return buildDetailFromCategory("INSTAGRAM_PROFILE", input, "low", "name_heuristic");
-  }
-  if (/ALCANCE|RECONHECIMENTO|AWARENESS|DIVULGA[ÇC][ÃA]O/.test(name)) {
-    return buildDetailFromCategory("REACH", input, "low", "name_heuristic");
-  }
-  if (/VIDEO|VÍDEO|THRUPLAY/.test(name)) {
-    return buildDetailFromCategory("VIDEO_VIEWS", input, "low", "name_heuristic");
-  }
-  if (/SITE|LANDING|CARDAPIO|CARDÁPIO|DESTINO/.test(name)) {
-    return buildDetailFromCategory("LANDING_PAGE_VIEWS", input, "low", "name_heuristic");
-  }
-  if (/COMPRA|VENDA|PURCHASE|ECOMMERCE/.test(name)) {
-    return buildDetailFromCategory("PURCHASES", input, "low", "name_heuristic");
-  }
-  if (/LEAD|CADASTRO|FORMULARIO|FORMULÁRIO|CONSIGNADO/.test(name)) {
-    return buildDetailFromCategory("LEADS", input, "low", "name_heuristic");
-  }
-
-  // Ambíguo / Desconhecido: NÃO inventa lead/conversa!
+  // Sem optimization_goal/actions confirmando conversas, nunca forcar OUTCOME_ENGAGEMENT nem inferir por nome de campanha!
   return buildDetailFromCategory("UNKNOWN", input, "unknown", "fallback");
 }
 
@@ -638,7 +592,7 @@ export function classifyMetaEvent(input: ClassifyMetaEventInput): EventClassific
 
 export function roundCurrency(value: number): number {
   if (!Number.isFinite(value)) return 0;
-  return Math.round((value + Number.EPSILON) * 100) / 100;
+  return Math.round((value + 1e-9) * 100) / 100;
 }
 
 export function roundPercent(value: number, decimals = 2): number {
@@ -802,7 +756,9 @@ export interface WeightedAggregateSummary {
   totalClicks: number;
   totalImpressions: number;
   reachEstimateSum: number;
+  accountDeduplicatedReach: number | null;
   hasDeduplicatedReach: boolean;
+  reachLabel: string;
   ctr: number | null;
   cpm: number | null;
   cpc: number | null;
@@ -819,7 +775,10 @@ export interface WeightedAggregateSummary {
   groupsByCategory: EventGroupAggregate[];
 }
 
-export function computeWeightedAggregates(rows: RawCampaignMetricRow[]): WeightedAggregateSummary {
+export function computeWeightedAggregates(
+  rows: RawCampaignMetricRow[],
+  options: { deduplicatedAccountReach?: number | null } = {}
+): WeightedAggregateSummary {
   const normalized = rows.map(normalizeCampaignItem);
 
   let totalMediaSpend = 0;
@@ -882,12 +841,29 @@ export function computeWeightedAggregates(rows: RawCampaignMetricRow[]): Weighte
   const nonZeroGroups = groupsByCategory.filter((g) => g.spend > 0 || g.results > 0);
   const hasMixedObjectives = nonZeroGroups.length > 1;
 
+  const dedupReach =
+    options.deduplicatedAccountReach !== undefined &&
+    options.deduplicatedAccountReach !== null &&
+    Number.isFinite(options.deduplicatedAccountReach) &&
+    options.deduplicatedAccountReach >= 0
+      ? options.deduplicatedAccountReach
+      : null;
+  const singleCampDedup = dedupReach === null && normalized.length === 1 && Boolean(normalized[0]?.reachIsDeduplicated);
+  const hasDeduplicatedReach = dedupReach !== null || singleCampDedup;
+  const reachLabel = dedupReach !== null
+    ? "Alcance da conta (deduplicado)"
+    : singleCampDedup
+    ? "Alcance da campanha"
+    : "Alcance (soma não deduplicada por campanha)";
+
   return {
     totalMediaSpend,
     totalClicks,
     totalImpressions,
     reachEstimateSum,
-    hasDeduplicatedReach: normalized.length === 1 && Boolean(normalized[0]?.reachIsDeduplicated),
+    accountDeduplicatedReach: dedupReach ?? (singleCampDedup ? normalized[0].reach : null),
+    hasDeduplicatedReach,
+    reachLabel,
     ctr: computeCtr(totalClicks, totalImpressions),
     cpm: computeCpm(totalMediaSpend, totalImpressions),
     cpc: computeCpc(totalMediaSpend, totalClicks),
@@ -925,7 +901,7 @@ export interface ReportSnapshot {
 }
 
 function fmtBRL(v: number): string {
-  return v.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return roundCurrency(v).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 function fmtInt(v: number): string {
@@ -949,11 +925,14 @@ export function buildReportSnapshot(params: {
   source?: string;
   generatedAt?: string;
   campaigns: RawCampaignMetricRow[];
+  deduplicatedAccountReach?: number | null;
   mode?: "standard" | "objective" | "campaigns" | "complete";
   agencyName?: string;
 }): ReportSnapshot {
   const periodInfo = formatPeriodLabel(params.dateFrom, params.dateTo);
-  const summary = computeWeightedAggregates(params.campaigns);
+  const summary = computeWeightedAggregates(params.campaigns, {
+    deduplicatedAccountReach: params.deduplicatedAccountReach,
+  });
   const items = summary.groupsByCategory.flatMap((g) => g.items);
   const mode = params.mode || "standard";
   const storeDisplay = params.clientName && params.clientName !== "Consolidado"

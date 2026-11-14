@@ -1,4 +1,10 @@
 import { supabase } from "@/integrations/supabase-external/client";
+import { formatCurrencyBRLStrict } from "@/lib/metaIntegrationCore";
+
+function fmtBRLWithSymbol(v: number | null | undefined): string {
+  const f = formatCurrencyBRLStrict(v ?? null);
+  return f ? `R$ ${f}` : "R$ 0,00";
+}
 
 export interface ReportCampaignItem {
   id: string;
@@ -944,25 +950,28 @@ export function renderReportTemplateText(params: {
   isVehicleContext?: boolean;
   salesRevenue?: string;
   salesOrders?: string;
+  accountPeriodReach?: number | null;
 }): string {
   const {
     templateText,
     campaigns,
-    clientName = "LumaCar Multimarcas",
+    clientName = "Cliente",
     periodText = "Período Selecionado",
     reportTitlePrefix,
     agencyName = "NC AGÊNCIA",
     reportLevel = "campaign",
     isVehicleContext = true,
-    salesRevenue = "25.538,08",
-    salesOrders = "244",
+    salesRevenue = "",
+    salesOrders = "",
+    accountPeriodReach = null,
   } = params;
 
   const selected = campaigns.filter((c) => c.selected);
   if (selected.length === 0) return "";
 
   const totalCost = selected.reduce((sum, c) => sum + c.cost, 0);
-  const totalReach = selected.reduce((sum, c) => sum + c.reach, 0);
+  const summedReach = selected.reduce((sum, c) => sum + c.reach, 0);
+  const totalReach = accountPeriodReach && accountPeriodReach > 0 ? accountPeriodReach : summedReach;
   const totalImps = selected.reduce((sum, c) => sum + c.impressions, 0);
 
   const groupedTypes = new Map<
@@ -1019,12 +1028,12 @@ export function renderReportTemplateText(params: {
   text = text.replace(/\{\{TOTAL_CAMPANHAS\}\}/g, selected.length.toString());
   text = text.replace(
     /\{\{INVESTIMENTO\}\}/g,
-    `R$ ${totalCost.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+    fmtBRLWithSymbol(totalCost)
   );
   text = text.replace(/\{\{TOTAL_RESULTADOS\}\}/g, totalResults.toLocaleString("pt-BR"));
   text = text.replace(
     /\{\{CPA_MEDIO\}\}/g,
-    `R$ ${avgCpa.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+    avgCpa > 0 ? fmtBRLWithSymbol(avgCpa) : "Não calculável"
   );
   text = text.replace(/\{\{ALCANCE_TOTAL\}\}/g, totalReach.toLocaleString("pt-BR"));
   text = text.replace(/\{\{IMPRESSOES_TOTAIS\}\}/g, totalImps.toLocaleString("pt-BR"));
@@ -1065,9 +1074,9 @@ export function renderReportTemplateText(params: {
         : `*Campanha de Mensagens / WhatsApp:*`;
       const metricNoun = isVehicleContext ? "conversas / leads" : "conversas";
       const costLine = cplMsg !== null
-        ? `R$ ${cplMsg.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+        ? fmtBRLWithSymbol(cplMsg)
         : "Não calculável (0 resultados)";
-      const block = `${heading}\n Investimento: R$ ${costMsg.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n Total de ${metricNoun}: ${leadsMsg.toLocaleString("pt-BR")}\n Custo por resultado: ${costLine}`;
+      const block = `${heading}\n Investimento: ${fmtBRLWithSymbol(costMsg)}\n Total de ${metricNoun}: ${leadsMsg.toLocaleString("pt-BR")}\n Custo por resultado: ${costLine}`;
       text = text.replace(/\{\{BLOCO_VEICULOS\}\}/g, block);
     } else {
       text = text.replace(/\{\{BLOCO_VEICULOS\}\}/g, "");
@@ -1084,7 +1093,7 @@ export function renderReportTemplateText(params: {
         0
       );
       const cpmReach = impsReach > 0 ? (costReach / impsReach) * 1000 : 0;
-      const block = `*Campanha de Alcance e Impressões:*\nInvestimento: R$ ${costReach.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\nImpressões / Plays: ${impsReach.toLocaleString("pt-BR")}\nCPM: R$ ${cpmReach.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+      const block = `*Campanha de Alcance e Impressões:*\nInvestimento: ${fmtBRLWithSymbol(costReach)}\nImpressões / Plays: ${impsReach.toLocaleString("pt-BR")}\nCPM: ${fmtBRLWithSymbol(cpmReach)}`;
       text = text.replace(/\{\{BLOCO_ALCANCE\}\}/g, block);
     } else {
       text = text.replace(/\{\{BLOCO_ALCANCE\}\}/g, "");
@@ -1097,8 +1106,8 @@ export function renderReportTemplateText(params: {
     if (consCamps.length > 0) {
       const costCons = consCamps.reduce((s, c) => s + c.cost, 0);
       const leadsCons = consCamps.reduce((s, c) => s + (c.conversions > 0 ? c.conversions : 0), 0);
-      const cplCons = leadsCons > 0 ? costCons / leadsCons : 0;
-      const block = `*Campanha de consignado*\nTotal de leads: ${leadsCons.toLocaleString("pt-BR")}\nCusto por leads: R$ ${cplCons.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\nInvestimento: R$ ${costCons.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+      const cplCons = leadsCons > 0 ? costCons / leadsCons : null;
+      const block = `*Campanha de consignado*\nTotal de leads: ${leadsCons.toLocaleString("pt-BR")}\nCusto por leads: ${cplCons !== null ? fmtBRLWithSymbol(cplCons) : "Não calculável"}\nInvestimento: ${fmtBRLWithSymbol(costCons)}`;
       text = text.replace(/\{\{BLOCO_CONSIGNADO\}\}/g, block);
     } else {
       text = text.replace(/\{\{BLOCO_CONSIGNADO\}\}/g, "");
@@ -1114,7 +1123,7 @@ export function renderReportTemplateText(params: {
       const costProf = profCamps.reduce((s, c) => s + c.cost, 0);
       const visitsProf = profCamps.reduce((s, c) => s + Number(c.conversions || 0), 0);
       const cpvProf = visitsProf > 0 ? costProf / visitsProf : null;
-      const block = `*Campanha de Visitas ao Perfil:*\nInvestimento: R$ ${costProf.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\nVisitas ao perfil: ${visitsProf.toLocaleString("pt-BR")}\nCusto por visita: ${cpvProf !== null ? `R$ ${cpvProf.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : "Não calculável"}`;
+      const block = `*Campanha de Visitas ao Perfil:*\nInvestimento: ${fmtBRLWithSymbol(costProf)}\nVisitas ao perfil: ${visitsProf.toLocaleString("pt-BR")}\nCusto por visita: ${cpvProf !== null ? fmtBRLWithSymbol(cpvProf) : "Não calculável"}`;
       text = text.replace(/\{\{BLOCO_PERFIL\}\}/g, block);
     } else {
       text = text.replace(/\{\{BLOCO_PERFIL\}\}/g, "");
@@ -1133,7 +1142,7 @@ export function renderReportTemplateText(params: {
         0
       );
       const cpView = visitsViews > 0 ? costViews / visitsViews : null;
-      const block = `*Visualizações na Página / Cliques:*\nInvestimento: R$ ${costViews.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\nResultados: ${visitsViews.toLocaleString("pt-BR")} visitas\nCusto por visita: ${cpView !== null ? `R$ ${cpView.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : "Não calculável"}`;
+      const block = `*Visualizações na Página / Cliques:*\nInvestimento: ${fmtBRLWithSymbol(costViews)}\nResultados: ${visitsViews.toLocaleString("pt-BR")} visitas\nCusto por visita: ${cpView !== null ? fmtBRLWithSymbol(cpView) : "Não calculável"}`;
       text = text.replace(/\{\{BLOCO_PAGINA\}\}/g, block);
     } else {
       text = text.replace(/\{\{BLOCO_PAGINA\}\}/g, "");
@@ -1145,14 +1154,10 @@ export function renderReportTemplateText(params: {
     const numOrders = Number(String(salesOrders).replace(/\./g, "").replace(",", ".")) || 0;
     const parsedRevenue =
       Number(String(salesRevenue).replace(/[^\d.,]/g, "").replace(/\./g, "").replace(",", ".")) || 0;
-    const formattedRevenue =
-      parsedRevenue > 0
-        ? parsedRevenue.toLocaleString("pt-BR", {
-            minimumFractionDigits: 2,
-            maximumFractionDigits: 2,
-          })
-        : salesRevenue || "0,00";
-    const block = `*No site/Cardápio:*\n Faturamento Líquido: R$ ${formattedRevenue}\n Resultados: ${numOrders.toLocaleString("pt-BR")} pedidos finalizados`;
+    const block =
+      parsedRevenue > 0 || numOrders > 0
+        ? `*No site/Cardápio (informado pelo usuário):*\n Faturamento Líquido: ${fmtBRLWithSymbol(parsedRevenue)}\n Resultados: ${numOrders.toLocaleString("pt-BR")} pedidos finalizados`
+        : `*No site/Cardápio:* Dados não informados pelo usuário`;
     text = text.replace(/\{\{BLOCO_ECOMMERCE\}\}/g, block);
   }
 
@@ -1185,11 +1190,11 @@ export function renderReportTemplateText(params: {
 
       const cplFormatted =
         cpl !== null
-          ? `R$ ${cpl.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+          ? fmtBRLWithSymbol(cpl)
           : "Não calculável";
 
       typeText += `*${type}*\n`;
-      typeText += `   💵 Investimento: R$ ${data.cost.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n`;
+      typeText += `   💵 Investimento: ${fmtBRLWithSymbol(data.cost)}\n`;
       typeText += `   📈 ${resultLabel}: ${data.results.toLocaleString("pt-BR")}\n`;
       typeText += `   💲 ${costLabel}: ${cplFormatted}\n\n`;
     });
@@ -1216,9 +1221,9 @@ export function renderReportTemplateText(params: {
       const costUnit = isReach ? "CPM" : "CPA";
       const costFormatted =
         costPerRes !== null
-          ? `R$ ${costPerRes.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+          ? fmtBRLWithSymbol(costPerRes)
           : "Não calculável";
-      summaryText += `• *${c.name.toUpperCase()}*\n  💵 R$ ${c.cost.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} | 📈 ${resultValue.toLocaleString("pt-BR")} ${unitLabel} (${costUnit}: ${costFormatted})\n\n`;
+      summaryText += `• *${c.name.toUpperCase()}*\n  💵 ${fmtBRLWithSymbol(c.cost)} | 📈 ${resultValue.toLocaleString("pt-BR")} ${unitLabel} (${costUnit}: ${costFormatted})\n\n`;
     });
     text = text.replace(/\{\{LISTA_CAMPANHAS_RESUMO\}\}/g, summaryText.trim());
   }
@@ -1245,7 +1250,7 @@ export function renderReportTemplateText(params: {
       const platIcon = c.platform === "google" ? "🌐" : "🎯";
       const costFormatted =
         costPerRes !== null
-          ? `R$ ${costPerRes.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+          ? fmtBRLWithSymbol(costPerRes)
           : "Não calculável";
 
       listText += `${platIcon} *${c.name.toUpperCase()}*\n`;
@@ -1255,7 +1260,7 @@ export function renderReportTemplateText(params: {
         if (c.adSetName) listText += `   📦 Conjunto: ${c.adSetName}\n`;
         if (c.campaignName) listText += `   📁 Campanha: ${c.campaignName}\n`;
       }
-      listText += `   💵 Investimento: R$ ${c.cost.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n`;
+      listText += `   💵 Investimento: ${fmtBRLWithSymbol(c.cost)}\n`;
       listText += `   📈 Resultados: ${resultValue.toLocaleString("pt-BR")} ${isReach ? "impr." : ""}\n`;
       listText += `   💲 ${costLabel}: ${costFormatted}\n`;
       if (c.reach > 0) listText += `   👥 Alcance: ${c.reach.toLocaleString("pt-BR")}\n`;

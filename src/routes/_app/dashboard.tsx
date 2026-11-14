@@ -164,14 +164,14 @@ function Dashboard() {
           bestDay: null,
           avgDailyCost: 0,
           healthScore: 100,
-          totals: { cost: 0, conversions: 0, results: 0, clicks: 0, impressions: 0, reach: 0 },
+          totals: { cost: 0, conversions: 0, results: 0, clicks: 0, impressions: 0, reach: 0, accountReach: 0 },
           trends: { cost: "0%", costPositive: true, conversions: "0%", conversionsPositive: true, clicks: "0%", clicksPositive: true, cpl: "0%", cplPositive: true },
           cpl: 0
         };
       }
 
       let metricsQuery = (supabase as any).from("metrics").select(`
-        campaign_id, cost, conversions, impressions, clicks, reach, date,
+        campaign_id, cost, conversions, impressions, clicks, reach, date, result_type,
         campaigns(ad_account_id, client_id, name, objective)
       `).gte('date', prevStartStr).lte('date', endStr);
 
@@ -184,6 +184,22 @@ function Dashboard() {
       const metrics = (metricsData || []).map((m: any) =>
         calibrateCampaignMetricsArray(m.campaigns?.name || "", [m])[0] || m
       );
+
+      let accountReach = 0;
+      if (selectedAccountId !== "all" && selectedClientId === "all") {
+        try {
+          const { data: accPeriod } = await (supabase as any)
+            .from("meta_account_period_stats")
+            .select("reach")
+            .eq("ad_account_id", selectedAccountId)
+            .eq("start_date", startStr)
+            .eq("end_date", endStr)
+            .maybeSingle();
+          if (accPeriod?.reach) accountReach = Number(accPeriod.reach);
+        } catch {
+          // Tabela opcional antes da migration
+        }
+      }
 
       const chartMap = new Map();
       let currentPeriod = { cost: 0, results: 0, trueConversions: 0, clicks: 0, impressions: 0, reach: 0 };
@@ -203,10 +219,15 @@ function Dashboard() {
         const isCurrent = m.date >= startStr && m.date <= endStr;
         const isPrevious = m.date >= prevStartStr && m.date < startStr;
         
-        const objective = m.campaigns?.objective;
-        const campName = (m.campaigns?.name || "").toUpperCase();
-        const isMessagingCamp = campName.includes("MSG") || campName.includes("MENSAGEM") || campName.includes("WPP") || campName.includes("WHATSAPP") || campName.includes("DIRECT") || campName.includes("CONVERSA");
-        const isVanity = isMessagingCamp ? false : (objective ? ["OUTCOME_AWARENESS", "VIDEO_VIEWS", "OUTCOME_ENGAGEMENT", "LINK_CLICKS", "OUTCOME_TRAFFIC"].includes(objective) : false);
+        const objective = (m.campaigns?.objective || "").toUpperCase();
+        const storedType = (m.result_type || "").toUpperCase();
+        const isConversionGoal = ["MESSAGES", "LEADS", "PURCHASES"].includes(storedType);
+        const isExplicitNonLead = ["REACH", "VIDEO_VIEWS", "LINK_CLICKS", "INSTAGRAM_PROFILE", "LANDING_PAGE_VIEWS"].includes(storedType);
+        const isVanity = isConversionGoal
+          ? false
+          : isExplicitNonLead
+            ? true
+            : (objective ? ["OUTCOME_AWARENESS", "VIDEO_VIEWS", "OUTCOME_ENGAGEMENT", "LINK_CLICKS", "OUTCOME_TRAFFIC"].includes(objective) : false);
         
         if (isCurrent) {
           const date = m.date;
@@ -304,16 +325,12 @@ function Dashboard() {
       const cplPrev = previousPeriod.trueConversions > 0 ? previousPeriod.cost / previousPeriod.trueConversions : 0;
       const cplTrendVal = cplPrev === 0 ? 0 : ((cplCurr - cplPrev) / cplPrev) * 100;
 
-      const isVanity = (obj: string, name?: string) => {
-        const n = (name || "").toUpperCase();
-        if (n.includes("MSG") || n.includes("MENSAGEM") || n.includes("WPP") || n.includes("WHATSAPP") || n.includes("DIRECT") || n.includes("CONVERSA")) {
-          return false;
-        }
-        return ["OUTCOME_AWARENESS", "VIDEO_VIEWS", "OUTCOME_ENGAGEMENT", "LINK_CLICKS", "OUTCOME_TRAFFIC"].includes(obj);
+      const isVanity = (obj: string) => {
+        return ["OUTCOME_AWARENESS", "VIDEO_VIEWS", "OUTCOME_ENGAGEMENT", "LINK_CLICKS", "OUTCOME_TRAFFIC"].includes((obj || "").toUpperCase());
       };
 
       const riskReturn = campaignsData.map(c => {
-        const isVanityObjective = isVanity(c.objective, c.name);
+        const isVanityObjective = isVanity(c.objective);
         const cpa = c.trueConversions > 0 ? c.cost / c.trueConversions : c.cost;
         let type = "Estável";
         
@@ -350,7 +367,7 @@ function Dashboard() {
         bestDay,
         avgDailyCost,
         healthScore,
-        totals: { ...currentPeriod, conversions: currentPeriod.trueConversions },
+        totals: { ...currentPeriod, conversions: currentPeriod.trueConversions, accountReach },
         trends: {
           cost: calcTrend(currentPeriod.cost, previousPeriod.cost),
           costPositive: currentPeriod.cost > previousPeriod.cost,
@@ -798,12 +815,13 @@ function Dashboard() {
 
       {/* ─── RESUMO EXECUTIVO DA CONTA / CONSOLIDADO ─── */}
       {(() => {
-        const totals = performanceData?.totals || { cost: 0, clicks: 0, impressions: 0, conversions: 0, reach: 0 };
+        const totals = performanceData?.totals || { cost: 0, clicks: 0, impressions: 0, conversions: 0, reach: 0, accountReach: 0 };
         const ctr = totals.impressions > 0 ? (totals.clicks / totals.impressions) * 100 : 0;
         const cpc = totals.clicks > 0 ? totals.cost / totals.clicks : 0;
         const cpa = performanceData?.cpl || 0;
         const cpm = totals.impressions > 0 ? (totals.cost / totals.impressions) * 1000 : 0;
-        const reachVal = totals.reach || Math.round(totals.impressions * 0.75);
+        const hasAccountReach = (totals.accountReach || 0) > 0;
+        const reachVal = hasAccountReach ? totals.accountReach : totals.reach;
 
         return (
           <motion.div
@@ -851,8 +869,12 @@ function Dashboard() {
                 <span className="font-bold text-foreground">R$ {cpc.toFixed(2)}</span>
               </div>
               <div className="bg-white/[0.03] border border-white/10 px-3 py-1.5 rounded-xl">
-                <span className="text-muted-foreground text-[9px] uppercase tracking-wider block font-sans font-bold">Alcance Est.</span>
-                <span className="font-bold text-foreground">{reachVal.toLocaleString('pt-BR')}</span>
+                <span className="text-muted-foreground text-[9px] uppercase tracking-wider block font-sans font-bold">
+                  {hasAccountReach ? "Alcance (Conta)" : "Alcance (Soma)"}
+                </span>
+                <span className="font-bold text-foreground">
+                  {reachVal > 0 ? reachVal.toLocaleString('pt-BR') : "—"}
+                </span>
               </div>
             </div>
           </motion.div>

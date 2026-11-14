@@ -353,7 +353,22 @@ function CobrancasPage() {
                         <CreditCard className="h-5 w-5" />
                       </div>
                       <div>
-                        <h4 className="text-sm font-bold text-white">{snap.ad_account_name || snap.ad_account_id}</h4>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <h4 className="text-sm font-bold text-white">{snap.ad_account_name || snap.ad_account_id}</h4>
+                          {snap.account_status !== undefined && snap.account_status !== null && Number(snap.account_status) !== 1 && (
+                            <span className="text-[9px] font-bold uppercase px-2 py-0.5 rounded bg-destructive/15 text-destructive border border-destructive/30">
+                              Conta Status {snap.account_status}{snap.disable_reason ? ` (motivo ${snap.disable_reason})` : ""}
+                            </span>
+                          )}
+                          {(snap.is_partial || (Array.isArray(snap.permission_gaps) && snap.permission_gaps.length > 0)) && (
+                            <span
+                              title={Array.isArray(snap.permission_gaps) ? snap.permission_gaps.join(" | ") : "Dados parciais"}
+                              className="text-[9px] font-bold uppercase px-2 py-0.5 rounded bg-amber-500/15 text-amber-400 border border-amber-500/30"
+                            >
+                              Permissão parcial
+                            </span>
+                          )}
+                        </div>
                         <span className="text-[9px] font-mono text-muted-foreground uppercase bg-white/5 px-2 py-0.5 rounded mt-1 inline-block">
                           ID: {snap.ad_account_id}
                         </span>
@@ -396,15 +411,23 @@ function CobrancasPage() {
 
                     <div className="bg-white/[0.02] border border-white/5 rounded-xl p-3">
                       <span className="text-[9px] font-black text-muted-foreground/60 uppercase block">Limite de Faturamento</span>
-                      <p className="text-sm font-bold text-white mt-1">{snap.spend_cap !== null && snap.spend_cap !== undefined ? fmtBRL(snap.spend_cap, snap.currency) : "Sem teto"}</p>
+                      <p className="text-sm font-bold text-white mt-1">
+                        {snap.spend_cap !== null && snap.spend_cap !== undefined && Number(snap.spend_cap) > 0
+                          ? fmtBRL(snap.spend_cap, snap.currency)
+                          : funding?.spend_cap_state === "unavailable" || (snap.spend_cap === null && snap.is_partial)
+                          ? "Indisponível por permissão"
+                          : "Sem limite definido"}
+                      </p>
                     </div>
 
                     <div className="bg-white/[0.02] border border-white/5 rounded-xl p-3">
                       <span className="text-[9px] font-black text-muted-foreground/60 uppercase block">Forma de Pagamento</span>
                       <p className="text-xs font-bold text-white truncate mt-1">
-                        {funding
+                        {funding && (funding.type_label || funding.type !== undefined || funding.display_string)
                           ? `${funding.type_label || FUNDING_TYPE_LABEL[String(funding.type ?? "")] || "Conta Meta"}${funding.display_string ? ` (${funding.display_string})` : ""}`
-                          : "Não cadastrado"}
+                          : Array.isArray(snap.permission_gaps) && snap.permission_gaps.some((g: string) => g.includes("extended_billing"))
+                          ? "Indisponível por permissão"
+                          : "Não cadastrado / Não informado"}
                       </p>
                     </div>
                   </div>

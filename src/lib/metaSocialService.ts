@@ -1,7 +1,13 @@
 import { format, parseISO, subDays, addDays, differenceInCalendarDays } from "date-fns";
 import { supabase } from "@/integrations/supabase-external/client";
+import {
+  META_GRAPH_BASE,
+  mergeSocialCrosspostRecords,
+  metaFetchJsonWithRetry,
+  metaFetchPaginatedWithStatus,
+} from "./metaIntegrationCore";
 
-const META_API_BASE = "https://graph.facebook.com/v21.0";
+const META_API_BASE = META_GRAPH_BASE;
 
 export interface RealSocialAccount {
   page_id: string;
@@ -81,17 +87,31 @@ export interface RealSocialInsightsResult {
   posts: RealSocialPost[];
   heatmapMatrix: number[][];
   hasPostsForHeatmap: boolean;
+  heatmapSampleSize?: number;
+  apiLimitations?: string[];
   syncSource: "meta_graph_v21" | "no_token" | "api_error";
   errorMessage?: string;
 }
 
 async function fetchMetaJson(url: string): Promise<any> {
-  try {
-    const res = await fetch(url);
-    return await res.json();
-  } catch (err: any) {
-    return { error: { message: err?.message || "Erro de rede ao consultar Meta API" } };
+  const res = await metaFetchJsonWithRetry(url, { maxRetries: 2, baseDelayMs: 400 });
+  if (!res.ok) {
+    return res.data?.error ? res.data : { error: { message: res.error || "Erro ao consultar Meta API" } };
   }
+  return res.data;
+}
+
+async function fetchMetaPaginatedList(
+  endpoint: string,
+  token: string,
+  params: Record<string, string>,
+  maxPages = 10
+) {
+  return await metaFetchPaginatedWithStatus(endpoint, token, params, {
+    maxRetries: 2,
+    baseDelayMs: 400,
+    maxPages,
+  });
 }
 
 export async function getActiveMasterMetaToken(): Promise<string | null> {
@@ -144,11 +164,17 @@ export async function fetchLiveSocialAccounts(syncToDb = false): Promise<{
     };
   }
 
-  const meRes = await fetchMetaJson(
-    `${META_API_BASE}/me/accounts?fields=id,name,access_token,fan_count,followers_count,instagram_business_account{id,username,followers_count,profile_picture_url}&limit=100&access_token=${encodeURIComponent(masterToken)}`
+  const mePaginated = await fetchMetaPaginatedList(
+    "/me/accounts",
+    masterToken,
+    {
+      fields: "id,name,access_token,fan_count,followers_count,instagram_business_account{id,username,followers_count,profile_picture_url}",
+      limit: "100",
+    },
+    20
   );
 
-  if (meRes?.error || !Array.isArray(meRes?.data)) {
+  if (!mePaginated.ok && mePaginated.data.length === 0) {
     const mappedDb = ((dbPages || []) as any[])
       .filter((p) => p.page_id && !String(p.page_id).startsWith("mock_"))
       .map((p) => ({
@@ -164,11 +190,11 @@ export async function fetchLiveSocialAccounts(syncToDb = false): Promise<{
     return {
       accounts: mappedDb,
       masterToken,
-      error: meRes?.error?.message || "Não foi possível consultar páginas conectadas no Meta.",
+      error: mePaginated.error || "Não foi possível consultar páginas conectadas no Meta.",
     };
   }
 
-  const accounts: RealSocialAccount[] = meRes.data.map((p: any) => ({
+  const accounts: RealSocialAccount[] = mePaginated.data.map((p: any) => ({
     page_id: p.id,
     page_name: p.name,
     access_token: p.access_token || masterToken,
@@ -536,12 +562,12 @@ export async function fetchRealSocialInsights(params: {
           }
         }
 
-        // Posts reais do Instagram + métricas individuais reais (sem multiplicadores fictícios)
+        // Posts reais do Instagram + métricas individuais reais para todos os posts retornados
         const mediaItems = Array.isArray(igMediaRes?.data) ? igMediaRes.data : [];
-        const topMedia = mediaItems.slice(0, selectedPageId === "all" ? 5 : 15);
 
-        await Promise.all(
-          topMedia.map(async (item: any) => {
+        for (let i = 0; i < mediaItems.length; i += 10) {
+          await Promise.all(
+            mediaItems.slice(i, i + 10).map(async (item: any) => {
             let pReach = 0;
             let pViews = 0;
             let pSaved = 0;
@@ -617,15 +643,22 @@ export async function fetchRealSocialInsights(params: {
             });
           })
         );
+        }
       }
 
-      // 2. Insights & Postagens reais do Facebook Page
-      const [fbInsRes, fbPostsRes] = await Promise.all([
+      // 2. Insights & Postagens reais do Facebook Page (com paginação e alcance orgânico quando permitido)
+      const [fbInsRes, fbPostsPaginated] = await Promise.all([
         fetchMetaJson(
           `${META_API_BASE}/${acc.page_id}/insights?metric=page_views_total,page_post_engagements,page_daily_follows&period=day&since=${chartSince}&until=${untilExclusive}&access_token=${encodeURIComponent(pageToken)}`
         ),
-        fetchMetaJson(
-          `${META_API_BASE}/${acc.page_id}/posts?fields=id,message,created_time,full_picture,permalink_url,likes.summary(true),comments.summary(true),shares&limit=${selectedPageId === "all" ? 4 : 12}&access_token=${encodeURIComponent(pageToken)}`
+        fetchMetaPaginatedList(
+          `/${acc.page_id}/posts`,
+          pageToken,
+          {
+            fields: "id,message,created_time,full_picture,permalink_url,likes.summary(true),comments.summary(true),shares",
+            limit: selectedPageId === "all" ? "10" : "25",
+          },
+          selectedPageId === "all" ? 1 : 3
         ),
       ]);
 
@@ -649,11 +682,35 @@ export async function fetchRealSocialInsights(params: {
         }
       }
 
-      const fbPosts = Array.isArray(fbPostsRes?.data) ? fbPostsRes.data : [];
+      const fbPosts = Array.isArray(fbPostsPaginated?.data) ? fbPostsPaginated.data : [];
+      const fbPostMetrics = new Map<string, { reach: number; views: number }>();
+      for (let i = 0; i < fbPosts.length; i += 10) {
+        await Promise.all(
+          fbPosts.slice(i, i + 10).map(async (fp: any) => {
+            const ins = await fetchMetaJson(
+              `${META_API_BASE}/${fp.id}/insights?metric=post_impressions_unique,post_impressions&access_token=${encodeURIComponent(pageToken)}`
+            );
+            let reach = 0;
+            let views = 0;
+            if (Array.isArray(ins?.data)) {
+              for (const m of ins.data) {
+                const v = Number(m.values?.[0]?.value || 0);
+                if (m.name === "post_impressions_unique") reach = v;
+                if (m.name === "post_impressions") views = v;
+              }
+            }
+            fbPostMetrics.set(fp.id, { reach, views });
+          })
+        );
+      }
+
       for (const fp of fbPosts) {
         const likes = Number(fp.likes?.summary?.total_count || 0);
         const comments = Number(fp.comments?.summary?.total_count || 0);
         const shares = Number(fp.shares?.count || 0);
+        const fbm = fbPostMetrics.get(fp.id) || { reach: 0, views: 0 };
+        const totalInt = likes + comments + shares;
+        const engRate = fbm.reach > 0 ? (totalInt / fbm.reach) * 100 : 0;
         const msg = fp.message || "";
         const firstLine = msg.split("\n").find((l: string) => l.trim()) || "Publicação no Facebook";
 
@@ -669,10 +726,10 @@ export async function fetchRealSocialInsights(params: {
           comments_count: comments,
           shares_count: shares,
           saved_count: 0,
-          reach_count: 0,
-          views_count: 0,
-          total_interactions: likes + comments + shares,
-          engagement_rate: 0,
+          reach_count: fbm.reach,
+          views_count: fbm.views,
+          total_interactions: totalInt,
+          engagement_rate: engRate,
           media_url: fp.full_picture || null,
           thumbnail_url: fp.full_picture || null,
           permalink: fp.permalink_url || `https://facebook.com/${fp.id}`,
@@ -752,6 +809,10 @@ export async function fetchRealSocialInsights(params: {
     posts: allPosts,
     heatmapMatrix,
     hasPostsForHeatmap,
+    heatmapSampleSize: allPosts.filter((p) => Boolean(p.published_at)).length,
+    apiLimitations: [
+      "Instagram Graph API não expõe rascunhos/agendados nativos criados fora da plataforma.",
+    ],
     syncSource: "meta_graph_v21",
   };
 }
@@ -809,6 +870,8 @@ export interface PlannerSyncResult {
   igProfile: RealIgProfileDetails | null;
   heatmapMatrix: number[][];
   hasPostsForHeatmap: boolean;
+  heatmapSampleSize?: number;
+  apiLimitations?: string[];
   topTimeSlots: BestSlotItem[];
   metaScheduledCount: number;
   metaPublishedCount: number;
@@ -928,7 +991,7 @@ export async function fetchRealPlannerPosts(params: {
   const isSingle = selectedPageId !== "all";
   const targetAccounts = isSingle
     ? accounts.filter((a) => a.page_id === selectedPageId || a.instagram_account_id === selectedPageId)
-    : accounts.slice(0, 10);
+    : accounts;
 
   if (targetAccounts.length === 0) {
     return {
@@ -972,30 +1035,62 @@ export async function fetchRealPlannerPosts(params: {
   await Promise.all(
     targetAccounts.map(async (acc) => {
       const pageToken = acc.access_token || masterToken;
-      const fbLimit = isSingle ? 45 : 12;
-      const igLimit = isSingle ? 50 : 15;
+      const fbLimit = isSingle ? "50" : "25";
+      const igLimit = isSingle ? "50" : "25";
+      const pageDepth = isSingle ? 5 : 2;
 
-      // 1) Agendados no Meta (Facebook Page scheduled_posts + promotable_posts com scheduled_publish_time)
-      // 2) Publicados no Facebook (/posts)
-      // 3) Publicados no Instagram (/media) + Stories ativos (/stories)
+      // 1) Agendados no Meta (paginado)
+      // 2) Publicados no Facebook (/posts paginado)
+      // 3) Publicados no Instagram (/media paginado) + Stories ativos (/stories paginado)
       const [fbSchedRes, fbPromoRes, fbPubRes, igMediaRes, igStoriesRes] = await Promise.all([
-        fetchMetaJson(
-          `${META_API_BASE}/${acc.page_id}/scheduled_posts?fields=id,message,created_time,scheduled_publish_time,full_picture,permalink_url,is_published,attachments{media_type,type,url,media{image{src}},subattachments{media{image{src}}}}&limit=50&access_token=${encodeURIComponent(pageToken)}`
+        fetchMetaPaginatedList(
+          `/${acc.page_id}/scheduled_posts`,
+          pageToken,
+          {
+            fields: "id,message,created_time,scheduled_publish_time,full_picture,permalink_url,is_published,attachments{media_type,type,url,media{image{src}},subattachments{media{image{src}}}}",
+            limit: "50",
+          },
+          pageDepth
         ),
-        fetchMetaJson(
-          `${META_API_BASE}/${acc.page_id}/promotable_posts?is_published=false&fields=id,message,created_time,scheduled_publish_time,full_picture,permalink_url,is_published,attachments{media_type,type,url,media{image{src}},subattachments{media{image{src}}}}&limit=50&access_token=${encodeURIComponent(pageToken)}`
+        fetchMetaPaginatedList(
+          `/${acc.page_id}/promotable_posts`,
+          pageToken,
+          {
+            is_published: "false",
+            fields: "id,message,created_time,scheduled_publish_time,full_picture,permalink_url,is_published,attachments{media_type,type,url,media{image{src}},subattachments{media{image{src}}}}",
+            limit: "50",
+          },
+          pageDepth
         ),
-        fetchMetaJson(
-          `${META_API_BASE}/${acc.page_id}/posts?fields=id,message,created_time,full_picture,permalink_url,attachments{media_type,type,media{image{src}},subattachments{media{image{src}}}},likes.summary(true),comments.summary(true),shares&limit=${fbLimit}&access_token=${encodeURIComponent(pageToken)}`
+        fetchMetaPaginatedList(
+          `/${acc.page_id}/posts`,
+          pageToken,
+          {
+            fields: "id,message,created_time,full_picture,permalink_url,attachments{media_type,type,media{image{src}},subattachments{media{image{src}}}},likes.summary(true),comments.summary(true),shares",
+            limit: fbLimit,
+          },
+          pageDepth
         ),
         acc.instagram_account_id
-          ? fetchMetaJson(
-              `${META_API_BASE}/${acc.instagram_account_id}/media?fields=id,caption,media_type,media_product_type,thumbnail_url,media_url,permalink,timestamp,like_count,comments_count&limit=${igLimit}&access_token=${encodeURIComponent(masterToken)}`
+          ? fetchMetaPaginatedList(
+              `/${acc.instagram_account_id}/media`,
+              masterToken,
+              {
+                fields: "id,caption,media_type,media_product_type,thumbnail_url,media_url,permalink,timestamp,like_count,comments_count",
+                limit: igLimit,
+              },
+              pageDepth
             )
           : Promise.resolve(null),
         acc.instagram_account_id
-          ? fetchMetaJson(
-              `${META_API_BASE}/${acc.instagram_account_id}/stories?fields=id,caption,media_type,media_url,thumbnail_url,permalink,timestamp&limit=25&access_token=${encodeURIComponent(masterToken)}`
+          ? fetchMetaPaginatedList(
+              `/${acc.instagram_account_id}/stories`,
+              masterToken,
+              {
+                fields: "id,caption,media_type,media_url,thumbnail_url,permalink,timestamp",
+                limit: "25",
+              },
+              2
             )
           : Promise.resolve(null),
       ]);
@@ -1081,32 +1176,33 @@ export async function fetchRealPlannerPosts(params: {
         metaByMetaId.set(fp.id, item);
       }
 
-      // Posts publicados no Instagram + enriquecimento de métricas reais nos mais recentes
+      // Posts publicados no Instagram + enriquecimento de métricas reais em TODOS os posts carregados (em lotes de 10)
       const igList = Array.isArray(igMediaRes?.data) ? igMediaRes.data : [];
-      const enrichCount = isSingle ? Math.min(20, igList.length) : Math.min(5, igList.length);
 
       const igInsightsMap = new Map<string, { reach: number; views: number; saved: number; shares: number }>();
-      await Promise.all(
-        igList.slice(0, enrichCount).map(async (mItem: any) => {
-          const ins = await fetchMetaJson(
-            `${META_API_BASE}/${mItem.id}/insights?metric=reach,views,saved,shares&access_token=${encodeURIComponent(masterToken)}`
-          );
-          let reach = 0;
-          let views = 0;
-          let saved = 0;
-          let shares = 0;
-          if (Array.isArray(ins?.data)) {
-            for (const met of ins.data) {
-              const v = Number(met.values?.[0]?.value || 0);
-              if (met.name === "reach") reach = v;
-              if (met.name === "views") views = v;
-              if (met.name === "saved") saved = v;
-              if (met.name === "shares") shares = v;
+      for (let i = 0; i < igList.length; i += 10) {
+        await Promise.all(
+          igList.slice(i, i + 10).map(async (mItem: any) => {
+            const ins = await fetchMetaJson(
+              `${META_API_BASE}/${mItem.id}/insights?metric=reach,views,saved,shares&access_token=${encodeURIComponent(masterToken)}`
+            );
+            let reach = 0;
+            let views = 0;
+            let saved = 0;
+            let shares = 0;
+            if (Array.isArray(ins?.data)) {
+              for (const met of ins.data) {
+                const v = Number(met.values?.[0]?.value || 0);
+                if (met.name === "reach") reach = v;
+                if (met.name === "views") views = v;
+                if (met.name === "saved") saved = v;
+                if (met.name === "shares") shares = v;
+              }
             }
-          }
-          igInsightsMap.set(mItem.id, { reach, views, saved, shares });
-        })
-      );
+            igInsightsMap.set(mItem.id, { reach, views, saved, shares });
+          })
+        );
+      }
 
       for (const igItem of igList) {
         if (!igItem?.id) continue;
@@ -1185,41 +1281,97 @@ export async function fetchRealPlannerPosts(params: {
     })
   );
 
-  // Deduplicar posts do Supabase que já existem na Meta API (via meta_post_id)
-  const dbLinkedMetaIds = new Set<string>();
-  const enrichedDbRows = dbRows.map((row) => {
-    if (!row.meta_post_id) return row;
-    const parts = row.meta_post_id.split(",").map((s) => s.trim()).filter(Boolean);
-    let merged = { ...row };
-    for (const pid of parts) {
-      dbLinkedMetaIds.add(pid);
-      const liveMatch = metaByMetaId.get(pid);
-      if (liveMatch) {
-        merged = {
-          ...merged,
-          likes_count: Math.max(merged.likes_count, liveMatch.likes_count),
-          comments_count: Math.max(merged.comments_count, liveMatch.comments_count),
-          reach_count: Math.max(merged.reach_count, liveMatch.reach_count),
-          impressions_count: Math.max(merged.impressions_count, liveMatch.impressions_count),
-          shares_count: liveMatch.shares_count ?? merged.shares_count,
-          saves_count: liveMatch.saves_count ?? merged.saves_count,
-          permalink: liveMatch.permalink || merged.permalink,
-          thumbnail_url: liveMatch.thumbnail_url || merged.thumbnail_url,
-          account_name: liveMatch.account_name || merged.account_name,
-          account_handle: liveMatch.account_handle || merged.account_handle,
-          status: liveMatch.status,
-        };
-      }
-    }
-    return merged;
+  // Reconcilia crossposts ("both") por canal (platform + meta_post_id) usando núcleo compartilhado
+  const dbCreatedMap = new Map(dbRows.map((r) => [r.id, r]));
+  const normalizedCombined = mergeSocialCrosspostRecords({
+    dbRows: dbRows.map((r) => ({
+      id: r.id,
+      page_id: r.page_id,
+      account_name: r.account_name,
+      account_handle: r.account_handle,
+      title: r.title,
+      content: r.content,
+      post_type: r.post_type,
+      status: r.status,
+      platform: r.platform,
+      scheduled_at: r.scheduled_at,
+      published_at: r.published_at,
+      meta_post_id: r.meta_post_id,
+      likes_count: r.likes_count,
+      comments_count: r.comments_count,
+      shares_count: r.shares_count,
+      saves_count: r.saves_count,
+      reach_count: r.reach_count,
+      impressions_count: r.impressions_count,
+      media_url: r.media_url,
+      thumbnail_url: r.thumbnail_url,
+      permalink: r.permalink,
+    })),
+    metaLivePosts: metaPosts.map((mp) => ({
+      id: mp.id,
+      platform: mp.platform === "facebook" ? "facebook" : "instagram",
+      metaPostId: mp.meta_post_id || null,
+      pageId: mp.page_id || "",
+      accountName: mp.account_name || "",
+      accountHandle: mp.account_handle || "",
+      title: mp.title,
+      content: mp.content,
+      postType: mp.post_type,
+      status: mp.status,
+      scheduledAt: mp.scheduled_at || null,
+      publishedAt: mp.published_at || null,
+      likesCount: mp.likes_count,
+      commentsCount: mp.comments_count,
+      sharesCount: mp.shares_count ?? null,
+      savesCount: mp.saves_count ?? null,
+      reachCount: mp.reach_count > 0 ? mp.reach_count : null,
+      impressionsCount: mp.impressions_count > 0 ? mp.impressions_count : null,
+      reachState: mp.reach_count > 0 ? "observado" : "indisponivel",
+      impressionsState: mp.impressions_count > 0 ? "observado" : "indisponivel",
+      permalink: mp.permalink || null,
+      mediaUrl: mp.media_url || null,
+      thumbnailUrl: mp.thumbnail_url || null,
+      source: "meta_live",
+    })),
   });
 
-  const nonDuplicateMetaPosts = metaPosts.filter((mp) => !mp.meta_post_id || !dbLinkedMetaIds.has(mp.meta_post_id));
-  const combinedPosts = [...enrichedDbRows, ...nonDuplicateMetaPosts].sort((a, b) => {
-    const da = new Date(a.scheduled_at || a.published_at || a.created_at).getTime();
-    const db = new Date(b.scheduled_at || b.published_at || b.created_at).getTime();
-    return db - da;
-  });
+  const combinedPosts: PlannerPost[] = normalizedCombined
+    .map((n) => {
+      const baseId = n.id.replace(/_(facebook|instagram)$/, "");
+      const orig = dbCreatedMap.get(baseId);
+      return {
+        id: n.id,
+        user_id: orig?.user_id,
+        page_id: n.pageId || orig?.page_id,
+        account_name: n.accountName || orig?.account_name,
+        account_handle: n.accountHandle || orig?.account_handle,
+        title: n.title,
+        content: n.content,
+        media_url: n.mediaUrl,
+        thumbnail_url: n.thumbnailUrl,
+        permalink: n.permalink,
+        post_type: n.postType,
+        status: n.status,
+        platform: n.platform,
+        scheduled_at: n.scheduledAt,
+        published_at: n.publishedAt,
+        meta_post_id: n.metaPostId,
+        error_message: orig?.error_message || null,
+        likes_count: n.likesCount,
+        comments_count: n.commentsCount,
+        shares_count: n.sharesCount ?? 0,
+        saves_count: n.savesCount ?? 0,
+        reach_count: n.reachCount ?? 0,
+        impressions_count: n.impressionsCount ?? 0,
+        created_at: orig?.created_at || n.publishedAt || n.scheduledAt || new Date().toISOString(),
+        source: (n.source === "meta_live" ? "meta_live" : "supabase") as "meta_live" | "supabase",
+      };
+    })
+    .sort((a, b) => {
+      const da = new Date(a.scheduled_at || a.published_at || a.created_at).getTime();
+      const db = new Date(b.scheduled_at || b.published_at || b.created_at).getTime();
+      return db - da;
+    });
 
   // Calcular matriz real de heatmap e top 3 horários reais com base nos posts publicados
   const publishedForHeat: RealSocialPost[] = combinedPosts
@@ -1282,6 +1434,10 @@ export async function fetchRealPlannerPosts(params: {
     igProfile,
     heatmapMatrix,
     hasPostsForHeatmap,
+    heatmapSampleSize: publishedForHeat.length,
+    apiLimitations: [
+      "Instagram Graph API não retorna rascunhos nem agendamentos nativos feitos no app Instagram/Meta Business Suite; apenas o agendamento nativo do Facebook (/scheduled_posts) e a fila local da NC Suite são listados.",
+    ],
     topTimeSlots,
     metaScheduledCount,
     metaPublishedCount,

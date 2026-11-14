@@ -1,84 +1,36 @@
 // src/lib/metaConversionCalibrator.ts
-// Calibrador Direto de Conversões Meta Ads (WhatsApp / Mensagens / Leads)
-// Garante paridade de 100% com o Gerenciador de Anúncios da Meta diretamente pelo frontend,
-// corrigindo qualquer divergência gerada por fallbacks de cliques ou visualizações de página.
+// Calibrador Direto de Conversões Meta Ads — alinhado integralmente ao núcleo metaIntegrationCore.ts.
+// Nunca sobrescreve objetivos nativos da Meta por heurísticas de nome nem exclui contas em listagens parciais.
 
 import {
   classifyMetaEvent,
-  computeUnitCost as computeDomainUnitCost,
   type MetaConversionCategory as DomainMetaConversionCategory,
 } from "./metricsDomain";
-
-const META_GRAPH_URL = "https://graph.facebook.com/v21.0";
+import {
+  detectStrictConversionCategory,
+  extractActionByExactTypes,
+  extractMetaInsightMetrics,
+  metaFetchPaginatedWithStatus,
+  parseMetaActionNumericValue,
+  type NormalizedResultCategory,
+} from "./metaIntegrationCore";
 
 export function parseMetaActionValue(a: any): number {
-  if (!a) return 0;
-
-  // 1. Prioridade absoluta para as janelas de atribuição oficiais configuradas no Ad Set
-  // No Gerenciador de Anúncios, a coluna "Resultados" reflete a atribuição ativa (ex: 7d_click + 1d_view).
-  const click7d = a["7d_click"] !== undefined && a["7d_click"] !== null ? parseInt(String(a["7d_click"]), 10) : null;
-  const view1d = a["1d_view"] !== undefined && a["1d_view"] !== null ? parseInt(String(a["1d_view"]), 10) : null;
-  if ((click7d !== null && !isNaN(click7d)) || (view1d !== null && !isNaN(view1d))) {
-    const totalWin = (click7d && click7d > 0 ? click7d : 0) + (view1d && view1d > 0 ? view1d : 0);
-    if (totalWin > 0) return totalWin;
-  }
-
-  // Outras janelas suportadas pelo Meta
-  for (const win of ["1d_click", "28d_click", "default"]) {
-    if (a[win] !== undefined && a[win] !== null) {
-      const parsed = parseInt(String(a[win]), 10);
-      if (!isNaN(parsed) && parsed > 0) return parsed;
-    }
-  }
-
-  // 2. Valor agregado padrão
-  if (typeof a.value === "number" && !isNaN(a.value)) return a.value;
-  if (typeof a.value === "string" && a.value.trim() !== "") {
-    const parsed = parseInt(a.value, 10);
-    if (!isNaN(parsed) && parsed > 0) return parsed;
-  }
-
-  return 0;
+  return parseMetaActionNumericValue(a);
 }
 
 export function getMessagingConversationsStarted(actions: any[] = []): number {
   if (!Array.isArray(actions) || actions.length === 0) return 0;
-
-  // A coluna "Resultados" do Meta Ads Manager para campanhas de mensagem é ESTRITAMENTE:
-  // "onsite_conversion.messaging_conversation_started_7d" (ou messaging_conversation_started).
-  // Se esse action_type não existir no array actions, significa que 0 conversas foram iniciadas.
-  // NUNCA usar first_reply, conexões de mensagem ou cliques como fallback.
-  for (const a of actions) {
-    const act = String(a.action_type || "").toLowerCase();
-    if (act.includes("messaging_conversation_started")) {
-      const val = parseMetaActionValue(a);
-      if (val > 0) return val;
-    }
-  }
-
-  for (const a of actions) {
-    const act = String(a.action_type || "").toLowerCase();
-    if (act === "whatsapp_conversation_started" || act === "messaging_conversation_started_7d") {
-      const val = parseMetaActionValue(a);
-      if (val > 0) return val;
-    }
-  }
-
-  return 0;
+  return extractActionByExactTypes(actions, [
+    "onsite_conversion.messaging_conversation_started_7d",
+    "onsite_conversion.messaging_conversation_started",
+    "messaging_conversation_started_7d",
+    "whatsapp_conversation_started",
+    "onsite_conversion.messaging_first_reply",
+  ]);
 }
 
-export type MetaConversionCategory =
-  | "MESSAGES"              // Conversas por mensagem iniciadas (WPP / Direct / Messenger)
-  | "INSTAGRAM_PROFILE"     // Visitas / Acessos ao perfil do Instagram
-  | "LANDING_PAGE_VIEWS"    // Visualizações da página de destino / site carregado
-  | "PURCHASES"             // Compras / Vendas / E-commerce (Pixel + Loja Meta)
-  | "LEADS"                 // Cadastros / Leads (Formulário nativo + Pixel)
-  | "CHECKOUT"              // Início de finalização de compra
-  | "ADD_TO_CART"           // Adições ao carrinho
-  | "VIDEO_VIEWS"           // Visualizações de vídeo / ThruPlay
-  | "ENGAGEMENT"            // Engajamento com a publicação / Curtidas
-  | "REACH"                 // Alcance / Reconhecimento
-  | "LINK_CLICKS";          // Cliques no link puros
+export type MetaConversionCategory = NormalizedResultCategory;
 
 export function detectConversionCategory(
   name?: string,
@@ -87,19 +39,26 @@ export function detectConversionCategory(
   optimizationGoalOrResults?: string | any[],
   resultsOrOptimizationGoal?: any[] | string
 ): MetaConversionCategory {
-  const optGoal = typeof optimizationGoalOrResults === "string" 
-    ? optimizationGoalOrResults 
+  const optGoal = typeof optimizationGoalOrResults === "string"
+    ? optimizationGoalOrResults
     : (typeof resultsOrOptimizationGoal === "string" ? resultsOrOptimizationGoal : undefined);
   const resultsArr = Array.isArray(optimizationGoalOrResults)
     ? optimizationGoalOrResults
     : (Array.isArray(resultsOrOptimizationGoal) ? resultsOrOptimizationGoal : undefined);
 
-  const indicator = resultsArr?.[0]?.indicator ? String(resultsArr[0].indicator).toLowerCase() : "";
-  const n = (name || "").toUpperCase();
-  const obj = (objective || "").toUpperCase();
-  const opt = (optGoal || "").toUpperCase();
+  const indicator = resultsArr?.[0]?.indicator ? String(resultsArr[0].indicator) : undefined;
 
-  // Delega primeiro ao modelo explícito de eventos (prioriza indicator e optimization_goal sobre heurísticas de nome)
+  // Prioridade absoluta ao contrato estrito Meta API (results -> optimization_goal -> actions -> objective)
+  const strict = detectStrictConversionCategory({
+    rawObjective: objective,
+    optimizationGoal: optGoal,
+    results: resultsArr,
+    actions,
+  });
+  if (strict !== "UNKNOWN") {
+    return strict;
+  }
+
   const classified = classifyMetaEvent({
     campaignName: name,
     rawObjective: objective,
@@ -107,200 +66,14 @@ export function detectConversionCategory(
     resultsIndicator: indicator,
     actions,
   });
-  if (classified.category !== "UNKNOWN") {
-    return classified.category as MetaConversionCategory;
-  }
-
-  // Fallback legado preservado apenas quando metadados oficiais não resolveram
-  if (
-    !indicator.includes("purchase") &&
-    !indicator.includes("profile") &&
-    !indicator.includes("landing_page") &&
-    (opt === "REPLIES" ||
-      opt === "CONVERSATIONS" ||
-      obj === "MESSAGES" ||
-      /(^|[^A-Z])MSG([^A-Z]|$)/.test(n) ||
-      n.includes("MENSAGEM") ||
-      n.includes("MENSAGENS") ||
-      n.includes("WHATSAPP") ||
-      n.includes("WPP"))
-  ) {
-    return "MESSAGES";
-  }
-
-  // 1. Visitas ao Perfil do Instagram (Tráfego pro perfil IG — ex: Trafego NC)
-  if (
-    indicator.includes("profile_visit") ||
-    indicator.includes("instagram_profile") ||
-    opt === "PROFILE_VISIT" ||
-    opt === "PROFILE_AND_PAGE_ENGAGEMENT" ||
-    opt === "VISIT_INSTAGRAM_PROFILE" ||
-    obj === "VISIT_INSTAGRAM_PROFILE" ||
-    obj === "INSTAGRAM_PROFILE" ||
-    n.includes("TRAFEGO NC") ||
-    n.includes("TRÁFEGO NC") ||
-    n.includes("PERFIL") ||
-    n.includes("INSTA") ||
-    n.includes("SEGUIDOR") ||
-    (actions && actions.some((a: any) => {
-      const act = String(a.action_type || "").toLowerCase();
-      return act.includes("profile_visit") || act.includes("instagram_profile") || act.includes("profile_visit_view");
-    }))
-  ) {
-    return "INSTAGRAM_PROFILE";
-  }
-
-  // 2. Compras / Vendas / E-commerce (ex: Bonne21 pixel / pedidos)
-  if (
-    indicator.includes("purchase") ||
-    opt === "PURCHASE" ||
-    opt === "PURCHASES" ||
-    obj === "OUTCOME_SALES" ||
-    obj === "CONVERSIONS" ||
-    obj === "CATALOG_SALES" ||
-    n.includes("COMPRA") ||
-    n.includes("VENDA") ||
-    n.includes("PURCHASE") ||
-    n.includes("ECOMMERCE") ||
-    (actions && actions.some((a: any) => String(a.action_type || "").toLowerCase().includes("purchase")))
-  ) {
-    return "PURCHASES";
-  }
-
-  // 3. Visualizações da Página de Destino (Landing Page / Site / Cardápio / Grupo de vendedores)
-  if (
-    indicator.includes("landing_page_view") ||
-    indicator.includes("omni_landing_page_view") ||
-    opt === "LANDING_PAGE_VIEWS" ||
-    obj === "LANDING_PAGE_VIEWS" ||
-    n.includes("GRUPO") ||
-    n.includes("VENDEDORES") ||
-    n.includes("CARDAPIO") ||
-    n.includes("CARDÁPIO") ||
-    n.includes("DELIVERY") ||
-    n.includes("LP") ||
-    n.includes("LANDING") ||
-    n.includes("SITE") ||
-    n.includes("DESTINO") ||
-    (actions && actions.some((a: any) => {
-      const act = String(a.action_type || "").toLowerCase();
-      return act.includes("landing_page_view") || act.includes("omni_landing_page_view");
-    }))
-  ) {
-    return "LANDING_PAGE_VIEWS";
-  }
-
-  // 4. Cadastros / Leads / Formulários
-  if (
-    indicator.includes("lead") ||
-    indicator.includes("registration") ||
-    opt === "LEAD" ||
-    opt === "LEADS" ||
-    opt === "LEAD_GENERATION" ||
-    opt === "QUALITY_LEAD" ||
-    obj === "OUTCOME_LEADS" ||
-    obj === "LEAD_GENERATION" ||
-    n.includes("LEAD") ||
-    n.includes("CADASTRO") ||
-    n.includes("FORMULARIO") ||
-    n.includes("FORMULÁRIO") ||
-    (actions && actions.some((a: any) => {
-      const act = String(a.action_type || "").toLowerCase();
-      return act.includes("lead") || act.includes("complete_registration");
-    }))
-  ) {
-    return "LEADS";
-  }
-
-  // 5. Mensagens (WhatsApp / Messenger / Direct — Falcão, 13Car, etc.)
-  if (
-    indicator.includes("messaging_conversation_started") ||
-    indicator.includes("messaging") ||
-    indicator.includes("contact") ||
-    opt === "REPLIES" ||
-    opt === "CONVERSATIONS" ||
-    obj === "MESSAGES" ||
-    obj === "OUTCOME_ENGAGEMENT" || // Campanhas modernas de WhatsApp utilizam OUTCOME_ENGAGEMENT no Meta ODIN
-    n.includes("MSG") ||
-    n.includes("MENSAGEM") ||
-    n.includes("MENSAGENS") ||
-    n.includes("WPP") ||
-    n.includes("WHATSAPP") ||
-    n.includes("DIRECT") ||
-    n.includes("CONVERSA") ||
-    n.includes("CONVERSAS") ||
-    n.includes("ZAP") ||
-    n.includes("VICTOR") ||
-    n.includes("YURI") ||
-    n.includes("TAYNA") ||
-    n.includes("RUTH") ||
-    n.includes("6720") ||
-    n.includes("7243") ||
-    (actions && actions.some((a: any) => {
-      const act = String(a.action_type || "").toLowerCase();
-      return act.includes("messaging") || act.includes("whatsapp") || act.includes("contact");
-    }))
-  ) {
-    return "MESSAGES";
-  }
-
-  // 6. Vídeo / ThruPlay
-  if (
-    indicator.includes("thruplay") ||
-    indicator.includes("video_view") ||
-    opt === "THRUPLAY" ||
-    opt === "VIDEO_VIEWS" ||
-    obj === "VIDEO_VIEWS" ||
-    n.includes("VIDEO") ||
-    n.includes("VÍDEO") ||
-    n.includes("THRUPLAY")
-  ) {
-    return "VIDEO_VIEWS";
-  }
-
-  // 7. Alcance / Reconhecimento
-  if (
-    indicator === "reach" ||
-    opt === "REACH" ||
-    obj === "REACH" ||
-    obj === "OUTCOME_AWARENESS" ||
-    obj === "AWARENESS" ||
-    n.includes("ALCANCE")
-  ) {
-    return "REACH";
-  }
-
-  // 8. Engajamento
-  if (
-    indicator.includes("post_engagement") ||
-    opt === "POST_ENGAGEMENT" ||
-    obj === "POST_ENGAGEMENT" ||
-    n.includes("CURTIDAS") ||
-    n.includes("POST")
-  ) {
-    return "ENGAGEMENT";
-  }
-
-  // 9. Se for OUTCOME_TRAFFIC sem outro objetivo:
-  if (obj === "OUTCOME_TRAFFIC" || opt === "LINK_CLICKS") {
-    if (n.includes("INSTA") || n.includes("PERFIL") || n.includes("NC")) {
-      return "INSTAGRAM_PROFILE";
-    }
-    return "LANDING_PAGE_VIEWS";
-  }
-
-  if (obj === "OUTCOME_ENGAGEMENT") {
-    return "MESSAGES";
-  }
-
-  return "MESSAGES";
+  return (classified.category as MetaConversionCategory) || "UNKNOWN";
 }
 
 export interface MetaResultDetail {
   category: MetaConversionCategory;
-  resultLabel: string;      // ex: "Conversa por mensagem iniciada" ou "Conversas por mensagem iniciadas"
-  costLabel: string;        // ex: "Por conversa por mensagem iniciada"
-  shortBadge: string;       // ex: "MENSAGENS"
+  resultLabel: string;
+  costLabel: string;
+  shortBadge: string;
 }
 
 export function getMetaResultDetail(
@@ -320,12 +93,12 @@ export function getMetaResultDetail(
   });
   const cat = (cls.category !== "UNKNOWN"
     ? cls.category
-    : detectConversionCategory(name, resultType || objective, actions, optimizationGoal)) as MetaConversionCategory;
+    : detectConversionCategory(name, resultType || objective, actions, optimizationGoal)) as DomainMetaConversionCategory;
   const isSingular = count === 1;
 
-  if ((cat as DomainMetaConversionCategory) === "UNKNOWN") {
+  if (cat === "UNKNOWN") {
     return {
-      category: "LINK_CLICKS",
+      category: "UNKNOWN",
       resultLabel: isSingular ? "Resultado (revisar evento)" : "Resultados (revisar evento)",
       costLabel: "Por resultado",
       shortBadge: "REVISAR",
@@ -414,177 +187,51 @@ export function getMetaResultDetail(
       };
 
     case "LINK_CLICKS":
+      return {
+        category: "LINK_CLICKS",
+        resultLabel: isSingular ? "Clique no link" : "Cliques no link",
+        costLabel: "Por clique no link",
+        shortBadge: "CLIQUES",
+      };
+
     default:
       return {
-        category: "LANDING_PAGE_VIEWS",
-        resultLabel: isSingular ? "Visualização da página de destino" : "Visualizações da página de destino",
-        costLabel: "Por visualização de destino",
-        shortBadge: "DESTINO",
+        category: "UNKNOWN",
+        resultLabel: isSingular ? "Resultado (revisar evento)" : "Resultados (revisar evento)",
+        costLabel: "Por resultado",
+        shortBadge: "REVISAR",
       };
   }
 }
 
-export function isMessagingCampaignName(name?: string, objective?: string): boolean {
-  return detectConversionCategory(name, objective) === "MESSAGES";
+export function isMessagingCampaignName(_name?: string, objective?: string): boolean {
+  return detectConversionCategory(undefined, objective) === "MESSAGES";
 }
 
 export function extractMetaConversions(
   actions: any[] = [],
   objective?: string,
   reach: number = 0,
-  campaignName?: string,
+  _campaignName?: string,
   results?: any[],
   optimizationGoal?: string
 ): number {
-  // 1. Prioridade máxima: valor nativo do array results da Meta Graph API
-  if (Array.isArray(results) && results.length > 0) {
-    const valStr = results[0]?.values?.[0]?.value;
-    if (valStr !== undefined && valStr !== null && !isNaN(parseFloat(valStr))) {
-      return parseFloat(valStr);
-    }
-    // Se a Meta retornou o indicator mas sem values (ex: 0 conversões registradas):
-    if (results[0]?.indicator) {
-      return 0;
-    }
-  }
-
-  if (objective === "OUTCOME_AWARENESS" || objective === "AWARENESS" || objective === "REACH") {
-    return reach;
-  }
-
-  if (!Array.isArray(actions) || actions.length === 0) return 0;
-
-  const getVal = (type: string): number => {
-    const a = actions.find((x: any) => String(x.action_type || "").toLowerCase() === type.toLowerCase());
-    return parseMetaActionValue(a);
-  };
-
-  const category = detectConversionCategory(campaignName, objective, actions, results, optimizationGoal);
-
-  switch (category) {
-    case "MESSAGES": {
-      // REGRA DE OURO: Apenas conversas por mensagem iniciadas! NUNCA cliques!
-      return getMessagingConversationsStarted(actions);
-    }
-
-    case "INSTAGRAM_PROFILE": {
-      // Visitas ao perfil do Instagram:
-      // Meta Ads API action_types: profile_visit, instagram_profile_visit, instagram_profile_view
-      const visits = Math.max(
-        getVal("profile_visit"),
-        getVal("instagram_profile_visit"),
-        getVal("instagram_profile_view"),
-        getVal("visit_instagram_profile"),
-        getVal("onsite_conversion.instagram_profile_visit")
-      );
-      if (visits > 0) return visits;
-
-      for (const a of actions) {
-        const act = String(a.action_type || "").toLowerCase();
-        if (act.includes("profile") && (act.includes("visit") || act.includes("view"))) {
-          const val = parseMetaActionValue(a);
-          if (val > 0) return val;
-        }
-      }
-
-      // Se for tráfego mas tiver landing_page_view:
-      const lpv = Math.max(getVal("landing_page_view"), getVal("onsite_conversion.landing_page_view"));
-      if (lpv > 0) return lpv;
-
-      // ATENÇÃO: NUNCA cair em cliques no link para perfil do Instagram!
-      return 0;
-    }
-
-    case "LANDING_PAGE_VIEWS": {
-      // Visualizações de página de destino do site
-      const lpv = Math.max(
-        getVal("landing_page_view"),
-        getVal("onsite_conversion.landing_page_view")
-      );
-      // NUNCA cair em link_click! Se a página não carregou, o resultado é 0!
-      return lpv;
-    }
-
-    case "PURCHASES": {
-      // Compras / E-commerce (Pixel + Loja Meta)
-      const onsite = Math.max(getVal("onsite_conversion.purchase"), getVal("purchase"));
-      const offsite = Math.max(
-        getVal("offsite_conversion.fb_pixel_purchase"),
-        getVal("offsite_conversion.fb_pixel_custom.PURCHASE")
-      );
-      const omni = getVal("omni_purchase");
-      let customPurchase = 0;
-      for (const a of actions) {
-        const act = String(a.action_type || "").toLowerCase();
-        if (act.startsWith("offsite_conversion.custom.") && act.includes("purchase")) {
-          customPurchase += parseMetaActionValue(a);
-        }
-      }
-      return Math.max(onsite, offsite, omni, customPurchase, onsite + offsite);
-    }
-
-    case "LEADS": {
-      // Cadastros / Leads (Formulários instantâneos ou Site)
-      const onsite = Math.max(getVal("onsite_conversion.lead"), getVal("leadgen_grouped"));
-      const offsite = Math.max(
-        getVal("offsite_conversion.fb_pixel_lead"),
-        getVal("complete_registration"),
-        getVal("offsite_conversion.fb_pixel_complete_registration"),
-        getVal("offsite_conversion.fb_pixel_custom.LEAD")
-      );
-      let customLead = 0;
-      for (const a of actions) {
-        const act = String(a.action_type || "").toLowerCase();
-        if (act.startsWith("offsite_conversion.custom.") && act.includes("lead")) {
-          customLead += parseMetaActionValue(a);
-        }
-      }
-      return Math.max(getVal("lead"), onsite + offsite, customLead);
-    }
-
-    case "VIDEO_VIEWS": {
-      return Math.max(
-        getVal("thruplay"),
-        getVal("video_thruplay_watched_actions"),
-        getVal("video_view")
-      );
-    }
-
-    case "ENGAGEMENT": {
-      return Math.max(
-        getVal("post_engagement"),
-        getVal("page_engagement"),
-        getVal("post_reaction")
-      );
-    }
-
-    case "REACH": {
-      return reach;
-    }
-
-    case "LINK_CLICKS": {
-      return getVal("link_click");
-    }
-
-    default: {
-      return 0; // NUNCA retornar link_click por fallback!
-    }
-  }
+  const extracted = extractMetaInsightMetrics(
+    { actions, results, reach, objective, optimization_goal: optimizationGoal },
+    { rawObjective: objective, optimizationGoal }
+  );
+  return extracted.resultCount ?? 0;
 }
 
-// ─── Calibração Determinística Instantânea em Memória (0ms Latency) ───────────
-
 export function calibrateCampaignMetricsArray(_campaignName: string, metrics: any[] = []): any[] {
-  // Sem valores fixos: os dados reais vêm da Meta (sync).
   return Array.isArray(metrics) ? metrics : [];
 }
 
-export function calibrateAdSetMetricsArray(adSetName: string, assetMetrics: any[] = []): any[] {
-  if (!Array.isArray(assetMetrics)) return [];
-  return assetMetrics;
+export function calibrateAdSetMetricsArray(_adSetName: string, assetMetrics: any[] = []): any[] {
+  return Array.isArray(assetMetrics) ? assetMetrics : [];
 }
 
-export function getCalibratedAdConversion20261111(adName: string, cost: number, clicks: number): number | null {
+export function getCalibratedAdConversion20261111(_adName: string, _cost: number, _clicks: number): number | null {
   return null;
 }
 
@@ -600,143 +247,42 @@ export function calibratePeriodStatsInMemory(
   _startStr?: string,
   _endStr?: string
 ): any[] {
-  // Sem valores fixos: exibe exatamente o que foi sincronizado da Meta.
   return Array.isArray(periodStats) ? periodStats : [];
 }
 
-// ─── Persistência Direta no Supabase via Cliente Autenticado ──────────────────
-
-let lastDbCalibrationRun = 0;
-
-export async function ensureDatabaseCalibrated(supabase: any, force = false): Promise<void> {
-  const now = Date.now();
-  if (!force && now - lastDbCalibrationRun < 30000) return;
-  lastDbCalibrationRun = now;
-
-  try {
-    const { data: camps } = await supabase
-      .from("campaigns")
-      .select("id, name, objective");
-
-    if (camps && camps.length > 0) {
-      for (const c of camps) {
-        const isMsg = isMessagingCampaignName(c.name, c.objective);
-        if (isMsg && c.objective !== "MESSAGES") {
-          await supabase.from("campaigns").update({ objective: "MESSAGES" }).eq("id", c.id);
-        }
-      }
-    }
-
-  } catch (err) {
-    console.warn("[Calibrator] Verificação silenciosa de campanhas:", err);
-  }
+// Mantida por compatibilidade com chamadores existentes, agora estritamente não-destrutiva:
+// nunca sobrescreve campaigns.objective por heurística de nome.
+export async function ensureDatabaseCalibrated(_supabase: any, _force = false): Promise<void> {
+  return;
 }
 
-// ─── Sincronização & Calibração Direta via Meta Graph API no Frontend ─────────
-
-async function fetchMetaGraphPaginated(
-  endpoint: string,
-  token: string,
-  params: Record<string, string> = {}
-): Promise<any[]> {
-  try {
-    const url = new URL(`${META_GRAPH_URL}${endpoint}`);
-    url.searchParams.set("access_token", token);
-    for (const [k, v] of Object.entries(params)) {
-      url.searchParams.set(k, v);
-    }
-
-    const results: any[] = [];
-    let nextUrl: string | null = url.toString();
-    let page = 0;
-
-    while (nextUrl && page < 10) {
-      page++;
-      const res: Response = await fetch(nextUrl);
-      const data: any = await res.json();
-      if (!res.ok || data?.error) {
-        console.warn(`[Calibrator] Meta Graph API [${endpoint}]:`, data?.error?.message || `HTTP ${res.status}`);
-        return results;
-      }
-      if (Array.isArray(data.data)) {
-        results.push(...data.data);
-      }
-      nextUrl = data.paging?.next || null;
-    }
-
-    return results;
-  } catch (err) {
-    console.warn(`[Calibrator] Chamada ao Meta Graph bloqueada ou falhou no browser [${endpoint}]:`, err);
-    return [];
-  }
-}
+const INSIGHT_WINDOWS = JSON.stringify(["7d_click", "1d_view", "1d_click", "default"]);
 
 export async function calibrateMetaConversionsFromGraph(
   supabase: any,
   startStr: string,
   endStr: string,
   accountFilter: string = "all"
-): Promise<void> {
+): Promise<{ ok: boolean; errors: string[] }> {
+  const errors: string[] = [];
   try {
-    // 1. Garante calibração determinística imediata
-    await ensureDatabaseCalibrated(supabase, true);
-
-    // 2. Busca o token configurado em meta_ads_configs
     const { data: configs } = await supabase
       .from("meta_ads_configs")
       .select("access_token")
+      .not("access_token", "is", null)
       .order("created_at", { ascending: false })
       .limit(1);
 
     const token = configs?.[0]?.access_token?.trim();
-    if (!token) return;
+    if (!token) return { ok: false, errors: ["Token Meta não encontrado."] };
 
-    // 3. Se for sync geral, verifica contas ativas no Meta para remover contas cujo acesso foi revogado
-    if (accountFilter === "all") {
-      try {
-        const metaAccounts = await fetchMetaGraphPaginated("/me/adaccounts", token, {
-          fields: "id,name,account_status",
-          limit: "100",
-        });
-        if (metaAccounts.length > 0) {
-          const validIds = new Set(metaAccounts.map((a: any) => a.id));
-          const { data: dbAccs } = await supabase.from("ad_accounts").select("id, platform");
-          const obsoleteIds = (dbAccs || [])
-            .filter((a: any) => (!a.platform || a.platform === "Meta Ads" || String(a.id).startsWith("act_")) && !validIds.has(a.id))
-            .map((a: any) => a.id);
-
-          if (obsoleteIds.length > 0) {
-            const { data: obsCamps } = await supabase.from("campaigns").select("id").in("ad_account_id", obsoleteIds);
-            const obsCampIds = (obsCamps || []).map((c: any) => c.id);
-            if (obsCampIds.length > 0) {
-              const { data: obsSets } = await supabase.from("ad_sets").select("id").in("campaign_id", obsCampIds);
-              const obsSetIds = (obsSets || []).map((s: any) => s.id);
-              if (obsSetIds.length > 0) {
-                await supabase.from("asset_metrics").delete().in("ad_set_id", obsSetIds);
-                await supabase.from("ads").delete().in("ad_set_id", obsSetIds);
-                await supabase.from("ad_sets").delete().in("id", obsSetIds);
-              }
-              await supabase.from("metrics").delete().in("campaign_id", obsCampIds);
-              await supabase.from("campaigns").delete().in("id", obsCampIds);
-            }
-            await supabase.from("meta_period_stats").delete().in("ad_account_id", obsoleteIds);
-            await supabase.from("client_accounts").delete().in("ad_account_id", obsoleteIds);
-            await supabase.from("ad_accounts").delete().in("id", obsoleteIds);
-          }
-        }
-      } catch (accErr) {
-        console.warn("[Calibrator] Não foi possível verificar lista de contas no Meta:", accErr);
-      }
-    }
-
-    // 4. Buscar contas e campanhas do banco para mapear external_id -> id
     let accQuery = supabase.from("ad_accounts").select("id, name");
     if (accountFilter !== "all") accQuery = accQuery.eq("id", accountFilter);
     const { data: accounts } = await accQuery;
-    if (!accounts || accounts.length === 0) return;
+    if (!accounts || accounts.length === 0) return { ok: true, errors: [] };
 
     const accIds = accounts.map((a: any) => a.id).filter((id: string) => String(id).startsWith("act_"));
-    if (accIds.length === 0) return;
+    if (accIds.length === 0) return { ok: true, errors: [] };
 
     const { data: dbCampaigns } = await supabase
       .from("campaigns")
@@ -749,110 +295,148 @@ export async function calibrateMetaConversionsFromGraph(
     }
 
     const dbCampIds = (dbCampaigns || []).map((c: any) => c.id);
-    const { data: dbAds } = dbCampIds.length > 0
-      ? await supabase.from("ads").select("id, external_id, name, campaign_id").in("campaign_id", dbCampIds)
-      : { data: [] };
+    const [{ data: dbAds }, { data: dbAdSets }] = await Promise.all([
+      dbCampIds.length > 0
+        ? supabase.from("ads").select("id, external_id, name, campaign_id").in("campaign_id", dbCampIds)
+        : Promise.resolve({ data: [] }),
+      dbCampIds.length > 0
+        ? supabase.from("ad_sets").select("id, external_id, name, campaign_id, optimization_goal, destination_type").in("campaign_id", dbCampIds)
+        : Promise.resolve({ data: [] }),
+    ]);
 
     const adByExt = new Map<string, any>();
     for (const a of dbAds || []) {
       if (a.external_id) adByExt.set(String(a.external_id), a);
     }
 
-    const { data: dbAdSets } = dbCampIds.length > 0
-      ? await supabase.from("ad_sets").select("id, external_id, name, campaign_id").in("campaign_id", dbCampIds)
-      : { data: [] };
-
     const adSetByExt = new Map<string, any>();
+    const campGoalCtx = new Map<string, { optimizationGoal: string | null; destinationType: string | null }>();
     for (const s of dbAdSets || []) {
       if (s.external_id) adSetByExt.set(String(s.external_id), s);
+      if (s.campaign_id && !campGoalCtx.has(s.campaign_id)) {
+        campGoalCtx.set(s.campaign_id, {
+          optimizationGoal: s.optimization_goal || null,
+          destinationType: s.destination_type || null,
+        });
+      }
     }
 
     const timeRangeParam = JSON.stringify({ since: startStr, until: endStr });
+    const commonInsightParams = {
+      time_range: timeRangeParam,
+      use_unified_attribution_setting: "true",
+      action_attribution_windows: INSIGHT_WINDOWS,
+      limit: "500",
+    };
 
     for (const accId of accIds) {
       try {
-        const [campDaily, campPeriod, adDaily, adPeriod, adsetPeriod] = await Promise.all([
-          fetchMetaGraphPaginated(`/${accId}/insights`, token, {
+        const [campDailyRes, campPeriodRes, adDailyRes, adPeriodRes, adsetPeriodRes, accountPeriodRes] = await Promise.all([
+          metaFetchPaginatedWithStatus(`/${accId}/insights`, token, {
             level: "campaign",
-            fields: "campaign_id,campaign_name,optimization_goal,results,cost_per_result,spend,reach,impressions,frequency,actions,inline_link_clicks,date_start",
+            fields: "campaign_id,campaign_name,objective,optimization_goal,results,cost_per_result,spend,reach,impressions,frequency,actions,action_values,clicks,inline_link_clicks,date_start",
             time_increment: "1",
-            time_range: timeRangeParam,
-            use_unified_attribution_setting: "true",
-            limit: "500",
-          }).catch(() => []),
-          fetchMetaGraphPaginated(`/${accId}/insights`, token, {
+            ...commonInsightParams,
+          }, { maxPages: 100 }),
+          metaFetchPaginatedWithStatus(`/${accId}/insights`, token, {
             level: "campaign",
-            fields: "campaign_id,campaign_name,optimization_goal,results,cost_per_result,spend,reach,impressions,frequency,actions,inline_link_clicks,date_start,date_stop",
-            time_range: timeRangeParam,
-            use_unified_attribution_setting: "true",
-            limit: "500",
-          }).catch(() => []),
-          fetchMetaGraphPaginated(`/${accId}/insights`, token, {
+            fields: "campaign_id,campaign_name,objective,optimization_goal,results,cost_per_result,spend,reach,impressions,frequency,actions,action_values,clicks,inline_link_clicks,date_start,date_stop",
+            ...commonInsightParams,
+          }, { maxPages: 100 }),
+          metaFetchPaginatedWithStatus(`/${accId}/insights`, token, {
             level: "ad",
-            fields: "ad_id,ad_name,campaign_id,campaign_name,optimization_goal,results,cost_per_result,spend,reach,impressions,frequency,actions,inline_link_clicks,date_start",
+            fields: "ad_id,ad_name,adset_id,campaign_id,campaign_name,objective,optimization_goal,results,cost_per_result,spend,reach,impressions,frequency,actions,action_values,clicks,inline_link_clicks,date_start",
             time_increment: "1",
-            time_range: timeRangeParam,
-            use_unified_attribution_setting: "true",
-            limit: "500",
-          }).catch(() => []),
-          fetchMetaGraphPaginated(`/${accId}/insights`, token, {
+            ...commonInsightParams,
+          }, { maxPages: 100 }),
+          metaFetchPaginatedWithStatus(`/${accId}/insights`, token, {
             level: "ad",
-            fields: "ad_id,ad_name,campaign_id,campaign_name,optimization_goal,results,cost_per_result,spend,reach,impressions,frequency,actions,inline_link_clicks,date_start,date_stop",
-            time_range: timeRangeParam,
-            use_unified_attribution_setting: "true",
-            limit: "500",
-          }).catch(() => []),
-          fetchMetaGraphPaginated(`/${accId}/insights`, token, {
+            fields: "ad_id,ad_name,adset_id,campaign_id,campaign_name,objective,optimization_goal,results,cost_per_result,spend,reach,impressions,frequency,actions,action_values,clicks,inline_link_clicks,date_start,date_stop",
+            ...commonInsightParams,
+          }, { maxPages: 100 }),
+          metaFetchPaginatedWithStatus(`/${accId}/insights`, token, {
             level: "adset",
-            fields: "adset_id,adset_name,campaign_id,campaign_name,optimization_goal,results,cost_per_result,spend,reach,impressions,frequency,actions,inline_link_clicks,date_start,date_stop",
-            time_range: timeRangeParam,
-            use_unified_attribution_setting: "true",
-            limit: "500",
-          }).catch(() => []),
+            fields: "adset_id,adset_name,campaign_id,campaign_name,objective,optimization_goal,results,cost_per_result,spend,reach,impressions,frequency,actions,action_values,clicks,inline_link_clicks,date_start,date_stop",
+            ...commonInsightParams,
+          }, { maxPages: 100 }),
+          metaFetchPaginatedWithStatus(`/${accId}/insights`, token, {
+            level: "account",
+            fields: "account_id,spend,reach,impressions,frequency,clicks,inline_link_clicks,actions,action_values,results,date_start,date_stop",
+            ...commonInsightParams,
+          }, { maxPages: 20 }),
         ]);
 
-        // Atualizar métricas diárias de campanhas
-        for (const row of campDaily) {
+        for (const [label, r] of [
+          ["campDaily", campDailyRes],
+          ["campPeriod", campPeriodRes],
+          ["adDaily", adDailyRes],
+          ["adPeriod", adPeriodRes],
+          ["adsetPeriod", adsetPeriodRes],
+        ] as const) {
+          if (!r.ok || r.truncated) {
+            errors.push(`${accId}:${label}: ${r.error || "truncado"}`);
+          }
+        }
+
+        // Account deduplicated period stats
+        for (const row of accountPeriodRes.data) {
+          const ex = extractMetaInsightMetrics(row, {});
+          await supabase.from("meta_account_period_stats").upsert({
+            ad_account_id: accId,
+            start_date: row.date_start || startStr,
+            end_date: row.date_stop || endStr,
+            reach: ex.reach,
+            impressions: ex.impressions,
+            frequency: ex.frequency,
+            spend: ex.spend,
+            clicks: ex.allClicks,
+            inline_link_clicks: ex.inlineLinkClicks,
+            conversions: ex.resultCount ?? 0,
+            purchase_value: ex.purchaseValue ?? 0,
+            synced_at: new Date().toISOString(),
+          }, { onConflict: "ad_account_id,start_date,end_date" }).then(() => undefined, () => undefined);
+        }
+
+        for (const row of campDailyRes.data) {
           const dbCamp = campByExt.get(String(row.campaign_id));
           if (!dbCamp) continue;
-          const campName = row.campaign_name || dbCamp.name || "";
-          const effObj = detectConversionCategory(campName, dbCamp.objective, row.actions, row.results, row.optimization_goal);
-          const valStr = row.results?.[0]?.values?.[0]?.value;
-          const trueConv = (valStr !== undefined && valStr !== null && !isNaN(parseFloat(valStr)))
-            ? parseFloat(valStr)
-            : (row.results?.[0]?.indicator ? 0 : extractMetaConversions(row.actions || [], effObj, parseInt(row.reach) || 0, campName));
-
+          const campCtx = campGoalCtx.get(dbCamp.id);
+          const ex = extractMetaInsightMetrics(row, {
+            rawObjective: row.objective || dbCamp.objective,
+            optimizationGoal: row.optimization_goal || campCtx?.optimizationGoal,
+            destinationType: campCtx?.destinationType,
+          });
           await supabase
             .from("metrics")
             .update({
-              conversions: trueConv,
-              cost: parseFloat(row.spend || "0") || 0,
-              reach: parseInt(row.reach || "0") || 0,
-              impressions: parseInt(row.impressions || "0") || 0,
-              result_type: effObj,
+              conversions: ex.resultCount ?? 0,
+              cost: ex.spend,
+              reach: ex.reach,
+              impressions: ex.impressions,
+              clicks: ex.inlineLinkClicks,
+              result_type: ex.category,
             })
             .eq("campaign_id", dbCamp.id)
             .eq("date", row.date_start);
         }
 
-        // Atualizar period stats de campanhas
-        for (const row of campPeriod) {
+        for (const row of campPeriodRes.data) {
           const dbCamp = campByExt.get(String(row.campaign_id));
           if (!dbCamp) continue;
-          const campName = row.campaign_name || dbCamp.name || "";
-          const effObj = detectConversionCategory(campName, dbCamp.objective, row.actions, row.results, row.optimization_goal);
-          const valStr = row.results?.[0]?.values?.[0]?.value;
-          const trueConv = (valStr !== undefined && valStr !== null && !isNaN(parseFloat(valStr)))
-            ? parseFloat(valStr)
-            : (row.results?.[0]?.indicator ? 0 : extractMetaConversions(row.actions || [], effObj, parseInt(row.reach) || 0, campName));
-
+          const campCtx = campGoalCtx.get(dbCamp.id);
+          const ex = extractMetaInsightMetrics(row, {
+            rawObjective: row.objective || dbCamp.objective,
+            optimizationGoal: row.optimization_goal || campCtx?.optimizationGoal,
+            destinationType: campCtx?.destinationType,
+          });
           await supabase
             .from("meta_period_stats")
             .update({
-              conversions: trueConv,
-              spend: parseFloat(row.spend || "0") || 0,
-              reach: parseInt(row.reach || "0") || 0,
-              impressions: parseInt(row.impressions || "0") || 0,
+              conversions: ex.resultCount ?? 0,
+              spend: ex.spend,
+              reach: ex.reach,
+              impressions: ex.impressions,
+              clicks: ex.inlineLinkClicks,
             })
             .eq("entity_type", "campaign")
             .eq("entity_id", dbCamp.id)
@@ -860,25 +444,23 @@ export async function calibrateMetaConversionsFromGraph(
             .eq("end_date", row.date_stop || endStr);
         }
 
-        // Atualizar period stats de ad sets
-        for (const row of adsetPeriod) {
+        for (const row of adsetPeriodRes.data) {
           const dbSet = adSetByExt.get(String(row.adset_id));
           if (!dbSet) continue;
           const dbCamp = campByExt.get(String(row.campaign_id));
-          const campName = row.campaign_name || dbCamp?.name || "";
-          const effObj = detectConversionCategory(campName, dbCamp?.objective, row.actions, row.results, row.optimization_goal);
-          const valStr = row.results?.[0]?.values?.[0]?.value;
-          const trueConv = (valStr !== undefined && valStr !== null && !isNaN(parseFloat(valStr)))
-            ? parseFloat(valStr)
-            : (row.results?.[0]?.indicator ? 0 : extractMetaConversions(row.actions || [], effObj, parseInt(row.reach) || 0, campName));
-
+          const ex = extractMetaInsightMetrics(row, {
+            rawObjective: row.objective || dbCamp?.objective,
+            optimizationGoal: row.optimization_goal || dbSet.optimization_goal,
+            destinationType: dbSet.destination_type,
+          });
           await supabase
             .from("meta_period_stats")
             .update({
-              conversions: trueConv,
-              spend: parseFloat(row.spend || "0") || 0,
-              reach: parseInt(row.reach || "0") || 0,
-              impressions: parseInt(row.impressions || "0") || 0,
+              conversions: ex.resultCount ?? 0,
+              spend: ex.spend,
+              reach: ex.reach,
+              impressions: ex.impressions,
+              clicks: ex.inlineLinkClicks,
             })
             .eq("entity_type", "adset")
             .eq("entity_id", dbSet.id)
@@ -886,64 +468,64 @@ export async function calibrateMetaConversionsFromGraph(
             .eq("end_date", row.date_stop || endStr);
         }
 
-        // Atualizar métricas diárias de anúncios
-        for (const row of adDaily) {
+        for (const row of adDailyRes.data) {
           const dbAd = adByExt.get(String(row.ad_id));
           if (!dbAd) continue;
           const dbCamp = campByExt.get(String(row.campaign_id));
-          const campName = row.campaign_name || dbCamp?.name || "";
-          const effObj = detectConversionCategory(campName, dbCamp?.objective, row.actions, row.results, row.optimization_goal);
-          const valStr = row.results?.[0]?.values?.[0]?.value;
-          const trueConv = (valStr !== undefined && valStr !== null && !isNaN(parseFloat(valStr)))
-            ? parseFloat(valStr)
-            : (row.results?.[0]?.indicator ? 0 : extractMetaConversions(row.actions || [], effObj, parseInt(row.reach) || 0, campName));
-
+          const dbSet = adSetByExt.get(String(row.adset_id));
+          const ex = extractMetaInsightMetrics(row, {
+            rawObjective: row.objective || dbCamp?.objective,
+            optimizationGoal: row.optimization_goal || dbSet?.optimization_goal,
+            destinationType: dbSet?.destination_type,
+          });
           await supabase
             .from("asset_metrics")
             .update({
-              conversions: trueConv,
-              cost: parseFloat(row.spend || "0") || 0,
-              reach: parseInt(row.reach || "0") || 0,
-              impressions: parseInt(row.impressions || "0") || 0,
+              conversions: ex.resultCount ?? 0,
+              cost: ex.spend,
+              reach: ex.reach,
+              impressions: ex.impressions,
+              clicks: ex.inlineLinkClicks,
             })
             .eq("ad_id", dbAd.id)
             .eq("date", row.date_start);
         }
 
-        // Atualizar period stats de anúncios
-        for (const row of adPeriod) {
+        for (const row of adPeriodRes.data) {
           const dbAd = adByExt.get(String(row.ad_id));
           if (!dbAd) continue;
           const dbCamp = campByExt.get(String(row.campaign_id));
-          const campName = row.campaign_name || dbCamp?.name || "";
-          const effObj = detectConversionCategory(campName, dbCamp?.objective, row.actions, row.results, row.optimization_goal);
-          const valStr = row.results?.[0]?.values?.[0]?.value;
-          const trueConv = (valStr !== undefined && valStr !== null && !isNaN(parseFloat(valStr)))
-            ? parseFloat(valStr)
-            : (row.results?.[0]?.indicator ? 0 : extractMetaConversions(row.actions || [], effObj, parseInt(row.reach) || 0, campName));
-
+          const dbSet = adSetByExt.get(String(row.adset_id));
+          const ex = extractMetaInsightMetrics(row, {
+            rawObjective: row.objective || dbCamp?.objective,
+            optimizationGoal: row.optimization_goal || dbSet?.optimization_goal,
+            destinationType: dbSet?.destination_type,
+          });
           await supabase
             .from("meta_period_stats")
             .update({
-              conversions: trueConv,
-              spend: parseFloat(row.spend || "0") || 0,
-              reach: parseInt(row.reach || "0") || 0,
-              impressions: parseInt(row.impressions || "0") || 0,
+              conversions: ex.resultCount ?? 0,
+              spend: ex.spend,
+              reach: ex.reach,
+              impressions: ex.impressions,
+              clicks: ex.inlineLinkClicks,
             })
             .eq("entity_type", "ad")
             .eq("entity_id", dbAd.id)
             .eq("start_date", row.date_start || startStr)
             .eq("end_date", row.date_stop || endStr);
         }
-      } catch (e) {
-        console.warn(`[Calibrator] Erro ao calibrar conta ${accId} via Graph API:`, e);
+      } catch (e: any) {
+        const msg = e?.message || String(e);
+        console.warn(`[Calibrator] Erro ao calibrar conta ${accId} via Graph API:`, msg);
+        errors.push(`${accId}: ${msg}`);
       }
     }
 
-    // Re-garante a calibração determinística caso algum valor específico precise de ajuste fino
-    await ensureDatabaseCalibrated(supabase, true);
-  } catch (err) {
-    console.warn("[Calibrator] Erro geral na calibração direta:", err);
+    return { ok: errors.length === 0, errors };
+  } catch (err: any) {
+    const msg = err?.message || String(err);
+    console.warn("[Calibrator] Erro geral na calibração direta:", msg);
+    return { ok: false, errors: [msg] };
   }
 }
-

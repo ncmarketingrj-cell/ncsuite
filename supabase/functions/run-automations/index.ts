@@ -266,18 +266,17 @@ serve(async (req) => {
 
         if (!metricsRows?.length) continue
 
-        let spend       = metricsRows.reduce((s, m) => s + Number(m.cost || 0), 0)
-        let conversions = metricsRows.reduce((s, m) => s + Number(m.conversions || 0), 0)
+        const spend       = metricsRows.reduce((s, m) => s + Number(m.cost || 0), 0)
+        const conversions = metricsRows.reduce((s, m) => s + Number(m.conversions || 0), 0)
 
-        // Calibração determinística para paridade de 100% com o Meta Ads Manager
-        const cNameUpper = (campaign.name || "").toUpperCase()
-        if (cNameUpper.includes("TAYNA") && today === "2026-11-12") {
-          conversions = 6
-        } else if (cNameUpper.includes("RUTH") && today === "2026-11-12") {
-          conversions = 7
-        } else if ((cNameUpper.includes("VICTOR") || cNameUpper.includes("6720")) && today === "2026-11-12") {
-          conversions = 0
-        }
+        // Declarados antes das ramificacoes para evitar ReferenceError / TDZ
+        const dailyBudget   = campaign.daily_budget || 0
+        const budgetUsedPct = dailyBudget > 0 ? (spend / dailyBudget) * 100 : 0
+        const rawType       = metricsRows[0]?.result_type || campaign.objective || null
+        const result        = getResultInfo(rawType)
+        const targetAccId   = campaign.ad_account_id || activeRule.ad_account_id || ""
+        const link          = `/metricas?account=${targetAccId}&campaign=${campaign.external_id}`
+        const alertsToInsert: any[] = []
 
         if (spend === 0) {
           // SMART TRIGGER: Zero Delivery (Falta de Entrega)
@@ -288,7 +287,7 @@ serve(async (req) => {
               message:     `A campanha está ATIVA mas gastou R$ 0,00 até agora (${currentHourBrt}h). Verifique o saldo, pagamentos ou rejeições de anúncios urgentes.`,
               type:        "alert",
               is_critical: true,
-              link:        `/metricas?account=${campaign.ad_account_id}&campaign=${campaign.external_id}`,
+              link,
               metadata: {
                 account_id:      campaign.ad_account_id,
                 campaign_id:     campaign.external_id,
@@ -301,10 +300,7 @@ serve(async (req) => {
             });
             console.log(`[AUTO] ⚠️ ALERTA ZERO DELIVERY: ${campaign.name}`);
           }
-          continue; // Pula as outras regras já que spend é 0
-        }
-
-        if (spend < minSpend) {
+        } else if (spend < minSpend) {
           console.log(`[AUTO] ${campaign.name}: gasto R$${spend.toFixed(2)} < mínimo R$${minSpend.toFixed(2)} — ignorando regras de CPA`)
         } else {
 
@@ -314,21 +310,10 @@ serve(async (req) => {
           ? freqRows.reduce((s, m) => s + Number(m.frequency), 0) / freqRows.length
           : 0
 
-        // Tipo de resultado: prefere result_type da métrica, fallback ao objective da campanha
-        const rawType   = metricsRows[0]?.result_type || campaign.objective || null
-        const result    = getResultInfo(rawType)
-
-        const dailyBudget   = campaign.daily_budget || 0
-        const budgetUsedPct = dailyBudget > 0 ? (spend / dailyBudget) * 100 : 0
-
         // Custo por resultado — indefinido quando não há resultados
         const costPerResult = conversions > 0 ? spend / conversions : null
 
         console.log(`[AUTO] ${campaign.name} [${result.label}] (Regra ${ruleType}): R$${spend.toFixed(2)} | ${conversions} ${result.label}(s) | ${result.metricLabel}: ${costPerResult ? `R$${costPerResult.toFixed(2)}` : 'N/A'} | Freq: ${frequency.toFixed(2)} | Budget: ${budgetUsedPct.toFixed(0)}%`)
-
-        const targetAccId = campaign.ad_account_id || activeRule.ad_account_id || ""
-        const link        = `/metricas?account=${targetAccId}&campaign=${campaign.external_id}`
-        const alertsToInsert: any[] = []
 
         // ── Alerta de custo por resultado elevado ─────────────────────────────
         if (cplEnabled && maxCpl && costPerResult !== null && costPerResult > maxCpl) {
@@ -832,15 +817,29 @@ serve(async (req) => {
             .limit(1)
 
           if (!existingSummary?.length) {
-            const { data: ym } = await supabase
-              .from("metrics")
-              .select("cost, conversions, reach")
-              .eq("date", yesterdayStr)
+            const [{ data: ym }, { data: accDailyRows }] = await Promise.all([
+              supabase
+                .from("metrics")
+                .select("cost, conversions, reach")
+                .eq("date", yesterdayStr),
+              supabase
+                .from("meta_account_daily_stats")
+                .select("ad_account_id, reach")
+                .eq("date", yesterdayStr)
+                .then((res: any) => res, () => ({ data: [] })),
+            ])
 
             if (ym && ym.length > 0) {
               const totalSpend = ym.reduce((acc, m) => acc + (m.cost || 0), 0)
               const totalConv  = ym.reduce((acc, m) => acc + (m.conversions || 0), 0)
-              const totalReach = ym.reduce((acc, m) => acc + (m.reach || 0), 0)
+              const hasAccountDedup = Array.isArray(accDailyRows) && accDailyRows.length > 0
+              const campaignSumReach = ym.reduce((acc, m) => acc + (m.reach || 0), 0)
+              const totalReach = hasAccountDedup
+                ? accDailyRows.reduce((acc: number, r: any) => acc + (Number(r.reach) || 0), 0)
+                : campaignSumReach
+              const reachSuffix = hasAccountDedup
+                ? "(alcance por conta; soma entre contas)"
+                : "(soma por campanha; não deduplicado)"
 
               if (totalSpend > 0) {
                 const yParts   = yesterdayStr.split("-")
@@ -851,16 +850,16 @@ serve(async (req) => {
                 await supabase.from("notifications").insert({
                   user_id:     adminUserId,
                   title:       `🌅 Fechamento: ${dayY} de ${monthPT}`,
-                  message:     `Resumo D-1: R$ ${totalSpend.toFixed(2)} investidos em todas as contas. ${totalConv} resultados totais | Alcance: ${totalReach.toLocaleString("pt-BR")}. Bom dia!`,
+                  message:     `Resumo D-1: R$ ${totalSpend.toFixed(2)} investidos em todas as contas. ${totalConv} resultados totais | Alcance ${reachSuffix}: ${totalReach.toLocaleString("pt-BR")}. Bom dia!`,
                   type:        "success",
                   is_critical: false,
                   link:        `/dashboard`,
-                  metadata:    { alert_type: "DAILY_SUMMARY_D1", summary_date: yesterdayStr, spend: totalSpend, conversions: totalConv }
+                  metadata:    { alert_type: "DAILY_SUMMARY_D1", summary_date: yesterdayStr, spend: totalSpend, conversions: totalConv, reach_deduplicated_by_account: hasAccountDedup }
                 })
 
                 if (whatsappPhone) {
                   await sendWhatsAppMessages(whatsappGateway, [whatsappPhone],
-                    `🌅 *FECHAMENTO DIÁRIO — NC PERFORMANCE*\n\n📅 *Período:* Ontem (${dayY} de ${monthPT})\n💸 *Total Investido:* R$ ${totalSpend.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}\n🎯 *Resultados Totais:* ${totalConv}\n👥 *Alcance Total:* ${totalReach.toLocaleString("pt-BR")}\n\nBom dia e ótimas campanhas! 🚀`,
+                    `🌅 *FECHAMENTO DIÁRIO — NC PERFORMANCE*\n\n📅 *Período:* Ontem (${dayY} de ${monthPT})\n💸 *Total Investido:* R$ ${totalSpend.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}\n🎯 *Resultados Totais:* ${totalConv}\n👥 *Alcance ${reachSuffix}:* ${totalReach.toLocaleString("pt-BR")}\n\nBom dia e ótimas campanhas! 🚀`,
                     whatsappProvider, whatsappApiKey, whatsappInstanceName
                   )
                 }
