@@ -118,10 +118,10 @@ export interface SocialFreshnessEvaluation<T> {
 export interface SocialSWRResolution<T> {
   data: T;
   source:
-    | "cache_fresh"
-    | "cache_stale_swr"
-    | "meta_live"
-    | "fallback_last_valid";
+  | "cache_fresh"
+  | "cache_stale_swr"
+  | "meta_live"
+  | "fallback_last_valid";
   snapshotAt: string;
   isStale: boolean;
   revalidatingInBackground: boolean;
@@ -131,18 +131,18 @@ export interface SocialSWRResolution<T> {
 export interface SocialPerfEventRecord {
   timestamp: string;
   event:
-    | "meta_call"
-    | "supabase_read"
-    | "cache_hit"
-    | "stale_swr_hit"
-    | "deduped_in_flight"
-    | "manual_sync"
-    | "fallback_preserved"
-    | "call_started"
-    | "call_completed"
-    | "call_failed"
-    | "call_aborted"
-    | "route_transition";
+  | "meta_call"
+  | "supabase_read"
+  | "cache_hit"
+  | "stale_swr_hit"
+  | "deduped_in_flight"
+  | "manual_sync"
+  | "fallback_preserved"
+  | "call_started"
+  | "call_completed"
+  | "call_failed"
+  | "call_aborted"
+  | "route_transition";
   source: "cache" | "meta" | "supabase";
   dataClass?: SocialDataClass;
   scopeTag?: string;
@@ -403,8 +403,8 @@ export function recordSocialPerfEvent(
     (event === "supabase_read"
       ? "supabase"
       : event === "cache_hit" || event === "stale_swr_hit" || event === "fallback_preserved"
-      ? "cache"
-      : "meta");
+        ? "cache"
+        : "meta");
 
   pushPerfEventRecord({
     timestamp: new Date().toISOString(),
@@ -808,9 +808,9 @@ export async function resolveSocialDataWithSWR<T>(input: {
         });
         const preserved = input.onErrorPreserve
           ? input.onErrorPreserve(
-              evaluation.envelope.data,
-              res.errorMessage || "Falha ao atualizar na Meta"
-            )
+            evaluation.envelope.data,
+            res.errorMessage || "Falha ao atualizar na Meta"
+          )
           : evaluation.envelope.data;
         return {
           data: preserved,
@@ -888,4 +888,73 @@ export async function resolveSocialDataWithSWR<T>(input: {
 
   // 3. Sem snapshot ou forceRefresh -> executa sincronização compartilhada
   return executeLiveFetch(input.forceRefresh ? "manual_sync" : "cache_miss");
+}
+
+export interface SocialMediaInsightsEntry {
+  mediaId: string;
+  platform: "instagram" | "facebook";
+  reach: number;
+  views: number;
+  saved: number;
+  shares: number;
+  available: boolean;
+}
+
+export function buildSocialMediaInsightsKey(params: {
+  tenantId?: string | null;
+  accountScope: string;
+  network?: SocialNetworkScope;
+  period?: string;
+  mediaId: string;
+}): string {
+  return buildSocialCacheKey({
+    tenantId: params.tenantId,
+    accountScope: params.accountScope,
+    network: params.network || "all",
+    period: params.period || "planner",
+    dataClass: "posts",
+    variant: `media:${params.mediaId}`,
+  });
+}
+
+export function readSocialMediaInsightsCache(params: {
+  tenantId?: string | null;
+  accountScope: string;
+  network?: SocialNetworkScope;
+  period?: string;
+  mediaId: string;
+  nowMs?: number;
+}): SocialMediaInsightsEntry | null {
+  const key = buildSocialMediaInsightsKey(params);
+  const res = evaluateSocialSnapshotFreshness<SocialMediaInsightsEntry>(
+    key,
+    "posts",
+    params.nowMs
+  );
+  if (res.status === "missing" || !res.envelope) return null;
+  return res.status === "fresh" ? res.envelope.data : null;
+}
+
+export function writeSocialMediaInsightsCache(
+  params: {
+    tenantId?: string | null;
+    accountScope: string;
+    network?: SocialNetworkScope;
+    period?: string;
+    mediaId: string;
+  },
+  entry: SocialMediaInsightsEntry
+): void {
+  const key = buildSocialMediaInsightsKey(params);
+  writeSocialCacheEnvelope(
+    key,
+    {
+      dataClass: "posts",
+      tenantId: (params.tenantId || "default").trim() || "default",
+      accountScope: params.accountScope || "all",
+      network: params.network || "all",
+      period: params.period || "planner",
+    },
+    entry
+  );
 }

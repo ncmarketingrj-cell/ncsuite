@@ -4,6 +4,7 @@ import {
   fetchAccountSocialOverview,
   fetchAccountSocialPosts,
   fetchLiveSocialAccounts,
+  fetchPlannerMediaInsightsBatch,
   fetchRealPlannerPosts,
   type PlannerSyncResult,
   type RealSocialAccount,
@@ -18,6 +19,7 @@ import {
   readSocialCacheEnvelope,
   recordSocialCacheHitEvent,
   resolveSocialDataWithSWR,
+  writeSocialCacheEnvelope,
   type SocialDataClass,
   type SocialNetworkScope,
 } from "@/lib/socialCacheDomain";
@@ -476,6 +478,7 @@ export function useSocialPlannerQuery(params: {
             accounts: params.accounts,
             selectedPageId: canonicalPage,
             masterToken: params.masterToken,
+            tenantId,
           });
           const nowIso = new Date().toISOString();
           return {
@@ -527,6 +530,126 @@ export function useSocialPlannerQuery(params: {
   });
 
   return query;
+}
+
+export function usePlannerProgressiveInsights(params: {
+  tenantId?: string | null;
+  accounts: RealSocialAccount[];
+  selectedPage: string;
+  network?: SocialNetworkScope;
+  masterToken: string | null;
+  plannerData?: CachedSocialPlanner;
+  targetMediaIds: string[];
+  enabled?: boolean;
+}) {
+  const qc = useQueryClient();
+  const tenantId = getLastKnownTenantId(params.tenantId);
+  const canonicalPage = useMemo(
+    () => canonicalizeSocialPageId(params.selectedPage, params.accounts),
+    [params.selectedPage, params.accounts]
+  );
+  const network: SocialNetworkScope = params.network || "all";
+  const accountsState = params.accounts.length > 0 ? "ready" : "empty";
+  const [isEnrichingInsights, setIsEnrichingInsights] = useState(false);
+
+  const keyParams = useMemo(
+    () => ({
+      tenantId,
+      accountScope: canonicalPage || "all",
+      network,
+      period: "planner",
+      dataClass: "planner" as const,
+      variant: Boolean(params.masterToken) ? "with_token" : "no_token",
+    }),
+    [tenantId, canonicalPage, network, params.masterToken]
+  );
+
+  const cacheKey = useMemo(() => buildSocialCacheKey(keyParams), [keyParams]);
+  const queryKey = useMemo(
+    () => ["social-hub", "planner", cacheKey, accountsState] as const,
+    [cacheKey, accountsState]
+  );
+
+  const pendingMediaIds = useMemo(() => {
+    if (!params.enabled || !params.masterToken || !params.plannerData?.posts?.length) {
+      return [];
+    }
+    const targetSet = new Set(params.targetMediaIds.filter(Boolean));
+    if (targetSet.size === 0) return [];
+    const pending = new Set<string>();
+    for (const p of params.plannerData.posts) {
+      if (
+        p.platform === "instagram" &&
+        p.status === "published" &&
+        p.meta_post_id &&
+        targetSet.has(p.meta_post_id) &&
+        p.insightsStatus === "pending"
+      ) {
+        pending.add(p.meta_post_id);
+      }
+    }
+    return Array.from(pending);
+  }, [params.enabled, params.masterToken, params.plannerData?.posts, params.targetMediaIds]);
+
+  const pendingKey = pendingMediaIds.join(",");
+
+  useEffect(() => {
+    if (!pendingKey || !params.masterToken) {
+      setIsEnrichingInsights(false);
+      return;
+    }
+    let mounted = true;
+    setIsEnrichingInsights(true);
+
+    void fetchPlannerMediaInsightsBatch({
+      mediaIds: pendingMediaIds,
+      masterToken: params.masterToken,
+      tenantId,
+      accountScope: canonicalPage || "all",
+      concurrency: 3,
+    })
+      .then((metricsById) => {
+        if (Object.keys(metricsById).length === 0) return;
+        const applyPatch = (prev: CachedSocialPlanner | undefined): CachedSocialPlanner | undefined => {
+          if (!prev) return prev;
+          let changed = false;
+          const nextPosts = prev.posts.map((post) => {
+            if (!post.meta_post_id || !metricsById[post.meta_post_id]) return post;
+            const m = metricsById[post.meta_post_id];
+            changed = true;
+            return {
+              ...post,
+              reach_count: m.reach,
+              impressions_count: m.views,
+              saves_count: m.saved,
+              shares_count: m.shares,
+              insightsStatus: (m.available ? "loaded" : "unavailable") as "loaded" | "unavailable",
+            };
+          });
+          if (!changed) return prev;
+          const updated: CachedSocialPlanner = { ...prev, posts: nextPosts };
+          writeSocialCacheEnvelope(
+            cacheKey,
+            {
+              ...keyParams,
+              snapshotAt: updated.snapshotAt || new Date().toISOString(),
+            },
+            updated
+          );
+          return updated;
+        };
+        qc.setQueryData<CachedSocialPlanner | undefined>(queryKey, applyPatch);
+      })
+      .finally(() => {
+        if (mounted) setIsEnrichingInsights(false);
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, [pendingKey, params.masterToken, tenantId, canonicalPage, cacheKey, keyParams, qc, queryKey]);
+
+  return { isEnrichingInsights };
 }
 
 export function useManualSocialSync() {

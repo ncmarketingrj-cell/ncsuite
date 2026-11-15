@@ -7,6 +7,7 @@ import {
   evaluateSocialSnapshotFreshness,
   getSocialCacheTtlMs,
   getSocialPerfMetrics,
+  readSocialMediaInsightsCache,
   recordSocialCacheHitEvent,
   recordSocialPerfEvent,
   recordSocialRouteTransition,
@@ -14,6 +15,7 @@ import {
   resolveSocialDataWithSWR,
   runSharedSocialSync,
   SOCIAL_DATA_CLASS_MATRIX,
+  writeSocialMediaInsightsCache,
 } from "../src/lib/socialCacheDomain.ts";
 import {
   canonicalizeSocialPageId,
@@ -532,4 +534,63 @@ test("13. ensureSocialPerfInitialized exposes global telemetry, tracks reactQuer
       (globalThis as any).sessionStorage = prevStorage;
     }
   }
+});
+
+test("14. Per-media insights cache isolates account/tenant scopes and avoids duplicate individual calls across routes", () => {
+  resetSocialCacheForTests();
+
+  writeSocialMediaInsightsCache(
+    {
+      tenantId: "tenant-1",
+      accountScope: "page-luma",
+      network: "all",
+      period: "planner",
+      mediaId: "ig_media_1",
+    },
+    {
+      mediaId: "ig_media_1",
+      platform: "instagram",
+      reach: 4200,
+      views: 5100,
+      saved: 34,
+      shares: 12,
+      available: true,
+    }
+  );
+
+  // Mesmo tenant + conta reutiliza imediatamente
+  const hit = readSocialMediaInsightsCache({
+    tenantId: "tenant-1",
+    accountScope: "page-luma",
+    network: "all",
+    period: "planner",
+    mediaId: "ig_media_1",
+  });
+  assert.ok(hit);
+  assert.equal(hit.reach, 4200);
+  assert.equal(hit.views, 5100);
+  assert.equal(hit.saved, 34);
+  assert.equal(hit.shares, 12);
+
+  // Outra conta ou outro tenant não vaza cache
+  assert.equal(
+    readSocialMediaInsightsCache({
+      tenantId: "tenant-1",
+      accountScope: "page-fly",
+      network: "all",
+      period: "planner",
+      mediaId: "ig_media_1",
+    }),
+    null
+  );
+  assert.equal(
+    readSocialMediaInsightsCache({
+      tenantId: "tenant-2",
+      accountScope: "page-luma",
+      network: "all",
+      period: "planner",
+      mediaId: "ig_media_1",
+    }),
+    null
+  );
 });

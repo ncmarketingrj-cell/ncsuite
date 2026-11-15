@@ -65,6 +65,7 @@ import { useAuth } from "@/lib/auth";
 import { canonicalizeSocialPageId, useSocialHubFilters } from "@/lib/socialHubStore";
 import {
   useManualSocialSync,
+  usePlannerProgressiveInsights,
   useSocialAccountsQuery,
   useSocialPlannerQuery,
 } from "@/hooks/useSocialHubData";
@@ -138,6 +139,7 @@ export default function SocialMediaPage() {
   const [editingPost, setEditingPost] = useState<SocialPost | null>(null);
   const [previewPost, setPreviewPost] = useState<SocialPost | null>(null);
   const [dayModalDate, setDayModalDate] = useState<Date | null>(null);
+  const [performanceVisibleCount, setPerformanceVisibleCount] = useState(10);
   const { isSyncing, syncScope } = useManualSocialSync();
 
   useEffect(() => {
@@ -240,6 +242,53 @@ export default function SocialMediaPage() {
       return true;
     });
   }, [allPosts, filterPlatform, filterType, filterStatus, searchQuery]);
+
+  useEffect(() => {
+    setPerformanceVisibleCount(10);
+  }, [canonicalSelectedPage]);
+
+  useEffect(() => {
+    if (!previewPost) return;
+    const latest = allPosts.find((p) => p.id === previewPost.id);
+    if (latest && latest !== previewPost) {
+      setPreviewPost(latest);
+    }
+  }, [allPosts, previewPost]);
+
+  const progressiveTargetMediaIds = useMemo(() => {
+    const ids = new Set<string>();
+    if (
+      previewPost &&
+      previewPost.platform === "instagram" &&
+      previewPost.status === "published" &&
+      previewPost.meta_post_id &&
+      previewPost.insightsStatus === "pending"
+    ) {
+      ids.add(previewPost.meta_post_id);
+    }
+    if (viewMode === "performance") {
+      const visibleIg = filteredPosts
+        .filter((p) => p.status === "published" && p.platform === "instagram" && p.meta_post_id)
+        .slice(0, performanceVisibleCount);
+      for (const p of visibleIg) {
+        if (p.meta_post_id && p.insightsStatus === "pending") {
+          ids.add(p.meta_post_id);
+        }
+      }
+    }
+    return Array.from(ids);
+  }, [previewPost, viewMode, filteredPosts, performanceVisibleCount]);
+
+  const { isEnrichingInsights } = usePlannerProgressiveInsights({
+    tenantId,
+    accounts: activePages,
+    selectedPage: canonicalSelectedPage,
+    network: selectedNetwork,
+    masterToken,
+    plannerData,
+    targetMediaIds: progressiveTargetMediaIds,
+    enabled: !isLoadingAccounts && progressiveTargetMediaIds.length > 0,
+  });
 
   const stats = useMemo(() => {
     const published = allPosts.filter((p) => p.status === "published");
@@ -807,7 +856,13 @@ export default function SocialMediaPage() {
             exit={{ opacity: 0, y: -8 }}
             transition={{ duration: 0.15 }}
           >
-            <PerformanceLeaderboardView posts={filteredPosts} onSelectPost={(p) => setPreviewPost(p)} />
+            <PerformanceLeaderboardView
+              posts={filteredPosts}
+              visibleCount={performanceVisibleCount}
+              isEnriching={isEnrichingInsights}
+              onLoadMore={() => setPerformanceVisibleCount((c) => c + 10)}
+              onSelectPost={(p) => setPreviewPost(p)}
+            />
           </motion.div>
         )}
       </AnimatePresence>
@@ -1629,10 +1684,19 @@ function BestPostingTimesHeatmapView({ matrix, hasData, sampleSize = 0, topSlots
 // ─── ABA 5: RANKING REAL DE PERFORMANCE ───────────────────────────────────────
 interface PerformanceViewProps {
   posts: SocialPost[];
+  visibleCount: number;
+  isEnriching?: boolean;
+  onLoadMore: () => void;
   onSelectPost: (p: SocialPost) => void;
 }
 
-function PerformanceLeaderboardView({ posts, onSelectPost }: PerformanceViewProps) {
+function PerformanceLeaderboardView({
+  posts,
+  visibleCount,
+  isEnriching,
+  onLoadMore,
+  onSelectPost,
+}: PerformanceViewProps) {
   const publishedPosts = useMemo(() => {
     return posts
       .filter((p) => p.status === "published")
@@ -1642,6 +1706,11 @@ function PerformanceLeaderboardView({ posts, onSelectPost }: PerformanceViewProp
           b.likes_count + b.comments_count - (a.likes_count + a.comments_count)
       );
   }, [posts]);
+
+  const visiblePosts = useMemo(
+    () => publishedPosts.slice(0, visibleCount),
+    [publishedPosts, visibleCount]
+  );
 
   return (
     <div className="space-y-6">
@@ -1654,6 +1723,7 @@ function PerformanceLeaderboardView({ posts, onSelectPost }: PerformanceViewProp
             </h3>
             <p className="text-xs text-muted-foreground">
               Ordenadas por alcance orgânico e interações reais registradas na Meta API.
+              {isEnriching && " (Carregando métricas de alcance visíveis...)"}
             </p>
           </div>
         </div>
@@ -1673,18 +1743,23 @@ function PerformanceLeaderboardView({ posts, onSelectPost }: PerformanceViewProp
               </tr>
             </thead>
             <tbody className="divide-y divide-border/40">
-              {publishedPosts.length === 0 ? (
+              {visiblePosts.length === 0 ? (
                 <tr>
                   <td colSpan={8} className="py-12 text-center text-muted-foreground">
                     Nenhuma publicação encontrada para os filtros selecionados.
                   </td>
                 </tr>
               ) : (
-                publishedPosts.map((post, idx) => {
+                visiblePosts.map((post, idx) => {
+                  const isPendingInsights = post.insightsStatus === "pending";
                   const interactions =
                     post.likes_count + post.comments_count + (post.shares_count || 0) + (post.saves_count || 0);
                   const engRate =
-                    post.reach_count > 0 ? ((interactions / post.reach_count) * 100).toFixed(1) : "—";
+                    isPendingInsights
+                      ? "Carregando..."
+                      : post.reach_count > 0
+                      ? ((interactions / post.reach_count) * 100).toFixed(1)
+                      : "—";
                   return (
                     <tr key={post.id} className="hover:bg-muted/40 transition">
                       <td className="py-3 px-3">
@@ -1718,7 +1793,15 @@ function PerformanceLeaderboardView({ posts, onSelectPost }: PerformanceViewProp
                         <span className="text-xs font-semibold capitalize text-foreground">{post.platform}</span>
                       </td>
                       <td className="py-3 px-3 font-mono font-bold text-foreground">
-                        {post.reach_count > 0 ? post.reach_count.toLocaleString("pt-BR") : "—"}
+                        {isPendingInsights ? (
+                          <span className="text-[11px] font-normal text-muted-foreground animate-pulse">
+                            Carregando...
+                          </span>
+                        ) : post.reach_count > 0 ? (
+                          post.reach_count.toLocaleString("pt-BR")
+                        ) : (
+                          "—"
+                        )}
                       </td>
                       <td className="py-3 px-3 font-mono text-foreground">
                         {post.likes_count.toLocaleString("pt-BR")}
@@ -1728,7 +1811,15 @@ function PerformanceLeaderboardView({ posts, onSelectPost }: PerformanceViewProp
                       </td>
                       <td className="py-3 px-3">
                         <span className="font-mono font-bold text-xs text-emerald-500">
-                          {engRate === "—" ? "—" : `${engRate}%`}
+                          {isPendingInsights ? (
+                            <span className="text-[11px] font-normal text-muted-foreground animate-pulse">
+                              Carregando...
+                            </span>
+                          ) : engRate === "—" ? (
+                            "—"
+                          ) : (
+                            `${engRate}%`
+                          )}
                         </span>
                       </td>
                       <td className="py-3 px-3 text-right">
@@ -1746,6 +1837,16 @@ function PerformanceLeaderboardView({ posts, onSelectPost }: PerformanceViewProp
             </tbody>
           </table>
         </div>
+        {publishedPosts.length > visibleCount && (
+          <div className="mt-4 flex justify-center">
+            <button
+              onClick={onLoadMore}
+              className="px-4 py-2 rounded-xl border border-border/80 bg-muted/40 hover:bg-muted text-xs font-bold text-foreground transition cursor-pointer"
+            >
+              Carregar mais ({Math.min(10, publishedPosts.length - visibleCount)} de {publishedPosts.length - visibleCount} restantes)
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -2426,13 +2527,19 @@ function DeviceMockupModal({
               <div>
                 <span className="block text-[11px]">Alcance</span>
                 <span className="font-bold text-foreground">
-                  {post.reach_count > 0 ? post.reach_count.toLocaleString("pt-BR") : "Indisp."}
+                  {post.insightsStatus === "pending"
+                    ? "Carregando..."
+                    : post.reach_count > 0
+                    ? post.reach_count.toLocaleString("pt-BR")
+                    : "Indisp."}
                 </span>
               </div>
               <div>
                 <span className="block text-[11px]">Shares/Salvos</span>
                 <span className="font-bold text-foreground">
-                  {((post.shares_count || 0) + (post.saves_count || 0)).toLocaleString("pt-BR")}
+                  {post.insightsStatus === "pending"
+                    ? "Carregando..."
+                    : ((post.shares_count || 0) + (post.saves_count || 0)).toLocaleString("pt-BR")}
                 </span>
               </div>
             </div>

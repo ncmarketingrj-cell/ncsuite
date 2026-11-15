@@ -17,7 +17,14 @@ import {
   type SocialSourceTelemetry,
   type SocialDataSourceKind,
 } from "./metaSocialErrors";
-import { recordSocialPerfEvent, type SocialDataClass } from "./socialCacheDomain";
+import {
+  buildSocialMediaInsightsKey,
+  readSocialMediaInsightsCache,
+  recordSocialPerfEvent,
+  runSharedSocialSync,
+  writeSocialMediaInsightsCache,
+  type SocialDataClass,
+} from "./socialCacheDomain";
 
 const META_API_BASE = META_GRAPH_BASE;
 
@@ -1894,32 +1901,63 @@ export async function fetchAccountSocialPosts(params: {
     await mapWithConcurrency(toEnrich, 4, async (entry) => {
       if (controller.signal.aborted) return;
       if (entry.platform === "instagram") {
-        const ins = await fetchMetaJson(
-          `${META_API_BASE}/${entry.rawId}/insights?metric=reach,views,saved,shares,total_interactions&access_token=${encodeURIComponent(entry.token)}`,
-          6_500,
-          controller.signal,
-          { dataClass: "posts", accountScope: selectedPageId, reason: "meta_ig_post_insights" }
-        );
-        if (ins?.error) {
-          postInsErr++;
-          logFailure(`/${entry.rawId}/insights`, entry.acc, "postInsights", ins);
-          return;
-        }
-        if (Array.isArray(ins?.data)) {
-          postInsOk++;
-          let pReach = 0;
-          let pViews = 0;
-          let pSaved = 0;
-          let pShares = 0;
-          let pInteractions = 0;
-          for (const m of ins.data) {
-            const v = Number(m.values?.[0]?.value || 0);
-            if (m.name === "reach") pReach = v;
-            if (m.name === "views") pViews = v;
-            if (m.name === "saved") pSaved = v;
-            if (m.name === "shares") pShares = v;
-            if (m.name === "total_interactions") pInteractions = v;
+        const cachedMedia = readSocialMediaInsightsCache({
+          accountScope: selectedPageId,
+          network: "all",
+          period: "planner",
+          mediaId: entry.rawId,
+        });
+        let pReach = cachedMedia?.reach || 0;
+        let pViews = cachedMedia?.views || 0;
+        let pSaved = cachedMedia?.saved || 0;
+        let pShares = cachedMedia?.shares || 0;
+        let pInteractions = 0;
+
+        if (!cachedMedia) {
+          const ins = await fetchMetaJson(
+            `${META_API_BASE}/${entry.rawId}/insights?metric=reach,views,saved,shares,total_interactions&access_token=${encodeURIComponent(entry.token)}`,
+            6_500,
+            controller.signal,
+            { dataClass: "posts", accountScope: selectedPageId, reason: "meta_ig_post_insights" }
+          );
+          if (ins?.error) {
+            postInsErr++;
+            logFailure(`/${entry.rawId}/insights`, entry.acc, "postInsights", ins);
+            return;
           }
+          if (Array.isArray(ins?.data)) {
+            postInsOk++;
+            for (const m of ins.data) {
+              const v = Number(m.values?.[0]?.value || 0);
+              if (m.name === "reach") pReach = v;
+              if (m.name === "views") pViews = v;
+              if (m.name === "saved") pSaved = v;
+              if (m.name === "shares") pShares = v;
+              if (m.name === "total_interactions") pInteractions = v;
+            }
+            writeSocialMediaInsightsCache(
+              {
+                accountScope: selectedPageId,
+                network: "all",
+                period: "planner",
+                mediaId: entry.rawId,
+              },
+              {
+                mediaId: entry.rawId,
+                platform: "instagram",
+                reach: pReach,
+                views: pViews,
+                saved: pSaved,
+                shares: pShares,
+                available: true,
+              }
+            );
+          }
+        } else {
+          postInsOk++;
+        }
+
+        if (cachedMedia || pReach > 0 || pViews > 0 || pSaved > 0 || pShares > 0 || pInteractions > 0) {
           const totalInt = pInteractions || entry.post.likes_count + entry.post.comments_count + pSaved + pShares;
           entry.post.reach_count = pReach;
           entry.post.views_count = pViews;
@@ -2209,6 +2247,7 @@ export interface PlannerPost {
   impressions_count: number;
   shares_count?: number;
   saves_count?: number;
+  insightsStatus?: "loaded" | "pending" | "unavailable";
   created_at: string;
   source: "meta_live" | "supabase";
 }
@@ -2292,8 +2331,9 @@ export async function fetchRealPlannerPosts(params: {
   accounts: RealSocialAccount[];
   selectedPageId: string;
   masterToken: string | null;
+  tenantId?: string | null;
 }): Promise<PlannerSyncResult> {
-  const { accounts, selectedPageId, masterToken } = params;
+  const { accounts, selectedPageId, masterToken, tenantId } = params;
 
   const emptyHeatmap = Array.from({ length: 7 }, () => Array(24).fill(0));
 
@@ -2379,30 +2419,31 @@ export async function fetchRealPlannerPosts(params: {
     };
   }
 
-  // Perfil completo real do Instagram (para o Feed Planner 3x3)
-  let igProfile: RealIgProfileDetails | null = null;
+  // Perfil completo real do Instagram (em paralelo com as listas de posts/agendamentos)
   const igTarget = targetAccounts.find((a) => a.instagram_account_id) || null;
-  if (igTarget?.instagram_account_id) {
-    const profRes = await fetchMetaJson(
-      `${META_API_BASE}/${igTarget.instagram_account_id}?fields=id,username,name,biography,website,followers_count,follows_count,media_count,profile_picture_url&access_token=${encodeURIComponent(masterToken)}`,
-      DEFAULT_META_CALL_TIMEOUT_MS,
-      undefined,
-      { dataClass: "profile", accountScope: selectedPageId, reason: "meta_ig_profile" }
-    );
-    if (profRes && !profRes.error && profRes.id) {
-      igProfile = {
-        id: profRes.id,
-        username: profRes.username || igTarget.instagram_handle || "",
-        name: profRes.name || igTarget.page_name,
-        biography: profRes.biography || "",
-        website: profRes.website || "",
-        followers_count: Number(profRes.followers_count ?? igTarget.instagram_followers ?? 0),
-        follows_count: Number(profRes.follows_count ?? 0),
-        media_count: Number(profRes.media_count ?? 0),
-        profile_picture_url: profRes.profile_picture_url || igTarget.profile_picture_url || null,
-      };
-    }
-  }
+  const igProfilePromise: Promise<RealIgProfileDetails | null> = igTarget?.instagram_account_id
+    ? fetchMetaJson(
+        `${META_API_BASE}/${igTarget.instagram_account_id}?fields=id,username,name,biography,website,followers_count,follows_count,media_count,profile_picture_url&access_token=${encodeURIComponent(masterToken)}`,
+        DEFAULT_META_CALL_TIMEOUT_MS,
+        undefined,
+        { dataClass: "profile", accountScope: selectedPageId, reason: "meta_ig_profile" }
+      ).then((profRes) => {
+        if (profRes && !profRes.error && profRes.id) {
+          return {
+            id: profRes.id,
+            username: profRes.username || igTarget.instagram_handle || "",
+            name: profRes.name || igTarget.page_name,
+            biography: profRes.biography || "",
+            website: profRes.website || "",
+            followers_count: Number(profRes.followers_count ?? igTarget.instagram_followers ?? 0),
+            follows_count: Number(profRes.follows_count ?? 0),
+            media_count: Number(profRes.media_count ?? 0),
+            profile_picture_url: profRes.profile_picture_url || igTarget.profile_picture_url || null,
+          };
+        }
+        return null;
+      })
+    : Promise.resolve(null);
 
   const metaPosts: PlannerPost[] = [];
   const metaByMetaId = new Map<string, PlannerPost>();
@@ -2436,7 +2477,7 @@ export async function fetchRealPlannerPosts(params: {
         const pageToken = acc.access_token || masterToken;
         const fbLimit = isSingle ? "30" : "10";
         const igLimit = isSingle ? "30" : "10";
-        const pageDepth = isSingle ? 3 : 1;
+        const pageDepth = isSingle ? 2 : 1;
 
         const [fbSchedRes, fbPromoRes, fbPubRes, igMediaRes, igStoriesRes] = await Promise.all([
           fetchMetaPaginatedList(
@@ -2592,38 +2633,9 @@ export async function fetchRealPlannerPosts(params: {
           metaByMetaId.set(fp.id, item);
         }
 
-        // Posts publicados no Instagram: enriquecimento limitado em lote para não saturar consolidado
+        // Posts publicados no Instagram: hidrata instantaneamente do cache compartilhado sem bloquear 1º render
+        // Métricas detalhadas (reach, views, saved, shares) são carregadas progressivamente sob demanda
         const igList = Array.isArray(igMediaRes?.data) ? igMediaRes.data : [];
-        const maxEnrichCount = isSingle ? 25 : 2;
-        const enrichSlice = igList.slice(0, maxEnrichCount);
-
-        const igInsightsMap = new Map<string, { reach: number; views: number; saved: number; shares: number }>();
-        for (let i = 0; i < enrichSlice.length; i += 6) {
-          await Promise.all(
-            enrichSlice.slice(i, i + 6).map(async (mItem: any) => {
-              const ins = await fetchMetaJson(
-                `${META_API_BASE}/${mItem.id}/insights?metric=reach,views,saved,shares&access_token=${encodeURIComponent(masterToken)}`,
-                DEFAULT_META_CALL_TIMEOUT_MS,
-                undefined,
-                { dataClass: "planner", accountScope: selectedPageId, reason: "meta_planner_ig_insights" }
-              );
-              let reach = 0;
-              let views = 0;
-              let saved = 0;
-              let shares = 0;
-              if (Array.isArray(ins?.data)) {
-                for (const met of ins.data) {
-                  const v = Number(met.values?.[0]?.value || 0);
-                  if (met.name === "reach") reach = v;
-                  if (met.name === "views") views = v;
-                  if (met.name === "saved") saved = v;
-                  if (met.name === "shares") shares = v;
-                }
-              }
-              igInsightsMap.set(mItem.id, { reach, views, saved, shares });
-            })
-          );
-        }
 
         for (const igItem of igList) {
           if (!igItem?.id) continue;
@@ -2637,7 +2649,13 @@ export async function fetchRealPlannerPosts(params: {
             : igItem.media_product_type === "STORY"
             ? "stories"
             : "feed";
-          const metrics = igInsightsMap.get(igItem.id);
+          const cachedMetrics = readSocialMediaInsightsCache({
+            tenantId,
+            accountScope: selectedPageId,
+            network: "all",
+            period: "planner",
+            mediaId: igItem.id,
+          });
           const item: PlannerPost = {
             id: `meta_ig_${igItem.id}`,
             page_id: acc.page_id,
@@ -2656,10 +2674,15 @@ export async function fetchRealPlannerPosts(params: {
             meta_post_id: igItem.id,
             likes_count: Number(igItem.like_count || 0),
             comments_count: Number(igItem.comments_count || 0),
-            shares_count: metrics?.shares || 0,
-            saves_count: metrics?.saved || 0,
-            reach_count: metrics?.reach || 0,
-            impressions_count: metrics?.views || 0,
+            shares_count: cachedMetrics?.shares || 0,
+            saves_count: cachedMetrics?.saved || 0,
+            reach_count: cachedMetrics?.reach || 0,
+            impressions_count: cachedMetrics?.views || 0,
+            insightsStatus: cachedMetrics
+              ? cachedMetrics.available
+                ? "loaded"
+                : "unavailable"
+              : "pending",
             created_at: igItem.timestamp,
             source: "meta_live",
           };
@@ -2702,6 +2725,11 @@ export async function fetchRealPlannerPosts(params: {
       })
     );
   }
+
+  const igProfile = await igProfilePromise;
+  const metaInsightsStatusMap = new Map<string, PlannerPost["insightsStatus"]>(
+    metaPosts.map((mp) => [mp.id, mp.insightsStatus || "loaded"])
+  );
 
   // Reconcilia crossposts ("both") por canal (platform + meta_post_id) usando núcleo compartilhado
   const dbCreatedMap = new Map(dbRows.map((r) => [r.id, r]));
@@ -2785,6 +2813,9 @@ export async function fetchRealPlannerPosts(params: {
         saves_count: n.savesCount ?? 0,
         reach_count: n.reachCount ?? 0,
         impressions_count: n.impressionsCount ?? 0,
+        insightsStatus:
+          metaInsightsStatusMap.get(n.id) ||
+          (n.source === "supabase" ? "loaded" : "unavailable"),
         created_at: orig?.created_at || n.publishedAt || n.scheduledAt || new Date().toISOString(),
         source: (n.source === "meta_live" ? "meta_live" : "supabase") as "meta_live" | "supabase",
       };
@@ -2871,6 +2902,132 @@ export async function fetchRealPlannerPosts(params: {
         "Não foi possível carregar dados ao vivo da Meta Graph API no momento (verifique limite ou conexão)."
       : undefined,
   };
+}
+
+export interface PlannerMediaInsightMetrics {
+  mediaId: string;
+  reach: number;
+  views: number;
+  saved: number;
+  shares: number;
+  available: boolean;
+}
+
+/**
+ * Busca insights individuais de mídias do Instagram sob demanda com concorrência limitada,
+ * deduplicação single-flight (não cancela ao desmontar rota) e cache compartilhado por conta/mídia.
+ */
+export async function fetchPlannerMediaInsightsBatch(params: {
+  mediaIds: string[];
+  masterToken: string;
+  tenantId?: string | null;
+  accountScope: string;
+  concurrency?: number;
+}): Promise<Record<string, PlannerMediaInsightMetrics>> {
+  const uniqueIds = Array.from(new Set(params.mediaIds.filter(Boolean)));
+  const out: Record<string, PlannerMediaInsightMetrics> = {};
+  if (uniqueIds.length === 0 || !params.masterToken) return out;
+
+  const missingIds: string[] = [];
+  for (const mediaId of uniqueIds) {
+    const cached = readSocialMediaInsightsCache({
+      tenantId: params.tenantId,
+      accountScope: params.accountScope,
+      network: "all",
+      period: "planner",
+      mediaId,
+    });
+    if (cached) {
+      out[mediaId] = {
+        mediaId,
+        reach: cached.reach,
+        views: cached.views,
+        saved: cached.saved,
+        shares: cached.shares,
+        available: cached.available,
+      };
+    } else {
+      missingIds.push(mediaId);
+    }
+  }
+
+  if (missingIds.length === 0) return out;
+
+  const concurrency = Math.max(1, Math.min(4, params.concurrency ?? 3));
+  await mapWithConcurrency(missingIds, concurrency, async (mediaId) => {
+    const flightKey = buildSocialMediaInsightsKey({
+      tenantId: params.tenantId,
+      accountScope: params.accountScope,
+      network: "all",
+      period: "planner",
+      mediaId,
+    });
+
+    const resolved = await runSharedSocialSync<PlannerMediaInsightMetrics>(
+      flightKey,
+      async () => {
+        const ins = await fetchMetaJson(
+          `${META_API_BASE}/${mediaId}/insights?metric=reach,views,saved,shares&access_token=${encodeURIComponent(params.masterToken)}`,
+          DEFAULT_META_CALL_TIMEOUT_MS,
+          undefined,
+          { dataClass: "planner", accountScope: params.accountScope, reason: "meta_planner_ig_insights_ondemand" }
+        );
+        let reach = 0;
+        let views = 0;
+        let saved = 0;
+        let shares = 0;
+        const available = Array.isArray(ins?.data);
+        if (available) {
+          for (const met of ins.data) {
+            const v = Number(met.values?.[0]?.value || 0);
+            if (met.name === "reach") reach = v;
+            if (met.name === "views") views = v;
+            if (met.name === "saved") saved = v;
+            if (met.name === "shares") shares = v;
+          }
+        }
+        const entry: PlannerMediaInsightMetrics = {
+          mediaId,
+          reach,
+          views,
+          saved,
+          shares,
+          available,
+        };
+        if (available) {
+          writeSocialMediaInsightsCache(
+            {
+              tenantId: params.tenantId,
+              accountScope: params.accountScope,
+              network: "all",
+              period: "planner",
+              mediaId,
+            },
+            {
+              mediaId,
+              platform: "instagram",
+              reach,
+              views,
+              saved,
+              shares,
+              available: true,
+            }
+          );
+        }
+        return entry;
+      },
+      {
+        dataClass: "planner",
+        accountScope: params.accountScope,
+        network: "all",
+        period: "planner",
+      }
+    );
+
+    out[mediaId] = resolved;
+  });
+
+  return out;
 }
 
 /**
