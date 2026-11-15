@@ -1279,8 +1279,23 @@ function RelatoriosPage() {
     const totalReach = effectiveAccountReach ?? summedReach;
     const totalImps = selected.reduce((s, c) => s + c.impressions, 0);
 
-    const buildHeader = (title: string) => {
-      return `📊 *${title}*\n━━━━━━━━━━━━━━━━━━━━\n🏢 *Cliente:* ${clientName}\n📅 *Período:* ${displayPeriod}\n📱 *Plataformas:* ${platformString}\n\n`;
+    const periodInfoLayout = formatPeriodLabel(globalDateFrom, globalDateTo);
+    const storeNameLayout = clientName && clientName !== "Consolidado"
+      ? clientName
+      : (accounts.find(a => a.id === selectedAccountId)?.name || clientName || "");
+
+    const buildHeader = () => {
+      const titlePrefix = source === "upload" ? "Relatório de performance" : periodInfoLayout.reportTitlePrefix;
+      let txt = `${titlePrefix}: \n`;
+      if (storeNameLayout) {
+        txt += `Loja: ${storeNameLayout}\n`;
+      }
+      txt += ` *Período:* ${displayPeriod}\n`;
+      if (platformString) {
+        txt += ` Plataformas: ${platformString}\n`;
+      }
+      txt += `\n`;
+      return txt;
     };
 
     const formatUnitCostText = (costVal: number, resVal: number, zeroResMsg = "Não calculável") => {
@@ -1291,43 +1306,39 @@ function RelatoriosPage() {
 
     // Bloco de totais gerais — presente em TODOS os modos de relatório (sem soma heterogênea de unidades)
     const buildTotais = () => {
-      let txt = `━━━━━━━━━━━━━━━━━━━━\n*📊 TOTAIS GERAIS*\n━━━━━━━━━━━━━━━━━━━━\n`;
-      txt += `💵 *Investimento Total:* ${fmtBRLWithSymbol(totalCost)}\n`;
+      let txt = `*Totais Gerais:*\n`;
+      txt += ` Investimento Total: ${fmtBRLWithSymbol(totalCost)}\n`;
       if (snapSummary && snapSummary.conversionResults > 0) {
-        txt += `📈 *Conversões Elegíveis:* ${snapSummary.conversionResults.toLocaleString("pt-BR")}\n`;
-        txt += `💲 *CPA (Conversões):* ${snapSummary.cpaEligible !== null ? fmtBRLWithSymbol(snapSummary.cpaEligible) : (snapSummary.conversionSpend <= 0 ? "Não calculável (gasto zero)" : "Não calculável")}\n`;
+        txt += ` Conversões Elegíveis: ${snapSummary.conversionResults.toLocaleString("pt-BR")}\n`;
+        txt += ` CPA (Conversões): ${snapSummary.cpaEligible !== null ? fmtBRLWithSymbol(snapSummary.cpaEligible) : (snapSummary.conversionSpend <= 0 ? "Não calculável (gasto zero)" : "Não calculável")}\n`;
       } else if (vectorSummary.length === 1) {
-        txt += `📈 *${vectorSummary[0].label}:* ${vectorSummary[0].value.toLocaleString("pt-BR")}\n`;
+        txt += ` ${vectorSummary[0].label}: ${vectorSummary[0].value.toLocaleString("pt-BR")}\n`;
       }
       if (snapSummary && snapSummary.totalPurchaseValue > 0) {
-        txt += `💰 *Receita (Compras):* ${fmtBRLWithSymbol(snapSummary.totalPurchaseValue)}${snapSummary.roasPurchases !== null ? ` (ROAS ${snapSummary.roasPurchases.toFixed(2)}x)` : ""}\n`;
+        txt += ` Receita (Compras): ${fmtBRLWithSymbol(snapSummary.totalPurchaseValue)}${snapSummary.roasPurchases !== null ? ` (ROAS ${snapSummary.roasPurchases.toFixed(2)}x)` : ""}\n`;
       }
       if (vectorSummary.length > 1) {
-        txt += `📊 *Resultados por tipo:* ${vectorSummary.map((e) => `${e.value.toLocaleString("pt-BR")} ${e.label}`).join(" | ")}\n`;
+        txt += ` Resultados por tipo: ${vectorSummary.map((e) => `${e.value.toLocaleString("pt-BR")} ${e.label}`).join(" | ")}\n`;
       }
-      txt += `👆 *Cliques no Link:* ${totalLinkClicks.toLocaleString("pt-BR")}`;
+      txt += ` Cliques no Link: ${totalLinkClicks.toLocaleString("pt-BR")}`;
       if (totalImps > 0) {
         txt += ` (CTR: ${((totalLinkClicks / totalImps) * 100).toFixed(2)}%)`;
       }
       if (totalAllClicks > totalLinkClicks) {
-        txt += ` • Todos: ${totalAllClicks.toLocaleString("pt-BR")}`;
+        txt += ` | Todos: ${totalAllClicks.toLocaleString("pt-BR")}`;
       }
       txt += `\n`;
       if (totalReach > 0) {
         const reachLbl = effectiveAccountReach !== null ? " (conta deduplicado)" : selected.length > 1 ? " (soma)" : "";
-        txt += `👥 *Alcance${reachLbl}:* ${totalReach.toLocaleString("pt-BR")}\n`;
+        txt += ` Alcance${reachLbl}: ${totalReach.toLocaleString("pt-BR")}\n`;
       }
-      if (totalImps > 0) txt += `👁️ *Impressões Totais:* ${totalImps.toLocaleString("pt-BR")}\n`;
-      txt += `📌 *Campanhas no Relatório:* ${selected.length}`;
-      if (activeReportSnapshot?.snapshotId) {
-        txt += ` • ID: \`${activeReportSnapshot.snapshotId}\``;
-      }
-      txt += `\n\n`;
+      if (totalImps > 0) txt += ` Impressões Totais: ${totalImps.toLocaleString("pt-BR")}\n`;
+      txt += ` Campanhas no Relatório: ${selected.length}\n\n`;
       return txt;
     };
 
     const buildResultsByType = () => {
-      let txt = `━━━━━━━━━━━━━━━━━━━━\n*RESULTADOS POR TIPO*\n━━━━━━━━━━━━━━━━━━━━\n\n`;
+      let txt = `*Resultados por Tipo / Objetivo:*\n\n`;
       groupedTypes.forEach((data, type) => {
         const isClick = data.isClick;
         const isReach = data.isReach;
@@ -1341,22 +1352,22 @@ function RelatoriosPage() {
         if (isClick) costLabel = "CPC (Link)";
         if (isReach) costLabel = "Custo por 1.000 Contas Alcançadas";
 
-        txt += `${type}\n`;
-        txt += `   💵 Investimento: ${fmtBRLWithSymbol(data.cost)}\n`;
-        txt += `   📈 ${resultLabel}: ${data.results.toLocaleString("pt-BR")}\n`;
-        txt += `   💲 ${costLabel}: ${cpl !== null ? fmtBRLWithSymbol(cpl) : (data.cost <= 0 && data.results > 0 ? "Não calculável (gasto zero)" : "Não calculável")}\n`;
+        txt += `*${type}:*\n`;
+        txt += ` Investimento: ${fmtBRLWithSymbol(data.cost)}\n`;
+        txt += ` ${resultLabel}: ${data.results.toLocaleString("pt-BR")}\n`;
+        txt += ` ${costLabel}: ${cpl !== null ? fmtBRLWithSymbol(cpl) : (data.cost <= 0 && data.results > 0 ? "Não calculável (gasto zero)" : "Não calculável")}\n`;
         if (data.purchaseValue > 0) {
-          txt += `   💰 Receita (Compras): ${fmtBRLWithSymbol(data.purchaseValue)}`;
+          txt += ` Receita (Compras): ${fmtBRLWithSymbol(data.purchaseValue)}`;
           if (data.cost > 0) txt += ` (ROAS ${(data.purchaseValue / data.cost).toFixed(2)}x)`;
           txt += `\n`;
         }
         if (data.cost <= 0 && (data.results > 0 || data.purchaseValue > 0)) {
-          txt += `   ℹ️ Resultados atribuídos pela janela de conversão Meta (sem gasto/veiculação no período).\n`;
+          txt += ` Resultados atribuídos pela janela de conversão Meta (sem gasto/veiculação no período).\n`;
         }
-        if (data.linkClicks > 0 && !isClick) txt += `   👆 Cliques no link: ${data.linkClicks.toLocaleString("pt-BR")}\n`;
-        if (data.reach > 0 && !isReach) txt += `   👥 Alcance${selected.length > 1 ? " (soma)" : ""}: ${data.reach.toLocaleString("pt-BR")}\n`;
+        if (data.linkClicks > 0 && !isClick) txt += ` Cliques no link: ${data.linkClicks.toLocaleString("pt-BR")}\n`;
+        if (data.reach > 0 && !isReach) txt += ` Alcance${selected.length > 1 ? " (soma)" : ""}: ${data.reach.toLocaleString("pt-BR")}\n`;
         if (data.impressions > 0) {
-          txt += `   👁️ Impressões: ${data.impressions.toLocaleString("pt-BR")}`;
+          txt += ` Impressões: ${data.impressions.toLocaleString("pt-BR")}`;
           if (isReach && data.cost > 0) {
             txt += ` (CPM: ${fmtBRLWithSymbol((data.cost / data.impressions) * 1000)})`;
           }
@@ -1369,16 +1380,19 @@ function RelatoriosPage() {
     };
 
     const buildCampaignDetails = () => {
-      let levelTitle = "DETALHAMENTO DE CAMPANHAS";
-      if (reportLevel === "adset") levelTitle = "DETALHAMENTO DE CONJUNTOS DE ANÚNCIOS";
-      if (reportLevel === "ad") levelTitle = "DETALHAMENTO DE ANÚNCIOS";
+      let levelTitle = "Detalhamento de Campanhas";
+      if (reportLevel === "adset") levelTitle = "Detalhamento de Conjuntos de Anúncios";
+      if (reportLevel === "ad") levelTitle = "Detalhamento de Anúncios";
 
-      let txt = `━━━━━━━━━━━━━━━━━━━━\n*${levelTitle}*\n━━━━━━━━━━━━━━━━━━━━\n\n`;
+      let txt = `*${levelTitle}:*\n\n`;
       ['google', 'meta'].forEach(plat => {
         const platCampaigns = selected.filter(c => c.platform === plat);
         if (platCampaigns.length === 0) return;
-        
-        txt += `*— ${plat === 'google' ? 'GOOGLE ADS' : 'META ADS'} —*\n\n`;
+
+        const hasMultiplePlatforms = selected.some(c => c.platform !== plat);
+        if (hasMultiplePlatforms) {
+          txt += `*${plat === 'google' ? 'Google Ads' : 'Meta Ads'}:*\n\n`;
+        }
         platCampaigns.forEach(c => {
           const ev = classifyMetaEvent({
             campaignName: c.name,
@@ -1393,27 +1407,27 @@ function RelatoriosPage() {
           const linkClk = Number(c.inlineLinkClicks ?? c.clicks ?? 0);
           const resultValue = isClickObj ? linkClk : isReachObj ? (c.reach > 0 ? c.reach : c.conversions) : c.conversions;
           const costPerRes = computeUnitCost(c.cost, resultValue, ev.category);
-          const costLabel = isReachObj ? "Custo/1.000 contas alc." : "Custo/Resultado";
+          const costLabel = isReachObj ? "Custo por 1.000 contas alcançadas" : "Custo/Resultado";
           const typeLabel = ev.unitPlural;
-          
-          txt += `📌 *${c.name.toUpperCase()}*${c.effectiveStatusLabel ? ` [${c.effectiveStatusLabel}]` : ""}\n`;
+
+          txt += `*${c.name}:*${c.effectiveStatusLabel ? ` (${c.effectiveStatusLabel})` : ""}\n`;
           if (reportLevel === "adset" && c.campaignName) {
-            txt += `   📁 Campanha: ${c.campaignName}\n`;
+            txt += ` Campanha: ${c.campaignName}\n`;
           } else if (reportLevel === "ad") {
-            if (c.adSetName) txt += `   📦 Conjunto: ${c.adSetName}\n`;
-            if (c.campaignName) txt += `   📁 Campanha: ${c.campaignName}\n`;
+            if (c.adSetName) txt += ` Conjunto: ${c.adSetName}\n`;
+            if (c.campaignName) txt += ` Campanha: ${c.campaignName}\n`;
           }
-          txt += `   💵 Invest: ${fmtBRLWithSymbol(c.cost)}\n`;
-          txt += `   📈 Result: ${resultValue.toLocaleString("pt-BR")} (${typeLabel})\n`;
-          txt += `   💲 ${costLabel}: ${costPerRes !== null ? fmtBRLWithSymbol(costPerRes) : (c.cost <= 0 && resultValue > 0 ? "Não calculável (gasto zero)" : "Não calculável")}\n`;
+          txt += ` Investimento: ${fmtBRLWithSymbol(c.cost)}\n`;
+          txt += ` Resultados: ${resultValue.toLocaleString("pt-BR")} ${typeLabel}\n`;
+          txt += ` ${costLabel}: ${costPerRes !== null ? fmtBRLWithSymbol(costPerRes) : (c.cost <= 0 && resultValue > 0 ? "Não calculável (gasto zero)" : "Não calculável")}\n`;
           if (Number(c.purchaseValue || 0) > 0) {
             const pv = Number(c.purchaseValue || 0);
-            txt += `   💰 Receita (Compras): ${fmtBRLWithSymbol(pv)}${c.cost > 0 ? ` (ROAS ${(pv / c.cost).toFixed(2)}x)` : ""}\n`;
+            txt += ` Receita (Compras): ${fmtBRLWithSymbol(pv)}${c.cost > 0 ? ` (ROAS ${(pv / c.cost).toFixed(2)}x)` : ""}\n`;
           }
           if (c.cost <= 0 && (resultValue > 0 || Number(c.purchaseValue || 0) > 0)) {
-            txt += `   ℹ️ Resultado atribuído pela janela Meta sem gasto/entrega no período.\n`;
+            txt += ` Resultado atribuído pela janela Meta sem gasto/entrega no período.\n`;
           }
-          if (linkClk > 0 && !isClickObj) txt += `   👆 Cliques no link: ${linkClk.toLocaleString("pt-BR")}\n`;
+          if (linkClk > 0 && !isClickObj) txt += ` Cliques no link: ${linkClk.toLocaleString("pt-BR")}\n`;
           txt += `\n`;
         });
       });
@@ -1720,25 +1734,24 @@ function RelatoriosPage() {
 
     if (reportMode === "complete") {
       setActivePdfLayout("classic");
-      finalText += buildHeader(reportTitle);
+      finalText += buildHeader();
       finalText += buildTotais();
       finalText += buildResultsByType();
       finalText += buildCampaignDetails();
     } else if (reportMode === "objective") {
       setActivePdfLayout("analytical");
-      finalText += buildHeader("RELATÓRIO DE RESULTADOS");
+      finalText += buildHeader();
       finalText += buildTotais();
       finalText += buildResultsByType();
     } else { // campaigns mode
       setActivePdfLayout("minimalist");
-      finalText += buildHeader(reportTitle);
+      finalText += buildHeader();
       finalText += buildTotais();
       finalText += buildCampaignDetails();
     }
 
-    finalText += `━━━━━━━━━━━━━━━━━━━━\n*${agencyName.toUpperCase()}*`;
     if (!isTextManuallyEdited) {
-      setGeneratedText(finalText);
+      setGeneratedText(finalText.trim());
     }
   }, [campaignList, reportMode, clientName, periodText, templatesData, reportLevel, salesRevenue, salesOrders, dateRange, selectedAccountId, globalDateFrom, globalDateTo, source, isTextManuallyEdited, regenerateNonce]);
 

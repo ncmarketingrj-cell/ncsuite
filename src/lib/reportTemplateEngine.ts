@@ -392,30 +392,22 @@ Loja: {{NOME_CLIENTE}}
     is_system: true,
     system_mode: "objective",
     variant_type: "objective",
-    message_template: `📊 *RELATÓRIO DE RESULTADOS*
-━━━━━━━━━━━━━━━━━━━━
-🏢 *Cliente:* {{NOME_CLIENTE}}
-📅 *Período:* {{PERIODO}}
-📱 *Plataformas:* {{PLATAFORMAS}}
+    message_template: `Relatório de performance: 
+Loja: {{NOME_CLIENTE}}
+ *Período:* {{PERIODO}}
+ Plataformas: {{PLATAFORMAS}}
 
-━━━━━━━━━━━━━━━━━━━━
-*📊 TOTAIS GERAIS*
-━━━━━━━━━━━━━━━━━━━━
-💵 *Investimento Total:* {{INVESTIMENTO}}
-📈 *Resultados Totais:* {{TOTAL_RESULTADOS}}
-💲 *CPA Médio Geral:* {{CPA_MEDIO}}
-👥 *Alcance Total:* {{ALCANCE_TOTAL}}
-👁️ *Impressões Totais:* {{IMPRESSOES_TOTAIS}}
-📌 *Campanhas no Relatório:* {{TOTAL_CAMPANHAS}}
+*Totais Gerais:*
+ Investimento Total: {{INVESTIMENTO}}
+ Resultados Totais: {{TOTAL_RESULTADOS}}
+ CPA Médio Geral: {{CPA_MEDIO}}
+ Alcance Total: {{ALCANCE_TOTAL}}
+ Impressões Totais: {{IMPRESSOES_TOTAIS}}
+ Campanhas no Relatório: {{TOTAL_CAMPANHAS}}
 
-━━━━━━━━━━━━━━━━━━━━
-*RESULTADOS POR OBJETIVO*
-━━━━━━━━━━━━━━━━━━━━
+*Resultados por Tipo / Objetivo:*
 
-{{RESULTADOS_POR_TIPO}}
-
-━━━━━━━━━━━━━━━━━━━━
-*{{AGENCIA}}*`,
+{{RESULTADOS_POR_TIPO}}`,
   },
   {
     id: "campaigns",
@@ -425,30 +417,22 @@ Loja: {{NOME_CLIENTE}}
     is_system: true,
     system_mode: "campaigns",
     variant_type: "campaigns",
-    message_template: `📊 *RELATÓRIO DE PERFORMANCE*
-━━━━━━━━━━━━━━━━━━━━
-🏢 *Cliente:* {{NOME_CLIENTE}}
-📅 *Período:* {{PERIODO}}
-📱 *Plataformas:* {{PLATAFORMAS}}
+    message_template: `Relatório de performance: 
+Loja: {{NOME_CLIENTE}}
+ *Período:* {{PERIODO}}
+ Plataformas: {{PLATAFORMAS}}
 
-━━━━━━━━━━━━━━━━━━━━
-*📊 TOTAIS GERAIS*
-━━━━━━━━━━━━━━━━━━━━
-💵 *Investimento Total:* {{INVESTIMENTO}}
-📈 *Resultados Totais:* {{TOTAL_RESULTADOS}}
-💲 *CPA Médio Geral:* {{CPA_MEDIO}}
-👥 *Alcance Total:* {{ALCANCE_TOTAL}}
-👁️ *Impressões Totais:* {{IMPRESSOES_TOTAIS}}
-📌 *Campanhas no Relatório:* {{TOTAL_CAMPANHAS}}
+*Totais Gerais:*
+ Investimento Total: {{INVESTIMENTO}}
+ Resultados Totais: {{TOTAL_RESULTADOS}}
+ CPA Médio Geral: {{CPA_MEDIO}}
+ Alcance Total: {{ALCANCE_TOTAL}}
+ Impressões Totais: {{IMPRESSOES_TOTAIS}}
+ Campanhas no Relatório: {{TOTAL_CAMPANHAS}}
 
-━━━━━━━━━━━━━━━━━━━━
-*DETALHAMENTO DE CAMPANHAS*
-━━━━━━━━━━━━━━━━━━━━
+*Detalhamento de Campanhas:*
 
-{{LISTA_CAMPANHAS}}
-
-━━━━━━━━━━━━━━━━━━━━
-*{{AGENCIA}}*`,
+{{LISTA_CAMPANHAS}}`,
   },
   {
     id: "complete",
@@ -458,36 +442,26 @@ Loja: {{NOME_CLIENTE}}
     is_system: true,
     system_mode: "complete",
     variant_type: "complete",
-    message_template: `📊 *RELATÓRIO DE PERFORMANCE*
-━━━━━━━━━━━━━━━━━━━━
-🏢 *Cliente:* {{NOME_CLIENTE}}
-📅 *Período:* {{PERIODO}}
-📱 *Plataformas:* {{PLATAFORMAS}}
+    message_template: `Relatório de performance: 
+Loja: {{NOME_CLIENTE}}
+ *Período:* {{PERIODO}}
+ Plataformas: {{PLATAFORMAS}}
 
-━━━━━━━━━━━━━━━━━━━━
-*📊 TOTAIS GERAIS*
-━━━━━━━━━━━━━━━━━━━━
-💵 *Investimento Total:* {{INVESTIMENTO}}
-📈 *Resultados Totais:* {{TOTAL_RESULTADOS}}
-💲 *CPA Médio Geral:* {{CPA_MEDIO}}
-👥 *Alcance Total:* {{ALCANCE_TOTAL}}
-👁️ *Impressões Totais:* {{IMPRESSOES_TOTAIS}}
-📌 *Campanhas no Relatório:* {{TOTAL_CAMPANHAS}}
+*Totais Gerais:*
+ Investimento Total: {{INVESTIMENTO}}
+ Resultados Totais: {{TOTAL_RESULTADOS}}
+ CPA Médio Geral: {{CPA_MEDIO}}
+ Alcance Total: {{ALCANCE_TOTAL}}
+ Impressões Totais: {{IMPRESSOES_TOTAIS}}
+ Campanhas no Relatório: {{TOTAL_CAMPANHAS}}
 
-━━━━━━━━━━━━━━━━━━━━
-*RESULTADOS POR OBJETIVO*
-━━━━━━━━━━━━━━━━━━━━
+*Resultados por Tipo / Objetivo:*
 
 {{RESULTADOS_POR_TIPO}}
 
-━━━━━━━━━━━━━━━━━━━━
-*DETALHAMENTO DE CAMPANHAS*
-━━━━━━━━━━━━━━━━━━━━
+*Detalhamento de Campanhas:*
 
-{{LISTA_CAMPANHAS}}
-
-━━━━━━━━━━━━━━━━━━━━
-*{{AGENCIA}}*`,
+{{LISTA_CAMPANHAS}}`,
   },
   {
     id: "ecommerce_sales",
@@ -1257,18 +1231,18 @@ export function renderReportTemplateText(params: {
             ? "Não calculável (gasto zero)"
             : "Não calculável";
 
-      typeText += `*${type}*\n`;
-      typeText += `   💵 Investimento: ${fmtBRLWithSymbol(data.cost)}\n`;
-      typeText += `   📈 ${resultLabel}: ${data.results.toLocaleString("pt-BR")}\n`;
-      typeText += `   💲 ${costLabel}: ${cplFormatted}\n`;
+      typeText += `*${type}:*\n`;
+      typeText += ` Investimento: ${fmtBRLWithSymbol(data.cost)}\n`;
+      typeText += ` ${resultLabel}: ${data.results.toLocaleString("pt-BR")}\n`;
+      typeText += ` ${costLabel}: ${cplFormatted}\n`;
       if (data.purchaseValue > 0) {
-        typeText += `   💰 Receita (Compras): ${fmtBRLWithSymbol(data.purchaseValue)}${data.cost > 0 ? ` (ROAS ${(data.purchaseValue / data.cost).toFixed(2)}x)` : ""}\n`;
+        typeText += ` Receita (Compras): ${fmtBRLWithSymbol(data.purchaseValue)}${data.cost > 0 ? ` (ROAS ${(data.purchaseValue / data.cost).toFixed(2)}x)` : ""}\n`;
       }
       if (isReach && data.impressions > 0) {
-        typeText += `   👁️ Impressões: ${data.impressions.toLocaleString("pt-BR")}${data.cost > 0 ? ` (CPM: ${fmtBRLWithSymbol((data.cost / data.impressions) * 1000)})` : ""}\n`;
+        typeText += ` Impressões: ${data.impressions.toLocaleString("pt-BR")}${data.cost > 0 ? ` (CPM: ${fmtBRLWithSymbol((data.cost / data.impressions) * 1000)})` : ""}\n`;
       }
       if (data.cost <= 0 && (data.results > 0 || data.purchaseValue > 0)) {
-        typeText += `   ℹ️ Resultados atribuídos pela janela de conversão Meta (não indicam entrega/gasto no período).\n`;
+        typeText += ` Resultados atribuídos pela janela de conversão Meta (não indicam entrega/gasto no período).\n`;
       }
       typeText += `\n`;
     });
@@ -1300,8 +1274,8 @@ export function renderReportTemplateText(params: {
           : c.cost <= 0 && resultValue > 0
             ? "Não calculável (gasto zero)"
             : "Não calculável";
-      const revPart = Number(c.purchaseValue || 0) > 0 ? ` | 💰 ${fmtBRLWithSymbol(Number(c.purchaseValue || 0))}` : "";
-      summaryText += `• *${c.name.toUpperCase()}*\n  💵 ${fmtBRLWithSymbol(c.cost)} | 📈 ${resultValue.toLocaleString("pt-BR")} ${unitLabel}${revPart} (${costUnit}: ${costFormatted})\n\n`;
+      const revPart = Number(c.purchaseValue || 0) > 0 ? ` | Receita: ${fmtBRLWithSymbol(Number(c.purchaseValue || 0))}` : "";
+      summaryText += `*${c.name}:*\n Investimento: ${fmtBRLWithSymbol(c.cost)} | ${resultValue.toLocaleString("pt-BR")} ${unitLabel}${revPart} (${costUnit}: ${costFormatted})\n\n`;
     });
     text = text.replace(/\{\{LISTA_CAMPANHAS_RESUMO\}\}/g, summaryText.trim());
   }
@@ -1325,7 +1299,6 @@ export function renderReportTemplateText(params: {
       const resultValue = isClick ? linkClk : isReach ? (c.reach > 0 ? c.reach : c.conversions) : c.conversions;
       const costPerRes = computeUnitCost(c.cost, resultValue, ev.category);
       const costLabel = isReach ? "Custo por 1.000 contas alcançadas" : "Custo/Resultado";
-      const platIcon = c.platform === "google" ? "🌐" : "🎯";
       const costFormatted =
         costPerRes !== null
           ? fmtBRLWithSymbol(costPerRes)
@@ -1333,25 +1306,25 @@ export function renderReportTemplateText(params: {
             ? "Não calculável (gasto zero)"
             : "Não calculável";
 
-      listText += `${platIcon} *${c.name.toUpperCase()}*\n`;
+      listText += `*${c.name}:*\n`;
       if (reportLevel === "adset" && c.campaignName) {
-        listText += `   📁 Campanha: ${c.campaignName}\n`;
+        listText += ` Campanha: ${c.campaignName}\n`;
       } else if (reportLevel === "ad") {
-        if (c.adSetName) listText += `   📦 Conjunto: ${c.adSetName}\n`;
-        if (c.campaignName) listText += `   📁 Campanha: ${c.campaignName}\n`;
+        if (c.adSetName) listText += ` Conjunto: ${c.adSetName}\n`;
+        if (c.campaignName) listText += ` Campanha: ${c.campaignName}\n`;
       }
-      listText += `   💵 Investimento: ${fmtBRLWithSymbol(c.cost)}\n`;
-      listText += `   📈 Resultados: ${resultValue.toLocaleString("pt-BR")} ${ev.unitPlural}\n`;
-      listText += `   💲 ${costLabel}: ${costFormatted}\n`;
+      listText += ` Investimento: ${fmtBRLWithSymbol(c.cost)}\n`;
+      listText += ` Resultados: ${resultValue.toLocaleString("pt-BR")} ${ev.unitPlural}\n`;
+      listText += ` ${costLabel}: ${costFormatted}\n`;
       if (Number(c.purchaseValue || 0) > 0) {
         const pv = Number(c.purchaseValue || 0);
-        listText += `   💰 Receita (Compras): ${fmtBRLWithSymbol(pv)}${c.cost > 0 ? ` (ROAS ${(pv / c.cost).toFixed(2)}x)` : ""}\n`;
+        listText += ` Receita (Compras): ${fmtBRLWithSymbol(pv)}${c.cost > 0 ? ` (ROAS ${(pv / c.cost).toFixed(2)}x)` : ""}\n`;
       }
       if (c.cost <= 0 && (resultValue > 0 || Number(c.purchaseValue || 0) > 0)) {
-        listText += `   ℹ️ Resultado atribuído pela janela Meta sem gasto/entrega no período.\n`;
+        listText += ` Resultado atribuído pela janela Meta sem gasto/entrega no período.\n`;
       }
-      if (linkClk > 0 && !isClick) listText += `   👆 Cliques no link: ${linkClk.toLocaleString("pt-BR")}\n`;
-      if (c.reach > 0 && !isReach) listText += `   👥 Alcance: ${c.reach.toLocaleString("pt-BR")}\n`;
+      if (linkClk > 0 && !isClick) listText += ` Cliques no link: ${linkClk.toLocaleString("pt-BR")}\n`;
+      if (c.reach > 0 && !isReach) listText += ` Alcance: ${c.reach.toLocaleString("pt-BR")}\n`;
       listText += `\n`;
     });
     text = text.replace(/\{\{LISTA_CAMPANHAS\}\}/g, listText.trim());
