@@ -270,10 +270,16 @@ async function fetchAdSetsWithStatus(adAccountId: string, token: string): Promis
 
 // ─── Buscar metadados completos de anúncios + criativo ───────────────────────
 async function fetchAdsWithStatus(adAccountId: string, token: string): Promise<MetaPaginatedResult<any>> {
+  const enriched = await safePaginatedFetch(`/${adAccountId}/ads`, token, {
+    fields: "id,name,status,effective_status,configured_status,adset_id,campaign_id,creative{id,name,title,body,object_type,image_url,effective_object_story_id,call_to_action_type,thumbnail_url}",
+    limit: "250"
+  }, `ads:${adAccountId}`)
+  if (enriched.ok) return enriched
+  // Fallback conservador caso a conta/token recuse algum subcampo estendido de creative
   return await safePaginatedFetch(`/${adAccountId}/ads`, token, {
     fields: "id,name,status,effective_status,configured_status,adset_id,campaign_id,creative{id,name,effective_object_story_id,call_to_action_type,thumbnail_url}",
     limit: "250"
-  }, `ads:${adAccountId}`)
+  }, `ads_fallback:${adAccountId}`)
 }
 
 async function fetchDemographicBreakdowns(adAccountId: string, token: string, timeParams: Record<string, string>) {
@@ -1324,7 +1330,11 @@ serve(async (req) => {
           creative_name: a.creative?.name || null,
           effective_object_story_id: a.creative?.effective_object_story_id || null,
           call_to_action_type: a.creative?.call_to_action_type || null,
-          thumbnail_url: a.creative?.thumbnail_url || null,
+          thumbnail_url: a.creative?.thumbnail_url || a.creative?.image_url || null,
+          creative_body: a.creative?.body || null,
+          creative_title: a.creative?.title || null,
+          creative_format: a.creative?.object_type || null,
+          creative_image_url: a.creative?.image_url || a.creative?.thumbnail_url || null,
           meta_synced_at: nowIso,
         })
       }
@@ -1348,6 +1358,10 @@ serve(async (req) => {
           effective_object_story_id: null,
           call_to_action_type: null,
           thumbnail_url: null,
+          creative_body: null,
+          creative_title: null,
+          creative_format: null,
+          creative_image_url: null,
           meta_synced_at: nowIso,
         })
       }
@@ -1358,7 +1372,21 @@ serve(async (req) => {
           "ads",
           Array.from(adMap.values()),
           "external_id",
-          ["ad_account_id", "delivery_status", "configured_status", "creative_id", "creative_name", "effective_object_story_id", "call_to_action_type", "thumbnail_url", "meta_synced_at"],
+          [
+            "ad_account_id",
+            "delivery_status",
+            "configured_status",
+            "creative_id",
+            "creative_name",
+            "effective_object_story_id",
+            "call_to_action_type",
+            "thumbnail_url",
+            "creative_body",
+            "creative_title",
+            "creative_format",
+            "creative_image_url",
+            "meta_synced_at",
+          ],
           "id, external_id"
         )
         if (adUpsert.error) console.error(`[SYNC] Erro ads ${accountId}:`, adUpsert.error)

@@ -24,6 +24,7 @@ import {
   accumulateMetricVector,
   type MetricVector,
 } from "./metricsDomain.ts";
+import type { CreativeAdRecord, FatigueDiagnostic } from "./creativeIntelligenceDomain.ts";
 
 export interface MetricasItemAdapterInput {
   item: any;
@@ -807,4 +808,130 @@ export async function executeGovernedVictoriaDiagnostic(
     clearTimeout(totalTimer);
     reqSession.signal.removeEventListener("abort", onSessionAbort);
   }
+}
+
+export interface CreativeItemAdapterInput {
+  record: CreativeAdRecord;
+  fatigue?: FatigueDiagnostic | null;
+  sameObjectivePeers?: CreativeAdRecord[];
+  dateFrom: string;
+  dateTo: string;
+  lastSyncAt?: string | null;
+  userId?: string | null;
+  conversationId?: string | null;
+  accountMaxCplTarget?: number | null;
+  ragDocuments?: CuratedRagDocument[];
+}
+
+/**
+ * Constrói o contexto canônico VictoriaAnalysisContext para /criativos em modo READ_ONLY_ANALYSIS,
+ * preservando objetivo, optimization_goal, janela de atribuição, pares homogêneos e limitações.
+ */
+export function buildContextFromCreativeItem(
+  input: CreativeItemAdapterInput
+): VictoriaAnalysisContext {
+  const { record, sameObjectivePeers = [], fatigue } = input;
+  const peers = sameObjectivePeers.filter(
+    (p) =>
+      p.id !== record.id &&
+      p.adAccountId === record.adAccountId &&
+      p.resultCategory === record.resultCategory &&
+      (p.spend > 0 || p.results > 0)
+  );
+  const peerSpend = peers.reduce((s, p) => s + p.spend, 0);
+  const peerResults = peers.reduce((s, p) => s + p.results, 0);
+  const sameObjectiveAvg = peerResults > 0 && peerSpend > 0 ? peerSpend / peerResults : null;
+  const isComparableWithAccountCpl =
+    record.resultCategory === "MESSAGES" || record.resultCategory === "LEADS";
+
+  return buildVictoriaAnalysisContext({
+    source_surface: "criativos",
+    route: "/criativos",
+    user_id: input.userId ?? null,
+    conversation_id: input.conversationId ?? null,
+    ad_account_id: record.adAccountId,
+    ad_account_name: record.accountName,
+    entity_level: "ad",
+    entity_id: record.id,
+    internal_id: record.id,
+    external_id: record.externalId,
+    entity_name: record.name,
+    effective_status: record.effectiveStatus,
+    parent_ids: {
+      account_id: record.adAccountId,
+      campaign_id: record.campaignId,
+      adset_id: record.adSetId,
+      client_id: null,
+    },
+    date_from: input.dateFrom,
+    date_to: input.dateTo,
+    last_sync_at: input.lastSyncAt ?? null,
+    odax_objective: record.rawObjective,
+    optimization_goal: record.optimizationGoal,
+    result_type: record.resultLabel,
+    result_indicator: record.shortBadge,
+    spend: record.spend,
+    impressions: record.impressions,
+    reach: record.reach,
+    reach_scope: "deduplicated_entity",
+    frequency: record.frequency,
+    link_clicks: record.linkClicks,
+    all_clicks: record.allClicks,
+    conversions: record.results,
+    purchase_value: record.purchaseValue,
+    has_creative_data: record.hasRealThumbnail,
+    has_copy_data: Boolean(record.creativeBody || record.creativeTitle || record.creativeName),
+    has_audience_targeting: false,
+    has_landing_page_data: record.resultCategory === "LANDING_PAGE_VIEWS",
+    has_crm_funnel_data: false,
+    account_max_cpl_target: isComparableWithAccountCpl ? input.accountMaxCplTarget ?? null : null,
+    comparable_same_objective_avg: sameObjectiveAvg,
+    comparable_peer_count: peers.length,
+    comparable_benchmark_criteria:
+      peers.length > 0
+        ? `Pares de mesma conta (${record.accountName}) e mesmo objetivo/evento (${record.resultLabel})`
+        : null,
+    rag_documents: [
+      ...(input.ragDocuments || []),
+      ...(fatigue
+        ? [
+            {
+              id: `fatigue-${record.id}`,
+              title: `Diagnóstico de fadiga (${fatigue.status})`,
+              author: "NC Creative Intelligence",
+              source: "asset_metrics_daily",
+              url: null,
+              published_at: null,
+              ingested_at: new Date().toISOString(),
+              valid_until: null,
+              category: record.resultCategory,
+              region: "BR",
+              objective: record.rawObjective || record.resultCategory,
+              evidence_level: "INTERNAL_RULE" as const,
+              version: "1.0",
+              approval_status: "APPROVED" as const,
+              content: [
+                `Status fadiga: ${fatigue.status} (confiança ${fatigue.confidence}).`,
+                `Janela de atribuição: ${record.attributionWindow}.`,
+                `Disponibilidade da métrica: ${record.availability} (${record.availabilityNote || "ok"}).`,
+                fatigue.signals.length > 0 ? `Sinais: ${fatigue.signals.join("; ")}.` : "Sem sinais fortes de queda no recorte.",
+                `Fatores alternativos que podem explicar variação além do criativo: ${fatigue.alternativeFactors.join("; ")}.`,
+              ].join(" "),
+            },
+          ]
+        : []),
+    ],
+    operational_mode: VICTORIA_DEFAULT_OPERATIONAL_MODE,
+    sibling_entities: peers.slice(0, 12).map((p) => ({
+      id: p.id,
+      external_id: p.externalId || undefined,
+      name: p.name,
+      spend: p.spend,
+      reach: p.reach,
+      impressions: p.impressions,
+      cpm: p.cpm || 0,
+      cost_per_result: p.unitCost,
+      result_value: p.results,
+    })),
+  });
 }

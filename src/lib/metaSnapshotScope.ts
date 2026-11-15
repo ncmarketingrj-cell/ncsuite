@@ -31,6 +31,13 @@ export const META_SNAPSHOT_CONSUMER_DOMAINS = new Set<string>([
   "clients-reports",
   "saved-reports",
   "relatorios-campaigns",
+  // Criativos (/criativos)
+  "criativos-ads",
+  "criativos-period-stats",
+  "criativos-placements",
+  "criativos-tests",
+  "criativos-brand-kit",
+  "swipe-files",
   // Auditoria (/auditoria)
   "auditoria-snapshot",
   // Simulador (/simulador)

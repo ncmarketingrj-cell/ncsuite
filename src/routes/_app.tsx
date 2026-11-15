@@ -32,13 +32,21 @@ import {
   getRecentNotifications,
   enforceNotificationCapacity,
   markAllNotificationsAsRead,
+  markNotificationAsRead,
   clearAllNotifications,
   deleteNotification,
   getAlertCategoryToggles,
   setAlertCategoryToggles,
   ALERT_CATEGORY_TOGGLES_EVENT,
   type AlertCategoryToggles,
+  type AppNotification,
 } from "@/lib/notificationService";
+import {
+  loadSeenToastIds,
+  parseNotificationTargetLink,
+  persistSeenToastIds,
+  selectPendingToastQueue,
+} from "@/lib/notificationPresentation";
 import { playAlertTone } from "@/lib/alertSounds";
 import { canUserAccessConfig, canUserManageUsers, getUserLevel, isMasterAdmin } from "@/lib/userHierarchy";
 import { UserAvatar } from "@/components/UserAvatar";
@@ -374,30 +382,49 @@ function Shell() {
     );
   };
 
-  const hasUnread = recentNotifications.some(n => !n.is_read);
-  const prevLatestNotifIdRef = useRef<string | null>(null);
+  const unreadCount = recentNotifications.filter((n) => !n.is_read && !n.is_dismissed).length;
+  const hasUnread = unreadCount > 0;
+  const [activeToastNotif, setActiveToastNotif] = useState<AppNotification | null>(null);
+  const seenToastIdsRef = useRef<Set<string> | null>(null);
+  const hasHydratedNotificationsRef = useRef(false);
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    if (recentNotifications.length > 0) {
-      const lastNotif = recentNotifications[0];
-      const logTime = new Date(lastNotif.created_at).getTime();
-      const now = new Date().getTime();
+    seenToastIdsRef.current = loadSeenToastIds(user?.id);
+    hasHydratedNotificationsRef.current = false;
+  }, [user?.id]);
 
-      // Dispara o toque configurado se uma nova notificação não lida acabou de chegar
-      if (prevLatestNotifIdRef.current && prevLatestNotifIdRef.current !== lastNotif.id && !lastNotif.is_read) {
-        if (soundEnabled) {
-          playAlertTone();
-        }
-      }
-      prevLatestNotifIdRef.current = lastNotif.id;
-
-      if (now - logTime < 60000 && !lastNotif.is_read) {
-        setShowNotification(true);
-        const timer = setTimeout(() => setShowNotification(false), 8000);
-        return () => clearTimeout(timer);
-      }
+  useEffect(() => {
+    if (!seenToastIdsRef.current) {
+      seenToastIdsRef.current = loadSeenToastIds(user?.id);
     }
-  }, [recentNotifications, soundEnabled]);
+    const { queue } = selectPendingToastQueue(recentNotifications, seenToastIdsRef.current, 3);
+    if (queue.length > 0) {
+      const nextToToast = queue[0];
+      // Marca como já exibido no popup deste navegador para evitar repetição ao trocar de rota
+      seenToastIdsRef.current.add(nextToToast.id);
+      persistSeenToastIds(user?.id, seenToastIdsRef.current);
+
+      if (hasHydratedNotificationsRef.current && soundEnabled) {
+        playAlertTone();
+      }
+      setActiveToastNotif(nextToToast);
+      setShowNotification(true);
+      if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+      toastTimerRef.current = setTimeout(() => {
+        setShowNotification(false);
+      }, 8500);
+    }
+    if (recentNotifications.length > 0 || hasHydratedNotificationsRef.current) {
+      hasHydratedNotificationsRef.current = true;
+    }
+  }, [recentNotifications, soundEnabled, user?.id]);
+
+  useEffect(() => {
+    return () => {
+      if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    };
+  }, []);
 
   const handleMarkAllAsRead = async () => {
     const unreadIds = recentNotifications.filter(n => !n.is_read).map(n => n.id);
@@ -1006,7 +1033,12 @@ function Shell() {
               >
                 <Bell className="h-3.5 w-3.5" />
                 {hasUnread && (
-                  <span className="absolute top-1.5 right-1.5 h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />
+                  <span
+                    aria-label={`${unreadCount} alertas não lidos`}
+                    className="absolute -top-1 -right-1 min-w-[16px] h-4 px-1 rounded-full bg-primary text-[9px] font-black text-white flex items-center justify-center shadow"
+                  >
+                    {unreadCount > 9 ? "9+" : unreadCount}
+                  </span>
                 )}
               </button>
 
@@ -1172,16 +1204,17 @@ function Shell() {
                                   </button>
                                 </div>
 
-                                {/* Corpo Clicável */}
-                                <Link
-                                  to={notif.link || "/automacoes"}
-                                  search={{ tab: "notificacoes" } as any}
+                                {/* Corpo Clicável preservando contexto completo (conta/campanha/data) */}
+                                <button
+                                  type="button"
                                   onClick={async () => {
                                     setShowNotifications(false);
-                                    await markAllNotificationsAsRead([notif.id]);
+                                    await markNotificationAsRead(notif.id);
                                     refetchNotifications();
+                                    const parsedTarget = parseNotificationTargetLink(notif.link);
+                                    nav({ to: parsedTarget.to as any, search: parsedTarget.search as any });
                                   }}
-                                  className="block min-w-0"
+                                  className="block w-full text-left min-w-0 cursor-pointer"
                                 >
                                   <p className="text-[11px] font-black text-foreground leading-snug">
                                     {notif.displayTitle || notif.title}
@@ -1189,7 +1222,7 @@ function Shell() {
                                   <p className="text-[10.5px] text-muted-foreground leading-relaxed mt-0.5">
                                     {notif.displayMessage || notif.message}
                                   </p>
-                                </Link>
+                                </button>
 
                                 {/* Rodapé do Card: Tempo + Ação rápida de Desativar categoria */}
                                 <div className="flex items-center justify-between gap-2 pt-1 border-t border-border/40 text-[9px]">
@@ -1498,66 +1531,91 @@ function Shell() {
 
       {createPortal(
         <AnimatePresence>
-          {showNotification && recentNotifications.length > 0 && (
+          {showNotification && activeToastNotif && (
             <motion.div
+              role="status"
+              aria-live="polite"
               initial={{ opacity: 0, x: 60, scale: 0.95 }}
               animate={{ opacity: 1, x: 0, scale: 1 }}
               exit={{ opacity: 0, x: 60, scale: 0.95 }}
               transition={{ type: "spring", stiffness: 300, damping: 25 }}
-              className="!fixed bottom-24 right-4 sm:bottom-8 sm:right-6 w-[calc(100vw-2rem)] max-w-[340px] z-[9999] rounded-2xl border border-primary/30 bg-card p-4 shadow-2xl overflow-hidden"
+              className="!fixed bottom-4 right-4 sm:bottom-6 sm:right-6 w-[calc(100vw-2rem)] max-w-[360px] z-[9990] rounded-2xl border border-primary/30 bg-card/95 backdrop-blur-md p-4 shadow-2xl overflow-hidden pointer-events-auto"
             >
               <div className="absolute top-0 inset-x-0 h-[2px] bg-gradient-to-r from-transparent via-primary to-transparent pointer-events-none" />
-              <button onClick={() => setShowNotification(false)} className="absolute top-2.5 right-2.5 text-muted-foreground/50 hover:text-foreground transition-colors">
+              <button
+                type="button"
+                aria-label="Fechar aviso"
+                onClick={() => setShowNotification(false)}
+                className="absolute top-2.5 right-2.5 text-muted-foreground/60 hover:text-foreground transition-colors"
+              >
                 <X className="h-3.5 w-3.5" />
               </button>
               <div className="flex items-start gap-3">
                 <div className="rounded-xl bg-primary/12 border border-primary/25 p-2 text-primary shrink-0">
-                  <Sparkles className="h-4 w-4 animate-pulse" />
+                  <Sparkles className="h-4 w-4" />
                 </div>
-                <div className="flex-1 min-w-0 pr-3">
+                <div className="flex-1 min-w-0 pr-4">
                   <div className="flex items-center gap-1.5 flex-wrap">
                     <span className="inline-flex items-center gap-1 rounded bg-primary/15 border border-primary/30 px-1.5 py-0.5 text-[9px] font-black uppercase text-primary">
                       <Store className="h-2.5 w-2.5" />
-                      {recentNotifications[0].accountName || "Conta Meta Ads"}
+                      {activeToastNotif.accountName || "Conta Meta Ads"}
                     </span>
-                    {recentNotifications[0].categoryLabel && (
+                    {activeToastNotif.categoryLabel && (
                       <span className="text-[9px] font-mono text-muted-foreground uppercase">
-                        • {recentNotifications[0].categoryLabel}
+                        • {activeToastNotif.categoryLabel}
+                      </span>
+                    )}
+                    {unreadCount > 1 && (
+                      <span className="rounded bg-muted px-1.5 py-0.5 text-[8px] font-bold text-foreground">
+                        +{unreadCount - 1} pendente(s)
                       </span>
                     )}
                   </div>
                   <p className="text-[11px] font-black text-foreground mt-1 leading-snug">
-                    {recentNotifications[0].displayTitle || recentNotifications[0].title}
+                    {activeToastNotif.displayTitle || activeToastNotif.title}
                   </p>
                   <p className="text-[10.5px] text-muted-foreground mt-1 leading-relaxed line-clamp-3">
-                    {recentNotifications[0].displayMessage || recentNotifications[0].message}
+                    {activeToastNotif.displayMessage || activeToastNotif.message}
                   </p>
                   <div className="mt-2.5 flex items-center justify-between gap-2 pt-1.5 border-t border-border/50">
-                    <Link
-                      to="/automacoes"
-                      search={{ tab: "notificacoes" } as any}
-                      onClick={() => setShowNotification(false)}
-                      className="text-[9px] font-bold uppercase text-muted-foreground hover:text-foreground"
-                    >
-                      Gerenciar Alertas
-                    </Link>
+                    <div className="flex items-center gap-2.5">
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          const targetId = activeToastNotif.id;
+                          setShowNotification(false);
+                          await markNotificationAsRead(targetId);
+                          refetchNotifications();
+                        }}
+                        className="text-[9px] font-bold uppercase text-muted-foreground hover:text-foreground cursor-pointer"
+                      >
+                        Marcar lida
+                      </button>
+                      <Link
+                        to="/automacoes"
+                        search={{ tab: "notificacoes" } as any}
+                        onClick={() => setShowNotification(false)}
+                        className="text-[9px] font-bold uppercase text-muted-foreground hover:text-foreground"
+                      >
+                        Central
+                      </Link>
+                    </div>
                     {(() => {
-                      const rawLink = recentNotifications[0].link || "/automacoes";
-                      const safeLink = rawLink.startsWith("/campanhas") ? rawLink.replace(/^\/campanhas/, "/metricas") : rawLink;
+                      const target = parseNotificationTargetLink(activeToastNotif.link);
                       return (
-                        <a
-                          href={safeLink}
-                          onClick={async (e) => {
-                            e.preventDefault();
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            const targetId = activeToastNotif.id;
                             setShowNotification(false);
-                            await supabase.from("notifications").update({ is_read: true }).eq("id", recentNotifications[0].id);
+                            await markNotificationAsRead(targetId);
                             refetchNotifications();
-                            window.location.href = safeLink;
+                            nav({ to: target.to as any, search: target.search as any });
                           }}
                           className="text-[9px] font-black uppercase text-primary hover:underline cursor-pointer"
                         >
                           Ver Campanha →
-                        </a>
+                        </button>
                       );
                     })()}
                   </div>

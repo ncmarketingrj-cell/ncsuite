@@ -4,8 +4,13 @@ import { z } from "zod";
 const AnalyzeInput = z.object({
   imageBase64: z.string().min(1),
   mimeType: z.string().default("image/png"),
-  niche: z.string().default("Mercado Automotivo"),
-  location: z.string().default("Rio de Janeiro"),
+  niche: z.string().default("Geral / Negócios"),
+  location: z.string().default("Brasil"),
+  accountName: z.string().optional(),
+  objectiveLabel: z.string().optional(),
+  optimizationGoal: z.string().optional(),
+  resultUnitLabel: z.string().optional(),
+  brandRules: z.string().optional(),
 });
 
 
@@ -36,59 +41,56 @@ export const analyzeCreativeFn = createServerFn({ method: "POST" })
       throw new Error("LOVABLE_API_KEY não configurada");
     }
 
-    const systemPrompt = `Você é o Diretor Criativo de Performance AI da NC Suite, especializado em neuro-marketing automotivo, psicologia de consumo e tráfego pago de alta conversão para concessionárias e lojas de veículos.
+    const isAuto =
+      /auto|veic|carro|moto|concession|loja.*auto/i.test(`${data.niche} ${data.accountName || ""}`);
 
-Nicho/Mercado: ${data.niche}
+    const objectiveContext = data.objectiveLabel || data.resultUnitLabel
+      ? `Objetivo da Campanha: ${data.objectiveLabel || "Conforme conta"} | Optimization Goal: ${data.optimizationGoal || "Não especificado"} | Unidade Oficial de Resultado: ${data.resultUnitLabel || "Conforme objetivo"}`
+      : "Objetivo da Campanha: Não vinculado (avaliar clareza visual, oferta, contraste e CTA sem assumir objetivo único)";
+
+    const systemPrompt = `Você é o Diretor Criativo de Performance AI da NC Suite, especialista em análise visual, atenção em feed/stories/reels, clareza de proposta de valor e resposta direta em Meta Ads.
+
+Conta / Cliente: ${data.accountName || "Não especificado"}
+Nicho / Mercado informado: ${data.niche}
 Localização do Público-Alvo: ${data.location}
+${objectiveContext}
+${data.brandRules ? `Regras e restrições da marca: ${data.brandRules}` : ""}
+
+REGRAS OBRIGATÓRIAS:
+- NÃO invente fatos comerciais (preço, ano, km, estoque, prazo, garantia) que não estejam visíveis na peça ou informados pelo usuário.
+- NÃO assuma que a conta otimiza para WhatsApp ou Leads se o objetivo informado for Vendas, Alcance, Tráfego ou Visualizações.
+- NÃO cite benchmarks numéricos fixos de CTR ou CPL como verdade universal; comente hipóteses qualitativas e sugestões de teste ligadas ao objetivo real.
+${isAuto ? "- Como o nicho informado é automotivo, observe ângulo, iluminação, recorte do veículo, transparência de condições e facilidade de leitura mobile." : "- Avalie o criativo respeitando o nicho real do cliente, sem forçar referências automotivas se não aplicáveis."}
 
 FRAMEWORK DE ANÁLISE:
-
-1. PERSUASÃO & NEURO-MARKETING AUTOMOTIVO
-- Ganchos emocionais: aspiração (status, liberdade, família), praticidade (econômico, seguro, espaçoso) ou urgência (estoque limitado, condição especial)
-- Gatilhos específicos do setor: facilidade de crédito, parcelamento acessível, garantia, procedência, blindagem
-- Direção do olhar e hierarquia visual (modelo do veículo → oferta → CTA)
-- Clareza da proposta de valor em 3 segundos
-
-2. ATRAÇÃO VISUAL & HOOK RATE
-- Qualidade fotográfica/visual do veículo (ângulo, iluminação, fundo)
-- Legibilidade imediata das condições comerciais (preço, parcela, entrada)
-- Impacto visual para Mobile (96% das conversões vêm do celular no automotivo)
-- Contraste e hierarquia tipográfica
-
-3. FUNIL DE CONVERSÃO AUTOMOTIVO
-- Adequação ao estágio do funil: TOPO (awareness de marca/modelo) | MEIO (comparação/interesse) | FUNDO (intenção de test drive/compra)
-- Eficiência do CTA: test drive, simulação de financiamento, "saiba o preço", WhatsApp, ligação direta
-- Presença de elementos de confiança: nome da concessionária, CNPJ, prazo de oferta
-
-4. BENCHMARKS DO SETOR
-- CTR saudável em automotivo: 1.2% – 2.5%
-- CPL alvo: R$20-60 (seminovos populares) a R$50-130 (novos/premium)
-- Criativos de melhor performance: vídeo de estoque com narração, foto de destaque + condição clara, UGC com cliente na entrega
+1. CLAREZA DE PROPOSTA & HIERARQUIA VISUAL (3 segundos, foco mobile, contraste tipográfico)
+2. ADERÊNCIA AO OBJETIVO & CTA (compatibilidade entre mensagem visual, destino e ação esperada)
+3. OPORTUNIDADES DE TESTE A/B (gancho, ângulo, prova social, formato)
 
 Retorne OBRIGATORIAMENTE um JSON válido:
 {
-  "nicheEvaluation": "Análise detalhada do alinhamento com o nicho automotivo e mercado local, incluindo adequação ao perfil do comprador da região",
+  "nicheEvaluation": "Análise detalhada do alinhamento com o nicho do cliente, objetivo da campanha e público local",
   "conversionProbability": "Alta" | "Média" | "Baixa",
   "score": número de 0 a 100,
   "persuasionScore": número de 0 a 100,
   "attractionScore": número de 0 a 100,
-  "marketingAlignment": "Análise do posicionamento Inbound/Outbound e do estágio no funil automotivo, com recomendações de copy e CTA",
-  "detectedElements": ["elementos visuais detectados: modelo do veículo, texto de oferta, CTA, logo, pessoa, cenário..."],
-  "strengths": ["pelo menos 3 pontos fortes sob olhar de marketing automotivo de alta performance"],
-  "weaknesses": ["pelo menos 3 oportunidades perdidas ou falhas críticas de conversão"],
-  "actionableImprovements": ["pelo menos 3 melhorias práticas e imediatas específicas para o nicho automotivo"],
+  "marketingAlignment": "Análise do estágio do funil e compatibilidade com o evento de otimização e CTA (sem inventar metas numéricas)",
+  "detectedElements": ["elementos visuais observados de fato na imagem: produto/veículo, texto visível, CTA, logo, pessoa, cenário"],
+  "strengths": ["pelo menos 3 pontos fortes observados na peça"],
+  "weaknesses": ["pelo menos 3 oportunidades de melhoria ou falhas visuais/comunicacionais"],
+  "actionableImprovements": ["pelo menos 3 melhorias práticas específicas para teste no nicho do cliente"],
   "newCreativeIdeas": [
     {
-      "concept": "Conceito estratégico do novo criativo — ângulo criativo e objetivo de conversão",
-      "hookText": "Headline/gancho matador específico para o mercado automotivo brasileiro",
-      "visualDescription": "Descrição visual detalhada: cenário, veículo, modelo, cores, composição, elementos de oferta, CTA visual — suficiente para um designer ou IA gerar a imagem",
-      "psychologicalTriggers": ["gatilhos psicológicos: ex. Urgência por Estoque, Prova Social, Facilidade de Crédito, Status Social"]
+      "concept": "Conceito estratégico (sugestão de teste — manter fatos reais fornecidos pelo usuário)",
+      "hookText": "Headline/gancho sugerido para o objetivo informado",
+      "visualDescription": "Descrição visual sugerida: composição, foco no produto, hierarquia de leitura e espaço para oferta editável",
+      "psychologicalTriggers": ["gatilhos sugeridos compatíveis com o objetivo"]
     },
     {
-      "concept": "Segundo conceito com ângulo diferente (ex: se o primeiro é emocional, esse é racional/oferta)",
-      "hookText": "Headline alternativa",
-      "visualDescription": "Descrição visual detalhada para geração",
-      "psychologicalTriggers": ["gatilhos psicológicos"]
+      "concept": "Segundo conceito com ângulo diferente (ex: racional/prova social vs emocional/autoridade)",
+      "hookText": "Headline alternativa (sugestão)",
+      "visualDescription": "Descrição visual detalhada mantendo consistência com a marca",
+      "psychologicalTriggers": ["gatilhos sugeridos"]
     }
   ]
 }

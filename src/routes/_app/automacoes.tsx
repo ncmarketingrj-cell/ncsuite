@@ -1360,7 +1360,7 @@ function AutomationsPage() {
 
                       {notif.link && (
                         <a
-                          href={notif.link}
+                          href={notif.link.startsWith("/campanhas") ? notif.link.replace(/^\/campanhas/, "/metricas") : notif.link}
                           onClick={() => handleMarkSingleRead(notif.id)}
                           className="flex items-center gap-1 text-[11px] font-bold text-foreground bg-muted hover:bg-muted/80 px-2.5 py-1.5 rounded-lg transition"
                         >

@@ -1,1215 +1,633 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { useState, useRef, useEffect, type ChangeEvent } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { useMemo, useState } from "react";
+import { createFileRoute, redirect } from "@tanstack/react-router";
+import { useQuery } from "@tanstack/react-query";
 import {
-  Palette, Plus, Trash2, Tag, Image as ImageIcon, Loader2, Search,
-  Sparkles, Check, AlertTriangle, AlertCircle, TrendingUp, Gauge, FileSearch,
-  Layers, Lightbulb, Compass, MapPin, Upload, X, ChevronRight, Zap,
-  Wand2, Download, ImagePlus, Car, Paintbrush, LayoutTemplate, Flame
+  AlertTriangle,
+  Bot,
+  FlaskConical,
+  Layers,
+  LayoutGrid,
+  Palette,
+  Store,
 } from "lucide-react";
-import { toast } from "sonner";
-import { PageHeader } from "@/components/PageHeader";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase-external/client";
-import { useServerFn } from "@tanstack/react-start";
-import { analyzeCreativeFn, type CreativeAIAnalysis } from "@/lib/criativo.functions";
+import { useAuth } from "@/lib/auth";
+import { usePagePermission } from "@/hooks/usePagePermission";
+import { useGlobalDate } from "@/contexts/DateContext";
+import { DateRangePicker } from "@/components/DateRangePicker";
+import { PageHeader } from "@/components/PageHeader";
+import { SnapshotStatusBadge } from "@/components/SnapshotStatusBadge";
+import {
+  buildMetaSnapshotKey,
+  DEFAULT_META_TIMEZONE,
+  useActiveMetaSnapshot,
+} from "@/lib/metaSnapshotCache";
+import { EVENT_MODEL_VERSION } from "@/lib/metricsDomain";
+import {
+  buildCreativeAdRecord,
+  buildCreativeManagerOverview,
+  enrichCreativePeerSignals,
+  evaluateCreativeDiversity,
+  evaluateCreativeFatigue,
+  type CreativeAdRecord,
+  type CreativePerformanceSignal,
+  type FatigueDiagnostic,
+} from "@/lib/creativeIntelligenceDomain";
+import { buildContextFromCreativeItem } from "@/lib/victoriaContextGateway";
+import { VictoriaFloatingChat, type ContextItem } from "@/components/victoria/VictoriaFloatingChat";
+import { CreativeManagerOverviewSection } from "@/components/criativos/CreativeManagerOverviewSection";
+import { CreativeLibrarySection } from "@/components/criativos/CreativeLibrarySection";
+import { CreativeFatigueSection } from "@/components/criativos/CreativeFatigueSection";
+import { CreativeTestsSection, type CreativeTestRow } from "@/components/criativos/CreativeTestsSection";
+import {
+  CreativeProductionWorkspace,
+  type BrandKitRow,
+  type SwipeAssetRow,
+} from "@/components/criativos/CreativeProductionWorkspace";
+
+const ADMIN_EMAILS = ["nc.marketingrj@gmail.com", "hc.marketing.dgt@gmail.com"];
 
 export const Route = createFileRoute("/_app/criativos")({
-  head: () => ({ meta: [{ title: "Criativos & IA — NC Suite" }] }),
-  component: CriativosPage,
+  head: () => ({ meta: [{ title: "Criativos & Testes — NC Suite" }] }),
+  beforeLoad: async () => {
+    let session = (await supabase.auth.getSession()).data.session;
+    if (!session) {
+      const { data: refreshed } = await supabase.auth.refreshSession();
+      session = refreshed.session;
+    }
+    if (!session) throw redirect({ to: "/login" });
+    if (ADMIN_EMAILS.includes(session.user.email || "")) return;
+    await (supabase as any)
+      .from("profiles")
+      .select("role, permissions")
+      .eq("id", session.user.id)
+      .maybeSingle();
+  },
+  component: CriativosHubPage,
 });
 
-type SwipeFile = { 
-  id: string; 
-  title: string; 
-  media_url: string | null; 
-  notes: string | null; 
-  tags: string[] | null; 
-  created_at: string | null 
-};
+type WorkspaceTab = "inteligencia" | "fadiga" | "testes" | "producao";
 
-function CriativosPage() {
-  const qc = useQueryClient();
-  const [showModal, setShowModal] = useState(false);
-  const [showCreateArt, setShowCreateArt] = useState(false);
-  const [search, setSearch] = useState("");
-  const [analysisItem, setAnalysisItem] = useState<SwipeFile | null>(null);
+function getLocalDateStr(d: Date) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
 
-  // Busca criativos no Supabase
-  const { data: items = [], isLoading } = useQuery({
-    queryKey: ["swipe-files"],
-    queryFn: async () => {
-      try {
-        const { data, error } = await (supabase as any)
-          .from("swipe_files")
-          .select("*")
-          .order("created_at", { ascending: false });
-        if (error) throw error;
-        return (data ?? []) as SwipeFile[];
-      } catch { 
-        return [] as SwipeFile[]; 
-      }
-    },
-  });
+function CriativosHubPage() {
+  const { user } = useAuth();
+  const { profile, canEdit, canViewIntegrations } = usePagePermission();
+  const canEditCriativos = canEdit("criativos");
 
-  // Remove criativo
-  const removeItem = useMutation({
-    mutationFn: async (id: string) => {
-      const { error } = await (supabase as any).from("swipe_files").delete().eq("id", id);
-      if (error) throw error;
-    },
-    onSuccess: () => { 
-      qc.invalidateQueries({ queryKey: ["swipe-files"] }); 
-      toast.success("Criativo removido do laboratório local"); 
-    },
-    onError: (e: Error) => toast.error(e.message),
-  });
+  const { dateFrom, dateTo, setDateFrom, setDateTo, accountId: globalAccountId, setAccountId: setGlobalAccountId } = useGlobalDate();
+  const [accountFilter, setAccountFilterState] = useState<string>(globalAccountId || "all");
+  const setAccountFilter = (next: string) => {
+    setAccountFilterState(next);
+    setGlobalAccountId(next || "all");
+  };
 
-  const filtered = items.filter((i) => 
-    !search || 
-    i.title.toLowerCase().includes(search.toLowerCase()) ||
-    (i.tags && i.tags.some(t => t.toLowerCase().includes(search.toLowerCase())))
+  const [activeTab, setActiveTab] = useState<WorkspaceTab>("inteligencia");
+  const [signalFilter, setSignalFilter] = useState<CreativePerformanceSignal | "all">("all");
+  const [preselectedAdForTest, setPreselectedAdForTest] = useState<CreativeAdRecord | null>(null);
+  const [seedVariationAd, setSeedVariationAd] = useState<CreativeAdRecord | null>(null);
+
+  // Victoria contextual floating drawer state
+  const [victoriaOpen, setVictoriaOpen] = useState(false);
+  const [victoriaContext, setVictoriaContext] = useState<ContextItem | null>(null);
+
+  const dateRange = useMemo(
+    () => ({
+      startDate: new Date(dateFrom + "T12:00:00"),
+      endDate: new Date(dateTo + "T12:00:00"),
+    }),
+    [dateFrom, dateTo]
   );
 
+  const setDateRange = (range: { startDate: Date; endDate: Date }) => {
+    setDateFrom(getLocalDateStr(range.startDate));
+    setDateTo(getLocalDateStr(range.endDate));
+  };
+
+  const activeSnapshot = useActiveMetaSnapshot({ accountId: accountFilter });
+
+  // 1. Contas e Clientes (suporta todas as contas reconhecidas no banco)
+  const { data: accounts = [] } = useQuery({
+    queryKey: ["ad-accounts", "criativos"],
+    queryFn: async () => {
+      const { data, error } = await (supabase as any)
+        .from("ad_accounts")
+        .select("id, name, status, currency, last_sync")
+        .order("name");
+      if (error) throw error;
+      return (data || []) as Array<{ id: string; name: string; status?: number; currency?: string; last_sync?: string | null }>;
+    },
+  });
+
+  const { data: clients = [] } = useQuery({
+    queryKey: ["clients", "criativos"],
+    queryFn: async () => {
+      const { data, error } = await (supabase as any)
+        .from("clients")
+        .select("id, name, meta_ad_account_id, niche, logo_url, rules")
+        .order("name");
+      if (error) return [];
+      return (data || []) as Array<{ id: string; name: string; meta_ad_account_id?: string | null; niche?: string | null; logo_url?: string | null; rules?: any }>;
+    },
+  });
+
+  const accountNameMap = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const a of accounts) map.set(a.id, a.name || a.id);
+    return map;
+  }, [accounts]);
+
+  // 2. Anúncios sincronizados da Meta + Métricas diárias (asset_metrics) + Estatísticas exatas de período (meta_period_stats)
+  const {
+    data: rawAdsBundle,
+    isLoading: loadingAds,
+    isFetching: fetchingAds,
+    error: adsError,
+  } = useQuery({
+    queryKey: buildMetaSnapshotKey(
+      "criativos-ads",
+      {
+        accountId: accountFilter,
+        dateFrom,
+        dateTo,
+        timezone: DEFAULT_META_TIMEZONE,
+        level: "ad",
+        snapshotId: activeSnapshot.snapshotId,
+        eventModelVersion: EVENT_MODEL_VERSION,
+      },
+      ["criativos-v1"]
+    ),
+    queryFn: async () => {
+      // Paginar todos os anúncios da conta/workspace respeitando cap seguro
+      const adsList: any[] = [];
+      let useExtendedAdCols = true;
+      const selectExtended =
+        "id, name, external_id, ad_account_id, campaign_id, ad_set_id, status, delivery_status, configured_status, creative_id, creative_name, creative_title, creative_body, creative_format, creative_image_url, call_to_action_type, thumbnail_url, creative_url, created_at, campaigns(id, name, external_id, ad_account_id, objective, status, delivery_status, stop_time), ad_sets(id, name, end_time)";
+      const selectLegacy =
+        "id, name, external_id, ad_account_id, campaign_id, ad_set_id, status, delivery_status, configured_status, creative_id, creative_name, call_to_action_type, thumbnail_url, creative_url, created_at, campaigns(id, name, external_id, ad_account_id, objective, status, delivery_status, stop_time), ad_sets(id, name, end_time)";
+
+      for (let from = 0; from < 10000; from += 1000) {
+        let q = (supabase as any)
+          .from("ads")
+          .select(useExtendedAdCols ? selectExtended : selectLegacy)
+          .order("name")
+          .order("id")
+          .range(from, from + 999);
+        if (accountFilter !== "all") {
+          q = q.eq("ad_account_id", accountFilter);
+        }
+        let { data, error } = await q;
+        if (
+          error &&
+          useExtendedAdCols &&
+          (error.code === "42703" || error.code === "PGRST204" || String(error.message || "").includes("column"))
+        ) {
+          useExtendedAdCols = false;
+          let fallbackQ = (supabase as any)
+            .from("ads")
+            .select(selectLegacy)
+            .order("name")
+            .order("id")
+            .range(from, from + 999);
+          if (accountFilter !== "all") fallbackQ = fallbackQ.eq("ad_account_id", accountFilter);
+          ({ data, error } = await fallbackQ);
+        }
+        if (error) throw error;
+        adsList.push(...(data || []));
+        if (!data || data.length < 1000) break;
+      }
+
+      if (adsList.length === 0) {
+        return { ads: [], periodStats: [], dailyMetrics: [] };
+      }
+
+      // Buscar meta_period_stats exatos de anúncio para o período selecionado
+      let pQuery = (supabase as any)
+        .from("meta_period_stats")
+        .select("*")
+        .eq("entity_type", "ad")
+        .eq("start_date", dateFrom)
+        .eq("end_date", dateTo)
+        .limit(5000);
+      if (accountFilter !== "all") {
+        pQuery = pQuery.eq("ad_account_id", accountFilter);
+      }
+      const { data: periodStats } = await pQuery;
+
+      // Buscar métricas diárias estritamente por ad_id (nunca ad_set_id sem ad_id) em chunks de ad_id
+      const adIds = adsList.map((a) => a.id);
+      const dailyMetrics: any[] = [];
+      for (let i = 0; i < adIds.length; i += 200) {
+        const chunk = adIds.slice(i, i + 200);
+        for (let from = 0; from < 10000; from += 1000) {
+          const { data: dRows, error: dErr } = await (supabase as any)
+            .from("asset_metrics")
+            .select(
+              "ad_id, date, cost, impressions, reach, frequency, clicks, inline_link_clicks, all_clicks, conversions, purchase_value, video_views, video_p25, video_p50, video_p75, video_p95, raw_objective, optimization_goal, result_type, result_indicator, attribution_window"
+            )
+            .in("ad_id", chunk)
+            .gte("date", dateFrom)
+            .lte("date", dateTo)
+            .order("date", { ascending: true })
+            .range(from, from + 999);
+          if (dErr) break;
+          dailyMetrics.push(...(dRows || []));
+          if (!dRows || dRows.length < 1000) break;
+        }
+      }
+
+      return {
+        ads: adsList,
+        periodStats: periodStats || [],
+        dailyMetrics,
+      };
+    },
+  });
+
+  // 3. Testes Criativos (creative_tests), Brand Kits e Peças Produzidas (swipe_files)
+  const { data: creativeTests = [] } = useQuery({
+    queryKey: ["criativos-tests", accountFilter],
+    queryFn: async () => {
+      let q = (supabase as any).from("creative_tests").select("*").order("updated_at", { ascending: false });
+      if (accountFilter !== "all") q = q.eq("ad_account_id", accountFilter);
+      const { data, error } = await q;
+      if (error) return [];
+      return (data || []) as CreativeTestRow[];
+    },
+  });
+
+  const { data: brandKits = [] } = useQuery({
+    queryKey: ["criativos-brand-kit"],
+    queryFn: async () => {
+      const { data, error } = await (supabase as any).from("creative_brand_kits").select("*");
+      if (error) return [];
+      return (data || []) as BrandKitRow[];
+    },
+  });
+
+  const { data: swipeAssets = [] } = useQuery({
+    queryKey: ["swipe-files", accountFilter],
+    queryFn: async () => {
+      let q = (supabase as any).from("swipe_files").select("*").order("created_at", { ascending: false });
+      if (accountFilter !== "all") {
+        q = q.or(`ad_account_id.eq.${accountFilter},ad_account_id.is.null`);
+      }
+      const { data, error } = await q;
+      if (error) return [];
+      return (data || []) as SwipeAssetRow[];
+    },
+  });
+
+  // 4. Normalização Canônica + Fadiga + Visão do Gestor
+  const {
+    records,
+    recordsById,
+    fatigueDiagnostics,
+    diversityGroups,
+    managerOverview,
+    linkedAdTestMap,
+  } = useMemo(() => {
+    const ads = rawAdsBundle?.ads || [];
+    const periodMap = new Map<string, any>();
+    for (const ps of rawAdsBundle?.periodStats || []) {
+      if (ps.entity_id) periodMap.set(String(ps.entity_id), ps);
+    }
+    const dailyByAd = new Map<string, any[]>();
+    for (const dm of rawAdsBundle?.dailyMetrics || []) {
+      if (!dm.ad_id) continue;
+      const arr = dailyByAd.get(String(dm.ad_id)) || [];
+      arr.push(dm);
+      dailyByAd.set(String(dm.ad_id), arr);
+    }
+
+    const baseRecords = ads.map((ad: any) =>
+      buildCreativeAdRecord({
+        ad,
+        accountName: accountNameMap.get(String(ad.ad_account_id || "")) || "Conta Meta Ads",
+        dateFrom,
+        dateTo,
+        periodStat: periodMap.get(String(ad.id)) || null,
+        dailyRows: dailyByAd.get(String(ad.id)) || [],
+        isLoadingMetrics: loadingAds,
+      })
+    );
+
+    const enriched = enrichCreativePeerSignals(baseRecords);
+    const byId = new Map(enriched.map((r) => [r.id, r]));
+    const fatigues = enriched.map((r) => evaluateCreativeFatigue(r));
+    const diversity = evaluateCreativeDiversity(enriched);
+    const overview = buildCreativeManagerOverview(enriched, fatigues);
+
+    const testLinkMap = new Map<string, string[]>();
+    for (const t of creativeTests) {
+      for (const aid of t.participant_ad_ids || []) {
+        const list = testLinkMap.get(aid) || [];
+        list.push(t.id);
+        testLinkMap.set(aid, list);
+      }
+    }
+
+    return {
+      records: enriched,
+      recordsById: byId,
+      fatigueDiagnostics: fatigues,
+      diversityGroups: diversity,
+      managerOverview: overview,
+      linkedAdTestMap: testLinkMap,
+    };
+  }, [rawAdsBundle, accountNameMap, dateFrom, dateTo, loadingAds, creativeTests]);
+
+  const testsSummary = useMemo(
+    () => ({
+      planned: creativeTests.filter((t) => t.status === "planned").length,
+      running: creativeTests.filter((t) => t.status === "running").length,
+      concluded: creativeTests.filter((t) => t.status === "concluded").length,
+      inconclusive: creativeTests.filter((t) => t.status === "inconclusive").length,
+    }),
+    [creativeTests]
+  );
+
+  const openVictoriaForAd = (record: CreativeAdRecord, fatigue?: FatigueDiagnostic | null) => {
+    const matchedClient = clients.find((c) => c.meta_ad_account_id === record.adAccountId);
+    const clientTargetCpl = matchedClient?.rules?.max_cpl ?? null;
+    const analysisCtx = buildContextFromCreativeItem({
+      record,
+      fatigue: fatigue ?? fatigueDiagnostics.find((f) => f.adId === record.id) ?? null,
+      sameObjectivePeers: records,
+      dateFrom,
+      dateTo,
+      lastSyncAt: activeSnapshot.committedAt || null,
+      userId: user?.id || null,
+      accountMaxCplTarget: clientTargetCpl,
+    });
+
+    setVictoriaContext({
+      id: record.id,
+      external_id: record.externalId || undefined,
+      ad_account_id: record.adAccountId,
+      name: record.name,
+      type: "ad",
+      status: record.configuredStatus,
+      delivery_status: record.effectiveStatus,
+      objective: record.rawObjective || undefined,
+      result_type: record.resultLabel,
+      result_indicator: record.shortBadge,
+      optimization_goal: record.optimizationGoal || undefined,
+      dateFrom,
+      dateTo,
+      lastSyncAt: activeSnapshot.committedAt || null,
+      t: {
+        cost: record.spend,
+        conversions: record.results,
+        cpl: record.unitCost ?? 0,
+        ctr: record.ctrLink ?? 0,
+        ctrAll: record.ctrAll ?? 0,
+        impressions: record.impressions,
+        reach: record.reach,
+        freq: record.frequency ?? 0,
+        cpm: record.cpm ?? 0,
+        cpc: record.cpcLink ?? 0,
+        cpcAll: record.cpcAll ?? 0,
+        clicks: record.linkClicks,
+        linkClicks: record.linkClicks,
+        allClicks: record.allClicks,
+      },
+      resultDetail: {
+        resultLabel: record.resultLabel,
+        costLabel: record.costLabel,
+        shortBadge: record.shortBadge,
+      },
+      analysisContext: analysisCtx,
+    });
+    setVictoriaOpen(true);
+  };
+
+  const selectedAccountLabel =
+    accountFilter === "all"
+      ? `Todas as Contas (${accounts.length})`
+      : accountNameMap.get(accountFilter) || accountFilter;
+
   return (
-    <div className="mx-auto max-w-7xl space-y-8 pb-20">
-      
-      {/* HEADER DE ALTÍSSIMO NÍVEL */}
-      <PageHeader 
-        eyebrow="Laboratório Criativo AI" 
-        title="Criativos & Inteligência Visual" 
-        description="Biblioteca de anúncios e inteligência visual preditiva para alta performance e neuro-marketing."
+    <div className="space-y-6 pb-20">
+      <PageHeader
+        eyebrow="CENTRO DE INTELIGÊNCIA CRIATIVA & PRODUÇÃO"
+        title="Criativos, Performance & Testes"
+        description="Conecte anúncios sincronizados da Meta, diagnósticos por objetivo oficial, detecção de fadiga, planejamento de testes e estúdio de produção com Brand Kit."
         actions={
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => setShowCreateArt(true)}
-              className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-orange-600 to-rose-600 px-5 py-3 text-xs font-black uppercase tracking-widest text-white shadow-lg transition hover:scale-102 active:scale-98"
-            >
-              <Car className="h-4 w-4" /> CRIADOR DE ARTE AUTO
-            </button>
-            <button
-              onClick={() => setShowModal(true)}
-              className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-primary to-secondary px-5 py-3 text-xs font-black uppercase tracking-widest text-background shadow-glow transition hover:scale-102 active:scale-98"
-            >
-              <Plus className="h-4.5 w-4.5 stroke-[3px]" /> ANALISAR NOVO ANÚNCIO
-            </button>
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Filtro Global de Conta + Período */}
+            <div className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-card px-2.5 py-1.5">
+              <Store className="h-3.5 w-3.5 text-primary shrink-0" />
+              <select
+                value={accountFilter}
+                onChange={(e) => setAccountFilter(e.target.value)}
+                className="bg-transparent text-xs font-bold text-foreground focus:outline-none max-w-[200px]"
+                aria-label="Selecionar conta de anúncios"
+              >
+                <option value="all">Todas as Contas ({accounts.length})</option>
+                {accounts.map((a) => (
+                  <option key={a.id} value={a.id}>{a.name}</option>
+                ))}
+              </select>
+            </div>
+
+            <DateRangePicker
+              startDate={dateRange.startDate}
+              endDate={dateRange.endDate}
+              onChange={(start, end) => setDateRange({ startDate: start, endDate: end })}
+            />
+
+            {/* RBAC: Somente perfis autorizados a ver integrações veem metadados de snapshot */}
+            {canViewIntegrations && (
+              <SnapshotStatusBadge
+                snapshotId={activeSnapshot.snapshotId}
+                committedAt={activeSnapshot.committedAt}
+                lastSyncAt={activeSnapshot.committedAt}
+                latestSyncRun={activeSnapshot.latestSyncRun}
+                selectedAccountId={accountFilter}
+                isPageLoading={loadingAds || fetchingAds}
+                isMetaSyncing={activeSnapshot.isMetaSyncRunning}
+              />
+            )}
           </div>
         }
       />
 
-      {/* BARRA DE FILTROS E BUSCA */}
-      <div className="relative max-w-md print:hidden">
-        <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-        <input 
-          value={search} 
-          onChange={(e) => setSearch(e.target.value)} 
-          placeholder="Buscar criativos, nichos ou localizações..." 
-          className="w-full rounded-xl border border-white/10 bg-background/50 py-3 pl-12 pr-4 text-sm font-bold focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/20 transition-all placeholder:text-muted-foreground/60" 
-        />
-      </div>
-
-      {/* RENDERIZAÇÃO DA BIBLIOTECA DE CRIATIVOS */}
-      {isLoading ? (
-        <div className="flex justify-center py-24">
-          <Loader2 className="h-8 w-8 animate-spin text-primary" />
-        </div>
-      ) : !filtered.length ? (
-        <div className="glass-panel flex flex-col items-center justify-center gap-3 py-24 text-center border-white/10 bg-white/5">
-          <Palette className="h-10 w-10 text-primary/40 animate-pulse" />
-          <h3 className="font-bold text-sm text-white uppercase tracking-wider">Nenhum anúncio analisado no laboratório</h3>
-          <p className="text-xs text-muted-foreground max-w-sm">Suba seus criativos locais de tráfego pago para receber análises profundas de persuasão e novas ideias de conversão.</p>
-        </div>
-      ) : (
-        <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {filtered.map((item, i) => {
-            let aiReport: CreativeAIAnalysis | null = null;
-            try {
-              if (item.notes) {
-                aiReport = JSON.parse(item.notes);
-              }
-            } catch (e) {
-              console.error("Erro ao fazer parse das notas de IA:", e);
-            }
-
-            return (
-              <motion.div 
-                key={item.id} 
-                initial={{ opacity: 0, y: 12 }} 
-                animate={{ opacity: 1, y: 0 }} 
-                transition={{ delay: i * 0.03 }} 
-                className="glass-panel card-sport overflow-hidden group flex flex-col border-white/10 bg-white/5 hover:border-primary/20 hover:bg-white/[0.07] transition-all duration-300"
-              >
-                
-                {/* Imagem do Criativo */}
-                <div className="relative aspect-[4/5] bg-background/80 overflow-hidden border-b border-white/5">
-                  {item.media_url ? (
-                    <img 
-                      src={item.media_url} 
-                      alt={item.title} 
-                      className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-102" 
-                    />
-                  ) : (
-                    <div className="flex h-full items-center justify-center bg-card">
-                      <ImageIcon className="h-12 w-12 text-muted-foreground/20" />
-                    </div>
-                  )}
-                  
-                  {/* Badges Holográficas de IA */}
-                  {aiReport && (
-                    <div className="absolute top-3 left-3 flex flex-col gap-1.5 pointer-events-none z-10">
-                      <span className="inline-flex items-center gap-1 rounded-lg bg-primary/20 px-2 py-1 text-[9px] font-black uppercase tracking-wider text-primary backdrop-blur-md border border-primary/20 shadow-lg">
-                        <Gauge className="h-3 w-3 text-primary animate-pulse" /> Score {aiReport.score}/100
-                      </span>
-                      <span className={`inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[9px] font-black uppercase tracking-wider backdrop-blur-md border shadow-lg ${
-                        aiReport.conversionProbability === "Alta" 
-                          ? "bg-success/20 text-success border-success/20" 
-                          : aiReport.conversionProbability === "Média"
-                          ? "bg-warning/20 text-warning border-warning/20"
-                          : "bg-destructive/20 text-destructive border-destructive/20"
-                      }`}>
-                        <Sparkles className="h-3 w-3" /> Conversão {aiReport.conversionProbability}
-                      </span>
-                    </div>
-                  )}
-
-                  {/* Ações em Hover (Overlay de Altíssima Sofisticação) */}
-                  <div className="absolute inset-0 bg-background/90 opacity-0 backdrop-blur-sm transition-all duration-300 group-hover:opacity-100 flex flex-col items-center justify-center gap-3.5 z-20">
-                    <button 
-                      onClick={() => setAnalysisItem(item)}
-                      className="inline-flex items-center gap-2 rounded-xl bg-primary px-5 py-2.5 text-xs font-black text-background uppercase tracking-widest shadow-glow-sm hover:scale-[1.02] active:scale-98 transition-all"
-                    >
-                      <FileSearch className="h-4 w-4" /> Diagnóstico IA
-                    </button>
-                    <button 
-                      onClick={() => removeItem.mutate(item.id)} 
-                      className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 hover:bg-destructive/20 hover:text-destructive hover:border-destructive/30 px-5 py-2.5 text-xs font-black uppercase tracking-widest text-muted-foreground transition-all"
-                    >
-                      <Trash2 className="h-4 w-4" /> Excluir
-                    </button>
-                  </div>
-                </div>
-
-                {/* Dados da Galeria */}
-                <div className="p-4 bg-card/40 flex-1 flex flex-col justify-between">
-                  <div>
-                    <h3 className="text-xs font-black text-white uppercase tracking-wider line-clamp-1 group-hover:text-primary transition" title={item.title}>
-                      {item.title}
-                    </h3>
-                    <p className="text-[10px] text-muted-foreground mt-1 font-medium font-mono">
-                      Subido em: {item.created_at ? new Date(item.created_at).toLocaleDateString('pt-BR') : 'Sem data'}
-                    </p>
-                  </div>
-
-                  {item.tags?.length ? (
-                    <div className="mt-3 flex flex-wrap gap-1.5">
-                      {item.tags.map((t, idx) => (
-                        <span 
-                          key={idx} 
-                          className="inline-flex items-center gap-1 rounded-lg bg-muted border border-border px-2.5 py-1 text-[9px] font-black uppercase tracking-wider text-foreground"
-                        >
-                          {idx === 1 ? <MapPin className="h-3 w-3 text-primary animate-pulse" /> : <Tag className="h-3 w-3 text-violet-600 dark:text-violet-400" />}
-                          {t}
-                        </span>
-                      ))}
-                    </div>
-                  ) : null}
-                </div>
-              </motion.div>
-            );
-          })}
+      {adsError && (
+        <div className="rounded-2xl border border-rose-500/35 bg-rose-500/10 p-4 flex items-center gap-3 text-xs text-rose-300">
+          <AlertTriangle className="h-4 w-4 shrink-0" />
+          <span>Falha ao carregar anúncios desta conta. Verifique sua conexão e recarregue o recorte.</span>
         </div>
       )}
 
-      {/* MODAL DE NOVO CRIATIVO COM UPLOAD REAL E PARÂMETROS */}
-      <AnimatePresence>
-        {showModal && (
-          <AddCreativeModal 
-            onClose={() => setShowModal(false)} 
-            onSuccess={() => qc.invalidateQueries({ queryKey: ["swipe-files"] })} 
-          />
-        )}
-      </AnimatePresence>
-      
-      {/* MODAL DE DIAGNÓSTICO COMPLETO DE IA */}
-      <AnimatePresence>
-        {analysisItem && (
-          <AIAnalysisModal
-            item={analysisItem}
-            onClose={() => setAnalysisItem(null)}
-          />
-        )}
-      </AnimatePresence>
-
-      {/* MODAL CRIAR ARTE COM IA */}
-      <AnimatePresence>
-        {showCreateArt && <CreateArtModal onClose={() => setShowCreateArt(false)} />}
-      </AnimatePresence>
-    </div>
-  );
-}
-
-// ==========================================
-// MODAL DE ADIÇÃO E ANÁLISE DE CRIATIVO COM UPLOAD REAL DE ARQUIVO
-// ==========================================
-interface AddModalProps {
-  onClose: () => void;
-  onSuccess: () => void;
-}
-
-function AddCreativeModal({ onClose, onSuccess }: AddModalProps) {
-  const analyzeCreative = useServerFn(analyzeCreativeFn);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
-  const [title, setTitle] = useState("");
-  const [niche, setNiche] = useState("Mercado Automotivo");
-  const [location, setLocation] = useState("Rio de Janeiro");
-  
-  const [preview, setPreview] = useState<string | null>(null);
-  const [base64, setBase64] = useState<string | null>(null);
-  const [mimeType, setMimeType] = useState("image/png");
-  
-  const [loading, setLoading] = useState(false);
-  const [scanStep, setScanStep] = useState(0);
-
-  // Efeito para simular scanner avançado visual com textos de IA durante o loading
-  useEffect(() => {
-    if (!loading) return;
-    const steps = [
-      "Decodificando layout visual do criativo...",
-      "Processando ganchos emocionais e atração visual...",
-      "Mapeando com dados do Mercado Automotivo...",
-      "Avaliando legibilidade, cores e CTA do anúncio...",
-      "Simulando conversão no público-alvo informado...",
-      "Gerando relatórios de neuro-marketing e ideias criativas..."
-    ];
-    const interval = setInterval(() => {
-      setScanStep((prev) => (prev + 1) % steps.length);
-    }, 2500);
-    return () => clearInterval(interval);
-  }, [loading]);
-
-  const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    
-    setMimeType(file.type || "image/png");
-    
-    const reader = new FileReader();
-    reader.onload = () => {
-      const result = reader.result as string;
-      setPreview(result);
-      setBase64(result.split(",")[1] ?? "");
-    };
-    reader.readAsDataURL(file);
-  };
-
-  const handleSelectFileClick = () => {
-    fileInputRef.current?.click();
-  };
-
-  const handleAnalyze = async () => {
-    if (!title) {
-      toast.warning("Por favor, dê um título a este criativo!");
-      return;
-    }
-    if (!base64) {
-      toast.warning("Por favor, selecione um arquivo de criativo!");
-      return;
-    }
-
-    setLoading(true);
-    setScanStep(0);
-    try {
-      // 1. Chamar server function do Gemini
-      const analysisResult = await analyzeCreative({
-        data: {
-          imageBase64: base64,
-          mimeType,
-          niche,
-          location
-        }
-      });
-
-      // 2. Gravar no banco de dados swipe_files
-      const { data: u } = await supabase.auth.getUser();
-      const payload = {
-        title,
-        media_url: `data:${mimeType};base64,${base64}`,
-        notes: JSON.stringify(analysisResult),
-        tags: [niche, location, `Conversão: ${analysisResult.conversionProbability}`],
-        user_id: u.user?.id
-      };
-
-      const { error } = await (supabase as any).from("swipe_files").insert(payload);
-      if (error) throw error;
-
-      toast.success("Análise de inteligência visual concluída com sucesso!");
-      onSuccess();
-      onClose();
-    } catch (e: any) {
-      console.error(e);
-      toast.error(e.message || "Erro durante a análise do criativo");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const stepsText = [
-    "Decodificando layout visual do criativo...",
-    "Processando ganchos emocionais e atração visual...",
-    "Mapeando com dados do Mercado Automotivo...",
-    "Avaliando legibilidade, cores e CTA do anúncio...",
-    "Simulando conversão no público-alvo informado...",
-    "Gerando relatórios de neuro-marketing e ideias criativas..."
-  ];
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/90 backdrop-blur-md p-4">
-      <motion.div 
-        initial={{ scale: 0.95, opacity: 0 }} 
-        animate={{ scale: 1, opacity: 1 }} 
-        exit={{ scale: 0.95, opacity: 0 }} 
-        className="glass-panel w-full max-w-2xl border-white/10 bg-background flex flex-col max-h-[90vh] shadow-2xl relative overflow-hidden"
-      >
-        
-        {/* EFEITO DE CORRIDA DE IA (SCANNER LASER) */}
-        <AnimatePresence>
-          {loading && (
-            <motion.div 
-              initial={{ opacity: 0 }} 
-              animate={{ opacity: 1 }} 
-              exit={{ opacity: 0 }} 
-              className="absolute inset-0 bg-background/95 backdrop-blur-xl z-50 flex flex-col items-center justify-center p-8 space-y-6"
-            >
-              <div className="relative h-64 w-64 rounded-2xl border border-primary/20 overflow-hidden shadow-2xl bg-white/5">
-                {preview && (
-                  <img src={preview} alt="Scanning preview" className="h-full w-full object-cover opacity-60" />
-                )}
-                {/* Laser horizontal */}
-                <div className="absolute left-0 right-0 h-1.5 bg-gradient-to-r from-primary/10 via-primary to-primary/10 shadow-[0_0_15px_rgba(var(--primary),1)] animate-[bounce_3s_infinite]" />
-              </div>
-              
-              <div className="flex flex-col items-center text-center space-y-3">
-                <Loader2 className="h-8 w-8 animate-spin text-primary" />
-                <h4 className="text-sm font-black uppercase tracking-widest text-primary">Victoria AI Engine</h4>
-                <p className="text-xs text-white/80 font-semibold font-mono animate-pulse min-h-[20px]">
-                  {stepsText[scanStep]}
-                </p>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        {/* HEADER */}
-        <div className="flex items-center justify-between border-b border-white/10 p-5 bg-card/50">
-          <div>
-            <h3 className="font-display text-lg font-black text-gradient flex items-center gap-2">
-              <Sparkles className="h-5 w-5 text-primary" /> Analisador de Criativos Pro
-            </h3>
-            <p className="text-xs text-muted-foreground mt-1">Carregue um arquivo local e defina o público para análise de neuro-marketing.</p>
-          </div>
-          <button onClick={onClose} className="p-2 rounded-full hover:bg-white/5 text-muted-foreground transition">✕</button>
-        </div>
-
-        {/* CORPO DO FORMULÁRIO */}
-        <div className="flex-1 overflow-y-auto custom-scrollbar p-6 space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            
-            {/* Campo Título */}
-            <div className="space-y-2">
-              <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Título do Anúncio</label>
-              <input 
-                value={title} 
-                onChange={(e) => setTitle(e.target.value)} 
-                placeholder="Ex: LumaCar Feirão Maio" 
-                className="w-full rounded-xl border border-white/10 bg-background/50 px-4 py-3 text-sm font-bold focus:border-primary focus:outline-none" 
-              />
-            </div>
-
-            {/* Localização */}
-            <div className="space-y-2">
-              <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Localização de Veiculação</label>
-              <input 
-                value={location} 
-                onChange={(e) => setLocation(e.target.value)} 
-                placeholder="Ex: Rio de Janeiro" 
-                className="w-full rounded-xl border border-white/10 bg-background/50 px-4 py-3 text-sm font-bold focus:border-primary focus:outline-none" 
-              />
-            </div>
-            
-            {/* Nicho / Mercado */}
-            <div className="space-y-2 md:col-span-2">
-              <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Nicho ou Segmento de Mercado</label>
-              <input 
-                value={niche} 
-                onChange={(e) => setNiche(e.target.value)} 
-                placeholder="Ex: Mercado Automotivo" 
-                className="w-full rounded-xl border border-white/10 bg-background/50 px-4 py-3 text-sm font-bold focus:border-primary focus:outline-none" 
-              />
-            </div>
-          </div>
-
-          {/* ÁREA DE DRAG & DROP E FILE UPLOAD REAL */}
-          <div className="space-y-2">
-            <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Imagem / Arte do Criativo (Upload)</label>
-            <input 
-              type="file" 
-              ref={fileInputRef} 
-              accept="image/*" 
-              onChange={handleFileChange} 
-              className="hidden" 
-            />
-
-            {!preview ? (
-              <div 
-                onClick={handleSelectFileClick}
-                className="group relative flex cursor-pointer flex-col items-center justify-center gap-4 rounded-xl border-2 border-dashed border-white/10 bg-background/40 py-12 transition hover:border-primary/40 hover:bg-primary/[0.02]"
-              >
-                <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-white/5 group-hover:scale-105 group-hover:bg-primary group-hover:text-background transition shadow-lg">
-                  <Upload className="h-6 w-6" />
-                </div>
-                <div className="text-center">
-                  <p className="text-xs font-bold uppercase tracking-wider text-white">Selecionar arquivo de imagem</p>
-                  <p className="mt-1 text-[9px] text-muted-foreground font-mono">PNG, JPG, WEBP • Max 8MB</p>
-                </div>
-              </div>
-            ) : (
-              <div className="relative rounded-xl border border-white/10 overflow-hidden shadow-2xl bg-white/5 p-2 flex justify-center items-center">
-                <img src={preview} alt="Upload preview" className="max-h-[300px] object-contain rounded-lg" />
-                <button
-                  onClick={() => { setPreview(null); setBase64(null); }}
-                  className="absolute right-4 top-4 rounded-xl bg-background/80 p-2 backdrop-blur shadow-xl hover:bg-destructive hover:text-white transition"
-                  title="Remover arquivo"
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* RODAPÉ E BOTÕES DE ENVIO */}
-        <div className="flex items-center justify-end gap-3 border-t border-white/10 p-5 bg-card/50">
-          <button 
-            onClick={onClose} 
-            className="rounded-xl border border-white/10 px-5 py-3 text-xs font-black uppercase tracking-widest text-muted-foreground hover:text-white transition"
-          >
-            Cancelar
-          </button>
-          <button 
-            onClick={handleAnalyze} 
-            disabled={!preview || !title}
-            className="flex items-center gap-2 rounded-xl bg-primary px-6 py-3 text-xs font-black uppercase tracking-widest text-background hover:shadow-glow transition hover:scale-[1.01] active:scale-95 disabled:opacity-40 disabled:pointer-events-none"
-          >
-            <Zap className="h-4.5 w-4.5 fill-current" /> INICIAR ANÁLISE IA
-          </button>
-        </div>
-      </motion.div>
-    </div>
-  );
-}
-
-// ==========================================
-// MODAL DE DIAGNÓSTICO DE IA
-// ==========================================
-function AIAnalysisModal({ item, onClose }: { item: SwipeFile; onClose: () => void }) {
-  const [generating, setGenerating] = useState<number | null>(null);
-  const [generatedImages, setGeneratedImages] = useState<Record<number, string>>({});
-
-  let report: CreativeAIAnalysis | null = null;
-  try {
-    if (item.notes) report = JSON.parse(item.notes);
-  } catch {}
-
-  if (!report) {
-    return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/90 backdrop-blur-md p-4">
-        <div className="glass-panel max-w-md p-6 space-y-4 text-center">
-          <AlertCircle className="h-10 w-10 text-destructive mx-auto animate-pulse" />
-          <h3 className="text-white font-bold">Erro de Diagnóstico</h3>
-          <p className="text-xs text-muted-foreground">O relatório não contém dados de inteligência válidos no banco.</p>
-          <button onClick={onClose} className="rounded-xl bg-white/10 px-4 py-2 text-xs font-bold uppercase">Fechar</button>
-        </div>
-      </div>
-    );
-  }
-
-  const handleGenerateImage = async (index: number, idea: CreativeAIAnalysis["newCreativeIdeas"][0]) => {
-    setGenerating(index);
-    try {
-      const prompt = `${idea.visualDescription}. Headline: ${idea.hookText}. Triggers: ${idea.psychologicalTriggers.join(", ")}.`;
-      const { data, error } = await supabase.functions.invoke("generate-art", {
-        body: { prompt, aspectRatio: "1:1" },
-      });
-      if (error || data?.error) throw new Error(data?.error || error?.message || "Erro ao gerar imagem");
-      setGeneratedImages(prev => ({ ...prev, [index]: `data:${data.mimeType};base64,${data.imageBase64}` }));
-      toast.success("Criativo gerado com DALL-E 3!");
-    } catch (e: any) {
-      toast.error(e.message || "Erro ao gerar imagem");
-    } finally {
-      setGenerating(null);
-    }
-  };
-
-  const handleDownload = (dataUrl: string, index: number) => {
-    const a = document.createElement("a");
-    a.href = dataUrl;
-    a.download = `criativo-ia-ideia-${index + 1}-${Date.now()}.png`;
-    a.click();
-  };
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/90 backdrop-blur-md p-4 sm:p-6 overflow-y-auto">
-      <motion.div
-        initial={{ scale: 0.95, opacity: 0 }}
-        animate={{ scale: 1, opacity: 1 }}
-        exit={{ scale: 0.95, opacity: 0 }}
-        className="glass-panel w-full max-w-4xl max-h-[90vh] flex flex-col border-white/10 bg-background shadow-2xl overflow-hidden"
-      >
-        {/* HEADER */}
-        <div className="flex items-center justify-between border-b border-white/10 p-5 bg-card/50 flex-shrink-0">
-          <div>
-            <h3 className="font-display text-lg font-black text-gradient flex items-center gap-2">
-              <Sparkles className="h-5 w-5 text-primary" /> Relatório de Inteligência Visual AI
-            </h3>
-            <p className="text-xs text-muted-foreground mt-1">Análise baseada em neuro-marketing automotivo e estratégia de conversão.</p>
-          </div>
-          <button onClick={onClose} className="p-2 rounded-full hover:bg-white/5 text-muted-foreground transition">✕</button>
-        </div>
-
-        {/* CORPO SCROLLABLE */}
-        <div className="flex-1 overflow-y-auto custom-scrollbar p-6 space-y-8">
-
-          {/* PAINEL DE PONTUAÇÃO */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-center p-6 rounded-2xl border border-white/10 bg-white/5 relative overflow-hidden">
-            <div className="absolute inset-0 bg-gradient-to-r from-primary/5 via-transparent to-secondary/5 pointer-events-none" />
-            <div className="flex flex-col items-center text-center">
-              <div className="h-28 w-28 rounded-full border-4 border-primary/20 flex flex-col items-center justify-center bg-background relative shadow-glow-sm">
-                <span className="text-3xl font-black tracking-tighter text-white font-mono">{report.score}</span>
-                <span className="text-[9px] font-black uppercase text-primary tracking-widest mt-0.5">SCORE GERAL</span>
-              </div>
-            </div>
-            <div className="flex flex-col justify-center space-y-4">
-              <div className="space-y-1">
-                <div className="flex justify-between items-center text-[10px] font-black uppercase tracking-wider text-muted-foreground">
-                  <span>Força Persuasiva</span>
-                  <span className="text-white font-mono">{report.persuasionScore}/100</span>
-                </div>
-                <div className="h-2.5 w-full bg-white/5 rounded-full overflow-hidden">
-                  <div className="h-full bg-gradient-to-r from-primary to-secondary rounded-full" style={{ width: `${report.persuasionScore}%` }} />
-                </div>
-              </div>
-              <div className="space-y-1">
-                <div className="flex justify-between items-center text-[10px] font-black uppercase tracking-wider text-muted-foreground">
-                  <span>Atração Visual</span>
-                  <span className="text-white font-mono">{report.attractionScore}/100</span>
-                </div>
-                <div className="h-2.5 w-full bg-white/5 rounded-full overflow-hidden">
-                  <div className="h-full bg-gradient-to-r from-secondary to-primary rounded-full" style={{ width: `${report.attractionScore}%` }} />
-                </div>
-              </div>
-            </div>
-            <div className="flex flex-col items-center justify-center p-4 rounded-xl border border-white/5 bg-background/50 text-center">
-              <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Probabilidade de Conversão</span>
-              <span className={`text-2xl font-black uppercase tracking-tighter mt-1.5 ${
-                report.conversionProbability === "Alta" ? "text-success" : report.conversionProbability === "Média" ? "text-warning" : "text-destructive"
-              }`}>
-                {report.conversionProbability}
-              </span>
-              <p className="text-[9px] text-muted-foreground/80 mt-1 font-semibold leading-relaxed">
-                Para o nicho e localização avaliados.
-              </p>
-            </div>
-          </div>
-
-          {/* NICHO E MERCADO */}
-          <div className="space-y-4">
-            <h4 className="header-sport text-sm font-black uppercase tracking-widest text-primary border-b border-border/50 pb-2 flex items-center gap-2">
-              <Compass className="h-4 w-4 text-primary" /> Análise do Mercado Automotivo
-            </h4>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div className="glass-panel p-5 border-white/5 bg-white/[0.02] space-y-2">
-                <h5 className="text-xs font-bold text-white uppercase tracking-wider">Avaliação no Nicho</h5>
-                <p className="text-xs text-muted-foreground leading-relaxed">{report.nicheEvaluation}</p>
-              </div>
-              <div className="glass-panel p-5 border-white/5 bg-white/[0.02] space-y-2">
-                <h5 className="text-xs font-bold text-white uppercase tracking-wider">Estratégia de Funil</h5>
-                <p className="text-xs text-muted-foreground leading-relaxed">{report.marketingAlignment}</p>
-              </div>
-            </div>
-          </div>
-
-          {/* ELEMENTOS DETECTADOS */}
-          {report.detectedElements?.length > 0 && (
-            <div className="space-y-3">
-              <h4 className="header-sport text-sm font-black uppercase tracking-widest text-primary border-b border-border/50 pb-2 flex items-center gap-2">
-                <Layers className="h-4 w-4 text-primary" /> Elementos Identificados por Visão Computacional
-              </h4>
-              <div className="flex flex-wrap gap-2">
-                {report.detectedElements.map((el, i) => (
-                  <span key={i} className="inline-flex rounded-lg bg-muted border border-border px-3 py-1.5 text-xs font-black uppercase tracking-wider text-foreground shadow-sm">
-                    {el}
-                  </span>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* PONTOS FORTES E FRACOS */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="space-y-3">
-              <h4 className="text-sm font-black uppercase tracking-widest text-success border-b border-white/5 pb-2 flex items-center gap-2">
-                <Check className="h-4 w-4 text-success" /> Pontos Fortes
-              </h4>
-              <ul className="space-y-2">
-                {report.strengths.map((str, i) => (
-                  <li key={i} className="flex gap-2.5 items-start p-3 rounded-xl bg-success/5 border border-success/20 text-xs text-foreground font-medium leading-relaxed">
-                    <span className="flex h-5 w-5 items-center justify-center rounded-full bg-success/20 text-success text-[10px] font-black font-mono mt-0.5">{i + 1}</span>
-                    <span>{str}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-            <div className="space-y-3">
-              <h4 className="text-sm font-black uppercase tracking-widest text-warning border-b border-white/5 pb-2 flex items-center gap-2">
-                <AlertTriangle className="h-4 w-4 text-warning" /> Oportunidades Perdidas
-              </h4>
-              <ul className="space-y-2">
-                {report.weaknesses.map((wk, i) => (
-                  <li key={i} className="flex gap-2.5 items-start p-3 rounded-xl bg-warning/5 border border-warning/20 text-xs text-foreground font-medium leading-relaxed">
-                    <span className="flex h-5 w-5 items-center justify-center rounded-full bg-warning/20 text-warning text-[10px] font-black font-mono mt-0.5">{i + 1}</span>
-                    <span>{wk}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          </div>
-
-          {/* CHECKLIST DE OTIMIZAÇÃO */}
-          <div className="space-y-4 p-5 rounded-2xl border border-white/5 bg-white/[0.02]">
-            <h4 className="header-sport text-sm font-black uppercase tracking-widest text-primary flex items-center gap-2">
-              <TrendingUp className="h-4 w-4 text-primary" /> Checklist de Otimização Imediata
-            </h4>
-            <div className="grid grid-cols-1 gap-3">
-              {report.actionableImprovements.map((imp, i) => (
-                <div key={i} className="flex gap-3 items-center p-3 rounded-xl border border-white/5 bg-background/50">
-                  <input type="checkbox" className="h-4.5 w-4.5 rounded border-white/20 bg-background text-primary focus:ring-primary/20 accent-primary" />
-                  <p className="text-xs text-white/90 font-medium">{imp}</p>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* IDEIAS DE NOVOS CRIATIVOS + GERAÇÃO DE IMAGEM */}
-          <div className="space-y-4">
-            <h4 className="text-sm font-black uppercase tracking-widest text-violet-400 border-b border-white/5 pb-2 flex items-center gap-2">
-              <Lightbulb className="h-4 w-4 text-violet-400" /> Novos Criativos Recomendados pela IA
-              <span className="ml-auto text-[9px] font-black uppercase tracking-widest text-muted-foreground border border-white/10 rounded px-2 py-0.5">Powered by Imagen 3</span>
-            </h4>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {report.newCreativeIdeas.map((idea, index) => (
-                <div key={index} className="glass-panel p-5 border-white/10 bg-white/5 space-y-4 hover:border-violet-500/30 transition-all duration-300">
-                  <div className="space-y-1">
-                    <span className="text-[9px] font-black uppercase tracking-widest text-violet-400">IDEIA #{index + 1}</span>
-                    <h5 className="text-sm font-black text-white uppercase tracking-wider">{idea.concept}</h5>
-                  </div>
-                  <div className="p-3.5 rounded-xl border border-dashed border-white/10 bg-background/40">
-                    <span className="text-[8px] font-black uppercase tracking-widest text-muted-foreground block mb-1">Headline / Gancho</span>
-                    <p className="text-xs font-black text-primary italic">"{idea.hookText}"</p>
-                  </div>
-                  <div className="space-y-1.5">
-                    <span className="text-[8px] font-black uppercase tracking-widest text-muted-foreground block">Roteiro Visual</span>
-                    <p className="text-[11px] text-muted-foreground leading-relaxed">{idea.visualDescription}</p>
-                  </div>
-                  <div className="flex flex-wrap gap-1.5">
-                    {idea.psychologicalTriggers.map((trig, idx) => (
-                      <span key={idx} className="inline-flex rounded-lg bg-muted border border-border px-2.5 py-1 text-[9px] font-black uppercase tracking-wider text-foreground">
-                        🧠 {trig}
-                      </span>
-                    ))}
-                  </div>
-
-                  {/* Imagem gerada ou botão de gerar */}
-                  {generatedImages[index] ? (
-                    <div className="space-y-2">
-                      <img src={generatedImages[index]} alt={`Criativo gerado ${index + 1}`} className="w-full rounded-xl border border-white/10 shadow-lg" />
-                      <button
-                        onClick={() => handleDownload(generatedImages[index], index)}
-                        className="w-full inline-flex items-center justify-center gap-2 rounded-xl border border-violet-500/30 bg-violet-500/10 px-4 py-2 text-xs font-black uppercase tracking-widest text-violet-400 hover:bg-violet-500/20 transition"
-                      >
-                        <Download className="h-3.5 w-3.5" /> BAIXAR CRIATIVO
-                      </button>
-                    </div>
-                  ) : (
-                    <button
-                      onClick={() => handleGenerateImage(index, idea)}
-                      disabled={generating !== null}
-                      className="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-violet-600/80 to-purple-600/80 px-4 py-2.5 text-xs font-black uppercase tracking-widest text-white hover:from-violet-600 hover:to-purple-600 transition disabled:opacity-50 disabled:pointer-events-none shadow-lg"
-                    >
-                      {generating === index ? (
-                        <><Loader2 className="h-3.5 w-3.5 animate-spin" /> GERANDO...</>
-                      ) : (
-                        <><Wand2 className="h-3.5 w-3.5" /> GERAR CRIATIVO COM IA</>
-                      )}
-                    </button>
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
-
-        </div>
-
-        {/* RODAPÉ */}
-        <div className="flex items-center justify-between border-t border-white/10 p-5 bg-card/50 flex-shrink-0">
-          <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Diagnóstico via Gemini 2.5 · Geração via DALL-E 3</p>
-          <button
-            onClick={onClose}
-            className="rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 px-5 py-2.5 text-xs font-black uppercase tracking-widest text-white transition"
-          >
-            Fechar
-          </button>
-        </div>
-      </motion.div>
-    </div>
-  );
-}
-
-// ==========================================
-// CRIADOR DE ARTE AUTOMOTIVA — dados estáticos
-// ==========================================
-const TEMPLATES = [
-  { label: "Feirão de Veículos", icon: "🏷️", prompt: "Feirão de veículos com grande estoque exposto em pátio iluminado, bandeiras coloridas, destaque em preços especiais e parcelas, clima de evento" },
-  { label: "Test Drive VIP", icon: "🏁", prompt: "Test drive em estrada aberta ao entardecer, motorista com expressão de satisfação, carro em movimento com efeito de velocidade, sensação de liberdade e performance" },
-  { label: "Lançamento do Modelo", icon: "🚀", prompt: "Lançamento de novo modelo em showroom premium, iluminação dramática em spotlight, veículo sobre pedestal, ambiente luxuoso de concessionária" },
-  { label: "Seminovo Destaque", icon: "⭐", prompt: "Seminovo em excelente estado em fundo branco clean, reflexo no chão espelhado, badge de garantia e procedência visível, estilo fotografia publicitária" },
-  { label: "Financiamento Fácil", icon: "💳", prompt: "Família feliz recebendo chave de carro novo em frente à concessionária, celebração de conquista, banner com parcelas acessíveis ao fundo" },
-  { label: "Black Friday Auto", icon: "🔥", prompt: "Promoção Black Friday automotiva, fundo preto dramático, veículo com iluminação neon vermelha, texto de desconto em destaque, clima de urgência" },
-];
-
-const VEHICLE_TYPES = ["SUV", "Sedan", "Hatch", "Pickup", "Esportivo", "Elétrico", "Van/Utilitário", "Crossover"];
-
-const VISUAL_STYLES = [
-  { value: "fotorrealista", label: "Fotorrealista", desc: "Foto profissional de alta definição" },
-  { value: "cinematografico", label: "Cinematográfico", desc: "Luz dramática, clima de filme" },
-  { value: "colorido", label: "Colorido/Festivo", desc: "Vibrante, cores saturadas, feirão" },
-  { value: "clean", label: "Clean/Luxo", desc: "Minimalista, elegante, premium" },
-];
-
-const BACKGROUNDS = [
-  { value: "showroom premium, marble floor, spotlights", label: "Showroom" },
-  { value: "open road through mountains, dramatic sky", label: "Estrada Aberta" },
-  { value: "city at night, neon lights, urban", label: "Cidade Noturna" },
-  { value: "nature, green fields, clear sky", label: "Natureza" },
-  { value: "neutral studio background, seamless white", label: "Estúdio" },
-  { value: "beach sunset, golden hour, coastal", label: "Praia/Pôr do Sol" },
-];
-
-const CAMERA_ANGLES = [
-  { value: "front view, symmetrical composition", label: "Frontal" },
-  { value: "3/4 front side angle", label: "¾ Frente" },
-  { value: "dramatic low angle, wide lens", label: "Plano Baixo" },
-  { value: "aerial drone shot from above", label: "Aéreo (Drone)" },
-  { value: "rear 3/4 angle", label: "¾ Traseiro" },
-  { value: "close-up details, macro photography", label: "Close Detalhes" },
-];
-
-const LIGHTING_OPTIONS = [
-  { value: "bright sunny day, natural sunlight, blue sky", label: "Dia Ensolarado" },
-  { value: "golden hour sunset, warm orange tones", label: "Entardecer Dourado" },
-  { value: "night scene, city lights, dramatic neon glow", label: "Noite com Neon" },
-  { value: "professional studio lighting, controlled shadows", label: "Estúdio Pro" },
-  { value: "overcast dramatic sky, moody atmosphere", label: "Dramático/Nublado" },
-];
-
-const ASPECT_OPTIONS: { value: "1:1" | "16:9" | "9:16"; label: string; desc: string }[] = [
-  { value: "1:1", label: "Quadrado", desc: "Feed" },
-  { value: "9:16", label: "Vertical", desc: "Stories/Reels" },
-  { value: "16:9", label: "Horizontal", desc: "Banner/YouTube" },
-];
-
-function CreateArtModal({ onClose }: { onClose: () => void }) {
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const [mode, setMode] = useState<"scratch" | "photo">("scratch");
-  const [uploadedPhoto, setUploadedPhoto] = useState<{ base64: string; mimeType: string; preview: string } | null>(null);
-  const [vehicleType, setVehicleType] = useState("SUV");
-  const [visualStyle, setVisualStyle] = useState("fotorrealista");
-  const [background, setBackground] = useState("");
-  const [cameraAngle, setCameraAngle] = useState("");
-  const [lighting, setLighting] = useState("");
-  const [overlayText, setOverlayText] = useState("");
-  const [aspectRatio, setAspectRatio] = useState<"1:1" | "16:9" | "9:16">("1:1");
-  const [customPrompt, setCustomPrompt] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [loadingStep, setLoadingStep] = useState("");
-  const [result, setResult] = useState<string | null>(null);
-
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      const dataUrl = reader.result as string;
-      setUploadedPhoto({
-        base64: dataUrl.split(",")[1],
-        mimeType: file.type || "image/jpeg",
-        preview: dataUrl,
-      });
-    };
-    reader.readAsDataURL(file);
-  };
-
-  const styleMap: Record<string, string> = {
-    fotorrealista: "ultra-realistic professional automotive photography, sharp details, studio lighting",
-    cinematografico: "cinematic lighting, dramatic shadows, movie-quality, widescreen atmosphere",
-    colorido: "vibrant saturated colors, festive atmosphere, high contrast, eye-catching advertising",
-    clean: "minimalist clean background, luxury premium feel, elegant composition",
-  };
-
-  const handleGenerate = async () => {
-    if (mode === "scratch" && !customPrompt.trim()) {
-      toast.warning("Descreva a arte ou escolha um template!");
-      return;
-    }
-    if (mode === "photo" && !uploadedPhoto) {
-      toast.warning("Suba uma foto para transformar!");
-      return;
-    }
-
-    setLoading(true);
-    setResult(null);
-
-    try {
-      if (mode === "photo") setLoadingStep("Analisando sua foto com GPT-4o...");
-      else setLoadingStep("Gerando arte com DALL-E 3...");
-
-      const body: Record<string, string> = {
-        aspectRatio,
-        vehicleType,
-      };
-
-      if (customPrompt.trim()) body.prompt = `${customPrompt}. Style: ${styleMap[visualStyle]}`;
-      else body.prompt = `${vehicleType} vehicle, ${styleMap[visualStyle]}`;
-
-      if (background) body.background = background;
-      if (cameraAngle) body.cameraAngle = cameraAngle;
-      if (lighting) body.lighting = lighting;
-      if (overlayText.trim()) body.overlayText = overlayText;
-
-      if (mode === "photo" && uploadedPhoto) {
-        body.imageBase64 = uploadedPhoto.base64;
-        body.imageMimeType = uploadedPhoto.mimeType;
-        setLoadingStep("GPT-4o analisou a foto. Gerando arte com DALL-E 3...");
-      }
-
-      const { data, error } = await supabase.functions.invoke("generate-art", { body });
-      if (error || data?.error) throw new Error(data?.error || error?.message || "Erro ao gerar arte");
-
-      setResult(`data:${data.mimeType};base64,${data.imageBase64}`);
-      toast.success("Arte automotiva gerada com DALL-E 3!");
-    } catch (e: any) {
-      toast.error(e.message || "Erro ao gerar arte");
-    } finally {
-      setLoading(false);
-      setLoadingStep("");
-    }
-  };
-
-  const handleDownload = () => {
-    if (!result) return;
-    const a = document.createElement("a");
-    a.href = result;
-    a.download = `arte-auto-ia-${Date.now()}.png`;
-    a.click();
-  };
-
-  const pill = (active: boolean) =>
-    `rounded-xl border px-3 py-1.5 text-[10px] font-black uppercase tracking-wider transition cursor-pointer ${
-      active
-        ? "border-orange-500/60 bg-orange-500/10 text-orange-400"
-        : "border-white/10 bg-white/5 text-muted-foreground hover:border-white/20 hover:text-foreground"
-    }`;
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/90 backdrop-blur-md p-4">
-      <motion.div
-        initial={{ scale: 0.95, opacity: 0 }}
-        animate={{ scale: 1, opacity: 1 }}
-        exit={{ scale: 0.95, opacity: 0 }}
-        className="glass-panel w-full max-w-2xl border-white/10 bg-background flex flex-col max-h-[92vh] shadow-2xl overflow-hidden"
-      >
-        {/* HEADER */}
-        <div className="flex items-center justify-between border-b border-white/10 p-5 bg-card/50 flex-shrink-0">
-          <div>
-            <h3 className="font-display text-lg font-black flex items-center gap-2">
-              <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-br from-orange-500 to-rose-500 shadow-lg">
-                <Car className="h-4 w-4 text-white" />
-              </span>
-              <span className="text-gradient">Criador de Arte Automotiva</span>
-            </h3>
-            <p className="text-xs text-muted-foreground mt-1">GPT-4o Vision + DALL-E 3 HD — especializado em publicidade automotiva.</p>
-          </div>
-          <button onClick={onClose} className="p-2 rounded-full hover:bg-white/5 text-muted-foreground transition">✕</button>
-        </div>
-
-        <div className="flex-1 overflow-y-auto custom-scrollbar p-6 space-y-6">
-
-          {/* MODO */}
-          <div className="grid grid-cols-2 gap-2 p-1 rounded-xl bg-white/5 border border-white/10">
-            {[
-              { key: "scratch", icon: "✨", label: "Do Zero" },
-              { key: "photo", icon: "📷", label: "Transformar Foto" },
-            ].map((m) => (
+      {/* Navegação clara separando Inteligência/Testes vs Estúdio de Produção */}
+      <nav className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-border bg-card p-2">
+        <div className="flex flex-wrap items-center gap-1.5">
+          {[
+            { id: "inteligencia", label: "Inteligência & Biblioteca", icon: LayoutGrid, count: records.length },
+            {
+              id: "fadiga",
+              label: "Fadiga & Diversidade",
+              icon: Layers,
+              count: managerOverview.fatiguePossibleCount,
+            },
+            { id: "testes", label: "Testes Criativos", icon: FlaskConical, count: creativeTests.length },
+          ].map((tab) => {
+            const Icon = tab.icon;
+            const active = activeTab === tab.id;
+            return (
               <button
-                key={m.key}
-                onClick={() => setMode(m.key as "scratch" | "photo")}
-                className={`flex items-center justify-center gap-2 rounded-lg py-2.5 text-xs font-black uppercase tracking-widest transition ${
-                  mode === m.key
-                    ? "bg-gradient-to-r from-orange-600 to-rose-600 text-white shadow-lg"
-                    : "text-muted-foreground hover:text-foreground"
+                key={tab.id}
+                type="button"
+                onClick={() => setActiveTab(tab.id as WorkspaceTab)}
+                className={`inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-black uppercase transition cursor-pointer ${
+                  active
+                    ? "bg-primary text-white shadow"
+                    : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
                 }`}
               >
-                <span>{m.icon}</span> {m.label}
+                <Icon className="h-3.5 w-3.5" />
+                <span>{tab.label}</span>
+                <span
+                  className={`rounded-full px-1.5 py-0.2 text-[10px] font-mono ${
+                    active ? "bg-black/25 text-white" : "bg-muted text-muted-foreground"
+                  }`}
+                >
+                  {tab.count}
+                </span>
               </button>
-            ))}
-          </div>
-
-          {/* UPLOAD DE FOTO (modo foto) */}
-          {mode === "photo" && (
-            <div className="space-y-3">
-              <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground flex items-center gap-2">
-                <Upload className="h-3.5 w-3.5" /> Foto de Referência
-              </label>
-              <input type="file" ref={fileInputRef} accept="image/*" onChange={handleFileChange} className="hidden" />
-              {!uploadedPhoto ? (
-                <div
-                  onClick={() => fileInputRef.current?.click()}
-                  className="flex cursor-pointer flex-col items-center gap-3 rounded-xl border-2 border-dashed border-orange-500/20 bg-orange-500/5 py-8 hover:border-orange-500/40 hover:bg-orange-500/10 transition"
-                >
-                  <Upload className="h-8 w-8 text-orange-400/60" />
-                  <div className="text-center">
-                    <p className="text-xs font-black uppercase tracking-wider text-orange-400">Clique para subir a foto</p>
-                    <p className="text-[9px] text-muted-foreground mt-1">JPG, PNG, WEBP — a IA vai analisar e transformar em arte</p>
-                  </div>
-                </div>
-              ) : (
-                <div className="relative rounded-xl overflow-hidden border border-orange-500/20">
-                  <img src={uploadedPhoto.preview} alt="Foto enviada" className="w-full max-h-48 object-cover" />
-                  <button
-                    onClick={() => setUploadedPhoto(null)}
-                    className="absolute top-2 right-2 rounded-full bg-background/80 p-1.5 text-muted-foreground hover:text-destructive transition"
-                  >
-                    <X className="h-4 w-4" />
-                  </button>
-                  <div className="absolute bottom-2 left-2">
-                    <span className="rounded-lg bg-black/70 backdrop-blur px-2 py-1 text-[9px] font-black uppercase text-orange-400">
-                      GPT-4o vai analisar esta foto
-                    </span>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* TEMPLATES (modo scratch) */}
-          {mode === "scratch" && (
-            <div className="space-y-3">
-              <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground flex items-center gap-2">
-                <LayoutTemplate className="h-3.5 w-3.5" /> Templates Rápidos
-              </label>
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                {TEMPLATES.map((tpl) => (
-                  <button
-                    key={tpl.label}
-                    onClick={() => setCustomPrompt(tpl.prompt)}
-                    className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 text-left hover:border-orange-500/40 hover:bg-orange-500/5 transition group"
-                  >
-                    <span className="text-base shrink-0">{tpl.icon}</span>
-                    <span className="text-[10px] font-black uppercase tracking-wider text-muted-foreground group-hover:text-foreground transition line-clamp-1">{tpl.label}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* TIPO DE VEÍCULO */}
-          <div className="space-y-3">
-            <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground flex items-center gap-2">
-              <Car className="h-3.5 w-3.5" /> Tipo de Veículo
-            </label>
-            <div className="flex flex-wrap gap-2">
-              {VEHICLE_TYPES.map((v) => (
-                <button key={v} onClick={() => setVehicleType(v)} className={pill(vehicleType === v)}>{v}</button>
-              ))}
-            </div>
-          </div>
-
-          {/* ESTILO VISUAL */}
-          <div className="space-y-3">
-            <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground flex items-center gap-2">
-              <Paintbrush className="h-3.5 w-3.5" /> Estilo Visual
-            </label>
-            <div className="grid grid-cols-2 gap-2">
-              {VISUAL_STYLES.map((s) => (
-                <button
-                  key={s.value}
-                  onClick={() => setVisualStyle(s.value)}
-                  className={`flex flex-col items-start gap-0.5 rounded-xl border px-4 py-3 text-left transition ${
-                    visualStyle === s.value ? "border-orange-500/60 bg-orange-500/10" : "border-white/10 bg-white/5 hover:border-white/20"
-                  }`}
-                >
-                  <span className={`text-[11px] font-black uppercase tracking-wider ${visualStyle === s.value ? "text-orange-400" : "text-foreground"}`}>{s.label}</span>
-                  <span className="text-[9px] text-muted-foreground">{s.desc}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* PERSONALIZAÇÃO AVANÇADA */}
-          <div className="space-y-4 rounded-2xl border border-white/5 bg-white/[0.02] p-4">
-            <p className="text-[10px] font-black uppercase tracking-widest text-primary flex items-center gap-2">
-              <Sparkles className="h-3.5 w-3.5" /> Personalização Avançada
-            </p>
-
-            <div className="space-y-3">
-              <label className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Cenário / Fundo</label>
-              <div className="flex flex-wrap gap-2">
-                <button onClick={() => setBackground("")} className={pill(!background)}>Qualquer</button>
-                {BACKGROUNDS.map((b) => (
-                  <button key={b.label} onClick={() => setBackground(b.value)} className={pill(background === b.value)}>{b.label}</button>
-                ))}
-              </div>
-            </div>
-
-            <div className="space-y-3">
-              <label className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Ângulo de Câmera</label>
-              <div className="flex flex-wrap gap-2">
-                <button onClick={() => setCameraAngle("")} className={pill(!cameraAngle)}>Qualquer</button>
-                {CAMERA_ANGLES.map((c) => (
-                  <button key={c.label} onClick={() => setCameraAngle(c.value)} className={pill(cameraAngle === c.value)}>{c.label}</button>
-                ))}
-              </div>
-            </div>
-
-            <div className="space-y-3">
-              <label className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Iluminação / Hora</label>
-              <div className="flex flex-wrap gap-2">
-                <button onClick={() => setLighting("")} className={pill(!lighting)}>Qualquer</button>
-                {LIGHTING_OPTIONS.map((l) => (
-                  <button key={l.label} onClick={() => setLighting(l.value)} className={pill(lighting === l.value)}>{l.label}</button>
-                ))}
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Texto na Arte (opcional)</label>
-              <input
-                value={overlayText}
-                onChange={(e) => setOverlayText(e.target.value)}
-                placeholder='Ex: FEIRÃO MAIO • A PARTIR DE R$899/MÊS'
-                className="w-full rounded-xl border border-white/10 bg-background/50 px-4 py-2.5 text-sm font-medium focus:border-orange-500/40 focus:outline-none placeholder:text-muted-foreground/40"
-              />
-            </div>
-          </div>
-
-          {/* DESCRIÇÃO ADICIONAL */}
-          <div className="space-y-2">
-            <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground flex items-center gap-2">
-              <Flame className="h-3.5 w-3.5" /> {mode === "photo" ? "Instruções de Transformação" : "Descreva a Cena"}
-            </label>
-            <textarea
-              value={customPrompt}
-              onChange={(e) => setCustomPrompt(e.target.value)}
-              rows={3}
-              placeholder={mode === "photo"
-                ? "Ex: Transforme em arte cinematográfica, adicione céu dramático, deixe mais premium..."
-                : "Ex: SUV prata com família feliz, pôr do sol dourado, texto OFERTA ESPECIAL em destaque..."
-              }
-              className="w-full rounded-xl border border-white/10 bg-background/50 px-4 py-3 text-sm font-medium focus:border-orange-500/40 focus:outline-none resize-none placeholder:text-muted-foreground/40"
-            />
-          </div>
-
-          {/* PROPORÇÃO */}
-          <div className="space-y-2">
-            <label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Proporção</label>
-            <div className="grid grid-cols-3 gap-2">
-              {ASPECT_OPTIONS.map((opt) => (
-                <button
-                  key={opt.value}
-                  onClick={() => setAspectRatio(opt.value)}
-                  className={`flex flex-col items-center gap-1 rounded-xl border p-3 text-center transition ${
-                    aspectRatio === opt.value ? "border-orange-500/60 bg-orange-500/10 text-orange-400" : "border-white/10 bg-white/5 text-muted-foreground hover:border-white/20"
-                  }`}
-                >
-                  <span className="text-xs font-black uppercase">{opt.label}</span>
-                  <span className="text-[9px] font-mono opacity-60">{opt.value}</span>
-                  <span className="text-[9px] text-muted-foreground">{opt.desc}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* GERANDO */}
-          {loading && (
-            <div className="flex flex-col items-center gap-4 py-8">
-              <div className="relative h-16 w-16">
-                <div className="absolute inset-0 rounded-full border-4 border-orange-500/20 animate-pulse" />
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <Car className="h-7 w-7 text-orange-400 animate-bounce" />
-                </div>
-              </div>
-              <p className="text-xs font-black uppercase tracking-widest text-orange-400 animate-pulse">
-                {loadingStep || "DALL-E 3 criando sua arte..."}
-              </p>
-              <p className="text-[10px] text-muted-foreground text-center max-w-xs">Aguarde de 15 a 40 segundos.</p>
-            </div>
-          )}
-
-          {/* RESULTADO */}
-          {result && !loading && (
-            <div className="space-y-4">
-              <div className="relative rounded-xl overflow-hidden border border-orange-500/20 shadow-2xl">
-                <img src={result} alt="Arte automotiva gerada" className="w-full" />
-                <div className="absolute top-3 right-3">
-                  <span className="inline-flex items-center gap-1 rounded-lg bg-black/70 backdrop-blur px-2.5 py-1 text-[9px] font-black uppercase tracking-widest text-orange-400 border border-orange-500/20">
-                    <Sparkles className="h-3 w-3" /> DALL-E 3 HD
-                  </span>
-                </div>
-              </div>
-              <div className="flex gap-3">
-                <button
-                  onClick={handleDownload}
-                  className="flex-1 inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-orange-600 to-rose-600 px-4 py-3 text-xs font-black uppercase tracking-widest text-white hover:brightness-110 transition shadow-lg"
-                >
-                  <Download className="h-4 w-4" /> BAIXAR ARTE
-                </button>
-                <button
-                  onClick={() => setResult(null)}
-                  className="rounded-xl border border-white/10 px-4 py-3 text-xs font-black uppercase tracking-widest text-muted-foreground hover:text-white hover:border-white/20 transition"
-                >
-                  Nova Arte
-                </button>
-              </div>
-            </div>
-          )}
+            );
+          })}
         </div>
 
-        {/* RODAPÉ */}
-        <div className="flex items-center justify-end gap-3 border-t border-white/10 p-5 bg-card/50 flex-shrink-0">
-          <button onClick={onClose} className="rounded-xl border border-white/10 px-5 py-3 text-xs font-black uppercase tracking-widest text-muted-foreground hover:text-white transition">
-            Cancelar
-          </button>
-          {!result && (
-            <button
-              onClick={handleGenerate}
-              disabled={loading || (mode === "scratch" && !customPrompt.trim()) || (mode === "photo" && !uploadedPhoto)}
-              className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-orange-600 to-rose-600 px-6 py-3 text-xs font-black uppercase tracking-widest text-white hover:brightness-110 transition disabled:opacity-40 disabled:pointer-events-none shadow-lg"
-            >
-              {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Car className="h-4 w-4" />} GERAR ARTE
-            </button>
-          )}
+        <button
+          type="button"
+          onClick={() => setActiveTab("producao")}
+          className={`inline-flex items-center gap-1.5 rounded-xl border px-3.5 py-2 text-xs font-black uppercase transition cursor-pointer ${
+            activeTab === "producao"
+              ? "border-primary bg-primary text-white shadow"
+              : "border-primary/30 bg-primary/10 text-primary hover:bg-primary/20"
+          }`}
+        >
+          <Palette className="h-3.5 w-3.5" />
+          <span>Estúdio de Produção & IA</span>
+          <span className="rounded-full bg-black/20 px-1.5 py-0.2 text-[10px] font-mono">
+            {swipeAssets.length}
+          </span>
+        </button>
+      </nav>
+
+      {/* ABA 1: VISÃO DO GESTOR + BIBLIOTECA COMPLETA */}
+      {activeTab === "inteligencia" && (
+        <div className="space-y-6">
+          <CreativeManagerOverviewSection
+            overview={managerOverview}
+            records={records}
+            fatigueDiagnostics={fatigueDiagnostics}
+            testsSummary={testsSummary}
+            dateFrom={dateFrom}
+            dateTo={dateTo}
+            accountLabel={selectedAccountLabel}
+            onAnalyzeWithVictoria={(rec) => openVictoriaForAd(rec)}
+            onFilterBySignal={(sig) => setSignalFilter((prev) => (prev === sig ? "all" : sig))}
+            onOpenFatigueTab={() => setActiveTab("fadiga")}
+            onOpenTestsTab={() => setActiveTab("testes")}
+          />
+
+          <CreativeLibrarySection
+            records={records}
+            isLoading={loadingAds}
+            canEdit={canEditCriativos}
+            externalSignalFilter={signalFilter}
+            onExternalSignalFilterChange={setSignalFilter}
+            linkedAdTestMap={linkedAdTestMap}
+            onAnalyzeWithVictoria={(rec) => openVictoriaForAd(rec)}
+            onCreateVariation={(rec) => {
+              setSeedVariationAd(rec);
+              setActiveTab("producao");
+            }}
+            onLinkToTest={(rec) => {
+              setPreselectedAdForTest(rec);
+              setActiveTab("testes");
+            }}
+          />
         </div>
-      </motion.div>
+      )}
+
+      {/* ABA 2: FADIGA E DIVERSIDADE CRIATIVA */}
+      {activeTab === "fadiga" && (
+        <CreativeFatigueSection
+          diagnostics={fatigueDiagnostics}
+          diversityGroups={diversityGroups}
+          recordsById={recordsById}
+          onAnalyzeWithVictoria={(rec, diag) => openVictoriaForAd(rec, diag)}
+        />
+      )}
+
+      {/* ABA 3: PLANEJADOR DE TESTES CRIATIVOS */}
+      {activeTab === "testes" && (
+        <CreativeTestsSection
+          tests={creativeTests}
+          records={records}
+          recordsById={recordsById}
+          accounts={accounts}
+          selectedAccountId={accountFilter}
+          assets={swipeAssets.map((a) => ({ id: a.id, title: a.title }))}
+          canEdit={canEditCriativos}
+          userId={user?.id || null}
+          userName={(profile as any)?.full_name || (profile as any)?.name || user?.email || "Gestor"}
+          preselectedAdForTest={preselectedAdForTest}
+          onClearPreselectedAd={() => setPreselectedAdForTest(null)}
+        />
+      )}
+
+      {/* ABA 4: PRODUÇÃO DE CRIATIVOS, BRAND KIT, CANVAS & ANÁLISE VISUAL */}
+      {activeTab === "producao" && (
+        <CreativeProductionWorkspace
+          accounts={accounts}
+          clients={clients}
+          selectedAccountId={accountFilter}
+          assets={swipeAssets}
+          brandKits={brandKits}
+          tests={creativeTests.map((t) => ({ id: t.id, title: t.title, ad_account_id: t.ad_account_id }))}
+          records={records}
+          canEdit={canEditCriativos}
+          userId={user?.id || null}
+          userName={(profile as any)?.full_name || (profile as any)?.name || user?.email || "Gestor"}
+          seedVariationAd={seedVariationAd}
+          onClearSeedVariation={() => setSeedVariationAd(null)}
+        />
+      )}
+
+      {/* Victoria AI Contextual Chat Drawer (Somente Leitura) */}
+      <VictoriaFloatingChat
+        isOpen={victoriaOpen}
+        onClose={() => setVictoriaOpen(false)}
+        contextItem={victoriaContext}
+        accountId={victoriaContext?.ad_account_id || accountFilter}
+        accountName={
+          accountNameMap.get(victoriaContext?.ad_account_id || accountFilter) ||
+          selectedAccountLabel
+        }
+        dateFrom={dateFrom}
+        dateTo={dateTo}
+        lastSyncAt={activeSnapshot.committedAt || null}
+      />
+
+      {victoriaContext && !victoriaOpen && (
+        <button
+          type="button"
+          onClick={() => setVictoriaOpen(true)}
+          className="fixed bottom-5 left-5 z-40 inline-flex items-center gap-2 rounded-full border border-primary/40 bg-card/95 backdrop-blur px-4 py-2 text-xs font-black text-primary shadow-xl hover:bg-primary/15 transition cursor-pointer"
+        >
+          <Bot className="h-4 w-4" /> Reabrir Victoria ({victoriaContext.name.slice(0, 20)})
+        </button>
+      )}
     </div>
   );
 }

@@ -113,6 +113,7 @@ export interface AppNotification {
   displayTitle?: string;
   displayMessage?: string;
   duplicateCount?: number;
+  is_dismissed?: boolean;
 }
 
 // ─── Cache leve de Contas e Campanhas para enriquecer notificações ────────────
@@ -391,22 +392,33 @@ function enrichNotificationItem(n: AppNotification, lookup: LookupCache): AppNot
 }
 
 /**
- * Busca até 100 notificações acumulativas ordenadas pela data mais recente,
- * enriquecendo com o Nome da Conta, formatando o texto didaticamente e
- * removendo duplicatas geradas para a mesma campanha/categoria no mesmo dia.
+ * Busca até 100 notificações ordenadas pela data mais recente,
+ * mesclando estado individual (lida/dispensada) sem destruir alertas históricos,
+ * enriquecendo com Nome da Conta e consolidando duplicatas apenas em memória.
  */
 export async function getRecentNotifications(
   limit = MAX_NOTIFICATIONS_CAP,
-  options?: { includeDisabledCategories?: boolean }
+  options?: { includeDisabledCategories?: boolean; includeDismissed?: boolean }
 ): Promise<AppNotification[]> {
   try {
-    const [{ data, error }, lookup] = await Promise.all([
+    const authRes = await supabase.auth.getUser().catch(() => ({ data: { user: null } }));
+    const currentUserId = authRes?.data?.user?.id || null;
+
+    const [{ data, error }, lookup, statesRes] = await Promise.all([
       (supabase as any)
         .from("notifications")
         .select("*")
         .order("created_at", { ascending: false })
         .limit(limit),
       getAccountAndCampaignLookup(),
+      currentUserId
+        ? (supabase as any)
+            .from("notification_user_states")
+            .select("notification_id, is_read, is_dismissed")
+            .eq("user_id", currentUserId)
+            .then((r: any) => r)
+            .catch(() => ({ data: [] }))
+        : Promise.resolve({ data: [] }),
     ]);
 
     if (error) {
@@ -414,14 +426,30 @@ export async function getRecentNotifications(
       return [];
     }
 
+    const userStateMap = new Map<string, { is_read: boolean; is_dismissed: boolean }>();
+    for (const st of statesRes?.data || []) {
+      userStateMap.set(st.notification_id, {
+        is_read: Boolean(st.is_read),
+        is_dismissed: Boolean(st.is_dismissed),
+      });
+    }
+
     const rawList = (data || []) as AppNotification[];
-    const enrichedList = rawList.map((item) => enrichNotificationItem(item, lookup));
+    const enrichedList = rawList.map((item) => {
+      const st = userStateMap.get(item.id);
+      const enriched = enrichNotificationItem(item, lookup);
+      return {
+        ...enriched,
+        is_read: Boolean(enriched.is_read || st?.is_read),
+        is_dismissed: Boolean(st?.is_dismissed),
+      };
+    });
 
-    // Deduplicação inteligente por (Dia + Categoria + Conta + Campanha)
+    // Deduplicação visual em memória por (Dia + Categoria + Conta + Campanha),
+    // preservando registros brutos históricos no banco.
     const seenKeys = new Map<string, AppNotification>();
-    const duplicateIdsToDelete: string[] = [];
-
     for (const item of enrichedList) {
+      if (!options?.includeDismissed && item.is_dismissed) continue;
       const dayKey = (item.created_at || "").slice(0, 10);
       const normCamp = (item.campaignName || item.title || "").trim().toUpperCase();
       const normAcc = (item.accountName || "").trim().toUpperCase();
@@ -432,20 +460,8 @@ export async function getRecentNotifications(
         seenKeys.set(dedupKey, { ...item, duplicateCount: 1 });
       } else {
         existing.duplicateCount = (existing.duplicateCount || 1) + 1;
-        duplicateIdsToDelete.push(item.id);
+        if (!item.is_read) existing.is_read = false;
       }
-    }
-
-    // Remove silenciosamente do banco as duplicatas antigas para manter a tabela limpa
-    if (duplicateIdsToDelete.length > 0) {
-      (supabase as any)
-        .from("notifications")
-        .delete()
-        .in("id", duplicateIdsToDelete)
-        .then(() => {
-          console.log(`[NOTIFICATION-SERVICE] 🧹 ${duplicateIdsToDelete.length} notificação(ões) duplicada(s) consolidada(s).`);
-        })
-        .catch(() => {});
     }
 
     let result = Array.from(seenKeys.values());
@@ -472,66 +488,63 @@ export async function getRecentNotifications(
 }
 
 /**
- * Verifica capacidade: se atingir ou ultrapassar 100 notificações,
- * executa limpeza automática para abrir espaço imediatamente para novos alertas.
+ * Mantida por compatibilidade sem destruir alertas históricos no banco.
  */
 export async function enforceNotificationCapacity(): Promise<{ purged: boolean; countPurged: number }> {
+  return { purged: false, countPurged: 0 };
+}
+
+async function upsertUserNotificationStates(
+  ids: string[],
+  patch: { is_read?: boolean; is_dismissed?: boolean }
+): Promise<boolean> {
+  if (!ids.length) return true;
   try {
-    const { count, error } = await (supabase as any)
-      .from("notifications")
-      .select("id", { count: "exact", head: true });
+    const authRes = await supabase.auth.getUser().catch(() => ({ data: { user: null } }));
+    const userId = authRes?.data?.user?.id;
+    const nowIso = new Date().toISOString();
 
-    if (error || typeof count !== "number") return { purged: false, countPurged: 0 };
-
-    if (count >= MAX_NOTIFICATIONS_CAP) {
-      console.warn(`[NOTIFICATION-SERVICE] ⚠️ Limite de ${MAX_NOTIFICATIONS_CAP} notificações atingido (${count}). Executando reciclagem automática...`);
-
-      const { data: latest } = await (supabase as any)
-        .from("notifications")
-        .select("id")
-        .order("created_at", { ascending: false })
-        .limit(MAX_NOTIFICATIONS_CAP);
-
-      if (latest && latest.length >= MAX_NOTIFICATIONS_CAP) {
-        const { error: delErr } = await (supabase as any)
-          .from("notifications")
-          .delete()
-          .neq("id", "00000000-0000-0000-0000-000000000000");
-
-        if (!delErr) {
-          return { purged: true, countPurged: count };
-        }
-      }
+    if (userId) {
+      const payload = ids.map((notification_id) => ({
+        user_id: userId,
+        notification_id,
+        ...(patch.is_read !== undefined ? { is_read: patch.is_read, read_at: patch.is_read ? nowIso : null } : {}),
+        ...(patch.is_dismissed !== undefined
+          ? { is_dismissed: patch.is_dismissed, dismissed_at: patch.is_dismissed ? nowIso : null }
+          : {}),
+        updated_at: nowIso,
+      }));
+      await (supabase as any)
+        .from("notification_user_states")
+        .upsert(payload, { onConflict: "user_id,notification_id" })
+        .catch(() => {});
     }
-    return { purged: false, countPurged: 0 };
+
+    if (patch.is_read) {
+      await (supabase as any)
+        .from("notifications")
+        .update({ is_read: true, acknowledged_at: nowIso })
+        .in("id", ids)
+        .catch(() => {});
+    }
+    return true;
   } catch (err) {
-    console.error("[NOTIFICATION-SERVICE] Erro na reciclagem automática:", err);
-    return { purged: false, countPurged: 0 };
+    console.error("[NOTIFICATION-SERVICE] Exceção ao atualizar estado de notificação:", err);
+    return false;
   }
 }
 
 /**
- * Marca todas as notificações não lidas como lidas.
+ * Marca todas as notificações especificadas (ou todas não lidas) como lidas para o usuário.
  */
 export async function markAllNotificationsAsRead(ids?: string[]): Promise<boolean> {
   try {
-    let query = (supabase as any).from("notifications").update({
-      is_read: true,
-      acknowledged_at: new Date().toISOString(),
-    });
-
-    if (ids && ids.length > 0) {
-      query = query.in("id", ids);
-    } else {
-      query = query.eq("is_read", false);
+    let targetIds = ids && ids.length > 0 ? ids : [];
+    if (targetIds.length === 0) {
+      const current = await getRecentNotifications(MAX_NOTIFICATIONS_CAP, { includeDisabledCategories: true });
+      targetIds = current.filter((n) => !n.is_read).map((n) => n.id);
     }
-
-    const { error } = await query;
-    if (error) {
-      console.error("[NOTIFICATION-SERVICE] Erro ao marcar como lidas:", error);
-      return false;
-    }
-    return true;
+    return await upsertUserNotificationStates(targetIds, { is_read: true });
   } catch (err) {
     console.error("[NOTIFICATION-SERVICE] Exceção ao marcar como lidas:", err);
     return false;
@@ -539,65 +552,43 @@ export async function markAllNotificationsAsRead(ids?: string[]): Promise<boolea
 }
 
 /**
- * Marca uma única notificação como lida.
+ * Marca uma única notificação como lida para o usuário.
  */
 export async function markNotificationAsRead(id: string): Promise<boolean> {
-  try {
-    const { error } = await (supabase as any)
-      .from("notifications")
-      .update({ is_read: true, acknowledged_at: new Date().toISOString() })
-      .eq("id", id);
-    return !error;
-  } catch {
-    return false;
-  }
+  return await upsertUserNotificationStates([id], { is_read: true });
 }
 
 /**
- * Zera / Limpa manualmente todas as notificações acumuladas.
+ * Dispensa visualmente as notificações da caixa de entrada do usuário atual,
+ * preservando os registros originais no banco e todas as regras de geração.
  */
 export async function clearAllNotifications(): Promise<boolean> {
   try {
-    const { error } = await (supabase as any)
-      .from("notifications")
-      .delete()
-      .neq("id", "00000000-0000-0000-0000-000000000000");
-
-    if (error) {
-      console.error("[NOTIFICATION-SERVICE] Erro ao limpar notificações:", error);
-      return false;
-    }
-    return true;
+    const current = await getRecentNotifications(MAX_NOTIFICATIONS_CAP, { includeDisabledCategories: true });
+    const ids = current.map((n) => n.id);
+    return await upsertUserNotificationStates(ids, { is_read: true, is_dismissed: true });
   } catch (err) {
-    console.error("[NOTIFICATION-SERVICE] Exceção ao limpar notificações:", err);
+    console.error("[NOTIFICATION-SERVICE] Exceção ao dispensar notificações:", err);
     return false;
   }
 }
 
 /**
- * Exclui uma notificação específica por ID.
+ * Dispensa visualmente uma notificação específica para o usuário atual (sem destruir o alerta).
  */
 export async function deleteNotification(id: string): Promise<boolean> {
-  try {
-    const { error } = await (supabase as any)
-      .from("notifications")
-      .delete()
-      .eq("id", id);
-    return !error;
-  } catch {
-    return false;
-  }
+  return await upsertUserNotificationStates([id], { is_read: true, is_dismissed: true });
 }
 
 /**
- * Exclui todas as notificações de uma categoria específica (ex: ao desativar orçamento ou fechamento).
+ * Dispensa visualmente as notificações de uma categoria na caixa de entrada do usuário.
  */
 export async function deleteNotificationsByCategory(category: AlertCategoryKey): Promise<number> {
   try {
     const all = await getRecentNotifications(MAX_NOTIFICATIONS_CAP, { includeDisabledCategories: true });
     const targetIds = all.filter((n) => n.category === category).map((n) => n.id);
     if (targetIds.length === 0) return 0;
-    await (supabase as any).from("notifications").delete().in("id", targetIds);
+    await upsertUserNotificationStates(targetIds, { is_read: true, is_dismissed: true });
     return targetIds.length;
   } catch {
     return 0;
