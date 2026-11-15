@@ -1,4 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { SocialHubChrome } from "@/components/social/SocialHubChrome";
 import { useState, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -233,6 +234,9 @@ function FormularioPage() {
 
   return (
     <div className="flex flex-col min-h-full bg-background">
+      <div className="px-6 pt-5">
+        <SocialHubChrome showAccountSelector />
+      </div>
       {/* Header */}
       <div className="border-b border-border px-6 py-5">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">

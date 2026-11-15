@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { SocialHubChrome } from "@/components/social/SocialHubChrome";
 import { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Link2, Plus, Eye, ExternalLink, Loader2, Edit, Trash2, QrCode, Settings, Layout, Palette, GripVertical, X, Smartphone, Car, Phone, MessageSquare, Video, FileText, Image as ImageIcon, MapPin, UploadCloud, Layers, LayoutList, Type, AlignLeft, Globe, ChevronDown, ChevronRight, Star, Zap, MousePointerClick, TrendingUp, Share2, HelpCircle, Image as BannerIcon } from "lucide-react";
@@ -123,6 +124,7 @@ function OrganizadorPage() {
 
   return (
     <div className="mx-auto max-w-7xl space-y-8">
+      <SocialHubChrome showAccountSelector />
       <PageHeader eyebrow="Automotivo" title="Central de Funis" description="Gerencie suas Link Bios, Páginas de Captura e Quizzes Interativos em um só lugar."
         actions={<button onClick={() => setShowCreateModal(true)} className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-primary to-secondary px-4 py-2 text-xs font-semibold text-background shadow-glow"><Plus className="h-4 w-4" /> Nova Página</button>}
       />

@@ -1,4 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { SocialHubChrome } from "@/components/social/SocialHubChrome";
 import { useState } from "react";
 import { motion } from "framer-motion";
 import {
@@ -67,6 +68,9 @@ function LinkBioPage() {
 
   return (
     <div className="flex flex-col min-h-full bg-background">
+      <div className="px-6 pt-5">
+        <SocialHubChrome showAccountSelector />
+      </div>
       {/* Header */}
       <div className="border-b border-border px-6 py-5">
         <div className="flex items-center justify-between">

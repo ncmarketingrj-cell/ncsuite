@@ -9,7 +9,7 @@ import {
   ChevronDown, RefreshCw, Users, Store,
   Volume2, VolumeX, LogOut, CreditCard, Share2, ArrowRight, GitBranch, Brain, ChevronRight,
   Lock, GaugeCircle, FlaskConical, TrendingUp, Trash2, CheckCheck, Calendar, HelpCircle,
-  ShieldAlert, Timer
+  ShieldAlert, Timer, Target, FolderKanban, Wrench
 } from "lucide-react";
 import { AuthProvider, useAuth } from "@/lib/auth";
 import { supabase } from "@/integrations/supabase-external/client";
@@ -26,6 +26,11 @@ import { resolveHeaderSpinnerState } from "@/lib/syncStatusDomain";
 import { useAlertEngine } from "@/hooks/useAlertEngine";
 import { DateProvider } from "@/contexts/DateContext";
 import { usePagePermission } from "@/hooks/usePagePermission";
+import {
+  getActiveSocialNavGroup,
+  isSocialHubRoute,
+  SOCIAL_HUB_NAV_GROUPS,
+} from "@/lib/socialStrategyDomain";
 import { resolveUserHeaderIdentity } from "@/lib/pageSanitizers";
 import {
   MAX_NOTIFICATIONS_CAP,
@@ -118,12 +123,12 @@ const REGRAS_NAV_ITEMS: NavItem[] = [
 ];
 
 const SOCIAL_NAV_ITEMS: NavItem[] = [
-  { to: "/social", icon: Calendar, label: "Planejador & Feed" },
-  { to: "/social-insights", icon: BarChart3, label: "Insights Meta" },
-  { to: "/social-audit", icon: TrendingUp, label: "Auditoria Orgânica" },
-  { to: "/link-bio", icon: Link2, label: "Link Bio" },
-  { to: "/formulario", icon: FileText, label: "Formulário" },
-  { to: "/quiz", icon: HelpCircle, label: "Quiz" },
+  { to: "/social-hub", icon: LayoutDashboard, label: "Visão Geral" },
+  { to: "/social-estrategia", icon: Target, label: "Estratégia" },
+  { to: "/social-conteudo", icon: Sparkles, label: "Conteúdo" },
+  { to: "/social-insights", icon: BarChart3, label: "Inteligência" },
+  { to: "/social-projetos", icon: FolderKanban, label: "Projetos" },
+  { to: "/link-bio", icon: Wrench, label: "Ferramentas" },
 ];
 
 const GESTAO_NAV_ITEMS: NavItem[] = [
@@ -208,7 +213,7 @@ function Shell() {
     if (pathname.startsWith("/clientes")) return hasAccess("clientes");
     if (pathname.startsWith("/relatorios")) return hasAccess("relatorios");
     if (pathname.startsWith("/criativos")) return hasAccess("criativos");
-    if (pathname.startsWith("/social") || pathname.startsWith("/organizador") || pathname.startsWith("/link-bio") || pathname.startsWith("/quiz") || pathname.startsWith("/formulario")) {
+    if (isSocialHubRoute(pathname)) {
       return hasAccess("social");
     }
     if (pathname.startsWith("/reunioes")) return hasAccess("reunioes");
@@ -238,7 +243,7 @@ function Shell() {
       const target = ev.target as HTMLElement | null;
       const anchor = target?.closest?.("a[href]") as HTMLAnchorElement | null;
       const href = anchor?.getAttribute("href") || "";
-      if (href.startsWith("/social")) {
+      if (isSocialHubRoute(href)) {
         socialNavClickAtRef.current = performance.now();
       }
     };
@@ -249,7 +254,7 @@ function Shell() {
   useEffect(() => {
     ensureSocialPerfInitialized();
     const prevPath = prevSocialPathRef.current;
-    if (path !== prevPath && path.startsWith("/social")) {
+    if (path !== prevPath && isSocialHubRoute(path)) {
       const elapsed =
         socialNavClickAtRef.current !== null
           ? performance.now() - socialNavClickAtRef.current
@@ -269,7 +274,7 @@ function Shell() {
       nextModule = "regras";
     } else if (path.startsWith("/victoria")) {
       nextModule = "victoria";
-    } else if (path.startsWith("/social") || path.startsWith("/organizador") || path.startsWith("/link-bio") || path.startsWith("/quiz") || path.startsWith("/formulario")) {
+    } else if (isSocialHubRoute(path)) {
       nextModule = "social";
     } else if (path.startsWith("/dashboard") || path.startsWith("/cockpit") || path.startsWith("/simulador") || path.startsWith("/relatorios") || path.startsWith("/criativos") || path.startsWith("/metricas") || path.startsWith("/campanhas")) {
       nextModule = "trafego";
@@ -623,7 +628,7 @@ function Shell() {
               onClick={() => {
                 setActiveModule("social");
                 localStorage.setItem("nc_active_module", "social");
-                nav({ to: "/social" });
+                nav({ to: "/social-hub" as any });
               }}
               className="group relative rounded-2xl border border-border bg-card p-6 text-left cursor-pointer transition-all duration-300 hover:border-pink-500/40 hover:shadow-lg shadow-sm"
             >
@@ -635,7 +640,7 @@ function Shell() {
                 Social Media
               </h3>
               <p className="text-xs text-muted-foreground mt-2 leading-relaxed">
-                Planejador visual, calendário editorial integrado, criador de legendas com IA e analytics de conteúdo.
+                Central diária de estratégia por conta, pautas, roteiros com IA, aprovações, inteligência orgânica e projetos.
               </p>
               <div className="mt-6 flex items-center gap-1.5 text-[10px] font-black uppercase text-pink-500 tracking-wider">
                 Acessar Redes <ArrowRight className="h-3 w-3 transition-transform group-hover:translate-x-1" />
@@ -887,7 +892,7 @@ function Shell() {
                             setActiveModule("social");
                             localStorage.setItem("nc_active_module", "social");
                             setShowModuleMenu(false);
-                            nav({ to: "/social" });
+                            nav({ to: "/social-hub" as any });
                           }}
                           className={`flex w-full items-center gap-2 rounded-xl px-2.5 py-2 text-xs font-bold transition-all ${
                             activeModule === "social" ? "bg-pink-500/10 text-pink-500" : "text-foreground/80 hover:bg-muted"
@@ -962,7 +967,13 @@ function Shell() {
           <nav className="hidden lg:flex flex-1 min-w-0 items-center overflow-x-auto overflow-y-hidden px-1 [scrollbar-width:thin] [scrollbar-color:hsl(var(--primary)/0.4)_transparent]">
             <div className="mx-auto flex items-center gap-1">
               {filteredNavItems.map((item) => {
-                const isActive = path === item.to || (item.to !== "/dashboard" && path.startsWith(item.to));
+                const isSocialActiveGroup =
+                  activeModule === "social" &&
+                  SOCIAL_HUB_NAV_GROUPS.find((g) => g.to === item.to)?.id === getActiveSocialNavGroup(path);
+                const isActive =
+                  activeModule === "social"
+                    ? Boolean(isSocialActiveGroup)
+                    : path === item.to || (item.to !== "/dashboard" && path.startsWith(item.to));
                 return (
                   <Link
                     key={item.to}
@@ -1456,7 +1467,13 @@ function Shell() {
         <div className="flex items-center justify-start sm:justify-around overflow-x-auto no-scrollbar px-2 py-1.5 gap-1 pb-safe">
           {filteredNavItems.length > 1 ? (
             filteredNavItems.map((item) => {
-              const isActive = path === item.to || (item.to !== "/dashboard" && path.startsWith(item.to));
+              const isSocialActiveGroup =
+                activeModule === "social" &&
+                SOCIAL_HUB_NAV_GROUPS.find((g) => g.to === item.to)?.id === getActiveSocialNavGroup(path);
+              const isActive =
+                activeModule === "social"
+                  ? Boolean(isSocialActiveGroup)
+                  : path === item.to || (item.to !== "/dashboard" && path.startsWith(item.to));
               return (
                 <Link
                   key={item.to} title={item.label}
@@ -1477,7 +1494,7 @@ function Shell() {
               { key: "hub", label: "Hub Central", to: "/hub", icon: LayoutDashboard, show: true },
               { key: "trafego", label: "Tráfego", to: "/dashboard", icon: LineChart, show: hasPageAccess("/dashboard") },
               { key: "regras", label: "Regras", to: "/regras", icon: ShieldAlert, show: hasPageAccess("/regras") },
-              { key: "social", label: "Social", to: "/social", icon: Share2, show: hasPageAccess("/social") },
+              { key: "social", label: "Social", to: "/social-hub", icon: Share2, show: hasPageAccess("/social-hub") },
               { key: "gestao", label: "Clientes", to: "/clientes", icon: Store, show: hasPageAccess("/clientes") },
               { key: "funil", label: "Strategy Map", to: "/strategy-map", icon: Brain, show: hasPageAccess("/strategy-map") },
               { key: "victoria", label: "Victoria AI", to: "/victoria", icon: Bot, show: hasPageAccess("/victoria") },

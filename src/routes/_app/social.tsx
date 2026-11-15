@@ -1,4 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { SocialHubChrome } from "@/components/social/SocialHubChrome";
 import { useState, useMemo, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -521,6 +522,7 @@ export default function SocialMediaPage() {
 
   return (
     <div className="space-y-6 pb-20">
+      <SocialHubChrome showAccountSelector={false} />
       {/* ─── HEADER EXECUTIVO DE SOCIAL MEDIA ─── */}
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-border/40 pb-5">
         <div>

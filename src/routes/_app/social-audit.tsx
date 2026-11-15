@@ -1,4 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { SocialHubChrome } from "@/components/social/SocialHubChrome";
 import { useState, useMemo, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
@@ -264,28 +265,28 @@ function SocialAuditPage() {
       !hasData
         ? "Sem Dados"
         : healthScore >= 75
-        ? "Saudável"
-        : healthScore >= 45
-        ? "Em Evolução"
-        : "Crítico";
+          ? "Saudável"
+          : healthScore >= 45
+            ? "Em Evolução"
+            : "Crítico";
 
     const consistencyLabel =
       postsList.length >= 10
         ? `Alta (${postsList.length} posts)`
         : postsList.length >= 4
-        ? `Moderada (${postsList.length} posts)`
-        : postsList.length > 0
-        ? `Baixa (${postsList.length} posts)`
-        : "Sem publicações";
+          ? `Moderada (${postsList.length} posts)`
+          : postsList.length > 0
+            ? `Baixa (${postsList.length} posts)`
+            : "Sem publicações";
 
     const retentionLabel =
       totalReach === 0
         ? "Sem dados"
         : avgEngRate >= 4
-        ? `Forte (${formatPct(avgEngRate)}%)`
-        : avgEngRate >= 1.5
-        ? `Regular (${formatPct(avgEngRate)}%)`
-        : `Baixa (${formatPct(avgEngRate)}%)`;
+          ? `Forte (${formatPct(avgEngRate)}%)`
+          : avgEngRate >= 1.5
+            ? `Regular (${formatPct(avgEngRate)}%)`
+            : `Baixa (${formatPct(avgEngRate)}%)`;
 
     const qualityLabel =
       totalInteractions === 0
@@ -396,21 +397,21 @@ Entregue um plano direto em português com:
       const topLines =
         bestPosts.length > 0
           ? bestPosts
-              .map(
-                (p, idx) =>
-                  `${idx + 1}. "${p.title}" (${p.platform.toUpperCase()} • ${p.post_type}) — Engaj. ${p.engagement_rate}%, Alcance ${p.reach_count.toLocaleString("pt-BR")}, ${p.likes_count} curtidas, ${p.comments_count} comentários.`
-              )
-              .join("\n")
+            .map(
+              (p, idx) =>
+                `${idx + 1}. "${p.title}" (${p.platform.toUpperCase()} • ${p.post_type}) — Engaj. ${p.engagement_rate}%, Alcance ${p.reach_count.toLocaleString("pt-BR")}, ${p.likes_count} curtidas, ${p.comments_count} comentários.`
+            )
+            .join("\n")
           : "• Nenhuma publicação real retornada pela API para esta conta no momento.";
 
       const lowLines =
         lowPosts.length > 0
           ? lowPosts
-              .map(
-                (p, idx) =>
-                  `${idx + 1}. "${p.title}" — Engaj. ${p.engagement_rate}% (${p.reach_count.toLocaleString("pt-BR")} alcance). Reforçar gancho inicial e CTA nos 3 primeiros segundos.`
-              )
-              .join("\n")
+            .map(
+              (p, idx) =>
+                `${idx + 1}. "${p.title}" — Engaj. ${p.engagement_rate}% (${p.reach_count.toLocaleString("pt-BR")} alcance). Reforçar gancho inicial e CTA nos 3 primeiros segundos.`
+            )
+            .join("\n")
           : "• Amostra reduzida: publique mais conteúdos na janela para comparar formatos vencedores e perdedores.";
 
       setOrganicPlan(
@@ -442,14 +443,15 @@ ${lowLines}
     chartMetric === "reachIg"
       ? "Alcance Orgânico (IG)"
       : chartMetric === "followers"
-      ? "Novos Seguidores"
-      : "Engajamento (FB)";
+        ? "Novos Seguidores"
+        : "Engajamento (FB)";
 
   const metricColor =
     chartMetric === "reachIg" ? "#e11d48" : chartMetric === "followers" ? "#10b981" : "#3b82f6";
 
   return (
     <div className="space-y-6 pb-12">
+      <SocialHubChrome showAccountSelector={false} />
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
@@ -613,15 +615,14 @@ ${lowLines}
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
-            className={`pb-3 text-xs font-bold transition-all relative capitalize cursor-pointer ${
-              activeTab === tab ? "text-primary font-black" : "text-muted-foreground hover:text-white"
-            }`}
+            className={`pb-3 text-xs font-bold transition-all relative capitalize cursor-pointer ${activeTab === tab ? "text-primary font-black" : "text-muted-foreground hover:text-white"
+              }`}
           >
             {tab === "diagnostico"
               ? "Diagnóstico de Performance"
               : tab === "conteudo"
-              ? `O que Funciona vs. O que Falha (${postsList.length})`
-              : "Plano Victoria AI"}
+                ? `O que Funciona vs. O que Falha (${postsList.length})`
+                : "Plano Victoria AI"}
             {activeTab === tab && (
               <motion.div
                 layoutId="social_audit_tab_bar"
@@ -666,11 +667,10 @@ ${lowLines}
                       <button
                         key={m.id}
                         onClick={() => setChartMetric(m.id)}
-                        className={`px-2.5 py-1 rounded-md text-[10px] font-bold transition cursor-pointer ${
-                          chartMetric === m.id
-                            ? "bg-primary text-white"
-                            : "text-muted-foreground hover:text-white"
-                        }`}
+                        className={`px-2.5 py-1 rounded-md text-[10px] font-bold transition cursor-pointer ${chartMetric === m.id
+                          ? "bg-primary text-white"
+                          : "text-muted-foreground hover:text-white"
+                          }`}
                       >
                         {m.label}
                       </button>
@@ -682,11 +682,10 @@ ${lowLines}
                       <button
                         key={d}
                         onClick={() => setChartDays(d)}
-                        className={`px-2 py-1 rounded-md text-[10px] font-bold transition cursor-pointer ${
-                          chartDays === d
-                            ? "bg-white/15 text-white"
-                            : "text-muted-foreground hover:text-white"
-                        }`}
+                        className={`px-2 py-1 rounded-md text-[10px] font-bold transition cursor-pointer ${chartDays === d
+                          ? "bg-white/15 text-white"
+                          : "text-muted-foreground hover:text-white"
+                          }`}
                       >
                         {d}d
                       </button>
@@ -777,13 +776,12 @@ ${lowLines}
                       <span className="text-xs text-muted-foreground">/100</span>
                     </span>
                     <span
-                      className={`text-[8px] font-black uppercase tracking-wider mt-1 px-2 py-0.5 rounded border ${
-                        auditMetrics.healthScore >= 75
-                          ? "text-emerald-400 bg-emerald-500/10 border-emerald-500/20"
-                          : auditMetrics.healthScore >= 45
+                      className={`text-[8px] font-black uppercase tracking-wider mt-1 px-2 py-0.5 rounded border ${auditMetrics.healthScore >= 75
+                        ? "text-emerald-400 bg-emerald-500/10 border-emerald-500/20"
+                        : auditMetrics.healthScore >= 45
                           ? "text-amber-400 bg-amber-500/10 border-amber-500/20"
                           : "text-rose-400 bg-rose-500/10 border-rose-500/20"
-                      }`}
+                        }`}
                     >
                       {auditMetrics.healthLabel}
                     </span>

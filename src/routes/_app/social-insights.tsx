@@ -1,4 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { SocialHubChrome } from "@/components/social/SocialHubChrome";
 import { useState, useEffect, useMemo, useCallback, Fragment, memo, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -1086,6 +1087,7 @@ Responda de forma objetiva e tática em Markdown com:
 
   return (
     <div className="space-y-6">
+      <SocialHubChrome showAccountSelector={false} />
       {/* Top Header */}
       <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 border-b border-white/5 pb-5">
         <div className="space-y-1">

@@ -21,7 +21,12 @@ import { Route as AppVictoriaRouteImport } from './routes/_app/victoria'
 import { Route as AppUtmsRouteImport } from './routes/_app/utms'
 import { Route as AppUploadRouteImport } from './routes/_app/upload'
 import { Route as AppStrategyMapRouteImport } from './routes/_app/strategy-map'
+import { Route as AppSocialTestesRouteImport } from './routes/_app/social-testes'
+import { Route as AppSocialProjetosRouteImport } from './routes/_app/social-projetos'
 import { Route as AppSocialInsightsRouteImport } from './routes/_app/social-insights'
+import { Route as AppSocialHubRouteImport } from './routes/_app/social-hub'
+import { Route as AppSocialEstrategiaRouteImport } from './routes/_app/social-estrategia'
+import { Route as AppSocialConteudoRouteImport } from './routes/_app/social-conteudo'
 import { Route as AppSocialAuditRouteImport } from './routes/_app/social-audit'
 import { Route as AppSocialRouteImport } from './routes/_app/social'
 import { Route as AppSimuladorRouteImport } from './routes/_app/simulador'
@@ -109,9 +114,34 @@ const AppStrategyMapRoute = AppStrategyMapRouteImport.update({
   path: '/strategy-map',
   getParentRoute: () => AppRoute,
 } as any)
+const AppSocialTestesRoute = AppSocialTestesRouteImport.update({
+  id: '/social-testes',
+  path: '/social-testes',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppSocialProjetosRoute = AppSocialProjetosRouteImport.update({
+  id: '/social-projetos',
+  path: '/social-projetos',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppSocialInsightsRoute = AppSocialInsightsRouteImport.update({
   id: '/social-insights',
   path: '/social-insights',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppSocialHubRoute = AppSocialHubRouteImport.update({
+  id: '/social-hub',
+  path: '/social-hub',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppSocialEstrategiaRoute = AppSocialEstrategiaRouteImport.update({
+  id: '/social-estrategia',
+  path: '/social-estrategia',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppSocialConteudoRoute = AppSocialConteudoRouteImport.update({
+  id: '/social-conteudo',
+  path: '/social-conteudo',
   getParentRoute: () => AppRoute,
 } as any)
 const AppSocialAuditRoute = AppSocialAuditRouteImport.update({
@@ -280,7 +310,12 @@ export interface FileRoutesByFullPath {
   '/simulador': typeof AppSimuladorRoute
   '/social': typeof AppSocialRoute
   '/social-audit': typeof AppSocialAuditRoute
+  '/social-conteudo': typeof AppSocialConteudoRoute
+  '/social-estrategia': typeof AppSocialEstrategiaRoute
+  '/social-hub': typeof AppSocialHubRoute
   '/social-insights': typeof AppSocialInsightsRoute
+  '/social-projetos': typeof AppSocialProjetosRoute
+  '/social-testes': typeof AppSocialTestesRoute
   '/strategy-map': typeof AppStrategyMapRoute
   '/upload': typeof AppUploadRoute
   '/utms': typeof AppUtmsRoute
@@ -321,7 +356,12 @@ export interface FileRoutesByTo {
   '/simulador': typeof AppSimuladorRoute
   '/social': typeof AppSocialRoute
   '/social-audit': typeof AppSocialAuditRoute
+  '/social-conteudo': typeof AppSocialConteudoRoute
+  '/social-estrategia': typeof AppSocialEstrategiaRoute
+  '/social-hub': typeof AppSocialHubRoute
   '/social-insights': typeof AppSocialInsightsRoute
+  '/social-projetos': typeof AppSocialProjetosRoute
+  '/social-testes': typeof AppSocialTestesRoute
   '/strategy-map': typeof AppStrategyMapRoute
   '/upload': typeof AppUploadRoute
   '/utms': typeof AppUtmsRoute
@@ -364,7 +404,12 @@ export interface FileRoutesById {
   '/_app/simulador': typeof AppSimuladorRoute
   '/_app/social': typeof AppSocialRoute
   '/_app/social-audit': typeof AppSocialAuditRoute
+  '/_app/social-conteudo': typeof AppSocialConteudoRoute
+  '/_app/social-estrategia': typeof AppSocialEstrategiaRoute
+  '/_app/social-hub': typeof AppSocialHubRoute
   '/_app/social-insights': typeof AppSocialInsightsRoute
+  '/_app/social-projetos': typeof AppSocialProjetosRoute
+  '/_app/social-testes': typeof AppSocialTestesRoute
   '/_app/strategy-map': typeof AppStrategyMapRoute
   '/_app/upload': typeof AppUploadRoute
   '/_app/utms': typeof AppUtmsRoute
@@ -407,7 +452,12 @@ export interface FileRouteTypes {
     | '/simulador'
     | '/social'
     | '/social-audit'
+    | '/social-conteudo'
+    | '/social-estrategia'
+    | '/social-hub'
     | '/social-insights'
+    | '/social-projetos'
+    | '/social-testes'
     | '/strategy-map'
     | '/upload'
     | '/utms'
@@ -448,7 +498,12 @@ export interface FileRouteTypes {
     | '/simulador'
     | '/social'
     | '/social-audit'
+    | '/social-conteudo'
+    | '/social-estrategia'
+    | '/social-hub'
     | '/social-insights'
+    | '/social-projetos'
+    | '/social-testes'
     | '/strategy-map'
     | '/upload'
     | '/utms'
@@ -490,7 +545,12 @@ export interface FileRouteTypes {
     | '/_app/simulador'
     | '/_app/social'
     | '/_app/social-audit'
+    | '/_app/social-conteudo'
+    | '/_app/social-estrategia'
+    | '/_app/social-hub'
     | '/_app/social-insights'
+    | '/_app/social-projetos'
+    | '/_app/social-testes'
     | '/_app/strategy-map'
     | '/_app/upload'
     | '/_app/utms'
@@ -599,11 +659,46 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppStrategyMapRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/social-testes': {
+      id: '/_app/social-testes'
+      path: '/social-testes'
+      fullPath: '/social-testes'
+      preLoaderRoute: typeof AppSocialTestesRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/social-projetos': {
+      id: '/_app/social-projetos'
+      path: '/social-projetos'
+      fullPath: '/social-projetos'
+      preLoaderRoute: typeof AppSocialProjetosRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/social-insights': {
       id: '/_app/social-insights'
       path: '/social-insights'
       fullPath: '/social-insights'
       preLoaderRoute: typeof AppSocialInsightsRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/social-hub': {
+      id: '/_app/social-hub'
+      path: '/social-hub'
+      fullPath: '/social-hub'
+      preLoaderRoute: typeof AppSocialHubRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/social-estrategia': {
+      id: '/_app/social-estrategia'
+      path: '/social-estrategia'
+      fullPath: '/social-estrategia'
+      preLoaderRoute: typeof AppSocialEstrategiaRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/social-conteudo': {
+      id: '/_app/social-conteudo'
+      path: '/social-conteudo'
+      fullPath: '/social-conteudo'
+      preLoaderRoute: typeof AppSocialConteudoRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/social-audit': {
@@ -859,7 +954,12 @@ interface AppRouteChildren {
   AppSimuladorRoute: typeof AppSimuladorRoute
   AppSocialRoute: typeof AppSocialRoute
   AppSocialAuditRoute: typeof AppSocialAuditRoute
+  AppSocialConteudoRoute: typeof AppSocialConteudoRoute
+  AppSocialEstrategiaRoute: typeof AppSocialEstrategiaRoute
+  AppSocialHubRoute: typeof AppSocialHubRoute
   AppSocialInsightsRoute: typeof AppSocialInsightsRoute
+  AppSocialProjetosRoute: typeof AppSocialProjetosRoute
+  AppSocialTestesRoute: typeof AppSocialTestesRoute
   AppStrategyMapRoute: typeof AppStrategyMapRoute
   AppUploadRoute: typeof AppUploadRoute
   AppUtmsRoute: typeof AppUtmsRoute
@@ -891,7 +991,12 @@ const AppRouteChildren: AppRouteChildren = {
   AppSimuladorRoute: AppSimuladorRoute,
   AppSocialRoute: AppSocialRoute,
   AppSocialAuditRoute: AppSocialAuditRoute,
+  AppSocialConteudoRoute: AppSocialConteudoRoute,
+  AppSocialEstrategiaRoute: AppSocialEstrategiaRoute,
+  AppSocialHubRoute: AppSocialHubRoute,
   AppSocialInsightsRoute: AppSocialInsightsRoute,
+  AppSocialProjetosRoute: AppSocialProjetosRoute,
+  AppSocialTestesRoute: AppSocialTestesRoute,
   AppStrategyMapRoute: AppStrategyMapRoute,
   AppUploadRoute: AppUploadRoute,
   AppUtmsRoute: AppUtmsRoute,
