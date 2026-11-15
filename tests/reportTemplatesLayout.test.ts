@@ -115,7 +115,19 @@ describe("Report templates clean NC layout", () => {
     assert.ok(completeOut.includes("*Resultados por Tipo / Objetivo:*"));
     assert.ok(completeOut.includes("*Detalhamento de Campanhas:*"));
     assert.ok(completeOut.includes("*NC - MSG - 29/06:*"));
+    assert.ok(completeOut.includes("Alcance: 7.196"));
+    assert.ok(completeOut.includes("Impressões: 9.436"));
     assert.ok(completeOut.includes("*Bonne21 - Vendas Site:*"));
+
+    const stdOut = renderReportTemplateText({
+      templateText: byId.get("standard_auto")!.message_template,
+      campaigns: sampleCampaigns,
+      clientName: "AlfaCar",
+      periodText: "01/11/2026 a 15/11/2026",
+      agencyName: "NC Performance",
+    });
+    assert.ok(stdOut.includes("Alcance: 7.196"));
+    assert.ok(stdOut.includes("Impressões: 9.436"));
     assert.ok(completeOut.includes("Receita (Compras): R$"));
     assert.ok(completeOut.includes("Não calculável (gasto zero)"));
 

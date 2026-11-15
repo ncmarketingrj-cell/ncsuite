@@ -1118,12 +1118,16 @@ export function renderReportTemplateText(params: {
     if (carCamps.length > 0) {
       const costMsg = carCamps.reduce((s, c) => s + c.cost, 0);
       const leadsMsg = carCamps.reduce((s, c) => s + Number(c.conversions || 0), 0);
+      const reachMsg = carCamps.reduce((s, c) => s + Number(c.reach || 0), 0);
+      const impsMsg = carCamps.reduce((s, c) => s + Number(c.impressions || 0), 0);
       const heading = isVehicleContext
         ? `*Campanha de mensagens nos veiculos:*`
         : `*Campanha de Mensagens / WhatsApp:*`;
       const metricNoun = isVehicleContext ? "conversas / leads" : "conversas";
       const costLine = formatTemplateUnitCost(costMsg, leadsMsg, "MESSAGES", "Não calculável (0 resultados)");
-      const block = `${heading}\n Investimento: ${fmtBRLWithSymbol(costMsg)}\n Total de ${metricNoun}: ${leadsMsg.toLocaleString("pt-BR")}\n Custo por resultado: ${costLine}`;
+      let block = `${heading}\n Investimento: ${fmtBRLWithSymbol(costMsg)}\n Total de ${metricNoun}: ${leadsMsg.toLocaleString("pt-BR")}\n Custo por resultado: ${costLine}`;
+      if (reachMsg > 0) block += `\n Alcance: ${reachMsg.toLocaleString("pt-BR")}`;
+      if (impsMsg > 0) block += `\n Impressões: ${impsMsg.toLocaleString("pt-BR")}`;
       text = text.replace(/\{\{BLOCO_VEICULOS\}\}/g, block);
     } else {
       text = text.replace(/\{\{BLOCO_VEICULOS\}\}/g, "");
@@ -1139,7 +1143,7 @@ export function renderReportTemplateText(params: {
       const impsReach = reachCamps.reduce((s, c) => s + c.impressions, 0);
       const costPer1kReach = computeUnitCost(costReach, peopleReached, "REACH");
       const cpmReach = costReach > 0 && impsReach > 0 ? (costReach / impsReach) * 1000 : null;
-      const block = `*Campanha de Alcance e Impressões:*\nInvestimento: ${fmtBRLWithSymbol(costReach)}\nPessoas alcançadas: ${peopleReached.toLocaleString("pt-BR")}\nCusto por 1.000 contas alcançadas: ${costPer1kReach !== null ? fmtBRLWithSymbol(costPer1kReach) : (costReach <= 0 && peopleReached > 0 ? "Não calculável (gasto zero)" : "Não calculável")}\nImpressões: ${impsReach.toLocaleString("pt-BR")}${cpmReach !== null ? ` (CPM: ${fmtBRLWithSymbol(cpmReach)})` : ""}`;
+      const block = `*Campanha de Alcance e Impressões:*\nInvestimento: ${fmtBRLWithSymbol(costReach)}\nAlcance: ${peopleReached.toLocaleString("pt-BR")}\nCusto por 1.000 contas alcançadas: ${costPer1kReach !== null ? fmtBRLWithSymbol(costPer1kReach) : (costReach <= 0 && peopleReached > 0 ? "Não calculável (gasto zero)" : "Não calculável")}\nImpressões: ${impsReach.toLocaleString("pt-BR")}${cpmReach !== null ? ` (CPM: ${fmtBRLWithSymbol(cpmReach)})` : ""}`;
       text = text.replace(/\{\{BLOCO_ALCANCE\}\}/g, block);
     } else {
       text = text.replace(/\{\{BLOCO_ALCANCE\}\}/g, "");
@@ -1152,8 +1156,12 @@ export function renderReportTemplateText(params: {
     if (consCamps.length > 0) {
       const costCons = consCamps.reduce((s, c) => s + c.cost, 0);
       const leadsCons = consCamps.reduce((s, c) => s + (c.conversions > 0 ? c.conversions : 0), 0);
+      const reachCons = consCamps.reduce((s, c) => s + Number(c.reach || 0), 0);
+      const impsCons = consCamps.reduce((s, c) => s + Number(c.impressions || 0), 0);
       const costStr = formatTemplateUnitCost(costCons, leadsCons, "LEADS");
-      const block = `*Campanha de consignado*\nTotal de leads: ${leadsCons.toLocaleString("pt-BR")}\nCusto por leads: ${costStr}\nInvestimento: ${fmtBRLWithSymbol(costCons)}`;
+      let block = `*Campanha de consignado*\nTotal de leads: ${leadsCons.toLocaleString("pt-BR")}\nCusto por leads: ${costStr}\nInvestimento: ${fmtBRLWithSymbol(costCons)}`;
+      if (reachCons > 0) block += `\nAlcance: ${reachCons.toLocaleString("pt-BR")}`;
+      if (impsCons > 0) block += `\nImpressões: ${impsCons.toLocaleString("pt-BR")}`;
       text = text.replace(/\{\{BLOCO_CONSIGNADO\}\}/g, block);
     } else {
       text = text.replace(/\{\{BLOCO_CONSIGNADO\}\}/g, "");
@@ -1168,8 +1176,12 @@ export function renderReportTemplateText(params: {
     if (profCamps.length > 0) {
       const costProf = profCamps.reduce((s, c) => s + c.cost, 0);
       const visitsProf = profCamps.reduce((s, c) => s + Number(c.conversions || 0), 0);
+      const reachProf = profCamps.reduce((s, c) => s + Number(c.reach || 0), 0);
+      const impsProf = profCamps.reduce((s, c) => s + Number(c.impressions || 0), 0);
       const costStr = formatTemplateUnitCost(costProf, visitsProf, "INSTAGRAM_PROFILE");
-      const block = `*Campanha de Visitas ao Perfil:*\nInvestimento: ${fmtBRLWithSymbol(costProf)}\nVisitas ao perfil: ${visitsProf.toLocaleString("pt-BR")}\nCusto por visita: ${costStr}`;
+      let block = `*Campanha de Visitas ao Perfil:*\nInvestimento: ${fmtBRLWithSymbol(costProf)}\nVisitas ao perfil: ${visitsProf.toLocaleString("pt-BR")}\nCusto por visita: ${costStr}`;
+      if (reachProf > 0) block += `\nAlcance: ${reachProf.toLocaleString("pt-BR")}`;
+      if (impsProf > 0) block += `\nImpressões: ${impsProf.toLocaleString("pt-BR")}`;
       text = text.replace(/\{\{BLOCO_PERFIL\}\}/g, block);
     } else {
       text = text.replace(/\{\{BLOCO_PERFIL\}\}/g, "");
@@ -1187,8 +1199,12 @@ export function renderReportTemplateText(params: {
         (s, c) => s + (c.objective.includes("Cliques") ? Number(c.clicks || 0) : Number(c.conversions || 0)),
         0
       );
+      const reachViews = pageCamps.reduce((s, c) => s + Number(c.reach || 0), 0);
+      const impsViews = pageCamps.reduce((s, c) => s + Number(c.impressions || 0), 0);
       const costStr = formatTemplateUnitCost(costViews, visitsViews, "LANDING_PAGE_VIEWS");
-      const block = `*Visualizações na Página / Cliques:*\nInvestimento: ${fmtBRLWithSymbol(costViews)}\nResultados: ${visitsViews.toLocaleString("pt-BR")} visitas\nCusto por visita: ${costStr}`;
+      let block = `*Visualizações na Página / Cliques:*\nInvestimento: ${fmtBRLWithSymbol(costViews)}\nResultados: ${visitsViews.toLocaleString("pt-BR")} visitas\nCusto por visita: ${costStr}`;
+      if (reachViews > 0) block += `\nAlcance: ${reachViews.toLocaleString("pt-BR")}`;
+      if (impsViews > 0) block += `\nImpressões: ${impsViews.toLocaleString("pt-BR")}`;
       text = text.replace(/\{\{BLOCO_PAGINA\}\}/g, block);
     } else {
       text = text.replace(/\{\{BLOCO_PAGINA\}\}/g, "");
@@ -1218,7 +1234,7 @@ export function renderReportTemplateText(params: {
 
       let resultLabel = `Resultados (${data.unitPlural})`;
       if (isClick) resultLabel = "Cliques no link";
-      if (isReach) resultLabel = "Pessoas alcançadas";
+      if (isReach) resultLabel = "Alcance";
 
       let costLabel = "Custo por resultado";
       if (isClick) costLabel = "CPC (link)";
@@ -1240,8 +1256,11 @@ export function renderReportTemplateText(params: {
       if (data.purchaseValue > 0) {
         typeText += ` Receita (Compras): ${fmtBRLWithSymbol(data.purchaseValue)}${data.cost > 0 ? ` (ROAS ${(data.purchaseValue / data.cost).toFixed(2)}x)` : ""}\n`;
       }
-      if (isReach && data.impressions > 0) {
-        typeText += ` Impressões: ${data.impressions.toLocaleString("pt-BR")}${data.cost > 0 ? ` (CPM: ${fmtBRLWithSymbol((data.cost / data.impressions) * 1000)})` : ""}\n`;
+      if (!isReach && data.reach > 0) {
+        typeText += ` Alcance: ${data.reach.toLocaleString("pt-BR")}\n`;
+      }
+      if (data.impressions > 0) {
+        typeText += ` Impressões: ${data.impressions.toLocaleString("pt-BR")}${isReach && data.cost > 0 ? ` (CPM: ${fmtBRLWithSymbol((data.cost / data.impressions) * 1000)})` : ""}\n`;
       }
       if (data.cost <= 0 && (data.results > 0 || data.purchaseValue > 0)) {
         typeText += ` Resultados atribuídos pela janela de conversão Meta (não indicam entrega/gasto no período).\n`;
@@ -1333,6 +1352,9 @@ export function renderReportTemplateText(params: {
       }
       if (linkClk > 0 && !isClick) listText += ` Cliques no link: ${linkClk.toLocaleString("pt-BR")}\n`;
       if (c.reach > 0 && !isReach) listText += ` Alcance: ${c.reach.toLocaleString("pt-BR")}\n`;
+      if (c.impressions > 0) {
+        listText += ` Impressões: ${c.impressions.toLocaleString("pt-BR")}${c.cost > 0 ? ` (CPM: ${fmtBRLWithSymbol((c.cost / c.impressions) * 1000)})` : ""}\n`;
+      }
       listText += `\n`;
     });
     text = text.replace(/\{\{LISTA_CAMPANHAS\}\}/g, listText.trim());

@@ -1368,7 +1368,7 @@ function RelatoriosPage() {
 
         let resultLabel = `Resultados (${data.unitPlural})`;
         if (isClick) resultLabel = "Cliques no Link";
-        if (isReach) resultLabel = "Pessoas Alcançadas";
+        if (isReach) resultLabel = "Alcance";
 
         let costLabel = "Custo por Resultado";
         if (isClick) costLabel = "CPC (Link)";
@@ -1459,6 +1459,10 @@ function RelatoriosPage() {
             txt += ` Resultado atribuído pela janela Meta sem gasto/entrega no período.\n`;
           }
           if (linkClk > 0 && !isClickObj) txt += ` Cliques no link: ${linkClk.toLocaleString("pt-BR")}\n`;
+          if (c.reach > 0 && !isReachObj) txt += ` Alcance: ${c.reach.toLocaleString("pt-BR")}\n`;
+          if (c.impressions > 0) {
+            txt += ` Impressões: ${c.impressions.toLocaleString("pt-BR")}${c.cost > 0 ? ` (CPM: ${fmtBRLWithSymbol((c.cost / c.impressions) * 1000)})` : ""}\n`;
+          }
           txt += `\n`;
         });
       });
@@ -1559,6 +1563,8 @@ function RelatoriosPage() {
         const costSalesStd = salesStdCampaigns.reduce((s, c) => s + c.cost, 0);
         const purchasesStd = salesStdCampaigns.reduce((s, c) => s + Number(c.conversions || 0), 0);
         const revenueStd = salesStdCampaigns.reduce((s, c) => s + Number(c.purchaseValue || 0), 0);
+        const reachSalesStd = salesStdCampaigns.reduce((s, c) => s + Number(c.reach || 0), 0);
+        const impsSalesStd = salesStdCampaigns.reduce((s, c) => s + Number(c.impressions || 0), 0);
         const cpaStd = computeUnitCost(costSalesStd, purchasesStd, "PURCHASES");
         const roasStd = costSalesStd > 0 && revenueStd > 0 ? revenueStd / costSalesStd : null;
         txt += `*Campanha de Compras / Vendas:*\n`;
@@ -1568,6 +1574,8 @@ function RelatoriosPage() {
         if (revenueStd > 0) {
           txt += ` Valor de compra (Receita): ${fmtBRLWithSymbol(revenueStd)}${roasStd !== null ? ` (ROAS ${roasStd.toFixed(2)}x)` : ""}\n`;
         }
+        if (reachSalesStd > 0) txt += ` Alcance: ${reachSalesStd.toLocaleString("pt-BR")}\n`;
+        if (impsSalesStd > 0) txt += ` Impressões: ${impsSalesStd.toLocaleString("pt-BR")}\n`;
         if (costSalesStd <= 0 && (purchasesStd > 0 || revenueStd > 0)) {
           txt += ` ℹ️ Resultados atribuídos pela janela de conversão Meta (não indicam entrega/gasto neste período).\n`;
         }
@@ -1578,20 +1586,30 @@ function RelatoriosPage() {
       if (carMsgCampaigns.length > 0) {
         const costMsg = carMsgCampaigns.reduce((s, c) => s + c.cost, 0);
         const leadsMsg = carMsgCampaigns.reduce((s, c) => s + Number(c.conversions || 0), 0);
+        const reachMsg = carMsgCampaigns.reduce((s, c) => s + Number(c.reach || 0), 0);
+        const impsMsg = carMsgCampaigns.reduce((s, c) => s + Number(c.impressions || 0), 0);
         txt += `*Campanha de mensagens nos veiculos:*\n`;
         txt += ` Investimento: ${fmtBRLWithSymbol(costMsg)}\n`;
         txt += ` Total de conversas / leads: ${leadsMsg.toLocaleString("pt-BR")}\n`;
-        txt += ` Custo por resultado: ${formatUnitCostText(costMsg, leadsMsg, "Não calculável (0 resultados)")}\n\n`;
+        txt += ` Custo por resultado: ${formatUnitCostText(costMsg, leadsMsg, "Não calculável (0 resultados)")}\n`;
+        if (reachMsg > 0) txt += ` Alcance: ${reachMsg.toLocaleString("pt-BR")}\n`;
+        if (impsMsg > 0) txt += ` Impressões: ${impsMsg.toLocaleString("pt-BR")}\n`;
+        txt += `\n`;
       }
 
       // 2. Mensagens / WhatsApp Geral (quando não for loja de veículos)
       if (generalMsgCampaigns.length > 0) {
         const costMsg = generalMsgCampaigns.reduce((s, c) => s + c.cost, 0);
         const leadsMsg = generalMsgCampaigns.reduce((s, c) => s + Number(c.conversions || 0), 0);
+        const reachMsg = generalMsgCampaigns.reduce((s, c) => s + Number(c.reach || 0), 0);
+        const impsMsg = generalMsgCampaigns.reduce((s, c) => s + Number(c.impressions || 0), 0);
         txt += `*Campanha de Mensagens / WhatsApp:*\n`;
         txt += ` Investimento: ${fmtBRLWithSymbol(costMsg)}\n`;
         txt += ` Total de conversas: ${leadsMsg.toLocaleString("pt-BR")}\n`;
-        txt += ` Custo por conversa: ${formatUnitCostText(costMsg, leadsMsg, "Não calculável (0 conversas)")}\n\n`;
+        txt += ` Custo por conversa: ${formatUnitCostText(costMsg, leadsMsg, "Não calculável (0 conversas)")}\n`;
+        if (reachMsg > 0) txt += ` Alcance: ${reachMsg.toLocaleString("pt-BR")}\n`;
+        if (impsMsg > 0) txt += ` Impressões: ${impsMsg.toLocaleString("pt-BR")}\n`;
+        txt += `\n`;
       }
 
       // 3. Alcance e Impressões
@@ -1603,7 +1621,7 @@ function RelatoriosPage() {
         const cpmReach = costReach > 0 && impsReach > 0 ? (costReach / impsReach) * 1000 : null;
         txt += `*Campanha de Alcance e Impressões:*\n`;
         txt += `Investimento: ${fmtBRLWithSymbol(costReach)}\n`;
-        txt += `Pessoas alcançadas: ${reachedPeople.toLocaleString("pt-BR")}\n`;
+        txt += `Alcance: ${reachedPeople.toLocaleString("pt-BR")}\n`;
         txt += `Custo por 1.000 contas alcançadas: ${costPer1kReach !== null ? fmtBRLWithSymbol(costPer1kReach) : (costReach <= 0 && reachedPeople > 0 ? "Não calculável (gasto zero)" : "Não calculável")}\n`;
         if (impsReach > 0) {
           txt += `Impressões: ${impsReach.toLocaleString("pt-BR")}${cpmReach !== null ? ` (CPM: ${fmtBRLWithSymbol(cpmReach)})` : ""}\n`;
@@ -1615,30 +1633,45 @@ function RelatoriosPage() {
       if (consignadoCampaigns.length > 0) {
         const costCons = consignadoCampaigns.reduce((s, c) => s + c.cost, 0);
         const leadsCons = consignadoCampaigns.reduce((s, c) => s + (c.conversions > 0 ? c.conversions : 0), 0);
+        const reachCons = consignadoCampaigns.reduce((s, c) => s + Number(c.reach || 0), 0);
+        const impsCons = consignadoCampaigns.reduce((s, c) => s + Number(c.impressions || 0), 0);
         txt += `*Campanha de consignado* \n`;
         txt += `Total de leads: ${leadsCons.toLocaleString("pt-BR")}\n`;
         txt += `Custo por leads: ${formatUnitCostText(costCons, leadsCons)}\n`;
-        txt += `Investimento: ${fmtBRLWithSymbol(costCons)}\n\n`;
+        txt += `Investimento: ${fmtBRLWithSymbol(costCons)}\n`;
+        if (reachCons > 0) txt += `Alcance: ${reachCons.toLocaleString("pt-BR")}\n`;
+        if (impsCons > 0) txt += `Impressões: ${impsCons.toLocaleString("pt-BR")}\n`;
+        txt += `\n`;
       }
 
       // 5. Visitas ao Perfil do Instagram
       if (profileCampaigns.length > 0) {
         const costProf = profileCampaigns.reduce((s, c) => s + c.cost, 0);
         const visitsProf = profileCampaigns.reduce((s, c) => s + Number(c.conversions || 0), 0);
+        const reachProf = profileCampaigns.reduce((s, c) => s + Number(c.reach || 0), 0);
+        const impsProf = profileCampaigns.reduce((s, c) => s + Number(c.impressions || 0), 0);
         txt += `*Campanha de Visitas ao Perfil:*\n`;
         txt += `Investimento: ${fmtBRLWithSymbol(costProf)}\n`;
         txt += `Visitas ao perfil: ${visitsProf.toLocaleString("pt-BR")}\n`;
-        txt += `Custo por visita: ${formatUnitCostText(costProf, visitsProf)}\n\n`;
+        txt += `Custo por visita: ${formatUnitCostText(costProf, visitsProf)}\n`;
+        if (reachProf > 0) txt += `Alcance: ${reachProf.toLocaleString("pt-BR")}\n`;
+        if (impsProf > 0) txt += `Impressões: ${impsProf.toLocaleString("pt-BR")}\n`;
+        txt += `\n`;
       }
 
       // 6. Visualizações na Página / Site
       if (pageCampaigns.length > 0) {
         const costViews = pageCampaigns.reduce((s, c) => s + c.cost, 0);
         const visitsViews = pageCampaigns.reduce((s, c) => s + Number(c.conversions || 0), 0);
+        const reachViews = pageCampaigns.reduce((s, c) => s + Number(c.reach || 0), 0);
+        const impsViews = pageCampaigns.reduce((s, c) => s + Number(c.impressions || 0), 0);
         txt += `*Visualizações na Página:*\n`;
         txt += `Investimento: ${fmtBRLWithSymbol(costViews)}\n`;
         txt += `Resultados: ${visitsViews.toLocaleString("pt-BR")} visitas\n`;
-        txt += `Custo por visualizações: ${formatUnitCostText(costViews, visitsViews)}\n\n`;
+        txt += `Custo por visualizações: ${formatUnitCostText(costViews, visitsViews)}\n`;
+        if (reachViews > 0) txt += `Alcance: ${reachViews.toLocaleString("pt-BR")}\n`;
+        if (impsViews > 0) txt += `Impressões: ${impsViews.toLocaleString("pt-BR")}\n`;
+        txt += `\n`;
       }
 
       // 7. Cliques no Link / Tráfego
@@ -1646,6 +1679,8 @@ function RelatoriosPage() {
         const costLink = linkCampaigns.reduce((s, c) => s + c.cost, 0);
         const clicksLink = linkCampaigns.reduce((s, c) => s + c.clicks, 0);
         const allClicksLink = linkCampaigns.reduce((s, c) => s + Number((c as any).allClicks ?? 0), 0);
+        const reachLink = linkCampaigns.reduce((s, c) => s + Number(c.reach || 0), 0);
+        const impsLink = linkCampaigns.reduce((s, c) => s + Number(c.impressions || 0), 0);
         const cpcLink = computeUnitCost(costLink, clicksLink, "LINK_CLICKS");
         const cpcAll = computeUnitCost(costLink, allClicksLink, "LINK_CLICKS");
         txt += `*Campanha de Cliques no Link:*\n`;
@@ -1654,7 +1689,10 @@ function RelatoriosPage() {
         if (allClicksLink > 0 && allClicksLink !== clicksLink) {
           txt += `Cliques (Todos): ${allClicksLink.toLocaleString("pt-BR")}\n`;
         }
-        txt += `CPC Link: ${cpcLink !== null ? fmtBRLWithSymbol(cpcLink) : (costLink <= 0 && clicksLink > 0 ? "Não calculável (gasto zero)" : "Não calculável")}${cpcAll !== null && cpcAll > 0 ? ` | CPC (Todos): ${fmtBRLWithSymbol(cpcAll)}` : ""}\n\n`;
+        txt += `CPC Link: ${cpcLink !== null ? fmtBRLWithSymbol(cpcLink) : (costLink <= 0 && clicksLink > 0 ? "Não calculável (gasto zero)" : "Não calculável")}${cpcAll !== null && cpcAll > 0 ? ` | CPC (Todos): ${fmtBRLWithSymbol(cpcAll)}` : ""}\n`;
+        if (reachLink > 0) txt += `Alcance: ${reachLink.toLocaleString("pt-BR")}\n`;
+        if (impsLink > 0) txt += `Impressões: ${impsLink.toLocaleString("pt-BR")}\n`;
+        txt += `\n`;
       }
 
       if (!isTextManuallyEdited) {
@@ -1690,6 +1728,7 @@ function RelatoriosPage() {
       const investViews = pageViewCampaigns.reduce((s, c) => s + c.cost, 0);
       const visitsCount = pageViewCampaigns.reduce((s, c) => s + (c.objective.includes("Cliques") ? Number(c.clicks || 0) : Number(c.conversions || 0)), 0);
       const costPerView = computeUnitCost(investViews, visitsCount, "LANDING_PAGE_VIEWS");
+      const reachViews = pageViewCampaigns.reduce((s, c) => s + c.reach, 0);
       const impsViews = pageViewCampaigns.reduce((s, c) => s + c.impressions, 0);
       const cpmViews = investViews > 0 && impsViews > 0 ? (investViews / impsViews) * 1000 : null;
 
@@ -1735,6 +1774,7 @@ function RelatoriosPage() {
       txt += ` Investimento: R$ ${investViews.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n`;
       txt += ` Resultados: ${visitsCount.toLocaleString("pt-BR")} visitas\n`;
       txt += ` Custo por visualizações: ${costPerView !== null ? `R$ ${costPerView.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : "Não calculável"}\n`;
+      if (reachViews > 0) txt += ` Alcance: ${reachViews.toLocaleString("pt-BR")}\n`;
       txt += ` Impressões / Plays: ${impsViews.toLocaleString("pt-BR")}\n`;
       txt += ` CPM: ${cpmViews !== null ? `R$ ${cpmViews.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : "Não calculável"}\n\n`;
 
