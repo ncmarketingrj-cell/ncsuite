@@ -3302,16 +3302,21 @@ export async function fetchPlannerMediaInsightsBatch(params: {
         let views = 0;
         let saved = 0;
         let shares = 0;
-        const available = Array.isArray(ins?.data);
-        if (available) {
+        const hasDataArray = Array.isArray(ins?.data);
+        let hasReachMetric = false;
+        if (hasDataArray) {
           for (const met of ins.data) {
             const v = Number(met.values?.[0]?.value || 0);
-            if (met.name === "reach") reach = v;
+            if (met.name === "reach") {
+              reach = v;
+              hasReachMetric = true;
+            }
             if (met.name === "views") views = v;
             if (met.name === "saved") saved = v;
             if (met.name === "shares") shares = v;
           }
         }
+        const available = hasDataArray && hasReachMetric && !ins?.error;
         const entry: PlannerMediaInsightMetrics = {
           mediaId,
           reach,

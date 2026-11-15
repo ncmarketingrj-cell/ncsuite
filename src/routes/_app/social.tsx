@@ -217,6 +217,10 @@ export default function SocialMediaPage() {
     !isPlannerInitialLoading &&
     Boolean(accountsData?.error || plannerData?.errorMessage) &&
     allPosts.length === 0;
+  const activeAccountHasIg =
+    canonicalSelectedPage === "all"
+      ? activePages.some((p) => Boolean(p.instagram_account_id))
+      : Boolean(activePageObj?.instagram_account_id);
   const igProfile = plannerData?.igProfile || null;
   const heatmapMatrix = plannerData?.heatmapMatrix || Array.from({ length: 7 }, () => Array(24).fill(0));
   const hasPostsForHeatmap = plannerData?.hasPostsForHeatmap || false;
@@ -294,7 +298,7 @@ export default function SocialMediaPage() {
     masterToken,
     plannerData,
     targetMediaIds: progressiveTargetMediaIds,
-    enabled: !isLoadingAccounts && progressiveTargetMediaIds.length > 0,
+    enabled: !isLoadingAccounts && !isLoadingPlanner && progressiveTargetMediaIds.length > 0,
   });
 
   const {
@@ -691,18 +695,30 @@ export default function SocialMediaPage() {
               ? "..."
               : isPlannerUnavailable || (stats.insightsLoadedCount === 0 && stats.insightsPendingCount > 0)
               ? "—"
+              : !activeAccountHasIg
+              ? "N/A"
+              : stats.insightsLoadedCount === 0 && stats.insightsUnavailableCount > 0
+              ? "Indisponível"
               : stats.totalReach === 0
               ? "—"
               : `${stats.avgEngRate}%`}
           </div>
           <p className="text-[10px] text-muted-foreground mt-0.5">
-            {isEnrichingInsights && stats.insightsLoadedCount === 0
+            {isPlannerInitialLoading
+              ? "Carregando dados da conta..."
+              : isPlannerUnavailable
+              ? "Indisponível — tente sincronizar"
+              : !activeAccountHasIg
+              ? "Conta somente Facebook — taxa IG não se aplica"
+              : isEnrichingInsights && stats.insightsLoadedCount === 0
               ? "Carregando métricas de alcance da Meta..."
               : stats.insightsLoadedCount === 0 && stats.insightsPendingCount > 0
               ? "Aguardando métricas individuais da Meta..."
+              : stats.insightsLoadedCount === 0 && stats.insightsUnavailableCount > 0
+              ? "Meta não retornou alcance (permissão ou mídia sem insights)"
               : stats.reachSampleCount > 0
               ? `Interações / alcance em ${stats.reachSampleCount} de ${stats.igPublishedCount} mídias IG${isEnrichingInsights ? " (carregando...)" : ""}`
-              : "Sem alcance observado nas mídias carregadas"}
+              : `Alcance zerado nas ${stats.insightsLoadedCount} mídias IG medidas`}
           </p>
         </div>
 
@@ -716,16 +732,28 @@ export default function SocialMediaPage() {
               ? "..."
               : isPlannerUnavailable || (stats.insightsLoadedCount === 0 && stats.insightsPendingCount > 0)
               ? "—"
+              : !activeAccountHasIg
+              ? "N/A"
+              : stats.insightsLoadedCount === 0 && stats.insightsUnavailableCount > 0
+              ? "Indisponível"
               : stats.totalReach.toLocaleString("pt-BR")}
           </div>
           <p className="text-[10px] text-muted-foreground mt-0.5">
-            {isEnrichingInsights && stats.insightsLoadedCount === 0
+            {isPlannerInitialLoading
+              ? "Carregando dados da conta..."
+              : isPlannerUnavailable
+              ? "Indisponível — tente sincronizar"
+              : !activeAccountHasIg
+              ? "Conta somente Facebook — sem Instagram vinculado"
+              : isEnrichingInsights && stats.insightsLoadedCount === 0
               ? "Consultando alcance real na Meta..."
               : stats.insightsLoadedCount === 0 && stats.insightsPendingCount > 0
               ? "Métricas individuais pendentes na amostra"
+              : stats.insightsLoadedCount === 0 && stats.insightsUnavailableCount > 0
+              ? "Meta não retornou insights para as mídias desta conta"
               : isEnrichingInsights
               ? `Amostra de ${stats.insightsLoadedCount}/${stats.igPublishedCount} mídias IG (atualizando...)`
-              : `Soma real em ${stats.insightsLoadedCount} de ${stats.igPublishedCount} mídias IG carregadas`}
+              : `Soma real em ${stats.insightsLoadedCount} de ${stats.igPublishedCount} mídias IG${stats.insightsUnavailableCount > 0 ? ` (${stats.insightsUnavailableCount} indisponíveis)` : ""}`}
           </p>
         </div>
       </div>

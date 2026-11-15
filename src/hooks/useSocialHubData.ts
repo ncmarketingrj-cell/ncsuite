@@ -467,7 +467,6 @@ export function useSocialPlannerQuery(params: {
     initialDataUpdatedAt: initialEnvelope
       ? Date.parse(initialEnvelope.snapshotAt) || undefined
       : undefined,
-    placeholderData: (prev) => prev,
     staleTime: getSocialCacheTtlMs("planner"),
     gcTime: 60 * 60 * 1000,
     refetchOnWindowFocus: false,
