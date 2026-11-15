@@ -54,8 +54,6 @@ import { ptBR } from "date-fns/locale";
 import { supabase } from "@/integrations/supabase-external/client";
 import { toast } from "sonner";
 import {
-  fetchLiveSocialAccounts,
-  fetchRealPlannerPosts,
   publishOrScheduleToMeta,
   deleteMetaScheduledPost,
   type PlannerPost,
@@ -63,6 +61,13 @@ import {
   type RealIgProfileDetails,
   type BestSlotItem,
 } from "@/lib/metaSocialService";
+import { useAuth } from "@/lib/auth";
+import { useSocialHubFilters } from "@/lib/socialHubStore";
+import {
+  useManualSocialSync,
+  useSocialAccountsQuery,
+  useSocialPlannerQuery,
+} from "@/hooks/useSocialHubData";
 
 export const Route = createFileRoute("/_app/social")({
   head: () => ({ meta: [{ title: "Planejador & Feed — NC Performance" }] }),
@@ -118,11 +123,13 @@ function SafeMediaThumb({
 
 export default function SocialMediaPage() {
   const qc = useQueryClient();
+  const { user } = useAuth();
+  const tenantId = user?.id || "default";
 
-  const [selectedPage, setSelectedPage] = useState<string>("all");
+  const { selectedPage, setSelectedPage, selectedNetwork } = useSocialHubFilters();
   const [viewMode, setViewMode] = useState<"calendar" | "kanban" | "grid" | "heatmap" | "performance">("calendar");
   const [calendarDate, setCalendarDate] = useState<Date>(new Date());
-  const [filterPlatform, setFilterPlatform] = useState<"all" | "instagram" | "facebook">("all");
+  const [filterPlatform, setFilterPlatform] = useState<"all" | "instagram" | "facebook">(selectedNetwork);
   const [filterType, setFilterType] = useState<"all" | PostType>("all");
   const [filterStatus, setFilterStatus] = useState<"all" | PostStatus>("all");
   const [searchQuery, setSearchQuery] = useState("");
@@ -131,18 +138,13 @@ export default function SocialMediaPage() {
   const [editingPost, setEditingPost] = useState<SocialPost | null>(null);
   const [previewPost, setPreviewPost] = useState<SocialPost | null>(null);
   const [dayModalDate, setDayModalDate] = useState<Date | null>(null);
-  const [isSyncing, setIsSyncing] = useState(false);
+  const { isSyncing, syncScope } = useManualSocialSync();
 
-  // 1. Busca contas reais conectadas ao Meta Graph API (/me/accounts)
+  // 1. Contas conectadas compartilhadas no cache do Hub Social
   const {
     data: accountsData,
     isLoading: isLoadingAccounts,
-    refetch: refetchAccounts,
-  } = useQuery({
-    queryKey: ["real-social-accounts"],
-    queryFn: () => fetchLiveSocialAccounts(false),
-    staleTime: 5 * 60 * 1000,
-  });
+  } = useSocialAccountsQuery({ tenantId });
 
   const activePages: RealSocialAccount[] = accountsData?.accounts || [];
   const masterToken = accountsData?.masterToken || null;
@@ -152,22 +154,19 @@ export default function SocialMediaPage() {
     return activePages.find((p) => p.page_id === selectedPage) || activePages[0] || null;
   }, [activePages, selectedPage]);
 
-  // 2. Busca posts reais agendados no Meta + publicados no Meta (IG & FB) + fila do Supabase
+  // 2. Planejador com snapshot imediato + SWR + single-flight compartilhado
   const {
     data: plannerData,
     isLoading: isLoadingPlanner,
     isFetching: isFetchingPlanner,
     refetch: refetchPlanner,
-  } = useQuery({
-    queryKey: ["real-planner-posts", selectedPage, activePages.length, Boolean(masterToken)],
+  } = useSocialPlannerQuery({
+    tenantId,
+    accounts: activePages,
+    selectedPage,
+    network: selectedNetwork,
+    masterToken,
     enabled: !isLoadingAccounts,
-    queryFn: () =>
-      fetchRealPlannerPosts({
-        accounts: activePages,
-        selectedPageId: selectedPage,
-        masterToken,
-      }),
-    staleTime: 2 * 60 * 1000,
   });
 
   const allPosts = plannerData?.posts || [];
@@ -227,15 +226,16 @@ export default function SocialMediaPage() {
   }, [allPosts, plannerData?.metaScheduledCount]);
 
   const handleSyncSocial = async () => {
-    setIsSyncing(true);
     try {
-      await refetchAccounts();
-      await refetchPlanner();
+      await syncScope({
+        tenantId,
+        selectedPage,
+        network: selectedNetwork,
+        includePlanner: true,
+      });
       toast.success("Planejador sincronizado com publicações e agendamentos reais da Meta API!");
     } catch (err: any) {
       toast.error(`Erro ao sincronizar: ${err?.message || "Tente novamente."}`);
-    } finally {
-      setIsSyncing(false);
     }
   };
 
@@ -322,7 +322,7 @@ export default function SocialMediaPage() {
         toast.success("Publicação removida do Planejador.");
       }
       refetchPlanner();
-      qc.invalidateQueries({ queryKey: ["real-planner-posts"] });
+      qc.invalidateQueries({ queryKey: ["social-hub", "planner"] });
     } catch (err: any) {
       toast.error(`Erro ao remover: ${err.message}`);
     }

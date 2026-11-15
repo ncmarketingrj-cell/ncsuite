@@ -47,6 +47,7 @@ import {
   persistSeenToastIds,
   selectPendingToastQueue,
 } from "@/lib/notificationPresentation";
+import { recordSocialRouteTransition } from "@/lib/socialCacheDomain";
 import { playAlertTone } from "@/lib/alertSounds";
 import { canUserAccessConfig, canUserManageUsers, getUserLevel, isMasterAdmin } from "@/lib/userHierarchy";
 import { UserAvatar } from "@/components/UserAvatar";
@@ -228,6 +229,15 @@ function Shell() {
   });
 
   const prevModuleRef = useRef(activeModule);
+  const socialNavClickAtRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (socialNavClickAtRef.current !== null && path.startsWith("/social")) {
+      const elapsed = performance.now() - socialNavClickAtRef.current;
+      recordSocialRouteTransition(elapsed);
+      socialNavClickAtRef.current = null;
+    }
+  }, [path]);
 
   useEffect(() => {
     let nextModule = activeModule;
@@ -933,6 +943,12 @@ function Shell() {
                   <Link
                     key={item.to}
                     to={item.to}
+                    preload="intent"
+                    onClick={() => {
+                      if (item.to.startsWith("/social")) {
+                        socialNavClickAtRef.current = performance.now();
+                      }
+                    }}
                     title={item.label}
                     className={`group relative flex shrink-0 items-center gap-1.5 rounded-xl py-1.5 text-[12px] font-semibold whitespace-nowrap transition-all duration-200 px-2.5 ${
                       isActive

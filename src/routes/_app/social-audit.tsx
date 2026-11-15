@@ -33,10 +33,16 @@ import { supabase } from "@/integrations/supabase-external/client";
 import { toast } from "sonner";
 import { useGlobalDate } from "@/contexts/DateContext";
 import {
-  fetchLiveSocialAccounts,
-  fetchRealSocialInsights,
   type RealSocialPost,
 } from "@/lib/metaSocialService";
+import { useAuth } from "@/lib/auth";
+import { useSocialHubFilters } from "@/lib/socialHubStore";
+import {
+  useManualSocialSync,
+  useSocialAccountsQuery,
+  useSocialOverviewQuery,
+  useSocialPostsQuery,
+} from "@/hooks/useSocialHubData";
 import { computeSocialAuditNetworkSplit } from "@/lib/pageSanitizers";
 import { formatCivilDateBR } from "@/lib/metricsDomain";
 
@@ -79,49 +85,62 @@ function formatPct(n: number): string {
 }
 
 function SocialAuditPage() {
+  const { user } = useAuth();
+  const tenantId = user?.id || "default";
   const { dateFrom, dateTo } = useGlobalDate();
-  const [selectedPage, setSelectedPage] = useState<string>("all");
+  const { selectedPage, setSelectedPage, selectedNetwork } = useSocialHubFilters();
   const [activeTab, setActiveTab] = useState<"diagnostico" | "conteudo" | "estratégia">("diagnostico");
   const [chartDays, setChartDays] = useState<7 | 14 | 30>(14);
   const [chartMetric, setChartMetric] = useState<"reachIg" | "followers" | "engFb">("reachIg");
   const [isGeneratingPlan, setIsGeneratingPlan] = useState(false);
   const [organicPlan, setOrganicPlan] = useState<string | null>(null);
+  const { isSyncing, syncScope } = useManualSocialSync();
 
   const {
     data: accountsRes,
     isLoading: isLoadingAccounts,
-    refetch: refetchAccounts,
-  } = useQuery({
-    queryKey: ["real-social-accounts"],
-    queryFn: () => fetchLiveSocialAccounts(false),
-    staleTime: 5 * 60 * 1000,
-  });
+  } = useSocialAccountsQuery({ tenantId });
 
   const activePages = accountsRes?.accounts || [];
   const masterToken = accountsRes?.masterToken || null;
 
   const {
-    data: insightsRes,
-    isLoading: isLoadingInsights,
-    isFetching: isFetchingInsights,
-    refetch: refetchInsights,
-  } = useQuery({
-    queryKey: ["real-social-audit", selectedPage, dateFrom, dateTo, chartDays, activePages.length],
+    data: overviewRes,
+    isLoading: isLoadingOverview,
+    isFetching: isFetchingOverview,
+  } = useSocialOverviewQuery({
+    tenantId,
+    accounts: activePages,
+    selectedPage,
+    network: selectedNetwork,
+    masterToken,
+    dateFrom,
+    dateTo,
+    chartDaysOverride: chartDays,
     enabled: !isLoadingAccounts,
-    queryFn: () =>
-      fetchRealSocialInsights({
-        accounts: activePages,
-        selectedPageId: selectedPage,
-        dateFrom,
-        dateTo,
-        chartDaysOverride: chartDays,
-        masterToken,
-      }),
-    staleTime: 3 * 60 * 1000,
   });
 
-  const postsList = insightsRes?.posts || [];
-  const kpis = insightsRes?.kpis || {
+  const {
+    data: postsRes,
+    isLoading: isLoadingPosts,
+    isFetching: isFetchingPosts,
+  } = useSocialPostsQuery({
+    tenantId,
+    accounts: activePages,
+    selectedPage,
+    network: selectedNetwork,
+    masterToken,
+    dateFrom,
+    dateTo,
+    onlyInPeriod: false,
+    enabled: !isLoadingAccounts,
+  });
+
+  const isLoadingInsights = (isLoadingOverview && !overviewRes) || (isLoadingPosts && !postsRes);
+  const isFetchingInsights = isFetchingOverview || isFetchingPosts || isSyncing;
+  const fieldAvailability = overviewRes?.fieldAvailability;
+  const postsList = postsRes?.posts || [];
+  const kpis = overviewRes?.kpis || {
     followersIg: 0,
     followersFb: 0,
     newFollowersIg: 0,
@@ -137,7 +156,7 @@ function SocialAuditPage() {
   };
 
   const chartData = useMemo(() => {
-    const series = insightsRes?.dailySeries || [];
+    const series = overviewRes?.dailySeries || [];
     return series.map((d) => ({
       date: d.date,
       label: d.label,
@@ -145,7 +164,7 @@ function SocialAuditPage() {
       followers: d.newFollowersIg + d.newFollowersFb,
       engFb: d.engFb,
     }));
-  }, [insightsRes?.dailySeries]);
+  }, [overviewRes?.dailySeries]);
 
   const chartAverage = useMemo(() => {
     if (chartData.length === 0) return 0;
@@ -256,9 +275,20 @@ function SocialAuditPage() {
   }, [selectedPage, activePages]);
 
   const handleSync = async () => {
-    await refetchAccounts();
-    await refetchInsights();
-    toast.success("Auditoria orgânica sincronizada com os dados reais da Meta API!");
+    try {
+      await syncScope({
+        tenantId,
+        selectedPage,
+        network: selectedNetwork,
+        dateFrom,
+        dateTo,
+        chartDaysOverride: chartDays,
+        includeInsights: true,
+      });
+      toast.success("Auditoria orgânica sincronizada com os dados reais da Meta API!");
+    } catch (err: any) {
+      toast.error(`Erro ao sincronizar: ${err?.message || "Tente novamente."}`);
+    }
   };
 
   const generateGrowthPlan = async () => {
@@ -436,12 +466,19 @@ ${lowLines}
               Alcance Orgânico (IG)
             </span>
             <span className="text-xl font-black text-white block mt-1 font-mono">
-              {isLoadingInsights ? "..." : auditMetrics.totalReach.toLocaleString("pt-BR")}
+              {isLoadingInsights
+                ? "..."
+                : !overviewRes || (fieldAvailability?.reachIg && fieldAvailability.reachIg !== "available")
+                  ? "—"
+                  : auditMetrics.totalReach.toLocaleString("pt-BR")}
             </span>
           </div>
           <div className="flex items-center gap-1 text-[9px] text-muted-foreground font-bold mt-2">
             <TrendingUp className="w-3 h-3 text-emerald-400" />
-            Views IG: {kpis.viewsIg.toLocaleString("pt-BR")}
+            Views IG:{" "}
+            {!overviewRes || (fieldAvailability?.viewsIg && fieldAvailability.viewsIg !== "available")
+              ? "Indisponível"
+              : kpis.viewsIg.toLocaleString("pt-BR")}
           </div>
         </div>
 
@@ -471,7 +508,11 @@ ${lowLines}
               Total Interações Reais
             </span>
             <span className="text-xl font-black text-white block mt-1 font-mono">
-              {isLoadingInsights ? "..." : auditMetrics.totalInteractions.toLocaleString("pt-BR")}
+              {isLoadingInsights
+                ? "..."
+                : !postsRes && !overviewRes
+                  ? "—"
+                  : auditMetrics.totalInteractions.toLocaleString("pt-BR")}
             </span>
           </div>
           <div className="flex flex-col gap-0.5 text-[9px] text-muted-foreground font-bold mt-2">

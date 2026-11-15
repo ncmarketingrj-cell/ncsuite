@@ -17,6 +17,7 @@ import {
   type SocialSourceTelemetry,
   type SocialDataSourceKind,
 } from "./metaSocialErrors";
+import { recordSocialPerfEvent } from "./socialCacheDomain";
 
 const META_API_BASE = META_GRAPH_BASE;
 
@@ -331,6 +332,7 @@ async function fetchMetaJson(
 ): Promise<any> {
   const endpointLabel = url.split("?")[0].replace(META_API_BASE, "");
   const t0 = Date.now();
+  recordSocialPerfEvent("meta_call");
   try {
     const res = await metaFetchJsonWithRetry(url, {
       maxRetries: 1,
@@ -487,6 +489,7 @@ export async function fetchLiveSocialAccounts(
     };
   }
 
+  recordSocialPerfEvent("supabase_read");
   const [masterTokenRaw, dbPagesRes] = await Promise.all([
     getActiveMasterMetaToken().catch(() => null),
     supabase.from("social_pages").select("*").order("page_name").then((r) => r, () => ({ data: [] })),
@@ -575,6 +578,7 @@ export async function fetchLiveSocialAccounts(
     };
   }
 
+  recordSocialPerfEvent("meta_call");
   const mePaginated = await fetchMetaPaginatedList(
     "/me/accounts",
     masterToken,
@@ -2243,6 +2247,7 @@ export async function fetchRealPlannerPosts(params: {
   // 1. Buscar posts reais salvos no Supabase (`social_posts`), removendo resíduos mock
   let dbRows: PlannerPost[] = [];
   try {
+    recordSocialPerfEvent("supabase_read");
     let q = supabase.from("social_posts").select("*").order("created_at", { ascending: false });
     if (selectedPageId !== "all") {
       q = q.eq("page_id", selectedPageId);

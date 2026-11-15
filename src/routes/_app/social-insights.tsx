@@ -21,11 +21,6 @@ import { DateRangePicker } from "@/components/DateRangePicker";
 import { usePagePermission } from "@/hooks/usePagePermission";
 import { supabase } from "@/integrations/supabase-external/client";
 import {
-  fetchLiveSocialAccounts,
-  fetchAccountSocialOverview,
-  fetchAccountSocialPosts,
-  getLastValidSocialSnapshot,
-  saveLastValidSocialSnapshot,
   buildSocialSourceTelemetry,
   deriveOverallSocialState,
   isVictoriaSocialContextUsable,
@@ -39,6 +34,14 @@ import {
   type SocialSourceTelemetry,
   type SimulatedSocialFault,
 } from "@/lib/metaSocialService";
+import { useAuth } from "@/lib/auth";
+import { useSocialHubFilters } from "@/lib/socialHubStore";
+import {
+  useManualSocialSync,
+  useSocialAccountsQuery,
+  useSocialOverviewQuery,
+  useSocialPostsQuery,
+} from "@/hooks/useSocialHubData";
 import ReactMarkdown from "react-markdown";
 
 export const Route = createFileRoute("/_app/social-insights")({
@@ -186,18 +189,28 @@ const STATE_BADGE_META: Record<
 
 function SocialInsightsPage() {
   const qc = useQueryClient();
+  const { user } = useAuth();
+  const tenantId = user?.id || "default";
   const { canViewIntegrations } = usePagePermission();
+  const { selectedPage, setSelectedPage, selectedNetwork } = useSocialHubFilters();
+  const { isSyncing: isManualSyncing, syncScope } = useManualSocialSync();
+
   const initialUrlParams = useMemo(() => {
-    if (typeof window === "undefined") return { account: "all", fault: null as SimulatedSocialFault, onlyPeriod: false };
+    if (typeof window === "undefined") return { account: null as string | null, fault: null as SimulatedSocialFault, onlyPeriod: false };
     const sp = new URLSearchParams(window.location.search);
     return {
-      account: sp.get("account") || "all",
+      account: sp.get("account"),
       fault: resolveSimulatedSocialFault(sp.get("sim_fault")),
       onlyPeriod: sp.get("only_period") === "1" || sp.get("only_period") === "true",
     };
   }, []);
 
-  const [selectedPage, setSelectedPage] = useState(initialUrlParams.account);
+  useEffect(() => {
+    if (initialUrlParams.account) {
+      setSelectedPage(initialUrlParams.account);
+    }
+  }, [initialUrlParams.account, setSelectedPage]);
+
   const [simulatedFault, setSimulatedFault] = useState<SimulatedSocialFault>(initialUrlParams.fault);
   const [onlyPostsInPeriod, setOnlyPostsInPeriod] = useState<boolean>(initialUrlParams.onlyPeriod);
   const [visiblePostsLimit, setVisiblePostsLimit] = useState<number>(INITIAL_VISIBLE_POSTS);
@@ -212,8 +225,8 @@ function SocialInsightsPage() {
   const [aiReport, setAiReport] = useState<string | null>(null);
   const [aiReportTab, setAiReportTab] = useState<"general" | "content" | "public">("general");
 
-  const [isSyncing, setIsSyncing] = useState(false);
   const [lastSync, setLastSync] = useState<Date | null>(null);
+  const isSyncing = isManualSyncing;
   const [manualSyncTelemetry, setManualSyncTelemetry] = useState<SocialSourceTelemetry>(() =>
     buildSocialSourceTelemetry({
       source: "manualSync",
@@ -271,168 +284,54 @@ function SocialInsightsPage() {
     [setDateFrom, setDateTo]
   );
 
-  // 1. Contas reais conectadas no Meta (/me/accounts) — máximo 1 retry, AbortSignal real
+  // 1. Contas reais compartilhadas no cache do Hub Social (sem cancelamento ao trocar rota)
   const {
     data: liveAccountsData,
     isLoading: loadingAccounts,
     isFetching: fetchingAccounts,
     refetch: refetchAccounts,
-  } = useQuery({
-    queryKey: ["live_meta_social_accounts", simulatedFault === "token_expired" ? "sim_token_expired" : "live"],
-    queryFn: async ({ signal }) => {
-      accountsStartRef.current = new Date().toISOString();
-      return fetchLiveSocialAccounts(false, { signal, simulatedFault });
-    },
-    staleTime: 10 * 60 * 1000,
-    retry: 1,
-  });
+  } = useSocialAccountsQuery({ tenantId, simulatedFault });
 
   const activePages = liveAccountsData?.accounts || [];
   const masterToken = liveAccountsData?.masterToken || null;
   const hasMasterToken = Boolean(liveAccountsData?.hasMasterToken || masterToken);
 
-  // 2A. Visão Geral (identidade, seguidores, insights IG/FB, série diária e demográficos)
-  const overviewSnapshotKey = `overview:${selectedPage}:${dateFrom}:${dateTo}:${chartDaysWindow}`;
+  // 2A. Visão Geral compartilhada com SWR (renderiza snapshot imediato e revalida em segundo plano)
   const {
     data: overviewQueryData,
     isFetching: fetchingOverview,
     isError: overviewQueryFailed,
     refetch: refetchOverview,
-  } = useQuery({
-    queryKey: [
-      "real_social_overview_v21",
-      selectedPage,
-      dateFrom,
-      dateTo,
-      chartDaysWindow,
-      activePages.length,
-      simulatedFault || "none",
-    ],
+  } = useSocialOverviewQuery({
+    tenantId,
+    accounts: activePages,
+    selectedPage,
+    network: selectedNetwork,
+    masterToken,
+    dateFrom,
+    dateTo,
+    chartDaysOverride: chartDaysWindow,
+    simulatedFault,
     enabled: !loadingAccounts,
-    queryFn: async ({
-      signal,
-    }): Promise<SocialOverviewResult & { isFromFallback?: boolean; fallbackSnapshotAt?: string | null }> => {
-      overviewStartRef.current = new Date().toISOString();
-      const result = await fetchAccountSocialOverview({
-        accounts: activePages,
-        selectedPageId: selectedPage,
-        dateFrom,
-        dateTo,
-        chartDaysOverride: chartDaysWindow,
-        masterToken,
-        signal,
-        simulatedFault,
-      });
-      if (result.syncSource === "meta_graph_v21" && result.sectionStates.accountInsights.state !== "error") {
-        saveLastValidSocialSnapshot(overviewSnapshotKey, {
-          accounts: result.accounts,
-          dailySeries: result.dailySeries,
-          chartWindowDays: result.chartWindowDays,
-          kpis: result.kpis,
-          fieldAvailability: result.fieldAvailability,
-          demographics: result.demographics,
-          posts: [],
-          heatmapMatrix: Array.from({ length: 7 }, () => Array(24).fill(0)),
-          hasPostsForHeatmap: false,
-          syncSource: result.syncSource,
-          snapshotAt: result.snapshotAt,
-          windowUsed: result.windowUsed,
-        });
-        setLastSync(new Date());
-        return result;
-      }
-      const prev = getLastValidSocialSnapshot(overviewSnapshotKey);
-      if (prev && !simulatedFault && result.sectionStates.accountInsights.state === "error") {
-        return {
-          ...result,
-          kpis: prev.kpis,
-          dailySeries: prev.dailySeries,
-          demographics: prev.demographics,
-          fieldAvailability: prev.fieldAvailability || result.fieldAvailability,
-          isFromFallback: true,
-          fromCache: true,
-          fallbackSnapshotAt: prev.snapshotAt || null,
-        };
-      }
-      setLastSync(new Date());
-      return result;
-    },
-    staleTime: 3 * 60 * 1000,
-    retry: 1,
   });
 
-  // 2B. Publicações & Heatmap (consulta independente da visão geral)
-  const postsSnapshotKey = `posts:${selectedPage}:${onlyPostsInPeriod ? `${dateFrom}_${dateTo}` : "recent"}`;
+  // 2B. Publicações & Heatmap compartilhados com SWR
   const {
     data: postsQueryData,
     isFetching: fetchingPosts,
     isError: postsQueryFailed,
     refetch: refetchPosts,
-  } = useQuery({
-    queryKey: [
-      "real_social_posts_v21",
-      selectedPage,
-      activePages.length,
-      onlyPostsInPeriod ? `${dateFrom}_${dateTo}` : "recent",
-      simulatedFault || "none",
-    ],
+  } = useSocialPostsQuery({
+    tenantId,
+    accounts: activePages,
+    selectedPage,
+    network: selectedNetwork,
+    masterToken,
+    dateFrom,
+    dateTo,
+    onlyInPeriod: onlyPostsInPeriod,
+    simulatedFault,
     enabled: !loadingAccounts,
-    queryFn: async ({
-      signal,
-    }): Promise<SocialPostsResult & { isFromFallback?: boolean; fallbackSnapshotAt?: string | null }> => {
-      postsStartRef.current = new Date().toISOString();
-      const result = await fetchAccountSocialPosts({
-        accounts: activePages,
-        selectedPageId: selectedPage,
-        masterToken,
-        dateFrom,
-        dateTo,
-        onlyInPeriod: onlyPostsInPeriod,
-        signal,
-        simulatedFault,
-      });
-      if (
-        result.postsState.state === "success" ||
-        result.postsState.state === "partial" ||
-        result.postsState.state === "empty"
-      ) {
-        saveLastValidSocialSnapshot(postsSnapshotKey, {
-          accounts: activePages,
-          dailySeries: [],
-          chartWindowDays: chartDaysWindow,
-          kpis: {
-            followersIg: 0, followersFb: 0, newFollowersIg: 0, newFollowersFb: 0,
-            reachIg: 0, viewsIg: 0, viewsFb: 0, interactionsIg: 0, interactionsFb: 0,
-            accountsEngaged: 0, profileViews: 0, websiteClicks: 0,
-            reachDeltaPct: null, followersDeltaPct: null,
-          },
-          demographics: { available: false, totalSample: 0, gender: { male: 0, female: 0 }, age: [] },
-          posts: result.posts,
-          heatmapMatrix: result.heatmapMatrix,
-          hasPostsForHeatmap: result.hasPostsForHeatmap,
-          heatmapSampleSize: result.heatmapSampleSize,
-          syncSource: "meta_graph_v21",
-          snapshotAt: result.snapshotAt,
-        });
-        return result;
-      }
-      const prev = getLastValidSocialSnapshot(postsSnapshotKey);
-      if (prev && !simulatedFault && prev.posts.length > 0) {
-        return {
-          ...result,
-          posts: prev.posts,
-          heatmapMatrix: prev.heatmapMatrix,
-          hasPostsForHeatmap: prev.hasPostsForHeatmap,
-          heatmapSampleSize: prev.heatmapSampleSize || prev.posts.length,
-          isFromFallback: true,
-          fromCache: true,
-          fallbackSnapshotAt: prev.snapshotAt || null,
-        };
-      }
-      return result;
-    },
-    staleTime: 3 * 60 * 1000,
-    retry: 1,
   });
 
   // Sinaliza ao useAutoSync global para não disputar conexões durante o carregamento inicial de /social-insights
@@ -577,7 +476,6 @@ function SocialInsightsPage() {
   const handleManualSync = async () => {
     const startedAt = new Date().toISOString();
     const t0 = Date.now();
-    setIsSyncing(true);
     setManualSyncTelemetry(
       buildSocialSourceTelemetry({
         source: "manualSync",
@@ -588,16 +486,28 @@ function SocialInsightsPage() {
       })
     );
     try {
-      const bounded = <T,>(promise: Promise<T>, label: string, ms = 18_000) =>
+      const bounded = <T,>(promise: Promise<T>, label: string, ms = 22_000) =>
         Promise.race([
           promise,
           new Promise<never>((_, reject) =>
             setTimeout(() => reject(new Error(`Tempo limite excedido ao atualizar ${label}.`)), ms)
           ),
         ]);
-      const accSyncRes = await bounded(fetchLiveSocialAccounts(true, { simulatedFault }), "lista de contas Meta", 12_000);
-      await qc.invalidateQueries({ queryKey: ["live_meta_social_accounts"] });
-      await bounded(refetchAllSocial(), "métricas e publicações sociais", 18_000);
+      const accSyncRes = await bounded(
+        syncScope({
+          tenantId,
+          selectedPage,
+          network: selectedNetwork,
+          dateFrom,
+          dateTo,
+          chartDaysOverride: chartDaysWindow,
+          onlyInPeriod: onlyPostsInPeriod,
+          simulatedFault,
+          includeInsights: true,
+        }),
+        "contas e métricas sociais",
+        22_000
+      );
       const finishedAt = new Date().toISOString();
       setLastSync(new Date());
       setManualSyncTelemetry(
@@ -628,15 +538,13 @@ function SocialInsightsPage() {
           durationMs: Date.now() - t0,
           timeoutMs: 20_000,
           error: errMsg,
-          itemCount: 0,
+          itemCount: activePages.length,
           dataSource: "meta_graph_v21",
           snapshotAt: finishedAt,
           fromCache: false,
         })
       );
       toast.error(errMsg);
-    } finally {
-      setIsSyncing(false);
     }
   };
 
