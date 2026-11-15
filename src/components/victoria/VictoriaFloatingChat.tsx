@@ -97,6 +97,24 @@ interface VictoriaFloatingChatProps {
   lastSyncAt?: string | null;
 }
 
+interface RagSourceItem {
+  id: string;
+  title: string;
+  source: string;
+  category?: string;
+}
+
+function normalizeRagUiItems(
+  items: Array<{ id: string; title: string; source?: string; evidence_level?: string; version?: string; category?: string }> = []
+): RagSourceItem[] {
+  return items.map((item) => ({
+    id: item.id,
+    title: item.title,
+    source: item.source || [item.evidence_level, item.version].filter(Boolean).join(" · ") || "RAG",
+    category: item.category || item.evidence_level,
+  }));
+}
+
 interface ChatMsg {
   id: string;
   role: "assistant" | "user";
@@ -152,6 +170,7 @@ export const VictoriaFloatingChat: React.FC<VictoriaFloatingChatProps> = ({
   const [fallbackReason, setFallbackReason] = useState<string | null>(null);
   const [responseLatencyMs, setResponseLatencyMs] = useState<number | null>(null);
   const [ragCitations, setRagCitations] = useState<Array<{ id: string; title: string; source: string; category?: string }>>([]);
+  const [ragCandidatesCount, setRagCandidatesCount] = useState<number>(0);
   const activeFlowSeqRef = useRef<number>(0);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -245,6 +264,7 @@ export const VictoriaFloatingChat: React.FC<VictoriaFloatingChatProps> = ({
     setFallbackReason(null);
     setResponseLatencyMs(null);
     setRagCitations([]);
+    setRagCandidatesCount(0);
     setConversationId(null);
     conversationContextHashRef.current = null;
 
@@ -374,16 +394,21 @@ export const VictoriaFloatingChat: React.FC<VictoriaFloatingChatProps> = ({
           "A conexão com o modelo excedeu 20s; exibindo diagnóstico estruturado determinístico da entidade atual."
         );
       } else if (result.status === "CONTEXT_MISMATCH_BLOCKED" || !idCheck.valid) {
+        const mismatchFields = !idCheck.valid
+          ? idCheck.mismatches.join(", ")
+          : String(result.fallbackReason || "").replace(/^context_mismatch:/, "") || "identidade";
         setErrorState(
-          "Divergência de contexto detectada e bloqueada; exibindo diagnóstico determinístico isolado desta entidade."
+          `Divergência de contexto detectada (${mismatchFields}) e bloqueada; exibindo diagnóstico determinístico isolado desta entidade.`
         );
       }
 
+      const normalizedRag = normalizeRagUiItems(result.ragCitations || []);
       setRagSources(result.ragCitations || []);
-      setRagCitations(result.ragCitations || []);
+      setRagCitations(normalizedRag);
+      setRagCandidatesCount(result.ragCandidatesCount ?? (result.ragCitations?.length || 0));
       setResponseOrigin(result.responseOrigin);
-      setFallbackReason(result.fallbackReason);
-      setResponseLatencyMs(result.latencyMs);
+      setFallbackReason(result.fallbackReason ?? null);
+      setResponseLatencyMs(result.latencyMs ?? null);
       setMessages([
         {
           id: `diag_${ctxSnapshot.request_id}`,
@@ -547,11 +572,14 @@ export const VictoriaFloatingChat: React.FC<VictoriaFloatingChatProps> = ({
       );
 
       setResponseOrigin(result.responseOrigin);
-      setFallbackReason(result.fallbackReason);
-      setResponseLatencyMs(result.latencyMs);
+      setFallbackReason(result.fallbackReason ?? null);
+      setResponseLatencyMs(result.latencyMs ?? null);
       if (result.ragCitations && result.ragCitations.length > 0) {
         setRagSources(result.ragCitations);
-        setRagCitations(result.ragCitations);
+        setRagCitations(normalizeRagUiItems(result.ragCitations));
+        setRagCandidatesCount(result.ragCandidatesCount ?? result.ragCitations.length);
+      } else if (result.ragCandidatesCount !== undefined) {
+        setRagCandidatesCount(result.ragCandidatesCount);
       }
 
       if (result.timedOut) {
@@ -826,9 +854,13 @@ export const VictoriaFloatingChat: React.FC<VictoriaFloatingChatProps> = ({
                     {responseLatencyMs ? ` ${(responseLatencyMs / 1000).toFixed(1)}s` : ""}
                   </span>
                 )}
-                {ragCitations.length > 0 && (
-                  <span className="rounded px-1.5 py-0.5 font-mono text-[8px] font-bold bg-violet-500/10 text-violet-300 border border-violet-500/30">
+                {(ragCitations.length > 0 || ragCandidatesCount > 0) && (
+                  <span
+                    className="rounded px-1.5 py-0.5 font-mono text-[8px] font-bold bg-violet-500/10 text-violet-300 border border-violet-500/30"
+                    title={`${ragCitations.length} documento(s) citado(s) na resposta de ${Math.max(ragCandidatesCount, ragCitations.length)} candidato(s) recuperado(s)`}
+                  >
                     📚 {ragCitations.length}
+                    {ragCandidatesCount > ragCitations.length ? `/${ragCandidatesCount}` : ""}
                   </span>
                 )}
                 <span className="font-mono text-[8px] text-muted-foreground/60 truncate">
@@ -860,7 +892,8 @@ export const VictoriaFloatingChat: React.FC<VictoriaFloatingChatProps> = ({
                   Campos ausentes: {activeContext.missing_fields.join(", ") || "Nenhum"}
                 </p>
                 <p className="text-muted-foreground">
-                  Fontes RAG ({ragSources.length}):{" "}
+                  Fontes RAG citadas ({ragSources.length}
+                  {ragCandidatesCount > ragSources.length ? ` de ${ragCandidatesCount} candidatas recuperadas` : ""}):{" "}
                   {ragSources.length > 0
                     ? ragSources.map((r) => `${r.title} [v${r.version} · ${r.evidence_level}]`).join(" | ")
                     : "Base normativa padrão do contrato"}

@@ -1,6 +1,8 @@
 export const VICTORIA_CONTRACT_VERSION = "2026.11.4";
 export const VICTORIA_PROMPT_VERSION = "2026.11.4-senior-10part";
 export const VICTORIA_DEFAULT_OPERATIONAL_MODE = "READ_ONLY_ANALYSIS" as const;
+export const DEFAULT_SYNC_STALE_THRESHOLD_MINUTES = 30;
+export const SYNC_DISPLAY_TIMEZONE = "America/Sao_Paulo";
 
 export const MANDATORY_10_SECTION_TITLES = [
   "Escopo analisado",
@@ -274,7 +276,7 @@ export function generateDeterministic10SectionAnalysis(
 
   const sourcesLine =
     ragDocs.length > 0
-      ? `- **Documentos RAG aprovados recuperados (${ragDocs.length}):** ${ragDocs
+      ? `- **Documentos RAG curados aplicados (${ragDocs.length}):** ${ragDocs
           .map((d) => `\`[${d.id}]\` **${d.title}** (\`${d.evidence_level}\` · v\`${d.version}\` · status \`${d.approval_status}\`)`)
           .join("; ")}.`
       : `- **Base de conhecimento RAG:** Nenhum documento pertinente foi recuperado na base para este diagnóstico isolado; aplicado contrato canônico \`${VICTORIA_CONTRACT_VERSION}\`.`;
@@ -290,7 +292,7 @@ export function generateDeterministic10SectionAnalysis(
     "",
     `#### 1. Escopo analisado`,
     `- **Conta:** ${ctx?.ad_account_name || "Conta Meta Ads"} (\`${ctx?.ad_account_id || "all"}\`) | **Entidade:** ${ctx?.entity_name || ""} (\`${ctx?.entity_level || "campaign"}\` · ID \`${ctx?.entity_id || ""}\`)`,
-    `- **Período:** ${periodText} | **Frescor do Snapshot:** ${p.last_sync_at ? `${p.last_sync_at} (\`${p.data_freshness || "unknown"}\`)` : `\`${p.data_freshness || "unknown"}\``}`,
+    `- **Período:** ${periodText} | **Frescor do Snapshot:** ${formatVictoriaFreshnessLabelServer(p)}`,
     `- **Contrato:** \`${VICTORIA_CONTRACT_VERSION}\` | **Prompt:** \`${VICTORIA_PROMPT_VERSION}\` | **Hash:** \`${ctx?.analysis_context_hash || ""}\``,
     "",
     `#### 2. Objetivo e evento oficial`,
@@ -328,6 +330,59 @@ export function generateDeterministic10SectionAnalysis(
   ].join("\n");
 }
 
+export function formatVictoriaFreshnessLabelServer(period: any): string {
+  const rawTs = period?.last_sync_at;
+  if (!rawTs) return "Horário indisponível (`unknown`)";
+  let norm = String(rawTs).trim();
+  if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}/.test(norm)) norm = norm.replace(" ", "T");
+  if (/([+-]\d{2})$/.test(norm)) norm = `${norm}:00`;
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?$/.test(norm)) norm = `${norm}Z`;
+  const ms = Date.parse(norm);
+  if (!Number.isFinite(ms)) return `${rawTs} (\`${period?.data_freshness || "unknown"}\`)`;
+  const ageMin = Math.max(0, Math.round((Date.now() - ms) / 60000));
+  const isStale = ageMin > DEFAULT_SYNC_STALE_THRESHOLD_MINUTES;
+  const brt = new Intl.DateTimeFormat("pt-BR", {
+    timeZone: SYNC_DISPLAY_TIMEZONE,
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  }).format(new Date(ms));
+  return isStale
+    ? `Dados defasados há ${ageMin} min (${brt} BRT · \`stale\`)`
+    : `Atualizado há ${ageMin} min (${brt} BRT · \`fresh\`)`;
+}
+
+export function selectUsedRagCitations(
+  text: string,
+  candidates: ServerRagCitation[] = []
+): ServerRagCitation[] {
+  if (!text || !Array.isArray(candidates) || candidates.length === 0) return [];
+  const lower = String(text).toLowerCase();
+  const matched: ServerRagCitation[] = [];
+  const seen = new Set<string>();
+  for (const doc of candidates) {
+    const id = String(doc?.id || "");
+    if (!id || seen.has(id)) continue;
+    const titlePrefix = String(doc?.title || "")
+      .toLowerCase()
+      .replace(/[^a-zà-ú0-9\s]/gi, " ")
+      .trim()
+      .slice(0, 26)
+      .trim();
+    const idMatched = lower.includes(id.toLowerCase());
+    const titleMatched = titlePrefix.length >= 10 && lower.includes(titlePrefix);
+    if (idMatched || titleMatched) {
+      seen.add(id);
+      matched.push(doc);
+    }
+  }
+  return matched;
+}
+
 export function enforceServerPostLlmGuardrails(
   rawText: string,
   analysisContext?: any,
@@ -338,10 +393,12 @@ export function enforceServerPostLlmGuardrails(
   text: string;
   replacedByDeterministic: boolean;
   reasons: string[];
+  citationsUsed: ServerRagCitation[];
 } {
   const sanitized = sanitizeVictoriaServerOutput(rawText, analysisContext, operationalMode);
   if (!analysisContext || !analysisContext.entity_id) {
-    return { text: sanitized, replacedByDeterministic: false, reasons: [] };
+    const usedGeneral = selectUsedRagCitations(sanitized, ragCitations);
+    return { text: sanitized, replacedByDeterministic: false, reasons: [], citationsUsed: usedGeneral };
   }
 
   const reasons: string[] = [];
@@ -361,32 +418,39 @@ export function enforceServerPostLlmGuardrails(
   }
 
   if (reasons.length > 0) {
+    const fallbackDocs =
+      ragCitations.length > 0
+        ? ragCitations.slice(0, 4)
+        : Array.isArray(analysisContext?.governance_and_benchmarks?.rag_documents)
+        ? analysisContext.governance_and_benchmarks.rag_documents
+        : [];
     return {
-      text: generateDeterministic10SectionAnalysis(analysisContext, ragCitations),
+      text: generateDeterministic10SectionAnalysis(analysisContext, fallbackDocs),
       replacedByDeterministic: true,
       reasons,
+      citationsUsed: fallbackDocs,
     };
   }
 
   let finalOut = sanitized;
+  let usedDocs = selectUsedRagCitations(finalOut, ragCitations);
   if (ragCitations.length > 0) {
-    const missingAnyDoc = ragCitations.some(
-      (d) => !finalOut.includes(d.id) && !finalOut.toLowerCase().includes(String(d.title || "").toLowerCase().slice(0, 28))
-    );
     const falselyStatesNone = /nenhum\s+documento\s+(espec[íi]fico|pertinente|recuperado|utilizado)/i.test(finalOut);
-    if (missingAnyDoc || falselyStatesNone) {
+    if (usedDocs.length === 0 || falselyStatesNone) {
+      const topApplied = ragCitations.slice(0, Math.min(ragCitations.length, 3));
       const cleanBody = finalOut
         .replace(/-?\s*\*?\*?Base de conhecimento RAG:\*?\*?[^\n]*nenhum documento[^\n]*/gi, "")
         .trim();
-      const citationBullets = ragCitations
+      const citationBullets = topApplied
         .map(
           (d) =>
             `- \`[${d.id}]\` **${d.title}** (\`${d.evidence_level}\` · v\`${d.version}\` · status \`${d.approval_status}\`)`
         )
         .join("\n");
-      finalOut = `${cleanBody}\n\n- **Fontes RAG curadas aplicadas (${ragCitations.length}):**\n${citationBullets}`;
+      finalOut = `${cleanBody}\n\n- **Fontes RAG curadas aplicadas (${topApplied.length} de ${ragCitations.length} candidatas):**\n${citationBullets}`;
+      usedDocs = topApplied;
     }
   }
 
-  return { text: finalOut, replacedByDeterministic: false, reasons: [] };
+  return { text: finalOut, replacedByDeterministic: false, reasons: [], citationsUsed: usedDocs };
 }

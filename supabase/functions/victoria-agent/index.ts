@@ -13,6 +13,7 @@ import {
   VICTORIA_DEFAULT_OPERATIONAL_MODE,
   enforceServerPostLlmGuardrails,
   sanitizeVictoriaServerOutput,
+  selectUsedRagCitations,
   generateDeterministic10SectionAnalysis,
   type ServerRagCitation,
 } from "../_shared/victoriaCore.ts";
@@ -1680,6 +1681,21 @@ REGRAS DE RESPOSTA (${VICTORIA_CONTRACT_VERSION}):
     };
 
     try {
+      const contextDocs = Array.isArray(analysisContext?.governance_and_benchmarks?.rag_documents)
+        ? analysisContext.governance_and_benchmarks.rag_documents
+        : [];
+      for (const cd of contextDocs) {
+        if (
+          cd &&
+          cd.approval_status === "APPROVED" &&
+          cd.evidence_level !== "UNVERIFIED" &&
+          cd.evidence_level !== "OPINION"
+        ) {
+          addCitation(cd);
+          knowledgeCtx += `${knowledgeCtx ? "\n\n---\n\n" : ""}[ID: ${cd.id} | CONTEXTO | Fonte: ${String(cd.source || "NC Performance")} | Evidência: ${String(cd.evidence_level || "INTERNAL_RULE")} | v${String(cd.version || VICTORIA_CONTRACT_VERSION)}] ${String(cd.title || "")}:\n${String(cd.content || "").slice(0, 650)}`;
+        }
+      }
+
       const { data: allKnowledge, error: kErr } = await supabase
         .from("victoria_knowledge")
         .select("id, category, title, content, source, evidence_level, approval_status, version, objective, priority")
@@ -1839,7 +1855,7 @@ REGRAS DE RESPOSTA (${VICTORIA_CONTRACT_VERSION}):
       const financialSnapshot = analysisContext.financial || {};
       const benchSnapshot = analysisContext.governance_and_benchmarks || {};
 
-      promptWithRAG += `\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nCONTRATO CANÔNICO DE CONTEXTO ATIVO (VictoriaAnalysisContext ${VICTORIA_CONTRACT_VERSION}):\n- Request ID: ${analysisContext.request_id || "n/a"} | Context Hash: ${analysisContext.analysis_context_hash || "n/a"}\n- Modo Operacional: ${operationalMode}\n- Entidade Analisada: [${analysisContext.entity_level || "campaign"}] ${analysisContext.entity_name || ""} (ID: ${analysisContext.entity_id || ""})\n- Conta: ${analysisContext.ad_account_name || ""} (${analysisContext.ad_account_id || ""})\n- Período: ${ctxDateFrom || startDateStr} a ${ctxDateTo || endDateStr} (${ctxDaysCount} dia(s)) | Last Sync: ${analysisContext.period?.last_sync_at || "n/a"} (${analysisContext.period?.data_freshness || "unknown"})\n- Categoria / Evento Oficial: ${cat} | Indicador Oficial de Custo: **${costLbl}**\n- Financeiro Oficial: ${JSON.stringify(financialSnapshot)}\n- Métricas Oficiais no Contrato: ${JSON.stringify(rawMetricsSnapshot)}\n- Benchmarks Homogêneos: avg=${benchSnapshot.comparable_same_objective_avg ?? "null"}, comparáveis=${benchSnapshot.comparable_peer_count ?? 0}, meta_conta=${benchSnapshot.account_max_cpl_target ?? "null"}\n- Rótulos PROIBIDOS para esta entidade: ${forbidden || "Nenhum"}\n- Nível de Confiança Calibrado: **${String(analysisContext.confidence_level || "baixa").toUpperCase()}** (${analysisContext.confidence_justification || analysisContext.confidence_reason || ""})\n- Campos Ausentes: ${Array.isArray(analysisContext.missing_fields) ? analysisContext.missing_fields.join(", ") : "nenhum"}\n- REGRA DE ISOLAMENTO ABSOLUTO: Analise EXCLUSIVAMENTE a entidade "${analysisContext.entity_name || ""}". É TERMINANTEMENTE PROIBIDO citar estas entidades irmãs da conta: ${siblingList || "outras campanhas"}.\n- CITAÇÃO OBRIGATÓRIA DE FONTES (Seção 10): ${ragCitations.length > 0 ? `Cite explicitamente os ${ragCitations.length} documento(s) RAG recuperado(s) abaixo pelo título e ID.` : "Nenhum documento RAG recuperado; informe honestamente que aplicou o contrato canônico sem documentos extras."}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+      promptWithRAG += `\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nCONTRATO CANÔNICO DE CONTEXTO ATIVO (VictoriaAnalysisContext ${VICTORIA_CONTRACT_VERSION}):\n- Request ID: ${analysisContext.request_id || "n/a"} | Context Hash: ${analysisContext.analysis_context_hash || "n/a"}\n- Modo Operacional: ${operationalMode}\n- Entidade Analisada: [${analysisContext.entity_level || "campaign"}] ${analysisContext.entity_name || ""} (ID: ${analysisContext.entity_id || ""})\n- Conta: ${analysisContext.ad_account_name || ""} (${analysisContext.ad_account_id || ""})\n- Período: ${ctxDateFrom || startDateStr} a ${ctxDateTo || endDateStr} (${ctxDaysCount} dia(s)) | Last Sync: ${analysisContext.period?.last_sync_at || "n/a"} (${analysisContext.period?.data_freshness || "unknown"})\n- Categoria / Evento Oficial: ${cat} | Indicador Oficial de Custo: **${costLbl}**\n- Financeiro Oficial: ${JSON.stringify(financialSnapshot)}\n- Métricas Oficiais no Contrato: ${JSON.stringify(rawMetricsSnapshot)}\n- Benchmarks Homogêneos: avg=${benchSnapshot.comparable_same_objective_avg ?? "null"}, comparáveis=${benchSnapshot.comparable_peer_count ?? 0}, meta_conta=${benchSnapshot.account_max_cpl_target ?? "null"}\n- Rótulos PROIBIDOS para esta entidade: ${forbidden || "Nenhum"}\n- Nível de Confiança Calibrado: **${String(analysisContext.confidence_level || "baixa").toUpperCase()}** (${analysisContext.confidence_justification || analysisContext.confidence_reason || ""})\n- Campos Ausentes: ${Array.isArray(analysisContext.missing_fields) ? analysisContext.missing_fields.join(", ") : "nenhum"}\n- REGRA DE ISOLAMENTO ABSOLUTO: Analise EXCLUSIVAMENTE a entidade "${analysisContext.entity_name || ""}". É TERMINANTEMENTE PROIBIDO citar estas entidades irmãs da conta: ${siblingList || "outras campanhas"}.\n- CITAÇÃO OBRIGATÓRIA DE FONTES (Seção 10): ${ragCitations.length > 0 ? `Foram recuperados ${ragCitations.length} documento(s) candidato(s) na base curada RAG abaixo. Na Seção 10, cite APENAS os documentos efetivamente utilizados e pertinentes ao objetivo desta entidade (pelo ID e título exato) e informe a contagem real de usados vs recuperados.` : "Nenhum documento RAG recuperado; informe honestamente que aplicou o contrato canônico sem documentos extras."}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
     }
     if (knowledgeCtx) {
       promptWithRAG += `\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nBASE DE CONHECIMENTO CURADA NC PERFORMANCE (APENAS APPROVED — Prioridade: 1º Dados Reais da Conta > 2º Metas da Conta > 3º Documentos RAG abaixo):\n\n${knowledgeCtx}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
@@ -1936,7 +1952,11 @@ REGRAS DE RESPOSTA (${VICTORIA_CONTRACT_VERSION}):
       } catch {}
     };
 
-    const buildResponseMetadata = (providerUsed?: string, usedFallback?: boolean) => ({
+    const buildResponseMetadata = (
+      providerUsed?: string,
+      usedFallback?: boolean,
+      usedCitations?: ServerRagCitation[]
+    ) => ({
       request_id: analysisContext?.request_id || null,
       analysis_context_hash: analysisContext?.analysis_context_hash || null,
       ad_account_id: analysisContext?.ad_account_id || selectedAccountId || null,
@@ -1944,14 +1964,18 @@ REGRAS DE RESPOSTA (${VICTORIA_CONTRACT_VERSION}):
       entity_id: analysisContext?.entity_id || null,
       date_from: ctxDateFrom || startDateStr,
       date_to: ctxDateTo || endDateStr,
-      result_indicator: analysisContext?.result_indicator || null,
+      result_indicator:
+        typeof analysisContext?.result_indicator === "string"
+          ? analysisContext.result_indicator
+          : analysisContext?.result_indicator?.code || null,
       contract_version: VICTORIA_CONTRACT_VERSION,
       prompt_version: VICTORIA_PROMPT_VERSION,
       operational_mode: operationalMode,
       model_version: userModelName,
       provider_used: providerUsed || null,
       temperature: userTemperature,
-      rag_citations: ragCitations,
+      rag_citations: usedCitations ?? [],
+      rag_candidates_count: ragCitations.length,
       rag_retrieval_mode: ragRetrievalMode,
       vector_match_count: vectorMatchCount,
       response_origin: usedFallback ? "deterministic_fallback" : "generative",
@@ -2013,7 +2037,7 @@ REGRAS DE RESPOSTA (${VICTORIA_CONTRACT_VERSION}):
             replaced_by_deterministic: guarded.replacedByDeterministic,
             guardrail_reasons: guarded.reasons,
             latency_ms: Date.now() - requestStartedAt,
-            ...buildResponseMetadata(activeProviderName, guarded.replacedByDeterministic),
+            ...buildResponseMetadata(activeProviderName, guarded.replacedByDeterministic, guarded.citationsUsed),
           }), {
             headers: { ...corsHeaders, "Content-Type": "application/json" }
           });
@@ -2086,7 +2110,8 @@ REGRAS DE RESPOSTA (${VICTORIA_CONTRACT_VERSION}):
                     response_origin: guarded.replacedByDeterministic ? "deterministic_fallback" : "generative",
                     replaced_by_deterministic: guarded.replacedByDeterministic,
                     guardrail_reasons: guarded.reasons,
-                    rag_citations: ragCitations,
+                    rag_citations: guarded.citationsUsed,
+                    rag_candidates_count: ragCitations.length,
                     final_text: guarded.text,
                     latency_ms: latencyMs,
                     provider_used: activeProviderName,
@@ -2094,6 +2119,7 @@ REGRAS DE RESPOSTA (${VICTORIA_CONTRACT_VERSION}):
                 });
               } else {
                 const cleanHubText = sanitizeVictoriaServerOutput(assembled, analysisContext, operationalMode);
+                const usedGeneralCitations = selectUsedRagCitations(cleanHubText, ragCitations);
                 const latencyMs = Date.now() - requestStartedAt;
                 await finalizeTelemetry({
                   usedFallback: false,
@@ -2105,7 +2131,8 @@ REGRAS DE RESPOSTA (${VICTORIA_CONTRACT_VERSION}):
                     response_origin: "generative",
                     replaced_by_deterministic: false,
                     guardrail_reasons: [],
-                    rag_citations: ragCitations,
+                    rag_citations: usedGeneralCitations,
+                    rag_candidates_count: ragCitations.length,
                     final_text: cleanHubText,
                     latency_ms: latencyMs,
                     provider_used: activeProviderName,
@@ -2133,9 +2160,10 @@ REGRAS DE RESPOSTA (${VICTORIA_CONTRACT_VERSION}):
       }
     }
 
+    const fallbackUsedDocs = analysisContext && analysisContext.entity_id ? ragCitations.slice(0, 4) : [];
     // Fallback determinístico completo se nenhum provedor respondeu
     const deterministicFallback = analysisContext && analysisContext.entity_id
-      ? generateDeterministic10SectionAnalysis(analysisContext, ragCitations)
+      ? generateDeterministic10SectionAnalysis(analysisContext, fallbackUsedDocs)
       : `### Victoria AI (${VICTORIA_CONTRACT_VERSION})\n\nDesculpe, ${userName}, houve indisponibilidade momentânea do provedor de IA (${lastProviderError || "sem conexão"}). Os dados oficiais continuam ativos — informe qual conta ou campanha deseja auditar.`;
 
     await finalizeTelemetry({
@@ -2151,14 +2179,14 @@ REGRAS DE RESPOSTA (${VICTORIA_CONTRACT_VERSION}):
         replaced_by_deterministic: true,
         guardrail_reasons: ["provider_unavailable", lastProviderError].filter(Boolean),
         latency_ms: Date.now() - requestStartedAt,
-        ...buildResponseMetadata(activeProviderName || "deterministic", true),
+        ...buildResponseMetadata(activeProviderName || "deterministic", true, fallbackUsedDocs),
       }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" }
       });
     }
 
     const encoder = new TextEncoder();
-    const metaFallback = `data: ${JSON.stringify({ victoria_meta: buildResponseMetadata(activeProviderName || "deterministic", true) })}\n\n`;
+    const metaFallback = `data: ${JSON.stringify({ victoria_meta: buildResponseMetadata(activeProviderName || "deterministic", true, fallbackUsedDocs) })}\n\n`;
     const sseChunk = `data: ${JSON.stringify({
       choices: [{ delta: { content: deterministicFallback } }]
     })}\n\n`;
@@ -2167,7 +2195,8 @@ REGRAS DE RESPOSTA (${VICTORIA_CONTRACT_VERSION}):
         response_origin: "deterministic_fallback",
         replaced_by_deterministic: true,
         guardrail_reasons: ["provider_unavailable", lastProviderError].filter(Boolean),
-        rag_citations: ragCitations,
+        rag_citations: fallbackUsedDocs,
+        rag_candidates_count: ragCitations.length,
         final_text: deterministicFallback,
         latency_ms: Date.now() - requestStartedAt,
       }

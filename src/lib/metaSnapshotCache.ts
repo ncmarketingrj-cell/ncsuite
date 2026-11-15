@@ -67,6 +67,8 @@ interface SharedTelemetryState {
   latestSyncRun: SyncRunRecord | null;
   lastCommittedRun: SyncRunRecord | null;
   accounts: SyncAccountRecord[];
+  publicIsSyncing: boolean;
+  publicCommittedAt: string | null;
   fetchedAtMs: number;
 }
 
@@ -74,6 +76,8 @@ let sharedTelemetry: SharedTelemetryState = {
   latestSyncRun: null,
   lastCommittedRun: null,
   accounts: [],
+  publicIsSyncing: false,
+  publicCommittedAt: null,
   fetchedAtMs: 0,
 };
 
@@ -210,6 +214,27 @@ async function queryLatestSyncHistoryRows(): Promise<{
   }
 }
 
+async function queryPublicSyncActivity(): Promise<{
+  is_syncing: boolean;
+  committed_at: string | null;
+}> {
+  try {
+    const { data, error } = await (supabase as any).rpc("get_public_sync_activity");
+    if (error || !data || typeof data !== "object") {
+      return { is_syncing: false, committed_at: null };
+    }
+    return {
+      is_syncing: Boolean((data as any).is_syncing),
+      committed_at:
+        normalizeTimestampToEpochMs((data as any).committed_at) !== null
+          ? String((data as any).committed_at)
+          : null,
+    };
+  } catch {
+    return { is_syncing: false, committed_at: null };
+  }
+}
+
 async function queryAdAccountsFreshness(): Promise<SyncAccountRecord[]> {
   try {
     const { data, error } = await (supabase as any)
@@ -251,13 +276,28 @@ export async function refreshSharedSyncTelemetry(force: boolean = false): Promis
         return sharedTelemetry;
       }
 
+      // Quando sync_history retorna vazio por RLS (usuários sem acesso técnico a integrações),
+      // consulta apenas { is_syncing, committed_at } públicos para spinner discreto e frescor interno.
+      const needsPublicRpc = !latestRun && !lastCommitted;
+      const publicActivity = needsPublicRpc
+        ? await queryPublicSyncActivity()
+        : { is_syncing: false, committed_at: null };
+
+      if (reqSeq < telemetryRequestSeq) {
+        return sharedTelemetry;
+      }
+
       const prevCommittedId = sharedTelemetry.lastCommittedRun?.id || null;
-      const remoteActiveNow = isSyncJobActivelyRunning(latestRun, Date.now());
+      const prevCommittedAt =
+        sharedTelemetry.lastCommittedRun?.completed_at || sharedTelemetry.publicCommittedAt || null;
+      const remoteActiveNow = isSyncJobActivelyRunning(latestRun, Date.now()) || publicActivity.is_syncing;
 
       sharedTelemetry = {
         latestSyncRun: latestRun,
         lastCommittedRun: lastCommitted,
         accounts,
+        publicIsSyncing: publicActivity.is_syncing,
+        publicCommittedAt: publicActivity.committed_at,
         fetchedAtMs: Date.now(),
       };
 
@@ -274,23 +314,38 @@ export async function refreshSharedSyncTelemetry(force: boolean = false): Promis
             source: "sync_history",
           });
         }
+      } else if (publicActivity.committed_at) {
+        const cur = getActiveMetaSnapshot();
+        const curMs = normalizeTimestampToEpochMs(cur.committedAt) ?? 0;
+        const nextMs = normalizeTimestampToEpochMs(publicActivity.committed_at) ?? 0;
+        if (nextMs > curMs) {
+          publishActiveMetaSnapshot({
+            snapshotId: "public",
+            committedAt: publicActivity.committed_at,
+            tenantId: cur.tenantId || "default-tenant",
+            source: "public_activity",
+          });
+        }
       }
+
+      const effectiveCommittedId = lastCommitted?.id || (publicActivity.committed_at ? `public_${publicActivity.committed_at}` : null);
+      const effectiveCommittedAt = lastCommitted?.completed_at || publicActivity.committed_at || "";
 
       // Detecta transição de execução remota -> concluído (cron ou outro cliente) e atualiza queries
       const finishedRemoteRun =
         wasRemoteJobActive &&
         !remoteActiveNow &&
-        lastCommitted?.id &&
-        lastCommitted.id !== prevCommittedId &&
-        lastCommitted.id !== lastInvalidatedRunId;
+        effectiveCommittedId &&
+        (effectiveCommittedId !== prevCommittedId && effectiveCommittedAt !== prevCommittedAt) &&
+        effectiveCommittedId !== lastInvalidatedRunId;
 
       wasRemoteJobActive = remoteActiveNow;
-      if (finishedRemoteRun && registeredQueryClient && lastCommitted?.id) {
-        lastInvalidatedRunId = lastCommitted.id;
+      if (finishedRemoteRun && registeredQueryClient && effectiveCommittedId) {
+        lastInvalidatedRunId = effectiveCommittedId;
         await invalidateMetaSnapshotConsumers({
           queryClient: registeredQueryClient,
-          snapshotId: lastCommitted.id,
-          committedAt: lastCommitted.completed_at || "",
+          snapshotId: lastCommitted?.id || "public",
+          committedAt: effectiveCommittedAt,
         });
       }
 
@@ -436,7 +491,7 @@ function buildActiveSnapshotView(options: { tenantId?: string | null; accountId?
   const lastCommitted = sharedTelemetry.lastCommittedRun;
   const latestRun = sharedTelemetry.latestSyncRun;
   const localLock = readValidatedLocalSyncStatus();
-  const remoteActive = isSyncJobActivelyRunning(latestRun);
+  const remoteActive = isSyncJobActivelyRunning(latestRun) || sharedTelemetry.publicIsSyncing;
   const isMetaSyncRunning = Boolean(localLock.isSyncing || remoteActive);
 
   const matchedAcc = accountId
@@ -446,12 +501,12 @@ function buildActiveSnapshotView(options: { tenantId?: string | null; accountId?
     ? String(matchedAcc.last_sync)
     : null;
 
-  const resolvedSnapshotId = String(lastCommitted?.id || stored.snapshotId || "initial");
+  const resolvedSnapshotId = String(lastCommitted?.id || (sharedTelemetry.publicCommittedAt ? "public" : null) || stored.snapshotId || "initial");
   const resolvedCommittedAt = accountId
     ? (accountLastSyncAt || "")
     : (lastCommitted?.completed_at && normalizeTimestampToEpochMs(lastCommitted.completed_at) !== null
         ? String(lastCommitted.completed_at)
-        : stored.committedAt || "");
+        : sharedTelemetry.publicCommittedAt || stored.committedAt || "");
 
   return {
     ...stored,

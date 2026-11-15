@@ -344,6 +344,7 @@ export interface ExecuteVictoriaDiagnosticResult {
     evidence_level: string;
     approval_status: string;
   }>;
+  ragCandidatesCount?: number;
   responseMeta?: Record<string, any> | null;
 }
 
@@ -488,6 +489,7 @@ export async function executeGovernedVictoriaDiagnostic(
     let rawAccumulated = "";
     let responseMeta: Record<string, any> | null = null;
     let ragCitations: ExecuteVictoriaDiagnosticResult["ragCitations"] = [];
+    let ragCandidatesCount = 0;
     let serverUsedFallback = false;
     let serverFallbackReason: string | null = null;
     let serverLatencyMs: number | undefined;
@@ -545,6 +547,9 @@ export async function executeGovernedVictoriaDiagnostic(
             const parsed = JSON.parse(jsonStr);
             if (parsed.victoria_meta) {
               responseMeta = parsed.victoria_meta;
+              if (typeof parsed.victoria_meta.rag_candidates_count === "number") {
+                ragCandidatesCount = parsed.victoria_meta.rag_candidates_count;
+              }
               const metaDocs = parsed.victoria_meta.rag_citations ?? parsed.victoria_meta.rag_docs;
               if (Array.isArray(metaDocs) && metaDocs.length > 0) {
                 ragCitations = metaDocs;
@@ -559,7 +564,10 @@ export async function executeGovernedVictoriaDiagnostic(
                 serverUsedFallback = true;
                 serverFallbackReason = Array.isArray(vf.guardrail_reasons) ? vf.guardrail_reasons.join(", ") : "server_fallback";
               }
-              if (Array.isArray(vf.rag_citations) && vf.rag_citations.length > 0) {
+              if (typeof vf.rag_candidates_count === "number") {
+                ragCandidatesCount = vf.rag_candidates_count;
+              }
+              if (Array.isArray(vf.rag_citations)) {
                 ragCitations = vf.rag_citations;
               }
               if (typeof vf.final_text === "string" && vf.final_text.trim()) {
@@ -614,7 +622,11 @@ export async function executeGovernedVictoriaDiagnostic(
           contract_version: data.contract_version,
           prompt_version: data.prompt_version,
           rag_citations: data.rag_citations,
+          rag_candidates_count: data.rag_candidates_count,
         };
+        if (typeof data.rag_candidates_count === "number") {
+          ragCandidatesCount = data.rag_candidates_count;
+        }
         if (Array.isArray(data.rag_citations)) {
           ragCitations = data.rag_citations;
         }
@@ -677,6 +689,7 @@ export async function executeGovernedVictoriaDiagnostic(
           suggestedQuestions,
           context: ctx,
           ragCitations,
+          ragCandidatesCount: Math.max(ragCandidatesCount, ragCitations?.length || 0),
           responseMeta,
         };
       }
@@ -753,6 +766,7 @@ export async function executeGovernedVictoriaDiagnostic(
       suggestedQuestions,
       context: enrichedCtx,
       ragCitations,
+      ragCandidatesCount: Math.max(ragCandidatesCount, ragCitations?.length || 0),
       responseMeta,
     };
   } catch (err: any) {
@@ -869,7 +883,7 @@ export function buildContextFromCreativeItem(
     odax_objective: record.rawObjective,
     optimization_goal: record.optimizationGoal,
     result_type: record.resultLabel,
-    result_indicator: record.shortBadge,
+    result_indicator: record.resultIndicator || record.resultLabel,
     spend: record.spend,
     impressions: record.impressions,
     reach: record.reach,

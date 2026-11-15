@@ -1,10 +1,15 @@
 import { useMemo, useState } from "react";
-import { AlertTriangle, Bot, CheckCircle2, Info, Layers } from "lucide-react";
-import type {
-  CreativeAdRecord,
-  CreativeDiversityGroup,
-  CreativeFatigueStatus,
-  FatigueDiagnostic,
+import { AlertTriangle, Bot, CheckCircle2, Clock, Info, Layers } from "lucide-react";
+import {
+  computeInclusiveWindowDays,
+  MIN_FATIGUE_ACTIVE_DAYS,
+  MIN_FATIGUE_IMPRESSIONS,
+  MIN_FATIGUE_SPEND,
+  MIN_TREND_WINDOW_DAYS,
+  type CreativeAdRecord,
+  type CreativeDiversityGroup,
+  type CreativeFatigueStatus,
+  type FatigueDiagnostic,
 } from "@/lib/creativeIntelligenceDomain";
 
 const STATUS_STYLE: Record<CreativeFatigueStatus, { label: string; badge: string }> = {
@@ -26,6 +31,8 @@ export interface CreativeFatigueSectionProps {
   diagnostics: FatigueDiagnostic[];
   diversityGroups: CreativeDiversityGroup[];
   recordsById: Map<string, CreativeAdRecord>;
+  dateFrom?: string;
+  dateTo?: string;
   onAnalyzeWithVictoria: (record: CreativeAdRecord, fatigue: FatigueDiagnostic) => void;
 }
 
@@ -33,9 +40,21 @@ export function CreativeFatigueSection({
   diagnostics,
   diversityGroups,
   recordsById,
+  dateFrom,
+  dateTo,
   onAnalyzeWithVictoria,
 }: CreativeFatigueSectionProps) {
   const [statusFilter, setStatusFilter] = useState<"all" | CreativeFatigueStatus>("all");
+
+  const windowDays = useMemo(
+    () => computeInclusiveWindowDays(dateFrom, dateTo),
+    [dateFrom, dateTo]
+  );
+  const isPeriodInsufficient = windowDays !== null && windowDays < MIN_TREND_WINDOW_DAYS;
+  const concentratedGroupsCount = useMemo(
+    () => diversityGroups.filter((g) => g.status === "single_creative_dominant").length,
+    [diversityGroups]
+  );
 
   const counts = useMemo(() => {
     return {
@@ -70,9 +89,14 @@ export function CreativeFatigueSection({
               Identifica conjuntos/campanhas dependentes de apenas 1 criativo ou com baixa variação ativa.
             </p>
           </div>
-          <span className="text-[11px] font-mono text-muted-foreground">
-            {diversityGroups.filter((g) => g.status === "single_creative_dominant").length} grupo(s) concentrado(s)
-          </span>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-2.5 py-1 text-[11px] font-mono font-bold text-amber-300">
+              {concentratedGroupsCount} grupo(s) com concentração de investimento
+            </span>
+            <span className="rounded-lg border border-border bg-muted/40 px-2.5 py-1 text-[11px] font-mono text-muted-foreground">
+              {counts.possible} criativo(s) c/ possível fadiga
+            </span>
+          </div>
         </div>
 
         {diversityGroups.length === 0 ? (
@@ -113,7 +137,7 @@ export function CreativeFatigueSection({
               Diagnóstico de Tendência por Criativo (Primeira vs Segunda Metade do Recorte)
             </h3>
             <p className="text-xs text-muted-foreground">
-              Compara frequência, CTR de link e custo por resultado na mesma unidade, mantendo causas alternativas explícitas.
+              Compara frequência, CTR de link e custo por resultado na mesma conta e unidade. Critério mínimo: ≥ {MIN_FATIGUE_ACTIVE_DAYS} dias com entrega, ≥ {MIN_FATIGUE_IMPRESSIONS} impr. e ≥ R$ {MIN_FATIGUE_SPEND}.
             </p>
           </div>
           <div className="flex flex-wrap gap-1.5 text-xs">
@@ -138,6 +162,22 @@ export function CreativeFatigueSection({
             ))}
           </div>
         </div>
+
+        {isPeriodInsufficient && (
+          <div className="rounded-2xl border border-amber-500/35 bg-amber-500/10 p-4 flex items-start gap-3 text-xs text-amber-200">
+            <Clock className="h-4 w-4 shrink-0 mt-0.5 text-amber-400" />
+            <div className="space-y-1">
+              <p className="font-black uppercase tracking-wider text-amber-300">
+                Período insuficiente para análise de tendência ({windowDays} dia{windowDays === 1 ? "" : "s"} selecionado{windowDays === 1 ? "" : "s"})
+              </p>
+              <p className="text-amber-100/90 leading-relaxed">
+                A detecção de fadiga exige janela de pelo menos <strong>{MIN_TREND_WINDOW_DAYS} dias</strong> e mínimo de{" "}
+                <strong>{MIN_FATIGUE_ACTIVE_DAYS} dias com entrega ativa</strong> (dias sem entrega nunca contam como estabilidade nem desgaste).
+                Amplie o seletor de datas no topo para <strong>7 ou 14 dias</strong> para liberar comparações confiáveis.
+              </p>
+            </div>
+          </div>
+        )}
 
         {filtered.length === 0 ? (
           <div className="rounded-2xl border border-dashed border-border bg-card/40 p-10 text-center text-xs text-muted-foreground">

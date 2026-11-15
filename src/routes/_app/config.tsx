@@ -887,17 +887,48 @@ export function TabIntegracoes({ canManage = false }: { canManage?: boolean }) {
           </div>
 
           {telemetryCoverage.issues.length > 0 && (
-            <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3.5 space-y-1.5">
-              <p className="text-xs font-bold text-amber-300 flex items-center gap-1.5">
-                <AlertTriangle className="h-4 w-4 shrink-0" />
-                Falhas Parciais / Limites da API Meta ({telemetryCoverage.issues.length})
-              </p>
-              <div className="space-y-1 max-h-36 overflow-y-auto text-[11px] font-mono text-amber-100/90">
-                {telemetryCoverage.issues.map((issue, idx) => (
-                  <p key={`${issue.accountId}-${idx}`}>
-                    • [{issue.kind}] {issue.accountName} ({issue.accountId}): {issue.message}
-                  </p>
-                ))}
+            <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3.5 space-y-2.5">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-xs font-bold text-amber-300 flex items-center gap-1.5">
+                  <AlertTriangle className="h-4 w-4 shrink-0" />
+                  Falhas Parciais / Limites da API Meta ({telemetryCoverage.issues.length})
+                </p>
+                <span className="text-[10px] font-mono text-amber-200/80">
+                  Ciclo:{" "}
+                  {latestTelemetryRun?.completed_at
+                    ? formatSyncTimestampBRT(latestTelemetryRun.completed_at)
+                    : latestTelemetryRun?.started_at
+                      ? formatSyncTimestampBRT(latestTelemetryRun.started_at)
+                      : "Horário indisponível"}{" "}
+                  • Cobertura:{" "}
+                  {telemetryCoverage.totalAccounts > 0
+                    ? `${telemetryCoverage.completedAccounts}/${telemetryCoverage.totalAccounts} OK`
+                    : `${latestTelemetryRun?.accounts_synced ?? 0} conta(s)`}
+                </span>
+              </div>
+              <div className="space-y-2 max-h-52 overflow-y-auto text-[11px] font-mono text-amber-100/90">
+                {telemetryCoverage.issues.map((issue, idx) => {
+                  const isPerm200 =
+                    issue.kind === "permission_denied" || /\(#200\)|ads_read|ads_management/i.test(issue.message);
+                  const isRateLimit = issue.kind === "rate_limit" || /rate limit|(#17)|(#4)/i.test(issue.message);
+                  const correctiveAction = isPerm200
+                    ? "Ação corretiva: no Meta Business Manager, conceder permissões ads_read e ads_management ao usuário do token nesta conta de anúncios, ou desvincular a conta caso não seja gerida."
+                    : isRateLimit
+                      ? "Ação corretiva: aguardar janela de resfriamento da Meta API (sem retry loop automático em rate limit) antes de executar novo sync manual."
+                      : "Ação corretiva: validar token da integração e status da conta na Meta antes de reprocessar.";
+                  return (
+                    <div
+                      key={`${issue.accountId}-${idx}`}
+                      className="rounded-lg border border-amber-500/20 bg-black/25 p-2 space-y-1"
+                    >
+                      <p className="font-bold text-amber-200">
+                        • [{issue.kind}] {issue.accountName} ({issue.accountId})
+                      </p>
+                      <p className="text-amber-100/90 break-words">Erro Meta API: {issue.message}</p>
+                      <p className="font-sans text-[11px] text-amber-200/85">{correctiveAction}</p>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           )}
@@ -1038,6 +1069,7 @@ export function TabIntegracoes({ canManage = false }: { canManage?: boolean }) {
               {connectedAdAccounts.map((acc: any) => {
                 const isDeleting = deletingAccountId === acc.id;
                 const campCount = Array.isArray(acc.campaigns) ? acc.campaigns.length : 0;
+                const accIssue = telemetryCoverage.issues.find((i) => i.accountId === acc.id);
                 return (
                   <div
                     key={acc.id}
@@ -1056,11 +1088,21 @@ export function TabIntegracoes({ canManage = false }: { canManage?: boolean }) {
                           <span className={`text-[8px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded ${acc.status === 1 || acc.status === "1" ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20" : "bg-amber-500/10 text-amber-400 border border-amber-500/20"}`}>
                             {acc.status === 1 || acc.status === "1" ? "Ativa" : "Desativada"}
                           </span>
+                          {accIssue && (
+                            <span className="text-[8px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded bg-rose-500/15 text-rose-300 border border-rose-500/30">
+                              {accIssue.kind}
+                            </span>
+                          )}
                         </div>
                         <p className="text-[10px] text-muted-foreground mt-0.5">
                           Moeda: <strong className="text-foreground/80">{acc.currency || "BRL"}</strong> • {campCount} campanha{campCount !== 1 ? "s" : ""} carregada{campCount !== 1 ? "s" : ""}
                           {acc.last_sync ? ` • Último sync: ${formatSyncTimestampBRT(acc.last_sync)}` : " • Horário indisponível"}
                         </p>
+                        {accIssue && (
+                          <p className="text-[10px] text-amber-300/90 mt-1 break-words">
+                            {accIssue.message}
+                          </p>
+                        )}
                       </div>
                     </div>
 

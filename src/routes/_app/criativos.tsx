@@ -16,12 +16,12 @@ import { usePagePermission } from "@/hooks/usePagePermission";
 import { useGlobalDate } from "@/contexts/DateContext";
 import { DateRangePicker } from "@/components/DateRangePicker";
 import { PageHeader } from "@/components/PageHeader";
-import { SnapshotStatusBadge } from "@/components/SnapshotStatusBadge";
 import {
   buildMetaSnapshotKey,
   DEFAULT_META_TIMEZONE,
   useActiveMetaSnapshot,
 } from "@/lib/metaSnapshotCache";
+import { summarizeSyncCoverage } from "@/lib/syncStatusDomain";
 import { EVENT_MODEL_VERSION } from "@/lib/metricsDomain";
 import {
   buildCreativeAdRecord,
@@ -319,9 +319,9 @@ function CriativosHubPage() {
 
     const enriched = enrichCreativePeerSignals(baseRecords);
     const byId = new Map(enriched.map((r) => [r.id, r]));
-    const fatigues = enriched.map((r) => evaluateCreativeFatigue(r));
+    const fatigues = enriched.map((r) => evaluateCreativeFatigue(r, { dateFrom, dateTo }));
     const diversity = evaluateCreativeDiversity(enriched);
-    const overview = buildCreativeManagerOverview(enriched, fatigues);
+    const overview = buildCreativeManagerOverview(enriched, fatigues, diversity);
 
     const testLinkMap = new Map<string, string[]>();
     for (const t of creativeTests) {
@@ -376,7 +376,7 @@ function CriativosHubPage() {
       delivery_status: record.effectiveStatus,
       objective: record.rawObjective || undefined,
       result_type: record.resultLabel,
-      result_indicator: record.shortBadge,
+      result_indicator: record.resultIndicator || record.resultLabel,
       optimization_goal: record.optimizationGoal || undefined,
       dateFrom,
       dateTo,
@@ -406,6 +406,44 @@ function CriativosHubPage() {
     });
     setVictoriaOpen(true);
   };
+
+  const accountHealthById = useMemo(() => {
+    const map = new Map<string, { hasIssue: boolean; kind: string; summary: string }>();
+    const coverage = activeSnapshot.latestSyncRun
+      ? summarizeSyncCoverage({
+          syncCoverage: activeSnapshot.latestSyncRun.sync_coverage,
+          partialFailures: activeSnapshot.latestSyncRun.partial_failures,
+          accounts,
+        })
+      : null;
+
+    for (const acc of accounts) {
+      const issue = coverage?.issues.find((i) => i.accountId === acc.id);
+      if (issue) {
+        map.set(acc.id, {
+          hasIssue: true,
+          kind: issue.kind,
+          summary:
+            issue.kind === "permission_denied"
+              ? "Sem permissão de leitura/anúncios na Meta Ads API para esta conta."
+              : "Conta com falha parcial de coleta neste ciclo.",
+        });
+      } else if (acc.status !== undefined && acc.status !== null && Number(acc.status) !== 1) {
+        map.set(acc.id, {
+          hasIssue: true,
+          kind: "inactive_or_unpermitted",
+          summary: "Conta desativada ou sem permissão ativa para sincronização na Meta.",
+        });
+      } else if (!acc.last_sync) {
+        map.set(acc.id, {
+          hasIssue: true,
+          kind: "no_sync_yet",
+          summary: "Conta sem dados sincronizados no período atual.",
+        });
+      }
+    }
+    return map;
+  }, [accounts, activeSnapshot.latestSyncRun]);
 
   const selectedAccountLabel =
     accountFilter === "all"
@@ -441,19 +479,6 @@ function CriativosHubPage() {
               endDate={dateRange.endDate}
               onChange={(start, end) => setDateRange({ startDate: start, endDate: end })}
             />
-
-            {/* RBAC: Somente perfis autorizados a ver integrações veem metadados de snapshot */}
-            {canViewIntegrations && (
-              <SnapshotStatusBadge
-                snapshotId={activeSnapshot.snapshotId}
-                committedAt={activeSnapshot.committedAt}
-                lastSyncAt={activeSnapshot.committedAt}
-                latestSyncRun={activeSnapshot.latestSyncRun}
-                selectedAccountId={accountFilter}
-                isPageLoading={loadingAds || fetchingAds}
-                isMetaSyncing={activeSnapshot.isMetaSyncRunning}
-              />
-            )}
           </div>
         }
       />
@@ -472,11 +497,11 @@ function CriativosHubPage() {
             { id: "inteligencia", label: "Inteligência & Biblioteca", icon: LayoutGrid, count: records.length },
             {
               id: "fadiga",
-              label: "Fadiga & Diversidade",
+              label: "Fadiga & Concentração",
               icon: Layers,
-              count: managerOverview.fatiguePossibleCount,
+              badgeText: `${managerOverview.fatiguePossibleCount} fadiga • ${managerOverview.concentratedGroupsCount} conc.`,
             },
-            { id: "testes", label: "Testes Criativos", icon: FlaskConical, count: creativeTests.length },
+            { id: "testes", label: "Testes Criativos", icon: FlaskConical, badgeText: String(creativeTests.length) },
           ].map((tab) => {
             const Icon = tab.icon;
             const active = activeTab === tab.id;
@@ -498,7 +523,7 @@ function CriativosHubPage() {
                     active ? "bg-black/25 text-white" : "bg-muted text-muted-foreground"
                   }`}
                 >
-                  {tab.count}
+                  {tab.badgeText}
                 </span>
               </button>
             );
@@ -565,6 +590,8 @@ function CriativosHubPage() {
           diagnostics={fatigueDiagnostics}
           diversityGroups={diversityGroups}
           recordsById={recordsById}
+          dateFrom={dateFrom}
+          dateTo={dateTo}
           onAnalyzeWithVictoria={(rec, diag) => openVictoriaForAd(rec, diag)}
         />
       )}
@@ -577,6 +604,9 @@ function CriativosHubPage() {
           recordsById={recordsById}
           accounts={accounts}
           selectedAccountId={accountFilter}
+          dateFrom={dateFrom}
+          dateTo={dateTo}
+          accountHealthById={accountHealthById}
           assets={swipeAssets.map((a) => ({ id: a.id, title: a.title }))}
           canEdit={canEditCriativos}
           userId={user?.id || null}

@@ -205,6 +205,67 @@ export function formatSyncTimeBRT(raw: unknown): string {
   }).format(new Date(ms));
 }
 
+export interface SnapshotFreshnessClassification {
+  status: "fresh" | "stale" | "unknown";
+  isStale: boolean;
+  ageMinutes: number | null;
+  thresholdMinutes: number;
+  normalizedMs: number | null;
+  committedAtIso: string | null;
+  committedAtBRT: string;
+  timeShort: string;
+  timezone: string;
+  label: string;
+}
+
+/**
+ * Contrato único e centralizado para frescor de snapshot em todo o produto e na Victoria.
+ * Evita divergência entre badges (ex.: "defasado há 33 min") e contexto analítico (ex.: "recente").
+ */
+export function classifySnapshotFreshness(
+  raw: unknown,
+  options: { nowMs?: number; staleThresholdMinutes?: number } = {}
+): SnapshotFreshnessClassification {
+  const nowMs = options.nowMs ?? Date.now();
+  const thresholdMinutes = options.staleThresholdMinutes ?? DEFAULT_SYNC_STALE_THRESHOLD_MINUTES;
+  const normalizedMs = normalizeTimestampToEpochMs(raw);
+
+  if (normalizedMs === null) {
+    return {
+      status: "unknown",
+      isStale: false,
+      ageMinutes: null,
+      thresholdMinutes,
+      normalizedMs: null,
+      committedAtIso: null,
+      committedAtBRT: UNAVAILABLE_TIME_LABEL,
+      timeShort: UNAVAILABLE_TIME_LABEL,
+      timezone: SYNC_DISPLAY_TIMEZONE,
+      label: UNAVAILABLE_TIME_LABEL,
+    };
+  }
+
+  const ageMinutes = computeFreshnessAgeMinutes(normalizedMs, nowMs);
+  const isStale = ageMinutes !== null && ageMinutes > thresholdMinutes;
+  const committedAtBRT = formatSyncTimestampBRT(normalizedMs);
+  const timeShort = formatSyncTimeBRT(normalizedMs);
+
+  return {
+    status: isStale ? "stale" : "fresh",
+    isStale,
+    ageMinutes,
+    thresholdMinutes,
+    normalizedMs,
+    committedAtIso: new Date(normalizedMs).toISOString(),
+    committedAtBRT,
+    timeShort,
+    timezone: SYNC_DISPLAY_TIMEZONE,
+    label: isStale
+      ? `Dados defasados há ${ageMinutes} min`
+      : `Atualizado às ${timeShort}`,
+  };
+}
+
 /**
  * Calcula defasagem em minutos exclusivamente a partir de timestamps numéricos normalizados.
  */
@@ -545,22 +606,26 @@ export function resolveSyncBadgePresentation(input: ResolveSyncBadgeInput): Sync
         : (input.lastSyncAt || input.committedAt || null));
 
   const effectiveCompletedMs = normalizeTimestampToEpochMs(rawCompletedAt);
-  const completedAtFormatted = effectiveCompletedMs !== null ? formatSyncTimestampBRT(effectiveCompletedMs) : null;
+  const freshness = classifySnapshotFreshness(effectiveCompletedMs, {
+    nowMs,
+    staleThresholdMinutes: staleThreshold,
+  });
+  const completedAtFormatted = freshness.normalizedMs !== null ? freshness.committedAtBRT : null;
   const startedAtRaw = isMetaSyncing
     ? (input.startedAt || (remoteJobActive ? run?.started_at : null) || null)
     : (run?.started_at || input.startedAt || null);
   const startedAtFormatted = normalizeTimestampToEpochMs(startedAtRaw) !== null ? formatSyncTimestampBRT(startedAtRaw) : null;
 
-  const ageMinutes = computeFreshnessAgeMinutes(effectiveCompletedMs, nowMs);
-  const isStale = ageMinutes !== null && ageMinutes > staleThreshold;
+  const ageMinutes = freshness.ageMinutes;
+  const isStale = freshness.isStale;
   const snapshotId = String(
     (run && isTerminalCommittedSyncStatus(run.status) ? run.id : null) ||
     input.snapshotId ||
     "initial"
   );
   const shortSnapshotId = formatShortSnapshotId(snapshotId);
-  const timeFormatted = completedAtFormatted || UNAVAILABLE_TIME_LABEL;
-  const timeShort = effectiveCompletedMs !== null ? formatSyncTimeBRT(effectiveCompletedMs) : UNAVAILABLE_TIME_LABEL;
+  const timeFormatted = freshness.committedAtBRT;
+  const timeShort = freshness.timeShort;
 
   // Avalia falha do último run somente se ele for mais recente (ou se não houver snapshot posterior)
   const runFailedMs = run && isFailedSyncStatus(run.status)

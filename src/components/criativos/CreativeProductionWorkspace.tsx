@@ -28,6 +28,7 @@ import { analyzeCreativeFn, type CreativeAIAnalysis } from "@/lib/criativo.funct
 import {
   extractConfirmedArtFacts,
   validateCreativeUploadFile,
+  validateCreativeUploadFileBinary,
   type CreativeAdRecord,
 } from "@/lib/creativeIntelligenceDomain";
 
@@ -167,7 +168,9 @@ export function CreativeProductionWorkspace({
   const [uploadObjectiveHint, setUploadObjectiveHint] = useState("");
   const [uploadTestId, setUploadTestId] = useState("");
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [validatingUploadFile, setValidatingUploadFile] = useState(false);
   const [analyzingUpload, setAnalyzingUpload] = useState(false);
+  const [uploadProgressLabel, setUploadProgressLabel] = useState<string | null>(null);
 
   // ── Viewing Analysis Drawer / Modal ──
   const [activeAnalysisModal, setActiveAnalysisModal] = useState<{
@@ -222,7 +225,10 @@ export function CreativeProductionWorkspace({
   }, [seedVariationAd]);
 
   // Helper: Upload dataURL or File into Supabase Storage 'media'
-  const uploadToStorage = async (blobOrFile: Blob | File, ext: string): Promise<string> => {
+  const uploadToStorage = async (
+    blobOrFile: Blob | File,
+    ext: string
+  ): Promise<{ publicUrl: string; storagePath: string }> => {
     const fileName = `criativos/${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${ext}`;
     const { error } = await supabase.storage.from("media").upload(fileName, blobOrFile, {
       contentType: blobOrFile.type || `image/${ext}`,
@@ -230,7 +236,7 @@ export function CreativeProductionWorkspace({
     });
     if (error) throw error;
     const { data } = supabase.storage.from("media").getPublicUrl(fileName);
-    return data.publicUrl;
+    return { publicUrl: data.publicUrl, storagePath: fileName };
   };
 
   const handleSaveBrandKit = useMutation({
@@ -263,24 +269,39 @@ export function CreativeProductionWorkspace({
     onError: (err: any) => toast.error(err?.message || "Erro ao salvar Brand Kit."),
   });
 
-  // Accessible File Picker Handler (Upload + Analyze)
-  const handlePickFileForAnalysis = (file: File | undefined | null) => {
+  // Accessible File Picker Handler (Upload + Analyze com validação MIME binária)
+  const handlePickFileForAnalysis = async (file: File | undefined | null) => {
     setUploadError(null);
-    if (!file) return;
-    const v = validateCreativeUploadFile(file);
-    if (!v.valid) {
-      setUploadError(v.error);
-      toast.error(v.error);
+    if (!file) {
+      setUploadFile(null);
+      setUploadPreview(null);
       return;
     }
-    setUploadFile(file);
-    if (!uploadTitle.trim()) {
-      setUploadTitle(file.name.replace(/\.[^.]+$/, ""));
+    setValidatingUploadFile(true);
+    try {
+      const v = await validateCreativeUploadFileBinary(file);
+      if (!v.valid) {
+        setUploadFile(null);
+        setUploadPreview(null);
+        setUploadError(v.error);
+        toast.error(v.error);
+        return;
+      }
+      setUploadFile(file);
+      if (!uploadTitle.trim()) {
+        setUploadTitle(file.name.replace(/\.[^.]+$/, ""));
+      }
+      const reader = new FileReader();
+      reader.onload = () => setUploadPreview(String(reader.result || ""));
+      reader.onerror = () => {
+        setUploadFile(null);
+        setUploadPreview(null);
+        setUploadError("Não foi possível ler a imagem selecionada.");
+      };
+      reader.readAsDataURL(file);
+    } finally {
+      setValidatingUploadFile(false);
     }
-    const reader = new FileReader();
-    reader.onload = () => setUploadPreview(String(reader.result || ""));
-    reader.onerror = () => setUploadError("Não foi possível ler a imagem selecionada.");
-    reader.readAsDataURL(file);
   };
 
   const handlePickPhotoForStudio = (file: File | undefined | null) => {
@@ -303,9 +324,21 @@ export function CreativeProductionWorkspace({
       setUploadError("Selecione uma imagem PNG, JPG ou WEBP antes de analisar.");
       return;
     }
+    if (!uploadTitle.trim()) {
+      setUploadError("Informe um título para identificar esta peça na biblioteca.");
+      return;
+    }
+    const recheck = await validateCreativeUploadFileBinary(uploadFile);
+    if (!recheck.valid) {
+      setUploadError(recheck.error);
+      return;
+    }
+
     setAnalyzingUpload(true);
     setUploadError(null);
+    let uploadedStoragePath: string | null = null;
     try {
+      setUploadProgressLabel("Analisando imagem por IA...");
       const base64 = uploadPreview.includes(",") ? uploadPreview.split(",")[1] : uploadPreview;
       const analysis = await analyzeCreativeFn({
         data: {
@@ -318,15 +351,23 @@ export function CreativeProductionWorkspace({
           brandRules: bkRules || bkRestrictions || undefined,
         },
       });
+      if (!analysis || typeof analysis.score !== "number") {
+        throw new Error("A análise de IA retornou resposta incompleta. Tente novamente.");
+      }
+
+      setUploadProgressLabel("Enviando arquivo para o Storage...");
       const ext = uploadFile.type.includes("webp") ? "webp" : uploadFile.type.includes("jpeg") ? "jpg" : "png";
-      const publicUrl = await uploadToStorage(uploadFile, ext);
+      const uploaded = await uploadToStorage(uploadFile, ext);
+      uploadedStoragePath = uploaded.storagePath;
+
+      setUploadProgressLabel("Salvando registro na biblioteca...");
       const { error } = await (supabase as any).from("swipe_files").insert({
         user_id: userId,
         ad_account_id: studioAccountId || null,
         client_id: matchedClient?.id || null,
         creative_test_id: uploadTestId || null,
-        title: uploadTitle.trim() || "Criativo Analisado",
-        media_url: publicUrl,
+        title: uploadTitle.trim(),
+        media_url: uploaded.publicUrl,
         notes: JSON.stringify(analysis),
         tags: [uploadNiche, currentAccountName, `score:${analysis.score}`],
         origin: "upload",
@@ -342,7 +383,12 @@ export function CreativeProductionWorkspace({
           },
         ],
       });
-      if (error) throw error;
+      if (error) {
+        if (uploadedStoragePath) {
+          await supabase.storage.from("media").remove([uploadedStoragePath]).catch(() => {});
+        }
+        throw error;
+      }
       toast.success("Peça analisada e salva na biblioteca de produção!");
       qc.invalidateQueries({ queryKey: ["swipe-files"] });
       setUploadModalOpen(false);
@@ -350,10 +396,11 @@ export function CreativeProductionWorkspace({
       setUploadPreview(null);
       setUploadTitle("");
     } catch (err: any) {
-      const msg = err?.message || "Falha ao analisar e enviar imagem.";
+      const msg = err?.message || "Falha ao analisar e enviar imagem. Nenhuma alteração incompleta foi gravada.";
       setUploadError(msg);
       toast.error(msg);
     } finally {
+      setUploadProgressLabel(null);
       setAnalyzingUpload(false);
     }
   };
@@ -577,7 +624,7 @@ export function CreativeProductionWorkspace({
     try {
       const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/png"));
       if (!blob) throw new Error("Falha ao renderizar preview para PNG.");
-      const publicUrl = await uploadToStorage(blob, "png");
+      const { publicUrl } = await uploadToStorage(blob, "png");
       const nextVersion = parentAssetId ? parentVersion + 1 : 1;
 
       const { error } = await (supabase as any).from("swipe_files").insert({
@@ -766,7 +813,11 @@ export function CreativeProductionWorkspace({
               <button
                 type="button"
                 onClick={() => {
+                  setUploadFile(null);
+                  setUploadPreview(null);
+                  setUploadTitle("");
                   setUploadError(null);
+                  setUploadProgressLabel(null);
                   setUploadModalOpen(true);
                 }}
                 className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-card px-3 py-2 text-xs font-bold text-foreground hover:border-primary/40 transition cursor-pointer"
@@ -1007,9 +1058,13 @@ export function CreativeProductionWorkspace({
               <label className="flex flex-col items-center justify-center rounded-2xl border-2 border-dashed border-border hover:border-primary/50 bg-muted/20 p-6 cursor-pointer transition text-center">
                 <input
                   type="file"
-                  accept="image/png,image/jpeg,image/webp"
+                  accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp"
                   className="sr-only"
-                  onChange={(e) => handlePickFileForAnalysis(e.target.files?.[0])}
+                  disabled={analyzingUpload || validatingUploadFile}
+                  onChange={(e) => {
+                    void handlePickFileForAnalysis(e.target.files?.[0]);
+                    e.currentTarget.value = "";
+                  }}
                 />
                 {uploadPreview ? (
                   <img src={uploadPreview} alt="Prévia enviada" className="max-h-44 rounded-xl object-contain mb-2" />
@@ -1017,19 +1072,47 @@ export function CreativeProductionWorkspace({
                   <Upload className="h-7 w-7 text-primary mb-2" />
                 )}
                 <span className="font-bold text-foreground">
-                  {uploadFile ? uploadFile.name : "Clique para selecionar PNG, JPG ou WEBP (máx. 8 MB)"}
+                  {validatingUploadFile
+                    ? "Validando assinatura do arquivo..."
+                    : uploadFile
+                      ? `${uploadFile.name} (${(uploadFile.size / (1024 * 1024)).toFixed(2)} MB)`
+                      : "Clique para selecionar PNG, JPG ou WEBP (máx. 8 MB)"}
                 </span>
               </label>
 
               {uploadError && (
-                <div className="rounded-xl border border-rose-500/35 bg-rose-500/10 p-2.5 text-rose-300 font-semibold">
-                  {uploadError}
+                <div className="rounded-xl border border-rose-500/35 bg-rose-500/10 p-2.5 text-rose-300 font-semibold flex items-center justify-between gap-2">
+                  <span>{uploadError}</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setUploadFile(null);
+                      setUploadPreview(null);
+                      setUploadError(null);
+                    }}
+                    className="shrink-0 rounded-lg border border-rose-500/40 px-2 py-1 text-[10px] font-bold hover:bg-rose-500/20 cursor-pointer"
+                  >
+                    Limpar
+                  </button>
+                </div>
+              )}
+
+              {uploadProgressLabel && (
+                <div className="rounded-xl border border-primary/30 bg-primary/10 p-2.5 text-primary font-semibold flex items-center gap-2">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin shrink-0" />
+                  <span>{uploadProgressLabel}</span>
                 </div>
               )}
 
               <div>
-                <label className="block font-bold mb-1">Título da Peça</label>
-                <input value={uploadTitle} onChange={(e) => setUploadTitle(e.target.value)} placeholder="Ex: Carrossel Oferta Dezembro v1" className="w-full rounded-xl border border-border bg-background px-3 py-2" />
+                <label className="block font-bold mb-1">Título da Peça *</label>
+                <input
+                  value={uploadTitle}
+                  onChange={(e) => setUploadTitle(e.target.value)}
+                  disabled={analyzingUpload}
+                  placeholder="Ex: Carrossel Oferta Dezembro v1"
+                  className="w-full rounded-xl border border-border bg-background px-3 py-2 disabled:opacity-60"
+                />
               </div>
 
               <div className="grid grid-cols-2 gap-2.5">
@@ -1061,17 +1144,35 @@ export function CreativeProductionWorkspace({
             </div>
 
             <div className="flex justify-end gap-2 border-t border-border pt-3">
-              <button type="button" onClick={() => setUploadModalOpen(false)} className="rounded-xl border border-border px-4 py-2 text-xs font-bold cursor-pointer">
+              <button
+                type="button"
+                disabled={analyzingUpload}
+                onClick={() => {
+                  setUploadFile(null);
+                  setUploadPreview(null);
+                  setUploadError(null);
+                  setUploadProgressLabel(null);
+                  setUploadModalOpen(false);
+                }}
+                className="rounded-xl border border-border px-4 py-2 text-xs font-bold disabled:opacity-50 cursor-pointer"
+              >
                 Cancelar
               </button>
               <button
                 type="button"
-                disabled={analyzingUpload}
+                disabled={
+                  analyzingUpload ||
+                  validatingUploadFile ||
+                  !uploadFile ||
+                  !uploadPreview ||
+                  Boolean(uploadError) ||
+                  !uploadTitle.trim()
+                }
                 onClick={handleAnalyzeAndSaveUpload}
-                className="inline-flex items-center gap-1.5 rounded-xl bg-primary px-4 py-2 text-xs font-black uppercase text-white disabled:opacity-50 cursor-pointer"
+                className="inline-flex items-center gap-1.5 rounded-xl bg-primary px-4 py-2 text-xs font-black uppercase text-white disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
               >
                 {analyzingUpload && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-                Analisar e Salvar
+                {analyzingUpload ? "Processando..." : "Analisar e Salvar"}
               </button>
             </div>
           </div>

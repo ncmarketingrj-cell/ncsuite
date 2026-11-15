@@ -6,13 +6,28 @@ import path from "node:path";
 import {
   buildCreativeAdRecord,
   buildCreativeManagerOverview,
+  detectImageMimeFromMagicBytes,
   enrichCreativePeerSignals,
   evaluateCreativeDiversity,
   evaluateCreativeFatigue,
   evaluateCreativeTestEvidence,
   extractConfirmedArtFacts,
+  MIN_TREND_WINDOW_DAYS,
   validateCreativeUploadFile,
 } from "../src/lib/creativeIntelligenceDomain.ts";
+import {
+  classifySnapshotFreshness,
+  DEFAULT_SYNC_STALE_THRESHOLD_MINUTES,
+} from "../src/lib/syncStatusDomain.ts";
+import {
+  buildVictoriaAnalysisContext,
+  matchesCanonicalContextIdentity,
+} from "../src/lib/victoriaContract.ts";
+import {
+  enforceServerPostLlmGuardrails,
+  formatVictoriaFreshnessLabelServer,
+  selectUsedRagCitations,
+} from "../supabase/functions/_shared/victoriaCore.ts";
 import { buildContextFromCreativeItem } from "../src/lib/victoriaContextGateway.ts";
 import {
   parseNotificationTargetLink,
@@ -306,5 +321,262 @@ describe("Sistema Global de Notificações e Alertas — Preservação de Regras
     assert.equal(svcSrc.includes('.from("notifications").delete()'), false);
     assert.equal(svcSrc.includes('.from("notifications")\n        .delete()'), false);
     assert.equal(svcSrc.includes('.from("notifications")\n      .delete()'), false);
+  });
+});
+
+describe("Auditoria /criativos — Frescor Único, Victoria FIT 2009, RAG Parity, Fadiga/Janela e Magic Bytes", () => {
+  it("8. Fonte única de frescor: 33 min é 'stale' em classifySnapshotFreshness, buildVictoriaAnalysisContext e servidor", () => {
+    const nowMs = Date.UTC(2026, 10, 15, 16, 0, 0);
+    const thirtyThreeMinAgo = new Date(nowMs - 33 * 60_000).toISOString();
+
+    const freshness = classifySnapshotFreshness(thirtyThreeMinAgo, {
+      nowMs,
+      staleThresholdMinutes: DEFAULT_SYNC_STALE_THRESHOLD_MINUTES,
+    });
+    assert.equal(freshness.status, "stale");
+    assert.equal(freshness.isStale, true);
+    assert.equal(freshness.ageMinutes, 33);
+    assert.match(freshness.label, /33|defasado/i);
+
+    const ctx = buildVictoriaAnalysisContext({
+      entity_id: "camp-fresh-1",
+      entity_level: "campaign",
+      entity_name: "Campanha Teste",
+      ad_account_id: "act_1",
+      ad_account_name: "Conta Teste",
+      surface: "criativos",
+      route: "/criativos",
+      raw_objective: "OUTCOME_ENGAGEMENT",
+      optimization_goal: "CONVERSATIONS",
+      destination_type: "WHATSAPP",
+      spend: 100,
+      conversions: 10,
+      impressions: 1000,
+      reach: 900,
+      clicks: 30,
+      date_from: "2026-11-10",
+      date_to: "2026-11-15",
+      last_sync_at: new Date(Date.now() - 33 * 60_000).toISOString(),
+    });
+    assert.equal(ctx.period.data_freshness, "stale");
+
+    const serverLabel = formatVictoriaFreshnessLabelServer(ctx.period);
+    assert.match(serverLabel, /defasado/i);
+    assert.doesNotMatch(serverLabel, /recente|fresh/i);
+  });
+
+  it("9. FIT 2009 / Rio2 (OUTCOME_ENGAGEMENT + CONVERSATIONS) preserva result_indicator string canônica e evita context_mismatch", () => {
+    const adFit = buildCreativeAdRecord({
+      ad: {
+        id: "ad-fit-2009",
+        external_id: "1202555009",
+        name: "FIT 2009",
+        ad_account_id: "act_243135681723027",
+        campaign_id: "camp-fit",
+        ad_set_id: "set-fit",
+        campaigns: { id: "camp-fit", name: "Rio 2 — Mensagens", objective: "OUTCOME_ENGAGEMENT" },
+        ad_sets: { id: "set-fit", name: "Local Rio 2" },
+      },
+      accountName: "NC - Rio 2 Veículos",
+      dateFrom: "2026-11-01",
+      dateTo: "2026-11-15",
+      periodStat: {
+        entity_id: "ad-fit-2009",
+        spend: 185.4,
+        impressions: 5400,
+        reach: 4100,
+        inline_link_clicks: 82,
+        conversions: 24,
+        optimization_goal: "CONVERSATIONS",
+        result_indicator: "actions:onsite_conversion.messaging_conversation_started_7d",
+      },
+    });
+
+    assert.equal(
+      adFit.resultIndicator,
+      "actions:onsite_conversion.messaging_conversation_started_7d"
+    );
+
+    const ctx = buildContextFromCreativeItem({
+      record: adFit,
+      dateFrom: "2026-11-01",
+      dateTo: "2026-11-15",
+    });
+    assert.equal(
+      ctx.result_indicator.code,
+      "onsite_conversion.messaging_conversation_started_7d"
+    );
+
+    const okCheck = matchesCanonicalContextIdentity(ctx, {
+      request_id: ctx.request_id,
+      analysis_context_hash: ctx.analysis_context_hash,
+      ad_account_id: ctx.ad_account_id,
+      entity_level: ctx.entity_level,
+      entity_id: ctx.entity_id,
+      date_from: ctx.period.date_from,
+      date_to: ctx.period.date_to,
+      result_indicator: ctx.result_indicator.code,
+      contract_version: ctx.contract_version,
+      prompt_version: ctx.prompt_version,
+    });
+    assert.equal(okCheck.valid, true);
+    assert.deepEqual(okCheck.mismatches, []);
+
+    const mismatchCheck = matchesCanonicalContextIdentity(ctx, {
+      request_id: ctx.request_id,
+      analysis_context_hash: ctx.analysis_context_hash,
+      ad_account_id: ctx.ad_account_id,
+      entity_level: ctx.entity_level,
+      entity_id: ctx.entity_id,
+      date_from: ctx.period.date_from,
+      date_to: ctx.period.date_to,
+      result_indicator: "[object Object]",
+      contract_version: ctx.contract_version,
+      prompt_version: ctx.prompt_version,
+    });
+    assert.equal(mismatchCheck.valid, false);
+    assert.ok(mismatchCheck.mismatches.some((m) => m.includes("result_indicator")));
+  });
+
+  it("10. Paridade de citações RAG: selectUsedRagCitations e enforceServerPostLlmGuardrails alinham candidatas vs efetivamente citadas", () => {
+    const candidates = [
+      { id: "doc-meta-1", title: "Guia WhatsApp Meta", version: "1.0", evidence_level: "oficial", approval_status: "approved" },
+      { id: "doc-meta-2", title: "Guia Instagram Visits", version: "1.0", evidence_level: "oficial", approval_status: "approved" },
+      { id: "doc-meta-3", title: "Guia Alcance e CPM", version: "1.0", evidence_level: "oficial", approval_status: "approved" },
+    ];
+    const citedOnlyOne = `
+### O que esta campanha foi configurada para otimizar?
+Mensagens no WhatsApp.
+1. Escopo analisado
+2. Objetivo e evento oficial
+3. Leitura factual
+4. Indicadores primários e secundários
+5. Limitações e dados ausentes
+6. Hipóteses
+7. Recomendações seguras
+8. Plano de validação
+9. Nível de confiança
+10. Fontes e documentos utilizados
+- [doc-meta-1] **Guia WhatsApp Meta** aplicada ao diagnóstico.
+    `.trim();
+
+    const used = selectUsedRagCitations(citedOnlyOne, candidates);
+    assert.equal(used.length, 1);
+    assert.equal(used[0].id, "doc-meta-1");
+
+    const guarded = enforceServerPostLlmGuardrails(
+      citedOnlyOne,
+      {
+        entity_id: "ad-fit-2009",
+        entity_level: "ad",
+        entity_name: "FIT 2009",
+        ad_account_id: "act_243135681723027",
+        ad_account_name: "NC - Rio 2 Veículos",
+        optimization: { official_objective: "OUTCOME_ENGAGEMENT", optimization_goal: "CONVERSATIONS", category: "MESSAGES" },
+        result_indicator: { unit_label: "conversa", cost_label: "Custo por conversa", official_indicator: "actions:onsite_conversion.messaging_conversation_started_7d" },
+        financial: { spend: 100, spend_label: "R$ 100,00" },
+        raw_metrics: { result_value: 10, cost_per_result: 10, impressions: 1000, reach: 800, link_clicks: 20, frequency: 1.25 },
+        period: { date_from: "2026-11-01", date_to: "2026-11-15", days_count: 15, sync_freshness: "fresh" },
+      },
+      candidates
+    );
+    assert.equal(guarded.replacedByDeterministic, false);
+    assert.deepEqual(guarded.citationsUsed.map((c) => c.id), ["doc-meta-1"]);
+  });
+
+  it("11. Separação explícita entre fadiga criativa e concentração de investimento + isolamento por conta/objetivo", () => {
+    const activeStableA = buildCreativeAdRecord({
+      ad: { id: "ad-s1", name: "Estável 1", ad_account_id: "act_1", campaign_id: "c1", ad_set_id: "shared-set", campaigns: { objective: "OUTCOME_ENGAGEMENT" }, ad_sets: { id: "shared-set", name: "Conjunto A" } },
+      accountName: "Conta 1",
+      dateFrom: "2026-11-01",
+      dateTo: "2026-11-08",
+      periodStat: { entity_id: "ad-s1", spend: 180, impressions: 4000, reach: 3800, frequency: 1.05, inline_link_clicks: 120, conversions: 20, optimization_goal: "CONVERSATIONS" },
+      dailyRows: [
+        { ad_id: "ad-s1", date: "2026-11-01", cost: 30, impressions: 650, reach: 620, frequency: 1.05, inline_link_clicks: 20, conversions: 3 },
+        { ad_id: "ad-s1", date: "2026-11-02", cost: 30, impressions: 680, reach: 650, frequency: 1.05, inline_link_clicks: 21, conversions: 4 },
+        { ad_id: "ad-s1", date: "2026-11-05", cost: 60, impressions: 1320, reach: 1250, frequency: 1.06, inline_link_clicks: 40, conversions: 7 },
+        { ad_id: "ad-s1", date: "2026-11-06", cost: 60, impressions: 1350, reach: 1280, frequency: 1.05, inline_link_clicks: 39, conversions: 6 },
+      ],
+    });
+    const otherAccountSameSet = buildCreativeAdRecord({
+      ad: { id: "ad-s2", name: "Outra Conta", ad_account_id: "act_2", campaign_id: "c2", ad_set_id: "shared-set", campaigns: { objective: "OUTCOME_AWARENESS" }, ad_sets: { id: "shared-set", name: "Conjunto A" } },
+      accountName: "Conta 2",
+      dateFrom: "2026-11-01",
+      dateTo: "2026-11-08",
+      periodStat: { entity_id: "ad-s2", spend: 90, impressions: 10000, reach: 9000, optimization_goal: "REACH" },
+    });
+
+    const diagA = evaluateCreativeFatigue(activeStableA, { dateFrom: "2026-11-01", dateTo: "2026-11-08" });
+    const diversity = evaluateCreativeDiversity([activeStableA, otherAccountSameSet]);
+    assert.equal(diversity.length, 2); // Nunca mistura act_1/MESSAGES com act_2/REACH mesmo com id igual
+
+    const overview = buildCreativeManagerOverview([activeStableA], [diagA], diversity);
+    assert.equal(overview.fatiguePossibleCount, 0);
+    assert.ok(overview.concentratedGroupsCount >= 1);
+  });
+
+  it("12. Janela temporal < 4 dias marca 'Período insuficiente' e dias com entrega zero nunca disparam fadiga ou estabilidade", () => {
+    const oneDayAd = buildCreativeAdRecord({
+      ad: { id: "ad-1d", name: "Hoje", ad_account_id: "act_1", campaigns: { objective: "MESSAGES" }, ad_sets: {} },
+      accountName: "C1",
+      dateFrom: "2026-11-15",
+      dateTo: "2026-11-15",
+      periodStat: { entity_id: "ad-1d", spend: 50, impressions: 1200, reach: 1100, conversions: 8, optimization_goal: "CONVERSATIONS" },
+      dailyRows: [
+        { ad_id: "ad-1d", date: "2026-11-15", cost: 50, impressions: 1200, reach: 1100, frequency: 1.09, inline_link_clicks: 25, conversions: 8 },
+      ],
+    });
+    const diag1d = evaluateCreativeFatigue(oneDayAd, { dateFrom: "2026-11-15", dateTo: "2026-11-15" });
+    assert.equal(diag1d.status, "insufficient_evidence");
+    assert.equal(diag1d.periodTooShort, true);
+    assert.equal(diag1d.selectedWindowDays, 1);
+    assert.ok(diag1d.selectedWindowDays < MIN_TREND_WINDOW_DAYS);
+
+    const zeroDeliveryRowsAd = buildCreativeAdRecord({
+      ad: { id: "ad-zero", name: "Sem Entrega", ad_account_id: "act_1", campaigns: { objective: "MESSAGES" }, ad_sets: {} },
+      accountName: "C1",
+      dateFrom: "2026-11-01",
+      dateTo: "2026-11-07",
+      periodStat: { entity_id: "ad-zero", spend: 0, impressions: 0, reach: 0, conversions: 0, optimization_goal: "CONVERSATIONS" },
+      dailyRows: [
+        { ad_id: "ad-zero", date: "2026-11-01", cost: 0, impressions: 0, reach: 0, inline_link_clicks: 0, conversions: 0 },
+        { ad_id: "ad-zero", date: "2026-11-02", cost: 0, impressions: 0, reach: 0, inline_link_clicks: 0, conversions: 0 },
+        { ad_id: "ad-zero", date: "2026-11-03", cost: 0, impressions: 0, reach: 0, inline_link_clicks: 0, conversions: 0 },
+        { ad_id: "ad-zero", date: "2026-11-04", cost: 0, impressions: 0, reach: 0, inline_link_clicks: 0, conversions: 0 },
+        { ad_id: "ad-zero", date: "2026-11-05", cost: 0, impressions: 0, reach: 0, inline_link_clicks: 0, conversions: 0 },
+      ],
+    });
+    const diagZero = evaluateCreativeFatigue(zeroDeliveryRowsAd, { dateFrom: "2026-11-01", dateTo: "2026-11-07" });
+    assert.equal(diagZero.status, "insufficient_evidence");
+    assert.equal(diagZero.signals.length, 0);
+  });
+
+  it("13. Upload valida magic bytes reais (PNG/JPG/WEBP) e rejeita PDF/texto disfarçado", () => {
+    const validPng = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d]);
+    const validJpg = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0x00, 0x01]);
+    const validWebp = new Uint8Array([0x52, 0x49, 0x46, 0x46, 0x24, 0x00, 0x00, 0x00, 0x57, 0x45, 0x42, 0x50]);
+    const fakePdf = new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d, 0x31, 0x2e, 0x37, 0x0a, 0x00, 0x00, 0x00]);
+
+    assert.equal(detectImageMimeFromMagicBytes(validPng), "image/png");
+    assert.equal(detectImageMimeFromMagicBytes(validJpg), "image/jpeg");
+    assert.equal(detectImageMimeFromMagicBytes(validWebp), "image/webp");
+    assert.equal(detectImageMimeFromMagicBytes(fakePdf), null);
+  });
+
+  it("14. Privacidade de sync em /criativos, RBAC backend em sync-meta-ads e guardrails no planejador", () => {
+    const criativosSrc = readFile("src/routes/_app/criativos.tsx");
+    assert.equal(criativosSrc.includes("SnapshotStatusBadge"), false);
+    assert.equal(criativosSrc.includes("{activeSnapshot.snapshotId}"), false);
+    assert.equal(criativosSrc.includes("Sincronizar contas"), false);
+    assert.equal(criativosSrc.includes("from(\"sync_history\")"), false);
+
+    const syncEdgeSrc = readFile("supabase/functions/sync-meta-ads/index.ts");
+    assert.ok(syncEdgeSrc.includes('.select("email, role, position, permissions, status")'));
+    assert.equal(syncEdgeSrc.includes('.select("role, cargo, permissions, active")'), false);
+
+    const testsModalSrc = readFile("src/components/criativos/CreativeTestsSection.tsx");
+    assert.ok(testsModalSrc.includes("selectedAccountHealth"));
+    assert.ok(testsModalSrc.includes("-- Selecione uma conta de anúncios --"));
+    assert.ok(testsModalSrc.includes("ads_read/ads_management"));
   });
 });

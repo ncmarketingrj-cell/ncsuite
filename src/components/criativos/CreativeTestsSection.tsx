@@ -79,8 +79,11 @@ export interface CreativeTestsSectionProps {
   tests: CreativeTestRow[];
   records: CreativeAdRecord[];
   recordsById: Map<string, CreativeAdRecord>;
-  accounts: Array<{ id: string; name: string }>;
+  accounts: Array<{ id: string; name: string; status?: number; last_sync?: string | null }>;
   selectedAccountId: string;
+  dateFrom?: string;
+  dateTo?: string;
+  accountHealthById?: Map<string, { hasIssue: boolean; kind: string; summary: string }>;
   assets: Array<{ id: string; title: string }>;
   canEdit: boolean;
   userId?: string | null;
@@ -95,6 +98,9 @@ export function CreativeTestsSection({
   recordsById,
   accounts,
   selectedAccountId,
+  dateFrom,
+  dateTo,
+  accountHealthById,
   assets,
   canEdit,
   userId,
@@ -108,10 +114,11 @@ export function CreativeTestsSection({
 
   const initialAcc =
     preselectedAdForTest?.adAccountId ||
-    (selectedAccountId !== "all" ? selectedAccountId : accounts[0]?.id || "");
+    (selectedAccountId !== "all" ? selectedAccountId : "");
 
   const [formAccountId, setFormAccountId] = useState(initialAcc);
   const [formCampaignId, setFormCampaignId] = useState(preselectedAdForTest?.campaignId || "");
+  const [formAdSetId, setFormAdSetId] = useState(preselectedAdForTest?.adSetId || "");
   const [formTitle, setFormTitle] = useState(
     preselectedAdForTest ? `Teste criativo — ${preselectedAdForTest.campaignName}` : ""
   );
@@ -143,9 +150,10 @@ export function CreativeTestsSection({
 
   const openNewModal = (seedAd?: CreativeAdRecord | null) => {
     setEditingId(null);
-    const acc = seedAd?.adAccountId || (selectedAccountId !== "all" ? selectedAccountId : accounts[0]?.id || "");
+    const acc = seedAd?.adAccountId || (selectedAccountId !== "all" ? selectedAccountId : "");
     setFormAccountId(acc);
     setFormCampaignId(seedAd?.campaignId || "");
+    setFormAdSetId(seedAd?.adSetId || "");
     setFormTitle(seedAd ? `Teste criativo — ${seedAd.campaignName}` : "");
     setFormQuestion("");
     setFormType("controlled_single_var");
@@ -171,6 +179,7 @@ export function CreativeTestsSection({
     setEditingId(t.id);
     setFormAccountId(t.ad_account_id);
     setFormCampaignId(t.campaign_id || "");
+    setFormAdSetId(t.ad_set_id || "");
     setFormTitle(t.title);
     setFormQuestion(t.business_question);
     setFormType(t.test_type);
@@ -189,7 +198,8 @@ export function CreativeTestsSection({
   };
 
   const accountAds = useMemo(() => {
-    return records.filter((r) => !formAccountId || r.adAccountId === formAccountId);
+    if (!formAccountId) return [];
+    return records.filter((r) => r.adAccountId === formAccountId);
   }, [records, formAccountId]);
 
   const accountCampaigns = useMemo(() => {
@@ -200,16 +210,43 @@ export function CreativeTestsSection({
     return Array.from(map.entries());
   }, [accountAds]);
 
+  const campaignAds = useMemo(() => {
+    if (!formCampaignId) return accountAds;
+    return accountAds.filter((r) => r.campaignId === formCampaignId);
+  }, [accountAds, formCampaignId]);
+
+  const selectedParticipantAds = useMemo(
+    () => formAdIds.map((id) => recordsById.get(id)).filter(Boolean) as CreativeAdRecord[],
+    [formAdIds, recordsById]
+  );
+
+  const lockedParticipantCategory = selectedParticipantAds[0]?.resultCategory || null;
+  const hasMixedSelectedObjectives =
+    new Set(selectedParticipantAds.map((a) => a.resultCategory)).size > 1;
+  const hasForeignSelectedAccount = selectedParticipantAds.some(
+    (a) => formAccountId && a.adAccountId !== formAccountId
+  );
+  const selectedAccountHealth = formAccountId ? accountHealthById?.get(formAccountId) || null : null;
+
   const saveMutation = useMutation({
     mutationFn: async () => {
-      if (!formAccountId || !formTitle.trim() || !formQuestion.trim() || !formHypText.trim()) {
-        throw new Error("Preencha conta, título, pergunta de negócio e hipótese.");
+      if (!formAccountId) {
+        throw new Error("Selecione explicitamente a conta de anúncios deste teste.");
       }
-      const firstAd = formAdIds.map((id) => recordsById.get(id)).find(Boolean);
+      if (!formTitle.trim() || !formQuestion.trim() || !formHypText.trim()) {
+        throw new Error("Preencha título, pergunta de negócio e hipótese.");
+      }
+      if (hasForeignSelectedAccount) {
+        throw new Error("Os anúncios participantes devem pertencer à mesma conta selecionada.");
+      }
+      if (hasMixedSelectedObjectives) {
+        throw new Error("Não é permitido misturar objetivos/unidades diferentes no mesmo teste.");
+      }
+      const firstAd = selectedParticipantAds[0];
       const payload = {
         ad_account_id: formAccountId,
         campaign_id: formCampaignId || firstAd?.campaignId || null,
-        ad_set_id: firstAd?.adSetId || null,
+        ad_set_id: formAdSetId || firstAd?.adSetId || null,
         title: formTitle.trim(),
         business_question: formQuestion.trim(),
         test_type: formType,
@@ -465,28 +502,59 @@ export function CreativeTestsSection({
                   onChange={(e) => {
                     setFormAccountId(e.target.value);
                     setFormCampaignId("");
+                    setFormAdSetId("");
                     setFormAdIds([]);
                   }}
                   className="w-full rounded-xl border border-border bg-background px-3 py-2 text-foreground"
                 >
-                  {accounts.map((a) => (
-                    <option key={a.id} value={a.id}>{a.name}</option>
-                  ))}
+                  <option value="">-- Selecione uma conta de anúncios --</option>
+                  {accounts.map((a) => {
+                    const issue = accountHealthById?.get(a.id);
+                    return (
+                      <option key={a.id} value={a.id}>
+                        {a.name}{issue?.hasIssue ? " (Sem dados/permissão)" : ""}
+                      </option>
+                    );
+                  })}
                 </select>
               </div>
               <div>
                 <label className="block font-bold text-foreground mb-1">Campanha (Opcional)</label>
                 <select
                   value={formCampaignId}
-                  onChange={(e) => setFormCampaignId(e.target.value)}
-                  className="w-full rounded-xl border border-border bg-background px-3 py-2 text-foreground"
+                  onChange={(e) => {
+                    setFormCampaignId(e.target.value);
+                    setFormAdSetId("");
+                  }}
+                  disabled={!formAccountId}
+                  className="w-full rounded-xl border border-border bg-background px-3 py-2 text-foreground disabled:opacity-50"
                 >
-                  <option value="">Selecionar automaticamente ou geral</option>
+                  <option value="">Todas as campanhas desta conta ({accountAds.length} anúncios)</option>
                   {accountCampaigns.map(([id, name]) => (
                     <option key={id} value={id}>{name}</option>
                   ))}
                 </select>
               </div>
+
+              {selectedAccountHealth?.hasIssue && (
+                <div className="sm:col-span-2 rounded-xl border border-amber-500/35 bg-amber-500/10 p-3 flex items-start gap-2 text-amber-200">
+                  <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5 text-amber-400" />
+                  <div className="space-y-0.5">
+                    <p className="font-bold text-amber-300">{selectedAccountHealth.summary}</p>
+                    <p className="text-[11px] text-amber-100/85">
+                      {selectedAccountHealth.kind === "permission_denied"
+                        ? "Solicite ao administrador para validar as permissões ads_read/ads_management no Gerenciador de Negócios da Meta antes de comparar anúncios ao vivo desta conta."
+                        : "Amplie a janela de datas no topo ou selecione outra conta com entrega no período."}
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {!formAccountId && (
+                <div className="sm:col-span-2 rounded-xl border border-sky-500/30 bg-sky-500/10 p-2.5 text-[11px] text-sky-200">
+                  O filtro global está em <strong>Todas as Contas</strong>. Escolha explicitamente a conta de destino acima para carregar apenas anúncios compatíveis (sem misturar contas nem objetivos).
+                </div>
+              )}
 
               <div className="sm:col-span-2">
                 <label className="block font-bold text-foreground mb-1">Título do Teste *</label>
@@ -595,19 +663,45 @@ export function CreativeTestsSection({
 
               <div className="sm:col-span-2">
                 <label className="block font-bold text-foreground mb-1">
-                  Anúncios Participantes ({formAdIds.length} selecionado(s))
+                  Anúncios Participantes ({formAdIds.length} selecionado(s)
+                  {lockedParticipantCategory ? ` • Unidade travada: ${lockedParticipantCategory}` : ""})
                 </label>
-                <div className="max-h-36 overflow-y-auto rounded-xl border border-border bg-background p-2 space-y-1">
-                  {accountAds.length === 0 ? (
-                    <p className="text-[11px] text-muted-foreground">Nenhum anúncio sincronizado nesta conta no período.</p>
+                <div className="max-h-40 overflow-y-auto rounded-xl border border-border bg-background p-2 space-y-1">
+                  {!formAccountId ? (
+                    <p className="text-[11px] text-muted-foreground p-1">
+                      Selecione primeiro uma conta de anúncios acima para listar anúncios elegíveis.
+                    </p>
+                  ) : campaignAds.length === 0 ? (
+                    <div className="text-[11px] text-muted-foreground p-1.5 space-y-1">
+                      <p className="font-semibold text-foreground/90">
+                        Nenhum anúncio elegível encontrado para esta conta{formCampaignId ? "/campanha" : ""} no período
+                        {dateFrom && dateTo ? ` (${dateFrom.split("-").reverse().join("/")} – ${dateTo.split("-").reverse().join("/")})` : ""}.
+                      </p>
+                      <p>
+                        Próximo passo: selecione um período mais amplo no filtro de datas ou escolha outra campanha antes de vincular variações.
+                      </p>
+                    </div>
                   ) : (
-                    accountAds.slice(0, 60).map((a) => {
+                    campaignAds.slice(0, 60).map((a) => {
                       const checked = formAdIds.includes(a.id);
+                      const incompatibleUnit =
+                        Boolean(lockedParticipantCategory) && a.resultCategory !== lockedParticipantCategory && !checked;
                       return (
-                        <label key={a.id} className="flex items-center gap-2 text-[11px] cursor-pointer hover:bg-muted/30 px-1.5 py-1 rounded">
+                        <label
+                          key={a.id}
+                          className={`flex items-center gap-2 text-[11px] px-1.5 py-1 rounded ${
+                            incompatibleUnit ? "opacity-40 cursor-not-allowed" : "cursor-pointer hover:bg-muted/30"
+                          }`}
+                          title={
+                            incompatibleUnit
+                              ? `Bloqueado: unidade (${a.resultCategory}) difere dos participantes selecionados (${lockedParticipantCategory}).`
+                              : undefined
+                          }
+                        >
                           <input
                             type="checkbox"
                             checked={checked}
+                            disabled={incompatibleUnit}
                             onChange={(e) => {
                               setFormAdIds((prev) =>
                                 e.target.checked ? [...prev, a.id] : prev.filter((x) => x !== a.id)
@@ -674,9 +768,17 @@ export function CreativeTestsSection({
               </button>
               <button
                 type="button"
-                disabled={saveMutation.isPending}
+                disabled={
+                  saveMutation.isPending ||
+                  !formAccountId ||
+                  !formTitle.trim() ||
+                  !formQuestion.trim() ||
+                  !formHypText.trim() ||
+                  hasMixedSelectedObjectives ||
+                  hasForeignSelectedAccount
+                }
                 onClick={() => saveMutation.mutate()}
-                className="inline-flex items-center gap-1.5 rounded-xl bg-primary px-4 py-2 text-xs font-black uppercase text-white hover:bg-primary/90 disabled:opacity-50 transition cursor-pointer"
+                className="inline-flex items-center gap-1.5 rounded-xl bg-primary px-4 py-2 text-xs font-black uppercase text-white hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition cursor-pointer"
               >
                 {saveMutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
                 Salvar Teste

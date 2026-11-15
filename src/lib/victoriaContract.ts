@@ -6,7 +6,11 @@ import {
   type MetaConversionCategory,
   type MetricVector,
 } from "./metricsDomain.ts";
-import { normalizeTimestampToEpochMs } from "./syncStatusDomain.ts";
+import {
+  classifySnapshotFreshness,
+  DEFAULT_SYNC_STALE_THRESHOLD_MINUTES,
+  normalizeTimestampToEpochMs,
+} from "./syncStatusDomain.ts";
 
 export const VICTORIA_CONTRACT_VERSION = "2026.11.4";
 export const VICTORIA_PROMPT_VERSION = "2026.11.4-senior-10part";
@@ -799,14 +803,10 @@ export function buildVictoriaAnalysisContext(input: BuildVictoriaContextInput): 
     limitations.push(`Período curto (${daysCount} dias: ${input.date_from} a ${input.date_to}) — recomenda-se janela de 7 dias para estabilização estatística do leilão.`);
   }
 
-  let dataFreshness: "fresh" | "recent" | "stale" | "unknown" = "unknown";
-  if (input.last_sync_at) {
-    const syncMs = normalizeTimestampToEpochMs(input.last_sync_at);
-    if (syncMs !== null) {
-      const diffHours = (Date.now() - syncMs) / 3600000;
-      dataFreshness = diffHours <= 2 ? "fresh" : diffHours <= 12 ? "recent" : "stale";
-    }
-  }
+  const freshness = classifySnapshotFreshness(input.last_sync_at, {
+    staleThresholdMinutes: DEFAULT_SYNC_STALE_THRESHOLD_MINUTES,
+  });
+  const dataFreshness: "fresh" | "recent" | "stale" | "unknown" = freshness.status;
 
   const modelVersion = input.model_version || VICTORIA_DEFAULT_ANALYTICAL_MODEL;
   const contextHash = computeAnalysisContextHash({

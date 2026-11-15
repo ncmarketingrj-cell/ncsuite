@@ -73,6 +73,7 @@ export interface CreativeAdRecord {
   rawObjective: string | null;
   optimizationGoal: string | null;
   resultCategory: MetaConversionCategory;
+  resultIndicator: string | null;
   resultLabel: string;
   costLabel: string;
   shortBadge: string;
@@ -149,6 +150,8 @@ export interface CreativeManagerOverview {
   losingEfficiencyCount: number;
   insufficientDataCount: number;
   fatiguePossibleCount: number;
+  concentratedGroupsCount: number;
+  lowDiversityGroupsCount: number;
   totalsByObjective: ObjectiveBucketSummary[];
   mixedObjectivesDetected: boolean;
 }
@@ -163,6 +166,8 @@ export interface FatigueDiagnostic {
   status: CreativeFatigueStatus;
   confidence: "low" | "medium" | "high";
   activeDaysCount: number;
+  selectedWindowDays: number;
+  periodTooShort: boolean;
   firstHalfSpend: number;
   secondHalfSpend: number;
   firstHalfFreq: number | null;
@@ -222,7 +227,52 @@ export const ALLOWED_CREATIVE_UPLOAD_MIME_TYPES = [
   "image/webp",
 ] as const;
 
+export const ALLOWED_CREATIVE_UPLOAD_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".webp"]);
+
 export const MAX_CREATIVE_UPLOAD_BYTES = 8 * 1024 * 1024; // 8 MB
+
+export const MIN_TREND_WINDOW_DAYS = 4;
+export const MIN_FATIGUE_ACTIVE_DAYS = 4;
+export const MIN_FATIGUE_IMPRESSIONS = 800;
+export const MIN_FATIGUE_SPEND = 25;
+export const MIN_FATIGUE_SECOND_HALF_IMPRESSIONS = 300;
+
+export function detectImageMimeFromMagicBytes(
+  bytes: Uint8Array
+): "image/png" | "image/jpeg" | "image/webp" | null {
+  if (!bytes || bytes.length < 12) return null;
+  // PNG: 89 50 4E 47 0D 0A 1A 0A
+  if (
+    bytes[0] === 0x89 &&
+    bytes[1] === 0x50 &&
+    bytes[2] === 0x4e &&
+    bytes[3] === 0x47 &&
+    bytes[4] === 0x0d &&
+    bytes[5] === 0x0a &&
+    bytes[6] === 0x1a &&
+    bytes[7] === 0x0a
+  ) {
+    return "image/png";
+  }
+  // JPEG: FF D8 FF
+  if (bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) {
+    return "image/jpeg";
+  }
+  // WEBP: RIFF....WEBP
+  if (
+    bytes[0] === 0x52 &&
+    bytes[1] === 0x49 &&
+    bytes[2] === 0x46 &&
+    bytes[3] === 0x46 &&
+    bytes[8] === 0x57 &&
+    bytes[9] === 0x45 &&
+    bytes[10] === 0x42 &&
+    bytes[11] === 0x50
+  ) {
+    return "image/webp";
+  }
+  return null;
+}
 
 export function validateCreativeUploadFile(file: {
   name?: string | null;
@@ -231,6 +281,16 @@ export function validateCreativeUploadFile(file: {
 }): CreativeUploadValidationResult {
   const mime = String(file?.type || "").toLowerCase();
   const size = Number(file?.size ?? 0);
+  const rawName = String(file?.name || "").trim().toLowerCase();
+  if (rawName) {
+    const extMatch = rawName.match(/\.[a-z0-9]+$/);
+    if (!extMatch || !ALLOWED_CREATIVE_UPLOAD_EXTENSIONS.has(extMatch[0])) {
+      return {
+        valid: false,
+        error: "Extensão de arquivo inválida. Utilize apenas arquivos .png, .jpg, .jpeg ou .webp.",
+      };
+    }
+  }
   if (!ALLOWED_CREATIVE_UPLOAD_MIME_TYPES.includes(mime as any)) {
     return {
       valid: false,
@@ -250,6 +310,38 @@ export function validateCreativeUploadFile(file: {
     };
   }
   return { valid: true, error: null };
+}
+
+export async function validateCreativeUploadFileBinary(
+  file: File | null | undefined
+): Promise<CreativeUploadValidationResult> {
+  if (!file) {
+    return {
+      valid: false,
+      error: "Selecione uma imagem válida (PNG, JPG ou WEBP) antes de analisar.",
+    };
+  }
+  const metaCheck = validateCreativeUploadFile(file);
+  if (!metaCheck.valid) return metaCheck;
+
+  try {
+    if (typeof file.slice === "function") {
+      const headerBuffer = await file.slice(0, 16).arrayBuffer();
+      const detectedMime = detectImageMimeFromMagicBytes(new Uint8Array(headerBuffer));
+      if (!detectedMime) {
+        return {
+          valid: false,
+          error: "Conteúdo binário inválido ou arquivo corrompido. Envie uma imagem PNG, JPG ou WEBP real.",
+        };
+      }
+    }
+    return { valid: true, error: null };
+  } catch {
+    return {
+      valid: false,
+      error: "Não foi possível validar o conteúdo do arquivo selecionado.",
+    };
+  }
 }
 
 export interface ArtFactualValidationResult {
@@ -545,6 +637,7 @@ export function buildCreativeAdRecord(input: BuildCreativeAdRecordInput): Creati
     rawObjective,
     optimizationGoal,
     resultCategory: cls.category,
+    resultIndicator,
     resultLabel: cls.unitPlural,
     costLabel: cls.costUnitLabel,
     shortBadge: cls.shortBadge,
@@ -680,8 +773,24 @@ export function enrichCreativePeerSignals(records: CreativeAdRecord[]): Creative
   });
 }
 
-export function evaluateCreativeFatigue(record: CreativeAdRecord): FatigueDiagnostic {
+export function computeInclusiveWindowDays(dateFrom?: string | null, dateTo?: string | null): number | null {
+  if (!dateFrom || !dateTo) return null;
+  const fromMs = Date.parse(`${String(dateFrom).slice(0, 10)}T00:00:00Z`);
+  const toMs = Date.parse(`${String(dateTo).slice(0, 10)}T00:00:00Z`);
+  if (!Number.isFinite(fromMs) || !Number.isFinite(toMs) || toMs < fromMs) return null;
+  return Math.floor((toMs - fromMs) / 86_400_000) + 1;
+}
+
+export function evaluateCreativeFatigue(
+  record: CreativeAdRecord,
+  options: { dateFrom?: string | null; dateTo?: string | null; minWindowDays?: number } = {}
+): FatigueDiagnostic {
   const activeDays = record.dailySeries.filter((d) => d.impressions > 0 || d.cost > 0);
+  const minWindowDays = options.minWindowDays ?? MIN_TREND_WINDOW_DAYS;
+  const parsedWindowDays = computeInclusiveWindowDays(options.dateFrom, options.dateTo);
+  const selectedWindowDays = parsedWindowDays ?? Math.max(activeDays.length, record.dailySeries.length);
+  const periodTooShort = parsedWindowDays !== null && parsedWindowDays < minWindowDays;
+
   const baseAltFactors = [
     "Alteração de orçamento ou público no conjunto de anúncios",
     "Sazonalidade semanal (dias úteis vs fim de semana)",
@@ -689,11 +798,29 @@ export function evaluateCreativeFatigue(record: CreativeAdRecord): FatigueDiagno
     "Diferença de posicionamento (Reels, Stories, Feed)",
   ];
 
-  if (activeDays.length < 4 || record.impressions < 800 || record.spend < 25) {
+  if (
+    periodTooShort ||
+    activeDays.length < MIN_FATIGUE_ACTIVE_DAYS ||
+    record.impressions < MIN_FATIGUE_IMPRESSIONS ||
+    record.spend < MIN_FATIGUE_SPEND
+  ) {
     const missing: string[] = [];
-    if (activeDays.length < 4) missing.push(`apenas ${activeDays.length} dia(s) com entrega (mín. recomendado: 4)`);
-    if (record.impressions < 800) missing.push(`${record.impressions} impressões no período (mín. recomendado: 800)`);
-    if (record.spend < 25) missing.push(`R$ ${record.spend.toFixed(2)} investidos (amostra inicial)`);
+    if (periodTooShort) {
+      missing.push(`período selecionado de ${selectedWindowDays} dia(s) (mín. para tendência: ${minWindowDays} dias)`);
+    }
+    if (activeDays.length < MIN_FATIGUE_ACTIVE_DAYS) {
+      missing.push(
+        activeDays.length === 0
+          ? "0 dias com entrega registrada no recorte"
+          : `apenas ${activeDays.length} dia(s) com entrega (mín.: ${MIN_FATIGUE_ACTIVE_DAYS})`
+      );
+    }
+    if (record.impressions < MIN_FATIGUE_IMPRESSIONS) {
+      missing.push(`${record.impressions} impressões (mín.: ${MIN_FATIGUE_IMPRESSIONS})`);
+    }
+    if (record.spend < MIN_FATIGUE_SPEND) {
+      missing.push(`R$ ${record.spend.toFixed(2)} investidos (mín.: R$ ${MIN_FATIGUE_SPEND})`);
+    }
     return {
       adId: record.id,
       adName: record.name,
@@ -704,6 +831,8 @@ export function evaluateCreativeFatigue(record: CreativeAdRecord): FatigueDiagno
       status: "insufficient_evidence",
       confidence: "low",
       activeDaysCount: activeDays.length,
+      selectedWindowDays,
+      periodTooShort,
       firstHalfSpend: 0,
       secondHalfSpend: 0,
       firstHalfFreq: null,
@@ -714,8 +843,16 @@ export function evaluateCreativeFatigue(record: CreativeAdRecord): FatigueDiagno
       secondHalfUnitCost: null,
       signals: [],
       alternativeFactors: baseAltFactors,
-      dataCoverageNotes: [`Evidência insuficiente: ${missing.join("; ")}.`],
-      recommendation: "Manter observação em modo leitura até acumular histórico diário suficiente antes de substituir o criativo.",
+      dataCoverageNotes: [
+        periodTooShort
+          ? `Período insuficiente (${selectedWindowDays} dia(s)): ${missing.join("; ")}.`
+          : `Evidência insuficiente: ${missing.join("; ")}.`,
+      ],
+      recommendation: periodTooShort
+        ? `Período insuficiente (${selectedWindowDays} dia(s)) para inferir fadiga ou estabilidade. Amplie a janela selecionada para pelo menos 7 dias.`
+        : activeDays.length === 0
+          ? "Sem dias com entrega neste período; dias zerados não indicam estabilidade nem fadiga."
+          : "Manter observação em modo leitura até acumular histórico diário suficiente (mín. 4 dias com entrega, 800 impressões e R$ 25) antes de substituir o criativo.",
     };
   }
 
@@ -757,7 +894,7 @@ export function evaluateCreativeFatigue(record: CreativeAdRecord): FatigueDiagno
     signals.push(`Queda para zero ${record.resultLabel.toLowerCase()} na segunda metade com R$ ${h2.spend.toFixed(2)} gastos`);
   }
 
-  const hasEnoughSecondHalfDelivery = h2.impressions >= 300;
+  const hasEnoughSecondHalfDelivery = h2.impressions >= MIN_FATIGUE_SECOND_HALF_IMPRESSIONS;
   let status: CreativeFatigueStatus = "not_detected";
   let confidence: "low" | "medium" | "high" = "medium";
 
@@ -782,6 +919,8 @@ export function evaluateCreativeFatigue(record: CreativeAdRecord): FatigueDiagno
     status,
     confidence,
     activeDaysCount: activeDays.length,
+    selectedWindowDays,
+    periodTooShort: false,
     firstHalfSpend: h1.spend,
     secondHalfSpend: h2.spend,
     firstHalfFreq: h1.freq,
@@ -807,7 +946,7 @@ export function evaluateCreativeFatigue(record: CreativeAdRecord): FatigueDiagno
 export function evaluateCreativeDiversity(records: CreativeAdRecord[]): CreativeDiversityGroup[] {
   const byAdSet = new Map<string, CreativeAdRecord[]>();
   for (const r of records) {
-    const key = r.adSetId || r.campaignId || r.adAccountId;
+    const key = `${r.adAccountId}::${r.resultCategory}::${r.adSetId || r.campaignId || "group"}`;
     const list = byAdSet.get(key) || [];
     list.push(r);
     byAdSet.set(key, list);
@@ -858,7 +997,8 @@ export function evaluateCreativeDiversity(records: CreativeAdRecord[]): Creative
 
 export function buildCreativeManagerOverview(
   records: CreativeAdRecord[],
-  fatigueDiagnostics: FatigueDiagnostic[]
+  fatigueDiagnostics: FatigueDiagnostic[],
+  diversityGroups: CreativeDiversityGroup[] = []
 ): CreativeManagerOverview {
   const fatigueMap = new Map(fatigueDiagnostics.map((f) => [f.adId, f]));
   const bucketMap = new Map<MetaConversionCategory, ObjectiveBucketSummary>();
@@ -916,6 +1056,9 @@ export function buildCreativeManagerOverview(
     }))
     .sort((a, b) => b.spend - a.spend || b.results - a.results);
 
+  const concentratedGroupsCount = diversityGroups.filter((g) => g.status === "single_creative_dominant").length;
+  const lowDiversityGroupsCount = diversityGroups.filter((g) => g.status === "low_diversity").length;
+
   return {
     totalAds: records.length,
     activeWithDeliveryCount,
@@ -926,6 +1069,8 @@ export function buildCreativeManagerOverview(
     losingEfficiencyCount,
     insufficientDataCount,
     fatiguePossibleCount,
+    concentratedGroupsCount,
+    lowDiversityGroupsCount,
     totalsByObjective,
     mixedObjectivesDetected: totalsByObjective.length > 1,
   };

@@ -162,12 +162,15 @@ export function CreativeManagerOverviewSection({
           className="text-left rounded-2xl border border-amber-500/25 bg-amber-500/[0.06] hover:bg-amber-500/10 p-3.5 transition cursor-pointer"
         >
           <div className="flex items-center justify-between text-[10px] font-mono uppercase text-amber-400">
-            <span>Possível Fadiga</span>
+            <span>Fadiga &amp; Concentração</span>
             <AlertTriangle className="h-3.5 w-3.5" />
           </div>
-          <p className="mt-1 text-2xl font-black text-foreground">{overview.fatiguePossibleCount}</p>
+          <div className="mt-1 flex items-baseline gap-2 flex-wrap">
+            <span className="text-2xl font-black text-foreground">{overview.fatiguePossibleCount}</span>
+            <span className="text-[10px] font-bold text-amber-300">c/ possível fadiga</span>
+          </div>
           <p className="mt-0.5 text-[10px] text-muted-foreground">
-            Requer checagem de tendência e fatores externos
+            {overview.concentratedGroupsCount} grupo(s) c/ concentração de investimento
           </p>
         </button>
 
