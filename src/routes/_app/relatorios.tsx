@@ -1306,11 +1306,33 @@ function RelatoriosPage() {
 
     // Bloco de totais gerais — presente em TODOS os modos de relatório (sem soma heterogênea de unidades)
     const buildTotais = () => {
+      const selectedEvents = selected.map((c) =>
+        classifyMetaEvent({
+          campaignName: c.name,
+          rawObjective: c.rawObjective,
+          optimizationGoal: c.optimizationGoal,
+          resultType: c.resultType || c.objective,
+          resultsIndicator: c.resultIndicator,
+          isVehicleContext,
+        })
+      );
+      const hasOnlyPurchases = selectedEvents.length > 0 && selectedEvents.every((ev) => ev.category === "PURCHASES");
+      const hasMessages = selectedEvents.some((ev) => ev.category === "MESSAGES");
+      const hasLeads = selectedEvents.some((ev) => ev.category === "LEADS");
+      const totalResultLabel = hasOnlyPurchases
+        ? "Compras"
+        : hasMessages && hasLeads
+          ? "Conversas / Leads"
+          : hasMessages
+            ? "Conversas"
+            : "Leads";
+      const totalCostLabel = hasOnlyPurchases ? "CPA" : "CPL";
+
       let txt = `*Totais Gerais:*\n`;
       txt += ` Investimento Total: ${fmtBRLWithSymbol(totalCost)}\n`;
       if (snapSummary && snapSummary.conversionResults > 0) {
-        txt += ` Conversões Elegíveis: ${snapSummary.conversionResults.toLocaleString("pt-BR")}\n`;
-        txt += ` CPA (Conversões): ${snapSummary.cpaEligible !== null ? fmtBRLWithSymbol(snapSummary.cpaEligible) : (snapSummary.conversionSpend <= 0 ? "Não calculável (gasto zero)" : "Não calculável")}\n`;
+        txt += ` ${totalResultLabel}: ${snapSummary.conversionResults.toLocaleString("pt-BR")}\n`;
+        txt += ` ${totalCostLabel}: ${snapSummary.cpaEligible !== null ? fmtBRLWithSymbol(snapSummary.cpaEligible) : (snapSummary.conversionSpend <= 0 ? "Não calculável (gasto zero)" : "Não calculável")}\n`;
       } else if (vectorSummary.length === 1) {
         txt += ` ${vectorSummary[0].label}: ${vectorSummary[0].value.toLocaleString("pt-BR")}\n`;
       }
@@ -1350,9 +1372,12 @@ function RelatoriosPage() {
 
         let costLabel = "Custo por Resultado";
         if (isClick) costLabel = "CPC (Link)";
-        if (isReach) costLabel = "Custo por 1.000 Contas Alcançadas";
+        else if (isReach) costLabel = "Custo por 1.000 Contas Alcançadas";
+        else if (/compras|vendas/i.test(type)) costLabel = "CPA";
+        else if (/mensagens|leads|consignado/i.test(type)) costLabel = "CPL";
 
-        txt += `*${type}:*\n`;
+        const cleanType = type.replace(/^[\p{Emoji_Presentation}\p{Extended_Pictographic}\uFE0F\u200D]+\s*/u, "");
+        txt += `*${cleanType}:*\n`;
         txt += ` Investimento: ${fmtBRLWithSymbol(data.cost)}\n`;
         txt += ` ${resultLabel}: ${data.results.toLocaleString("pt-BR")}\n`;
         txt += ` ${costLabel}: ${cpl !== null ? fmtBRLWithSymbol(cpl) : (data.cost <= 0 && data.results > 0 ? "Não calculável (gasto zero)" : "Não calculável")}\n`;
@@ -1407,7 +1432,13 @@ function RelatoriosPage() {
           const linkClk = Number(c.inlineLinkClicks ?? c.clicks ?? 0);
           const resultValue = isClickObj ? linkClk : isReachObj ? (c.reach > 0 ? c.reach : c.conversions) : c.conversions;
           const costPerRes = computeUnitCost(c.cost, resultValue, ev.category);
-          const costLabel = isReachObj ? "Custo por 1.000 contas alcançadas" : "Custo/Resultado";
+          const costLabel = isReachObj
+            ? "Custo por 1.000 contas alcançadas"
+            : ev.category === "PURCHASES"
+              ? "CPA"
+              : ev.category === "MESSAGES" || ev.category === "LEADS"
+                ? "CPL"
+                : "Custo/Resultado";
           const typeLabel = ev.unitPlural;
 
           txt += `*${c.name}:*${c.effectiveStatusLabel ? ` (${c.effectiveStatusLabel})` : ""}\n`;

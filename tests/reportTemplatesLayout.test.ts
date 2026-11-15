@@ -81,6 +81,8 @@ describe("Report templates clean NC layout", () => {
       assert.ok(tpl.message_template.includes("Loja: {{NOME_CLIENTE}}"), `${id} deve usar Loja: {{NOME_CLIENTE}}`);
       assert.ok(tpl.message_template.includes("*Período:* {{PERIODO}}"), `${id} deve usar *Período:* {{PERIODO}}`);
       assert.ok(tpl.message_template.includes("*Totais Gerais:*"), `${id} deve conter *Totais Gerais:*`);
+      assert.ok(tpl.message_template.includes("CPL Médio Geral:"), `${id} deve usar CPL Médio Geral`);
+      assert.equal(tpl.message_template.includes("CPA Médio Geral:"), false, `${id} não deve usar CPA Médio Geral`);
     }
 
     const std = byId.get("standard_auto");
@@ -142,6 +144,8 @@ describe("Report templates clean NC layout", () => {
     const relatoriosSource = readFileSync(resolvePath(rootDir, "src/routes/_app/relatorios.tsx"), "utf8");
     assert.equal(relatoriosSource.includes("━━━━━"), false, "relatorios.tsx não deve conter divisores ━━━━━");
     assert.equal(relatoriosSource.includes("TOTAIS GERAIS"), false, "relatorios.tsx não deve conter *📊 TOTAIS GERAIS*");
+    assert.equal(relatoriosSource.includes("Conversões Elegíveis"), false, "relatorios.tsx não deve falar Conversões Elegíveis");
+    assert.equal(relatoriosSource.includes("CPA (Conversões)"), false, "relatorios.tsx não deve usar CPA (Conversões)");
     assert.ok(relatoriosSource.includes("*Totais Gerais:*"));
     assert.ok(relatoriosSource.includes("*Resultados por Tipo / Objetivo:*"));
     assert.ok(relatoriosSource.includes("Detalhamento de Campanhas"));

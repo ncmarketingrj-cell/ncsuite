@@ -400,7 +400,7 @@ Loja: {{NOME_CLIENTE}}
 *Totais Gerais:*
  Investimento Total: {{INVESTIMENTO}}
  Resultados Totais: {{TOTAL_RESULTADOS}}
- CPA Médio Geral: {{CPA_MEDIO}}
+ CPL Médio Geral: {{CPA_MEDIO}}
  Alcance Total: {{ALCANCE_TOTAL}}
  Impressões Totais: {{IMPRESSOES_TOTAIS}}
  Campanhas no Relatório: {{TOTAL_CAMPANHAS}}
@@ -425,7 +425,7 @@ Loja: {{NOME_CLIENTE}}
 *Totais Gerais:*
  Investimento Total: {{INVESTIMENTO}}
  Resultados Totais: {{TOTAL_RESULTADOS}}
- CPA Médio Geral: {{CPA_MEDIO}}
+ CPL Médio Geral: {{CPA_MEDIO}}
  Alcance Total: {{ALCANCE_TOTAL}}
  Impressões Totais: {{IMPRESSOES_TOTAIS}}
  Campanhas no Relatório: {{TOTAL_CAMPANHAS}}
@@ -450,7 +450,7 @@ Loja: {{NOME_CLIENTE}}
 *Totais Gerais:*
  Investimento Total: {{INVESTIMENTO}}
  Resultados Totais: {{TOTAL_RESULTADOS}}
- CPA Médio Geral: {{CPA_MEDIO}}
+ CPL Médio Geral: {{CPA_MEDIO}}
  Alcance Total: {{ALCANCE_TOTAL}}
  Impressões Totais: {{IMPRESSOES_TOTAIS}}
  Campanhas no Relatório: {{TOTAL_CAMPANHAS}}
@@ -1222,7 +1222,9 @@ export function renderReportTemplateText(params: {
 
       let costLabel = "Custo por resultado";
       if (isClick) costLabel = "CPC (link)";
-      if (isReach) costLabel = "Custo por 1.000 contas alcançadas";
+      else if (isReach) costLabel = "Custo por 1.000 contas alcançadas";
+      else if (data.category === "PURCHASES") costLabel = "CPA";
+      else if (data.category === "MESSAGES" || data.category === "LEADS") costLabel = "CPL";
 
       const cplFormatted =
         cpl !== null
@@ -1267,7 +1269,7 @@ export function renderReportTemplateText(params: {
       const resultValue = isClick ? linkClk : isReach ? (c.reach > 0 ? c.reach : c.conversions) : c.conversions;
       const costPerRes = computeUnitCost(c.cost, resultValue, ev.category);
       const unitLabel = isReach ? "pessoas alc." : isClick ? "cliques link" : ev.unitPlural;
-      const costUnit = isReach ? "Custo/1k alc." : ev.isConversionGoal ? "CPA" : "CPR";
+      const costUnit = isReach ? "Custo/1k alc." : ev.category === "PURCHASES" ? "CPA" : ev.isConversionGoal ? "CPL" : "CPR";
       const costFormatted =
         costPerRes !== null
           ? fmtBRLWithSymbol(costPerRes)
@@ -1298,7 +1300,13 @@ export function renderReportTemplateText(params: {
 
       const resultValue = isClick ? linkClk : isReach ? (c.reach > 0 ? c.reach : c.conversions) : c.conversions;
       const costPerRes = computeUnitCost(c.cost, resultValue, ev.category);
-      const costLabel = isReach ? "Custo por 1.000 contas alcançadas" : "Custo/Resultado";
+      const costLabel = isReach
+        ? "Custo por 1.000 contas alcançadas"
+        : ev.category === "PURCHASES"
+          ? "CPA"
+          : ev.category === "MESSAGES" || ev.category === "LEADS"
+            ? "CPL"
+            : "Custo/Resultado";
       const costFormatted =
         costPerRes !== null
           ? fmtBRLWithSymbol(costPerRes)
