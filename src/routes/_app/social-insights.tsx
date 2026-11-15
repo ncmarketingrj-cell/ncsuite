@@ -35,7 +35,7 @@ import {
   type SimulatedSocialFault,
 } from "@/lib/metaSocialService";
 import { useAuth } from "@/lib/auth";
-import { useSocialHubFilters } from "@/lib/socialHubStore";
+import { canonicalizeSocialPageId, useSocialHubFilters } from "@/lib/socialHubStore";
 import {
   useManualSocialSync,
   useSocialAccountsQuery,
@@ -192,7 +192,7 @@ function SocialInsightsPage() {
   const { user } = useAuth();
   const tenantId = user?.id || "default";
   const { canViewIntegrations } = usePagePermission();
-  const { selectedPage, setSelectedPage, selectedNetwork } = useSocialHubFilters();
+  const { selectedPage, selectedAccountLabel, setSelectedPage, selectedNetwork } = useSocialHubFilters();
   const { isSyncing: isManualSyncing, syncScope } = useManualSocialSync();
 
   const initialUrlParams = useMemo(() => {
@@ -296,6 +296,25 @@ function SocialInsightsPage() {
   const masterToken = liveAccountsData?.masterToken || null;
   const hasMasterToken = Boolean(liveAccountsData?.hasMasterToken || masterToken);
 
+  const canonicalSelectedPage = useMemo(
+    () => canonicalizeSocialPageId(selectedPage, activePages),
+    [selectedPage, activePages]
+  );
+
+  useEffect(() => {
+    if (canonicalSelectedPage !== selectedPage) {
+      const matched = activePages.find((p) => p.page_id === canonicalSelectedPage);
+      const label = matched
+        ? `${matched.page_name}${
+            matched.instagram_handle
+              ? ` (@${matched.instagram_handle} · ${matched.instagram_followers.toLocaleString("pt-BR")} seg)`
+              : ` (Somente FB · ${matched.facebook_followers} seg)`
+          }`
+        : null;
+      setSelectedPage(canonicalSelectedPage, label);
+    }
+  }, [canonicalSelectedPage, selectedPage, activePages, setSelectedPage]);
+
   // 2A. Visão Geral compartilhada com SWR (renderiza snapshot imediato e revalida em segundo plano)
   const {
     data: overviewQueryData,
@@ -305,7 +324,7 @@ function SocialInsightsPage() {
   } = useSocialOverviewQuery({
     tenantId,
     accounts: activePages,
-    selectedPage,
+    selectedPage: canonicalSelectedPage,
     network: selectedNetwork,
     masterToken,
     dateFrom,
@@ -324,7 +343,7 @@ function SocialInsightsPage() {
   } = useSocialPostsQuery({
     tenantId,
     accounts: activePages,
-    selectedPage,
+    selectedPage: canonicalSelectedPage,
     network: selectedNetwork,
     masterToken,
     dateFrom,
@@ -334,17 +353,22 @@ function SocialInsightsPage() {
     enabled: !loadingAccounts,
   });
 
-  // Sinaliza ao useAutoSync global para não disputar conexões durante o carregamento inicial de /social-insights
+  // Sinaliza ao useAutoSync global para não disputar conexões durante o carregamento inicial
   useEffect(() => {
     if (typeof window !== "undefined") {
-      (window as any).__ncSocialInsightsLoading = Boolean(loadingAccounts || fetchingOverview || fetchingPosts);
+      const initialLoading = Boolean(
+        loadingAccounts || (!overviewQueryData && fetchingOverview) || (!postsQueryData && fetchingPosts)
+      );
+      (window as any).__ncSocialInsightsLoading = initialLoading;
+      (window as any).__ncSocialHubLoading = initialLoading;
     }
     return () => {
       if (typeof window !== "undefined") {
         (window as any).__ncSocialInsightsLoading = false;
+        (window as any).__ncSocialHubLoading = false;
       }
     };
-  }, [loadingAccounts, fetchingOverview, fetchingPosts]);
+  }, [loadingAccounts, fetchingOverview, fetchingPosts, overviewQueryData, postsQueryData]);
 
   const refetchAllSocial = useCallback(async () => {
     await Promise.allSettled([refetchOverview(), refetchPosts()]);
@@ -1144,10 +1168,18 @@ Responda de forma objetiva e tática em Markdown com:
           <span className="text-xs text-muted-foreground font-bold uppercase tracking-wider">Conta Conectada:</span>
           <select
             data-testid="social-account-selector"
-            value={selectedPage}
+            value={canonicalSelectedPage}
             onChange={(e) => {
               const nextVal = e.target.value;
-              setSelectedPage(nextVal);
+              const matched = activePages.find((p) => p.page_id === nextVal);
+              const label = matched
+                ? `${matched.page_name}${
+                    matched.instagram_handle
+                      ? ` (@${matched.instagram_handle} · ${matched.instagram_followers.toLocaleString("pt-BR")} seg)`
+                      : ` (Somente FB · ${matched.facebook_followers} seg)`
+                  }`
+                : null;
+              setSelectedPage(nextVal, label);
               setAiReport(null);
               setSelectedPostDetail(null);
               setVisiblePostsLimit(INITIAL_VISIBLE_POSTS);
@@ -1155,10 +1187,16 @@ Responda de forma objetiva e tática em Markdown com:
             className="rounded-xl border border-white/10 bg-background px-3 py-1.5 text-xs text-foreground focus:outline-none focus:border-primary/50 font-bold max-w-[360px]"
           >
             <option value="all">
-              {loadingAccounts
-                ? "Consolidado — Carregando contas conectadas..."
+              {loadingAccounts && activePages.length === 0
+                ? "Todas as Contas (Consolidado · Carregando...)"
                 : `Principais Contas Conectadas (Consolidado · ${activePages.length} contas)`}
             </option>
+            {canonicalSelectedPage !== "all" &&
+              !activePages.some((sp) => sp.page_id === canonicalSelectedPage) && (
+                <option value={canonicalSelectedPage}>
+                  {selectedAccountLabel || "Conta selecionada"}
+                </option>
+              )}
             {activePages.map((sp) => (
               <option key={sp.page_id} value={sp.page_id}>
                 {sp.page_name}
@@ -1168,12 +1206,12 @@ Responda de forma objetiva e tática em Markdown com:
               </option>
             ))}
           </select>
-          {fetchingOverview && (
+          {fetchingOverview && !overviewQueryData && (
             <span className="inline-flex items-center gap-1.5 text-[11px] font-bold text-primary">
               <Loader2 className="h-3.5 w-3.5 animate-spin" /> Carregando visão geral Meta...
             </span>
           )}
-          {fetchingPosts && (
+          {fetchingPosts && !postsQueryData && (
             <span className="inline-flex items-center gap-1.5 text-[11px] font-bold text-cyan-400">
               <Loader2 className="h-3.5 w-3.5 animate-spin" /> Carregando publicações...
             </span>

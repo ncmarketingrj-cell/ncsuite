@@ -62,7 +62,7 @@ import {
   type BestSlotItem,
 } from "@/lib/metaSocialService";
 import { useAuth } from "@/lib/auth";
-import { useSocialHubFilters } from "@/lib/socialHubStore";
+import { canonicalizeSocialPageId, useSocialHubFilters } from "@/lib/socialHubStore";
 import {
   useManualSocialSync,
   useSocialAccountsQuery,
@@ -126,7 +126,7 @@ export default function SocialMediaPage() {
   const { user } = useAuth();
   const tenantId = user?.id || "default";
 
-  const { selectedPage, setSelectedPage, selectedNetwork } = useSocialHubFilters();
+  const { selectedPage, selectedAccountLabel, setSelectedPage, selectedNetwork } = useSocialHubFilters();
   const [viewMode, setViewMode] = useState<"calendar" | "kanban" | "grid" | "heatmap" | "performance">("calendar");
   const [calendarDate, setCalendarDate] = useState<Date>(new Date());
   const [filterPlatform, setFilterPlatform] = useState<"all" | "instagram" | "facebook">(selectedNetwork);
@@ -140,6 +140,19 @@ export default function SocialMediaPage() {
   const [dayModalDate, setDayModalDate] = useState<Date | null>(null);
   const { isSyncing, syncScope } = useManualSocialSync();
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const sp = new URLSearchParams(window.location.search);
+    const urlAcc = sp.get("account");
+    if (urlAcc) setSelectedPage(urlAcc);
+    const onPopState = () => {
+      const nextAcc = new URLSearchParams(window.location.search).get("account");
+      if (nextAcc) setSelectedPage(nextAcc);
+    };
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, [setSelectedPage]);
+
   // 1. Contas conectadas compartilhadas no cache do Hub Social
   const {
     data: accountsData,
@@ -149,10 +162,25 @@ export default function SocialMediaPage() {
   const activePages: RealSocialAccount[] = accountsData?.accounts || [];
   const masterToken = accountsData?.masterToken || null;
 
+  const canonicalSelectedPage = useMemo(
+    () => canonicalizeSocialPageId(selectedPage, activePages),
+    [selectedPage, activePages]
+  );
+
+  useEffect(() => {
+    if (canonicalSelectedPage !== selectedPage) {
+      const matched = activePages.find((p) => p.page_id === canonicalSelectedPage);
+      const label = matched
+        ? `${matched.page_name}${matched.instagram_handle ? ` (@${matched.instagram_handle})` : " (FB)"}`
+        : null;
+      setSelectedPage(canonicalSelectedPage, label);
+    }
+  }, [canonicalSelectedPage, selectedPage, activePages, setSelectedPage]);
+
   const activePageObj = useMemo(() => {
-    if (selectedPage === "all") return activePages[0] || null;
-    return activePages.find((p) => p.page_id === selectedPage) || activePages[0] || null;
-  }, [activePages, selectedPage]);
+    if (canonicalSelectedPage === "all") return activePages[0] || null;
+    return activePages.find((p) => p.page_id === canonicalSelectedPage) || activePages[0] || null;
+  }, [activePages, canonicalSelectedPage]);
 
   // 2. Planejador com snapshot imediato + SWR + single-flight compartilhado
   const {
@@ -163,13 +191,29 @@ export default function SocialMediaPage() {
   } = useSocialPlannerQuery({
     tenantId,
     accounts: activePages,
-    selectedPage,
+    selectedPage: canonicalSelectedPage,
     network: selectedNetwork,
     masterToken,
     enabled: !isLoadingAccounts,
   });
 
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      (window as any).__ncSocialHubLoading = Boolean(isLoadingAccounts || (!plannerData && isFetchingPlanner));
+    }
+    return () => {
+      if (typeof window !== "undefined") {
+        (window as any).__ncSocialHubLoading = false;
+      }
+    };
+  }, [isLoadingAccounts, isFetchingPlanner, plannerData]);
+
   const allPosts = plannerData?.posts || [];
+  const isPlannerInitialLoading = !plannerData && (isLoadingAccounts || isLoadingPlanner || isFetchingPlanner);
+  const isPlannerUnavailable =
+    !isPlannerInitialLoading &&
+    Boolean(accountsData?.error || plannerData?.errorMessage) &&
+    allPosts.length === 0;
   const igProfile = plannerData?.igProfile || null;
   const heatmapMatrix = plannerData?.heatmapMatrix || Array.from({ length: 7 }, () => Array(24).fill(0));
   const hasPostsForHeatmap = plannerData?.hasPostsForHeatmap || false;
@@ -413,11 +457,29 @@ export default function SocialMediaPage() {
         <div className="flex items-center gap-2.5 flex-wrap">
           <div className="relative">
             <select
-              value={selectedPage}
-              onChange={(e) => setSelectedPage(e.target.value)}
+              data-testid="social-account-selector"
+              value={canonicalSelectedPage}
+              onChange={(e) => {
+                const nextId = e.target.value;
+                const matched = activePages.find((p) => p.page_id === nextId);
+                const label = matched
+                  ? `${matched.page_name}${matched.instagram_handle ? ` (@${matched.instagram_handle})` : " (FB)"}`
+                  : null;
+                setSelectedPage(nextId, label);
+              }}
               className="bg-card border border-border/80 text-foreground text-xs font-bold rounded-xl px-3 py-2 pr-8 appearance-none focus:outline-none focus:ring-1 focus:ring-primary cursor-pointer hover:border-primary/50 transition shadow-sm min-w-[220px]"
             >
-              <option value="all">Todas as Contas ({activePages.length})</option>
+              <option value="all">
+                {isLoadingAccounts && activePages.length === 0
+                  ? "Todas as Contas (Consolidado · Carregando...)"
+                  : `Todas as Contas (${activePages.length})`}
+              </option>
+              {canonicalSelectedPage !== "all" &&
+                !activePages.some((p) => p.page_id === canonicalSelectedPage) && (
+                  <option value={canonicalSelectedPage}>
+                    {selectedAccountLabel || "Conta selecionada"}
+                  </option>
+                )}
               {activePages.map((page) => (
                 <option key={page.page_id} value={page.page_id}>
                   {page.page_name} {page.instagram_handle ? `(@${page.instagram_handle})` : "(FB)"}
@@ -460,9 +522,21 @@ export default function SocialMediaPage() {
 
       {/* ─── AVISO DE CONEXÃO / LIMITAÇÃO TRANSPARENTE ─── */}
       {(accountsData?.error || plannerData?.errorMessage) && (
-        <div className="p-3.5 rounded-xl border border-amber-500/30 bg-amber-500/10 text-xs text-amber-200 flex items-center gap-2">
-          <Info className="h-4 w-4 shrink-0 text-amber-400" />
-          <span>{accountsData?.error || plannerData?.errorMessage}</span>
+        <div className="p-3.5 rounded-xl border border-amber-500/30 bg-amber-500/10 text-xs text-amber-200 flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <Info className="h-4 w-4 shrink-0 text-amber-400" />
+            <span>
+              {accountsData?.error || plannerData?.errorMessage}
+              {allPosts.length > 0 ? " — exibindo último snapshot válido." : ""}
+            </span>
+          </div>
+          <button
+            onClick={() => void handleSyncSocial()}
+            disabled={isSyncing || isFetchingPlanner}
+            className="px-2.5 py-1 rounded-lg bg-amber-500/20 border border-amber-400/30 text-amber-100 font-bold hover:bg-amber-500/30 cursor-pointer disabled:opacity-50"
+          >
+            Tentar novamente
+          </button>
         </div>
       )}
 
@@ -474,10 +548,14 @@ export default function SocialMediaPage() {
             <Clock className="h-4 w-4 text-cyan-400" />
           </div>
           <div className="text-xl sm:text-2xl font-bold font-mono text-foreground">
-            {isLoadingPlanner ? "..." : stats.scheduledCount}
+            {isPlannerInitialLoading ? "..." : isPlannerUnavailable ? "—" : stats.scheduledCount}
           </div>
           <p className="text-[10px] text-muted-foreground mt-0.5">
-            {stats.metaScheduledCount} no Facebook + fila NC Suite • {stats.pendingCount} pendente(s) (IG nativo não listado pela API)
+            {isPlannerInitialLoading
+              ? "Carregando agendamentos..."
+              : isPlannerUnavailable
+              ? "Indisponível — tente sincronizar"
+              : `${stats.metaScheduledCount} no Facebook + fila NC Suite • ${stats.pendingCount} pendente(s) (IG nativo não listado pela API)`}
           </p>
         </div>
 
@@ -487,10 +565,14 @@ export default function SocialMediaPage() {
             <CheckCircle2 className="h-4 w-4 text-emerald-400" />
           </div>
           <div className="text-xl sm:text-2xl font-bold font-mono text-foreground">
-            {isLoadingPlanner ? "..." : stats.publishedCount}
+            {isPlannerInitialLoading ? "..." : isPlannerUnavailable ? "—" : stats.publishedCount}
           </div>
           <p className="text-[10px] text-emerald-500 font-semibold mt-0.5">
-            {stats.totalLikes.toLocaleString("pt-BR")} curtidas e {stats.totalComments.toLocaleString("pt-BR")} coment.
+            {isPlannerInitialLoading
+              ? "Carregando publicações..."
+              : isPlannerUnavailable
+              ? "Indisponível — tente sincronizar"
+              : `${stats.totalLikes.toLocaleString("pt-BR")} curtidas e ${stats.totalComments.toLocaleString("pt-BR")} coment.`}
           </p>
         </div>
 
@@ -500,7 +582,7 @@ export default function SocialMediaPage() {
             <Flame className="h-4 w-4 text-amber-400" />
           </div>
           <div className="text-xl sm:text-2xl font-bold font-mono text-foreground">
-            {isLoadingPlanner ? "..." : `${stats.avgEngRate}%`}
+            {isPlannerInitialLoading ? "..." : isPlannerUnavailable ? "—" : `${stats.avgEngRate}%`}
           </div>
           <p className="text-[10px] text-muted-foreground mt-0.5">
             Interações / alcance real nos posts
@@ -513,7 +595,7 @@ export default function SocialMediaPage() {
             <Eye className="h-4 w-4 text-primary" />
           </div>
           <div className="text-xl sm:text-2xl font-bold font-mono text-foreground">
-            {isLoadingPlanner ? "..." : stats.totalReach.toLocaleString("pt-BR")}
+            {isPlannerInitialLoading ? "..." : isPlannerUnavailable ? "—" : stats.totalReach.toLocaleString("pt-BR")}
           </div>
           <p className="text-[10px] text-muted-foreground mt-0.5">
             Soma de alcance real das mídias

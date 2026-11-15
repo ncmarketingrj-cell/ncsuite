@@ -6,12 +6,23 @@ import {
   evaluateSocialSnapshotFreshness,
   getSocialCacheTtlMs,
   getSocialPerfMetrics,
+  recordSocialCacheHitEvent,
   recordSocialPerfEvent,
   recordSocialRouteTransition,
   resetSocialCacheForTests,
   resolveSocialDataWithSWR,
   runSharedSocialSync,
+  SOCIAL_DATA_CLASS_MATRIX,
 } from "../src/lib/socialCacheDomain.ts";
+import {
+  canonicalizeSocialPageId,
+  getLastKnownTenantId,
+  getSocialHubFilterSnapshot,
+  normalizeSelectedPageId,
+  resetSocialHubFiltersForTests,
+  setSocialSelectedNetwork,
+  setSocialSelectedPage,
+} from "../src/lib/socialHubStore.ts";
 
 test("1-4. Warm cache across Social Hub screens avoids repeated Meta calls and reuses snapshots on revisit & hub switch", async () => {
   resetSocialCacheForTests();
@@ -334,4 +345,89 @@ test("10. Warmed-cache navigation latency benchmark records accurate p50/p95 and
   assert.equal(metrics.metaCalls, 0);
   assert.ok(metrics.p50NavigationMs <= 50);
   assert.ok(metrics.p95NavigationMs <= 100);
+});
+
+test("11. Canonical shared account selection persists across Audit -> Insights -> Planner and supports FB-only, IG+FB, and consolidated", () => {
+  resetSocialHubFiltersForTests();
+
+  const mockAccounts = [
+    {
+      page_id: "1001",
+      page_name: "Fly Garage",
+      instagram_account_id: "178414001",
+      instagram_handle: "flygaragebarra",
+    },
+    {
+      page_id: "2002",
+      page_name: "Alug Motos Brasil",
+      instagram_account_id: null,
+      instagram_handle: null,
+    },
+  ];
+
+  // Selecionar Fly Garage na Auditoria Orgânica
+  setSocialSelectedPage("1001", "Fly Garage (@flygaragebarra)");
+  assert.equal(getSocialHubFilterSnapshot().selectedPage, "1001");
+  assert.equal(getSocialHubFilterSnapshot().selectedAccountLabel, "Fly Garage (@flygaragebarra)");
+
+  // Canonicaliza se um ID do Instagram vier via URL ?account=
+  assert.equal(canonicalizeSocialPageId("178414001", mockAccounts), "1001");
+  // Preserva enquanto accounts ainda está vazio (carregando)
+  assert.equal(canonicalizeSocialPageId("1001", []), "1001");
+
+  // Conta somente Facebook permanece selecionada sem resetar para consolidated
+  setSocialSelectedPage("2002", "Alug Motos Brasil (Somente FB)");
+  assert.equal(canonicalizeSocialPageId("2002", mockAccounts), "2002");
+  assert.equal(getSocialHubFilterSnapshot().selectedPage, "2002");
+
+  // Troca de rede não altera conta selecionada
+  setSocialSelectedNetwork("facebook");
+  assert.equal(getSocialHubFilterSnapshot().selectedPage, "2002");
+
+  // Retorno explícito para Consolidado ("all")
+  assert.equal(normalizeSelectedPageId("consolidated"), "all");
+  setSocialSelectedPage("all");
+  assert.equal(getSocialHubFilterSnapshot().selectedPage, "all");
+  assert.equal(getSocialHubFilterSnapshot().selectedAccountLabel, null);
+
+  // Tenant fallback nunca regrede se tenant real for conhecido
+  assert.equal(getLastKnownTenantId("user-uuid-99"), "user-uuid-99");
+  assert.equal(getLastKnownTenantId(null), "default");
+});
+
+test("12. Instrumentation matrix, React Query cache-hit tracking, call lifecycle, and anonymized scope tags work without exposing tokens", async () => {
+  resetSocialCacheForTests();
+
+  // Matriz formal cobre todas as classes
+  for (const cls of ["accounts", "profile", "insights", "posts", "planner"] as const) {
+    assert.ok(SOCIAL_DATA_CLASS_MATRIX[cls].ttlMs > 0);
+    assert.ok(SOCIAL_DATA_CLASS_MATRIX[cls].keyDimensions.includes("tenantId"));
+  }
+
+  // Simula hit em cache do React Query + chamada single-flight completa
+  recordSocialCacheHitEvent({
+    dataClass: "insights",
+    accountScope: "100199998888",
+    network: "all",
+    period: "2026-11-01_2026-11-15_d14",
+  });
+
+  await runSharedSocialSync(
+    "k1",
+    async () => ({ ok: true }),
+    { dataClass: "planner", accountScope: "100199998888", network: "all", period: "planner" }
+  );
+
+  recordSocialRouteTransition(14.2, { from: "/social-audit", to: "/social-insights", cacheWarm: true });
+
+  const perf = getSocialPerfMetrics();
+  assert.equal(perf.cacheHits, 1);
+  assert.equal(perf.callsStarted, 1);
+  assert.equal(perf.callsCompleted, 1);
+  assert.equal(perf.routeTransitions.length, 1);
+  assert.equal(perf.routeTransitions[0].from, "/social-audit");
+  assert.equal(perf.routeTransitions[0].to, "/social-insights");
+  const serialized = JSON.stringify(perf);
+  assert.ok(!serialized.includes("EAAG"));
+  assert.ok(!serialized.includes("access_token"));
 });

@@ -30,6 +30,58 @@ export const DEFAULT_SOCIAL_CACHE_TTLS_MS: Record<SocialDataClass, number> = {
   planner: 5 * 60 * 1000, // 5 min: agendamentos + fila Supabase + heatmap
 };
 
+export interface SocialDataClassPolicy {
+  dataClass: SocialDataClass;
+  ttlMs: number;
+  sharedAcrossRoutes: string[];
+  keyDimensions: string[];
+  canReuseBetweenPlannerAndAnalytics: boolean;
+  fallbackPolicy: "preserve_last_valid_snapshot" | "error_without_fake_zero";
+}
+
+export const SOCIAL_DATA_CLASS_MATRIX: Record<SocialDataClass, SocialDataClassPolicy> = {
+  accounts: {
+    dataClass: "accounts",
+    ttlMs: DEFAULT_SOCIAL_CACHE_TTLS_MS.accounts,
+    sharedAcrossRoutes: ["/social", "/social-insights", "/social-audit"],
+    keyDimensions: ["tenantId", "variant"],
+    canReuseBetweenPlannerAndAnalytics: true,
+    fallbackPolicy: "preserve_last_valid_snapshot",
+  },
+  profile: {
+    dataClass: "profile",
+    ttlMs: DEFAULT_SOCIAL_CACHE_TTLS_MS.profile,
+    sharedAcrossRoutes: ["/social", "/social-insights"],
+    keyDimensions: ["tenantId", "accountScope", "network"],
+    canReuseBetweenPlannerAndAnalytics: true,
+    fallbackPolicy: "preserve_last_valid_snapshot",
+  },
+  insights: {
+    dataClass: "insights",
+    ttlMs: DEFAULT_SOCIAL_CACHE_TTLS_MS.insights,
+    sharedAcrossRoutes: ["/social-insights", "/social-audit"],
+    keyDimensions: ["tenantId", "accountScope", "network", "period", "variant"],
+    canReuseBetweenPlannerAndAnalytics: false,
+    fallbackPolicy: "preserve_last_valid_snapshot",
+  },
+  posts: {
+    dataClass: "posts",
+    ttlMs: DEFAULT_SOCIAL_CACHE_TTLS_MS.posts,
+    sharedAcrossRoutes: ["/social-insights", "/social-audit"],
+    keyDimensions: ["tenantId", "accountScope", "network", "period", "variant"],
+    canReuseBetweenPlannerAndAnalytics: false,
+    fallbackPolicy: "preserve_last_valid_snapshot",
+  },
+  planner: {
+    dataClass: "planner",
+    ttlMs: DEFAULT_SOCIAL_CACHE_TTLS_MS.planner,
+    sharedAcrossRoutes: ["/social"],
+    keyDimensions: ["tenantId", "accountScope", "network", "variant"],
+    canReuseBetweenPlannerAndAnalytics: false,
+    fallbackPolicy: "preserve_last_valid_snapshot",
+  },
+};
+
 const STORAGE_PREFIX = "nc_social_hub_cache_v2::";
 const MAX_LOCAL_STORAGE_POSTS = 25;
 
@@ -76,33 +128,95 @@ export interface SocialSWRResolution<T> {
   error?: string | null;
 }
 
+export interface SocialPerfEventRecord {
+  timestamp: string;
+  event:
+    | "meta_call"
+    | "supabase_read"
+    | "cache_hit"
+    | "stale_swr_hit"
+    | "deduped_in_flight"
+    | "manual_sync"
+    | "fallback_preserved"
+    | "call_started"
+    | "call_completed"
+    | "call_failed"
+    | "call_aborted";
+  dataClass?: SocialDataClass;
+  scopeTag?: string;
+  network?: SocialNetworkScope;
+  period?: string;
+  durationMs?: number;
+  reason?: string;
+  status?: "ok" | "deduped" | "stale" | "error" | "aborted";
+}
+
+export interface SocialRouteTransitionRecord {
+  from: string;
+  to: string;
+  durationMs: number;
+  cacheWarm: boolean;
+  timestamp: string;
+}
+
 export interface SocialPerfMetrics {
+  version: string;
+  initializedAt: string;
   metaCalls: number;
   supabaseReads: number;
   cacheHits: number;
   staleSwrHits: number;
   dedupedInFlightHits: number;
+  callsStarted: number;
+  callsDeduped: number;
+  callsCompleted: number;
+  callsAborted: number;
+  callsFailed: number;
   manualSyncs: number;
   fallbackPreservations: number;
   routeTransitionsMs: number[];
+  routeTransitions: SocialRouteTransitionRecord[];
+  recentEvents: SocialPerfEventRecord[];
 }
 
+const MAX_PERF_EVENTS = 60;
 const memoryStore = new Map<string, SocialCacheEnvelope<unknown>>();
 const inFlightMap = new Map<string, Promise<unknown>>();
 const backgroundRevalidatingKeys = new Set<string>();
 
 let customTtls: Partial<Record<SocialDataClass, number>> = {};
 
+function anonymizeScopeTag(accountScope?: string): string {
+  const clean = (accountScope || "all").trim();
+  if (!clean || clean === "all") return "all";
+  return clean.length <= 6 ? `acc:${clean}` : `acc:...${clean.slice(-4)}`;
+}
+
 const perfMetrics: SocialPerfMetrics = {
+  version: SOCIAL_CACHE_CONTRACT_VERSION,
+  initializedAt: new Date().toISOString(),
   metaCalls: 0,
   supabaseReads: 0,
   cacheHits: 0,
   staleSwrHits: 0,
   dedupedInFlightHits: 0,
+  callsStarted: 0,
+  callsDeduped: 0,
+  callsCompleted: 0,
+  callsAborted: 0,
+  callsFailed: 0,
   manualSyncs: 0,
   fallbackPreservations: 0,
   routeTransitionsMs: [],
+  routeTransitions: [],
+  recentEvents: [],
 };
+
+function syncWindowSocialPerfSnapshot(): void {
+  if (typeof window !== "undefined") {
+    (window as any).__ncSocialPerf = getSocialPerfMetrics();
+  }
+}
 
 export function configureSocialCacheTtls(
   overrides: Partial<Record<SocialDataClass, number>>
@@ -141,9 +255,18 @@ export function getSocialPerfMetrics(): SocialPerfMetrics & {
   return {
     ...perfMetrics,
     routeTransitionsMs: [...perfMetrics.routeTransitionsMs],
+    routeTransitions: [...perfMetrics.routeTransitions],
+    recentEvents: [...perfMetrics.recentEvents],
     p50NavigationMs: percentile(50),
     p95NavigationMs: percentile(95),
   };
+}
+
+function pushPerfEventRecord(rec: SocialPerfEventRecord): void {
+  perfMetrics.recentEvents.push(rec);
+  if (perfMetrics.recentEvents.length > MAX_PERF_EVENTS) {
+    perfMetrics.recentEvents.shift();
+  }
 }
 
 export function recordSocialPerfEvent(
@@ -154,31 +277,83 @@ export function recordSocialPerfEvent(
     | "stale_swr_hit"
     | "deduped_in_flight"
     | "manual_sync"
-    | "fallback_preserved"
+    | "fallback_preserved",
+  meta?: {
+    dataClass?: SocialDataClass;
+    accountScope?: string;
+    network?: SocialNetworkScope;
+    period?: string;
+    durationMs?: number;
+    reason?: string;
+    status?: SocialPerfEventRecord["status"];
+  }
 ): void {
   if (event === "meta_call") perfMetrics.metaCalls += 1;
   else if (event === "supabase_read") perfMetrics.supabaseReads += 1;
   else if (event === "cache_hit") perfMetrics.cacheHits += 1;
   else if (event === "stale_swr_hit") perfMetrics.staleSwrHits += 1;
-  else if (event === "deduped_in_flight") perfMetrics.dedupedInFlightHits += 1;
-  else if (event === "manual_sync") perfMetrics.manualSyncs += 1;
+  else if (event === "deduped_in_flight") {
+    perfMetrics.dedupedInFlightHits += 1;
+    perfMetrics.callsDeduped += 1;
+  } else if (event === "manual_sync") perfMetrics.manualSyncs += 1;
   else if (event === "fallback_preserved") perfMetrics.fallbackPreservations += 1;
 
-  if (typeof window !== "undefined") {
-    (window as any).__ncSocialPerf = getSocialPerfMetrics();
+  if (meta || event !== "meta_call") {
+    pushPerfEventRecord({
+      timestamp: new Date().toISOString(),
+      event,
+      dataClass: meta?.dataClass,
+      scopeTag: meta?.accountScope ? anonymizeScopeTag(meta.accountScope) : undefined,
+      network: meta?.network,
+      period: meta?.period,
+      durationMs: meta?.durationMs !== undefined ? Math.round(meta.durationMs) : undefined,
+      reason: meta?.reason,
+      status: meta?.status || (event === "fallback_preserved" ? "error" : "ok"),
+    });
   }
+
+  syncWindowSocialPerfSnapshot();
 }
 
-export function recordSocialRouteTransition(durationMs: number): void {
+export function recordSocialCacheHitEvent(input: {
+  dataClass: SocialDataClass;
+  accountScope: string;
+  network?: SocialNetworkScope;
+  period?: string;
+  reason?: string;
+}): void {
+  recordSocialPerfEvent("cache_hit", {
+    ...input,
+    reason: input.reason || "react_query_fresh",
+    status: "ok",
+  });
+}
+
+export function recordSocialRouteTransition(
+  durationMs: number,
+  meta?: { from?: string; to?: string; cacheWarm?: boolean }
+): void {
   if (!Number.isFinite(durationMs) || durationMs < 0) return;
-  perfMetrics.routeTransitionsMs.push(durationMs);
+  const rounded = Math.round(durationMs * 10) / 10;
+  perfMetrics.routeTransitionsMs.push(rounded);
   if (perfMetrics.routeTransitionsMs.length > 100) {
     perfMetrics.routeTransitionsMs.shift();
   }
-  if (typeof window !== "undefined") {
-    (window as any).__ncSocialPerf = getSocialPerfMetrics();
+  perfMetrics.routeTransitions.push({
+    from: meta?.from || "unknown",
+    to: meta?.to || "unknown",
+    durationMs: rounded,
+    cacheWarm: meta?.cacheWarm ?? perfMetrics.cacheHits > 0,
+    timestamp: new Date().toISOString(),
+  });
+  if (perfMetrics.routeTransitions.length > 50) {
+    perfMetrics.routeTransitions.shift();
   }
+  syncWindowSocialPerfSnapshot();
 }
+
+// Garante window.__ncSocialPerf disponível desde o carregamento inicial do módulo
+syncWindowSocialPerfSnapshot();
 
 export function resetSocialCacheForTests(): void {
   memoryStore.clear();
@@ -190,9 +365,16 @@ export function resetSocialCacheForTests(): void {
   perfMetrics.cacheHits = 0;
   perfMetrics.staleSwrHits = 0;
   perfMetrics.dedupedInFlightHits = 0;
+  perfMetrics.callsStarted = 0;
+  perfMetrics.callsDeduped = 0;
+  perfMetrics.callsCompleted = 0;
+  perfMetrics.callsAborted = 0;
+  perfMetrics.callsFailed = 0;
   perfMetrics.manualSyncs = 0;
   perfMetrics.fallbackPreservations = 0;
   perfMetrics.routeTransitionsMs = [];
+  perfMetrics.routeTransitions = [];
+  perfMetrics.recentEvents = [];
   if (typeof localStorage !== "undefined") {
     try {
       const toDelete: string[] = [];
@@ -306,17 +488,82 @@ export function evaluateSocialSnapshotFreshness<T>(
  */
 export function runSharedSocialSync<T>(
   key: string,
-  fetcher: () => Promise<T>
+  fetcher: () => Promise<T>,
+  meta?: {
+    dataClass?: SocialDataClass;
+    accountScope?: string;
+    network?: SocialNetworkScope;
+    period?: string;
+    reason?: string;
+  }
 ): Promise<T> {
   const existing = inFlightMap.get(key) as Promise<T> | undefined;
   if (existing) {
-    recordSocialPerfEvent("deduped_in_flight");
+    recordSocialPerfEvent("deduped_in_flight", {
+      dataClass: meta?.dataClass,
+      accountScope: meta?.accountScope,
+      network: meta?.network,
+      period: meta?.period,
+      reason: meta?.reason || "in_flight_single_flight",
+      status: "deduped",
+    });
     return existing;
   }
 
+  const startedAt = typeof performance !== "undefined" ? performance.now() : Date.now();
+  perfMetrics.callsStarted += 1;
+  pushPerfEventRecord({
+    timestamp: new Date().toISOString(),
+    event: "call_started",
+    dataClass: meta?.dataClass,
+    scopeTag: meta?.accountScope ? anonymizeScopeTag(meta.accountScope) : undefined,
+    network: meta?.network,
+    period: meta?.period,
+    reason: meta?.reason || "cache_miss",
+    status: "ok",
+  });
+  syncWindowSocialPerfSnapshot();
+
   const promise = (async () => {
     try {
-      return await fetcher();
+      const value = await fetcher();
+      const durationMs =
+        (typeof performance !== "undefined" ? performance.now() : Date.now()) - startedAt;
+      perfMetrics.callsCompleted += 1;
+      pushPerfEventRecord({
+        timestamp: new Date().toISOString(),
+        event: "call_completed",
+        dataClass: meta?.dataClass,
+        scopeTag: meta?.accountScope ? anonymizeScopeTag(meta.accountScope) : undefined,
+        network: meta?.network,
+        period: meta?.period,
+        durationMs: Math.round(durationMs),
+        reason: meta?.reason || "cache_miss",
+        status: "ok",
+      });
+      syncWindowSocialPerfSnapshot();
+      return value;
+    } catch (err: any) {
+      const durationMs =
+        (typeof performance !== "undefined" ? performance.now() : Date.now()) - startedAt;
+      const isAbort =
+        err?.name === "AbortError" ||
+        String(err?.message || "").toLowerCase().includes("abort");
+      if (isAbort) perfMetrics.callsAborted += 1;
+      else perfMetrics.callsFailed += 1;
+      pushPerfEventRecord({
+        timestamp: new Date().toISOString(),
+        event: isAbort ? "call_aborted" : "call_failed",
+        dataClass: meta?.dataClass,
+        scopeTag: meta?.accountScope ? anonymizeScopeTag(meta.accountScope) : undefined,
+        network: meta?.network,
+        period: meta?.period,
+        durationMs: Math.round(durationMs),
+        reason: meta?.reason || "error",
+        status: isAbort ? "aborted" : "error",
+      });
+      syncWindowSocialPerfSnapshot();
+      throw err;
     } finally {
       inFlightMap.delete(key);
       backgroundRevalidatingKeys.delete(key);
@@ -360,7 +607,14 @@ export async function resolveSocialDataWithSWR<T>(input: {
 
   // 1. Snapshot dentro do prazo de validade -> 0 chamadas Meta
   if (!input.forceRefresh && evaluation.status === "fresh" && evaluation.envelope) {
-    recordSocialPerfEvent("cache_hit");
+    recordSocialPerfEvent("cache_hit", {
+      dataClass: input.keyParams.dataClass,
+      accountScope: input.keyParams.accountScope,
+      network: input.keyParams.network || "all",
+      period: input.keyParams.period || "default",
+      reason: "swr_fresh",
+      status: "ok",
+    });
     return {
       data: evaluation.envelope.data,
       source: "cache_fresh",
@@ -370,12 +624,24 @@ export async function resolveSocialDataWithSWR<T>(input: {
     };
   }
 
-  const executeLiveFetch = async (): Promise<SocialSWRResolution<T>> => {
+  const executeLiveFetch = async (reason: string): Promise<SocialSWRResolution<T>> => {
     if (input.forceRefresh) {
-      recordSocialPerfEvent("manual_sync");
+      recordSocialPerfEvent("manual_sync", {
+        dataClass: input.keyParams.dataClass,
+        accountScope: input.keyParams.accountScope,
+        network: input.keyParams.network || "all",
+        period: input.keyParams.period || "default",
+        reason: "manual_sync",
+      });
     }
     try {
-      const res = await runSharedSocialSync(key, input.fetcher);
+      const res = await runSharedSocialSync(key, input.fetcher, {
+        dataClass: input.keyParams.dataClass,
+        accountScope: input.keyParams.accountScope,
+        network: input.keyParams.network || "all",
+        period: input.keyParams.period || "default",
+        reason,
+      });
       if (res.isValidForCache) {
         const env = writeSocialCacheEnvelope(
           key,
@@ -401,7 +667,14 @@ export async function resolveSocialDataWithSWR<T>(input: {
 
       // Resposta veio com erro (rate limit, permissão, timeout) -> preservar último snapshot válido se existir
       if (evaluation.envelope) {
-        recordSocialPerfEvent("fallback_preserved");
+        recordSocialPerfEvent("fallback_preserved", {
+          dataClass: input.keyParams.dataClass,
+          accountScope: input.keyParams.accountScope,
+          network: input.keyParams.network || "all",
+          period: input.keyParams.period || "default",
+          reason: res.errorMessage || "fallback_preserved",
+          status: "error",
+        });
         const preserved = input.onErrorPreserve
           ? input.onErrorPreserve(
               evaluation.envelope.data,
@@ -429,7 +702,14 @@ export async function resolveSocialDataWithSWR<T>(input: {
     } catch (err: any) {
       const msg = err?.message || "Erro ao consultar Meta Graph API";
       if (evaluation.envelope) {
-        recordSocialPerfEvent("fallback_preserved");
+        recordSocialPerfEvent("fallback_preserved", {
+          dataClass: input.keyParams.dataClass,
+          accountScope: input.keyParams.accountScope,
+          network: input.keyParams.network || "all",
+          period: input.keyParams.period || "default",
+          reason: msg,
+          status: "error",
+        });
         const preserved = input.onErrorPreserve
           ? input.onErrorPreserve(evaluation.envelope.data, msg)
           : evaluation.envelope.data;
@@ -448,10 +728,17 @@ export async function resolveSocialDataWithSWR<T>(input: {
 
   // 2. Snapshot vencido -> retorna imediatamente e revalida em segundo plano
   if (!input.forceRefresh && evaluation.status === "stale" && evaluation.envelope) {
-    recordSocialPerfEvent("stale_swr_hit");
+    recordSocialPerfEvent("stale_swr_hit", {
+      dataClass: input.keyParams.dataClass,
+      accountScope: input.keyParams.accountScope,
+      network: input.keyParams.network || "all",
+      period: input.keyParams.period || "default",
+      reason: "swr_stale_revalidate",
+      status: "stale",
+    });
     if (!backgroundRevalidatingKeys.has(key)) {
       backgroundRevalidatingKeys.add(key);
-      void executeLiveFetch()
+      void executeLiveFetch("swr_background_revalidate")
         .then((fresh) => {
           input.onBackgroundRevalidated?.(fresh);
         })
@@ -469,5 +756,5 @@ export async function resolveSocialDataWithSWR<T>(input: {
   }
 
   // 3. Sem snapshot ou forceRefresh -> executa sincronização compartilhada
-  return executeLiveFetch();
+  return executeLiveFetch(input.forceRefresh ? "manual_sync" : "cache_miss");
 }

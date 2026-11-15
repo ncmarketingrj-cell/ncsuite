@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -36,7 +36,7 @@ import {
   type RealSocialPost,
 } from "@/lib/metaSocialService";
 import { useAuth } from "@/lib/auth";
-import { useSocialHubFilters } from "@/lib/socialHubStore";
+import { canonicalizeSocialPageId, useSocialHubFilters } from "@/lib/socialHubStore";
 import {
   useManualSocialSync,
   useSocialAccountsQuery,
@@ -88,13 +88,31 @@ function SocialAuditPage() {
   const { user } = useAuth();
   const tenantId = user?.id || "default";
   const { dateFrom, dateTo } = useGlobalDate();
-  const { selectedPage, setSelectedPage, selectedNetwork } = useSocialHubFilters();
+  const {
+    selectedPage,
+    selectedAccountLabel: storedAccountLabel,
+    setSelectedPage,
+    selectedNetwork,
+  } = useSocialHubFilters();
   const [activeTab, setActiveTab] = useState<"diagnostico" | "conteudo" | "estratégia">("diagnostico");
   const [chartDays, setChartDays] = useState<7 | 14 | 30>(14);
   const [chartMetric, setChartMetric] = useState<"reachIg" | "followers" | "engFb">("reachIg");
   const [isGeneratingPlan, setIsGeneratingPlan] = useState(false);
   const [organicPlan, setOrganicPlan] = useState<string | null>(null);
   const { isSyncing, syncScope } = useManualSocialSync();
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const sp = new URLSearchParams(window.location.search);
+    const urlAcc = sp.get("account");
+    if (urlAcc) setSelectedPage(urlAcc);
+    const onPopState = () => {
+      const nextAcc = new URLSearchParams(window.location.search).get("account");
+      if (nextAcc) setSelectedPage(nextAcc);
+    };
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, [setSelectedPage]);
 
   const {
     data: accountsRes,
@@ -104,6 +122,21 @@ function SocialAuditPage() {
   const activePages = accountsRes?.accounts || [];
   const masterToken = accountsRes?.masterToken || null;
 
+  const canonicalSelectedPage = useMemo(
+    () => canonicalizeSocialPageId(selectedPage, activePages),
+    [selectedPage, activePages]
+  );
+
+  useEffect(() => {
+    if (canonicalSelectedPage !== selectedPage) {
+      const matched = activePages.find((p) => p.page_id === canonicalSelectedPage);
+      const label = matched
+        ? `${matched.page_name}${matched.instagram_handle ? ` (@${matched.instagram_handle})` : ""}`
+        : null;
+      setSelectedPage(canonicalSelectedPage, label);
+    }
+  }, [canonicalSelectedPage, selectedPage, activePages, setSelectedPage]);
+
   const {
     data: overviewRes,
     isLoading: isLoadingOverview,
@@ -111,7 +144,7 @@ function SocialAuditPage() {
   } = useSocialOverviewQuery({
     tenantId,
     accounts: activePages,
-    selectedPage,
+    selectedPage: canonicalSelectedPage,
     network: selectedNetwork,
     masterToken,
     dateFrom,
@@ -127,7 +160,7 @@ function SocialAuditPage() {
   } = useSocialPostsQuery({
     tenantId,
     accounts: activePages,
-    selectedPage,
+    selectedPage: canonicalSelectedPage,
     network: selectedNetwork,
     masterToken,
     dateFrom,
@@ -135,6 +168,19 @@ function SocialAuditPage() {
     onlyInPeriod: false,
     enabled: !isLoadingAccounts,
   });
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      (window as any).__ncSocialHubLoading = Boolean(
+        isLoadingAccounts || (!overviewRes && isFetchingOverview) || (!postsRes && isFetchingPosts)
+      );
+    }
+    return () => {
+      if (typeof window !== "undefined") {
+        (window as any).__ncSocialHubLoading = false;
+      }
+    };
+  }, [isLoadingAccounts, isFetchingOverview, isFetchingPosts, overviewRes, postsRes]);
 
   const isLoadingInsights = (isLoadingOverview && !overviewRes) || (isLoadingPosts && !postsRes);
   const isFetchingInsights = isFetchingOverview || isFetchingPosts || isSyncing;
@@ -440,13 +486,29 @@ ${lowLines}
           {/* Seletor de Contas */}
           <div className="relative">
             <select
-              value={selectedPage}
-              onChange={(e) => setSelectedPage(e.target.value)}
+              data-testid="social-account-selector"
+              value={canonicalSelectedPage}
+              onChange={(e) => {
+                const nextId = e.target.value;
+                const matched = activePages.find((p) => p.page_id === nextId);
+                const label = matched
+                  ? `${matched.page_name}${matched.instagram_handle ? ` (@${matched.instagram_handle})` : ""}`
+                  : null;
+                setSelectedPage(nextId, label);
+              }}
               className="bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-xs font-bold text-white focus:outline-none focus:border-primary/50 cursor-pointer appearance-none pr-8 min-w-[220px]"
             >
               <option value="all" className="bg-neutral-900">
-                Todas as Contas ({activePages.length})
+                {isLoadingAccounts && activePages.length === 0
+                  ? "Todas as Contas (Carregando...)"
+                  : `Todas as Contas (${activePages.length})`}
               </option>
+              {canonicalSelectedPage !== "all" &&
+                !activePages.some((p) => p.page_id === canonicalSelectedPage) && (
+                  <option value={canonicalSelectedPage} className="bg-neutral-900">
+                    {storedAccountLabel || "Conta selecionada"}
+                  </option>
+                )}
               {activePages.map((page) => (
                 <option key={page.page_id} value={page.page_id} className="bg-neutral-900">
                   {page.page_name} {page.instagram_handle ? `(@${page.instagram_handle})` : ""}

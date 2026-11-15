@@ -230,13 +230,36 @@ function Shell() {
 
   const prevModuleRef = useRef(activeModule);
   const socialNavClickAtRef = useRef<number | null>(null);
+  const prevSocialPathRef = useRef<string>(path);
 
   useEffect(() => {
-    if (socialNavClickAtRef.current !== null && path.startsWith("/social")) {
-      const elapsed = performance.now() - socialNavClickAtRef.current;
-      recordSocialRouteTransition(elapsed);
+    if (typeof document === "undefined") return;
+    const onSocialLinkClick = (ev: MouseEvent) => {
+      const target = ev.target as HTMLElement | null;
+      const anchor = target?.closest?.("a[href]") as HTMLAnchorElement | null;
+      const href = anchor?.getAttribute("href") || "";
+      if (href.startsWith("/social")) {
+        socialNavClickAtRef.current = performance.now();
+      }
+    };
+    document.addEventListener("click", onSocialLinkClick, true);
+    return () => document.removeEventListener("click", onSocialLinkClick, true);
+  }, []);
+
+  useEffect(() => {
+    const prevPath = prevSocialPathRef.current;
+    if (path !== prevPath && path.startsWith("/social")) {
+      const elapsed =
+        socialNavClickAtRef.current !== null
+          ? performance.now() - socialNavClickAtRef.current
+          : 0;
+      recordSocialRouteTransition(elapsed, {
+        from: prevPath,
+        to: path,
+      });
       socialNavClickAtRef.current = null;
     }
+    prevSocialPathRef.current = path;
   }, [path]);
 
   useEffect(() => {

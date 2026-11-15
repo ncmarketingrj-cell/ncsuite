@@ -392,7 +392,10 @@ export function useAutoSync(options: UseAutoSyncOptions = {}) {
         throw new Error(metaInvokeErr?.message || "Todos os serviços de sincronização falharam.");
       }
 
-      if (typeof window === "undefined" || !window.location.pathname.includes("/social-insights")) {
+      const isSocialHub =
+        typeof window !== "undefined" &&
+        (window.location.pathname.startsWith("/social"));
+      if (!isSocialHub) {
         try {
           await withTimeout(ensureDatabaseCalibrated(supabase, false), 15_000, "calibrate-db");
         } catch (calibErr) {
@@ -489,8 +492,9 @@ export function useAutoSync(options: UseAutoSyncOptions = {}) {
       if (!enabledRef.current) return;
       if (
         typeof window !== "undefined" &&
-        window.location.pathname.includes("/social-insights") &&
-        (window as any).__ncSocialInsightsLoading === true
+        window.location.pathname.startsWith("/social") &&
+        ((window as any).__ncSocialInsightsLoading === true ||
+          (window as any).__ncSocialHubLoading === true)
       ) {
         return;
       }
@@ -515,7 +519,7 @@ export function useAutoSync(options: UseAutoSyncOptions = {}) {
     };
 
     const isSocialRoute =
-      typeof window !== "undefined" && window.location.pathname.includes("/social-insights");
+      typeof window !== "undefined" && window.location.pathname.startsWith("/social");
     const initialTimer = setTimeout(checkAndSync, isSocialRoute ? 25_000 : 8_000);
 
     intervalRef.current = setInterval(checkAndSync, 30 * 1000);

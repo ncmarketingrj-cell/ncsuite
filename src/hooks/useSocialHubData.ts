@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   fetchAccountSocialOverview,
@@ -15,9 +15,49 @@ import {
   buildSocialCacheKey,
   getSocialCacheTtlMs,
   readSocialCacheEnvelope,
+  recordSocialCacheHitEvent,
   resolveSocialDataWithSWR,
+  type SocialDataClass,
   type SocialNetworkScope,
 } from "@/lib/socialCacheDomain";
+import { canonicalizeSocialPageId, getLastKnownTenantId } from "@/lib/socialHubStore";
+
+function useTrackReactQueryCacheHit(input: {
+  enabled: boolean;
+  isFetching: boolean;
+  hasData: boolean;
+  dataUpdatedAt: number;
+  dataClass: SocialDataClass;
+  accountScope: string;
+  network?: SocialNetworkScope;
+  period?: string;
+  cacheKey: string;
+}) {
+  const lastTrackedRef = useRef<string>("");
+  useEffect(() => {
+    if (!input.enabled || input.isFetching || !input.hasData) return;
+    const stamp = `${input.cacheKey}::${input.dataUpdatedAt}`;
+    if (lastTrackedRef.current === stamp) return;
+    lastTrackedRef.current = stamp;
+    recordSocialCacheHitEvent({
+      dataClass: input.dataClass,
+      accountScope: input.accountScope,
+      network: input.network || "all",
+      period: input.period || "default",
+      reason: "react_query_cache_hit",
+    });
+  }, [
+    input.enabled,
+    input.isFetching,
+    input.hasData,
+    input.dataUpdatedAt,
+    input.dataClass,
+    input.accountScope,
+    input.network,
+    input.period,
+    input.cacheKey,
+  ]);
+}
 
 export type SocialAccountsResult = Awaited<ReturnType<typeof fetchLiveSocialAccounts>>;
 
@@ -48,7 +88,7 @@ export function useSocialAccountsQuery(params?: {
   simulatedFault?: SimulatedSocialFault;
 }) {
   const qc = useQueryClient();
-  const tenantId = params?.tenantId || "default";
+  const tenantId = getLastKnownTenantId(params?.tenantId);
   const faultVariant = params?.simulatedFault === "token_expired" ? "sim_token_expired" : "live";
 
   const keyParams = useMemo(
@@ -69,12 +109,13 @@ export function useSocialAccountsQuery(params?: {
   const initialEnvelope =
     faultVariant === "live" ? readSocialCacheEnvelope<SocialAccountsResult>(cacheKey) : null;
 
-  return useQuery({
+  const query = useQuery({
     queryKey,
     initialData: initialEnvelope?.data,
     initialDataUpdatedAt: initialEnvelope
       ? Date.parse(initialEnvelope.snapshotAt) || undefined
       : undefined,
+    placeholderData: (prev) => prev,
     staleTime: getSocialCacheTtlMs("accounts"),
     gcTime: 60 * 60 * 1000,
     refetchOnWindowFocus: false,
@@ -104,6 +145,19 @@ export function useSocialAccountsQuery(params?: {
       return resolved.data;
     },
   });
+
+  useTrackReactQueryCacheHit({
+    enabled: faultVariant === "live",
+    isFetching: query.isFetching,
+    hasData: Boolean(query.data && query.data.accounts.length > 0),
+    dataUpdatedAt: query.dataUpdatedAt,
+    dataClass: "accounts",
+    accountScope: "all",
+    period: "accounts",
+    cacheKey,
+  });
+
+  return query;
 }
 
 export function useSocialOverviewQuery(params: {
@@ -119,39 +173,45 @@ export function useSocialOverviewQuery(params: {
   enabled?: boolean;
 }) {
   const qc = useQueryClient();
-  const tenantId = params.tenantId || "default";
+  const tenantId = getLastKnownTenantId(params.tenantId);
+  const canonicalPage = useMemo(
+    () => canonicalizeSocialPageId(params.selectedPage, params.accounts),
+    [params.selectedPage, params.accounts]
+  );
   const network: SocialNetworkScope = params.network || "all";
   const chartDays = params.chartDaysOverride || 14;
   const faultVariant = params.simulatedFault || "none";
+  const accountsState = params.accounts.length > 0 ? "ready" : "empty";
 
   const keyParams = useMemo(
     () => ({
       tenantId,
-      accountScope: params.selectedPage || "all",
+      accountScope: canonicalPage || "all",
       network,
       period: `${params.dateFrom}_${params.dateTo}_d${chartDays}`,
       dataClass: "insights" as const,
       variant: faultVariant,
     }),
-    [tenantId, params.selectedPage, network, params.dateFrom, params.dateTo, chartDays, faultVariant]
+    [tenantId, canonicalPage, network, params.dateFrom, params.dateTo, chartDays, faultVariant]
   );
 
   const cacheKey = useMemo(() => buildSocialCacheKey(keyParams), [keyParams]);
   const queryKey = useMemo(
-    () => ["social-hub", "overview", cacheKey, params.accounts.length] as const,
-    [cacheKey, params.accounts.length]
+    () => ["social-hub", "overview", cacheKey, accountsState] as const,
+    [cacheKey, accountsState]
   );
 
   const initialEnvelope =
     faultVariant === "none" ? readSocialCacheEnvelope<CachedSocialOverview>(cacheKey) : null;
 
-  return useQuery({
+  const query = useQuery({
     queryKey,
     enabled: params.enabled !== false,
     initialData: initialEnvelope?.data,
     initialDataUpdatedAt: initialEnvelope
       ? Date.parse(initialEnvelope.snapshotAt) || undefined
       : undefined,
+    placeholderData: (prev) => prev,
     staleTime: getSocialCacheTtlMs("insights"),
     gcTime: 60 * 60 * 1000,
     refetchOnWindowFocus: false,
@@ -163,7 +223,7 @@ export function useSocialOverviewQuery(params: {
           // Não repassamos AbortSignal da rota: troca de tela não cancela sync compartilhado
           const result = await fetchAccountSocialOverview({
             accounts: params.accounts,
-            selectedPageId: params.selectedPage,
+            selectedPageId: canonicalPage,
             dateFrom: params.dateFrom,
             dateTo: params.dateTo,
             chartDaysOverride: chartDays,
@@ -208,6 +268,20 @@ export function useSocialOverviewQuery(params: {
       };
     },
   });
+
+  useTrackReactQueryCacheHit({
+    enabled: params.enabled !== false && faultVariant === "none",
+    isFetching: query.isFetching,
+    hasData: Boolean(query.data),
+    dataUpdatedAt: query.dataUpdatedAt,
+    dataClass: "insights",
+    accountScope: canonicalPage,
+    network,
+    period: keyParams.period,
+    cacheKey,
+  });
+
+  return query;
 }
 
 export function useSocialPostsQuery(params: {
@@ -223,41 +297,47 @@ export function useSocialPostsQuery(params: {
   enabled?: boolean;
 }) {
   const qc = useQueryClient();
-  const tenantId = params.tenantId || "default";
+  const tenantId = getLastKnownTenantId(params.tenantId);
+  const canonicalPage = useMemo(
+    () => canonicalizeSocialPageId(params.selectedPage, params.accounts),
+    [params.selectedPage, params.accounts]
+  );
   const network: SocialNetworkScope = params.network || "all";
   const periodStr = params.onlyInPeriod
     ? `${params.dateFrom || ""}_${params.dateTo || ""}`
     : "recent";
   const faultVariant = params.simulatedFault || "none";
+  const accountsState = params.accounts.length > 0 ? "ready" : "empty";
 
   const keyParams = useMemo(
     () => ({
       tenantId,
-      accountScope: params.selectedPage || "all",
+      accountScope: canonicalPage || "all",
       network,
       period: periodStr,
       dataClass: "posts" as const,
       variant: faultVariant,
     }),
-    [tenantId, params.selectedPage, network, periodStr, faultVariant]
+    [tenantId, canonicalPage, network, periodStr, faultVariant]
   );
 
   const cacheKey = useMemo(() => buildSocialCacheKey(keyParams), [keyParams]);
   const queryKey = useMemo(
-    () => ["social-hub", "posts", cacheKey, params.accounts.length] as const,
-    [cacheKey, params.accounts.length]
+    () => ["social-hub", "posts", cacheKey, accountsState] as const,
+    [cacheKey, accountsState]
   );
 
   const initialEnvelope =
     faultVariant === "none" ? readSocialCacheEnvelope<CachedSocialPosts>(cacheKey) : null;
 
-  return useQuery({
+  const query = useQuery({
     queryKey,
     enabled: params.enabled !== false,
     initialData: initialEnvelope?.data,
     initialDataUpdatedAt: initialEnvelope
       ? Date.parse(initialEnvelope.snapshotAt) || undefined
       : undefined,
+    placeholderData: (prev) => prev,
     staleTime: getSocialCacheTtlMs("posts"),
     gcTime: 60 * 60 * 1000,
     refetchOnWindowFocus: false,
@@ -268,7 +348,7 @@ export function useSocialPostsQuery(params: {
         fetcher: async () => {
           const result = await fetchAccountSocialPosts({
             accounts: params.accounts,
-            selectedPageId: params.selectedPage,
+            selectedPageId: canonicalPage,
             masterToken: params.masterToken,
             dateFrom: params.dateFrom,
             dateTo: params.dateTo,
@@ -317,6 +397,20 @@ export function useSocialPostsQuery(params: {
       };
     },
   });
+
+  useTrackReactQueryCacheHit({
+    enabled: params.enabled !== false && faultVariant === "none",
+    isFetching: query.isFetching,
+    hasData: Boolean(query.data),
+    dataUpdatedAt: query.dataUpdatedAt,
+    dataClass: "posts",
+    accountScope: canonicalPage,
+    network,
+    period: periodStr,
+    cacheKey,
+  });
+
+  return query;
 }
 
 export function useSocialPlannerQuery(params: {
@@ -328,36 +422,42 @@ export function useSocialPlannerQuery(params: {
   enabled?: boolean;
 }) {
   const qc = useQueryClient();
-  const tenantId = params.tenantId || "default";
+  const tenantId = getLastKnownTenantId(params.tenantId);
+  const canonicalPage = useMemo(
+    () => canonicalizeSocialPageId(params.selectedPage, params.accounts),
+    [params.selectedPage, params.accounts]
+  );
   const network: SocialNetworkScope = params.network || "all";
+  const accountsState = params.accounts.length > 0 ? "ready" : "empty";
 
   const keyParams = useMemo(
     () => ({
       tenantId,
-      accountScope: params.selectedPage || "all",
+      accountScope: canonicalPage || "all",
       network,
       period: "planner",
       dataClass: "planner" as const,
       variant: Boolean(params.masterToken) ? "with_token" : "no_token",
     }),
-    [tenantId, params.selectedPage, network, params.masterToken]
+    [tenantId, canonicalPage, network, params.masterToken]
   );
 
   const cacheKey = useMemo(() => buildSocialCacheKey(keyParams), [keyParams]);
   const queryKey = useMemo(
-    () => ["social-hub", "planner", cacheKey, params.accounts.length] as const,
-    [cacheKey, params.accounts.length]
+    () => ["social-hub", "planner", cacheKey, accountsState] as const,
+    [cacheKey, accountsState]
   );
 
   const initialEnvelope = readSocialCacheEnvelope<CachedSocialPlanner>(cacheKey);
 
-  return useQuery({
+  const query = useQuery({
     queryKey,
     enabled: params.enabled !== false,
     initialData: initialEnvelope?.data,
     initialDataUpdatedAt: initialEnvelope
       ? Date.parse(initialEnvelope.snapshotAt) || undefined
       : undefined,
+    placeholderData: (prev) => prev,
     staleTime: getSocialCacheTtlMs("planner"),
     gcTime: 60 * 60 * 1000,
     refetchOnWindowFocus: false,
@@ -368,7 +468,7 @@ export function useSocialPlannerQuery(params: {
         fetcher: async () => {
           const result = await fetchRealPlannerPosts({
             accounts: params.accounts,
-            selectedPageId: params.selectedPage,
+            selectedPageId: canonicalPage,
             masterToken: params.masterToken,
           });
           const nowIso = new Date().toISOString();
@@ -407,6 +507,20 @@ export function useSocialPlannerQuery(params: {
       };
     },
   });
+
+  useTrackReactQueryCacheHit({
+    enabled: params.enabled !== false,
+    isFetching: query.isFetching,
+    hasData: Boolean(query.data),
+    dataUpdatedAt: query.dataUpdatedAt,
+    dataClass: "planner",
+    accountScope: canonicalPage,
+    network,
+    period: "planner",
+    cacheKey,
+  });
+
+  return query;
 }
 
 export function useManualSocialSync() {
@@ -426,7 +540,7 @@ export function useManualSocialSync() {
       includePlanner?: boolean;
       includeInsights?: boolean;
     }) => {
-      const tenantId = input.tenantId || "default";
+      const tenantId = getLastKnownTenantId(input.tenantId);
       const network: SocialNetworkScope = input.network || "all";
       const fault = input.simulatedFault;
       setIsSyncing(true);
@@ -460,12 +574,14 @@ export function useManualSocialSync() {
 
         const accounts = accRes.data.accounts || [];
         const masterToken = accRes.data.masterToken || null;
+        const accountsState = accounts.length > 0 ? "ready" : "empty";
+        const canonicalPage = canonicalizeSocialPageId(input.selectedPage, accounts);
 
         if (input.includeInsights && input.dateFrom && input.dateTo) {
           const chartDays = input.chartDaysOverride || 14;
           const overviewParams = {
             tenantId,
-            accountScope: input.selectedPage || "all",
+            accountScope: canonicalPage || "all",
             network,
             period: `${input.dateFrom}_${input.dateTo}_d${chartDays}`,
             dataClass: "insights" as const,
@@ -473,7 +589,7 @@ export function useManualSocialSync() {
           };
           const postsParams = {
             tenantId,
-            accountScope: input.selectedPage || "all",
+            accountScope: canonicalPage || "all",
             network,
             period: input.onlyInPeriod ? `${input.dateFrom}_${input.dateTo}` : "recent",
             dataClass: "posts" as const,
@@ -487,7 +603,7 @@ export function useManualSocialSync() {
               fetcher: async () => {
                 const res = await fetchAccountSocialOverview({
                   accounts,
-                  selectedPageId: input.selectedPage,
+                  selectedPageId: canonicalPage,
                   dateFrom: input.dateFrom!,
                   dateTo: input.dateTo!,
                   chartDaysOverride: chartDays,
@@ -517,7 +633,7 @@ export function useManualSocialSync() {
               fetcher: async () => {
                 const res = await fetchAccountSocialPosts({
                   accounts,
-                  selectedPageId: input.selectedPage,
+                  selectedPageId: canonicalPage,
                   masterToken,
                   dateFrom: input.dateFrom,
                   dateTo: input.dateTo,
@@ -545,11 +661,11 @@ export function useManualSocialSync() {
           ]);
 
           qc.setQueryData(
-            ["social-hub", "overview", buildSocialCacheKey(overviewParams), accounts.length],
+            ["social-hub", "overview", buildSocialCacheKey(overviewParams), accountsState],
             ovRes.data
           );
           qc.setQueryData(
-            ["social-hub", "posts", buildSocialCacheKey(postsParams), accounts.length],
+            ["social-hub", "posts", buildSocialCacheKey(postsParams), accountsState],
             psRes.data
           );
         }
@@ -557,7 +673,7 @@ export function useManualSocialSync() {
         if (input.includePlanner) {
           const plannerParams = {
             tenantId,
-            accountScope: input.selectedPage || "all",
+            accountScope: canonicalPage || "all",
             network,
             period: "planner",
             dataClass: "planner" as const,
@@ -569,7 +685,7 @@ export function useManualSocialSync() {
             fetcher: async () => {
               const res = await fetchRealPlannerPosts({
                 accounts,
-                selectedPageId: input.selectedPage,
+                selectedPageId: canonicalPage,
                 masterToken,
               });
               const nowIso = new Date().toISOString();
@@ -589,7 +705,7 @@ export function useManualSocialSync() {
             }),
           });
           qc.setQueryData(
-            ["social-hub", "planner", buildSocialCacheKey(plannerParams), accounts.length],
+            ["social-hub", "planner", buildSocialCacheKey(plannerParams), accountsState],
             plRes.data
           );
         }

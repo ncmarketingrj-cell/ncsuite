@@ -2347,255 +2347,282 @@ export async function fetchRealPlannerPosts(params: {
   const metaByMetaId = new Map<string, PlannerPost>();
   let metaScheduledCount = 0;
   let metaPublishedCount = 0;
+  let succeededEndpointCalls = 0;
+  let failedEndpointCalls = 0;
+  let lastMetaError: string | null = null;
 
-  await Promise.all(
-    targetAccounts.map(async (acc) => {
-      const pageToken = acc.access_token || masterToken;
-      const fbLimit = isSingle ? "50" : "25";
-      const igLimit = isSingle ? "50" : "25";
-      const pageDepth = isSingle ? 5 : 2;
-
-      // 1) Agendados no Meta (paginado)
-      // 2) Publicados no Facebook (/posts paginado)
-      // 3) Publicados no Instagram (/media paginado) + Stories ativos (/stories paginado)
-      const [fbSchedRes, fbPromoRes, fbPubRes, igMediaRes, igStoriesRes] = await Promise.all([
-        fetchMetaPaginatedList(
-          `/${acc.page_id}/scheduled_posts`,
-          pageToken,
-          {
-            fields: "id,message,created_time,scheduled_publish_time,full_picture,permalink_url,is_published,attachments{media_type,type,url,media{image{src}},subattachments{media{image{src}}}}",
-            limit: "50",
-          },
-          pageDepth
-        ),
-        fetchMetaPaginatedList(
-          `/${acc.page_id}/promotable_posts`,
-          pageToken,
-          {
-            is_published: "false",
-            fields: "id,message,created_time,scheduled_publish_time,full_picture,permalink_url,is_published,attachments{media_type,type,url,media{image{src}},subattachments{media{image{src}}}}",
-            limit: "50",
-          },
-          pageDepth
-        ),
-        fetchMetaPaginatedList(
-          `/${acc.page_id}/posts`,
-          pageToken,
-          {
-            fields: "id,message,created_time,full_picture,permalink_url,attachments{media_type,type,media{image{src}},subattachments{media{image{src}}}},likes.summary(true),comments.summary(true),shares",
-            limit: fbLimit,
-          },
-          pageDepth
-        ),
-        acc.instagram_account_id
-          ? fetchMetaPaginatedList(
-              `/${acc.instagram_account_id}/media`,
-              masterToken,
-              {
-                fields: "id,caption,media_type,media_product_type,thumbnail_url,media_url,permalink,timestamp,like_count,comments_count",
-                limit: igLimit,
-              },
-              pageDepth
-            )
-          : Promise.resolve(null),
-        acc.instagram_account_id
-          ? fetchMetaPaginatedList(
-              `/${acc.instagram_account_id}/stories`,
-              masterToken,
-              {
-                fields: "id,caption,media_type,media_url,thumbnail_url,permalink,timestamp",
-                limit: "25",
-              },
-              2
-            )
-          : Promise.resolve(null),
-      ]);
-
-      // Mesclar agendados reais do Meta (scheduled_posts + promotable_posts com scheduled_publish_time)
-      const rawScheduled = [
-        ...(Array.isArray(fbSchedRes?.data) ? fbSchedRes.data : []),
-        ...(Array.isArray(fbPromoRes?.data) ? fbPromoRes.data.filter((x: any) => x?.scheduled_publish_time) : []),
-      ];
-      const seenFbSchedIds = new Set<string>();
-      for (const sp of rawScheduled) {
-        if (!sp?.id || seenFbSchedIds.has(sp.id)) continue;
-        seenFbSchedIds.add(sp.id);
-        const schedIso = parseMetaTimestampToIso(sp.scheduled_publish_time);
-        if (!schedIso) continue;
-        const { mediaUrl, postType } = extractFbAttachmentInfo(sp);
-        const msg = sp.message || "";
-        const firstLine = msg.split("\n").find((l: string) => l.trim()) || "Post Agendado no Meta";
-        const item: PlannerPost = {
-          id: `meta_sched_${sp.id}`,
-          page_id: acc.page_id,
-          account_name: acc.page_name,
-          account_handle: acc.instagram_handle || acc.page_name,
-          title: firstLine.length > 52 ? `${firstLine.slice(0, 49)}...` : firstLine,
-          content: msg || "Publicação agendada diretamente no Meta Business Suite.",
-          media_url: mediaUrl,
-          thumbnail_url: mediaUrl,
-          permalink: sp.permalink_url || null,
-          post_type: postType,
-          status: "scheduled",
-          platform: "facebook",
-          scheduled_at: schedIso,
-          published_at: null,
-          meta_post_id: sp.id,
-          likes_count: 0,
-          comments_count: 0,
-          reach_count: 0,
-          impressions_count: 0,
-          created_at: sp.created_time || schedIso,
-          source: "meta_live",
-        };
-        metaScheduledCount += 1;
-        metaPosts.push(item);
-        metaByMetaId.set(sp.id, item);
+  const trackEndpointResult = (res: any) => {
+    if (!res) {
+      failedEndpointCalls += 1;
+      return;
+    }
+    if (res.error) {
+      failedEndpointCalls += 1;
+      if (!lastMetaError && res.error?.message) {
+        lastMetaError = String(res.error.message);
       }
+      return;
+    }
+    succeededEndpointCalls += 1;
+  };
 
-      // Posts publicados do Facebook
-      const fbPubList = Array.isArray(fbPubRes?.data) ? fbPubRes.data : [];
-      for (const fp of fbPubList) {
-        if (!fp?.id) continue;
-        const { mediaUrl, postType } = extractFbAttachmentInfo(fp);
-        const msg = fp.message || "";
-        const firstLine = msg.split("\n").find((l: string) => l.trim()) || "Publicação no Facebook";
-        const likes = Number(fp.likes?.summary?.total_count || 0);
-        const comments = Number(fp.comments?.summary?.total_count || 0);
-        const shares = Number(fp.shares?.count || 0);
-        const item: PlannerPost = {
-          id: `meta_fb_${fp.id}`,
-          page_id: acc.page_id,
-          account_name: acc.page_name,
-          account_handle: acc.instagram_handle || acc.page_name,
-          title: firstLine.length > 52 ? `${firstLine.slice(0, 49)}...` : firstLine,
-          content: msg,
-          media_url: mediaUrl,
-          thumbnail_url: mediaUrl,
-          permalink: fp.permalink_url || `https://facebook.com/${fp.id}`,
-          post_type: postType,
-          status: "published",
-          platform: "facebook",
-          scheduled_at: null,
-          published_at: fp.created_time,
-          meta_post_id: fp.id,
-          likes_count: likes,
-          comments_count: comments,
-          shares_count: shares,
-          reach_count: 0,
-          impressions_count: 0,
-          created_at: fp.created_time,
-          source: "meta_live",
-        };
-        metaPublishedCount += 1;
-        metaPosts.push(item);
-        metaByMetaId.set(fp.id, item);
-      }
+  // Processa em lotes limitados (4 contas por vez) para evitar rajada de centenas de chamadas na Meta
+  const ACCOUNT_CONCURRENCY = isSingle ? 1 : 4;
+  for (let offset = 0; offset < targetAccounts.length; offset += ACCOUNT_CONCURRENCY) {
+    const batch = targetAccounts.slice(offset, offset + ACCOUNT_CONCURRENCY);
+    await Promise.all(
+      batch.map(async (acc) => {
+        const pageToken = acc.access_token || masterToken;
+        const fbLimit = isSingle ? "30" : "10";
+        const igLimit = isSingle ? "30" : "10";
+        const pageDepth = isSingle ? 3 : 1;
 
-      // Posts publicados no Instagram + enriquecimento de métricas reais em TODOS os posts carregados (em lotes de 10)
-      const igList = Array.isArray(igMediaRes?.data) ? igMediaRes.data : [];
+        const [fbSchedRes, fbPromoRes, fbPubRes, igMediaRes, igStoriesRes] = await Promise.all([
+          fetchMetaPaginatedList(
+            `/${acc.page_id}/scheduled_posts`,
+            pageToken,
+            {
+              fields: "id,message,created_time,scheduled_publish_time,full_picture,permalink_url,is_published,attachments{media_type,type,url,media{image{src}},subattachments{media{image{src}}}}",
+              limit: isSingle ? "50" : "15",
+            },
+            pageDepth
+          ),
+          fetchMetaPaginatedList(
+            `/${acc.page_id}/promotable_posts`,
+            pageToken,
+            {
+              is_published: "false",
+              fields: "id,message,created_time,scheduled_publish_time,full_picture,permalink_url,is_published,attachments{media_type,type,url,media{image{src}},subattachments{media{image{src}}}}",
+              limit: isSingle ? "50" : "15",
+            },
+            pageDepth
+          ),
+          fetchMetaPaginatedList(
+            `/${acc.page_id}/posts`,
+            pageToken,
+            {
+              fields: "id,message,created_time,full_picture,permalink_url,attachments{media_type,type,media{image{src}},subattachments{media{image{src}}}},likes.summary(true),comments.summary(true),shares",
+              limit: fbLimit,
+            },
+            pageDepth
+          ),
+          acc.instagram_account_id
+            ? fetchMetaPaginatedList(
+                `/${acc.instagram_account_id}/media`,
+                masterToken,
+                {
+                  fields: "id,caption,media_type,media_product_type,thumbnail_url,media_url,permalink,timestamp,like_count,comments_count",
+                  limit: igLimit,
+                },
+                pageDepth
+              )
+            : Promise.resolve(null),
+          acc.instagram_account_id && isSingle
+            ? fetchMetaPaginatedList(
+                `/${acc.instagram_account_id}/stories`,
+                masterToken,
+                {
+                  fields: "id,caption,media_type,media_url,thumbnail_url,permalink,timestamp",
+                  limit: "25",
+                },
+                1
+              )
+            : Promise.resolve(null),
+        ]);
 
-      const igInsightsMap = new Map<string, { reach: number; views: number; saved: number; shares: number }>();
-      for (let i = 0; i < igList.length; i += 10) {
-        await Promise.all(
-          igList.slice(i, i + 10).map(async (mItem: any) => {
-            const ins = await fetchMetaJson(
-              `${META_API_BASE}/${mItem.id}/insights?metric=reach,views,saved,shares&access_token=${encodeURIComponent(masterToken)}`
-            );
-            let reach = 0;
-            let views = 0;
-            let saved = 0;
-            let shares = 0;
-            if (Array.isArray(ins?.data)) {
-              for (const met of ins.data) {
-                const v = Number(met.values?.[0]?.value || 0);
-                if (met.name === "reach") reach = v;
-                if (met.name === "views") views = v;
-                if (met.name === "saved") saved = v;
-                if (met.name === "shares") shares = v;
+        trackEndpointResult(fbSchedRes);
+        trackEndpointResult(fbPromoRes);
+        trackEndpointResult(fbPubRes);
+        if (acc.instagram_account_id) trackEndpointResult(igMediaRes);
+
+        // Mesclar agendados reais do Meta (scheduled_posts + promotable_posts com scheduled_publish_time)
+        const rawScheduled = [
+          ...(Array.isArray(fbSchedRes?.data) ? fbSchedRes.data : []),
+          ...(Array.isArray(fbPromoRes?.data) ? fbPromoRes.data.filter((x: any) => x?.scheduled_publish_time) : []),
+        ];
+        const seenFbSchedIds = new Set<string>();
+        for (const sp of rawScheduled) {
+          if (!sp?.id || seenFbSchedIds.has(sp.id)) continue;
+          seenFbSchedIds.add(sp.id);
+          const schedIso = parseMetaTimestampToIso(sp.scheduled_publish_time);
+          if (!schedIso) continue;
+          const { mediaUrl, postType } = extractFbAttachmentInfo(sp);
+          const msg = sp.message || "";
+          const firstLine = msg.split("\n").find((l: string) => l.trim()) || "Post Agendado no Meta";
+          const item: PlannerPost = {
+            id: `meta_sched_${sp.id}`,
+            page_id: acc.page_id,
+            account_name: acc.page_name,
+            account_handle: acc.instagram_handle || acc.page_name,
+            title: firstLine.length > 52 ? `${firstLine.slice(0, 49)}...` : firstLine,
+            content: msg || "Publicação agendada diretamente no Meta Business Suite.",
+            media_url: mediaUrl,
+            thumbnail_url: mediaUrl,
+            permalink: sp.permalink_url || null,
+            post_type: postType,
+            status: "scheduled",
+            platform: "facebook",
+            scheduled_at: schedIso,
+            published_at: null,
+            meta_post_id: sp.id,
+            likes_count: 0,
+            comments_count: 0,
+            reach_count: 0,
+            impressions_count: 0,
+            created_at: sp.created_time || schedIso,
+            source: "meta_live",
+          };
+          metaScheduledCount += 1;
+          metaPosts.push(item);
+          metaByMetaId.set(sp.id, item);
+        }
+
+        // Posts publicados do Facebook
+        const fbPubList = Array.isArray(fbPubRes?.data) ? fbPubRes.data : [];
+        for (const fp of fbPubList) {
+          if (!fp?.id) continue;
+          const { mediaUrl, postType } = extractFbAttachmentInfo(fp);
+          const msg = fp.message || "";
+          const firstLine = msg.split("\n").find((l: string) => l.trim()) || "Publicação no Facebook";
+          const likes = Number(fp.likes?.summary?.total_count || 0);
+          const comments = Number(fp.comments?.summary?.total_count || 0);
+          const shares = Number(fp.shares?.count || 0);
+          const item: PlannerPost = {
+            id: `meta_fb_${fp.id}`,
+            page_id: acc.page_id,
+            account_name: acc.page_name,
+            account_handle: acc.instagram_handle || acc.page_name,
+            title: firstLine.length > 52 ? `${firstLine.slice(0, 49)}...` : firstLine,
+            content: msg,
+            media_url: mediaUrl,
+            thumbnail_url: mediaUrl,
+            permalink: fp.permalink_url || `https://facebook.com/${fp.id}`,
+            post_type: postType,
+            status: "published",
+            platform: "facebook",
+            scheduled_at: null,
+            published_at: fp.created_time,
+            meta_post_id: fp.id,
+            likes_count: likes,
+            comments_count: comments,
+            shares_count: shares,
+            reach_count: 0,
+            impressions_count: 0,
+            created_at: fp.created_time,
+            source: "meta_live",
+          };
+          metaPublishedCount += 1;
+          metaPosts.push(item);
+          metaByMetaId.set(fp.id, item);
+        }
+
+        // Posts publicados no Instagram: enriquecimento limitado em lote para não saturar consolidado
+        const igList = Array.isArray(igMediaRes?.data) ? igMediaRes.data : [];
+        const maxEnrichCount = isSingle ? 25 : 2;
+        const enrichSlice = igList.slice(0, maxEnrichCount);
+
+        const igInsightsMap = new Map<string, { reach: number; views: number; saved: number; shares: number }>();
+        for (let i = 0; i < enrichSlice.length; i += 6) {
+          await Promise.all(
+            enrichSlice.slice(i, i + 6).map(async (mItem: any) => {
+              const ins = await fetchMetaJson(
+                `${META_API_BASE}/${mItem.id}/insights?metric=reach,views,saved,shares&access_token=${encodeURIComponent(masterToken)}`
+              );
+              let reach = 0;
+              let views = 0;
+              let saved = 0;
+              let shares = 0;
+              if (Array.isArray(ins?.data)) {
+                for (const met of ins.data) {
+                  const v = Number(met.values?.[0]?.value || 0);
+                  if (met.name === "reach") reach = v;
+                  if (met.name === "views") views = v;
+                  if (met.name === "saved") saved = v;
+                  if (met.name === "shares") shares = v;
+                }
               }
-            }
-            igInsightsMap.set(mItem.id, { reach, views, saved, shares });
-          })
-        );
-      }
+              igInsightsMap.set(mItem.id, { reach, views, saved, shares });
+            })
+          );
+        }
 
-      for (const igItem of igList) {
-        if (!igItem?.id) continue;
-        const caption = igItem.caption || "";
-        const firstLine = caption.split("\n").find((l: string) => l.trim()) || `Instagram ${igItem.media_type || "Post"}`;
-        const isReel = igItem.media_product_type === "REELS" || igItem.media_type === "VIDEO";
-        const postType: PlannerPost["post_type"] = isReel
-          ? "reels"
-          : igItem.media_type === "CAROUSEL_ALBUM"
-          ? "carousel"
-          : igItem.media_product_type === "STORY"
-          ? "stories"
-          : "feed";
-        const metrics = igInsightsMap.get(igItem.id);
-        const item: PlannerPost = {
-          id: `meta_ig_${igItem.id}`,
-          page_id: acc.page_id,
-          account_name: acc.page_name,
-          account_handle: acc.instagram_handle || acc.page_name,
-          title: firstLine.length > 52 ? `${firstLine.slice(0, 49)}...` : firstLine,
-          content: caption,
-          media_url: igItem.thumbnail_url || igItem.media_url || null,
-          thumbnail_url: igItem.thumbnail_url || igItem.media_url || null,
-          permalink: igItem.permalink || null,
-          post_type: postType,
-          status: "published",
-          platform: "instagram",
-          scheduled_at: null,
-          published_at: igItem.timestamp,
-          meta_post_id: igItem.id,
-          likes_count: Number(igItem.like_count || 0),
-          comments_count: Number(igItem.comments_count || 0),
-          shares_count: metrics?.shares || 0,
-          saves_count: metrics?.saved || 0,
-          reach_count: metrics?.reach || 0,
-          impressions_count: metrics?.views || 0,
-          created_at: igItem.timestamp,
-          source: "meta_live",
-        };
-        metaPublishedCount += 1;
-        metaPosts.push(item);
-        metaByMetaId.set(igItem.id, item);
-      }
+        for (const igItem of igList) {
+          if (!igItem?.id) continue;
+          const caption = igItem.caption || "";
+          const firstLine = caption.split("\n").find((l: string) => l.trim()) || `Instagram ${igItem.media_type || "Post"}`;
+          const isReel = igItem.media_product_type === "REELS" || igItem.media_type === "VIDEO";
+          const postType: PlannerPost["post_type"] = isReel
+            ? "reels"
+            : igItem.media_type === "CAROUSEL_ALBUM"
+            ? "carousel"
+            : igItem.media_product_type === "STORY"
+            ? "stories"
+            : "feed";
+          const metrics = igInsightsMap.get(igItem.id);
+          const item: PlannerPost = {
+            id: `meta_ig_${igItem.id}`,
+            page_id: acc.page_id,
+            account_name: acc.page_name,
+            account_handle: acc.instagram_handle || acc.page_name,
+            title: firstLine.length > 52 ? `${firstLine.slice(0, 49)}...` : firstLine,
+            content: caption,
+            media_url: igItem.thumbnail_url || igItem.media_url || null,
+            thumbnail_url: igItem.thumbnail_url || igItem.media_url || null,
+            permalink: igItem.permalink || null,
+            post_type: postType,
+            status: "published",
+            platform: "instagram",
+            scheduled_at: null,
+            published_at: igItem.timestamp,
+            meta_post_id: igItem.id,
+            likes_count: Number(igItem.like_count || 0),
+            comments_count: Number(igItem.comments_count || 0),
+            shares_count: metrics?.shares || 0,
+            saves_count: metrics?.saved || 0,
+            reach_count: metrics?.reach || 0,
+            impressions_count: metrics?.views || 0,
+            created_at: igItem.timestamp,
+            source: "meta_live",
+          };
+          metaPublishedCount += 1;
+          metaPosts.push(item);
+          metaByMetaId.set(igItem.id, item);
+        }
 
-      // Stories ativos no Instagram
-      const storiesList = Array.isArray(igStoriesRes?.data) ? igStoriesRes.data : [];
-      for (const st of storiesList) {
-        if (!st?.id) continue;
-        const item: PlannerPost = {
-          id: `meta_story_${st.id}`,
-          page_id: acc.page_id,
-          account_name: acc.page_name,
-          account_handle: acc.instagram_handle || acc.page_name,
-          title: "Story Ativo (Instagram)",
-          content: st.caption || "Story publicado nas últimas 24h no Instagram.",
-          media_url: st.thumbnail_url || st.media_url || null,
-          thumbnail_url: st.thumbnail_url || st.media_url || null,
-          permalink: st.permalink || null,
-          post_type: "stories",
-          status: "published",
-          platform: "instagram",
-          scheduled_at: null,
-          published_at: st.timestamp,
-          meta_post_id: st.id,
-          likes_count: 0,
-          comments_count: 0,
-          reach_count: 0,
-          impressions_count: 0,
-          created_at: st.timestamp,
-          source: "meta_live",
-        };
-        metaPublishedCount += 1;
-        metaPosts.push(item);
-        metaByMetaId.set(st.id, item);
-      }
-    })
-  );
+        // Stories ativos no Instagram
+        const storiesList = Array.isArray(igStoriesRes?.data) ? igStoriesRes.data : [];
+        for (const st of storiesList) {
+          if (!st?.id) continue;
+          const item: PlannerPost = {
+            id: `meta_story_${st.id}`,
+            page_id: acc.page_id,
+            account_name: acc.page_name,
+            account_handle: acc.instagram_handle || acc.page_name,
+            title: "Story Ativo (Instagram)",
+            content: st.caption || "Story publicado nas últimas 24h no Instagram.",
+            media_url: st.thumbnail_url || st.media_url || null,
+            thumbnail_url: st.thumbnail_url || st.media_url || null,
+            permalink: st.permalink || null,
+            post_type: "stories",
+            status: "published",
+            platform: "instagram",
+            scheduled_at: null,
+            published_at: st.timestamp,
+            meta_post_id: st.id,
+            likes_count: 0,
+            comments_count: 0,
+            reach_count: 0,
+            impressions_count: 0,
+            created_at: st.timestamp,
+            source: "meta_live",
+          };
+          metaPublishedCount += 1;
+          metaPosts.push(item);
+          metaByMetaId.set(st.id, item);
+        }
+      })
+    );
+  }
 
   // Reconcilia crossposts ("both") por canal (platform + meta_post_id) usando núcleo compartilhado
   const dbCreatedMap = new Map(dbRows.map((r) => [r.id, r]));
@@ -2745,6 +2772,9 @@ export async function fetchRealPlannerPosts(params: {
     .sort((a, b) => b.score - a.score || b.postsCount - a.postsCount)
     .slice(0, 3);
 
+  const metaUnavailable =
+    targetAccounts.length > 0 && succeededEndpointCalls === 0 && failedEndpointCalls > 0;
+
   return {
     posts: combinedPosts,
     igProfile,
@@ -2757,6 +2787,10 @@ export async function fetchRealPlannerPosts(params: {
     topTimeSlots,
     metaScheduledCount,
     metaPublishedCount,
+    errorMessage: metaUnavailable
+      ? lastMetaError ||
+        "Não foi possível carregar dados ao vivo da Meta Graph API no momento (verifique limite ou conexão)."
+      : undefined,
   };
 }
 
