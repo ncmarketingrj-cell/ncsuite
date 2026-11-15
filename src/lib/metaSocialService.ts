@@ -450,6 +450,8 @@ async function fetchMetaPaginatedList(
           data: [],
           pagesFetched: 0,
           truncated: false,
+          nextAfterCursor: null,
+          hasMore: false,
           statusCode: 504,
           attempts: 1,
           error: proxyErr?.message || `Timeout em ${endpoint}`,
@@ -459,7 +461,7 @@ async function fetchMetaPaginatedList(
         };
       }
     }
-    recordMeta(res.ok ? "ok" : "error");
+    recordMeta(res.ok || (Array.isArray(res.data) && res.data.length > 0) ? "ok" : "error");
     return res;
   } catch (err: any) {
     recordMeta("error");
@@ -468,6 +470,8 @@ async function fetchMetaPaginatedList(
       data: [],
       pagesFetched: 0,
       truncated: false,
+      nextAfterCursor: null,
+      hasMore: false,
       statusCode: 504,
       attempts: 1,
       error: err?.message || `Timeout em ${endpoint}`,
@@ -2272,6 +2276,28 @@ export interface BestSlotItem {
   postsCount: number;
 }
 
+export interface PlannerAccountCursorState {
+  pageId: string;
+  accountName: string;
+  instagramAccountId: string | null;
+  instagramHandle: string | null;
+  fbAfterCursor: string | null;
+  igAfterCursor: string | null;
+  fbHasMore: boolean;
+  igHasMore: boolean;
+  fbPagesLoaded: number;
+  igPagesLoaded: number;
+}
+
+export interface PlannerPaginationState {
+  hasMore: boolean;
+  isPartialSample: boolean;
+  igTotalMediaCount: number | null;
+  loadedPublishedCount: number;
+  loadedTotalCount: number;
+  cursorsByAccount: PlannerAccountCursorState[];
+}
+
 export interface PlannerSyncResult {
   posts: PlannerPost[];
   igProfile: RealIgProfileDetails | null;
@@ -2282,7 +2308,217 @@ export interface PlannerSyncResult {
   topTimeSlots: BestSlotItem[];
   metaScheduledCount: number;
   metaPublishedCount: number;
+  pagination?: PlannerPaginationState;
   errorMessage?: string;
+}
+
+const PLANNER_FB_POST_FIELDS =
+  "id,message,created_time,full_picture,permalink_url,attachments{media_type,type,media{image{src}},subattachments{media{image{src}}}},likes.summary(true),comments.summary(true),shares";
+const PLANNER_IG_MEDIA_FIELDS =
+  "id,caption,media_type,media_product_type,thumbnail_url,media_url,permalink,timestamp,like_count,comments_count";
+
+function mapMetaFbPostToPlannerPost(
+  fp: any,
+  acc: Pick<RealSocialAccount, "page_id" | "page_name" | "instagram_handle">
+): PlannerPost {
+  const { mediaUrl, postType } = extractFbAttachmentInfo(fp);
+  const msg = fp.message || "";
+  const firstLine = msg.split("\n").find((l: string) => l.trim()) || "Publicação no Facebook";
+  return {
+    id: `meta_fb_${fp.id}`,
+    page_id: acc.page_id,
+    account_name: acc.page_name,
+    account_handle: acc.instagram_handle || acc.page_name,
+    title: firstLine.length > 52 ? `${firstLine.slice(0, 49)}...` : firstLine,
+    content: msg,
+    media_url: mediaUrl,
+    thumbnail_url: mediaUrl,
+    permalink: fp.permalink_url || `https://facebook.com/${fp.id}`,
+    post_type: postType,
+    status: "published",
+    platform: "facebook",
+    scheduled_at: null,
+    published_at: fp.created_time,
+    meta_post_id: fp.id,
+    likes_count: Number(fp.likes?.summary?.total_count || 0),
+    comments_count: Number(fp.comments?.summary?.total_count || 0),
+    shares_count: Number(fp.shares?.count || 0),
+    reach_count: 0,
+    impressions_count: 0,
+    insightsStatus: "loaded",
+    created_at: fp.created_time,
+    source: "meta_live",
+  };
+}
+
+function mapMetaIgMediaToPlannerPost(
+  igItem: any,
+  acc: Pick<RealSocialAccount, "page_id" | "page_name" | "instagram_handle">,
+  scope: { tenantId?: string | null; accountScope: string }
+): PlannerPost {
+  const caption = igItem.caption || "";
+  const firstLine =
+    caption.split("\n").find((l: string) => l.trim()) ||
+    `Instagram ${igItem.media_type || "Post"}`;
+  const isReel = igItem.media_product_type === "REELS" || igItem.media_type === "VIDEO";
+  const postType: PlannerPost["post_type"] = isReel
+    ? "reels"
+    : igItem.media_type === "CAROUSEL_ALBUM"
+    ? "carousel"
+    : igItem.media_product_type === "STORY"
+    ? "stories"
+    : "feed";
+  const cachedMetrics = readSocialMediaInsightsCache({
+    tenantId: scope.tenantId,
+    accountScope: scope.accountScope,
+    network: "all",
+    period: "planner",
+    mediaId: igItem.id,
+  });
+  return {
+    id: `meta_ig_${igItem.id}`,
+    page_id: acc.page_id,
+    account_name: acc.page_name,
+    account_handle: acc.instagram_handle || acc.page_name,
+    title: firstLine.length > 52 ? `${firstLine.slice(0, 49)}...` : firstLine,
+    content: caption,
+    media_url: igItem.thumbnail_url || igItem.media_url || null,
+    thumbnail_url: igItem.thumbnail_url || igItem.media_url || null,
+    permalink: igItem.permalink || null,
+    post_type: postType,
+    status: "published",
+    platform: "instagram",
+    scheduled_at: null,
+    published_at: igItem.timestamp,
+    meta_post_id: igItem.id,
+    likes_count: Number(igItem.like_count || 0),
+    comments_count: Number(igItem.comments_count || 0),
+    shares_count: cachedMetrics?.shares || 0,
+    saves_count: cachedMetrics?.saved || 0,
+    reach_count: cachedMetrics?.reach || 0,
+    impressions_count: cachedMetrics?.views || 0,
+    insightsStatus: cachedMetrics
+      ? cachedMetrics.available
+        ? "loaded"
+        : "unavailable"
+      : "pending",
+    created_at: igItem.timestamp,
+    source: "meta_live",
+  };
+}
+
+function computePlannerHeatmapAndSlots(posts: PlannerPost[]) {
+  const publishedForHeat: RealSocialPost[] = posts
+    .filter((p) => p.status === "published" && p.published_at)
+    .map((p) => ({
+      id: p.id,
+      accountName: p.account_name || "",
+      accountHandle: p.account_handle || "",
+      title: p.title,
+      content: p.content,
+      post_type: p.post_type === "feed" ? "image" : p.post_type,
+      platform: p.platform === "facebook" ? "facebook" : "instagram",
+      likes_count: p.likes_count,
+      comments_count: p.comments_count,
+      shares_count: p.shares_count || 0,
+      saved_count: p.saves_count || 0,
+      reach_count: p.reach_count,
+      views_count: p.impressions_count,
+      total_interactions:
+        p.likes_count + p.comments_count + (p.shares_count || 0) + (p.saves_count || 0),
+      engagement_rate: 0,
+      media_url: p.media_url || null,
+      thumbnail_url: p.thumbnail_url || null,
+      permalink: p.permalink || null,
+      published_at: p.published_at!,
+      ai_sentiment: "",
+      ai_recommendation: "",
+    }));
+
+  const { matrix: heatmapMatrix, hasData: hasPostsForHeatmap } =
+    buildRealHeatmap(publishedForHeat);
+
+  const slotAgg = new Map<string, { dayIdx: number; hour: number; total: number; count: number }>();
+  for (const p of publishedForHeat) {
+    const dt = new Date(p.published_at);
+    if (isNaN(dt.getTime())) continue;
+    const dIdx = dt.getDay();
+    const hr = dt.getHours();
+    const key = `${dIdx}-${hr}`;
+    const score = Math.max(
+      1,
+      p.likes_count +
+        p.comments_count * 2 +
+        p.shares_count * 3 +
+        p.saved_count * 2 +
+        Math.round(p.reach_count / 100)
+    );
+    const prev = slotAgg.get(key) || { dayIdx: dIdx, hour: hr, total: 0, count: 0 };
+    prev.total += score;
+    prev.count += 1;
+    slotAgg.set(key, prev);
+  }
+
+  const maxSlotAvg = Math.max(
+    1,
+    ...Array.from(slotAgg.values()).map((s) => s.total / s.count)
+  );
+  const topTimeSlots: BestSlotItem[] = Array.from(slotAgg.values())
+    .map((s) => ({
+      dayIdx: s.dayIdx,
+      dayName: WEEK_DAY_NAMES_PT[s.dayIdx],
+      hour: s.hour,
+      score: Math.round((s.total / s.count / maxSlotAvg) * 100),
+      postsCount: s.count,
+    }))
+    .sort((a, b) => b.score - a.score || b.postsCount - a.postsCount)
+    .slice(0, 3);
+
+  return {
+    heatmapMatrix,
+    hasPostsForHeatmap,
+    heatmapSampleSize: publishedForHeat.length,
+    topTimeSlots,
+  };
+}
+
+function buildPlannerPaginationState(params: {
+  posts: PlannerPost[];
+  igProfile: RealIgProfileDetails | null;
+  cursorsByAccount: PlannerAccountCursorState[];
+}): PlannerPaginationState {
+  const hasMore = params.cursorsByAccount.some((c) => c.fbHasMore || c.igHasMore);
+  const loadedPublishedCount = params.posts.filter((p) => p.status === "published").length;
+  const igTotalMediaCount = params.igProfile?.media_count ?? null;
+  const isPartialSample = Boolean(
+    hasMore || (igTotalMediaCount !== null && loadedPublishedCount < igTotalMediaCount)
+  );
+  return {
+    hasMore,
+    isPartialSample,
+    igTotalMediaCount,
+    loadedPublishedCount,
+    loadedTotalCount: params.posts.length,
+    cursorsByAccount: params.cursorsByAccount,
+  };
+}
+
+function dedupeAndSortPlannerPosts(posts: PlannerPost[]): PlannerPost[] {
+  const seen = new Set<string>();
+  const out: PlannerPost[] = [];
+  for (const post of posts) {
+    const key = post.meta_post_id
+      ? `${post.platform}:${post.status}:${post.post_type === "stories" ? "stories" : "post"}:${post.meta_post_id}`
+      : post.id;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(post);
+  }
+  return out.sort((a, b) => {
+    const da = new Date(a.scheduled_at || a.published_at || a.created_at).getTime();
+    const db = new Date(b.scheduled_at || b.published_at || b.created_at).getTime();
+    return db - da;
+  });
 }
 
 function parseMetaTimestampToIso(raw: unknown): string | null {
@@ -2447,6 +2683,7 @@ export async function fetchRealPlannerPosts(params: {
 
   const metaPosts: PlannerPost[] = [];
   const metaByMetaId = new Map<string, PlannerPost>();
+  const cursorsByAccount: PlannerAccountCursorState[] = [];
   let metaScheduledCount = 0;
   let metaPublishedCount = 0;
   let succeededEndpointCalls = 0;
@@ -2458,7 +2695,8 @@ export async function fetchRealPlannerPosts(params: {
       failedEndpointCalls += 1;
       return;
     }
-    if (res.error) {
+    const hasPartialData = Array.isArray(res.data) && res.data.length > 0 && res.truncated;
+    if (res.error && !hasPartialData) {
       failedEndpointCalls += 1;
       if (!lastMetaError && res.error?.message) {
         lastMetaError = String(res.error.message);
@@ -2509,7 +2747,7 @@ export async function fetchRealPlannerPosts(params: {
             `/${acc.page_id}/posts`,
             pageToken,
             {
-              fields: "id,message,created_time,full_picture,permalink_url,attachments{media_type,type,media{image{src}},subattachments{media{image{src}}}},likes.summary(true),comments.summary(true),shares",
+              fields: PLANNER_FB_POST_FIELDS,
               limit: fbLimit,
             },
             pageDepth,
@@ -2522,7 +2760,7 @@ export async function fetchRealPlannerPosts(params: {
                 `/${acc.instagram_account_id}/media`,
                 masterToken,
                 {
-                  fields: "id,caption,media_type,media_product_type,thumbnail_url,media_url,permalink,timestamp,like_count,comments_count",
+                  fields: PLANNER_IG_MEDIA_FIELDS,
                   limit: igLimit,
                 },
                 pageDepth,
@@ -2598,36 +2836,7 @@ export async function fetchRealPlannerPosts(params: {
         const fbPubList = Array.isArray(fbPubRes?.data) ? fbPubRes.data : [];
         for (const fp of fbPubList) {
           if (!fp?.id) continue;
-          const { mediaUrl, postType } = extractFbAttachmentInfo(fp);
-          const msg = fp.message || "";
-          const firstLine = msg.split("\n").find((l: string) => l.trim()) || "Publicação no Facebook";
-          const likes = Number(fp.likes?.summary?.total_count || 0);
-          const comments = Number(fp.comments?.summary?.total_count || 0);
-          const shares = Number(fp.shares?.count || 0);
-          const item: PlannerPost = {
-            id: `meta_fb_${fp.id}`,
-            page_id: acc.page_id,
-            account_name: acc.page_name,
-            account_handle: acc.instagram_handle || acc.page_name,
-            title: firstLine.length > 52 ? `${firstLine.slice(0, 49)}...` : firstLine,
-            content: msg,
-            media_url: mediaUrl,
-            thumbnail_url: mediaUrl,
-            permalink: fp.permalink_url || `https://facebook.com/${fp.id}`,
-            post_type: postType,
-            status: "published",
-            platform: "facebook",
-            scheduled_at: null,
-            published_at: fp.created_time,
-            meta_post_id: fp.id,
-            likes_count: likes,
-            comments_count: comments,
-            shares_count: shares,
-            reach_count: 0,
-            impressions_count: 0,
-            created_at: fp.created_time,
-            source: "meta_live",
-          };
+          const item = mapMetaFbPostToPlannerPost(fp, acc);
           metaPublishedCount += 1;
           metaPosts.push(item);
           metaByMetaId.set(fp.id, item);
@@ -2636,56 +2845,12 @@ export async function fetchRealPlannerPosts(params: {
         // Posts publicados no Instagram: hidrata instantaneamente do cache compartilhado sem bloquear 1º render
         // Métricas detalhadas (reach, views, saved, shares) são carregadas progressivamente sob demanda
         const igList = Array.isArray(igMediaRes?.data) ? igMediaRes.data : [];
-
         for (const igItem of igList) {
           if (!igItem?.id) continue;
-          const caption = igItem.caption || "";
-          const firstLine = caption.split("\n").find((l: string) => l.trim()) || `Instagram ${igItem.media_type || "Post"}`;
-          const isReel = igItem.media_product_type === "REELS" || igItem.media_type === "VIDEO";
-          const postType: PlannerPost["post_type"] = isReel
-            ? "reels"
-            : igItem.media_type === "CAROUSEL_ALBUM"
-            ? "carousel"
-            : igItem.media_product_type === "STORY"
-            ? "stories"
-            : "feed";
-          const cachedMetrics = readSocialMediaInsightsCache({
+          const item = mapMetaIgMediaToPlannerPost(igItem, acc, {
             tenantId,
             accountScope: selectedPageId,
-            network: "all",
-            period: "planner",
-            mediaId: igItem.id,
           });
-          const item: PlannerPost = {
-            id: `meta_ig_${igItem.id}`,
-            page_id: acc.page_id,
-            account_name: acc.page_name,
-            account_handle: acc.instagram_handle || acc.page_name,
-            title: firstLine.length > 52 ? `${firstLine.slice(0, 49)}...` : firstLine,
-            content: caption,
-            media_url: igItem.thumbnail_url || igItem.media_url || null,
-            thumbnail_url: igItem.thumbnail_url || igItem.media_url || null,
-            permalink: igItem.permalink || null,
-            post_type: postType,
-            status: "published",
-            platform: "instagram",
-            scheduled_at: null,
-            published_at: igItem.timestamp,
-            meta_post_id: igItem.id,
-            likes_count: Number(igItem.like_count || 0),
-            comments_count: Number(igItem.comments_count || 0),
-            shares_count: cachedMetrics?.shares || 0,
-            saves_count: cachedMetrics?.saved || 0,
-            reach_count: cachedMetrics?.reach || 0,
-            impressions_count: cachedMetrics?.views || 0,
-            insightsStatus: cachedMetrics
-              ? cachedMetrics.available
-                ? "loaded"
-                : "unavailable"
-              : "pending",
-            created_at: igItem.timestamp,
-            source: "meta_live",
-          };
           metaPublishedCount += 1;
           metaPosts.push(item);
           metaByMetaId.set(igItem.id, item);
@@ -2715,6 +2880,7 @@ export async function fetchRealPlannerPosts(params: {
             comments_count: 0,
             reach_count: 0,
             impressions_count: 0,
+            insightsStatus: "loaded",
             created_at: st.timestamp,
             source: "meta_live",
           };
@@ -2722,6 +2888,21 @@ export async function fetchRealPlannerPosts(params: {
           metaPosts.push(item);
           metaByMetaId.set(st.id, item);
         }
+
+        const fbHasMore = Boolean((fbPubRes?.hasMore || fbPubRes?.truncated) && fbPubRes?.nextAfterCursor);
+        const igHasMore = Boolean((igMediaRes?.hasMore || igMediaRes?.truncated) && igMediaRes?.nextAfterCursor);
+        cursorsByAccount.push({
+          pageId: acc.page_id,
+          accountName: acc.page_name,
+          instagramAccountId: acc.instagram_account_id || null,
+          instagramHandle: acc.instagram_handle || null,
+          fbAfterCursor: fbHasMore ? fbPubRes?.nextAfterCursor || null : null,
+          igAfterCursor: igHasMore ? igMediaRes?.nextAfterCursor || null : null,
+          fbHasMore,
+          igHasMore,
+          fbPagesLoaded: fbPubRes?.pagesFetched || 0,
+          igPagesLoaded: igMediaRes?.pagesFetched || 0,
+        });
       })
     );
   }
@@ -2785,8 +2966,8 @@ export async function fetchRealPlannerPosts(params: {
     })),
   });
 
-  const combinedPosts: PlannerPost[] = normalizedCombined
-    .map((n) => {
+  const combinedPosts = dedupeAndSortPlannerPosts(
+    normalizedCombined.map((n) => {
       const baseId = n.id.replace(/_(facebook|instagram)$/, "");
       const orig = dbCreatedMap.get(baseId);
       return {
@@ -2820,67 +3001,14 @@ export async function fetchRealPlannerPosts(params: {
         source: (n.source === "meta_live" ? "meta_live" : "supabase") as "meta_live" | "supabase",
       };
     })
-    .sort((a, b) => {
-      const da = new Date(a.scheduled_at || a.published_at || a.created_at).getTime();
-      const db = new Date(b.scheduled_at || b.published_at || b.created_at).getTime();
-      return db - da;
-    });
+  );
 
-  // Calcular matriz real de heatmap e top 3 horários reais com base nos posts publicados
-  const publishedForHeat: RealSocialPost[] = combinedPosts
-    .filter((p) => p.status === "published" && p.published_at)
-    .map((p) => ({
-      id: p.id,
-      accountName: p.account_name || "",
-      accountHandle: p.account_handle || "",
-      title: p.title,
-      content: p.content,
-      post_type: p.post_type === "feed" ? "image" : p.post_type,
-      platform: p.platform === "facebook" ? "facebook" : "instagram",
-      likes_count: p.likes_count,
-      comments_count: p.comments_count,
-      shares_count: p.shares_count || 0,
-      saved_count: p.saves_count || 0,
-      reach_count: p.reach_count,
-      views_count: p.impressions_count,
-      total_interactions: p.likes_count + p.comments_count + (p.shares_count || 0) + (p.saves_count || 0),
-      engagement_rate: 0,
-      media_url: p.media_url || null,
-      thumbnail_url: p.thumbnail_url || null,
-      permalink: p.permalink || null,
-      published_at: p.published_at!,
-      ai_sentiment: "",
-      ai_recommendation: "",
-    }));
-
-  const { matrix: heatmapMatrix, hasData: hasPostsForHeatmap } = buildRealHeatmap(publishedForHeat);
-
-  // Calcular top 3 slots reais (dia/hora) onde houve maior engajamento
-  const slotAgg = new Map<string, { dayIdx: number; hour: number; total: number; count: number }>();
-  for (const p of publishedForHeat) {
-    const dt = new Date(p.published_at);
-    if (isNaN(dt.getTime())) continue;
-    const dIdx = dt.getDay();
-    const hr = dt.getHours();
-    const key = `${dIdx}-${hr}`;
-    const score = Math.max(1, p.likes_count + p.comments_count * 2 + p.shares_count * 3 + p.saved_count * 2 + Math.round(p.reach_count / 100));
-    const prev = slotAgg.get(key) || { dayIdx: dIdx, hour: hr, total: 0, count: 0 };
-    prev.total += score;
-    prev.count += 1;
-    slotAgg.set(key, prev);
-  }
-
-  const maxSlotAvg = Math.max(1, ...Array.from(slotAgg.values()).map((s) => s.total / s.count));
-  const topTimeSlots: BestSlotItem[] = Array.from(slotAgg.values())
-    .map((s) => ({
-      dayIdx: s.dayIdx,
-      dayName: WEEK_DAY_NAMES_PT[s.dayIdx],
-      hour: s.hour,
-      score: Math.round(((s.total / s.count) / maxSlotAvg) * 100),
-      postsCount: s.count,
-    }))
-    .sort((a, b) => b.score - a.score || b.postsCount - a.postsCount)
-    .slice(0, 3);
+  const heat = computePlannerHeatmapAndSlots(combinedPosts);
+  const pagination = buildPlannerPaginationState({
+    posts: combinedPosts,
+    igProfile,
+    cursorsByAccount,
+  });
 
   const metaUnavailable =
     targetAccounts.length > 0 && succeededEndpointCalls === 0 && failedEndpointCalls > 0;
@@ -2888,18 +3016,216 @@ export async function fetchRealPlannerPosts(params: {
   return {
     posts: combinedPosts,
     igProfile,
-    heatmapMatrix,
-    hasPostsForHeatmap,
-    heatmapSampleSize: publishedForHeat.length,
+    heatmapMatrix: heat.heatmapMatrix,
+    hasPostsForHeatmap: heat.hasPostsForHeatmap,
+    heatmapSampleSize: heat.heatmapSampleSize,
     apiLimitations: [
       "Instagram Graph API não retorna rascunhos nem agendamentos nativos feitos no app Instagram/Meta Business Suite; apenas o agendamento nativo do Facebook (/scheduled_posts) e a fila local da NC Suite são listados.",
     ],
-    topTimeSlots,
+    topTimeSlots: heat.topTimeSlots,
     metaScheduledCount,
     metaPublishedCount,
+    pagination,
     errorMessage: metaUnavailable
       ? lastMetaError ||
         "Não foi possível carregar dados ao vivo da Meta Graph API no momento (verifique limite ou conexão)."
+      : undefined,
+  };
+}
+
+/**
+ * Carrega as páginas seguintes de publicações da Meta para o Planejador usando os cursores
+ * explícitos salvos em `current.pagination.cursorsByAccount`, sem truncar o histórico.
+ */
+export async function fetchNextPlannerPostsPage(params: {
+  current: PlannerSyncResult;
+  accounts: RealSocialAccount[];
+  selectedPageId: string;
+  masterToken: string | null;
+  tenantId?: string | null;
+  pagesToFetch?: number;
+}): Promise<PlannerSyncResult> {
+  const { current, accounts, selectedPageId, masterToken, tenantId } = params;
+  const currentPagination = current.pagination;
+  if (!masterToken || !currentPagination?.cursorsByAccount?.length) {
+    return current;
+  }
+
+  const activeCursors = currentPagination.cursorsByAccount.filter(
+    (c) => (c.fbHasMore && c.fbAfterCursor) || (c.igHasMore && c.igAfterCursor)
+  );
+  if (activeCursors.length === 0) {
+    return {
+      ...current,
+      pagination: buildPlannerPaginationState({
+        posts: current.posts,
+        igProfile: current.igProfile,
+        cursorsByAccount: currentPagination.cursorsByAccount,
+      }),
+    };
+  }
+
+  const isSingle = selectedPageId !== "all";
+  const pagesToFetch = Math.max(1, params.pagesToFetch ?? 1);
+  const fbLimit = isSingle ? "30" : "10";
+  const igLimit = isSingle ? "30" : "10";
+  const ACCOUNT_CONCURRENCY = isSingle ? 1 : 4;
+
+  const fetchedPosts: PlannerPost[] = [];
+  const updatedCursorMap = new Map<string, PlannerAccountCursorState>();
+  let succeededCalls = 0;
+  let failedCalls = 0;
+  let lastError: string | null = null;
+
+  for (let offset = 0; offset < activeCursors.length; offset += ACCOUNT_CONCURRENCY) {
+    const batch = activeCursors.slice(offset, offset + ACCOUNT_CONCURRENCY);
+    await Promise.all(
+      batch.map(async (cursor) => {
+        const matchedAcc = accounts.find(
+          (a) =>
+            a.page_id === cursor.pageId ||
+            (cursor.instagramAccountId && a.instagram_account_id === cursor.instagramAccountId)
+        );
+        const accMeta: Pick<RealSocialAccount, "page_id" | "page_name" | "instagram_handle"> = {
+          page_id: cursor.pageId,
+          page_name: matchedAcc?.page_name || cursor.accountName,
+          instagram_handle: matchedAcc?.instagram_handle || cursor.instagramHandle || null,
+        };
+        const pageToken = matchedAcc?.access_token || masterToken;
+
+        const [fbRes, igRes] = await Promise.all([
+          cursor.fbHasMore && cursor.fbAfterCursor
+            ? fetchMetaPaginatedList(
+                `/${cursor.pageId}/posts`,
+                pageToken,
+                {
+                  fields: PLANNER_FB_POST_FIELDS,
+                  limit: fbLimit,
+                  after: cursor.fbAfterCursor,
+                },
+                pagesToFetch,
+                DEFAULT_META_PAGINATED_TIMEOUT_MS,
+                undefined,
+                {
+                  dataClass: "planner",
+                  accountScope: selectedPageId,
+                  reason: "meta_fb_planner_posts_next",
+                }
+              )
+            : Promise.resolve(null),
+          cursor.igHasMore && cursor.igAfterCursor && cursor.instagramAccountId
+            ? fetchMetaPaginatedList(
+                `/${cursor.instagramAccountId}/media`,
+                masterToken,
+                {
+                  fields: PLANNER_IG_MEDIA_FIELDS,
+                  limit: igLimit,
+                  after: cursor.igAfterCursor,
+                },
+                pagesToFetch,
+                DEFAULT_META_PAGINATED_TIMEOUT_MS,
+                undefined,
+                {
+                  dataClass: "planner",
+                  accountScope: selectedPageId,
+                  reason: "meta_ig_planner_media_next",
+                }
+              )
+            : Promise.resolve(null),
+        ]);
+
+        let nextFbAfter = cursor.fbAfterCursor;
+        let nextFbHasMore = cursor.fbHasMore;
+        let nextFbPagesLoaded = cursor.fbPagesLoaded;
+
+        if (fbRes) {
+          const fbItems = Array.isArray(fbRes.data) ? fbRes.data : [];
+          if (fbRes.error && fbItems.length === 0) {
+            failedCalls += 1;
+            if (!lastError && fbRes.error?.message) lastError = String(fbRes.error.message);
+          } else {
+            succeededCalls += 1;
+            for (const fp of fbItems) {
+              if (fp?.id) fetchedPosts.push(mapMetaFbPostToPlannerPost(fp, accMeta));
+            }
+            nextFbPagesLoaded = cursor.fbPagesLoaded + (fbRes.pagesFetched || 0);
+            const fbCursorAdvanced = Boolean(
+              fbRes.nextAfterCursor && fbRes.nextAfterCursor !== cursor.fbAfterCursor
+            );
+            nextFbHasMore = Boolean((fbRes.hasMore || fbRes.truncated) && fbCursorAdvanced);
+            nextFbAfter = nextFbHasMore ? fbRes.nextAfterCursor || null : null;
+          }
+        }
+
+        let nextIgAfter = cursor.igAfterCursor;
+        let nextIgHasMore = cursor.igHasMore;
+        let nextIgPagesLoaded = cursor.igPagesLoaded;
+
+        if (igRes) {
+          const igItems = Array.isArray(igRes.data) ? igRes.data : [];
+          if (igRes.error && igItems.length === 0) {
+            failedCalls += 1;
+            if (!lastError && igRes.error?.message) lastError = String(igRes.error.message);
+          } else {
+            succeededCalls += 1;
+            for (const igItem of igItems) {
+              if (igItem?.id) {
+                fetchedPosts.push(
+                  mapMetaIgMediaToPlannerPost(igItem, accMeta, {
+                    tenantId,
+                    accountScope: selectedPageId,
+                  })
+                );
+              }
+            }
+            nextIgPagesLoaded = cursor.igPagesLoaded + (igRes.pagesFetched || 0);
+            const igCursorAdvanced = Boolean(
+              igRes.nextAfterCursor && igRes.nextAfterCursor !== cursor.igAfterCursor
+            );
+            nextIgHasMore = Boolean((igRes.hasMore || igRes.truncated) && igCursorAdvanced);
+            nextIgAfter = nextIgHasMore ? igRes.nextAfterCursor || null : null;
+          }
+        }
+
+        updatedCursorMap.set(cursor.pageId, {
+          ...cursor,
+          fbAfterCursor: nextFbAfter,
+          igAfterCursor: nextIgAfter,
+          fbHasMore: nextFbHasMore,
+          igHasMore: nextIgHasMore,
+          fbPagesLoaded: nextFbPagesLoaded,
+          igPagesLoaded: nextIgPagesLoaded,
+        });
+      })
+    );
+  }
+
+  const updatedCursors = currentPagination.cursorsByAccount.map(
+    (c) => updatedCursorMap.get(c.pageId) || c
+  );
+  const combinedPosts = dedupeAndSortPlannerPosts([...current.posts, ...fetchedPosts]);
+  const heat = computePlannerHeatmapAndSlots(combinedPosts);
+  const pagination = buildPlannerPaginationState({
+    posts: combinedPosts,
+    igProfile: current.igProfile,
+    cursorsByAccount: updatedCursors,
+  });
+
+  const nextFailed = succeededCalls === 0 && failedCalls > 0;
+
+  return {
+    ...current,
+    posts: combinedPosts,
+    heatmapMatrix: heat.heatmapMatrix,
+    hasPostsForHeatmap: heat.hasPostsForHeatmap,
+    heatmapSampleSize: heat.heatmapSampleSize,
+    topTimeSlots: heat.topTimeSlots,
+    metaPublishedCount: combinedPosts.filter(
+      (p) => p.status === "published" && p.source === "meta_live"
+    ).length,
+    pagination,
+    errorMessage: nextFailed
+      ? lastError || "Não foi possível carregar mais publicações da Meta no momento."
       : undefined,
   };
 }

@@ -26,6 +26,10 @@ import {
   setSocialSelectedNetwork,
   setSocialSelectedPage,
 } from "../src/lib/socialHubStore.ts";
+import {
+  metaFetchPaginatedWithStatus,
+  mergeSocialCrosspostRecords,
+} from "../src/lib/metaIntegrationCore.ts";
 
 test("1-4. Warm cache across Social Hub screens avoids repeated Meta calls and reuses snapshots on revisit & hub switch", async () => {
   resetSocialCacheForTests();
@@ -592,5 +596,172 @@ test("14. Per-media insights cache isolates account/tenant scopes and avoids dup
       mediaId: "ig_media_1",
     }),
     null
+  );
+});
+
+test("15. Explicit Meta cursor pagination loads 120 -> 180 -> 210 without silent truncation and deduplicates cross-endpoint records safely", async () => {
+  const buildPage = (prefix: string, start: number, count: number) =>
+    Array.from({ length: count }, (_, idx) => ({
+      id: `${prefix}_${start + idx}`,
+      timestamp: `2026-11-${String(Math.max(1, 28 - Math.floor((start + idx) / 10))).padStart(2, "0")}T12:00:00+0000`,
+    }));
+
+  const makePaginatedFetch = (prefix: string) => {
+    const pages: Record<string, { data: Array<{ id: string; timestamp: string }>; nextCursor?: string }> = {
+      root: { data: buildPage(prefix, 1, 30), nextCursor: `${prefix}_cursor_p2` },
+      [`${prefix}_cursor_p2`]: { data: buildPage(prefix, 31, 30), nextCursor: `${prefix}_cursor_p3` },
+      [`${prefix}_cursor_p3`]: { data: buildPage(prefix, 61, 30), nextCursor: `${prefix}_cursor_p4` },
+      [`${prefix}_cursor_p4`]: { data: buildPage(prefix, 91, 15) },
+    };
+
+    return async (url: string | URL | Request) => {
+      const parsed = new URL(typeof url === "string" ? url : url.toString());
+      const after = parsed.searchParams.get("after") || "root";
+      const page = pages[after] || { data: [] };
+      const body = page.nextCursor
+        ? {
+            data: page.data,
+            paging: {
+              cursors: { after: page.nextCursor },
+              next: `${parsed.origin}${parsed.pathname}?after=${page.nextCursor}`,
+            },
+          }
+        : { data: page.data };
+      return new Response(JSON.stringify(body), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    };
+  };
+
+  const igFetch = makePaginatedFetch("ig");
+  const fbFetch = makePaginatedFetch("fb");
+
+  // 1) Carga inicial rápida (maxPages: 2) para em 120 itens (60 IG + 60 FB) com cursor explícito para página 3
+  const [igStage1, fbStage1] = await Promise.all([
+    metaFetchPaginatedWithStatus<{ id: string }>("/17841402722228965/media", "tok", { limit: "30" }, { maxPages: 2, fetchFn: igFetch }),
+    metaFetchPaginatedWithStatus<{ id: string }>("/381260795398048/posts", "tok", { limit: "30" }, { maxPages: 2, fetchFn: fbFetch }),
+  ]);
+
+  assert.equal(igStage1.data.length + fbStage1.data.length, 120);
+  assert.equal(igStage1.truncated, true);
+  assert.equal(fbStage1.truncated, true);
+  assert.equal(igStage1.hasMore, true);
+  assert.equal(fbStage1.hasMore, true);
+  assert.equal(igStage1.nextAfterCursor, "ig_cursor_p3");
+  assert.equal(fbStage1.nextAfterCursor, "fb_cursor_p3");
+
+  // 2) Continuação progressiva da página 3 alcança 180 itens (ainda com hasMore: true para página 4)
+  const [igStage2, fbStage2] = await Promise.all([
+    metaFetchPaginatedWithStatus<{ id: string }>(
+      "/17841402722228965/media",
+      "tok",
+      { limit: "30", after: igStage1.nextAfterCursor! },
+      { maxPages: 1, fetchFn: igFetch }
+    ),
+    metaFetchPaginatedWithStatus<{ id: string }>(
+      "/381260795398048/posts",
+      "tok",
+      { limit: "30", after: fbStage1.nextAfterCursor! },
+      { maxPages: 1, fetchFn: fbFetch }
+    ),
+  ]);
+
+  const totalAfterPage3 =
+    igStage1.data.length + fbStage1.data.length + igStage2.data.length + fbStage2.data.length;
+  assert.equal(totalAfterPage3, 180);
+  assert.equal(igStage2.hasMore, true);
+  assert.equal(fbStage2.hasMore, true);
+  assert.equal(igStage2.nextAfterCursor, "ig_cursor_p4");
+  assert.equal(fbStage2.nextAfterCursor, "fb_cursor_p4");
+
+  // 3) Página 4 completa os 210 itens sem truncated nem nextAfterCursor
+  const [igStage3, fbStage3] = await Promise.all([
+    metaFetchPaginatedWithStatus<{ id: string }>(
+      "/17841402722228965/media",
+      "tok",
+      { limit: "30", after: igStage2.nextAfterCursor! },
+      { maxPages: 1, fetchFn: igFetch }
+    ),
+    metaFetchPaginatedWithStatus<{ id: string }>(
+      "/381260795398048/posts",
+      "tok",
+      { limit: "30", after: fbStage2.nextAfterCursor! },
+      { maxPages: 1, fetchFn: fbFetch }
+    ),
+  ]);
+
+  const allPaginatedIds = new Set([
+    ...igStage1.data.map((x) => x.id),
+    ...fbStage1.data.map((x) => x.id),
+    ...igStage2.data.map((x) => x.id),
+    ...fbStage2.data.map((x) => x.id),
+    ...igStage3.data.map((x) => x.id),
+    ...fbStage3.data.map((x) => x.id),
+  ]);
+  assert.equal(allPaginatedIds.size, 210);
+  assert.equal(igStage3.truncated, false);
+  assert.equal(fbStage3.truncated, false);
+  assert.equal(igStage3.hasMore, false);
+  assert.equal(fbStage3.hasMore, false);
+  assert.equal(igStage3.nextAfterCursor, null);
+  assert.equal(fbStage3.nextAfterCursor, null);
+
+  // 4) Deduplicação preserva /media, /posts, /scheduled_posts, /promotable_posts e /stories e descarta duplicatas exatas
+  const makeMetaRecord = (overrides: Record<string, unknown>) => ({
+    id: "meta_item_1",
+    platform: "instagram" as const,
+    metaPostId: "18019822568745786",
+    pageId: "381260795398048",
+    accountName: "Luma Car",
+    accountHandle: "lumacar.veiculos",
+    title: "Post Meta",
+    content: "Conteúdo",
+    postType: "feed" as const,
+    status: "published" as const,
+    scheduledAt: null,
+    publishedAt: "2026-11-13T15:00:00.000Z",
+    likesCount: 10,
+    commentsCount: 2,
+    sharesCount: 1,
+    savesCount: 0,
+    reachCount: null,
+    impressionsCount: null,
+    reachState: "indisponivel" as const,
+    impressionsState: "indisponivel" as const,
+    permalink: null,
+    mediaUrl: null,
+    thumbnailUrl: null,
+    source: "meta_live" as const,
+    ...overrides,
+  });
+
+  const merged = mergeSocialCrosspostRecords({
+    dbRows: [],
+    metaLivePosts: [
+      makeMetaRecord({ id: "meta_ig_180", metaPostId: "180", platform: "instagram", postType: "reels", status: "published" }),
+      // Duplicata exata de /media vinda de paginação repetida -> deve ser deduplicada
+      makeMetaRecord({ id: "meta_ig_180_dup", metaPostId: "180", platform: "instagram", postType: "reels", status: "published" }),
+      // Facebook /posts com outro canal
+      makeMetaRecord({ id: "meta_fb_200", metaPostId: "200", platform: "facebook", postType: "feed", status: "published" }),
+      // Story ativo do IG não colide com feed
+      makeMetaRecord({ id: "meta_story_300", metaPostId: "300", platform: "instagram", postType: "stories", status: "published" }),
+      // Scheduled + Promotable no FB (/scheduled_posts + /promotable_posts) distintos preservados, duplicata removida
+      makeMetaRecord({ id: "meta_sched_400", metaPostId: "400", platform: "facebook", postType: "feed", status: "scheduled", publishedAt: null, scheduledAt: "2026-11-20T14:00:00.000Z" }),
+      makeMetaRecord({ id: "meta_promo_400", metaPostId: "400", platform: "facebook", postType: "feed", status: "scheduled", publishedAt: null, scheduledAt: "2026-11-20T14:00:00.000Z" }),
+      makeMetaRecord({ id: "meta_promo_500", metaPostId: "500", platform: "facebook", postType: "feed", status: "scheduled", publishedAt: null, scheduledAt: "2026-11-21T14:00:00.000Z" }),
+    ],
+  });
+
+  assert.equal(merged.length, 5);
+  assert.deepEqual(
+    merged.map((m) => `${m.platform}:${m.status}:${m.postType}:${m.metaPostId}`).sort(),
+    [
+      "facebook:published:feed:200",
+      "facebook:scheduled:feed:400",
+      "facebook:scheduled:feed:500",
+      "instagram:published:reels:180",
+      "instagram:published:stories:300",
+    ]
   );
 });

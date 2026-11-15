@@ -65,6 +65,7 @@ import { useAuth } from "@/lib/auth";
 import { canonicalizeSocialPageId, useSocialHubFilters } from "@/lib/socialHubStore";
 import {
   useManualSocialSync,
+  usePlannerPagination,
   usePlannerProgressiveInsights,
   useSocialAccountsQuery,
   useSocialPlannerQuery,
@@ -288,6 +289,23 @@ export default function SocialMediaPage() {
     plannerData,
     targetMediaIds: progressiveTargetMediaIds,
     enabled: !isLoadingAccounts && progressiveTargetMediaIds.length > 0,
+  });
+
+  const {
+    isLoadingMorePages,
+    loadMorePages,
+    hasMorePages,
+    isPartialSample,
+    igTotalMediaCount,
+    paginationError,
+  } = usePlannerPagination({
+    tenantId,
+    accounts: activePages,
+    selectedPage: canonicalSelectedPage,
+    network: selectedNetwork,
+    masterToken,
+    plannerData,
+    enabled: !isLoadingAccounts && !isLoadingPlanner && Boolean(plannerData),
   });
 
   const stats = useMemo(() => {
@@ -610,18 +628,39 @@ export default function SocialMediaPage() {
 
         <div className="glass-panel p-4 rounded-2xl border border-border/60 bg-card/60 backdrop-blur-md">
           <div className="flex items-center justify-between text-muted-foreground mb-1.5">
-            <span className="text-[10px] font-bold uppercase tracking-wider">Publicados Carregados</span>
+            <span className="text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5">
+              Publicados Carregados
+              {!isPlannerInitialLoading && !isPlannerUnavailable && allPosts.length > 0 && (
+                <span
+                  className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${
+                    isLoadingMorePages
+                      ? "bg-primary/15 text-primary"
+                      : isPartialSample
+                      ? "bg-amber-500/15 text-amber-400"
+                      : "bg-emerald-500/15 text-emerald-400"
+                  }`}
+                >
+                  {isLoadingMorePages ? "Carregando+" : isPartialSample ? "Amostra" : "Completo"}
+                </span>
+              )}
+            </span>
             <CheckCircle2 className="h-4 w-4 text-emerald-400" />
           </div>
           <div className="text-xl sm:text-2xl font-bold font-mono text-foreground">
-            {isPlannerInitialLoading ? "..." : isPlannerUnavailable ? "—" : stats.publishedCount}
+            {isPlannerInitialLoading ? "..." : isPlannerUnavailable ? "—" : stats.publishedCount.toLocaleString("pt-BR")}
           </div>
           <p className="text-[10px] text-emerald-500 font-semibold mt-0.5">
             {isPlannerInitialLoading
               ? "Carregando publicações..."
               : isPlannerUnavailable
               ? "Indisponível — tente sincronizar"
-              : `${stats.totalLikes.toLocaleString("pt-BR")} curtidas e ${stats.totalComments.toLocaleString("pt-BR")} coment.`}
+              : isLoadingMorePages
+              ? `Carregando mais páginas da Meta... (${stats.publishedCount.toLocaleString("pt-BR")} até agora)`
+              : isPartialSample && igTotalMediaCount !== null
+              ? `Amostra parcial carregada (${igTotalMediaCount.toLocaleString("pt-BR")} no IG na Meta) • ${stats.totalLikes.toLocaleString("pt-BR")} curtidas`
+              : isPartialSample
+              ? `Amostra parcial da Meta • ${stats.totalLikes.toLocaleString("pt-BR")} curtidas e ${stats.totalComments.toLocaleString("pt-BR")} coment.`
+              : `Histórico completo • ${stats.totalLikes.toLocaleString("pt-BR")} curtidas e ${stats.totalComments.toLocaleString("pt-BR")} coment.`}
           </p>
         </div>
 
@@ -765,6 +804,69 @@ export default function SocialMediaPage() {
         </div>
       </div>
 
+      {/* ─── ESTADO DA AMOSTRA / PAGINAÇÃO PROGRESSIVA NA META ─── */}
+      {!isPlannerInitialLoading && !isPlannerUnavailable && plannerData && (
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 px-4 py-2.5 rounded-2xl border border-border/60 bg-card/50 text-xs">
+          <div className="flex items-start sm:items-center gap-2 text-muted-foreground">
+            {isLoadingMorePages ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin text-primary shrink-0 mt-0.5 sm:mt-0" />
+            ) : isPartialSample ? (
+              <Info className="h-3.5 w-3.5 text-amber-400 shrink-0 mt-0.5 sm:mt-0" />
+            ) : (
+              <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400 shrink-0 mt-0.5 sm:mt-0" />
+            )}
+            <div className="space-y-0.5">
+              <p>
+                {isLoadingMorePages ? (
+                  <>
+                    <span className="font-semibold text-foreground">Carregando mais publicações da Meta...</span>{" "}
+                    {allPosts.length.toLocaleString("pt-BR")} itens carregados até agora.
+                  </>
+                ) : isPartialSample ? (
+                  <>
+                    <span className="font-semibold text-amber-400">Amostra parcial carregada:</span>{" "}
+                    {allPosts.length.toLocaleString("pt-BR")} itens ({stats.publishedCount.toLocaleString("pt-BR")} publicados)
+                    {igTotalMediaCount !== null
+                      ? ` · ${igTotalMediaCount.toLocaleString("pt-BR")} mídias no perfil Instagram na Meta.`
+                      : " · Mais histórico disponível na Meta."}{" "}
+                    Contagens e gráficos abaixo refletem apenas os itens carregados.
+                  </>
+                ) : (
+                  <>
+                    <span className="font-semibold text-emerald-400">Histórico completo carregado:</span>{" "}
+                    {allPosts.length.toLocaleString("pt-BR")} publicações disponíveis na Meta e na fila NC Suite.
+                  </>
+                )}
+              </p>
+              {paginationError && (
+                <p className="text-[11px] text-amber-400 font-medium">{paginationError}</p>
+              )}
+            </div>
+          </div>
+
+          {hasMorePages && (
+            <button
+              type="button"
+              onClick={() => void loadMorePages(1)}
+              disabled={isLoadingMorePages}
+              className="shrink-0 inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-xl bg-primary/15 hover:bg-primary/25 text-primary border border-primary/30 text-[11px] font-bold transition disabled:opacity-50 cursor-pointer"
+            >
+              {isLoadingMorePages ? (
+                <>
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  Carregando mais...
+                </>
+              ) : (
+                <>
+                  <Plus className="h-3.5 w-3.5" />
+                  Carregar mais publicações da Meta
+                </>
+              )}
+            </button>
+          )}
+        </div>
+      )}
+
       {/* ─── RENDERIZAÇÃO DA ABA ATIVA ─── */}
       <AnimatePresence mode="wait">
         {viewMode === "calendar" && (
@@ -821,6 +923,10 @@ export default function SocialMediaPage() {
               activePage={activePageObj}
               igProfile={igProfile}
               posts={filteredPosts}
+              hasMorePages={hasMorePages}
+              isPartialSample={isPartialSample}
+              isLoadingMorePages={isLoadingMorePages}
+              onLoadMorePages={() => void loadMorePages(1)}
               onSelectPost={(p) => setPreviewPost(p)}
               onNewPost={() => {
                 setEditingPost(null);
@@ -860,6 +966,10 @@ export default function SocialMediaPage() {
               posts={filteredPosts}
               visibleCount={performanceVisibleCount}
               isEnriching={isEnrichingInsights}
+              hasMoreMetaPages={hasMorePages}
+              isPartialSample={isPartialSample}
+              isLoadingMoreMeta={isLoadingMorePages}
+              onLoadMoreMeta={() => void loadMorePages(1)}
               onLoadMore={() => setPerformanceVisibleCount((c) => c + 10)}
               onSelectPost={(p) => setPreviewPost(p)}
             />
@@ -1409,6 +1519,10 @@ interface FeedSimulatorProps {
   activePage: RealSocialAccount | null;
   igProfile: RealIgProfileDetails | null;
   posts: SocialPost[];
+  hasMorePages?: boolean;
+  isPartialSample?: boolean;
+  isLoadingMorePages?: boolean;
+  onLoadMorePages?: () => void;
   onSelectPost: (p: SocialPost) => void;
   onNewPost: () => void;
 }
@@ -1417,6 +1531,10 @@ function InstagramFeedSimulatorView({
   activePage,
   igProfile,
   posts,
+  hasMorePages,
+  isPartialSample,
+  isLoadingMorePages,
+  onLoadMorePages,
   onSelectPost,
   onNewPost,
 }: FeedSimulatorProps) {
@@ -1505,9 +1623,16 @@ function InstagramFeedSimulatorView({
       </div>
 
       <div className="space-y-4">
-        <div className="flex items-center justify-between text-xs font-bold uppercase tracking-wider text-muted-foreground border-b border-border/40 pb-2">
+        <div className="flex flex-wrap items-center justify-between gap-2 text-xs font-bold uppercase tracking-wider text-muted-foreground border-b border-border/40 pb-2">
           <span>Grade Real do Feed (Agendados + Publicados)</span>
-          <span className="text-primary font-mono">{feedPosts.length} itens carregados</span>
+          <span className="text-primary font-mono">
+            {feedPosts.length.toLocaleString("pt-BR")} itens carregados
+            {(isPartialSample || hasMorePages) && igProfile?.media_count
+              ? ` (amostra de ${mediaCount.toLocaleString("pt-BR")} no IG)`
+              : isPartialSample || hasMorePages
+              ? " (amostra)"
+              : ""}
+          </span>
         </div>
 
         <div className="grid grid-cols-3 gap-1.5 sm:gap-2">
@@ -1554,6 +1679,29 @@ function InstagramFeedSimulatorView({
             </div>
           )}
         </div>
+
+        {hasMorePages && onLoadMorePages && (
+          <div className="pt-2 flex justify-center">
+            <button
+              type="button"
+              onClick={onLoadMorePages}
+              disabled={isLoadingMorePages}
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl border border-primary/30 bg-primary/10 hover:bg-primary/20 text-xs font-bold text-primary transition disabled:opacity-50 cursor-pointer"
+            >
+              {isLoadingMorePages ? (
+                <>
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  Carregando mais publicações da Meta...
+                </>
+              ) : (
+                <>
+                  <Plus className="h-3.5 w-3.5" />
+                  Carregar mais publicações da Meta
+                </>
+              )}
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -1686,6 +1834,10 @@ interface PerformanceViewProps {
   posts: SocialPost[];
   visibleCount: number;
   isEnriching?: boolean;
+  hasMoreMetaPages?: boolean;
+  isPartialSample?: boolean;
+  isLoadingMoreMeta?: boolean;
+  onLoadMoreMeta?: () => void;
   onLoadMore: () => void;
   onSelectPost: (p: SocialPost) => void;
 }
@@ -1694,6 +1846,10 @@ function PerformanceLeaderboardView({
   posts,
   visibleCount,
   isEnriching,
+  hasMoreMetaPages,
+  isPartialSample,
+  isLoadingMoreMeta,
+  onLoadMoreMeta,
   onLoadMore,
   onSelectPost,
 }: PerformanceViewProps) {
@@ -1722,7 +1878,11 @@ function PerformanceLeaderboardView({
               Ranking Real de Publicações
             </h3>
             <p className="text-xs text-muted-foreground">
-              Ordenadas por alcance orgânico e interações reais registradas na Meta API.
+              Ordenadas por alcance orgânico e interações reais sobre{" "}
+              <strong className="text-foreground font-mono">
+                {publishedPosts.length.toLocaleString("pt-BR")}
+              </strong>{" "}
+              publicações carregadas{isPartialSample || hasMoreMetaPages ? " (amostra parcial)" : ""}.
               {isEnriching && " (Carregando métricas de alcance visíveis...)"}
             </p>
           </div>
@@ -1837,14 +1997,36 @@ function PerformanceLeaderboardView({
             </tbody>
           </table>
         </div>
-        {publishedPosts.length > visibleCount && (
-          <div className="mt-4 flex justify-center">
-            <button
-              onClick={onLoadMore}
-              className="px-4 py-2 rounded-xl border border-border/80 bg-muted/40 hover:bg-muted text-xs font-bold text-foreground transition cursor-pointer"
-            >
-              Carregar mais ({Math.min(10, publishedPosts.length - visibleCount)} de {publishedPosts.length - visibleCount} restantes)
-            </button>
+        {(publishedPosts.length > visibleCount || hasMoreMetaPages) && (
+          <div className="mt-4 flex flex-wrap items-center justify-center gap-3">
+            {publishedPosts.length > visibleCount && (
+              <button
+                onClick={onLoadMore}
+                className="px-4 py-2 rounded-xl border border-border/80 bg-muted/40 hover:bg-muted text-xs font-bold text-foreground transition cursor-pointer"
+              >
+                Carregar mais ({Math.min(10, publishedPosts.length - visibleCount)} de {publishedPosts.length - visibleCount} carregados restantes)
+              </button>
+            )}
+            {hasMoreMetaPages && onLoadMoreMeta && (
+              <button
+                type="button"
+                onClick={onLoadMoreMeta}
+                disabled={isLoadingMoreMeta}
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl border border-primary/30 bg-primary/10 hover:bg-primary/20 text-xs font-bold text-primary transition disabled:opacity-50 cursor-pointer"
+              >
+                {isLoadingMoreMeta ? (
+                  <>
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    Carregando mais da Meta...
+                  </>
+                ) : (
+                  <>
+                    <Plus className="h-3.5 w-3.5" />
+                    Carregar mais publicações da Meta
+                  </>
+                )}
+              </button>
+            )}
           </div>
         )}
       </div>

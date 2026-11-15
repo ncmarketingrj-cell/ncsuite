@@ -4,6 +4,7 @@ import {
   fetchAccountSocialOverview,
   fetchAccountSocialPosts,
   fetchLiveSocialAccounts,
+  fetchNextPlannerPostsPage,
   fetchPlannerMediaInsightsBatch,
   fetchRealPlannerPosts,
   type PlannerSyncResult,
@@ -19,6 +20,7 @@ import {
   readSocialCacheEnvelope,
   recordSocialCacheHitEvent,
   resolveSocialDataWithSWR,
+  runSharedSocialSync,
   writeSocialCacheEnvelope,
   type SocialDataClass,
   type SocialNetworkScope,
@@ -650,6 +652,232 @@ export function usePlannerProgressiveInsights(params: {
   }, [pendingKey, params.masterToken, tenantId, canonicalPage, cacheKey, keyParams, qc, queryKey]);
 
   return { isEnrichingInsights };
+}
+
+export function usePlannerPagination(params: {
+  tenantId?: string | null;
+  accounts: RealSocialAccount[];
+  selectedPage: string;
+  network?: SocialNetworkScope;
+  masterToken: string | null;
+  plannerData?: CachedSocialPlanner;
+  enabled?: boolean;
+}) {
+  const qc = useQueryClient();
+  const tenantId = getLastKnownTenantId(params.tenantId);
+  const canonicalPage = useMemo(
+    () => canonicalizeSocialPageId(params.selectedPage, params.accounts),
+    [params.selectedPage, params.accounts]
+  );
+  const network: SocialNetworkScope = params.network || "all";
+  const accountsState = params.accounts.length > 0 ? "ready" : "empty";
+  const [isLoadingMorePages, setIsLoadingMorePages] = useState(false);
+  const [paginationError, setPaginationError] = useState<string | null>(null);
+  const autoStage3TriggeredRef = useRef<Set<string>>(new Set());
+  const mountedRef = useRef(true);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
+  const keyParams = useMemo(
+    () => ({
+      tenantId,
+      accountScope: canonicalPage || "all",
+      network,
+      period: "planner",
+      dataClass: "planner" as const,
+      variant: Boolean(params.masterToken) ? "with_token" : "no_token",
+    }),
+    [tenantId, canonicalPage, network, params.masterToken]
+  );
+
+  const cacheKey = useMemo(() => buildSocialCacheKey(keyParams), [keyParams]);
+  const queryKey = useMemo(
+    () => ["social-hub", "planner", cacheKey, accountsState] as const,
+    [cacheKey, accountsState]
+  );
+
+  const pagination = params.plannerData?.pagination;
+  const hasMorePages = Boolean(pagination?.hasMore);
+  const igTotalMediaCount =
+    pagination?.igTotalMediaCount ?? params.plannerData?.igProfile?.media_count ?? null;
+  const isPartialSample = Boolean(pagination?.isPartialSample || hasMorePages);
+
+  const loadMorePages = useCallback(
+    async (pagesToFetch = 1) => {
+      const current =
+        qc.getQueryData<CachedSocialPlanner>(queryKey) || params.plannerData;
+      if (!current || !params.masterToken || !current.pagination?.hasMore) {
+        return;
+      }
+
+      const cursorSignature = current.pagination.cursorsByAccount
+        .map((c) => `${c.pageId}:${c.fbAfterCursor || ""}:${c.igAfterCursor || ""}`)
+        .join("|");
+      const dedupeKey = `${cacheKey}:page:${cursorSignature}`;
+
+      if (mountedRef.current) {
+        setIsLoadingMorePages(true);
+        setPaginationError(null);
+      }
+
+      try {
+        const nextResult = await runSharedSocialSync(
+          dedupeKey,
+          () =>
+            fetchNextPlannerPostsPage({
+              current,
+              accounts: params.accounts,
+              selectedPageId: canonicalPage || "all",
+              masterToken: params.masterToken,
+              tenantId,
+              pagesToFetch,
+            }),
+          {
+            dataClass: "planner",
+            accountScope: canonicalPage || "all",
+            network,
+            period: "planner",
+          }
+        );
+
+        const nextSnapshotAt = new Date().toISOString();
+        const mergePostsKeepingInsights = (prev: CachedSocialPlanner | undefined): CachedSocialPlanner => {
+          if (!prev) {
+            return {
+              ...nextResult,
+              snapshotAt: current.snapshotAt || nextSnapshotAt,
+              fromCache: false,
+            };
+          }
+          const prevById = new Map(prev.posts.map((p) => [p.id, p]));
+          const mergedPosts = nextResult.posts.map((post) => {
+            const existing = prevById.get(post.id);
+            if (
+              existing &&
+              post.insightsStatus === "pending" &&
+              (existing.insightsStatus === "loaded" || existing.insightsStatus === "unavailable")
+            ) {
+              return {
+                ...post,
+                reach_count: existing.reach_count,
+                impressions_count: existing.impressions_count,
+                saves_count: existing.saves_count,
+                shares_count: existing.shares_count,
+                insightsStatus: existing.insightsStatus,
+              };
+            }
+            return post;
+          });
+          // Reincorpora posts que já existiam em prev caso algum tenha sido adicionado concorrentemente
+          const seen = new Set(mergedPosts.map((p) => p.id));
+          for (const prevPost of prev.posts) {
+            if (!seen.has(prevPost.id)) mergedPosts.push(prevPost);
+          }
+
+          const updated: CachedSocialPlanner = {
+            ...prev,
+            ...nextResult,
+            posts: mergedPosts,
+            snapshotAt: prev.snapshotAt || nextSnapshotAt,
+            fromCache: false,
+          };
+          writeSocialCacheEnvelope(
+            cacheKey,
+            {
+              ...keyParams,
+              snapshotAt: updated.snapshotAt || nextSnapshotAt,
+            },
+            updated
+          );
+          return updated;
+        };
+
+        qc.setQueryData<CachedSocialPlanner | undefined>(queryKey, (prev) =>
+          mergePostsKeepingInsights(prev)
+        );
+
+        if (mountedRef.current && nextResult.errorMessage) {
+          setPaginationError(nextResult.errorMessage);
+        }
+      } catch (err: any) {
+        if (mountedRef.current) {
+          setPaginationError(
+            err?.message || "Falha ao carregar mais publicações da Meta."
+          );
+        }
+      } finally {
+        if (mountedRef.current) {
+          setIsLoadingMorePages(false);
+        }
+      }
+    },
+    [
+      qc,
+      queryKey,
+      params.plannerData,
+      params.masterToken,
+      params.accounts,
+      cacheKey,
+      canonicalPage,
+      tenantId,
+      network,
+      keyParams,
+    ]
+  );
+
+  // Para conta única, carrega progressivamente a página 3 em background após o 1º render rápido
+  // (preserva carga inicial veloz sem truncar de 180 para 120; páginas 4+ ficam disponíveis via cursor explícito)
+  useEffect(() => {
+    if (
+      params.enabled === false ||
+      !params.masterToken ||
+      !canonicalPage ||
+      canonicalPage === "all" ||
+      !pagination?.hasMore ||
+      isLoadingMorePages
+    ) {
+      return;
+    }
+
+    const needsPage3 = pagination.cursorsByAccount.some(
+      (c) => (c.fbHasMore && c.fbPagesLoaded < 3) || (c.igHasMore && c.igPagesLoaded < 3)
+    );
+    if (!needsPage3) return;
+
+    const triggerKey = `${cacheKey}:stage3`;
+    if (autoStage3TriggeredRef.current.has(triggerKey)) return;
+    autoStage3TriggeredRef.current.add(triggerKey);
+
+    void loadMorePages(1);
+  }, [
+    params.enabled,
+    params.masterToken,
+    canonicalPage,
+    pagination,
+    isLoadingMorePages,
+    cacheKey,
+    loadMorePages,
+  ]);
+
+  return {
+    isLoadingMorePages,
+    loadMorePages,
+    hasMorePages,
+    isPartialSample,
+    igTotalMediaCount,
+    paginationError,
+    loadedPagesSummary: useMemo(() => {
+      if (!pagination?.cursorsByAccount?.length) return null;
+      const maxFb = Math.max(0, ...pagination.cursorsByAccount.map((c) => c.fbPagesLoaded));
+      const maxIg = Math.max(0, ...pagination.cursorsByAccount.map((c) => c.igPagesLoaded));
+      return { maxFbPages: maxFb, maxIgPages: maxIg };
+    }, [pagination]),
+  };
 }
 
 export function useManualSocialSync() {

@@ -29,6 +29,8 @@ export interface MetaPaginatedResult<T = any> {
   data: T[];
   pagesFetched: number;
   truncated: boolean;
+  nextAfterCursor?: string | null;
+  hasMore?: boolean;
   statusCode: number | null;
   attempts: number;
   error: string | null;
@@ -298,6 +300,7 @@ export async function metaFetchPaginatedWithStatus<T = any>(
 
   const all: T[] = [];
   let nextUrl: string | null = firstUrl.toString();
+  let lastAfterCursor: string | null = null;
   let pagesFetched = 0;
   let totalAttempts = 0;
   let rateLimitUsagePct: number | null = null;
@@ -316,6 +319,8 @@ export async function metaFetchPaginatedWithStatus<T = any>(
         data: all,
         pagesFetched,
         truncated: false,
+        nextAfterCursor: null,
+        hasMore: false,
         statusCode: res.statusCode,
         attempts: totalAttempts,
         error: res.error,
@@ -329,6 +334,20 @@ export async function metaFetchPaginatedWithStatus<T = any>(
       all.push(...res.data.data);
     }
     nextUrl = res.data?.paging?.next || null;
+    if (nextUrl) {
+      const rawAfter = res.data?.paging?.cursors?.after;
+      if (typeof rawAfter === "string" && rawAfter.trim()) {
+        lastAfterCursor = rawAfter.trim();
+      } else {
+        try {
+          lastAfterCursor = new URL(nextUrl).searchParams.get("after");
+        } catch {
+          lastAfterCursor = null;
+        }
+      }
+    } else {
+      lastAfterCursor = null;
+    }
   }
 
   const truncated = Boolean(nextUrl);
@@ -337,6 +356,8 @@ export async function metaFetchPaginatedWithStatus<T = any>(
     data: all,
     pagesFetched,
     truncated,
+    nextAfterCursor: truncated ? lastAfterCursor : null,
+    hasMore: truncated,
     statusCode: lastStatusCode,
     attempts: totalAttempts,
     error: truncated ? `Paginação atingiu o limite de ${maxPages} páginas sem concluir.` : null,
@@ -1225,8 +1246,14 @@ export function mergeSocialCrosspostRecords(params: {
   }
 
   for (const mp of params.metaLivePosts) {
-    const key = mp.metaPostId ? `${mp.platform}:${mp.metaPostId}` : "";
-    if (key && matchedLiveKeys.has(key)) continue;
+    const crossKey = mp.metaPostId ? `${mp.platform}:${mp.metaPostId}` : "";
+    if (crossKey && matchedLiveKeys.has(crossKey)) continue;
+    const dedupeKey = mp.metaPostId
+      ? `${mp.platform}:${mp.status}:${mp.postType === "stories" ? "stories" : "post"}:${mp.metaPostId}`
+      : mp.id;
+    if (dedupeKey && matchedLiveKeys.has(dedupeKey)) continue;
+    if (crossKey) matchedLiveKeys.add(crossKey);
+    if (dedupeKey) matchedLiveKeys.add(dedupeKey);
     result.push(mp);
   }
 
