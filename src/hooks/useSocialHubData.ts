@@ -13,6 +13,7 @@ import {
 } from "@/lib/metaSocialService";
 import {
   buildSocialCacheKey,
+  ensureSocialPerfInitialized,
   getSocialCacheTtlMs,
   readSocialCacheEnvelope,
   recordSocialCacheHitEvent,
@@ -35,6 +36,11 @@ function useTrackReactQueryCacheHit(input: {
 }) {
   const lastTrackedRef = useRef<string>("");
   useEffect(() => {
+    ensureSocialPerfInitialized();
+  }, []);
+
+  useEffect(() => {
+    ensureSocialPerfInitialized();
     if (!input.enabled || input.isFetching || !input.hasData) return;
     const stamp = `${input.cacheKey}::${input.dataUpdatedAt}`;
     if (lastTrackedRef.current === stamp) return;

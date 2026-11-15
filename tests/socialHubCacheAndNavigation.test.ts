@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   buildSocialCacheKey,
   configureSocialCacheTtls,
+  ensureSocialPerfInitialized,
   evaluateSocialSnapshotFreshness,
   getSocialCacheTtlMs,
   getSocialPerfMetrics,
@@ -430,4 +431,105 @@ test("12. Instrumentation matrix, React Query cache-hit tracking, call lifecycle
   const serialized = JSON.stringify(perf);
   assert.ok(!serialized.includes("EAAG"));
   assert.ok(!serialized.includes("access_token"));
+});
+
+test("13. ensureSocialPerfInitialized exposes global telemetry, tracks reactQueryHits, byDataClass, source, durationMs, reason, and warmed transitions", async () => {
+  const sessionStore = new Map<string, string>();
+  const prevWindow = (globalThis as any).window;
+  const prevStorage = (globalThis as any).sessionStorage;
+  const mockWin: Record<string, unknown> = {};
+  (globalThis as any).window = mockWin;
+  (globalThis as any).sessionStorage = {
+    getItem: (k: string) => sessionStore.get(k) ?? null,
+    setItem: (k: string, v: string) => {
+      sessionStore.set(k, v);
+    },
+    removeItem: (k: string) => {
+      sessionStore.delete(k);
+    },
+  };
+
+  try {
+    resetSocialCacheForTests();
+    const initial = ensureSocialPerfInitialized();
+    assert.ok((globalThis as any).__ncSocialPerf);
+    assert.ok(mockWin.__ncSocialPerf);
+    assert.equal(typeof mockWin.__getNcSocialPerf, "function");
+    assert.equal(initial.reactQueryHits, 0);
+    assert.ok(sessionStore.get("nc_social_perf_v1"));
+
+    // Simula hits e chamadas reais por classe de dado e transições Audit -> Insights -> Planner -> Audit
+    recordSocialCacheHitEvent({
+      dataClass: "accounts",
+      accountScope: "all",
+      network: "all",
+      period: "accounts",
+      reason: "react_query_cache_hit",
+      durationMs: 1.5,
+    });
+    recordSocialPerfEvent("supabase_read", {
+      dataClass: "planner",
+      accountScope: "1001",
+      reason: "supabase_social_posts_read",
+      source: "supabase",
+      durationMs: 12,
+    });
+    recordSocialPerfEvent("meta_call", {
+      dataClass: "profile",
+      accountScope: "1001",
+      reason: "meta_ig_profile",
+      source: "meta",
+      durationMs: 85,
+      status: "ok",
+    });
+    recordSocialCacheHitEvent({
+      dataClass: "insights",
+      accountScope: "1001",
+      network: "all",
+      period: "2026-11-01_2026-11-15_d14",
+      reason: "react_query_cache_hit",
+    });
+    recordSocialCacheHitEvent({
+      dataClass: "posts",
+      accountScope: "1001",
+      network: "all",
+      period: "2026-11-01_2026-11-15_d14",
+      reason: "swr_memory_hit",
+    });
+    recordSocialRouteTransition(9.4, { from: "/social-audit", to: "/social-insights", cacheWarm: true });
+    recordSocialRouteTransition(6.1, { from: "/social-insights", to: "/social", cacheWarm: true });
+    recordSocialRouteTransition(4.2, { from: "/social", to: "/social-audit", cacheWarm: true });
+
+    const live = (mockWin.__getNcSocialPerf as () => ReturnType<typeof getSocialPerfMetrics>)();
+    assert.equal(live.reactQueryHits, 2);
+    assert.equal(live.cacheHits, 3);
+    assert.equal(live.supabaseReads, 1);
+    assert.equal(live.metaCalls, 1);
+    assert.equal(live.byDataClass.accounts.reactQueryHits, 1);
+    assert.equal(live.byDataClass.planner.supabaseReads, 1);
+    assert.equal(live.byDataClass.profile.metaCalls, 1);
+    assert.equal(live.byDataClass.insights.reactQueryHits, 1);
+    assert.equal(live.byDataClass.posts.cacheHits, 1);
+    assert.equal(live.routeTransitions.length, 3);
+
+    const lastEvent = live.recentEvents[live.recentEvents.length - 1];
+    assert.equal(lastEvent.event, "route_transition");
+    assert.equal(typeof lastEvent.durationMs, "number");
+    assert.ok(lastEvent.reason?.includes("/social"));
+
+    const persisted = JSON.parse(sessionStore.get("nc_social_perf_v1") || "{}");
+    assert.equal(persisted.reactQueryHits, 2);
+    assert.equal(persisted.byDataClass?.profile?.metaCalls, 1);
+  } finally {
+    if (prevWindow === undefined) {
+      delete (globalThis as any).window;
+    } else {
+      (globalThis as any).window = prevWindow;
+    }
+    if (prevStorage === undefined) {
+      delete (globalThis as any).sessionStorage;
+    } else {
+      (globalThis as any).sessionStorage = prevStorage;
+    }
+  }
 });

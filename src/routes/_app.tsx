@@ -47,7 +47,7 @@ import {
   persistSeenToastIds,
   selectPendingToastQueue,
 } from "@/lib/notificationPresentation";
-import { recordSocialRouteTransition } from "@/lib/socialCacheDomain";
+import { ensureSocialPerfInitialized, recordSocialRouteTransition } from "@/lib/socialCacheDomain";
 import { playAlertTone } from "@/lib/alertSounds";
 import { canUserAccessConfig, canUserManageUsers, getUserLevel, isMasterAdmin } from "@/lib/userHierarchy";
 import { UserAvatar } from "@/components/UserAvatar";
@@ -247,6 +247,7 @@ function Shell() {
   }, []);
 
   useEffect(() => {
+    ensureSocialPerfInitialized();
     const prevPath = prevSocialPathRef.current;
     if (path !== prevPath && path.startsWith("/social")) {
       const elapsed =

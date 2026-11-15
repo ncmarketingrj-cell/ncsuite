@@ -141,7 +141,9 @@ export interface SocialPerfEventRecord {
     | "call_started"
     | "call_completed"
     | "call_failed"
-    | "call_aborted";
+    | "call_aborted"
+    | "route_transition";
+  source: "cache" | "meta" | "supabase";
   dataClass?: SocialDataClass;
   scopeTag?: string;
   network?: SocialNetworkScope;
@@ -149,6 +151,20 @@ export interface SocialPerfEventRecord {
   durationMs?: number;
   reason?: string;
   status?: "ok" | "deduped" | "stale" | "error" | "aborted";
+}
+
+export interface SocialDataClassPerfCounters {
+  cacheHits: number;
+  reactQueryHits: number;
+  swrFreshHits: number;
+  staleSwrHits: number;
+  metaCalls: number;
+  supabaseReads: number;
+  callsStarted: number;
+  callsDeduped: number;
+  callsCompleted: number;
+  callsFailed: number;
+  callsAborted: number;
 }
 
 export interface SocialRouteTransitionRecord {
@@ -165,6 +181,7 @@ export interface SocialPerfMetrics {
   metaCalls: number;
   supabaseReads: number;
   cacheHits: number;
+  reactQueryHits: number;
   staleSwrHits: number;
   dedupedInFlightHits: number;
   callsStarted: number;
@@ -174,17 +191,52 @@ export interface SocialPerfMetrics {
   callsFailed: number;
   manualSyncs: number;
   fallbackPreservations: number;
+  byDataClass: Record<SocialDataClass, SocialDataClassPerfCounters>;
   routeTransitionsMs: number[];
   routeTransitions: SocialRouteTransitionRecord[];
   recentEvents: SocialPerfEventRecord[];
 }
 
 const MAX_PERF_EVENTS = 60;
+const PERF_SESSION_KEY = "nc_social_perf_v1";
+const ALL_DATA_CLASSES: SocialDataClass[] = [
+  "accounts",
+  "profile",
+  "insights",
+  "posts",
+  "planner",
+];
 const memoryStore = new Map<string, SocialCacheEnvelope<unknown>>();
 const inFlightMap = new Map<string, Promise<unknown>>();
 const backgroundRevalidatingKeys = new Set<string>();
 
 let customTtls: Partial<Record<SocialDataClass, number>> = {};
+
+function createEmptyClassCounters(): SocialDataClassPerfCounters {
+  return {
+    cacheHits: 0,
+    reactQueryHits: 0,
+    swrFreshHits: 0,
+    staleSwrHits: 0,
+    metaCalls: 0,
+    supabaseReads: 0,
+    callsStarted: 0,
+    callsDeduped: 0,
+    callsCompleted: 0,
+    callsFailed: 0,
+    callsAborted: 0,
+  };
+}
+
+function createInitialByDataClass(): Record<SocialDataClass, SocialDataClassPerfCounters> {
+  return {
+    accounts: createEmptyClassCounters(),
+    profile: createEmptyClassCounters(),
+    insights: createEmptyClassCounters(),
+    posts: createEmptyClassCounters(),
+    planner: createEmptyClassCounters(),
+  };
+}
 
 function anonymizeScopeTag(accountScope?: string): string {
   const clean = (accountScope || "all").trim();
@@ -198,6 +250,7 @@ const perfMetrics: SocialPerfMetrics = {
   metaCalls: 0,
   supabaseReads: 0,
   cacheHits: 0,
+  reactQueryHits: 0,
   staleSwrHits: 0,
   dedupedInFlightHits: 0,
   callsStarted: 0,
@@ -207,15 +260,37 @@ const perfMetrics: SocialPerfMetrics = {
   callsFailed: 0,
   manualSyncs: 0,
   fallbackPreservations: 0,
+  byDataClass: createInitialByDataClass(),
   routeTransitionsMs: [],
   routeTransitions: [],
   recentEvents: [],
 };
 
+const liveGlobalPerfObject: Record<string, unknown> = {};
+
 function syncWindowSocialPerfSnapshot(): void {
-  if (typeof window !== "undefined") {
-    (window as any).__ncSocialPerf = getSocialPerfMetrics();
+  const snapshot = getSocialPerfMetrics();
+  Object.assign(liveGlobalPerfObject, snapshot);
+  try {
+    if (typeof globalThis !== "undefined") {
+      (globalThis as any).__ncSocialPerf = liveGlobalPerfObject;
+      (globalThis as any).__getNcSocialPerf = getSocialPerfMetrics;
+    }
+    if (typeof window !== "undefined") {
+      (window as any).__ncSocialPerf = liveGlobalPerfObject;
+      (window as any).__getNcSocialPerf = getSocialPerfMetrics;
+    }
+    if (typeof sessionStorage !== "undefined") {
+      sessionStorage.setItem(PERF_SESSION_KEY, JSON.stringify(snapshot));
+    }
+  } catch {
+    // ignore host/storage restrictions
   }
+}
+
+export function ensureSocialPerfInitialized(): ReturnType<typeof getSocialPerfMetrics> {
+  syncWindowSocialPerfSnapshot();
+  return getSocialPerfMetrics();
 }
 
 export function configureSocialCacheTtls(
@@ -252,8 +327,13 @@ export function getSocialPerfMetrics(): SocialPerfMetrics & {
     );
     return Math.round(sorted[idx]);
   };
+  const clonedByClass = createInitialByDataClass();
+  for (const cls of ALL_DATA_CLASSES) {
+    clonedByClass[cls] = { ...perfMetrics.byDataClass[cls] };
+  }
   return {
     ...perfMetrics,
+    byDataClass: clonedByClass,
     routeTransitionsMs: [...perfMetrics.routeTransitionsMs],
     routeTransitions: [...perfMetrics.routeTransitions],
     recentEvents: [...perfMetrics.recentEvents],
@@ -286,31 +366,58 @@ export function recordSocialPerfEvent(
     durationMs?: number;
     reason?: string;
     status?: SocialPerfEventRecord["status"];
+    source?: "cache" | "meta" | "supabase";
   }
 ): void {
-  if (event === "meta_call") perfMetrics.metaCalls += 1;
-  else if (event === "supabase_read") perfMetrics.supabaseReads += 1;
-  else if (event === "cache_hit") perfMetrics.cacheHits += 1;
-  else if (event === "stale_swr_hit") perfMetrics.staleSwrHits += 1;
-  else if (event === "deduped_in_flight") {
+  const clsCounters = meta?.dataClass ? perfMetrics.byDataClass[meta.dataClass] : null;
+  const isReactQueryHit =
+    event === "cache_hit" &&
+    (meta?.reason === "react_query_cache_hit" || meta?.reason === "react_query_fresh");
+
+  if (event === "meta_call") {
+    perfMetrics.metaCalls += 1;
+    if (clsCounters) clsCounters.metaCalls += 1;
+  } else if (event === "supabase_read") {
+    perfMetrics.supabaseReads += 1;
+    if (clsCounters) clsCounters.supabaseReads += 1;
+  } else if (event === "cache_hit") {
+    perfMetrics.cacheHits += 1;
+    if (isReactQueryHit) perfMetrics.reactQueryHits += 1;
+    if (clsCounters) {
+      clsCounters.cacheHits += 1;
+      if (isReactQueryHit) clsCounters.reactQueryHits += 1;
+      else clsCounters.swrFreshHits += 1;
+    }
+  } else if (event === "stale_swr_hit") {
+    perfMetrics.staleSwrHits += 1;
+    if (clsCounters) clsCounters.staleSwrHits += 1;
+  } else if (event === "deduped_in_flight") {
     perfMetrics.dedupedInFlightHits += 1;
     perfMetrics.callsDeduped += 1;
+    if (clsCounters) clsCounters.callsDeduped += 1;
   } else if (event === "manual_sync") perfMetrics.manualSyncs += 1;
   else if (event === "fallback_preserved") perfMetrics.fallbackPreservations += 1;
 
-  if (meta || event !== "meta_call") {
-    pushPerfEventRecord({
-      timestamp: new Date().toISOString(),
-      event,
-      dataClass: meta?.dataClass,
-      scopeTag: meta?.accountScope ? anonymizeScopeTag(meta.accountScope) : undefined,
-      network: meta?.network,
-      period: meta?.period,
-      durationMs: meta?.durationMs !== undefined ? Math.round(meta.durationMs) : undefined,
-      reason: meta?.reason,
-      status: meta?.status || (event === "fallback_preserved" ? "error" : "ok"),
-    });
-  }
+  const inferredSource: "cache" | "meta" | "supabase" =
+    meta?.source ||
+    (event === "supabase_read"
+      ? "supabase"
+      : event === "cache_hit" || event === "stale_swr_hit" || event === "fallback_preserved"
+      ? "cache"
+      : "meta");
+
+  pushPerfEventRecord({
+    timestamp: new Date().toISOString(),
+    event,
+    source: inferredSource,
+    dataClass: meta?.dataClass,
+    scopeTag: meta?.accountScope ? anonymizeScopeTag(meta.accountScope) : undefined,
+    network: meta?.network,
+    period: meta?.period,
+    durationMs: meta?.durationMs !== undefined ? Math.round(meta.durationMs) : undefined,
+    reason: meta?.reason,
+    status: meta?.status || (event === "fallback_preserved" ? "error" : "ok"),
+  });
 
   syncWindowSocialPerfSnapshot();
 }
@@ -324,7 +431,9 @@ export function recordSocialCacheHitEvent(input: {
 }): void {
   recordSocialPerfEvent("cache_hit", {
     ...input,
-    reason: input.reason || "react_query_fresh",
+    source: "cache",
+    durationMs: 0,
+    reason: input.reason || "react_query_cache_hit",
     status: "ok",
   });
 }
@@ -349,6 +458,14 @@ export function recordSocialRouteTransition(
   if (perfMetrics.routeTransitions.length > 50) {
     perfMetrics.routeTransitions.shift();
   }
+  pushPerfEventRecord({
+    event: "route_transition",
+    source: "cache",
+    durationMs: rounded,
+    reason: `${meta?.from || "unknown"} -> ${meta?.to || "unknown"}`,
+    status: (meta?.cacheWarm ?? perfMetrics.cacheHits > 0) ? "ok" : "stale",
+    timestamp: new Date().toISOString(),
+  });
   syncWindowSocialPerfSnapshot();
 }
 
@@ -363,6 +480,7 @@ export function resetSocialCacheForTests(): void {
   perfMetrics.metaCalls = 0;
   perfMetrics.supabaseReads = 0;
   perfMetrics.cacheHits = 0;
+  perfMetrics.reactQueryHits = 0;
   perfMetrics.staleSwrHits = 0;
   perfMetrics.dedupedInFlightHits = 0;
   perfMetrics.callsStarted = 0;
@@ -372,9 +490,11 @@ export function resetSocialCacheForTests(): void {
   perfMetrics.callsFailed = 0;
   perfMetrics.manualSyncs = 0;
   perfMetrics.fallbackPreservations = 0;
+  perfMetrics.byDataClass = createInitialByDataClass();
   perfMetrics.routeTransitionsMs = [];
   perfMetrics.routeTransitions = [];
   perfMetrics.recentEvents = [];
+  syncWindowSocialPerfSnapshot();
   if (typeof localStorage !== "undefined") {
     try {
       const toDelete: string[] = [];
@@ -511,10 +631,13 @@ export function runSharedSocialSync<T>(
   }
 
   const startedAt = typeof performance !== "undefined" ? performance.now() : Date.now();
+  const clsCounters = meta?.dataClass ? perfMetrics.byDataClass[meta.dataClass] : null;
   perfMetrics.callsStarted += 1;
+  if (clsCounters) clsCounters.callsStarted += 1;
   pushPerfEventRecord({
     timestamp: new Date().toISOString(),
     event: "call_started",
+    source: "meta",
     dataClass: meta?.dataClass,
     scopeTag: meta?.accountScope ? anonymizeScopeTag(meta.accountScope) : undefined,
     network: meta?.network,
@@ -530,9 +653,11 @@ export function runSharedSocialSync<T>(
       const durationMs =
         (typeof performance !== "undefined" ? performance.now() : Date.now()) - startedAt;
       perfMetrics.callsCompleted += 1;
+      if (clsCounters) clsCounters.callsCompleted += 1;
       pushPerfEventRecord({
         timestamp: new Date().toISOString(),
         event: "call_completed",
+        source: "meta",
         dataClass: meta?.dataClass,
         scopeTag: meta?.accountScope ? anonymizeScopeTag(meta.accountScope) : undefined,
         network: meta?.network,
@@ -549,11 +674,17 @@ export function runSharedSocialSync<T>(
       const isAbort =
         err?.name === "AbortError" ||
         String(err?.message || "").toLowerCase().includes("abort");
-      if (isAbort) perfMetrics.callsAborted += 1;
-      else perfMetrics.callsFailed += 1;
+      if (isAbort) {
+        perfMetrics.callsAborted += 1;
+        if (clsCounters) clsCounters.callsAborted += 1;
+      } else {
+        perfMetrics.callsFailed += 1;
+        if (clsCounters) clsCounters.callsFailed += 1;
+      }
       pushPerfEventRecord({
         timestamp: new Date().toISOString(),
         event: isAbort ? "call_aborted" : "call_failed",
+        source: "meta",
         dataClass: meta?.dataClass,
         scopeTag: meta?.accountScope ? anonymizeScopeTag(meta.accountScope) : undefined,
         network: meta?.network,

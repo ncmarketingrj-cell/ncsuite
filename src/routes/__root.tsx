@@ -1,5 +1,6 @@
 import { useEffect, useState, createContext, useContext } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { ensureSocialPerfInitialized } from "@/lib/socialCacheDomain";
 import {
   Outlet,
   Link,
@@ -153,6 +154,7 @@ function RootComponent() {
   const [theme, setTheme] = useState<Theme>("dark");
 
   useEffect(() => {
+    ensureSocialPerfInitialized();
     // Recupera tema salvo no localStorage
     const saved = localStorage.getItem("nc-theme") as Theme | null;
     const initial = saved || "dark";

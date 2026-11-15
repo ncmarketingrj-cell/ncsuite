@@ -17,7 +17,7 @@ import {
   type SocialSourceTelemetry,
   type SocialDataSourceKind,
 } from "./metaSocialErrors";
-import { recordSocialPerfEvent } from "./socialCacheDomain";
+import { recordSocialPerfEvent, type SocialDataClass } from "./socialCacheDomain";
 
 const META_API_BASE = META_GRAPH_BASE;
 
@@ -325,14 +325,30 @@ export function getLastValidSocialSnapshot(cacheKey: string): RealSocialInsights
   return null;
 }
 
+interface MetaCallTelemetryOptions {
+  dataClass?: SocialDataClass;
+  accountScope?: string;
+  reason?: string;
+}
+
 async function fetchMetaJson(
   url: string,
   timeoutMs = DEFAULT_META_CALL_TIMEOUT_MS,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  telemetry?: MetaCallTelemetryOptions
 ): Promise<any> {
   const endpointLabel = url.split("?")[0].replace(META_API_BASE, "");
   const t0 = Date.now();
-  recordSocialPerfEvent("meta_call");
+  const recordMeta = (status: "ok" | "error" | "aborted") => {
+    recordSocialPerfEvent("meta_call", {
+      dataClass: telemetry?.dataClass,
+      accountScope: telemetry?.accountScope,
+      durationMs: Date.now() - t0,
+      reason: telemetry?.reason || `meta_graph:${endpointLabel}`,
+      status: signal?.aborted ? "aborted" : status,
+      source: "meta",
+    });
+  };
   try {
     const res = await metaFetchJsonWithRetry(url, {
       maxRetries: 1,
@@ -340,7 +356,10 @@ async function fetchMetaJson(
       timeoutMs,
       signal,
     });
-    if (res.ok) return res.data;
+    if (res.ok) {
+      recordMeta(res.data?.error ? "error" : "ok");
+      return res.data;
+    }
     const elapsed = Date.now() - t0;
     // Só aciona o proxy se foi bloqueio rápido de rede (ex: Brave Shields) e não um timeout/abort
     if (res.errorKind === "network" && !signal?.aborted && elapsed < Math.max(3500, timeoutMs - 2000)) {
@@ -354,15 +373,21 @@ async function fetchMetaJson(
           `proxy:${endpointLabel}`,
           signal
         );
-        if (!proxyResp?.error && proxyResp?.data) return proxyResp.data;
+        if (!proxyResp?.error && proxyResp?.data) {
+          recordMeta(proxyResp.data?.error ? "error" : "ok");
+          return proxyResp.data;
+        }
       } catch (proxyErr: any) {
+        recordMeta("error");
         return { error: { message: proxyErr?.message || "Timeout ao consultar proxy Meta", code: 504 } };
       }
     }
+    recordMeta("error");
     return res.data?.error
       ? res.data
       : { error: { message: res.error || "Erro ao consultar Meta API", code: res.errorCode || 500, errorKind: res.errorKind } };
   } catch (err: any) {
+    recordMeta("error");
     return { error: { message: err?.message || `Timeout ao consultar ${endpointLabel}`, code: 504, is_timeout: true } };
   }
 }
@@ -373,9 +398,20 @@ async function fetchMetaPaginatedList(
   params: Record<string, string>,
   maxPages = 5,
   timeoutMs = DEFAULT_META_PAGINATED_TIMEOUT_MS,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  telemetry?: MetaCallTelemetryOptions
 ) {
   const t0 = Date.now();
+  const recordMeta = (status: "ok" | "error" | "aborted") => {
+    recordSocialPerfEvent("meta_call", {
+      dataClass: telemetry?.dataClass,
+      accountScope: telemetry?.accountScope,
+      durationMs: Date.now() - t0,
+      reason: telemetry?.reason || `meta_graph:${endpoint}`,
+      status: signal?.aborted ? "aborted" : status,
+      source: "meta",
+    });
+  };
   try {
     const res = await metaFetchPaginatedWithStatus(endpoint, token, params, {
       maxRetries: 1,
@@ -397,9 +433,11 @@ async function fetchMetaPaginatedList(
           signal
         );
         if (!proxyResp?.error && proxyResp?.data?.paginated) {
+          recordMeta(proxyResp.data.ok ? "ok" : "error");
           return proxyResp.data;
         }
       } catch (proxyErr: any) {
+        recordMeta("error");
         return {
           ok: false,
           data: [],
@@ -414,8 +452,10 @@ async function fetchMetaPaginatedList(
         };
       }
     }
+    recordMeta(res.ok ? "ok" : "error");
     return res;
   } catch (err: any) {
+    recordMeta("error");
     return {
       ok: false,
       data: [],
@@ -489,7 +529,12 @@ export async function fetchLiveSocialAccounts(
     };
   }
 
-  recordSocialPerfEvent("supabase_read");
+  recordSocialPerfEvent("supabase_read", {
+    dataClass: "accounts",
+    accountScope: "all",
+    reason: "supabase_social_pages_read",
+    source: "supabase",
+  });
   const [masterTokenRaw, dbPagesRes] = await Promise.all([
     getActiveMasterMetaToken().catch(() => null),
     supabase.from("social_pages").select("*").order("page_name").then((r) => r, () => ({ data: [] })),
@@ -578,7 +623,6 @@ export async function fetchLiveSocialAccounts(
     };
   }
 
-  recordSocialPerfEvent("meta_call");
   const mePaginated = await fetchMetaPaginatedList(
     "/me/accounts",
     masterToken,
@@ -589,7 +633,8 @@ export async function fetchLiveSocialAccounts(
     },
     10,
     timeoutMs,
-    options?.signal
+    options?.signal,
+    { dataClass: "accounts", accountScope: "all", reason: "meta_accounts_list" }
   );
 
   if (!mePaginated.ok && mePaginated.data.length === 0) {
@@ -1229,7 +1274,8 @@ export async function fetchAccountSocialOverview(params: {
         fetchMetaJson(
           `${META_API_BASE}/${acc.page_id}/insights?metric=page_views_total,page_post_engagements,page_daily_follows&period=day&since=${chartSince}&until=${untilExclusive}&access_token=${encodeURIComponent(pageToken)}`,
           9_500,
-          controller.signal
+          controller.signal,
+          { dataClass: "insights", accountScope: selectedPageId, reason: "meta_fb_page_insights" }
         ).then((fbInsRes) => {
           if (fbInsRes?.error) {
             fbInsErrors++;
@@ -1265,7 +1311,8 @@ export async function fetchAccountSocialOverview(params: {
           fetchMetaJson(
             `${META_API_BASE}/${igId}/insights?metric=reach,follower_count&period=day&since=${chartSince}&until=${untilExclusive}&access_token=${encodeURIComponent(igToken)}`,
             9_500,
-            controller.signal
+            controller.signal,
+            { dataClass: "insights", accountScope: selectedPageId, reason: "meta_ig_daily_series" }
           ).then((igTsRes) => {
             if (igTsRes?.error) {
               igTsErrors++;
@@ -1294,7 +1341,8 @@ export async function fetchAccountSocialOverview(params: {
           fetchMetaJson(
             `${META_API_BASE}/${igId}/insights?metric=views,total_interactions,accounts_engaged,profile_views,website_clicks&metric_type=total_value&period=day&since=${kpiSince}&until=${untilExclusive}&access_token=${encodeURIComponent(igToken)}`,
             9_500,
-            controller.signal
+            controller.signal,
+            { dataClass: "insights", accountScope: selectedPageId, reason: "meta_ig_totals_insights" }
           ).then((igTotalsRes) => {
             if (igTotalsRes?.error) {
               igTotalsErrors++;
@@ -1321,7 +1369,8 @@ export async function fetchAccountSocialOverview(params: {
             fetchMetaJson(
               `${META_API_BASE}/${igId}/insights?metric=follower_demographics&period=lifetime&metric_type=total_value&breakdown=age,gender&access_token=${encodeURIComponent(igToken)}`,
               9_500,
-              controller.signal
+              controller.signal,
+              { dataClass: "insights", accountScope: selectedPageId, reason: "meta_ig_demographics" }
             ).then((igDemoRes) => {
               if (igDemoRes?.error) {
                 demoErrors++;
@@ -1698,7 +1747,8 @@ export async function fetchAccountSocialPosts(params: {
             const igMediaRes = await fetchMetaJson(
               `${META_API_BASE}/${igId}/media?fields=id,caption,media_type,media_product_type,thumbnail_url,media_url,permalink,timestamp,like_count,comments_count&limit=${igLimit}&access_token=${encodeURIComponent(igToken)}`,
               9_500,
-              controller.signal
+              controller.signal,
+              { dataClass: "posts", accountScope: selectedPageId, reason: "meta_ig_media" }
             );
             if (igMediaRes?.error) {
               postListErr++;
@@ -1777,7 +1827,8 @@ export async function fetchAccountSocialPosts(params: {
             },
             1,
             9_500,
-            controller.signal
+            controller.signal,
+            { dataClass: "posts", accountScope: selectedPageId, reason: "meta_fb_posts" }
           );
           if (!fbPostsPaginated.ok) {
             postListErr++;
@@ -1846,7 +1897,8 @@ export async function fetchAccountSocialPosts(params: {
         const ins = await fetchMetaJson(
           `${META_API_BASE}/${entry.rawId}/insights?metric=reach,views,saved,shares,total_interactions&access_token=${encodeURIComponent(entry.token)}`,
           6_500,
-          controller.signal
+          controller.signal,
+          { dataClass: "posts", accountScope: selectedPageId, reason: "meta_ig_post_insights" }
         );
         if (ins?.error) {
           postInsErr++;
@@ -1892,7 +1944,8 @@ export async function fetchAccountSocialPosts(params: {
         const ins = await fetchMetaJson(
           `${META_API_BASE}/${entry.rawId}/insights?metric=post_impressions_unique,post_impressions&access_token=${encodeURIComponent(entry.token)}`,
           6_500,
-          controller.signal
+          controller.signal,
+          { dataClass: "posts", accountScope: selectedPageId, reason: "meta_fb_post_insights" }
         );
         if (ins?.error) {
           postInsErr++;
@@ -2247,7 +2300,12 @@ export async function fetchRealPlannerPosts(params: {
   // 1. Buscar posts reais salvos no Supabase (`social_posts`), removendo resíduos mock
   let dbRows: PlannerPost[] = [];
   try {
-    recordSocialPerfEvent("supabase_read");
+      recordSocialPerfEvent("supabase_read", {
+      dataClass: "planner",
+      accountScope: selectedPageId,
+      reason: "supabase_social_posts_read",
+      source: "supabase",
+    });
     let q = supabase.from("social_posts").select("*").order("created_at", { ascending: false });
     if (selectedPageId !== "all") {
       q = q.eq("page_id", selectedPageId);
@@ -2326,7 +2384,10 @@ export async function fetchRealPlannerPosts(params: {
   const igTarget = targetAccounts.find((a) => a.instagram_account_id) || null;
   if (igTarget?.instagram_account_id) {
     const profRes = await fetchMetaJson(
-      `${META_API_BASE}/${igTarget.instagram_account_id}?fields=id,username,name,biography,website,followers_count,follows_count,media_count,profile_picture_url&access_token=${encodeURIComponent(masterToken)}`
+      `${META_API_BASE}/${igTarget.instagram_account_id}?fields=id,username,name,biography,website,followers_count,follows_count,media_count,profile_picture_url&access_token=${encodeURIComponent(masterToken)}`,
+      DEFAULT_META_CALL_TIMEOUT_MS,
+      undefined,
+      { dataClass: "profile", accountScope: selectedPageId, reason: "meta_ig_profile" }
     );
     if (profRes && !profRes.error && profRes.id) {
       igProfile = {
@@ -2385,7 +2446,10 @@ export async function fetchRealPlannerPosts(params: {
               fields: "id,message,created_time,scheduled_publish_time,full_picture,permalink_url,is_published,attachments{media_type,type,url,media{image{src}},subattachments{media{image{src}}}}",
               limit: isSingle ? "50" : "15",
             },
-            pageDepth
+            pageDepth,
+            DEFAULT_META_PAGINATED_TIMEOUT_MS,
+            undefined,
+            { dataClass: "planner", accountScope: selectedPageId, reason: "meta_fb_scheduled_posts" }
           ),
           fetchMetaPaginatedList(
             `/${acc.page_id}/promotable_posts`,
@@ -2395,7 +2459,10 @@ export async function fetchRealPlannerPosts(params: {
               fields: "id,message,created_time,scheduled_publish_time,full_picture,permalink_url,is_published,attachments{media_type,type,url,media{image{src}},subattachments{media{image{src}}}}",
               limit: isSingle ? "50" : "15",
             },
-            pageDepth
+            pageDepth,
+            DEFAULT_META_PAGINATED_TIMEOUT_MS,
+            undefined,
+            { dataClass: "planner", accountScope: selectedPageId, reason: "meta_fb_promotable_posts" }
           ),
           fetchMetaPaginatedList(
             `/${acc.page_id}/posts`,
@@ -2404,7 +2471,10 @@ export async function fetchRealPlannerPosts(params: {
               fields: "id,message,created_time,full_picture,permalink_url,attachments{media_type,type,media{image{src}},subattachments{media{image{src}}}},likes.summary(true),comments.summary(true),shares",
               limit: fbLimit,
             },
-            pageDepth
+            pageDepth,
+            DEFAULT_META_PAGINATED_TIMEOUT_MS,
+            undefined,
+            { dataClass: "planner", accountScope: selectedPageId, reason: "meta_fb_planner_posts" }
           ),
           acc.instagram_account_id
             ? fetchMetaPaginatedList(
@@ -2414,7 +2484,10 @@ export async function fetchRealPlannerPosts(params: {
                   fields: "id,caption,media_type,media_product_type,thumbnail_url,media_url,permalink,timestamp,like_count,comments_count",
                   limit: igLimit,
                 },
-                pageDepth
+                pageDepth,
+                DEFAULT_META_PAGINATED_TIMEOUT_MS,
+                undefined,
+                { dataClass: "planner", accountScope: selectedPageId, reason: "meta_ig_planner_media" }
               )
             : Promise.resolve(null),
           acc.instagram_account_id && isSingle
@@ -2425,7 +2498,10 @@ export async function fetchRealPlannerPosts(params: {
                   fields: "id,caption,media_type,media_url,thumbnail_url,permalink,timestamp",
                   limit: "25",
                 },
-                1
+                1,
+                DEFAULT_META_PAGINATED_TIMEOUT_MS,
+                undefined,
+                { dataClass: "planner", accountScope: selectedPageId, reason: "meta_ig_planner_stories" }
               )
             : Promise.resolve(null),
         ]);
@@ -2526,7 +2602,10 @@ export async function fetchRealPlannerPosts(params: {
           await Promise.all(
             enrichSlice.slice(i, i + 6).map(async (mItem: any) => {
               const ins = await fetchMetaJson(
-                `${META_API_BASE}/${mItem.id}/insights?metric=reach,views,saved,shares&access_token=${encodeURIComponent(masterToken)}`
+                `${META_API_BASE}/${mItem.id}/insights?metric=reach,views,saved,shares&access_token=${encodeURIComponent(masterToken)}`,
+                DEFAULT_META_CALL_TIMEOUT_MS,
+                undefined,
+                { dataClass: "planner", accountScope: selectedPageId, reason: "meta_planner_ig_insights" }
               );
               let reach = 0;
               let views = 0;
@@ -2965,7 +3044,10 @@ export async function publishOrScheduleToMeta(params: {
           while (statusCode === "IN_PROGRESS" && attempts < 12) {
             await new Promise((r) => setTimeout(r, 2500));
             const chk = await fetchMetaJson(
-              `${META_API_BASE}/${creationId}?fields=status_code&access_token=${encodeURIComponent(masterToken)}`
+              `${META_API_BASE}/${creationId}?fields=status_code&access_token=${encodeURIComponent(masterToken)}`,
+              DEFAULT_META_CALL_TIMEOUT_MS,
+              undefined,
+              { dataClass: "planner", accountScope: "publish", reason: "meta_ig_publish_status" }
             );
             if (chk?.status_code) statusCode = chk.status_code;
             if (statusCode === "ERROR") throw new Error("Processamento do vídeo falhou no Instagram.");
