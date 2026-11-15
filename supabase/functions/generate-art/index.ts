@@ -7,9 +7,13 @@ const corsHeaders = {
 
 const SIZE_MAP: Record<string, string> = {
   "1:1": "1024x1024",
-  "16:9": "1792x1024",
+  "4:5": "1024x1792",
   "9:16": "1024x1792",
+  "16:9": "1792x1024",
   "4:3": "1024x1024",
+  "1024x1024": "1024x1024",
+  "1024x1792": "1024x1792",
+  "1792x1024": "1792x1024",
 };
 
 serve(async (req) => {
@@ -19,13 +23,16 @@ serve(async (req) => {
     const {
       prompt,
       aspectRatio = "1:1",
-      imageBase64,
+      imageBase64: inputImageBase64,
       imageMimeType,
       vehicleType,
       background,
       cameraAngle,
       lighting,
       overlayText,
+      noTextInImage = true,
+      mode = "ai_generated_art",
+      brandPalette,
     } = await req.json();
 
     const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY");
@@ -34,9 +41,8 @@ serve(async (req) => {
     const size = SIZE_MAP[aspectRatio] || "1024x1024";
     let baseDescription = "";
 
-    // Se foto foi enviada — analisa com GPT-4o Vision
-    if (imageBase64 && imageMimeType) {
-      console.log("[GENERATE-ART] Analisando foto com GPT-4o...");
+    if (inputImageBase64 && imageMimeType) {
+      console.log("[GENERATE-ART] Analisando referência com GPT-4o...");
       const visionRes = await fetch("https://api.openai.com/v1/chat/completions", {
         method: "POST",
         headers: {
@@ -52,18 +58,21 @@ serve(async (req) => {
                 {
                   type: "image_url",
                   image_url: {
-                    url: `data:${imageMimeType};base64,${imageBase64}`,
+                    url: `data:${imageMimeType};base64,${inputImageBase64}`,
                     detail: "high",
                   },
                 },
                 {
                   type: "text",
-                  text: "Describe this automotive image in detail for DALL-E 3 generation. Include: vehicle type, color, model if visible, setting/background, lighting, mood, composition, visible text or branding. Be specific. Reply in English.",
+                  text:
+                    mode === "ai_scenario"
+                      ? "Analyze this automotive photo to design a matching commercial studio environment background only. Describe perspective, ground plane reflection, camera elevation, lighting temperature, and color harmony. Reply concisely in English."
+                      : "Describe this automotive reference image for illustrative visual creation: vehicle category, angle, lighting, color palette, environment, composition. Reply concisely in English.",
                 },
               ],
             },
           ],
-          max_tokens: 600,
+          max_tokens: 450,
         }),
       });
 
@@ -76,29 +85,37 @@ serve(async (req) => {
       }
     }
 
-    // Montar prompt final com todas as personalizações
     const parts: string[] = [
-      "Professional Brazilian automotive advertising image, commercial quality, ultra-realistic.",
+      mode === "ai_scenario"
+        ? "Clean automotive commercial studio backdrop and showroom environment, photographic realism, uncluttered composition."
+        : "Professional Brazilian automotive advertising visual, commercial photography look, crisp details.",
     ];
 
     if (baseDescription) {
-      parts.push(`Based on this reference: ${baseDescription}.`);
-      parts.push("Reimagine and enhance this as a professional advertisement.");
+      parts.push(
+        mode === "ai_scenario"
+          ? `Match perspective, ground plane, and lighting from this scene: ${baseDescription}.`
+          : `Based on this reference composition: ${baseDescription}.`
+      );
     }
 
-    if (vehicleType) parts.push(`Vehicle type: ${vehicleType}.`);
+    if (vehicleType && mode !== "ai_scenario") parts.push(`Subject/vehicle context: ${vehicleType}.`);
     if (prompt?.trim()) parts.push(prompt.trim());
     if (background) parts.push(`Setting/background: ${background}.`);
-    if (cameraAngle) parts.push(`Camera angle: ${cameraAngle}.`);
-    if (lighting) parts.push(`Lighting and atmosphere: ${lighting}.`);
-    if (overlayText?.trim()) {
-      parts.push(`Include this text prominently and legibly in the image: "${overlayText}".`);
+    if (cameraAngle) parts.push(`Camera framing: ${cameraAngle}.`);
+    if (lighting) parts.push(`Lighting atmosphere: ${lighting}.`);
+    if (brandPalette) parts.push(`Harmonize ambient lighting subtly with brand palette: ${brandPalette}.`);
+
+    if (noTextInImage !== false) {
+      parts.push(
+        "CRITICAL: Do NOT include any text, letters, numbers, prices, badges, watermarks, UI overlays, or logos anywhere in the image. Leave clean negative space for typography layers."
+      );
+    } else if (overlayText?.trim()) {
+      parts.push(`Include this text cleanly: "${overlayText}".`);
     }
 
-    parts.push("High quality marketing material, vibrant colors, sharp details, suitable for social media ads.");
-
     const finalPrompt = parts.join(" ");
-    console.log("[GENERATE-ART] DALL-E 3 | size:", size, "| prompt:", finalPrompt.slice(0, 120));
+    console.log("[GENERATE-ART] DALL-E 3 | mode:", mode, "| size:", size);
 
     const res = await fetch("https://api.openai.com/v1/images/generations", {
       method: "POST",
@@ -122,7 +139,9 @@ serve(async (req) => {
       try {
         const j = JSON.parse(body);
         msg = j.error?.message || msg;
-      } catch {}
+      } catch {
+        // ignore JSON parse failure
+      }
       throw new Error(msg);
     }
 
@@ -130,7 +149,6 @@ serve(async (req) => {
     const image = data.data?.[0];
     if (!image?.url) throw new Error("Nenhuma imagem foi gerada");
 
-    // Fetch image URL and convert to base64
     const imgRes = await fetch(image.url);
     const buffer = await imgRes.arrayBuffer();
     const bytes = new Uint8Array(buffer);
@@ -139,20 +157,25 @@ serve(async (req) => {
       binary += String.fromCharCode(bytes[i]);
     }
     const imageBase64 = btoa(binary);
+    const mimeType = "image/png";
 
     return new Response(
       JSON.stringify({
+        imageUrl: `data:${mimeType};base64,${imageBase64}`,
         imageBase64,
-        mimeType: "image/png",
+        mimeType,
+        size,
+        mode,
+        noTextInImage: noTextInImage !== false,
         revisedPrompt: image.revised_prompt || null,
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (e: any) {
-    console.error("[GENERATE-ART] Erro:", e.message);
+    console.error("[GENERATE-ART] Erro:", e?.message || e);
     return new Response(
-      JSON.stringify({ error: e.message }),
-      { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      JSON.stringify({ error: e?.message || "Falha ao gerar visual com IA" }),
+      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }
 });
