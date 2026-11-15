@@ -267,18 +267,24 @@ export default function SocialMediaPage() {
     ) {
       ids.add(previewPost.meta_post_id);
     }
-    if (viewMode === "performance") {
-      const visibleIg = filteredPosts
-        .filter((p) => p.status === "published" && p.platform === "instagram" && p.meta_post_id)
-        .slice(0, performanceVisibleCount);
-      for (const p of visibleIg) {
-        if (p.meta_post_id && p.insightsStatus === "pending") {
-          ids.add(p.meta_post_id);
-        }
+
+    const publishedIg = filteredPosts.filter(
+      (p) => p.status === "published" && p.platform === "instagram" && p.meta_post_id
+    );
+    const targetLimit =
+      viewMode === "performance"
+        ? performanceVisibleCount
+        : canonicalSelectedPage !== "all"
+        ? 10
+        : 5;
+
+    for (const p of publishedIg.slice(0, targetLimit)) {
+      if (p.meta_post_id && p.insightsStatus === "pending") {
+        ids.add(p.meta_post_id);
       }
     }
     return Array.from(ids);
-  }, [previewPost, viewMode, filteredPosts, performanceVisibleCount]);
+  }, [previewPost, viewMode, filteredPosts, performanceVisibleCount, canonicalSelectedPage]);
 
   const { isEnrichingInsights } = usePlannerProgressiveInsights({
     tenantId,
@@ -314,17 +320,28 @@ export default function SocialMediaPage() {
     const pending = allPosts.filter((p) => p.status === "pending_approval");
     const drafts = allPosts.filter((p) => p.status === "draft");
 
-    const totalReach = published.reduce((acc, p) => acc + (p.reach_count || 0), 0);
+    const igPublished = published.filter((p) => p.platform === "instagram");
+    const insightsLoadedCount = igPublished.filter((p) => p.insightsStatus === "loaded").length;
+    const insightsPendingCount = igPublished.filter((p) => p.insightsStatus === "pending").length;
+    const insightsUnavailableCount = igPublished.filter((p) => p.insightsStatus === "unavailable").length;
+
+    const reachSamplePosts = published.filter((p) => (p.reach_count || 0) > 0);
+    const totalReach = reachSamplePosts.reduce((acc, p) => acc + (p.reach_count || 0), 0);
     const totalLikes = published.reduce((acc, p) => acc + (p.likes_count || 0), 0);
     const totalComments = published.reduce((acc, p) => acc + (p.comments_count || 0), 0);
-    const totalInteractions = published.reduce(
+    const sampleInteractions = reachSamplePosts.reduce(
       (acc, p) => acc + (p.likes_count || 0) + (p.comments_count || 0) + (p.shares_count || 0) + (p.saves_count || 0),
       0
     );
-    const avgEngRate = totalReach > 0 ? (totalInteractions / totalReach) * 100 : 0;
+    const avgEngRate = totalReach > 0 ? (sampleInteractions / totalReach) * 100 : 0;
 
     return {
       publishedCount: published.length,
+      igPublishedCount: igPublished.length,
+      insightsLoadedCount,
+      insightsPendingCount,
+      insightsUnavailableCount,
+      reachSampleCount: reachSamplePosts.length,
       scheduledCount: scheduled.length,
       metaScheduledCount: plannerData?.metaScheduledCount || 0,
       pendingCount: pending.length,
@@ -670,10 +687,22 @@ export default function SocialMediaPage() {
             <Flame className="h-4 w-4 text-amber-400" />
           </div>
           <div className="text-xl sm:text-2xl font-bold font-mono text-foreground">
-            {isPlannerInitialLoading ? "..." : isPlannerUnavailable ? "—" : `${stats.avgEngRate}%`}
+            {isPlannerInitialLoading || (isEnrichingInsights && stats.insightsLoadedCount === 0)
+              ? "..."
+              : isPlannerUnavailable || (stats.insightsLoadedCount === 0 && stats.insightsPendingCount > 0)
+              ? "—"
+              : stats.totalReach === 0
+              ? "—"
+              : `${stats.avgEngRate}%`}
           </div>
           <p className="text-[10px] text-muted-foreground mt-0.5">
-            Interações / alcance real nos posts
+            {isEnrichingInsights && stats.insightsLoadedCount === 0
+              ? "Carregando métricas de alcance da Meta..."
+              : stats.insightsLoadedCount === 0 && stats.insightsPendingCount > 0
+              ? "Aguardando métricas individuais da Meta..."
+              : stats.reachSampleCount > 0
+              ? `Interações / alcance em ${stats.reachSampleCount} de ${stats.igPublishedCount} mídias IG${isEnrichingInsights ? " (carregando...)" : ""}`
+              : "Sem alcance observado nas mídias carregadas"}
           </p>
         </div>
 
@@ -683,10 +712,20 @@ export default function SocialMediaPage() {
             <Eye className="h-4 w-4 text-primary" />
           </div>
           <div className="text-xl sm:text-2xl font-bold font-mono text-foreground">
-            {isPlannerInitialLoading ? "..." : isPlannerUnavailable ? "—" : stats.totalReach.toLocaleString("pt-BR")}
+            {isPlannerInitialLoading || (isEnrichingInsights && stats.insightsLoadedCount === 0)
+              ? "..."
+              : isPlannerUnavailable || (stats.insightsLoadedCount === 0 && stats.insightsPendingCount > 0)
+              ? "—"
+              : stats.totalReach.toLocaleString("pt-BR")}
           </div>
           <p className="text-[10px] text-muted-foreground mt-0.5">
-            Soma de alcance real das mídias
+            {isEnrichingInsights && stats.insightsLoadedCount === 0
+              ? "Consultando alcance real na Meta..."
+              : stats.insightsLoadedCount === 0 && stats.insightsPendingCount > 0
+              ? "Métricas individuais pendentes na amostra"
+              : isEnrichingInsights
+              ? `Amostra de ${stats.insightsLoadedCount}/${stats.igPublishedCount} mídias IG (atualizando...)`
+              : `Soma real em ${stats.insightsLoadedCount} de ${stats.igPublishedCount} mídias IG carregadas`}
           </p>
         </div>
       </div>
