@@ -1223,3 +1223,105 @@ export function resolveLibraryAssetBadges(input: {
     testLinkBadge: input.linkedTestTitle ? `Teste: ${input.linkedTestTitle}` : null,
   };
 }
+
+const DEFAULT_OR_PLACEHOLDER_TEXTS = new Set<string>([
+  "defina a chamada confirmada",
+  "novo texto confirmado",
+  "condição especial",
+  "oferta confirmada",
+  ...STUDIO_TEMPLATES.map((t) => t.badgeText.trim().toLowerCase()),
+  ...STUDIO_PIECE_OBJECTIVES.map((o) => o.defaultCta.trim().toLowerCase()),
+]);
+
+export function isDefaultOrPlaceholderStudioText(text: string | null | undefined): boolean {
+  const norm = String(text || "").trim().toLowerCase();
+  if (!norm) return true;
+  if (DEFAULT_OR_PLACEHOLDER_TEXTS.has(norm)) return true;
+  if (/^(ex:|placeholder|digite aqui|escreva aqui|clique para)/i.test(norm)) return true;
+  return false;
+}
+
+export interface StudioExportAndSaveValidation {
+  canDownload: boolean;
+  canSave: boolean;
+  hasValidFormat: boolean;
+  hasValidMedia: boolean;
+  hasRealTextContent: boolean;
+  hasRenderableContent: boolean;
+  hasTitle: boolean;
+  downloadBlockedReason: string | null;
+  saveBlockedReason: string | null;
+}
+
+export function validateStudioExportAndSave(input: {
+  studioTitle: string;
+  formatId: StudioFormatId;
+  layers: StudioLayer[];
+  hasValidMedia: boolean;
+  mediaFailedToLoad?: boolean;
+  isRenderingOrLoading?: boolean;
+  facts?: Partial<ConfirmedCommercialFacts> | null;
+}): StudioExportAndSaveValidation {
+  const spec = STUDIO_FORMATS.find((f) => f.id === input.formatId) ?? null;
+  const hasValidFormat = Boolean(spec && spec.width > 0 && spec.height > 0);
+  const hasValidMedia = Boolean(input.hasValidMedia && !input.mediaFailedToLoad);
+  const hasTitle = String(input.studioTitle || "").trim().length > 0;
+
+  const visibleLayers = (input.layers || []).filter((l) => l.visible && l.text.trim().length > 0);
+  const realUserLayers = visibleLayers.filter(
+    (l) => l.kind !== "badge" && l.kind !== "cta" && !isDefaultOrPlaceholderStudioText(l.text)
+  );
+  const hasRealFacts = Boolean(
+    input.facts &&
+      [
+        input.facts.vehicleOrOfferName,
+        input.facts.headlineOffer,
+        input.facts.confirmedPrice,
+        input.facts.confirmedInstallment,
+        input.facts.confirmedDownPayment,
+        input.facts.fipeComparison,
+        input.facts.confirmedDifferentials,
+        input.facts.confirmedCondition,
+      ].some((v) => String(v || "").trim().length > 0 && !isDefaultOrPlaceholderStudioText(v))
+  );
+
+  const hasRealTextContent = realUserLayers.length > 0 || hasRealFacts;
+  const hasRenderableContent = hasValidFormat && (hasValidMedia || hasRealTextContent);
+
+  let downloadBlockedReason: string | null = null;
+  if (input.isRenderingOrLoading) {
+    downloadBlockedReason = "Aguarde a conclusão do carregamento ou renderização da peça.";
+  } else if (!hasValidFormat) {
+    downloadBlockedReason = "Formato e dimensões inválidos para exportação.";
+  } else if (input.mediaFailedToLoad) {
+    downloadBlockedReason = "A mídia selecionada falhou ao carregar. Substitua ou remova o arquivo com erro.";
+  } else if (!hasRenderableContent) {
+    downloadBlockedReason = "Adicione uma imagem válida ou conteúdo real nas camadas antes de baixar.";
+  }
+
+  let saveBlockedReason: string | null = null;
+  if (input.isRenderingOrLoading) {
+    saveBlockedReason = "Aguarde o carregamento da peça antes de salvar.";
+  } else if (input.mediaFailedToLoad) {
+    saveBlockedReason = "A mídia selecionada falhou ao carregar e não pode ser salva na biblioteca.";
+  } else if (!hasTitle && !hasRenderableContent) {
+    saveBlockedReason = "Dê um nome à peça e adicione uma mídia válida ou conteúdo real antes de salvar.";
+  } else if (!hasRenderableContent) {
+    saveBlockedReason = "Um título sozinho não basta: adicione uma imagem válida ou conteúdo real antes de salvar.";
+  } else if (!hasTitle) {
+    saveBlockedReason = "Informe um título/nome para salvar este rascunho na biblioteca.";
+  }
+
+  return {
+    canDownload: downloadBlockedReason === null,
+    canSave: saveBlockedReason === null,
+    hasValidFormat,
+    hasValidMedia,
+    hasRealTextContent,
+    hasRenderableContent,
+    hasTitle,
+    downloadBlockedReason,
+    saveBlockedReason,
+  };
+}
+

@@ -27,6 +27,23 @@ export type CreativeFatigueStatus =
   | "insufficient_evidence"
   | "not_detected";
 
+export type AdMetaStatusBucket = "ACTIVE" | "PAUSED" | "COMPLETED" | "ARCHIVED";
+
+export type AdSituationFilter = AdMetaStatusBucket | "ALL";
+
+export type AdPeriodDeliveryState = "with_delivery" | "no_delivery" | "unavailable";
+
+export interface AdStatusCountsSummary {
+  all: number;
+  ACTIVE: number;
+  PAUSED: number;
+  COMPLETED: number;
+  ARCHIVED: number;
+  activeWithDelivery: number;
+  activeWithoutDelivery: number;
+  activeUnavailable: number;
+}
+
 export type CreativeTestType =
   | "controlled_single_var"
   | "concept_exploration"
@@ -68,8 +85,11 @@ export interface CreativeAdRecord {
   adSetId: string | null;
   adSetName: string;
   configuredStatus: string;
-  effectiveStatus: string;
+  effectiveStatus: AdMetaStatusBucket;
   deliveryLabel: string;
+  metaStatusReason: string | null;
+  periodDeliveryState: AdPeriodDeliveryState;
+  periodDeliveryLabel: string;
   rawObjective: string | null;
   optimizationGoal: string | null;
   resultCategory: MetaConversionCategory;
@@ -450,6 +470,118 @@ function aggregateDailyRowsByDate(rows: any[], dateFrom: string, dateTo: string)
     .sort((a, b) => a.date.localeCompare(b.date));
 }
 
+export function resolveAdEffectiveMetaStatus(input: {
+  adStatus?: string | null;
+  adDeliveryStatus?: string | null;
+  adConfiguredStatus?: string | null;
+  adSetStatus?: string | null;
+  adSetDeliveryStatus?: string | null;
+  adSetConfiguredStatus?: string | null;
+  adSetEndTime?: string | null;
+  campaignStatus?: string | null;
+  campaignDeliveryStatus?: string | null;
+  campaignConfiguredStatus?: string | null;
+  campaignStopTime?: string | null;
+  now?: Date;
+}): {
+  code: AdMetaStatusBucket;
+  label: "Ativo" | "Pausado" | "Concluído" | "Arquivado";
+  reason: string | null;
+} {
+  const now = input.now || new Date();
+  const norm = (v?: string | null) => String(v || "").trim().toUpperCase();
+
+  const adAll = [norm(input.adStatus), norm(input.adDeliveryStatus), norm(input.adConfiguredStatus)];
+  const setAll = [norm(input.adSetStatus), norm(input.adSetDeliveryStatus), norm(input.adSetConfiguredStatus)];
+  const campAll = [norm(input.campaignStatus), norm(input.campaignDeliveryStatus), norm(input.campaignConfiguredStatus)];
+
+  // 1. Arquivado em qualquer nível
+  if (adAll.includes("ARCHIVED") || setAll.includes("ARCHIVED") || campAll.includes("ARCHIVED")) {
+    const reason = adAll.includes("ARCHIVED")
+      ? "Anúncio arquivado na Meta."
+      : setAll.includes("ARCHIVED")
+        ? "Conjunto arquivado na Meta."
+        : "Campanha arquivada na Meta.";
+    return { code: "ARCHIVED", label: "Arquivado", reason };
+  }
+
+  // 2. Concluído por status ou data de término expirada
+  const stopRaw = input.adSetEndTime || input.campaignStopTime || null;
+  const stopMs = stopRaw ? Date.parse(stopRaw) : NaN;
+  const expired = !Number.isNaN(stopMs) && stopMs < now.getTime();
+  if (adAll.includes("COMPLETED") || setAll.includes("COMPLETED") || campAll.includes("COMPLETED") || expired) {
+    const reason = expired ? "Período de veiculação encerrado na Meta." : "Marcado como concluído na Meta.";
+    return { code: "COMPLETED", label: "Concluído", reason };
+  }
+
+  // 3. Pausado no nível do anúncio, conjunto ou campanha
+  const adPausedTokens = new Set(["PAUSED", "CAMPAIGN_PAUSED", "ADSET_PAUSED", "WITH_ISSUES", "DISAPPROVED"]);
+  const parentPausedTokens = new Set(["PAUSED", "CAMPAIGN_PAUSED", "ADSET_PAUSED"]);
+
+  if (adAll.some((s) => adPausedTokens.has(s))) {
+    const reason = adAll.includes("CAMPAIGN_PAUSED")
+      ? "Pausado porque a campanha está pausada."
+      : adAll.includes("ADSET_PAUSED")
+        ? "Pausado porque o conjunto está pausado."
+        : adAll.includes("WITH_ISSUES")
+          ? "Anúncio pausado/com pendência de veiculação na Meta."
+          : "Anúncio pausado na Meta.";
+    return { code: "PAUSED", label: "Pausado", reason };
+  }
+  if (setAll.some((s) => parentPausedTokens.has(s))) {
+    return { code: "PAUSED", label: "Pausado", reason: "Conjunto de anúncios pausado na Meta." };
+  }
+  if (campAll.some((s) => parentPausedTokens.has(s))) {
+    return { code: "PAUSED", label: "Pausado", reason: "Campanha pausada na Meta." };
+  }
+
+  // 4. Ativo apenas quando anúncio + conjunto + campanha estão ativos e vigentes
+  const derivedFallback = deriveEffectiveCampaignStatus({
+    status: input.adDeliveryStatus || input.adStatus,
+    delivery_status: input.adDeliveryStatus,
+    configured_status: input.adConfiguredStatus,
+    stop_time: input.campaignStopTime || input.adSetEndTime,
+    now,
+  });
+  if (derivedFallback.code === "ARCHIVED") return { code: "ARCHIVED", label: "Arquivado", reason: null };
+  if (derivedFallback.code === "COMPLETED") return { code: "COMPLETED", label: "Concluído", reason: null };
+  if (derivedFallback.code === "PAUSED") return { code: "PAUSED", label: "Pausado", reason: null };
+
+  return { code: "ACTIVE", label: "Ativo", reason: null };
+}
+
+export function filterCreativeAdsByStatus(
+  records: CreativeAdRecord[],
+  statusFilter: AdSituationFilter = "ACTIVE"
+): CreativeAdRecord[] {
+  if (statusFilter === "ALL") return records;
+  return records.filter((r) => r.effectiveStatus === statusFilter);
+}
+
+export function summarizeAdStatusCounts(records: CreativeAdRecord[]): AdStatusCountsSummary {
+  const counts: AdStatusCountsSummary = {
+    all: records.length,
+    ACTIVE: 0,
+    PAUSED: 0,
+    COMPLETED: 0,
+    ARCHIVED: 0,
+    activeWithDelivery: 0,
+    activeWithoutDelivery: 0,
+    activeUnavailable: 0,
+  };
+
+  for (const r of records) {
+    counts[r.effectiveStatus] += 1;
+    if (r.effectiveStatus === "ACTIVE") {
+      if (r.periodDeliveryState === "with_delivery") counts.activeWithDelivery += 1;
+      else if (r.periodDeliveryState === "no_delivery") counts.activeWithoutDelivery += 1;
+      else counts.activeUnavailable += 1;
+    }
+  }
+
+  return counts;
+}
+
 export interface BuildCreativeAdRecordInput {
   ad: any;
   accountName: string;
@@ -583,11 +715,18 @@ export function buildCreativeAdRecord(input: BuildCreativeAdRecordInput): Creati
         }
       : null;
 
-  const derivedCampStatus = deriveEffectiveCampaignStatus({
-    status: ad.delivery_status || ad.status,
-    delivery_status: ad.delivery_status,
-    configured_status: ad.configured_status,
-    stop_time: camp.stop_time || adSet.end_time,
+  const resolvedStatus = resolveAdEffectiveMetaStatus({
+    adStatus: ad.status,
+    adDeliveryStatus: ad.delivery_status,
+    adConfiguredStatus: ad.configured_status,
+    adSetStatus: adSet.status,
+    adSetDeliveryStatus: adSet.delivery_status,
+    adSetConfiguredStatus: adSet.configured_status,
+    adSetEndTime: adSet.end_time,
+    campaignStatus: camp.status,
+    campaignDeliveryStatus: camp.delivery_status,
+    campaignConfiguredStatus: camp.configured_status,
+    campaignStopTime: camp.stop_time,
   });
 
   let availability: CreativeMetricAvailability = "active_delivery";
@@ -613,6 +752,26 @@ export function buildCreativeAdRecord(input: BuildCreativeAdRecordInput): Creati
     availabilityNote = "Houve entrega no período, com zero resultados no evento oficial.";
   }
 
+  const periodDeliveryState: AdPeriodDeliveryState =
+    availability === "loading" || availability === "unavailable" || availability === "permission_missing"
+      ? "unavailable"
+      : availability === "no_delivery"
+        ? "no_delivery"
+        : "with_delivery";
+
+  const periodDeliveryLabel =
+    availability === "loading"
+      ? "Carregando"
+      : availability === "permission_missing"
+        ? "Sem permissão"
+        : availability === "unavailable"
+          ? "Sem dados no período"
+          : availability === "no_delivery"
+            ? "Sem entrega no período"
+            : availability === "zero_spend_attributed_result"
+              ? "Resultado atribuído (gasto R$ 0)"
+              : "Com entrega no período";
+
   const createdDate = ad.created_at ? String(ad.created_at).slice(0, 10) : null;
   const isNewInPeriod =
     Boolean(createdDate && createdDate >= dateFrom && createdDate <= dateTo) ||
@@ -632,8 +791,11 @@ export function buildCreativeAdRecord(input: BuildCreativeAdRecordInput): Creati
     adSetId: ad.ad_set_id ? String(ad.ad_set_id) : null,
     adSetName: adSet.name || "Conjunto não identificado",
     configuredStatus: String(ad.configured_status || ad.status || "ACTIVE").toUpperCase(),
-    effectiveStatus: String(ad.delivery_status || derivedCampStatus.code || "UNKNOWN").toUpperCase(),
-    deliveryLabel: derivedCampStatus.label || "Ativo",
+    effectiveStatus: resolvedStatus.code,
+    deliveryLabel: resolvedStatus.label,
+    metaStatusReason: resolvedStatus.reason,
+    periodDeliveryState,
+    periodDeliveryLabel,
     rawObjective,
     optimizationGoal,
     resultCategory: cls.category,
@@ -695,6 +857,13 @@ export function enrichCreativePeerSignals(records: CreativeAdRecord[]): Creative
   }
 
   return records.map((r) => {
+    if (r.availability === "loading" || r.availability === "permission_missing" || r.availability === "unavailable") {
+      return {
+        ...r,
+        performanceSignal: "insufficient_data",
+        signalReason: r.availabilityNote || "Sem dados sincronizados para o período selecionado.",
+      };
+    }
     if (r.availability === "no_delivery") {
       return {
         ...r,

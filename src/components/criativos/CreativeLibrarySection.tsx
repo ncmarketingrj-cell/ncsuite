@@ -3,6 +3,7 @@ import {
   Bot,
   ExternalLink,
   FlaskConical,
+  GitCompare,
   ImageOff,
   LayoutGrid,
   List as ListIcon,
@@ -11,7 +12,12 @@ import {
   Sparkles,
   Video,
 } from "lucide-react";
-import type { CreativeAdRecord, CreativePerformanceSignal } from "@/lib/creativeIntelligenceDomain";
+import type {
+  AdSituationFilter,
+  AdStatusCountsSummary,
+  CreativeAdRecord,
+  CreativePerformanceSignal,
+} from "@/lib/creativeIntelligenceDomain";
 
 const fmtBRL = (v: number | null | undefined) => {
   if (v === null || v === undefined || !Number.isFinite(v)) return "—";
@@ -55,10 +61,14 @@ export interface CreativeLibrarySectionProps {
   records: CreativeAdRecord[];
   isLoading: boolean;
   canEdit: boolean;
+  statusFilter: AdSituationFilter;
+  onStatusFilterChange: (val: AdSituationFilter) => void;
+  statusCounts?: AdStatusCountsSummary;
   externalSignalFilter: CreativePerformanceSignal | "all";
   onExternalSignalFilterChange: (val: CreativePerformanceSignal | "all") => void;
   linkedAdTestMap: Map<string, string[]>;
   onAnalyzeWithVictoria: (record: CreativeAdRecord) => void;
+  onCompareWithCandidate?: (record: CreativeAdRecord) => void;
   onCreateVariation: (record: CreativeAdRecord) => void;
   onLinkToTest: (record: CreativeAdRecord) => void;
 }
@@ -67,10 +77,14 @@ export function CreativeLibrarySection({
   records,
   isLoading,
   canEdit,
+  statusFilter,
+  onStatusFilterChange,
+  statusCounts,
   externalSignalFilter,
   onExternalSignalFilterChange,
   linkedAdTestMap,
   onAnalyzeWithVictoria,
+  onCompareWithCandidate,
   onCreateVariation,
   onLinkToTest,
 }: CreativeLibrarySectionProps) {
@@ -79,7 +93,6 @@ export function CreativeLibrarySection({
   const [campaignFilter, setCampaignFilter] = useState<string>("all");
   const [adSetFilter, setAdSetFilter] = useState<string>("all");
   const [objectiveFilter, setObjectiveFilter] = useState<string>("all");
-  const [statusFilter, setStatusFilter] = useState<string>("all");
   const [deliveryOnly, setDeliveryOnly] = useState<boolean>(false);
   const [visibleLimit, setVisibleLimit] = useState<number>(36);
 
@@ -115,10 +128,8 @@ export function CreativeLibrarySection({
       if (adSetFilter !== "all" && r.adSetId !== adSetFilter) return false;
       if (objectiveFilter !== "all" && r.resultCategory !== objectiveFilter) return false;
       if (externalSignalFilter !== "all" && r.performanceSignal !== externalSignalFilter) return false;
-      if (statusFilter === "active" && r.effectiveStatus !== "ACTIVE") return false;
-      if (statusFilter === "paused" && r.effectiveStatus !== "PAUSED") return false;
-      if (statusFilter === "completed" && r.deliveryLabel !== "Concluída") return false;
-      if (deliveryOnly && r.availability === "no_delivery") return false;
+      if (statusFilter !== "ALL" && r.effectiveStatus !== statusFilter) return false;
+      if (deliveryOnly && r.periodDeliveryState !== "with_delivery") return false;
       if (q) {
         const hay = `${r.name} ${r.externalId || ""} ${r.campaignName} ${r.adSetName} ${r.accountName} ${r.creativeName || ""} ${r.creativeTitle || ""} ${r.creativeBody || ""}`.toLowerCase();
         if (!hay.includes(q)) return false;
@@ -198,14 +209,25 @@ export function CreativeLibrarySection({
 
             <select
               value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
+              onChange={(e) => onStatusFilterChange(e.target.value as AdSituationFilter)}
               className="rounded-xl border border-border bg-background px-2.5 py-2 text-xs text-foreground focus:border-primary focus:outline-none"
-              aria-label="Filtrar por status"
+              aria-label="Filtrar por status na Meta"
             >
-              <option value="all">Todos status</option>
-              <option value="active">Ativos</option>
-              <option value="paused">Pausados</option>
-              <option value="completed">Concluídos</option>
+              <option value="ACTIVE">
+                Ativos{statusCounts ? ` (${statusCounts.ACTIVE})` : ""}
+              </option>
+              <option value="PAUSED">
+                Pausados{statusCounts ? ` (${statusCounts.PAUSED})` : ""}
+              </option>
+              <option value="COMPLETED">
+                Concluídos{statusCounts ? ` (${statusCounts.COMPLETED})` : ""}
+              </option>
+              <option value="ARCHIVED">
+                Arquivados{statusCounts ? ` (${statusCounts.ARCHIVED})` : ""}
+              </option>
+              <option value="ALL">
+                Todos{statusCounts ? ` (${statusCounts.all})` : ""}
+              </option>
             </select>
 
             <select
@@ -334,7 +356,9 @@ export function CreativeLibrarySection({
                     <div>
                       <div className="flex items-center justify-between gap-2 text-[10px] font-mono text-muted-foreground">
                         <span className="truncate font-bold text-foreground/80">{ad.accountName}</span>
-                        <span>{ad.deliveryLabel} • {ad.effectiveStatus}</span>
+                        <span className="truncate">
+                          Status Meta: {ad.deliveryLabel} · {ad.periodDeliveryLabel}
+                        </span>
                       </div>
                       <h3 className="mt-0.5 text-sm font-black text-foreground leading-snug line-clamp-2">
                         {ad.name}
@@ -342,10 +366,16 @@ export function CreativeLibrarySection({
                       <p className="text-[11px] text-muted-foreground truncate">
                         Campanha: {ad.campaignName} • Conj: {ad.adSetName}
                       </p>
-                      <p className="text-[10px] font-mono text-muted-foreground/80 truncate">
-                        Ad ID: {ad.externalId || ad.id} • Janela: {ad.attributionWindow}
+                      <p className="text-[10px] text-muted-foreground/80 truncate">
+                        Janela: {ad.attributionWindow}
                         {ad.optimizationGoal ? ` • Opt: ${ad.optimizationGoal}` : ""}
+                        {ad.metaStatusReason ? ` • ${ad.metaStatusReason}` : ""}
                       </p>
+                      {ad.effectiveStatus === "ACTIVE" && ad.periodDeliveryState === "no_delivery" && (
+                        <p className="mt-1 rounded-md border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium text-amber-300">
+                          Ativo na Meta sem entrega no período selecionado.
+                        </p>
+                      )}
                       {linkedTests.length > 0 && (
                         <p className="mt-1 inline-flex items-center gap-1 rounded-md border border-primary/30 bg-primary/10 px-1.5 py-0.5 text-[10px] font-bold text-primary">
                           <FlaskConical className="h-3 w-3" /> Em {linkedTests.length} teste(s)
@@ -431,6 +461,16 @@ export function CreativeLibrarySection({
                   </button>
 
                   <div className="flex items-center gap-1.5">
+                    {onCompareWithCandidate && ad.effectiveStatus === "ACTIVE" && (
+                      <button
+                        type="button"
+                        onClick={() => onCompareWithCandidate(ad)}
+                        className="inline-flex items-center gap-1 rounded-lg border border-sky-500/30 bg-sky-500/10 px-2 py-1 text-[11px] font-bold text-sky-300 hover:bg-sky-500/20 transition cursor-pointer"
+                        title="Comparar este anúncio ativo com uma peça nova no Comparador"
+                      >
+                        <GitCompare className="h-3 w-3" /> Comparar
+                      </button>
+                    )}
                     {canEdit && (
                       <>
                         <button

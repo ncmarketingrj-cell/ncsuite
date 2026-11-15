@@ -64,6 +64,7 @@ import {
   resolveLibraryAssetBadges,
   resolveStudioAccountContext,
   undoStudioHistory,
+  validateStudioExportAndSave,
   validateStudioTestCompatibility,
   type BrandKitLike,
   type ConfirmedCommercialFacts,
@@ -334,6 +335,8 @@ export function CreativeProductionWorkspace({
   const [aiCostConfirmed, setAiCostConfirmed] = useState(false);
   const [photoBaseUrl, setPhotoBaseUrl] = useState<string | null>(null);
   const [generatedArtUrl, setGeneratedArtUrl] = useState<string | null>(null);
+  const [mediaLoadFailed, setMediaLoadFailed] = useState(false);
+  const [mediaLoading, setMediaLoading] = useState(false);
   const [compareBeforeAfter, setCompareBeforeAfter] = useState<"after" | "before">("after");
   const [generatingArt, setGeneratingArt] = useState(false);
 
@@ -951,24 +954,39 @@ export function CreativeProductionWorkspace({
       creationMode === "faithful_composition"
         ? photoBaseUrl
         : creationMode === "ai_scenario"
-        ? compareBeforeAfter === "before"
-          ? photoBaseUrl
-          : generatedArtUrl || photoBaseUrl
-        : generatedArtUrl || photoBaseUrl;
+          ? compareBeforeAfter === "before"
+            ? photoBaseUrl
+            : generatedArtUrl || photoBaseUrl
+          : generatedArtUrl || photoBaseUrl;
 
-    const loadImage = (src: string | null | undefined) =>
+    setMediaLoadFailed(false);
+    setMediaLoading(Boolean(effectiveBgSrc));
+
+    const loadImage = (src: string | null | undefined, trackMainBg = false) =>
       new Promise<HTMLImageElement | null>((resolve) => {
         if (!src) return resolve(null);
         const img = new Image();
         img.crossOrigin = "anonymous";
-        img.onload = () => resolve(img);
-        img.onerror = () => resolve(null);
+        img.onload = () => {
+          if (trackMainBg) {
+            setMediaLoadFailed(false);
+            setMediaLoading(false);
+          }
+          resolve(img);
+        };
+        img.onerror = () => {
+          if (trackMainBg) {
+            setMediaLoadFailed(true);
+            setMediaLoading(false);
+          }
+          resolve(null);
+        };
         img.src = src;
       });
 
     void Promise.all([
-      loadImage(effectiveBgSrc),
-      loadImage(brandKitHealth.hasLogo ? bkLogoUrl : null),
+      loadImage(effectiveBgSrc, true),
+      loadImage(brandKitHealth.hasLogo ? bkLogoUrl : null, false),
     ]).then(([bgImg, logoImg]) => {
       renderScene(bgImg, logoImg);
     });
@@ -991,8 +1009,54 @@ export function CreativeProductionWorkspace({
     exportTransparentBg,
   ]);
 
+  const activeEffectiveBgSrc =
+    creationMode === "faithful_composition"
+      ? photoBaseUrl
+      : creationMode === "ai_scenario"
+        ? compareBeforeAfter === "before"
+          ? photoBaseUrl
+          : generatedArtUrl || photoBaseUrl
+        : generatedArtUrl || photoBaseUrl;
+
+  const exportSaveGuard = useMemo(
+    () =>
+      validateStudioExportAndSave({
+        studioTitle,
+        formatId: aspectId,
+        layers,
+        hasValidMedia: Boolean(activeEffectiveBgSrc),
+        mediaFailedToLoad: mediaLoadFailed,
+        isRenderingOrLoading: mediaLoading || generatingArt || savingDraft,
+        facts,
+      }),
+    [
+      studioTitle,
+      aspectId,
+      layers,
+      activeEffectiveBgSrc,
+      mediaLoadFailed,
+      mediaLoading,
+      generatingArt,
+      savingDraft,
+      facts,
+    ]
+  );
+
   // Save draft or v+1 to Library (never modifies Meta Ads)
   const handleSaveStudioAsset = async (targetApprovalStatus: "draft" | "approved" = "draft") => {
+    const guard = validateStudioExportAndSave({
+      studioTitle,
+      formatId: aspectId,
+      layers,
+      hasValidMedia: Boolean(activeEffectiveBgSrc),
+      mediaFailedToLoad: mediaLoadFailed,
+      isRenderingOrLoading: mediaLoading || generatingArt || savingDraft,
+      facts,
+    });
+    if (!guard.canSave) {
+      toast.error(guard.saveBlockedReason || "Preencha título e conteúdo real antes de salvar.");
+      return;
+    }
     if (!studioAccountId) {
       toast.error("Escolha explicitamente uma conta antes de salvar na biblioteca.");
       setStudioStep(1);
@@ -1020,8 +1084,12 @@ export function CreativeProductionWorkspace({
     }
 
     const canvas = canvasRef.current;
-    if (!canvas) return;
+    if (!canvas) {
+      toast.error("Canvas de renderização não está pronto.");
+      return;
+    }
     setSavingDraft(true);
+    let uploadedStoragePath: string | null = null;
     try {
       const mime = exportMime === "image/webp" && !webpSupported ? "image/png" : exportMime;
       const ext = mime === "image/jpeg" ? "jpg" : mime === "image/webp" ? "webp" : "png";
@@ -1029,10 +1097,10 @@ export function CreativeProductionWorkspace({
         canvas.toBlob(resolve, mime, mime === "image/png" ? undefined : exportQuality)
       );
       if (!blob) throw new Error("Falha ao renderizar peça para exportação.");
-      const { publicUrl } = await uploadToStorage(blob, ext);
+      const uploaded = await uploadToStorage(blob, ext);
+      uploadedStoragePath = uploaded.storagePath;
+      const publicUrl = uploaded.publicUrl;
       const nextVersion = parentAssetId ? parentVersion + 1 : 1;
-      const titleFallback =
-        facts.headlineOffer.trim() || facts.vehicleOrOfferName.trim() || "Criativo Estúdio";
 
       const { error } = await (supabase as any).from("swipe_files").insert({
         user_id: userId,
@@ -1041,7 +1109,7 @@ export function CreativeProductionWorkspace({
         linked_ad_id: linkedAdId || null,
         linked_campaign_id: records.find((r) => r.id === linkedAdId)?.campaignId || null,
         creative_test_id: linkedTestId || null,
-        title: studioTitle.trim() || `${titleFallback.slice(0, 40)} v${nextVersion}`,
+        title: studioTitle.trim(),
         media_url: publicUrl,
         origin: creationMode,
         version: nextVersion,
@@ -1076,7 +1144,12 @@ export function CreativeProductionWorkspace({
           },
         ],
       });
-      if (error) throw error;
+      if (error) {
+        if (uploadedStoragePath) {
+          await supabase.storage.from("media").remove([uploadedStoragePath]).catch(() => {});
+        }
+        throw error;
+      }
       toast.success(
         targetApprovalStatus === "approved"
           ? `Criativo v${nextVersion} salvo e marcado como Aprovado na biblioteca!`
@@ -1086,6 +1159,9 @@ export function CreativeProductionWorkspace({
       setStudioOpen(false);
       onClearSeedVariation();
     } catch (err: any) {
+      if (uploadedStoragePath) {
+        await supabase.storage.from("media").remove([uploadedStoragePath]).catch(() => {});
+      }
       toast.error(err?.message || "Erro ao salvar peça no repositório.");
     } finally {
       setSavingDraft(false);
@@ -1094,8 +1170,24 @@ export function CreativeProductionWorkspace({
 
   // Export local file (PNG / JPG / WebP)
   const handleDownloadCanvas = () => {
+    const guard = validateStudioExportAndSave({
+      studioTitle,
+      formatId: aspectId,
+      layers,
+      hasValidMedia: Boolean(activeEffectiveBgSrc),
+      mediaFailedToLoad: mediaLoadFailed,
+      isRenderingOrLoading: mediaLoading || generatingArt || savingDraft,
+      facts,
+    });
+    if (!guard.canDownload) {
+      toast.error(guard.downloadBlockedReason || "Adicione uma mídia ou conteúdo real para baixar.");
+      return;
+    }
     const canvas = canvasRef.current;
-    if (!canvas) return;
+    if (!canvas) {
+      toast.error("Canvas de renderização não está pronto.");
+      return;
+    }
     const mime = exportMime === "image/webp" && !webpSupported ? "image/png" : exportMime;
     const ext = mime === "image/jpeg" ? "jpg" : mime === "image/webp" ? "webp" : "png";
     const dataUrl =
@@ -2432,7 +2524,10 @@ export function CreativeProductionWorkspace({
                         {photoBaseUrl && (
                           <button
                             type="button"
-                            onClick={() => setPhotoBaseUrl(null)}
+                            onClick={() => {
+                              setPhotoBaseUrl(null);
+                              setMediaLoadFailed(false);
+                            }}
                             className="rounded-lg border border-border px-2.5 py-1.5 text-[11px] text-rose-400 cursor-pointer"
                           >
                             Remover Foto
@@ -2937,16 +3032,17 @@ export function CreativeProductionWorkspace({
                     <div className="flex flex-wrap gap-2 pt-1">
                       <button
                         type="button"
+                        disabled={!exportSaveGuard.canDownload}
                         onClick={handleDownloadCanvas}
-                        className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-card px-4 py-2 text-xs font-bold hover:border-primary/40 cursor-pointer"
+                        className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-card px-4 py-2 text-xs font-bold hover:border-primary/40 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
                       >
                         <Download className="h-3.5 w-3.5 text-primary" /> Baixar Arquivo
                       </button>
                       <button
                         type="button"
-                        disabled={savingDraft}
+                        disabled={savingDraft || !exportSaveGuard.canSave}
                         onClick={() => void handleSaveStudioAsset("draft")}
-                        className="inline-flex items-center gap-1.5 rounded-xl bg-primary px-4 py-2 text-xs font-black uppercase text-white disabled:opacity-50 cursor-pointer"
+                        className="inline-flex items-center gap-1.5 rounded-xl bg-primary px-4 py-2 text-xs font-black uppercase text-white disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
                       >
                         {savingDraft ? (
                           <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -2956,6 +3052,22 @@ export function CreativeProductionWorkspace({
                         {parentAssetId ? `Salvar Nova Versão v${parentVersion + 1}` : "Salvar Rascunho na Biblioteca"}
                       </button>
                     </div>
+                    {(!exportSaveGuard.canDownload || !exportSaveGuard.canSave) && (
+                      <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-200 space-y-1">
+                        {!exportSaveGuard.canDownload && exportSaveGuard.downloadBlockedReason && (
+                          <p>
+                            <span className="font-bold">Download bloqueado:</span>{" "}
+                            {exportSaveGuard.downloadBlockedReason}
+                          </p>
+                        )}
+                        {!exportSaveGuard.canSave && exportSaveGuard.saveBlockedReason && (
+                          <p>
+                            <span className="font-bold">Salvar rascunho bloqueado:</span>{" "}
+                            {exportSaveGuard.saveBlockedReason}
+                          </p>
+                        )}
+                      </div>
+                    )}
                   </div>
                 )}
 

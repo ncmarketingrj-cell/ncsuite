@@ -1,10 +1,11 @@
 import { useMemo, useState } from "react";
 import { createFileRoute, redirect } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle,
   Bot,
   FlaskConical,
+  GitCompare,
   Layers,
   LayoutGrid,
   Palette,
@@ -29,6 +30,9 @@ import {
   enrichCreativePeerSignals,
   evaluateCreativeDiversity,
   evaluateCreativeFatigue,
+  filterCreativeAdsByStatus,
+  summarizeAdStatusCounts,
+  type AdSituationFilter,
   type CreativeAdRecord,
   type CreativePerformanceSignal,
   type FatigueDiagnostic,
@@ -39,6 +43,10 @@ import { CreativeManagerOverviewSection } from "@/components/criativos/CreativeM
 import { CreativeLibrarySection } from "@/components/criativos/CreativeLibrarySection";
 import { CreativeFatigueSection } from "@/components/criativos/CreativeFatigueSection";
 import { CreativeTestsSection, type CreativeTestRow } from "@/components/criativos/CreativeTestsSection";
+import {
+  CreativeComparatorSection,
+  type CreativeComparisonRow,
+} from "@/components/criativos/CreativeComparatorSection";
 import {
   CreativeProductionWorkspace,
   type BrandKitRow,
@@ -66,7 +74,7 @@ export const Route = createFileRoute("/_app/criativos")({
   component: CriativosHubPage,
 });
 
-type WorkspaceTab = "inteligencia" | "fadiga" | "testes" | "producao";
+type WorkspaceTab = "inteligencia" | "comparador" | "fadiga" | "testes" | "producao";
 
 function getLocalDateStr(d: Date) {
   const y = d.getFullYear();
@@ -77,6 +85,7 @@ function getLocalDateStr(d: Date) {
 
 function CriativosHubPage() {
   const { user } = useAuth();
+  const queryClient = useQueryClient();
   const { profile, canEdit, canViewIntegrations } = usePagePermission();
   const canEditCriativos = canEdit("criativos");
 
@@ -88,8 +97,10 @@ function CriativosHubPage() {
   };
 
   const [activeTab, setActiveTab] = useState<WorkspaceTab>("inteligencia");
+  const [statusFilter, setStatusFilter] = useState<AdSituationFilter>("ACTIVE");
   const [signalFilter, setSignalFilter] = useState<CreativePerformanceSignal | "all">("all");
   const [preselectedAdForTest, setPreselectedAdForTest] = useState<CreativeAdRecord | null>(null);
+  const [preselectedRefForComparator, setPreselectedRefForComparator] = useState<CreativeAdRecord | null>(null);
   const [seedVariationAd, setSeedVariationAd] = useState<CreativeAdRecord | null>(null);
 
   // Victoria contextual floating drawer state
@@ -167,9 +178,9 @@ function CriativosHubPage() {
       const adsList: any[] = [];
       let useExtendedAdCols = true;
       const selectExtended =
-        "id, name, external_id, ad_account_id, campaign_id, ad_set_id, status, delivery_status, configured_status, creative_id, creative_name, creative_title, creative_body, creative_format, creative_image_url, call_to_action_type, thumbnail_url, creative_url, created_at, campaigns(id, name, external_id, ad_account_id, objective, status, delivery_status, stop_time), ad_sets(id, name, end_time)";
+        "id, name, external_id, ad_account_id, campaign_id, ad_set_id, status, delivery_status, configured_status, creative_id, creative_name, creative_title, creative_body, creative_format, creative_image_url, call_to_action_type, thumbnail_url, creative_url, created_at, campaigns(id, name, external_id, ad_account_id, objective, status, delivery_status, configured_status, stop_time), ad_sets(id, name, status, delivery_status, configured_status, end_time)";
       const selectLegacy =
-        "id, name, external_id, ad_account_id, campaign_id, ad_set_id, status, delivery_status, configured_status, creative_id, creative_name, call_to_action_type, thumbnail_url, creative_url, created_at, campaigns(id, name, external_id, ad_account_id, objective, status, delivery_status, stop_time), ad_sets(id, name, end_time)";
+        "id, name, external_id, ad_account_id, campaign_id, ad_set_id, status, delivery_status, configured_status, creative_id, creative_name, call_to_action_type, thumbnail_url, creative_url, created_at, campaigns(id, name, external_id, ad_account_id, objective, status, delivery_status, configured_status, stop_time), ad_sets(id, name, status, delivery_status, configured_status, end_time)";
 
       for (let from = 0; from < 10000; from += 1000) {
         let q = (supabase as any)
@@ -283,10 +294,30 @@ function CriativosHubPage() {
     },
   });
 
-  // 4. Normalização Canônica + Fadiga + Visão do Gestor
+  const { data: creativeComparisons = [], isLoading: loadingComparisons } = useQuery({
+    queryKey: ["creative-comparisons", accountFilter],
+    queryFn: async () => {
+      let q = (supabase as any)
+        .from("creative_comparisons")
+        .select("*")
+        .order("created_at", { ascending: false })
+        .limit(100);
+      if (accountFilter !== "all") {
+        q = q.eq("ad_account_id", accountFilter);
+      }
+      const { data, error } = await q;
+      if (error) return [];
+      return (data || []) as CreativeComparisonRow[];
+    },
+  });
+
+  // 4. Normalização Canônica + Isolamento por Status Efetivo + Fadiga + Visão do Gestor
   const {
+    allRecords,
+    activeRecords,
     records,
     recordsById,
+    statusCounts,
     fatigueDiagnostics,
     diversityGroups,
     managerOverview,
@@ -317,11 +348,16 @@ function CriativosHubPage() {
       })
     );
 
-    const enriched = enrichCreativePeerSignals(baseRecords);
-    const byId = new Map(enriched.map((r) => [r.id, r]));
-    const fatigues = enriched.map((r) => evaluateCreativeFatigue(r, { dateFrom, dateTo }));
-    const diversity = evaluateCreativeDiversity(enriched);
-    const overview = buildCreativeManagerOverview(enriched, fatigues, diversity);
+    const enrichedAll = enrichCreativePeerSignals(baseRecords);
+    const counts = summarizeAdStatusCounts(enrichedAll);
+    const activeOnly = filterCreativeAdsByStatus(enrichedAll, "ACTIVE");
+    const scopedByStatus = filterCreativeAdsByStatus(enrichedAll, statusFilter);
+
+    // Análises operacionais (visão do gestor, fadiga e diversidade) usam estritamente o recorte selecionado (padrão: Ativos)
+    const byId = new Map(scopedByStatus.map((r) => [r.id, r]));
+    const fatigues = scopedByStatus.map((r) => evaluateCreativeFatigue(r, { dateFrom, dateTo }));
+    const diversity = evaluateCreativeDiversity(scopedByStatus);
+    const overview = buildCreativeManagerOverview(scopedByStatus, fatigues, diversity);
 
     const testLinkMap = new Map<string, string[]>();
     for (const t of creativeTests) {
@@ -333,14 +369,17 @@ function CriativosHubPage() {
     }
 
     return {
-      records: enriched,
+      allRecords: enrichedAll,
+      activeRecords: activeOnly,
+      records: scopedByStatus,
       recordsById: byId,
+      statusCounts: counts,
       fatigueDiagnostics: fatigues,
       diversityGroups: diversity,
       managerOverview: overview,
       linkedAdTestMap: testLinkMap,
     };
-  }, [rawAdsBundle, accountNameMap, dateFrom, dateTo, loadingAds, creativeTests]);
+  }, [rawAdsBundle, accountNameMap, dateFrom, dateTo, loadingAds, creativeTests, statusFilter]);
 
   const testsSummary = useMemo(
     () => ({
@@ -490,11 +529,65 @@ function CriativosHubPage() {
         </div>
       )}
 
+      {/* Barra Operacional de Status Efetivo na Meta (padrão: Ativos) */}
+      <div className="rounded-2xl border border-border bg-card/60 px-4 py-3 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-1.5">
+          {(
+            [
+              { id: "ACTIVE", label: "Ativos", count: statusCounts.ACTIVE },
+              { id: "PAUSED", label: "Pausados", count: statusCounts.PAUSED },
+              { id: "COMPLETED", label: "Concluídos", count: statusCounts.COMPLETED },
+              { id: "ARCHIVED", label: "Arquivados", count: statusCounts.ARCHIVED },
+              { id: "ALL", label: "Todos", count: statusCounts.all },
+            ] as { id: AdSituationFilter; label: string; count: number }[]
+          ).map((pill) => {
+            const selected = statusFilter === pill.id;
+            return (
+              <button
+                key={pill.id}
+                type="button"
+                onClick={() => setStatusFilter(pill.id)}
+                className={`inline-flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-bold transition cursor-pointer ${
+                  selected
+                    ? "border-primary bg-primary text-white shadow-sm"
+                    : "border-border bg-background text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                <span>{pill.label}</span>
+                <span
+                  className={`rounded-full px-1.5 py-0.5 text-[10px] font-mono ${
+                    selected ? "bg-black/25 text-white" : "bg-muted text-foreground"
+                  }`}
+                >
+                  {pill.count}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
+          <span className="rounded-lg border border-emerald-500/25 bg-emerald-500/10 px-2 py-1 text-emerald-300 font-semibold">
+            Ativos com entrega: {statusCounts.activeWithDelivery}
+          </span>
+          <span className="rounded-lg border border-amber-500/25 bg-amber-500/10 px-2 py-1 text-amber-300 font-semibold">
+            Ativos sem entrega no período: {statusCounts.activeWithoutDelivery}
+          </span>
+          <span
+            title="Status efetivo considera campanha, conjunto e anúncio na Meta. Entrega no período indica se houve gasto ou impressões nas datas selecionadas."
+            className="hidden sm:inline text-[11px] text-muted-foreground cursor-help underline decoration-dotted"
+          >
+            Status Meta ≠ Entrega no período
+          </span>
+        </div>
+      </div>
+
       {/* Navegação clara separando Inteligência/Testes vs Estúdio de Produção */}
       <nav className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-border bg-card p-2">
         <div className="flex flex-wrap items-center gap-1.5">
           {[
-            { id: "inteligencia", label: "Inteligência & Biblioteca", icon: LayoutGrid, count: records.length },
+            { id: "inteligencia", label: "Inteligência & Biblioteca", icon: LayoutGrid, badgeText: String(records.length) },
+            { id: "comparador", label: "Comparar Criativos", icon: GitCompare, badgeText: String(creativeComparisons.length) },
             {
               id: "fadiga",
               label: "Fadiga & Concentração",
@@ -568,10 +661,17 @@ function CriativosHubPage() {
             records={records}
             isLoading={loadingAds}
             canEdit={canEditCriativos}
+            statusFilter={statusFilter}
+            onStatusFilterChange={setStatusFilter}
+            statusCounts={statusCounts}
             externalSignalFilter={signalFilter}
             onExternalSignalFilterChange={setSignalFilter}
             linkedAdTestMap={linkedAdTestMap}
             onAnalyzeWithVictoria={(rec) => openVictoriaForAd(rec)}
+            onCompareWithCandidate={(rec) => {
+              setPreselectedRefForComparator(rec);
+              setActiveTab("comparador");
+            }}
             onCreateVariation={(rec) => {
               setSeedVariationAd(rec);
               setActiveTab("producao");
@@ -582,6 +682,31 @@ function CriativosHubPage() {
             }}
           />
         </div>
+      )}
+
+      {/* ABA COMPARAR CRIATIVOS */}
+      {activeTab === "comparador" && (
+        <CreativeComparatorSection
+          accounts={accounts}
+          clients={clients}
+          selectedAccountId={accountFilter}
+          onSelectAccount={setAccountFilter}
+          allRecords={allRecords}
+          activeRecords={activeRecords}
+          accountHealthById={accountHealthById}
+          comparisons={creativeComparisons}
+          comparisonsLoading={loadingComparisons}
+          dateFrom={dateFrom}
+          dateTo={dateTo}
+          canEdit={canEditCriativos}
+          userId={user?.id}
+          userName={(profile as any)?.full_name || (profile as any)?.name || user?.email || "Gestor"}
+          preselectedReferenceAd={preselectedRefForComparator}
+          onClearPreselectedReference={() => setPreselectedRefForComparator(null)}
+          onComparisonSaved={() => {
+            void queryClient.invalidateQueries({ queryKey: ["creative-comparisons"] });
+          }}
+        />
       )}
 
       {/* ABA 2: FADIGA E DIVERSIDADE CRIATIVA */}
@@ -600,8 +725,9 @@ function CriativosHubPage() {
       {activeTab === "testes" && (
         <CreativeTestsSection
           tests={creativeTests}
-          records={records}
-          recordsById={recordsById}
+          records={activeRecords}
+          allRecords={allRecords}
+          recordsById={new Map(allRecords.map((r) => [r.id, r]))}
           accounts={accounts}
           selectedAccountId={accountFilter}
           dateFrom={dateFrom}

@@ -20,6 +20,7 @@ import {
   resolveLibraryAssetBadges,
   resolveStudioAccountContext,
   undoStudioHistory,
+  validateStudioExportAndSave,
   validateStudioTestCompatibility,
   type ConfirmedCommercialFacts,
   type StudioHistoryStack,
@@ -306,4 +307,129 @@ test("Export metadata, test compatibility guard, and library lifecycle badges en
   assert.equal(liveBadges.workflowLabel, "Aprovado");
   assert.match(liveBadges.adUsageBadge || "", /Usado em anúncio/);
   assert.match(liveBadges.observedResultBadge || "", /Resultado observado: 18 conversas/);
+});
+
+test("Export & Save Guard enforces all 9 empty-piece, placeholder, media-failure, loading and rollback rules", () => {
+  const defaultTemplateLayers = createInitialStudioLayers({
+    template: getStudioTemplateSpec("promo"),
+    brandKit: null,
+    facts: {
+      ...SAMPLE_FACTS,
+      vehicleOrOfferName: "",
+      headlineOffer: "",
+      confirmedPrice: "",
+      confirmedInstallment: "",
+      confirmedDownPayment: "",
+      fipeComparison: "",
+      confirmedDifferentials: "",
+      confirmedCondition: "",
+      confirmedCta: "Falar no WhatsApp",
+      confirmedLocationOrContact: "",
+    },
+    formatId: "1:1",
+  });
+
+  // 1. Peça totalmente vazia (sem mídia, sem texto real, sem título) -> ambos bloqueados
+  const empty = validateStudioExportAndSave({
+    studioTitle: "",
+    formatId: "1:1",
+    layers: [],
+    hasValidMedia: false,
+  });
+  assert.equal(empty.canDownload, false);
+  assert.equal(empty.canSave, false);
+  assert.ok(empty.downloadBlockedReason);
+  assert.ok(empty.saveBlockedReason);
+
+  // 2. Apenas título preenchido, sem conteúdo no canvas -> ambos bloqueados
+  const titleOnly = validateStudioExportAndSave({
+    studioTitle: "Rascunho sem arte",
+    formatId: "1:1",
+    layers: [],
+    hasValidMedia: false,
+  });
+  assert.equal(titleOnly.hasTitle, true);
+  assert.equal(titleOnly.hasRenderableContent, false);
+  assert.equal(titleOnly.canDownload, false);
+  assert.equal(titleOnly.canSave, false);
+
+  // 3. Mídia com falha de carregamento -> bloqueado mesmo se hasValidMedia=true
+  const failedMedia = validateStudioExportAndSave({
+    studioTitle: "Arte com imagem quebrada",
+    formatId: "1:1",
+    layers: [],
+    hasValidMedia: true,
+    mediaFailedToLoad: true,
+  });
+  assert.equal(failedMedia.hasValidMedia, false);
+  assert.equal(failedMedia.canDownload, false);
+  assert.equal(failedMedia.canSave, false);
+
+  // 4. Apenas texto placeholder/padrão do template (ex.: badge + CTA padrão) -> bloqueado
+  const placeholderOnly = validateStudioExportAndSave({
+    studioTitle: "Só template padrão",
+    formatId: "1:1",
+    layers: defaultTemplateLayers,
+    hasValidMedia: false,
+  });
+  assert.equal(placeholderOnly.hasRealTextContent, false);
+  assert.equal(placeholderOnly.canDownload, false);
+  assert.equal(placeholderOnly.canSave, false);
+
+  // 5. Conteúdo real sem título -> Baixar liberado, Salvar rascunho bloqueado
+  const validNoTitle = validateStudioExportAndSave({
+    studioTitle: "   ",
+    formatId: "4:5",
+    layers: [],
+    hasValidMedia: true,
+  });
+  assert.equal(validNoTitle.canDownload, true);
+  assert.equal(validNoTitle.canSave, false);
+  assert.ok(validNoTitle.saveBlockedReason);
+
+  // 6. Conteúdo real + título -> ambos liberados
+  const validFull = validateStudioExportAndSave({
+    studioTitle: "Civic EXL 2021 — Feed",
+    formatId: "4:5",
+    layers: [],
+    hasValidMedia: false,
+    facts: { vehicleOrOfferName: "Honda Civic EXL 2021", confirmedPrice: "R$ 89.900" },
+  });
+  assert.equal(validFull.canDownload, true);
+  assert.equal(validFull.canSave, true);
+  assert.equal(validFull.downloadBlockedReason, null);
+  assert.equal(validFull.saveBlockedReason, null);
+
+  // 7. Remoção do conteúdo volta a bloquear imediatamente
+  const afterRemoval = validateStudioExportAndSave({
+    studioTitle: "Civic EXL 2021 — Feed",
+    formatId: "4:5",
+    layers: [],
+    hasValidMedia: false,
+    facts: null,
+  });
+  assert.equal(afterRemoval.canDownload, false);
+  assert.equal(afterRemoval.canSave, false);
+
+  // 8. Estado de carregamento/renderização trava ambos
+  const whileLoading = validateStudioExportAndSave({
+    studioTitle: "Civic EXL 2021 — Feed",
+    formatId: "4:5",
+    layers: [],
+    hasValidMedia: true,
+    isRenderingOrLoading: true,
+  });
+  assert.equal(whileLoading.canDownload, false);
+  assert.equal(whileLoading.canSave, false);
+
+  // 9. Contrato de formato inválido trava ambos mesmo com mídia
+  const invalidFormat = validateStudioExportAndSave({
+    studioTitle: "Formato desconhecido",
+    formatId: "invalid" as any,
+    layers: [],
+    hasValidMedia: true,
+  });
+  assert.equal(invalidFormat.hasValidFormat, false);
+  assert.equal(invalidFormat.canDownload, false);
+  assert.equal(invalidFormat.canSave, false);
 });

@@ -78,6 +78,7 @@ const HYPOTHESIS_CATEGORIES = [
 export interface CreativeTestsSectionProps {
   tests: CreativeTestRow[];
   records: CreativeAdRecord[];
+  allRecords?: CreativeAdRecord[];
   recordsById: Map<string, CreativeAdRecord>;
   accounts: Array<{ id: string; name: string; status?: number; last_sync?: string | null }>;
   selectedAccountId: string;
@@ -95,6 +96,7 @@ export interface CreativeTestsSectionProps {
 export function CreativeTestsSection({
   tests,
   records,
+  allRecords,
   recordsById,
   accounts,
   selectedAccountId,
@@ -111,6 +113,7 @@ export function CreativeTestsSection({
   const qc = useQueryClient();
   const [modalOpen, setModalOpen] = useState(Boolean(preselectedAdForTest));
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [includeInactiveAds, setIncludeInactiveAds] = useState(false);
 
   const initialAcc =
     preselectedAdForTest?.adAccountId ||
@@ -199,8 +202,13 @@ export function CreativeTestsSection({
 
   const accountAds = useMemo(() => {
     if (!formAccountId) return [];
-    return records.filter((r) => r.adAccountId === formAccountId);
-  }, [records, formAccountId]);
+    const source = includeInactiveAds && allRecords ? allRecords : records;
+    return source.filter(
+      (r) =>
+        r.adAccountId === formAccountId &&
+        (includeInactiveAds || r.effectiveStatus === "ACTIVE")
+    );
+  }, [records, allRecords, includeInactiveAds, formAccountId]);
 
   const accountCampaigns = useMemo(() => {
     const map = new Map<string, string>();
@@ -662,10 +670,20 @@ export function CreativeTestsSection({
               </div>
 
               <div className="sm:col-span-2">
-                <label className="block font-bold text-foreground mb-1">
-                  Anúncios Participantes ({formAdIds.length} selecionado(s)
-                  {lockedParticipantCategory ? ` • Unidade travada: ${lockedParticipantCategory}` : ""})
-                </label>
+                <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
+                  <label className="block font-bold text-foreground">
+                    Anúncios Participantes ({formAdIds.length} selecionado(s)
+                    {lockedParticipantCategory ? ` • Unidade travada: ${lockedParticipantCategory}` : ""})
+                  </label>
+                  <label className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={includeInactiveAds}
+                      onChange={(e) => setIncludeInactiveAds(e.target.checked)}
+                    />
+                    Incluir anúncios não ativos apenas para histórico
+                  </label>
+                </div>
                 <div className="max-h-40 overflow-y-auto rounded-xl border border-border bg-background p-2 space-y-1">
                   {!formAccountId ? (
                     <p className="text-[11px] text-muted-foreground p-1">
