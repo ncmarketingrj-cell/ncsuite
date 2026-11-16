@@ -189,7 +189,16 @@ export function useSocialOverviewQuery(params: {
     [params.selectedPage, params.accounts]
   );
   const network: SocialNetworkScope = params.network || "all";
-  const chartDays = params.chartDaysOverride || 14;
+  const selectedRangeDays = useMemo(() => {
+    const startMs = Date.parse(`${params.dateFrom}T00:00:00Z`);
+    const endMs = Date.parse(`${params.dateTo}T00:00:00Z`);
+    if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs < startMs) return 7;
+    return Math.max(1, Math.round((endMs - startMs) / 86_400_000) + 1);
+  }, [params.dateFrom, params.dateTo]);
+  const chartDays =
+    typeof params.chartDaysOverride === "number" && params.chartDaysOverride > 0
+      ? params.chartDaysOverride
+      : selectedRangeDays;
   const faultVariant = params.simulatedFault || "none";
   const accountsState = params.accounts.length > 0 ? "ready" : "empty";
 
@@ -934,7 +943,16 @@ export function useManualSocialSync() {
         const canonicalPage = canonicalizeSocialPageId(input.selectedPage, accounts);
 
         if (input.includeInsights && input.dateFrom && input.dateTo) {
-          const chartDays = input.chartDaysOverride || 14;
+          const sMs = Date.parse(`${input.dateFrom}T00:00:00Z`);
+          const eMs = Date.parse(`${input.dateTo}T00:00:00Z`);
+          const rangeDays =
+            Number.isFinite(sMs) && Number.isFinite(eMs) && eMs >= sMs
+              ? Math.max(1, Math.round((eMs - sMs) / 86_400_000) + 1)
+              : 7;
+          const chartDays =
+            typeof input.chartDaysOverride === "number" && input.chartDaysOverride > 0
+              ? input.chartDaysOverride
+              : rangeDays;
           const overviewParams = {
             tenantId,
             accountScope: canonicalPage || "all",

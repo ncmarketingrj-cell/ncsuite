@@ -1044,14 +1044,15 @@ export async function fetchAccountSocialOverview(params: {
   const t0 = Date.now();
   const timeoutMs = 15_000;
   const fault = resolveSimulatedSocialFault(params.simulatedFault);
-  const cacheKey = `${selectedPageId}:${dateFrom}:${dateTo}:${chartDaysOverride || 14}`;
+  const cacheKey = `${selectedPageId}:${dateFrom}:${dateTo}:${chartDaysOverride || "period"}`;
   const cachedOverview = getOverviewSnapshot(cacheKey);
 
   const endDateObj = parseISO(dateTo);
   const startDateObj = parseISO(dateFrom);
   const selectedDaysCount = Math.max(1, differenceInCalendarDays(endDateObj, startDateObj) + 1);
-  const chartDays = chartDaysOverride || Math.max(14, selectedDaysCount);
-  const chartStartDate = subDays(endDateObj, chartDays - 1);
+  const hasExplicitChartOverride = typeof chartDaysOverride === "number" && chartDaysOverride > 0;
+  const chartDays = hasExplicitChartOverride ? chartDaysOverride : selectedDaysCount;
+  const chartStartDate = hasExplicitChartOverride ? subDays(endDateObj, chartDays - 1) : startDateObj;
   const chartSince = format(chartStartDate, "yyyy-MM-dd");
   const kpiSince = dateFrom;
   const untilExclusive = format(addDays(endDateObj, 1), "yyyy-MM-dd");

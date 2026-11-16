@@ -493,5 +493,20 @@ describe("Social Hub Evolution — Navegação, Contas, IA, Pipeline e Operaçã
     );
     assert.ok(socialRoute.includes("deleteMetaPostViaEdge"));
     assert.ok(socialRoute.includes("Excluir do Facebook"));
+
+    // Ponto 1: Insights Meta usa modo "period" por padrão para acompanhar exatamente dateFrom -> dateTo
+    const insightsRoute = fs.readFileSync(
+      path.join(process.cwd(), "src/routes/_app/social-insights.tsx"),
+      "utf8"
+    );
+    assert.ok(insightsRoute.includes('useState<"period" | 7 | 14 | 30>("period")'));
+    assert.ok(insightsRoute.includes("Total do Período"));
+
+    // Ponto 2: Texto técnico de sincronização no topo é restrito a quem possui canViewIntegrations
+    const appShell = fs.readFileSync(
+      path.join(process.cwd(), "src/routes/_app.tsx"),
+      "utf8"
+    );
+    assert.ok(appShell.includes('canViewIntegrations ? "Sincronização em andamento" : "Atualizando dados"'));
   });
 });

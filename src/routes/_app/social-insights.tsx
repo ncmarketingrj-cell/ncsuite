@@ -217,8 +217,16 @@ function SocialInsightsPage() {
   const [visiblePostsLimit, setVisiblePostsLimit] = useState<number>(INITIAL_VISIBLE_POSTS);
   const { dateFrom, dateTo, setDateFrom, setDateTo } = useGlobalDate();
 
-  // Controles do gráfico de evolução
-  const [chartDaysWindow, setChartDaysWindow] = useState<7 | 14 | 30>(14);
+  // Controles do gráfico de evolução: padrão segue exatamente o período selecionado (DateRangePicker)
+  const [chartWindowMode, setChartWindowMode] = useState<"period" | 7 | 14 | 30>("period");
+  const selectedRangeDaysCount = useMemo(() => {
+    const startMs = Date.parse(`${dateFrom}T00:00:00Z`);
+    const endMs = Date.parse(`${dateTo}T00:00:00Z`);
+    if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs < startMs) return 7;
+    return Math.max(1, Math.round((endMs - startMs) / 86_400_000) + 1);
+  }, [dateFrom, dateTo]);
+  const chartDaysOverride = chartWindowMode === "period" ? undefined : chartWindowMode;
+  const chartDaysWindow = chartWindowMode === "period" ? selectedRangeDaysCount : chartWindowMode;
   const [chartMetric, setChartMetric] = useState<ChartMetricKey>("reachIg");
 
   // Estados de IA
@@ -330,7 +338,7 @@ function SocialInsightsPage() {
     masterToken,
     dateFrom,
     dateTo,
-    chartDaysOverride: chartDaysWindow,
+    chartDaysOverride,
     simulatedFault,
     enabled: !loadingAccounts,
   });
@@ -459,6 +467,9 @@ function SocialInsightsPage() {
     });
 
     const total = mapped.reduce((acc, item) => acc + item.value, 0);
+    const periodTotal = mapped
+      .filter((item) => item.isSelectedRange)
+      .reduce((acc, item) => acc + item.value, 0);
     const nonZero = mapped.filter((item) => item.value > 0);
     const avg = mapped.length > 0 ? Math.round(total / mapped.length) : 0;
     const peak = nonZero.length > 0
@@ -468,6 +479,7 @@ function SocialInsightsPage() {
     return {
       data: mapped,
       total,
+      periodTotal,
       avg,
       peak,
       hasAnyData: total > 0,
@@ -525,7 +537,7 @@ function SocialInsightsPage() {
           network: selectedNetwork,
           dateFrom,
           dateTo,
-          chartDaysOverride: chartDaysWindow,
+          chartDaysOverride,
           onlyInPeriod: onlyPostsInPeriod,
           simulatedFault,
           includeInsights: true,
@@ -1249,7 +1261,12 @@ Responda de forma objetiva e tática em Markdown com:
             {networkModeLabel}
           </span>
           <span className="text-muted-foreground font-mono text-[11px]">
-            Janela: {overviewQueryData?.windowUsed?.dateFrom || dateFrom} → {overviewQueryData?.windowUsed?.dateTo || dateTo} ({overviewQueryData?.chartWindowDays || chartDaysWindow}d série)
+            Período: {overviewQueryData?.windowUsed?.dateFrom || dateFrom} → {overviewQueryData?.windowUsed?.dateTo || dateTo} ({selectedRangeDaysCount}d
+            {chartWindowMode !== "period" &&
+            overviewQueryData?.windowUsed?.chartSince &&
+            overviewQueryData.windowUsed.chartSince !== (overviewQueryData?.windowUsed?.dateFrom || dateFrom)
+              ? ` · gráfico ${chartDaysWindow}d desde ${overviewQueryData.windowUsed.chartSince}`
+              : ""})
           </span>
         </div>
         {(overviewErrorState || followersErrorState || postsErrorState) && (
@@ -1421,11 +1438,20 @@ Responda de forma objetiva e tática em Markdown com:
                   Evolução Diária do Perfil
                 </h4>
                 <span className="px-2 py-0.5 rounded-full text-[11px] font-bold uppercase bg-primary/15 text-primary border border-primary/25">
-                  Janela de {chartDaysWindow} dias até {format(parseISO(dateTo), "dd/MM")}
+                  {chartWindowMode === "period"
+                    ? `Período (${selectedRangeDaysCount}d): ${format(parseISO(dateFrom), "dd/MM")} → ${format(parseISO(dateTo), "dd/MM")}`
+                    : `Comparativo ${chartDaysWindow}d: ${
+                        overviewQueryData?.windowUsed?.chartSince
+                          ? format(parseISO(overviewQueryData.windowUsed.chartSince), "dd/MM")
+                          : `${chartDaysWindow}d`
+                      } → ${format(parseISO(dateTo), "dd/MM")}`}
                 </span>
               </div>
               <p className="text-xs text-muted-foreground mt-0.5">
                 {chartMetricMeta[chartMetric].desc}.
+                {chartWindowMode !== "period" &&
+                  chartDaysWindow !== selectedRangeDaysCount &&
+                  ` Barras translúcidas ficam fora do filtro de KPIs (${format(parseISO(dateFrom), "dd/MM")} → ${format(parseISO(dateTo), "dd/MM")}).`}
               </p>
             </div>
 
@@ -1448,15 +1474,26 @@ Responda de forma objetiva e tática em Markdown com:
                 ))}
               </div>
 
-              {/* Janela rápida do gráfico */}
+              {/* Janela rápida do gráfico ("Período" acompanha o DateRangePicker sem divergir) */}
               <div className="flex bg-white/5 p-1 rounded-xl gap-1 text-xs font-bold">
+                <button
+                  type="button"
+                  onClick={() => setChartWindowMode("period")}
+                  className={`px-2 py-1 rounded-lg transition-colors cursor-pointer ${
+                    chartWindowMode === "period"
+                      ? "bg-white/15 text-white"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  Período ({selectedRangeDaysCount}d)
+                </button>
                 {([7, 14, 30] as const).map((d) => (
                   <button
                     key={d}
                     type="button"
-                    onClick={() => setChartDaysWindow(d)}
+                    onClick={() => setChartWindowMode(d)}
                     className={`px-2 py-1 rounded-lg transition-colors cursor-pointer ${
-                      chartDaysWindow === d
+                      chartWindowMode === d
                         ? "bg-white/15 text-white"
                         : "text-muted-foreground hover:text-foreground"
                     }`}
@@ -1472,11 +1509,19 @@ Responda de forma objetiva e tática em Markdown com:
           <div className="grid grid-cols-3 gap-3">
             <div className="rounded-xl bg-white/[0.02] border border-white/5 px-3 py-2">
               <span className="text-[11px] uppercase font-bold text-muted-foreground block">
-                Total ({chartDaysWindow}d)
+                {chartWindowMode === "period"
+                  ? `Total do Período (${selectedRangeDaysCount}d)`
+                  : `Total na Janela (${chartDaysWindow}d)`}
               </span>
               <span className="text-sm font-bold font-mono text-white">
                 {chartView.total.toLocaleString("pt-BR")}
               </span>
+              {chartWindowMode !== "period" && chartDaysWindow !== selectedRangeDaysCount && (
+                <span className="text-[10px] text-muted-foreground block mt-0.5">
+                  No filtro ({format(parseISO(dateFrom), "dd/MM")}–{format(parseISO(dateTo), "dd/MM")}):{" "}
+                  {chartView.periodTotal.toLocaleString("pt-BR")}
+                </span>
+              )}
             </div>
             <div className="rounded-xl bg-white/[0.02] border border-white/5 px-3 py-2">
               <span className="text-[11px] uppercase font-bold text-muted-foreground block">
