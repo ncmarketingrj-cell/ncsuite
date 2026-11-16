@@ -698,6 +698,56 @@ export function useVictoriaChat(
       let responseLatencyMs: number | null = null;
       let streamRagCitations: any[] = [];
 
+      const processSseLine = (line: string) => {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed === "data: [DONE]") return;
+        if (!trimmed.startsWith("data: ")) return;
+        try {
+          const jsonStr = trimmed.slice(6).trim();
+          const parsed = JSON.parse(jsonStr);
+          if (parsed?.victoria_meta) {
+            if (parsed.victoria_meta.response_origin === "deterministic_fallback") {
+              responseOrigin = "deterministic_fallback";
+            }
+            if (Array.isArray(parsed.victoria_meta.rag_docs) && parsed.victoria_meta.rag_docs.length > 0) {
+              streamRagCitations = parsed.victoria_meta.rag_docs;
+            }
+            return;
+          }
+          if (parsed?.victoria_final) {
+            if (parsed.victoria_final.used_fallback || parsed.victoria_final.replaced_by_deterministic) {
+              responseOrigin = "deterministic_fallback";
+              fallbackReason = parsed.victoria_final.fallback_reason || null;
+            }
+            if (typeof parsed.victoria_final.latency_ms === "number") {
+              responseLatencyMs = parsed.victoria_final.latency_ms;
+            }
+            if (Array.isArray(parsed.victoria_final.rag_citations) && parsed.victoria_final.rag_citations.length > 0) {
+              streamRagCitations = parsed.victoria_final.rag_citations;
+            }
+            if (typeof parsed.victoria_final.final_text === "string" && parsed.victoria_final.final_text.trim()) {
+              responseText = parsed.victoria_final.final_text;
+              setMessages(prev =>
+                prev.map(m => (m.id === assistantMessageId ? { ...m, content: responseText } : m))
+              );
+            }
+            return;
+          }
+          const chunk = parsed.choices?.[0]?.delta?.content || "";
+          if (chunk) {
+            responseText += chunk;
+            const liveContent = isDetailedAudit
+              ? responseText
+              : stripTechnicalArtifactsForQuickMode(responseText);
+            setMessages(prev =>
+              prev.map(m => (m.id === assistantMessageId ? { ...m, content: liveContent } : m))
+            );
+          }
+        } catch (err) {
+          console.warn("Erro ao ler chunk SSE:", err, trimmed);
+        }
+      };
+
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
@@ -707,47 +757,14 @@ export function useVictoriaChat(
         buffer = lines.pop() || "";
 
         for (const line of lines) {
-          const trimmed = line.trim();
-          if (!trimmed || trimmed === "data: [DONE]") continue;
+          processSseLine(line);
+        }
+      }
 
-          if (trimmed.startsWith("data: ")) {
-            try {
-              const jsonStr = trimmed.slice(6);
-              const parsed = JSON.parse(jsonStr);
-              if (parsed?.victoria_meta) {
-                if (parsed.victoria_meta.response_origin === "deterministic_fallback") {
-                  responseOrigin = "deterministic_fallback";
-                }
-                if (Array.isArray(parsed.victoria_meta.rag_docs) && parsed.victoria_meta.rag_docs.length > 0) {
-                  streamRagCitations = parsed.victoria_meta.rag_docs;
-                }
-                continue;
-              }
-              if (parsed?.victoria_final) {
-                if (parsed.victoria_final.used_fallback) {
-                  responseOrigin = "deterministic_fallback";
-                  fallbackReason = parsed.victoria_final.fallback_reason || null;
-                }
-                if (typeof parsed.victoria_final.latency_ms === "number") {
-                  responseLatencyMs = parsed.victoria_final.latency_ms;
-                }
-                if (Array.isArray(parsed.victoria_final.rag_citations) && parsed.victoria_final.rag_citations.length > 0) {
-                  streamRagCitations = parsed.victoria_final.rag_citations;
-                }
-                continue;
-              }
-              const chunk = parsed.choices?.[0]?.delta?.content || "";
-              if (chunk) {
-                responseText += chunk;
-                // Atualizar o chat progressivamente
-                setMessages(prev =>
-                  prev.map(m => (m.id === assistantMessageId ? { ...m, content: responseText } : m))
-                );
-              }
-            } catch (err) {
-              console.warn("Erro ao ler chunk SSE:", err, trimmed);
-            }
-          }
+      buffer += decoder.decode();
+      if (buffer.trim()) {
+        for (const line of buffer.split("\n")) {
+          processSseLine(line);
         }
       }
 

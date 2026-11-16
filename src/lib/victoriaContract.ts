@@ -1468,8 +1468,11 @@ export function stripTechnicalArtifactsForQuickMode(text: string): string {
   let clean = String(text || "");
   if (!clean) return "";
 
-  // Remove UUIDs RAG ([uuid] ou uuid isolado) e linhas de fontes/metadados técnicos
+  // Remove blocos de citações RAG ("Fontes RAG...", bullets com PARECER TÉCNICO / OFFICIAL_DOC / APPROVED / UUID)
   clean = clean
+    .replace(/\n*-?\s*\*?\*?Fontes\s+(?:RAG|e\s+documentos)[^:\n]*:[\s\S]*$/gim, "")
+    .replace(/^-\s+`?\[?[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\]?`?.*$/gim, "")
+    .replace(/^-\s+.*?(?:OFFICIAL_DOC|INTERNAL_RULE|EMPIRICAL_AUDIT|PARECER\s+T[ÉE]CNICO|APPROVED|UNVERIFIED|REJECTED).*$/gim, "")
     .replace(/\s*\(?\s*ID\s*:?\s*`?[a-zA-Z0-9_.-]{6,}`?\s*\)?/gi, "")
     .replace(/\[[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\]/gi, "")
     .replace(/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi, "")
@@ -1482,11 +1485,79 @@ export function stripTechnicalArtifactsForQuickMode(text: string): string {
     .replace(/Prompt\s*:?\s*`?2026\.[a-zA-Z0-9_.-]+`?/gi, "")
     .replace(/Hash\s*:?\s*`?[a-f0-9]{6,}`?/gi, "")
     .replace(/\b2026\.11\.\d+(?:-[a-z0-9-]+)?\b/gi, "")
+    .replace(/\b(?:OFFICIAL_DOC|INTERNAL_RULE|EMPIRICAL_AUDIT|UNVERIFIED|APPROVED|REJECTED)\b/gi, "")
     .replace(/\b(meta_insights_snapshot|asset_metrics|victoria_knowledge|victoria_messages)\b/gi, "dados do Meta Ads")
-    .replace(/^-?\s*\*?\*?Fontes RAG[^:\n]*:[^\n]*$/gim, "")
+    .replace(/``+/g, "")
+    .replace(/\(\s*[·|•\s]*\)/g, "")
     .replace(/\n{3,}/g, "\n\n");
 
   return clean.trim();
+}
+
+const QUICK_SECTION_PATTERNS: Array<{ name: string; regex: RegExp }> = [
+  { name: "veredito", regex: /(?:^|\n)\s*(?:#{1,4}\s*)?(?:\*\*)?(?:1[.)]\s*)?(?:\*\*)?Veredito(?:\*\*)?\s*:?/i },
+  { name: "resultado_principal", regex: /(?:^|\n)\s*(?:#{1,4}\s*)?(?:\*\*)?(?:2[.)]\s*)?(?:\*\*)?Resultado\s+principal(?:\*\*)?\s*:?/i },
+  { name: "leitura_do_funil", regex: /(?:^|\n)\s*(?:#{1,4}\s*)?(?:\*\*)?(?:3[.)]\s*)?(?:\*\*)?Leitura\s+do\s+funil(?:\*\*)?\s*:?/i },
+  { name: "o_que_fazer_agora", regex: /(?:^|\n)\s*(?:#{1,4}\s*)?(?:\*\*)?(?:4[.)]\s*)?(?:\*\*)?O\s+que\s+fazer\s+agora(?:\*\*)?\s*:?/i },
+  { name: "como_validar", regex: /(?:^|\n)\s*(?:#{1,4}\s*)?(?:\*\*)?(?:5[.)]\s*)?(?:\*\*)?Como\s+validar(?:\*\*)?\s*:?/i },
+];
+
+export function validateQuickExecutiveStructure(
+  text: string,
+  ctx?: VictoriaAnalysisContext | null
+): { valid: boolean; reasons: string[] } {
+  const clean = String(text || "").trim();
+  const reasons: string[] = [];
+  if (clean.length < 120) {
+    reasons.push("incomplete_quick_length");
+    return { valid: false, reasons };
+  }
+
+  const positions: Array<{ name: string; start: number; end: number }> = [];
+  let cursor = 0;
+  for (const sec of QUICK_SECTION_PATTERNS) {
+    const slice = clean.slice(cursor);
+    const m = slice.match(sec.regex);
+    if (!m || m.index === undefined) {
+      reasons.push(`missing_quick_section_${sec.name}`);
+      continue;
+    }
+    const start = cursor + m.index;
+    const end = start + m[0].length;
+    positions.push({ name: sec.name, start, end });
+    cursor = end;
+  }
+
+  if (reasons.length === 0 && positions.length === 5) {
+    for (let i = 0; i < positions.length; i++) {
+      const nextStart = i + 1 < positions.length ? positions[i + 1].start : clean.length;
+      const body = clean.slice(positions[i].end, nextStart).trim();
+      if (body.length < 12) {
+        reasons.push(`empty_quick_section_${positions[i].name}`);
+      }
+    }
+  }
+
+  // Detecta corte abrupto de frase/streaming (ex.: "Com um investimento de R$ 298,85,")
+  if (/[,;:\-(]\s*$|R\$\s*$/i.test(clean)) {
+    reasons.push("truncated_mid_sentence");
+  }
+
+  // Garante zero vazamentos técnicos ou metadados RAG residuais
+  if (
+    /\b(?:OFFICIAL_DOC|INTERNAL_RULE|EMPIRICAL_AUDIT|UNVERIFIED|APPROVED|REJECTED)\b/i.test(clean) ||
+    /PARECER\s+T[ÉE]CNICO\s+META\s+ADS/i.test(clean) ||
+    /Fontes\s+RAG\s+curadas/i.test(clean) ||
+    /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i.test(clean) ||
+    /(?:onsite_conversion|offsite_conversion)\./i.test(clean) ||
+    /\b(?:ctx_|vreq_)[a-z0-9_]+\b/i.test(clean) ||
+    /\bact_\d+\b/i.test(clean) ||
+    (ctx?.entity_id && String(ctx.entity_id).length >= 8 && clean.includes(String(ctx.entity_id)))
+  ) {
+    reasons.push("technical_or_rag_leak_in_quick_mode");
+  }
+
+  return { valid: reasons.length === 0, reasons };
 }
 
 export function generateQuickExecutiveAnalysis(
@@ -1664,6 +1735,7 @@ export function enforceVictoriaPostLlmGuardrails(
     requireFull10Sections?: boolean;
     userPrompt?: string | null;
     approvedDocs?: CuratedRagDocument[];
+    truncatedByLength?: boolean;
   }
 ): {
   text: string;
@@ -1677,13 +1749,16 @@ export function enforceVictoriaPostLlmGuardrails(
   const requireFull10 = mode === "detailed_audit";
 
   const reasons: string[] = [];
+  if (opts?.truncatedByLength) {
+    reasons.push("upstream_truncated_length");
+  }
   const sanitized = sanitizeVictoriaOutputText(rawText, ctx);
   const leak = detectCrossEntityLeakage(sanitized, ctx);
   if (leak.leaked) {
     reasons.push(`cross_entity_leak:${leak.matches.join(",")}`);
   }
   const tooShortOrError =
-    sanitized.length < (requireFull10 ? 120 : 40) ||
+    sanitized.length < (requireFull10 ? 120 : 80) ||
     /^\[ERRO\s+\d+\]/i.test(sanitized) ||
     /tive um problema de comunicação/i.test(sanitized);
   if (tooShortOrError) {
@@ -1697,9 +1772,14 @@ export function enforceVictoriaPostLlmGuardrails(
       reasons.push("missing_mandatory_10_sections");
     }
   } else {
-    // No modo rápido padrão, bloqueia se a IA devolveu relatório antigo de 10 seções com IDs/vagas "aguardar 3 a 7 dias"
     if (hasAllMandatory10Sections(sanitized)) {
       reasons.push("bloated_10_sections_in_quick_mode");
+    } else {
+      const quickClean = stripTechnicalArtifactsForQuickMode(sanitized);
+      const quickCheck = validateQuickExecutiveStructure(quickClean, ctx);
+      if (!quickCheck.valid) {
+        reasons.push(...quickCheck.reasons);
+      }
     }
   }
 
@@ -2079,6 +2159,7 @@ export class VictoriaSessionController {
     ctx: VictoriaAnalysisContext;
     userId?: string | null;
     conversationId?: string | null;
+    responseMode?: VictoriaResponseMode;
   }): {
     requestId: string;
     contextHash: string;
@@ -2102,7 +2183,7 @@ export class VictoriaSessionController {
     this.activeContractVersion = params.ctx.contract_version;
     this.activePromptVersion = params.ctx.prompt_version;
 
-    const cacheKey = buildVictoriaSessionCacheKey({
+    const baseCacheKey = buildVictoriaSessionCacheKey({
       userId: params.userId ?? params.ctx.user_id,
       conversationId: params.conversationId ?? params.ctx.conversation_id,
       accountId: params.ctx.ad_account_id,
@@ -2114,6 +2195,7 @@ export class VictoriaSessionController {
       modelVersion: params.ctx.model_version,
       promptVersion: params.ctx.prompt_version,
     });
+    const cacheKey = `${baseCacheKey}::${params.responseMode || "quick_executive"}`;
 
     const cached = this.responseCache.get(cacheKey);
     const isFreshCache =

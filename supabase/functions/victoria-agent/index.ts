@@ -13,6 +13,7 @@ import {
   VICTORIA_DEFAULT_OPERATIONAL_MODE,
   enforceServerPostLlmGuardrails,
   sanitizeVictoriaServerOutput,
+  stripTechnicalArtifactsServerQuick,
   selectUsedRagCitations,
   generateDeterministic10SectionAnalysis,
   generateQuickExecutiveAnalysisServer,
@@ -1704,7 +1705,10 @@ REGRAS DE RESPOSTA (${VICTORIA_CONTRACT_VERSION}):
           cd.evidence_level !== "OPINION"
         ) {
           addCitation(cd);
-          knowledgeCtx += `${knowledgeCtx ? "\n\n---\n\n" : ""}[ID: ${cd.id} | CONTEXTO | Fonte: ${String(cd.source || "NC Performance")} | Evidência: ${String(cd.evidence_level || "INTERNAL_RULE")} | v${String(cd.version || VICTORIA_CONTRACT_VERSION)}] ${String(cd.title || "")}:\n${String(cd.content || "").slice(0, 650)}`;
+          const ragBlock = requireFull10Sections
+            ? `[ID: ${cd.id} | CONTEXTO | Fonte: ${String(cd.source || "NC Performance")} | Evidência: ${String(cd.evidence_level || "INTERNAL_RULE")} | v${String(cd.version || VICTORIA_CONTRACT_VERSION)}] ${String(cd.title || "")}:\n${String(cd.content || "").slice(0, 650)}`
+            : `Diretriz interna: ${String(cd.content || "").slice(0, 500)}`;
+          knowledgeCtx += `${knowledgeCtx ? "\n\n---\n\n" : ""}${ragBlock}`;
         }
       }
 
@@ -1746,7 +1750,11 @@ REGRAS DE RESPOSTA (${VICTORIA_CONTRACT_VERSION}):
 
         rankedDocs.forEach(({ doc }) => addCitation(doc));
         knowledgeCtx = rankedDocs
-          .map(({ doc: k }) => `[ID: ${k.id} | ${String(k.category || "").toUpperCase()} | Fonte: ${String(k.source || "Manual Interno")} | Evidência: ${String(k.evidence_level || "INTERNAL_RULE")} | v${String(k.version || VICTORIA_CONTRACT_VERSION)}] ${String(k.title || "")}:\n${String(k.content || "").slice(0, 650)}`)
+          .map(({ doc: k }) =>
+            requireFull10Sections
+              ? `[ID: ${k.id} | ${String(k.category || "").toUpperCase()} | Fonte: ${String(k.source || "Manual Interno")} | Evidência: ${String(k.evidence_level || "INTERNAL_RULE")} | v${String(k.version || VICTORIA_CONTRACT_VERSION)}] ${String(k.title || "")}:\n${String(k.content || "").slice(0, 650)}`
+              : `Diretriz interna: ${String(k.content || "").slice(0, 480)}`
+          )
           .join("\n\n---\n\n");
       }
     } catch (_kErr) {
@@ -1798,7 +1806,11 @@ REGRAS DE RESPOSTA (${VICTORIA_CONTRACT_VERSION}):
                 ragRetrievalMode = "vector+lexical";
                 safeVectorDocs.forEach((k: any) => addCitation(k));
                 const vectorBlocks = safeVectorDocs
-                  .map((k: any) => `[ID: ${k.id} | VETOR sim=${Number(k.similarity || 0).toFixed(2)} | Categoria: ${k.category} | Evidência: ${k.evidence_level || "INTERNAL_RULE"}] ${k.title}: ${String(k.content || "").slice(0, 650)}`)
+                  .map((k: any) =>
+                    requireFull10Sections
+                      ? `[ID: ${k.id} | VETOR sim=${Number(k.similarity || 0).toFixed(2)} | Categoria: ${k.category} | Evidência: ${k.evidence_level || "INTERNAL_RULE"}] ${k.title}: ${String(k.content || "").slice(0, 650)}`
+                      : `Diretriz interna: ${String(k.content || "").slice(0, 480)}`
+                  )
                   .join("\n\n---\n\n");
                 knowledgeCtx = vectorBlocks + (knowledgeCtx ? `\n\n---\n\n${knowledgeCtx}` : "");
               }
@@ -1903,7 +1915,9 @@ REGRAS DE RESPOSTA (${VICTORIA_CONTRACT_VERSION}):
       content: promptWithRAG
     });
 
-    const maxTokens = isScopedSingleEntity ? 2400 : 3000;
+    const maxTokens = requireFull10Sections
+      ? (isScopedSingleEntity ? 4200 : 4500)
+      : 3200;
     const providerTargets: Array<{ name: string; url: string; headers: Record<string, string>; body: any }> = [];
 
     if (LOVABLE_API_KEY) {
@@ -1938,6 +1952,7 @@ REGRAS DE RESPOSTA (${VICTORIA_CONTRACT_VERSION}):
           messages: openAiMessages,
           temperature: userTemperature,
           max_tokens: maxTokens,
+          reasoning_effort: requireFull10Sections ? "low" : "minimal",
           stream: !shouldReturnJson,
         },
       });
@@ -2029,13 +2044,15 @@ REGRAS DE RESPOSTA (${VICTORIA_CONTRACT_VERSION}):
         if (shouldReturnJson) {
           const jsonPayload = await activeStreamRes.json();
           const rawReply = jsonPayload?.choices?.[0]?.message?.content || "";
+          const jsonTruncated = jsonPayload?.choices?.[0]?.finish_reason === "length";
           const guarded = enforceServerPostLlmGuardrails(
             rawReply,
             analysisContext,
             ragCitations,
             operationalMode,
             requireFull10Sections,
-            rawLatestUserText
+            rawLatestUserText,
+            jsonTruncated
           );
           await finalizeTelemetry({
             usedFallback: guarded.replacedByDeterministic,
@@ -2074,6 +2091,24 @@ REGRAS DE RESPOSTA (${VICTORIA_CONTRACT_VERSION}):
               const decoder = new TextDecoder();
               let buffer = "";
               let assembled = "";
+              let upstreamTruncated = false;
+
+              const handleUpstreamLine = (line: string) => {
+                const trimmed = line.trim();
+                if (!trimmed.startsWith("data: ") || trimmed === "data: [DONE]") return;
+                try {
+                  const parsed = JSON.parse(trimmed.slice(6).trim());
+                  if (parsed?.choices?.[0]?.finish_reason === "length") {
+                    upstreamTruncated = true;
+                  }
+                  const delta = parsed?.choices?.[0]?.delta?.content;
+                  if (typeof delta === "string" && delta.length > 0) {
+                    assembled += delta;
+                    const safeChunk = delta.replace(/\bComandante\b/gi, "Parceiro");
+                    sendSse({ choices: [{ delta: { content: safeChunk } }] });
+                  }
+                } catch {}
+              };
 
               try {
                 while (true) {
@@ -2085,21 +2120,18 @@ REGRAS DE RESPOSTA (${VICTORIA_CONTRACT_VERSION}):
                   buffer = lines.pop() || "";
 
                   for (const line of lines) {
-                    const trimmed = line.trim();
-                    if (!trimmed.startsWith("data: ") || trimmed === "data: [DONE]") continue;
-                    try {
-                      const parsed = JSON.parse(trimmed.slice(6));
-                      const delta = parsed?.choices?.[0]?.delta?.content;
-                      if (typeof delta === "string" && delta.length > 0) {
-                        assembled += delta;
-                        const safeChunk = delta.replace(/\bComandante\b/gi, "Parceiro");
-                        sendSse({ choices: [{ delta: { content: safeChunk } }] });
-                      }
-                    } catch {}
+                    handleUpstreamLine(line);
+                  }
+                }
+                buffer += decoder.decode();
+                if (buffer.trim()) {
+                  for (const line of buffer.split("\n")) {
+                    handleUpstreamLine(line);
                   }
                 }
               } catch (readErr: any) {
                 console.error("[VICTORIA] Erro lendo stream SSE upstream:", readErr?.message);
+                upstreamTruncated = true;
               }
 
               const hasEntityScope = Boolean(analysisContext && analysisContext.entity_id);
@@ -2110,7 +2142,8 @@ REGRAS DE RESPOSTA (${VICTORIA_CONTRACT_VERSION}):
                   ragCitations,
                   operationalMode,
                   requireFull10Sections,
-                  rawLatestUserText
+                  rawLatestUserText,
+                  upstreamTruncated
                 );
                 const latencyMs = Date.now() - requestStartedAt;
                 await finalizeTelemetry({
@@ -2124,6 +2157,7 @@ REGRAS DE RESPOSTA (${VICTORIA_CONTRACT_VERSION}):
                   victoria_final: {
                     response_origin: guarded.replacedByDeterministic ? "deterministic_fallback" : "generative",
                     replaced_by_deterministic: guarded.replacedByDeterministic,
+                    truncated_by_length: upstreamTruncated,
                     guardrail_reasons: guarded.reasons,
                     rag_citations: guarded.citationsUsed,
                     rag_candidates_count: ragCitations.length,
@@ -2133,7 +2167,10 @@ REGRAS DE RESPOSTA (${VICTORIA_CONTRACT_VERSION}):
                   },
                 });
               } else {
-                const cleanHubText = sanitizeVictoriaServerOutput(assembled, analysisContext, operationalMode);
+                const sanitizedGeneral = sanitizeVictoriaServerOutput(assembled, analysisContext, operationalMode);
+                const cleanHubText = requireFull10Sections
+                  ? sanitizedGeneral
+                  : stripTechnicalArtifactsServerQuick(sanitizedGeneral);
                 const usedGeneralCitations = selectUsedRagCitations(cleanHubText, ragCitations);
                 const latencyMs = Date.now() - requestStartedAt;
                 await finalizeTelemetry({

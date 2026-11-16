@@ -67,6 +67,9 @@ export function extractServerUserTarget(
 
 export function stripTechnicalArtifactsServerQuick(text: string): string {
   return String(text || "")
+    .replace(/\n*-?\s*\*?\*?Fontes\s+(?:RAG|e\s+documentos)[^:\n]*:[\s\S]*$/gim, "")
+    .replace(/^-\s+`?\[?[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\]?`?.*$/gim, "")
+    .replace(/^-\s+.*?(?:OFFICIAL_DOC|INTERNAL_RULE|EMPIRICAL_AUDIT|PARECER\s+T[ÉE]CNICO|APPROVED|UNVERIFIED|REJECTED).*$/gim, "")
     .replace(/\s*\(?\s*ID\s*:?\s*`?[a-zA-Z0-9_.-]{6,}`?\s*\)?/gi, "")
     .replace(/\[[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\]/gi, "")
     .replace(/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi, "")
@@ -79,10 +82,71 @@ export function stripTechnicalArtifactsServerQuick(text: string): string {
     .replace(/Prompt\s*:?\s*`?2026\.[a-zA-Z0-9_.-]+`?/gi, "")
     .replace(/Hash\s*:?\s*`?[a-f0-9]{6,}`?/gi, "")
     .replace(/\b2026\.11\.\d+(?:-[a-z0-9-]+)?\b/gi, "")
+    .replace(/\b(?:OFFICIAL_DOC|INTERNAL_RULE|EMPIRICAL_AUDIT|UNVERIFIED|APPROVED|REJECTED)\b/gi, "")
     .replace(/\b(meta_insights_snapshot|asset_metrics|victoria_knowledge|victoria_messages)\b/gi, "dados do Meta Ads")
-    .replace(/^-?\s*\*?\*?Fontes RAG[^:\n]*:[^\n]*$/gim, "")
+    .replace(/``+/g, "")
+    .replace(/\(\s*[·|•\s]*\)/g, "")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
+}
+
+const SERVER_QUICK_SECTION_PATTERNS: Array<{ name: string; regex: RegExp }> = [
+  { name: "veredito", regex: /(?:^|\n)\s*(?:#{1,4}\s*)?(?:\*\*)?(?:1[.)]\s*)?(?:\*\*)?Veredito(?:\*\*)?\s*:?/i },
+  { name: "resultado_principal", regex: /(?:^|\n)\s*(?:#{1,4}\s*)?(?:\*\*)?(?:2[.)]\s*)?(?:\*\*)?Resultado\s+principal(?:\*\*)?\s*:?/i },
+  { name: "leitura_do_funil", regex: /(?:^|\n)\s*(?:#{1,4}\s*)?(?:\*\*)?(?:3[.)]\s*)?(?:\*\*)?Leitura\s+do\s+funil(?:\*\*)?\s*:?/i },
+  { name: "o_que_fazer_agora", regex: /(?:^|\n)\s*(?:#{1,4}\s*)?(?:\*\*)?(?:4[.)]\s*)?(?:\*\*)?O\s+que\s+fazer\s+agora(?:\*\*)?\s*:?/i },
+  { name: "como_validar", regex: /(?:^|\n)\s*(?:#{1,4}\s*)?(?:\*\*)?(?:5[.)]\s*)?(?:\*\*)?Como\s+validar(?:\*\*)?\s*:?/i },
+];
+
+export function validateQuickExecutiveStructureServer(
+  text: string,
+  analysisContext?: any
+): { valid: boolean; reasons: string[] } {
+  const clean = String(text || "").trim();
+  const reasons: string[] = [];
+  if (clean.length < 120) {
+    reasons.push("incomplete_quick_length");
+    return { valid: false, reasons };
+  }
+  const positions: Array<{ name: string; start: number; end: number }> = [];
+  let cursor = 0;
+  for (const sec of SERVER_QUICK_SECTION_PATTERNS) {
+    const slice = clean.slice(cursor);
+    const m = slice.match(sec.regex);
+    if (!m || m.index === undefined) {
+      reasons.push(`missing_quick_section_${sec.name}`);
+      continue;
+    }
+    const start = cursor + m.index;
+    const end = start + m[0].length;
+    positions.push({ name: sec.name, start, end });
+    cursor = end;
+  }
+  if (reasons.length === 0 && positions.length === 5) {
+    for (let i = 0; i < positions.length; i++) {
+      const nextStart = i + 1 < positions.length ? positions[i + 1].start : clean.length;
+      if (clean.slice(positions[i].end, nextStart).trim().length < 12) {
+        reasons.push(`empty_quick_section_${positions[i].name}`);
+      }
+    }
+  }
+  if (/[,;:\-(]\s*$|R\$\s*$/i.test(clean)) {
+    reasons.push("truncated_mid_sentence");
+  }
+  const entId = String(analysisContext?.entity_id || "");
+  if (
+    /\b(?:OFFICIAL_DOC|INTERNAL_RULE|EMPIRICAL_AUDIT|UNVERIFIED|APPROVED|REJECTED)\b/i.test(clean) ||
+    /PARECER\s+T[ÉE]CNICO\s+META\s+ADS/i.test(clean) ||
+    /Fontes\s+RAG\s+curadas/i.test(clean) ||
+    /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i.test(clean) ||
+    /(?:onsite_conversion|offsite_conversion)\./i.test(clean) ||
+    /\b(?:ctx_|vreq_)[a-z0-9_]+\b/i.test(clean) ||
+    /\bact_\d+\b/i.test(clean) ||
+    (entId.length >= 8 && clean.includes(entId))
+  ) {
+    reasons.push("technical_or_rag_leak_in_quick_mode");
+  }
+  return { valid: reasons.length === 0, reasons };
 }
 
 export function sanitizeVictoriaServerOutput(
@@ -590,7 +654,8 @@ export function enforceServerPostLlmGuardrails(
   ragCitations: ServerRagCitation[] = [],
   operationalMode: string = VICTORIA_DEFAULT_OPERATIONAL_MODE,
   requireFull10Sections: boolean = false,
-  userPrompt?: string | null
+  userPrompt?: string | null,
+  truncatedByLength: boolean = false
 ): {
   text: string;
   replacedByDeterministic: boolean;
@@ -610,9 +675,12 @@ export function enforceServerPostLlmGuardrails(
 
   const effectiveFull10 = resolveServerRequireFull10Sections(requireFull10Sections, userPrompt);
   const reasons: string[] = [];
+  if (truncatedByLength) {
+    reasons.push("upstream_truncated_length");
+  }
   const leak = detectCrossEntityLeakageServer(sanitized, analysisContext);
   if (leak.leaked) reasons.push(`cross_entity_leak:${leak.matches.join(",")}`);
-  if (sanitized.length < (effectiveFull10 ? 120 : 40) || /^\[ERRO\s+\d+\]/i.test(sanitized)) {
+  if (sanitized.length < (effectiveFull10 ? 120 : 80) || /^\[ERRO\s+\d+\]/i.test(sanitized)) {
     reasons.push("empty_or_provider_error");
   }
   const isScopedEntity = ["campaign", "adset", "ad"].includes(String(analysisContext.entity_level || ""));
@@ -626,6 +694,12 @@ export function enforceServerPostLlmGuardrails(
   } else if (isScopedEntity && !effectiveFull10) {
     if (hasAllMandatory10SectionsServer(sanitized)) {
       reasons.push("bloated_10_sections_in_quick_mode");
+    } else {
+      const quickClean = stripTechnicalArtifactsServerQuick(sanitized);
+      const quickCheck = validateQuickExecutiveStructureServer(quickClean, analysisContext);
+      if (!quickCheck.valid) {
+        reasons.push(...quickCheck.reasons);
+      }
     }
   }
 

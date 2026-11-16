@@ -4,6 +4,7 @@ import {
   generateSeniorStructuredAnalysis,
   generateQuickExecutiveAnalysis,
   sanitizeVictoriaOutputText,
+  stripTechnicalArtifactsForQuickMode,
   enforceVictoriaPostLlmGuardrails,
   resolveVictoriaResponseMode,
   extractUserTargetFromPrompt,
@@ -449,6 +450,7 @@ export async function executeGovernedVictoriaDiagnostic(
     ctx,
     userId: ctx.user_id,
     conversationId: ctx.conversation_id,
+    responseMode,
   });
 
   if (reqSession.cachedResponse && !params.userPrompt) {
@@ -456,21 +458,23 @@ export async function executeGovernedVictoriaDiagnostic(
       requireFull10Sections: requireFull10,
       userPrompt: params.userPrompt,
     });
-    if (params.onToken) {
-      params.onToken(cachedGuard.text, ctx);
+    if (!cachedGuard.replacedByDeterministic) {
+      if (params.onToken) {
+        params.onToken(cachedGuard.text, ctx);
+      }
+      return {
+        aborted: false,
+        timedOut: false,
+        fromCache: true,
+        status: "SUCCESS",
+        responseOrigin: "generative",
+        fallbackReason: null,
+        latencyMs: Date.now() - callStartedAt,
+        text: cachedGuard.text,
+        suggestedQuestions,
+        context: ctx,
+      };
     }
-    return {
-      aborted: false,
-      timedOut: false,
-      fromCache: true,
-      status: cachedGuard.replacedByDeterministic ? "FALLBACK_STRUCTURED" : "SUCCESS",
-      responseOrigin: cachedGuard.replacedByDeterministic ? "deterministic_fallback" : "generative",
-      fallbackReason: cachedGuard.replacedByDeterministic ? cachedGuard.reasons.join(",") : null,
-      latencyMs: Date.now() - callStartedAt,
-      text: cachedGuard.text,
-      suggestedQuestions,
-      context: ctx,
-    };
   }
 
   // 3. Dois timers: primeiro byte/token (20s) e orçamento total de conclusão do stream (55s)
@@ -570,6 +574,81 @@ export async function executeGovernedVictoriaDiagnostic(
     let serverUsedFallback = false;
     let serverFallbackReason: string | null = null;
     let serverLatencyMs: number | undefined;
+    let upstreamTruncated = false;
+
+    const processSseLine = (line: string) => {
+      const trimmed = line.trim();
+      if (!trimmed.startsWith("data: ")) return;
+      const jsonStr = trimmed.slice(6).trim();
+      if (!jsonStr || jsonStr === "[DONE]") return;
+      try {
+        const parsed = JSON.parse(jsonStr);
+        if (parsed.victoria_meta) {
+          responseMeta = parsed.victoria_meta;
+          if (typeof parsed.victoria_meta.rag_candidates_count === "number") {
+            ragCandidatesCount = parsed.victoria_meta.rag_candidates_count;
+          }
+          const metaDocs = parsed.victoria_meta.rag_citations ?? parsed.victoria_meta.rag_docs;
+          if (Array.isArray(metaDocs) && metaDocs.length > 0) {
+            ragCitations = metaDocs;
+          }
+          if (parsed.victoria_meta.response_origin === "deterministic_fallback") {
+            serverUsedFallback = true;
+          }
+        }
+        if (parsed.victoria_final) {
+          const vf = parsed.victoria_final;
+          if (vf.response_origin === "deterministic_fallback" || vf.replaced_by_deterministic) {
+            serverUsedFallback = true;
+            serverFallbackReason = Array.isArray(vf.guardrail_reasons) ? vf.guardrail_reasons.join(", ") : "server_fallback";
+          }
+          if (vf.truncated_by_length) {
+            upstreamTruncated = true;
+          }
+          if (typeof vf.rag_candidates_count === "number") {
+            ragCandidatesCount = vf.rag_candidates_count;
+          }
+          if (Array.isArray(vf.rag_citations)) {
+            ragCitations = vf.rag_citations;
+          }
+          if (typeof vf.final_text === "string" && vf.final_text.trim()) {
+            rawAccumulated = vf.final_text;
+          }
+          if (typeof vf.latency_ms === "number") {
+            serverLatencyMs = vf.latency_ms;
+          }
+        }
+        if (parsed.choices?.[0]?.finish_reason === "length") {
+          upstreamTruncated = true;
+        }
+        const chunk = parsed.choices?.[0]?.delta?.content || "";
+        if (chunk) {
+          rawAccumulated += chunk;
+          const sanitizedPartial = sanitizeVictoriaOutputText(rawAccumulated, ctx);
+          const safePartial = requireFull10
+            ? sanitizedPartial
+            : stripTechnicalArtifactsForQuickMode(sanitizedPartial);
+          if (
+            params.onToken &&
+            safePartial &&
+            sessionCtrl.canRenderToken({
+              requestId: reqSession.requestId,
+              contextHash: reqSession.contextHash,
+              accountId: ctx.ad_account_id,
+              entityLevel: ctx.entity_level,
+              entityId: ctx.entity_id,
+              dateFrom: ctx.period.date_from,
+              dateTo: ctx.period.date_to,
+              resultIndicator: ctx.result_indicator.code,
+              contractVersion: ctx.contract_version,
+              promptVersion: ctx.prompt_version,
+            })
+          ) {
+            params.onToken(safePartial, ctx);
+          }
+        }
+      } catch { }
+    };
 
     if (contentType.includes("text/event-stream") && response.body) {
       const reader = response.body.getReader();
@@ -616,67 +695,14 @@ export async function executeGovernedVictoriaDiagnostic(
         buffer = lines.pop() || "";
 
         for (const line of lines) {
-          const trimmed = line.trim();
-          if (!trimmed.startsWith("data: ")) continue;
-          const jsonStr = trimmed.slice(6);
-          if (jsonStr === "[DONE]") continue;
-          try {
-            const parsed = JSON.parse(jsonStr);
-            if (parsed.victoria_meta) {
-              responseMeta = parsed.victoria_meta;
-              if (typeof parsed.victoria_meta.rag_candidates_count === "number") {
-                ragCandidatesCount = parsed.victoria_meta.rag_candidates_count;
-              }
-              const metaDocs = parsed.victoria_meta.rag_citations ?? parsed.victoria_meta.rag_docs;
-              if (Array.isArray(metaDocs) && metaDocs.length > 0) {
-                ragCitations = metaDocs;
-              }
-              if (parsed.victoria_meta.response_origin === "deterministic_fallback") {
-                serverUsedFallback = true;
-              }
-            }
-            if (parsed.victoria_final) {
-              const vf = parsed.victoria_final;
-              if (vf.response_origin === "deterministic_fallback" || vf.replaced_by_deterministic) {
-                serverUsedFallback = true;
-                serverFallbackReason = Array.isArray(vf.guardrail_reasons) ? vf.guardrail_reasons.join(", ") : "server_fallback";
-              }
-              if (typeof vf.rag_candidates_count === "number") {
-                ragCandidatesCount = vf.rag_candidates_count;
-              }
-              if (Array.isArray(vf.rag_citations)) {
-                ragCitations = vf.rag_citations;
-              }
-              if (typeof vf.final_text === "string" && vf.final_text.trim()) {
-                rawAccumulated = vf.final_text;
-              }
-              if (typeof vf.latency_ms === "number") {
-                serverLatencyMs = vf.latency_ms;
-              }
-            }
-            const chunk = parsed.choices?.[0]?.delta?.content || "";
-            if (chunk) {
-              rawAccumulated += chunk;
-              const safePartial = sanitizeVictoriaOutputText(rawAccumulated, ctx);
-              if (
-                params.onToken &&
-                sessionCtrl.canRenderToken({
-                  requestId: reqSession.requestId,
-                  contextHash: reqSession.contextHash,
-                  accountId: ctx.ad_account_id,
-                  entityLevel: ctx.entity_level,
-                  entityId: ctx.entity_id,
-                  dateFrom: ctx.period.date_from,
-                  dateTo: ctx.period.date_to,
-                  resultIndicator: ctx.result_indicator.code,
-                  contractVersion: ctx.contract_version,
-                  promptVersion: ctx.prompt_version,
-                })
-              ) {
-                params.onToken(safePartial, ctx);
-              }
-            }
-          } catch { }
+          processSseLine(line);
+        }
+      }
+
+      buffer += decoder.decode();
+      if (buffer.trim()) {
+        for (const line of buffer.split("\n")) {
+          processSseLine(line);
         }
       }
     } else {
@@ -802,6 +828,7 @@ export async function executeGovernedVictoriaDiagnostic(
     const enforced = enforceVictoriaPostLlmGuardrails(rawAccumulated, enrichedCtx, {
       requireFull10Sections: requireFull10,
       userPrompt: params.userPrompt,
+      truncatedByLength: upstreamTruncated,
     });
     const finalText = enforced.text;
     const isDeterministic = serverUsedFallback || enforced.replacedByDeterministic;

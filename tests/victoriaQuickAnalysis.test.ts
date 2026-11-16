@@ -5,15 +5,18 @@ import {
   buildVictoriaAnalysisContext,
   extractUserTargetFromPrompt,
   generateQuickExecutiveAnalysis,
+  generateSeniorStructuredAnalysis,
   hasAllMandatory10Sections,
   resolveVictoriaResponseMode,
   stripTechnicalArtifactsForQuickMode,
+  validateQuickExecutiveStructure,
   enforceVictoriaPostLlmGuardrails,
   VictoriaSessionController,
 } from "../src/lib/victoriaContract.ts";
 
 import {
   buildContextFromMetricasItem,
+  buildContextFromCreativeItem,
   executeGovernedVictoriaDiagnostic,
 } from "../src/lib/victoriaContextGateway.ts";
 
@@ -555,4 +558,244 @@ Médio
   } finally {
     globalThis.fetch = originalFetch;
   }
+});
+
+test("Reprodução do bug PCX 160: resposta truncada em R$ 298,85 + RAG OFFICIAL_DOC/APPROVED é rejeitada, não vai pro cache e vira fallback completo de 5 blocos", async () => {
+  const ctx = buildContextFromMetricasItem({
+    item: {
+      id: "582a784e-456d-4604-ab91-325ef5d2385c",
+      external_id: "6997481207262",
+      name: "PCX 160 DLX ABS 2026",
+      entityLevel: "ad",
+      status: "ACTIVE",
+      ad_account_id: "act_997870312646696",
+      adAccountName: "Falcão Motos - Anúncios",
+      rawObjective: "OUTCOME_ENGAGEMENT",
+      optimizationGoal: "CONVERSATIONS",
+      resultType: "MESSAGES",
+      resultIndicator: "actions:onsite_conversion.messaging_conversation_started_7d",
+      cost: 298.85,
+      conversions: 47,
+      impressions: 13234,
+      reach: 12540,
+      link_clicks: 149,
+      clicks: 380,
+      frequency: 1.06,
+    },
+    surface: "metricas",
+    route: "/metricas",
+    accountId: "act_997870312646696",
+    accountName: "Falcão Motos - Anúncios",
+    dateFrom: "2026-11-09",
+    dateTo: "2026-11-15",
+    sameObjectiveAvgCost: 7.84,
+    comparablePeerCount: 4,
+  });
+
+  const brokenProductionPayload = [
+    "Henrique,",
+    "",
+    "A campanha para PCX 160 DLX ABS 2026 está entregando conversas a um custo competitivo e eficiente.",
+    "",
+    "#### 1. Veredito",
+    "A campanha para PCX 160 DLX ABS 2026 performou de forma eficiente, superando o benchmark de custo por conversa.",
+    "",
+    "#### 2. Resultado principal",
+    "Com um investimento de R$ 298,85,",
+    "",
+    "- `` **[PARECER TÉCNICO META ADS 2026 — PARTE 1] Infraestrutura Advantage+, Motor Andromeda (MoE) e GEM (OneSeq/Kunlun)** (`OFFICIAL_DOC` · v`` · status `APPROVED`)",
+    "- `` **[PARECER TÉCNICO META ADS 2026 — PARTE 2] Matemática do Leilão (Total Value, VCG, Pacing λ e Cold Start)** (`OFFICIAL_DOC` · v`` · status `APPROVED`)",
+  ].join("\n");
+
+  // 1. Guardrails cliente e servidor devem rejeitar o corte + vazamento RAG
+  const clientCheck = enforceVictoriaPostLlmGuardrails(brokenProductionPayload, ctx);
+  assert.equal(clientCheck.replacedByDeterministic, true);
+  assert.equal(validateQuickExecutiveStructure(clientCheck.text, ctx).valid, true);
+  assert.equal(/OFFICIAL_DOC|INTERNAL_RULE|APPROVED|PARECER\s+T[ÉE]CNICO/i.test(clientCheck.text), false);
+  assertNoTechnicalLeaks(clientCheck.text);
+  assert.ok(clientCheck.text.includes("298,85") && clientCheck.text.includes("6,36") && clientCheck.text.includes("7,84"));
+
+  const serverCheck = enforceServerPostLlmGuardrails(brokenProductionPayload, ctx);
+  assert.equal(serverCheck.replacedByDeterministic, true);
+  assert.equal(/OFFICIAL_DOC|INTERNAL_RULE|APPROVED|PARECER\s+T[ÉE]CNICO/i.test(serverCheck.text), false);
+  assertNoTechnicalLeaks(serverCheck.text);
+
+  // 2. SSE dividido entre chunks, sem newline final no último frame, entregando a resposta quebrada acima -> substituído por fallback e NÃO cacheado
+  const originalFetch = globalThis.fetch;
+  let fetchCalls = 0;
+  try {
+    const encoder = new TextEncoder();
+    const ctrl = new VictoriaSessionController();
+
+    globalThis.fetch = (async () => {
+      fetchCalls++;
+      if (fetchCalls === 1) {
+        const frame1 = `data: ${JSON.stringify({ victoria_meta: { response_origin: "generative", rag_candidates_count: 3 } })}\n\n`;
+        const frame2 = `data: ${JSON.stringify({ choices: [{ delta: { content: brokenProductionPayload } }] })}\n\n`;
+        const frame3NoTrailingNl = `data: ${JSON.stringify({
+          victoria_final: {
+            response_origin: "generative",
+            final_text: brokenProductionPayload,
+            latency_ms: 12583,
+          },
+        })}`;
+        const combined = frame1 + frame2 + frame3NoTrailingNl;
+        const cutA = Math.floor(combined.length * 0.4);
+        const cutB = Math.floor(combined.length * 0.8);
+        const stream = new ReadableStream({
+          start(controller) {
+            controller.enqueue(encoder.encode(combined.slice(0, cutA)));
+            controller.enqueue(encoder.encode(combined.slice(cutA, cutB)));
+            controller.enqueue(encoder.encode(combined.slice(cutB)));
+            controller.close();
+          },
+        });
+        return new Response(stream, { status: 200, headers: { "Content-Type": "text/event-stream" } });
+      }
+
+      // Na 2ª chamada, devolve análise executiva limpa em 5 blocos (split no meio do JSON) -> NÃO reutilizou a resposta quebrada
+      const cleanQuick = [
+        "**1. Veredito:** Bom frente à conta: R$ 6,36 está abaixo da referência comparável de R$ 7,84.",
+        "**2. Resultado principal:** Em 7 dia(s), PCX 160 DLX ABS 2026 investiu R$ 298,85 para gerar 47 conversas iniciadas (R$ 6,36 por conversa; nenhuma meta informada).",
+        "**3. Leitura do funil:** Teve 13.234 impressões, 12.540 alcance e 149 cliques no link (CTR de link 1,13%). Sem mídia ou CRM nesta amostra para julgar criativo visual ou fechamento.",
+        "**4. O que fazer agora:**\n1. Manter o controle ativo.\n2. Testar 1 variação mudando apenas gancho ou CTA.",
+        "**5. Como validar:** Acompanhe Custo por conversa e CTR de link em janela compatível.",
+      ].join("\n\n");
+      const frame = `data: ${JSON.stringify({ choices: [{ delta: { content: cleanQuick }, finish_reason: "stop" }] })}\ndata: ${JSON.stringify({
+        victoria_final: { response_origin: "generative", final_text: cleanQuick, latency_ms: 4100 },
+      })}`;
+      const stream = new ReadableStream({
+        start(controller) {
+          controller.enqueue(encoder.encode(frame.slice(0, 60)));
+          controller.enqueue(encoder.encode(frame.slice(60)));
+          controller.close();
+        },
+      });
+      return new Response(stream, { status: 200, headers: { "Content-Type": "text/event-stream" } });
+    }) as typeof fetch;
+
+    const firstRes = await executeGovernedVictoriaDiagnostic({
+      ctx,
+      controller: ctrl,
+      endpointUrl: "https://example.supabase.co/functions/v1/victoria-agent",
+      anonKey: "anon",
+    });
+    assert.equal(firstRes.responseOrigin, "deterministic_fallback");
+    assert.equal(validateQuickExecutiveStructure(firstRes.text, ctx).valid, true);
+    assert.equal(/OFFICIAL_DOC|APPROVED/i.test(firstRes.text), false);
+
+    // 2ª chamada deve ir à rede (pois fallback não vai para o cache) e retornar resposta limpa do LLM
+    const secondRes = await executeGovernedVictoriaDiagnostic({
+      ctx,
+      controller: ctrl,
+      endpointUrl: "https://example.supabase.co/functions/v1/victoria-agent",
+      anonKey: "anon",
+    });
+    assert.equal(fetchCalls, 2, "Resposta quebrada não pode ser cacheada nem reutilizada");
+    assert.equal(secondRes.responseOrigin, "generative");
+    assert.equal(validateQuickExecutiveStructure(secondRes.text, ctx).valid, true);
+
+    // 3ª chamada: acionar Auditoria Completa (10 seções) não deve reutilizar cache do modo rápido e vice-versa
+    globalThis.fetch = (async () => {
+      fetchCalls++;
+      const full10 = generateSeniorStructuredAnalysis(ctx);
+      const stream = new ReadableStream({
+        start(controller) {
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ choices: [{ delta: { content: full10 } }] })}\n\n`));
+          controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+          controller.close();
+        },
+      });
+      return new Response(stream, { status: 200, headers: { "Content-Type": "text/event-stream" } });
+    }) as typeof fetch;
+
+    const auditRes = await executeGovernedVictoriaDiagnostic({
+      ctx,
+      controller: ctrl,
+      endpointUrl: "https://example.supabase.co/functions/v1/victoria-agent",
+      anonKey: "anon",
+      requireFull10Sections: true,
+    });
+    assert.equal(fetchCalls, 3);
+    assert.equal(hasAllMandatory10Sections(auditRes.text), true);
+
+    // Nova chamada padrão após Auditoria Completa volta para modo rápido sem herdar 10 seções
+    const quickAgain = await executeGovernedVictoriaDiagnostic({
+      ctx,
+      controller: ctrl,
+      endpointUrl: "https://example.supabase.co/functions/v1/victoria-agent",
+      anonKey: "anon",
+    });
+    assert.equal(hasAllMandatory10Sections(quickAgain.text), false);
+    assert.equal(validateQuickExecutiveStructure(quickAgain.text, ctx).valid, true);
+
+    // finish_reason="length" força fallback executivo mesmo que texto pareça ter estrutura
+    globalThis.fetch = (async () => {
+      const stream = new ReadableStream({
+        start(controller) {
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ choices: [{ delta: { content: "**1. Veredito:** Parcial" }, finish_reason: "length" }] })}`));
+          controller.close();
+        },
+      });
+      return new Response(stream, { status: 200, headers: { "Content-Type": "text/event-stream" } });
+    }) as typeof fetch;
+    const lenTruncatedRes = await executeGovernedVictoriaDiagnostic({
+      ctx: { ...ctx, entity_id: "6997481207299", request_id: "vreq_len_test" },
+      controller: ctrl,
+      endpointUrl: "https://example.supabase.co/functions/v1/victoria-agent",
+      anonKey: "anon",
+    });
+    assert.equal(lenTruncatedRes.responseOrigin, "deterministic_fallback");
+    assert.equal(validateQuickExecutiveStructure(lenTruncatedRes.text).valid, true);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("Segunda superfície (/criativos) e objetivo diferente (LANDING_PAGE_VIEWS) funcionam no modo rápido", () => {
+  const creativeCtx = buildContextFromCreativeItem({
+    record: {
+      id: "ad_lpv_01",
+      externalId: "1202888999000",
+      name: "Vídeo Estoque Hatch",
+      adAccountId: "act_5050",
+      adAccountName: "Concessionária Central",
+      campaignId: "camp_lpv",
+      campaignName: "Tráfego Site",
+      adSetId: "adset_lpv",
+      adSetName: "Interesse Automotivo",
+      rawObjective: "OUTCOME_TRAFFIC",
+      optimizationGoal: "LANDING_PAGE_VIEWS",
+      resultCategory: "LANDING_PAGE_VIEWS",
+      resultLabel: "visualização da página de destino",
+      costLabel: "Custo por visualização da página de destino",
+      attributionWindow: "7d_click_1d_view",
+      availability: "available",
+      effectiveStatus: "ACTIVE",
+      spend: 190,
+      results: 95,
+      unitCost: 2,
+      impressions: 7600,
+      reach: 6400,
+      frequency: 1.19,
+      linkClicks: 140,
+      ctrLink: 1.84,
+      cpcLink: 1.36,
+      cpm: 25,
+      creativeFormat: "VIDEO",
+      thumbnailUrl: "https://cdn.example.com/thumb.jpg",
+      creativeBody: "Conheça o estoque revisado.",
+      creativeTitle: "Ofertas da semana",
+      ctaType: "LEARN_MORE",
+      hasRealThumbnail: true,
+    } as any,
+    dateFrom: "2026-11-09",
+    dateTo: "2026-11-15",
+  });
+
+  const out = generateQuickExecutiveAnalysis(creativeCtx);
+  assert.equal(validateQuickExecutiveStructure(out, creativeCtx).valid, true);
+  assert.ok(out.includes("visualizações da página de destino") || out.includes("visualização da página de destino"));
+  assert.equal(/\bCPL\b/i.test(out), false);
+  assertNoTechnicalLeaks(out);
 });

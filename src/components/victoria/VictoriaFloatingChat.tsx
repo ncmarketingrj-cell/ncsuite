@@ -31,6 +31,7 @@ import {
   VictoriaSessionController,
   buildSuggestedQuestionsForContext,
   sanitizeVictoriaOutputText,
+  stripTechnicalArtifactsForQuickMode,
   generateSeniorStructuredAnalysis,
   generateQuickExecutiveAnalysis,
   resolveVictoriaResponseMode,
@@ -370,7 +371,9 @@ export const VictoriaFloatingChat: React.FC<VictoriaFloatingChatProps> = ({
             {
               id: `diag_${validatedCtx.request_id}`,
               role: "assistant",
-              content: sanitizeVictoriaOutputText(partialText, validatedCtx),
+              content: stripTechnicalArtifactsForQuickMode(
+                sanitizeVictoriaOutputText(partialText, validatedCtx)
+              ),
               created_at: new Date(),
               requestId: validatedCtx.request_id,
               contextHash: validatedCtx.analysis_context_hash,
@@ -539,7 +542,11 @@ export const VictoriaFloatingChat: React.FC<VictoriaFloatingChatProps> = ({
         onToken: (partialText, validatedCtx) => {
           if (isStale()) return;
           if (!matchesCanonicalContextIdentity(ctxSnapshot, toIdentityPayload(validatedCtx)).valid) return;
-          const safeText = sanitizeVictoriaOutputText(partialText, validatedCtx);
+          const sanitizedPartial = sanitizeVictoriaOutputText(partialText, validatedCtx);
+          const safeText =
+            resolveVictoriaResponseMode({ userPrompt: text }) === "detailed_audit"
+              ? sanitizedPartial
+              : stripTechnicalArtifactsForQuickMode(sanitizedPartial);
           setMessages((prev) => {
             const existing = prev.find((m) => m.id === assistantMsgId);
             if (existing) {
