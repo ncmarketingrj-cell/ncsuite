@@ -1,16 +1,10 @@
 import { Link, useRouterState } from "@tanstack/react-router";
 import {
   AlertTriangle,
-  BarChart3,
   Building2,
   Calendar,
-  Compass,
-  FolderKanban,
   Instagram,
   Share2,
-  Sparkles,
-  Target,
-  Wrench,
 } from "lucide-react";
 import { useSocialHubFilters } from "@/lib/socialHubStore";
 import { useSocialAccountsQuery } from "@/hooks/useSocialHubData";
@@ -21,18 +15,8 @@ import {
   requiresExplicitAccountForAction,
   SOCIAL_HUB_NAV_GROUPS,
   type AccountScopedAction,
-  type SocialNavGroupId,
 } from "@/lib/socialStrategyDomain";
 import type { SocialDataState } from "@/lib/metaSocialErrors";
-
-const GROUP_ICONS: Record<SocialNavGroupId, any> = {
-  visao_geral: Compass,
-  estrategia: Target,
-  conteudo: Sparkles,
-  inteligencia: BarChart3,
-  projetos: FolderKanban,
-  ferramentas: Wrench,
-};
 
 export interface SocialHubChromeProps {
   tenantId?: string | null;
@@ -82,36 +66,46 @@ export function SocialHubChrome({
     neutral: "bg-muted text-muted-foreground border-border",
   };
 
+  const hasSubLinks = Boolean(activeGroup?.children && activeGroup.children.length > 0);
+  const hasToolbarContent = hasSubLinks || showAccountSelector || Boolean(humanSync) || Boolean(rightSlot);
+
   return (
     <div className="space-y-3 mb-5">
-      {/* Navegação Secundária Social (Compacta/Rolável no mobile e clara no desktop) */}
-      <div className="flex flex-col gap-2.5 rounded-2xl border border-border/80 bg-card/85 px-3.5 py-2.5 shadow-sm backdrop-blur-sm">
-        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-2.5">
-          {/* 6 Seções Principais */}
-          <div className="flex items-center gap-1 overflow-x-auto no-scrollbar pb-0.5 lg:pb-0">
-            {SOCIAL_HUB_NAV_GROUPS.map((group) => {
-              const Icon = GROUP_ICONS[group.id];
-              const isActive = group.id === activeGroupId;
-              return (
-                <Link
-                  key={group.id}
-                  to={group.to as any}
-                  preload="intent"
-                  className={`inline-flex shrink-0 items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-semibold transition-all ${
-                    isActive
-                      ? "bg-primary text-primary-foreground shadow-sm"
-                      : "text-muted-foreground hover:bg-muted hover:text-foreground"
-                  }`}
-                >
-                  <Icon className="h-3.5 w-3.5 shrink-0" />
-                  <span>{group.label}</span>
-                </Link>
-              );
-            })}
-          </div>
+      {/* Barra Contextual Social (Sub-páginas do grupo + Seletor de Conta + Status — sem repetir o menu superior) */}
+      {hasToolbarContent && (
+        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-2.5 rounded-2xl border border-border/80 bg-card/85 px-3.5 py-2.5 shadow-sm backdrop-blur-sm">
+          {/* Sub-links quando o grupo ativo possui múltiplas páginas (Conteúdo / Inteligência / Ferramentas) */}
+          {hasSubLinks ? (
+            <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-0.5 lg:pb-0">
+              {activeGroup!.children!.map((sub) => {
+                const isSubActive =
+                  sub.to === "/social"
+                    ? pathname === "/social"
+                    : pathname === sub.to || pathname.startsWith(`${sub.to}/`);
+                return (
+                  <Link
+                    key={sub.to}
+                    to={sub.to as any}
+                    preload="intent"
+                    title={sub.description}
+                    className={`inline-flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1 text-[11px] font-semibold transition-all ${
+                      isSubActive
+                        ? "bg-primary/12 text-primary border border-primary/25"
+                        : "text-muted-foreground hover:text-foreground hover:bg-muted/60 border border-transparent"
+                    }`}
+                  >
+                    {sub.to === "/social" && <Calendar className="h-3 w-3" />}
+                    <span>{sub.label}</span>
+                  </Link>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="hidden lg:block" />
+          )}
 
           {/* Seletor Compartilhado de Conta + Status Humano */}
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2 lg:ml-auto">
             {showAccountSelector && (
               <div className="flex items-center gap-2 min-w-0">
                 <div className="relative flex items-center">
@@ -174,35 +168,7 @@ export function SocialHubChrome({
             {rightSlot}
           </div>
         </div>
-
-        {/* Sub-links quando o grupo ativo possui múltiplas páginas (Conteúdo / Inteligência / Ferramentas) */}
-        {activeGroup?.children && activeGroup.children.length > 0 && (
-          <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar border-t border-border/60 pt-2">
-            {activeGroup.children.map((sub) => {
-              const isSubActive =
-                sub.to === "/social"
-                  ? pathname === "/social"
-                  : pathname === sub.to || pathname.startsWith(`${sub.to}/`);
-              return (
-                <Link
-                  key={sub.to}
-                  to={sub.to as any}
-                  preload="intent"
-                  title={sub.description}
-                  className={`inline-flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1 text-[11px] font-semibold transition-all ${
-                    isSubActive
-                      ? "bg-primary/12 text-primary border border-primary/25"
-                      : "text-muted-foreground hover:text-foreground hover:bg-muted/60 border border-transparent"
-                  }`}
-                >
-                  {sub.to === "/social" && <Calendar className="h-3 w-3" />}
-                  <span>{sub.label}</span>
-                </Link>
-              );
-            })}
-          </div>
-        )}
-      </div>
+      )}
 
       {/* Aviso explícito quando a ação/tela exige seleção de uma conta específica */}
       {!explicitCheck.allowed && explicitCheck.reason && (
