@@ -7,7 +7,7 @@ import ReactMarkdown from "react-markdown";
 import { chatWithVictoriaFn } from "@/lib/agent.functions";
 import { classifyMetaEvent, computeUnitCost } from "@/lib/metricsDomain";
 import { isReadOnlyAnalysisRequest, stripJsonActionBlocks, validateActionExecution } from "@/lib/victoriaGovernance";
-import { VICTORIA_CONTRACT_VERSION, VICTORIA_PROMPT_VERSION, VICTORIA_DEFAULT_OPERATIONAL_MODE } from "@/lib/victoriaContract";
+import { VICTORIA_CONTRACT_VERSION, VICTORIA_PROMPT_VERSION, VICTORIA_DEFAULT_OPERATIONAL_MODE, resolveVictoriaResponseMode } from "@/lib/victoriaContract";
 
 type Message = {
   role: "user" | "assistant";
@@ -129,6 +129,7 @@ export function AIAgentSidebar({ isOpen, onClose }: AIAgentSidebarProps) {
               selectedAccountId: selectedAccountId,
               readOnly: true,
               operational_mode: VICTORIA_DEFAULT_OPERATIONAL_MODE,
+              requireFull10Sections: resolveVictoriaResponseMode({ userPrompt: userMsg.content }) === "detailed_audit",
               contract_version: VICTORIA_CONTRACT_VERSION,
               prompt_version: VICTORIA_PROMPT_VERSION,
             }

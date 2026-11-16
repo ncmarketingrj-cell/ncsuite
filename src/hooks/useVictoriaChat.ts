@@ -27,6 +27,8 @@ import {
 } from "@/lib/victoriaGovernance";
 import {
   sanitizeVictoriaOutputText,
+  resolveVictoriaResponseMode,
+  stripTechnicalArtifactsForQuickMode,
   VICTORIA_ANALYTICAL_TEMPERATURE,
   VICTORIA_CONTRACT_VERSION,
   VICTORIA_PROMPT_VERSION,
@@ -639,6 +641,7 @@ export function useVictoriaChat(
 
       // 5. Invocar a IA Victoria por Streaming SSE
       const isReadOnly = isReadOnlyAnalysisRequest(content);
+      const isDetailedAudit = resolveVictoriaResponseMode({ userPrompt: content }) === "detailed_audit";
       const { data: { session } } = await supabase.auth.getSession();
       const res = await fetch(
         `${VITE_SUPABASE_URL}/functions/v1/victoria-agent`,
@@ -657,6 +660,7 @@ export function useVictoriaChat(
             externalContext,
             regionalBenchmark,
             readOnly: isReadOnly,
+            requireFull10Sections: isDetailedAudit,
             operational_mode: isReadOnly ? "READ_ONLY_ANALYSIS" : "ACTION_PROPOSAL",
             contract_version: VICTORIA_CONTRACT_VERSION,
             prompt_version: VICTORIA_PROMPT_VERSION,
@@ -749,7 +753,10 @@ export function useVictoriaChat(
 
       // 5. Detectar blocos json:action com bloqueio determinístico em modo somente-leitura (ID 09)
       const parsedBlock = stripJsonActionBlocks(responseText);
-      responseText = sanitizeVictoriaOutputText(parsedBlock.cleanText);
+      const cleanedQuickText = sanitizeVictoriaOutputText(parsedBlock.cleanText);
+      responseText = isDetailedAudit
+        ? cleanedQuickText
+        : stripTechnicalArtifactsForQuickMode(cleanedQuickText);
       let responseAction: any = parsedBlock.parsedAction
         ? buildActionProposal(parsedBlock.parsedAction, {
             accountId: selectedAccountId || null,

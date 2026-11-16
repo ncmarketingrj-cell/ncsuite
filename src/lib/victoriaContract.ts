@@ -469,6 +469,21 @@ export interface VictoriaAnalysisContext {
     bidding_strategy?: string | null;
   };
 
+  creative?: {
+    has_media: boolean;
+    media_url: string | null;
+    format: string | null;
+    copy_text: string | null;
+    headline: string | null;
+    cta_type: string | null;
+    placements: string | null;
+  };
+
+  user_target?: {
+    amount: number;
+    raw_text: string;
+  } | null;
+
   governance_and_benchmarks: {
     account_max_cpl_target: number | null;
     target_metric_category: MetaConversionCategory | null;
@@ -687,6 +702,13 @@ export interface BuildVictoriaContextInput {
   has_hourly_breakdown?: boolean;
   placement_summary?: string | null;
   bidding_strategy?: string | null;
+  creative_media_url?: string | null;
+  creative_format?: string | null;
+  creative_body?: string | null;
+  creative_title?: string | null;
+  creative_cta_type?: string | null;
+  user_target_amount?: number | null;
+  user_target_raw_text?: string | null;
   account_max_cpl_target?: number | null;
   comparable_same_objective_avg?: number | null;
   comparable_peer_count?: number;
@@ -960,8 +982,8 @@ export function buildVictoriaAnalysisContext(input: BuildVictoriaContextInput): 
     metric_vector: vector,
 
     configuration: {
-      has_creative_data: Boolean(input.has_creative_data),
-      has_copy_data: Boolean(input.has_copy_data),
+      has_creative_data: Boolean(input.has_creative_data || input.creative_media_url),
+      has_copy_data: Boolean(input.has_copy_data || input.creative_body || input.creative_title),
       has_audience_targeting: Boolean(input.has_audience_targeting),
       has_landing_page_data: Boolean(input.has_landing_page_data),
       has_crm_funnel_data: Boolean(input.has_crm_funnel_data),
@@ -969,6 +991,24 @@ export function buildVictoriaAnalysisContext(input: BuildVictoriaContextInput): 
       placement_summary: input.placement_summary ?? null,
       bidding_strategy: input.bidding_strategy ?? null,
     },
+
+    creative: {
+      has_media: Boolean(input.has_creative_data || input.creative_media_url),
+      media_url: input.creative_media_url ?? null,
+      format: input.creative_format ?? null,
+      copy_text: input.creative_body ?? null,
+      headline: input.creative_title ?? null,
+      cta_type: input.creative_cta_type ?? null,
+      placements: input.placement_summary ?? null,
+    },
+
+    user_target:
+      typeof input.user_target_amount === "number" && Number.isFinite(input.user_target_amount) && input.user_target_amount > 0
+        ? {
+            amount: Number(input.user_target_amount),
+            raw_text: input.user_target_raw_text || `R$ ${input.user_target_amount.toFixed(2)}`,
+          }
+        : null,
 
     governance_and_benchmarks: {
       account_max_cpl_target: isTargetApplicable ? Number(input.account_max_cpl_target) : null,
@@ -1386,15 +1426,256 @@ export function sanitizeVictoriaOutputText(
   return text.trim();
 }
 
+export type VictoriaResponseMode = "quick_executive" | "detailed_audit";
+
+const EXPLICIT_DETAILED_AUDIT_PATTERN =
+  /\b(auditoria\s+completa|an[aá]lise\s+(aprofundada|detalhada|completa)|relat[oó]rio\s+(detalhado|completo)|10\s+se[çc][õo]es|todas\s+as\s+se[çc][õo]es)\b/i;
+
+export function resolveVictoriaResponseMode(params: {
+  userPrompt?: string | null;
+  explicitRequireFull10Sections?: boolean | null;
+}): VictoriaResponseMode {
+  if (params.explicitRequireFull10Sections === true) return "detailed_audit";
+  if (params.explicitRequireFull10Sections === false) return "quick_executive";
+  if (params.userPrompt && EXPLICIT_DETAILED_AUDIT_PATTERN.test(params.userPrompt)) {
+    return "detailed_audit";
+  }
+  return "quick_executive";
+}
+
+export function extractUserTargetFromPrompt(
+  prompt?: string | null
+): { amount: number; rawText: string } | null {
+  const txt = String(prompt || "").trim();
+  if (!txt) return null;
+  const patterns = [
+    /(?:abaixo\s+de|menos\s+de|at[eé]|m[aá]ximo\s+de|meta\s+(?:de|em)|alvo\s+(?:de|em)|custo\s+(?:de|por\s+\w+\s+(?:de|abaixo\s+de|em))|conversas?\s+(?:a|por|abaixo\s+de))\s*(?:r\$\s*)?(\d+(?:[.,]\d{1,2})?)/i,
+    /r\$\s*(\d+(?:[.,]\d{1,2})?)\s*(?:ou\s+menos|de\s+meta|por\s+(?:conversa|lead|compra|clique|visita|resultado))?/i,
+  ];
+  for (const rx of patterns) {
+    const m = txt.match(rx);
+    if (m?.[1]) {
+      const parsed = Number(m[1].replace(",", "."));
+      if (Number.isFinite(parsed) && parsed > 0 && parsed < 100_000) {
+        return { amount: parsed, rawText: m[0].trim() };
+      }
+    }
+  }
+  return null;
+}
+
+export function stripTechnicalArtifactsForQuickMode(text: string): string {
+  let clean = String(text || "");
+  if (!clean) return "";
+
+  // Remove UUIDs RAG ([uuid] ou uuid isolado) e linhas de fontes/metadados técnicos
+  clean = clean
+    .replace(/\s*\(?\s*ID\s*:?\s*`?[a-zA-Z0-9_.-]{6,}`?\s*\)?/gi, "")
+    .replace(/\[[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\]/gi, "")
+    .replace(/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi, "")
+    .replace(/\bctx_[a-zA-Z0-9_]+\b/gi, "")
+    .replace(/\bvreq_[a-zA-Z0-9_]+\b/gi, "")
+    .replace(/\bact_\d+\b/gi, "")
+    .replace(/(?:onsite_conversion|offsite_conversion)\.[a-z0-9_]+/gi, "evento oficial da campanha")
+    .replace(/\bactions:[a-z0-9_.]+\b/gi, "evento oficial")
+    .replace(/Contrato(?:\s+Can[ôo]nico)?\s*:?\s*`?\d{4}\.\d+(?:\.\d+)?`?/gi, "")
+    .replace(/Prompt\s*:?\s*`?2026\.[a-zA-Z0-9_.-]+`?/gi, "")
+    .replace(/Hash\s*:?\s*`?[a-f0-9]{6,}`?/gi, "")
+    .replace(/\b2026\.11\.\d+(?:-[a-z0-9-]+)?\b/gi, "")
+    .replace(/\b(meta_insights_snapshot|asset_metrics|victoria_knowledge|victoria_messages)\b/gi, "dados do Meta Ads")
+    .replace(/^-?\s*\*?\*?Fontes RAG[^:\n]*:[^\n]*$/gim, "")
+    .replace(/\n{3,}/g, "\n\n");
+
+  return clean.trim();
+}
+
+export function generateQuickExecutiveAnalysis(
+  ctx: VictoriaAnalysisContext,
+  opts?: { userPrompt?: string | null; userTargetAmount?: number | null }
+): string {
+  const validation = validateVictoriaAnalysisContext(ctx);
+  if (!validation.valid && validation.degradedResponse) {
+    return stripTechnicalArtifactsForQuickMode(validation.degradedResponse);
+  }
+
+  const fmtBRL = (n: number) =>
+    `R$ ${Number(n || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const fmtNum = (n: number) => Number(n || 0).toLocaleString("pt-BR");
+  const fmtPct = (n: number) =>
+    `${Number(n || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%`;
+
+  const { raw_metrics: m, financial: f, period: p, optimization: opt, result_indicator: ind } = ctx;
+  const cat = opt.category;
+  const daysCount = p.days_count;
+  const parsedFromPrompt = opts?.userPrompt ? extractUserTargetFromPrompt(opts.userPrompt) : null;
+  const explicitTarget =
+    opts?.userTargetAmount ??
+    ctx.user_target?.amount ??
+    parsedFromPrompt?.amount ??
+    null;
+  const configTarget =
+    ctx.governance_and_benchmarks.account_max_cpl_target !== null &&
+    ctx.governance_and_benchmarks.account_max_cpl_target > 0
+      ? Number(ctx.governance_and_benchmarks.account_max_cpl_target)
+      : null;
+  const targetAmount = explicitTarget ?? configTarget;
+  const targetSource = explicitTarget !== null ? "sua meta" : configTarget !== null ? "meta configurada na conta" : null;
+
+  const compAvg = ctx.governance_and_benchmarks.comparable_same_objective_avg;
+  const cost = m.cost_per_result;
+  const hasResults = m.result_value > 0 && cost !== null;
+  const spendZero = f.spend === 0;
+  const spendNoResult = f.spend > 0 && m.result_value === 0;
+  const isShortSample = daysCount < 3 || m.impressions < 500;
+
+  // 1. Veredito (1 frase direta)
+  let veredito = "";
+  if (spendZero) {
+    veredito = `Inconclusivo: não houve investimento nos últimos ${daysCount} dia(s).`;
+  } else if (spendNoResult) {
+    veredito = `Abaixo do esperado: houve gasto de ${fmtBRL(f.spend)} em ${daysCount} dia(s) sem registrar ${ind.label_plural}.`;
+  } else if (isShortSample && hasResults) {
+    veredito = `Inconclusivo pela amostra curta (${daysCount} dia(s)): gerou ${fmtNum(m.result_value)} ${ind.label_plural} a ${fmtBRL(cost!)}, ainda com poucos dados para cravar tendência.`;
+  } else if (hasResults && targetAmount !== null) {
+    const diff = cost! - targetAmount;
+    if (diff <= 0) {
+      veredito = `Bom desempenho: está dentro da ${targetSource} de ${fmtBRL(targetAmount)}, mantendo ${ind.cost_label.toLowerCase()} de ${fmtBRL(cost!)}.`;
+    } else if (compAvg !== null && cost! < compAvg) {
+      veredito = `Abaixo da meta desejada (${fmtBRL(targetAmount)}), mas melhor que a referência comparável da conta (${fmtBRL(compAvg)}).`;
+    } else {
+      veredito = `Abaixo da meta: o ${ind.cost_label.toLowerCase()} de ${fmtBRL(cost!)} está ${fmtBRL(diff)} acima da ${targetSource} (${fmtBRL(targetAmount)}).`;
+    }
+  } else if (hasResults && compAvg !== null) {
+    veredito =
+      cost! <= compAvg
+        ? `Bom em relação à conta: ${ind.cost_label.toLowerCase()} de ${fmtBRL(cost!)}, abaixo da referência comparável de ${fmtBRL(compAvg)}.`
+        : `Acima da referência da conta: ${ind.cost_label.toLowerCase()} de ${fmtBRL(cost!)} vs ${fmtBRL(compAvg)} no grupo comparável.`;
+  } else if (hasResults) {
+    veredito = `Entrega ativa: gerou ${fmtNum(m.result_value)} ${ind.label_plural} a ${fmtBRL(cost!)}, sem meta ou referência comparável configurada para classificar como bom ou ruim.`;
+  } else {
+    veredito = "Inconclusivo por falta de dados suficientes no período.";
+  }
+
+  // 2. Resultado principal
+  const metaCompText =
+    hasResults && targetAmount !== null
+      ? cost! > targetAmount
+        ? ` (${fmtBRL(cost! - targetAmount)} acima da ${targetSource} de ${fmtBRL(targetAmount)})`
+        : ` (${fmtBRL(targetAmount - cost!)} abaixo da ${targetSource} de ${fmtBRL(targetAmount)})`
+      : " (nenhuma meta definida)";
+
+  const benchCompText =
+    compAvg !== null && hasResults
+      ? cost! < compAvg
+        ? ` Melhor que a referência de ${fmtBRL(compAvg)}.`
+        : ` Acima da referência de ${fmtBRL(compAvg)}.`
+      : " Sem referência comparável.";
+
+  const salesSuffix =
+    cat === "PURCHASES" && m.purchase_value && m.purchase_value > 0
+      ? ` Receita de ${fmtBRL(m.purchase_value)}${m.roas ? ` (ROAS ${m.roas.toFixed(2).replace(".", ",")}x)` : ""}.`
+      : "";
+
+  const resultadoLine = `Em ${daysCount} dia(s), **${ctx.entity_name}** investiu **${fmtBRL(f.spend)}** e gerou **${fmtNum(m.result_value)} ${ind.label_plural}** com **${ind.cost_label}** de **${hasResults ? fmtBRL(cost!) : "não calculável"}**${metaCompText}.${salesSuffix}${benchCompText}`;
+
+  // 3. Leitura do funil + criativo + limitações honestas
+  const funnelParts: string[] = [];
+  if (cat === "REACH") {
+    funnelParts.push(
+      `Entrega de **${fmtNum(m.reach)} pessoas alcançadas** e **${fmtNum(m.impressions)} impressões** (CPM ${fmtBRL(m.cpm)}, frequência ${m.frequency.toFixed(2).replace(".", ",")}).`
+    );
+  } else {
+    const clickRate =
+      m.link_clicks > 0 && m.result_value > 0
+        ? ` (~${Math.round((m.result_value / m.link_clicks) * 100)}% dos cliques no link virando ${ind.label_singular}, relação observada sem provar causa)`
+        : "";
+    funnelParts.push(
+      `Teve **${fmtNum(m.impressions)} impressões**, **${fmtNum(m.reach)} alcance** (frequência **${m.frequency.toFixed(2).replace(".", ",")}**${m.frequency > 0 && m.frequency < 1.8 ? ", sem sinal de saturação" : ""}), **${fmtNum(m.link_clicks)} cliques no link** (CTR de link ${fmtPct(m.ctr_link)}, CPC de link ${m.link_clicks > 0 ? fmtBRL(m.cpc_link) : "—"})${m.all_clicks > m.link_clicks ? ` e **${fmtNum(m.all_clicks)} cliques totais**` : ""}${clickRate}.`
+    );
+  }
+
+  const hasVisualCreative = Boolean(ctx.creative?.has_media);
+  const creativeNotes: string[] = [];
+  if (!hasVisualCreative) {
+    creativeNotes.push(
+      "Consegui analisar os resultados, mas não tive acesso à imagem ou ao vídeo para avaliar o criativo visualmente."
+    );
+  } else {
+    const details = [
+      ctx.creative?.format ? `${ctx.creative.format}` : null,
+      ctx.creative?.headline ? `título "${ctx.creative.headline}"` : null,
+      ctx.creative?.cta_type ? `CTA ${ctx.creative.cta_type}` : null,
+    ].filter(Boolean);
+    creativeNotes.push(
+      details.length > 0
+        ? `Peça acessível no contexto (${details.join(", ")}).`
+        : "Mídia criativa acessível no contexto para acompanhamento de CTR de link e custo."
+    );
+  }
+  if (!ctx.configuration.has_crm_funnel_data && (cat === "MESSAGES" || cat === "LEADS")) {
+    creativeNotes.push("Sem dados de CRM para medir qualidade comercial ou fechamento.");
+  }
+  const leituraLine = `${funnelParts.join(" ")} ${creativeNotes.join(" ")}`.trim();
+
+  // 4. O que fazer agora (até 3 ações específicas)
+  const actions: string[] = [];
+  if (spendZero) {
+    actions.push("1. Verificar se a entrega está ativa antes de avaliar desempenho.");
+    actions.push("2. Acumular entrega mínima antes de julgar o criativo.");
+  } else if (spendNoResult) {
+    actions.push(`1. Revisar se destino e evento de ${ind.label_plural} recebem os ${fmtNum(m.link_clicks)} cliques.`);
+    actions.push("2. Testar 1 variação de criativo mudando gancho ou oferta principal.");
+  } else if (cat === "REACH") {
+    actions.push("1. Manter o criativo enquanto frequência e custo por 1.000 alcançadas seguirem estáveis.");
+    actions.push("2. Preparar 1 variação visual se a frequência subir sem alcance novo.");
+  } else {
+    actions.push(
+      compAvg !== null && hasResults && cost! <= compAvg
+        ? "1. **Manter o anúncio ativo como controle** (entrega abaixo da referência comparável)."
+        : "1. **Manter o controle estável se ainda trouxer volume**, sem editar tudo junto."
+    );
+    actions.push(
+      `2. **Testar 1–2 variações mudando uma variável por vez:** gancho inicial para elevar CTR de link (${fmtPct(m.ctr_link)}) ou CTA/texto para melhorar conversão pós-clique.`
+    );
+    actions.push(
+      "3. **Não alterar público, orçamento e objetivo juntos** durante o teste."
+    );
+  }
+
+  // 5. Como validar
+  const validationLine =
+    hasResults
+      ? `Compare **${ind.cost_label}**, **CTR de link** e clique-para-${ind.label_singular} entre controle e variações por janela compatível, sem presumir atingir ${targetAmount !== null ? fmtBRL(targetAmount) : "a meta"}.`
+      : `Acompanhe ${ind.cost_label} e CTR de link após acumular volume mínimo no mesmo conjunto, mudando uma variável por vez.`;
+
+  return [
+    `**1. Veredito:** ${veredito}`,
+    `**2. Resultado principal:** ${resultadoLine}`,
+    `**3. Leitura do funil:** ${leituraLine}`,
+    `**4. O que fazer agora:**\n${actions.slice(0, 3).join("\n")}`,
+    `**5. Como validar:** ${validationLine}`,
+  ].join("\n\n");
+}
+
 export function enforceVictoriaPostLlmGuardrails(
   rawText: string,
   ctx: VictoriaAnalysisContext,
-  opts?: { requireFull10Sections?: boolean; approvedDocs?: CuratedRagDocument[] }
+  opts?: {
+    requireFull10Sections?: boolean;
+    userPrompt?: string | null;
+    approvedDocs?: CuratedRagDocument[];
+  }
 ): {
   text: string;
   replacedByDeterministic: boolean;
   reasons: string[];
 } {
+  const mode = resolveVictoriaResponseMode({
+    userPrompt: opts?.userPrompt,
+    explicitRequireFull10Sections: opts?.requireFull10Sections,
+  });
+  const requireFull10 = mode === "detailed_audit";
+
   const reasons: string[] = [];
   const sanitized = sanitizeVictoriaOutputText(rawText, ctx);
   const leak = detectCrossEntityLeakage(sanitized, ctx);
@@ -1402,26 +1683,41 @@ export function enforceVictoriaPostLlmGuardrails(
     reasons.push(`cross_entity_leak:${leak.matches.join(",")}`);
   }
   const tooShortOrError =
-    sanitized.length < 120 ||
+    sanitized.length < (requireFull10 ? 120 : 40) ||
     /^\[ERRO\s+\d+\]/i.test(sanitized) ||
     /tive um problema de comunicação/i.test(sanitized);
   if (tooShortOrError) {
     reasons.push("empty_or_provider_error");
   }
-  if (opts?.requireFull10Sections !== false) {
+  if (requireFull10) {
     if (!sanitized.includes("O que esta campanha foi configurada para otimizar?")) {
       reasons.push("missing_opening_question");
     }
     if (!hasAllMandatory10Sections(sanitized)) {
       reasons.push("missing_mandatory_10_sections");
     }
+  } else {
+    // No modo rápido padrão, bloqueia se a IA devolveu relatório antigo de 10 seções com IDs/vagas "aguardar 3 a 7 dias"
+    if (hasAllMandatory10Sections(sanitized)) {
+      reasons.push("bloated_10_sections_in_quick_mode");
+    }
   }
 
   if (reasons.length > 0) {
     return {
-      text: generateSeniorStructuredAnalysis(ctx),
+      text: requireFull10
+        ? generateSeniorStructuredAnalysis(ctx)
+        : generateQuickExecutiveAnalysis(ctx, { userPrompt: opts?.userPrompt }),
       replacedByDeterministic: true,
       reasons,
+    };
+  }
+
+  if (!requireFull10) {
+    return {
+      text: stripTechnicalArtifactsForQuickMode(sanitized),
+      replacedByDeterministic: false,
+      reasons: [],
     };
   }
 

@@ -2,8 +2,11 @@ import {
   buildVictoriaAnalysisContext,
   validateVictoriaAnalysisContext,
   generateSeniorStructuredAnalysis,
+  generateQuickExecutiveAnalysis,
   sanitizeVictoriaOutputText,
   enforceVictoriaPostLlmGuardrails,
+  resolveVictoriaResponseMode,
+  extractUserTargetFromPrompt,
   matchesCanonicalContextIdentity,
   buildSuggestedQuestionsForContext,
   VictoriaSessionController,
@@ -45,6 +48,8 @@ export interface MetricasItemAdapterInput {
   ragDocuments?: CuratedRagDocument[];
   operationalMode?: VictoriaOperationalMode;
   siblingEntities?: any[];
+  userPrompt?: string | null;
+  userTargetAmount?: number | null;
 }
 
 /**
@@ -58,12 +63,13 @@ export function buildContextFromMetricasItem(
   const raw = input.item || {};
   const t = raw.t || {};
 
+  const rawType = raw.entityLevel || raw.type;
   const entityLevel: VictoriaEntityLevel =
-    raw.type === "adset" || raw.type === "conjunto"
+    rawType === "adset" || rawType === "conjunto"
       ? "adset"
-      : raw.type === "ad" || raw.type === "anuncio"
+      : rawType === "ad" || rawType === "anuncio"
         ? "ad"
-        : raw.type === "account"
+        : rawType === "account"
           ? "account"
           : "campaign";
 
@@ -97,10 +103,24 @@ export function buildContextFromMetricasItem(
   const impressions = Number(t.impressions ?? raw.impressions ?? 0);
   const reach = Number(t.reach ?? raw.reach ?? 0);
   const linkClicks = Number(
-    t.linkClicks ?? t.clicks ?? raw.inline_link_clicks ?? raw.clicks ?? 0
+    t.linkClicks ??
+      t.link_clicks ??
+      t.inline_link_clicks ??
+      raw.linkClicks ??
+      raw.link_clicks ??
+      raw.inline_link_clicks ??
+      t.clicks ??
+      raw.clicks ??
+      0
   );
   const allClicks = Number(
-    t.allClicks ?? raw.allClicks ?? raw.all_clicks ?? linkClicks
+    t.allClicks ??
+      t.all_clicks ??
+      raw.allClicks ??
+      raw.all_clicks ??
+      raw.clicks ??
+      t.clicks ??
+      linkClicks
   );
   const conversions =
     cls.category === "REACH"
@@ -108,6 +128,14 @@ export function buildContextFromMetricasItem(
         ? reach
         : Number(t.conversions ?? raw.conversions ?? 0)
       : Number(t.conversions ?? raw.conversions ?? 0);
+
+  const parsedPromptTarget = input.userPrompt
+    ? extractUserTargetFromPrompt(input.userPrompt)
+    : null;
+  const resolvedUserTargetAmount =
+    typeof input.userTargetAmount === "number" && Number.isFinite(input.userTargetAmount) && input.userTargetAmount > 0
+      ? input.userTargetAmount
+      : parsedPromptTarget?.amount ?? null;
 
   return buildVictoriaAnalysisContext({
     source_surface: input.surface || "metricas",
@@ -147,9 +175,15 @@ export function buildContextFromMetricasItem(
     all_clicks: allClicks,
     conversions,
     purchase_value: Number(t.purchaseValue ?? raw.purchase_value ?? raw.purchaseValue ?? 0) || null,
-    has_creative_data: Boolean(raw.creative_url || raw.thumbnail_url),
-    has_copy_data: Boolean(raw.body || raw.headline),
+    has_creative_data: Boolean(raw.creative_image_url || raw.thumbnail_url || raw.creative_url),
+    has_copy_data: Boolean(raw.creative_body || raw.creative_title || raw.body || raw.headline),
     has_audience_targeting: Boolean(raw.targeting),
+    creative_media_url: raw.creative_image_url || raw.thumbnail_url || raw.creative_url || null,
+    creative_format: raw.creative_format || null,
+    creative_body: raw.creative_body || raw.body || null,
+    creative_title: raw.creative_title || raw.headline || null,
+    creative_cta_type: raw.call_to_action_type || null,
+    placement_summary: raw.placement_summary || null,
     has_landing_page_data: false,
     has_crm_funnel_data: false,
     account_max_cpl_target: isComparableWithAccountCpl ? input.accountMaxCplTarget ?? null : null,
@@ -163,6 +197,8 @@ export function buildContextFromMetricasItem(
         : null,
     comparable_peer_count: input.sameObjectivePeerCount,
     comparable_benchmark_criteria: input.sameObjectiveBenchmarkCriteria ?? null,
+    user_target_amount: resolvedUserTargetAmount,
+    user_target_raw_text: parsedPromptTarget?.rawText ?? null,
     rag_documents: input.ragDocuments || [],
     operational_mode: input.operationalMode || VICTORIA_DEFAULT_OPERATIONAL_MODE,
     sibling_entities: (input.siblingEntities || []).map((sib: any) => ({
@@ -206,6 +242,8 @@ export interface AccountSurfaceAdapterInput {
   deduplicatedAccountReach?: number | null;
   accountMaxCplTarget?: number | null;
   ragDocuments?: CuratedRagDocument[];
+  userPrompt?: string | null;
+  userTargetAmount?: number | null;
 }
 
 /**
@@ -271,6 +309,14 @@ export function buildContextFromAccountSummary(
   const roas = totalSpend > 0 && totalPurchaseValue > 0 ? totalPurchaseValue / totalSpend : null;
   const primaryIsPurchases = messageResults === 0 && (purchaseResults > 0 || totalPurchaseValue > 0);
 
+  const parsedPromptTarget = input.userPrompt
+    ? extractUserTargetFromPrompt(input.userPrompt)
+    : null;
+  const resolvedUserTargetAmount =
+    typeof input.userTargetAmount === "number" && Number.isFinite(input.userTargetAmount) && input.userTargetAmount > 0
+      ? input.userTargetAmount
+      : parsedPromptTarget?.amount ?? null;
+
   return buildVictoriaAnalysisContext({
     source_surface: input.surface,
     route: input.route,
@@ -307,6 +353,8 @@ export function buildContextFromAccountSummary(
     comparable_same_objective_avg: primaryIsPurchases
       ? (purchaseResults > 0 ? purchaseSpend / purchaseResults : null)
       : (messageResults > 0 ? messageSpend / messageResults : null),
+    user_target_amount: resolvedUserTargetAmount,
+    user_target_raw_text: parsedPromptTarget?.rawText ?? null,
     rag_documents: input.ragDocuments || [],
   });
 }
@@ -359,10 +407,24 @@ export interface ExecuteVictoriaDiagnosticResult {
 export async function executeGovernedVictoriaDiagnostic(
   params: ExecuteVictoriaDiagnosticParams
 ): Promise<ExecuteVictoriaDiagnosticResult> {
-  const { ctx } = params;
+  const promptTarget = extractUserTargetFromPrompt(params.userPrompt);
+  const ctx: VictoriaAnalysisContext =
+    promptTarget && (!params.ctx.user_target || params.ctx.user_target.amount !== promptTarget.amount)
+      ? {
+          ...params.ctx,
+          user_target: {
+            amount: promptTarget.amount,
+            raw_text: promptTarget.rawText,
+          },
+        }
+      : params.ctx;
   const sessionCtrl = params.controller || globalVictoriaSessionController;
   const suggestedQuestions = buildSuggestedQuestionsForContext(ctx);
-  const requireFull10 = params.requireFull10Sections !== false;
+  const responseMode = resolveVictoriaResponseMode({
+    userPrompt: params.userPrompt,
+    explicitRequireFull10Sections: params.requireFull10Sections,
+  });
+  const requireFull10 = responseMode === "detailed_audit";
   const callStartedAt = Date.now();
 
   // 1. Validar contrato antes de invocar modelo
@@ -392,6 +454,7 @@ export async function executeGovernedVictoriaDiagnostic(
   if (reqSession.cachedResponse && !params.userPrompt) {
     const cachedGuard = enforceVictoriaPostLlmGuardrails(reqSession.cachedResponse, ctx, {
       requireFull10Sections: requireFull10,
+      userPrompt: params.userPrompt,
     });
     if (params.onToken) {
       params.onToken(cachedGuard.text, ctx);
@@ -431,18 +494,31 @@ export async function executeGovernedVictoriaDiagnostic(
     timeoutController.abort("VICTORIA_TOTAL_STREAM_TIMEOUT");
   }, totalStreamTimeoutMs);
 
-  const structuredBaseline = generateSeniorStructuredAnalysis(ctx);
+  const structuredBaseline = requireFull10
+    ? generateSeniorStructuredAnalysis(ctx)
+    : generateQuickExecutiveAnalysis(ctx, { userPrompt: params.userPrompt });
 
   try {
     const promptToSend =
       params.userPrompt ||
-      [
-        `Gere uma análise técnica sênior para a entidade selecionada seguindo rigorosamente o contrato VictoriaAnalysisContext (${VICTORIA_CONTRACT_VERSION}).`,
-        `Comece obrigatoriamente respondendo: "O que esta campanha foi configurada para otimizar?" e inclua todas as 10 seções obrigatórias.`,
-        `Use exclusivamente a unidade oficial "${ctx.result_indicator.cost_label}" (${ctx.result_indicator.unit}) e os números exatos do contexto.`,
-        `Proibido usar o termo "CPL" se a categoria for REACH, INSTAGRAM_PROFILE, LANDING_PAGE_VIEWS, LINK_CLICKS, VIDEO_VIEWS ou ENGAGEMENT.`,
-        `Proibido citar qualquer outra campanha da conta ou comparar CPM com custo por conversa.`,
-      ].join("\n");
+      (requireFull10
+        ? [
+            `Gere uma auditoria técnica detalhada em 10 seções para a entidade selecionada seguindo rigorosamente o contrato VictoriaAnalysisContext (${VICTORIA_CONTRACT_VERSION}).`,
+            `Comece obrigatoriamente respondendo: "O que esta campanha foi configurada para otimizar?" e inclua todas as 10 seções obrigatórias.`,
+            `Use exclusivamente a unidade oficial "${ctx.result_indicator.cost_label}" (${ctx.result_indicator.unit}) e os números exatos do contexto.`,
+            `Proibido usar o termo "CPL" se a categoria for REACH, INSTAGRAM_PROFILE, LANDING_PAGE_VIEWS, LINK_CLICKS, VIDEO_VIEWS ou ENGAGEMENT.`,
+            `Proibido citar qualquer outra campanha da conta ou comparar CPM com custo por conversa.`,
+          ].join("\n")
+        : [
+            `Responda de forma clara, executiva e prática entre 120 e 200 palavras nesta ordem exata:`,
+            `1. Veredito (1 frase direta)`,
+            `2. Resultado principal (investimento, ${ctx.result_indicator.label_plural} e ${ctx.result_indicator.cost_label} no período, comparando com meta/referência se existir)`,
+            `3. Leitura do funil (apenas sinais úteis como cliques no link, CTR de link, CPC de link, frequência e acesso ao criativo)`,
+            `4. O que fazer agora (até 3 ações específicas em ordem de prioridade, sem recomendar apenas "esperar" ou "ver CRM")`,
+            `5. Como validar (o que medir e por qual critério, sem prometer certeza)`,
+            `PROIBIDO exibir IDs, hashes, versões de contrato/prompt, nomes internos de eventos da API, tabelas ou UUIDs RAG.`,
+            `Use exclusivamente a unidade oficial "${ctx.result_indicator.cost_label}" e não cite outras campanhas.`,
+          ].join("\n"));
 
     const outgoingMessages =
       params.conversationHistory && params.conversationHistory.length > 0
@@ -466,6 +542,7 @@ export async function executeGovernedVictoriaDiagnostic(
         mode: "sse",
         stream: true,
         requireFull10Sections: requireFull10,
+        response_mode: responseMode,
         readOnly: ctx.operational_mode !== "ACTION_PROPOSAL",
         operational_mode: ctx.operational_mode || VICTORIA_DEFAULT_OPERATIONAL_MODE,
         contract_version: VICTORIA_CONTRACT_VERSION,
@@ -724,6 +801,7 @@ export async function executeGovernedVictoriaDiagnostic(
 
     const enforced = enforceVictoriaPostLlmGuardrails(rawAccumulated, enrichedCtx, {
       requireFull10Sections: requireFull10,
+      userPrompt: params.userPrompt,
     });
     const finalText = enforced.text;
     const isDeterministic = serverUsedFallback || enforced.replacedByDeterministic;
@@ -835,6 +913,8 @@ export interface CreativeItemAdapterInput {
   conversationId?: string | null;
   accountMaxCplTarget?: number | null;
   ragDocuments?: CuratedRagDocument[];
+  userPrompt?: string | null;
+  userTargetAmount?: number | null;
 }
 
 /**
@@ -857,6 +937,14 @@ export function buildContextFromCreativeItem(
   const sameObjectiveAvg = peerResults > 0 && peerSpend > 0 ? peerSpend / peerResults : null;
   const isComparableWithAccountCpl =
     record.resultCategory === "MESSAGES" || record.resultCategory === "LEADS";
+
+  const parsedPromptTarget = input.userPrompt
+    ? extractUserTargetFromPrompt(input.userPrompt)
+    : null;
+  const resolvedUserTargetAmount =
+    typeof input.userTargetAmount === "number" && Number.isFinite(input.userTargetAmount) && input.userTargetAmount > 0
+      ? input.userTargetAmount
+      : parsedPromptTarget?.amount ?? null;
 
   return buildVictoriaAnalysisContext({
     source_surface: "criativos",
@@ -936,6 +1024,8 @@ export function buildContextFromCreativeItem(
         : []),
     ],
     operational_mode: VICTORIA_DEFAULT_OPERATIONAL_MODE,
+    user_target_amount: resolvedUserTargetAmount,
+    user_target_raw_text: parsedPromptTarget?.rawText ?? null,
     sibling_entities: peers.slice(0, 12).map((p) => ({
       id: p.id,
       external_id: p.externalId || undefined,

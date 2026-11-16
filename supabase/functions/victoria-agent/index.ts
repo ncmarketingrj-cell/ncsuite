@@ -15,6 +15,8 @@ import {
   sanitizeVictoriaServerOutput,
   selectUsedRagCitations,
   generateDeterministic10SectionAnalysis,
+  generateQuickExecutiveAnalysisServer,
+  resolveServerRequireFull10Sections,
   type ServerRagCitation,
 } from "../_shared/victoriaCore.ts";
 
@@ -894,7 +896,8 @@ Escreva em formato altamente profissional, com dados baseados na série de métr
       Boolean(analysisContext.entity_id);
     const scopedEntityExternalId = isScopedSingleEntity ? String(analysisContext.external_id || analysisContext.entity_id || "") : "";
     const scopedEntityInternalId = isScopedSingleEntity && analysisContext.internal_id ? String(analysisContext.internal_id) : "";
-    const requireFull10Sections = body.requireFull10Sections !== false;
+    const rawLatestUserText = Array.isArray(messages) && messages.length > 0 ? String(messages[messages.length - 1]?.content || "") : "";
+    const requireFull10Sections = resolveServerRequireFull10Sections(body.requireFull10Sections, rawLatestUserText);
 
     // Registrar telemetria inicial do VictoriaAnalysisContext se fornecido
     if (analysisContext && typeof analysisContext === "object" && analysisContext.request_id) {
@@ -1634,7 +1637,8 @@ REGRAS DE RESPOSTA (${VICTORIA_CONTRACT_VERSION}):
    - 🎯 *Leads / Cadastros (LEADS)* → resultado primário = **leads**, indicador oficial = **CPL (custo por lead)**.
    - 🛒 *Compras (PURCHASES)* → resultado primário = **compras**, indicadores oficiais = **CPA (custo por compra)** e **ROAS**.
    - **PROIBIÇÃO DE COMPARAÇÃO ENTRE UNIDADES DIFERENTES:** Nunca compare grandezas de denominadores diferentes.
-   - **ESTRUTURA OBRIGATÓRIA DE RESPOSTA ANALÍTICA (10 SEÇÕES EM ORDEM EXATA):**
+   - ${requireFull10Sections
+     ? `**ESTRUTURA OBRIGATÓRIA DE RESPOSTA ANALÍTICA (AUDITORIA DETALHADA — 10 SEÇÕES EM ORDEM EXATA):**
      Comece SEMPRE com **"O que esta campanha foi configurada para otimizar?"** e estruture exatamente nestas 10 seções:
      1. \`#### 1. Escopo analisado\`
      2. \`#### 2. Objetivo e evento oficial\`
@@ -1645,7 +1649,15 @@ REGRAS DE RESPOSTA (${VICTORIA_CONTRACT_VERSION}):
      7. \`#### 7. Recomendações seguras\`
      8. \`#### 8. Plano de validação\`
      9. \`#### 9. Nível de confiança\`
-     10. \`#### 10. Fontes e documentos utilizados\`
+     10. \`#### 10. Fontes e documentos utilizados\``
+     : `**ESTRUTURA PADRÃO EXECUTIVA (RESPOSTA RÁPIDA — 120 A 200 PALAVRAS):**
+     Quando o usuário pedir análise de campanha, conjunto ou anúncio (sem pedir auditoria completa), responda em texto curto, natural e acionável, nesta ordem:
+     1. **Veredito:** bom, abaixo da meta, acima da referência ou inconclusivo — 1 frase.
+     2. **Resultado principal:** investimento, resultados oficiais e custo por resultado no período, comparando com meta/referência real quando existir.
+     3. **Leitura do funil:** apenas indicadores secundários úteis (cliques no link, CTR de link, CPC de link, cliques totais e relação cliques->resultado observada sem afirmar causalidade; frequência). Se \`has_media=false\`, declare literalmente: "Consegui analisar os resultados, mas não tive acesso à imagem ou ao vídeo para avaliar o criativo visualmente." Se não houver dados de CRM, cite essa limitação sem enrolar.
+     4. **O que fazer agora:** até 3 ações práticas priorizadas (ex.: manter controle ativo, testar 1–2 variações controladas alterando 1 variável por vez como gancho ou CTA, sem alterar público/orçamento/objetivo juntos). Nunca sugira apenas "esperar 3 a 7 dias e olhar o CRM".
+     5. **Como validar:** métrica, janela compatível e critério objetivo sem prometer certeza ou garantir meta.
+     **PROIBIDO NA RESPOSTA PADRÃO:** IDs de conta/campanha/conjunto/anúncio/documento/snapshot, hashes de contexto, versões de contrato/prompt, códigos internos da API (ex.: \`onsite_conversion.*\`) ou UUIDs/fontes RAG.`}
 
 5. **MODO OPERACIONAL PADRÃO (SOMENTE LEITURA):**
    - ${operationalMode === "ACTION_PROPOSAL"
@@ -1837,7 +1849,7 @@ REGRAS DE RESPOSTA (${VICTORIA_CONTRACT_VERSION}):
       ? normalizedSystemPrompt
       : (userSystemPrompt ? `${normalizedSystemPrompt}\n\nPREFERÊNCIA COMPLEMENTAR DO USUÁRIO (SUBORDINADA ÀS REGRAS CANÔNICAS):\n${userSystemPrompt}` : normalizedSystemPrompt);
 
-    promptWithRAG += `\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nREGRA MANDATÓRIA DE TRATAMENTO & PRECISÃO (${VICTORIA_CONTRACT_VERSION}):\n- Dirija-se ao usuário SEMPRE pelo primeiro nome dele: **${userName}**. PROIBIDO usar "Comandante", "Chefe" ou "Usuário".\n- SEMPRE preserve o evento oficial da entidade (ex: "conversas iniciadas", "visitas ao perfil", "visualizações de página", "pessoas alcançadas") e NUNCA converta para "CPL" quando o objetivo for alcance/visitas/mensagens/cliques.\n- SEMPRE separe e informe explicitamente **CTR Link / CPC Link** e **CTR Todos / CPC Todos**.\n- Quando \`comparable_same_objective_avg\` for \`null\`, afirme literalmente: "Benchmark homogêneo indisponível: não existem outras campanhas comparáveis suficientes no período." — NUNCA compare a campanha consigo mesma.\n- Quando resultados forem 0 e custo não calculável, informe "Não calculável" e NUNCA R$ 0,00.\n- Seja objetivo e direto (máximo ~900–1200 palavras) mantendo rigor factual e as 10 seções exatas.\n- ${operationalMode === "ACTION_PROPOSAL" ? "Ações mutáveis exigem proposta estruturada com aprovação humana explícita." : "MODO READ_ONLY_ANALYSIS ATIVO: PROIBIDO emitir json:action ou propor alteração automática."}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+    promptWithRAG += `\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nREGRA MANDATÓRIA DE TRATAMENTO & PRECISÃO:\n- Dirija-se ao usuário SEMPRE pelo primeiro nome dele: **${userName}**. PROIBIDO usar "Comandante", "Chefe" ou "Usuário".\n- SEMPRE preserve o evento oficial da entidade (ex: "conversas iniciadas", "visitas ao perfil", "visualizações de página", "pessoas alcançadas") e NUNCA converta para "CPL" quando o objetivo for alcance/visitas/mensagens/cliques.\n- SEMPRE distinga **CTR de link / CPC de link** e **cliques totais**.\n- Quando não houver referência comparável, não invente nem compare a entidade consigo mesma.\n- Quando resultados forem 0 e custo não calculável, informe "Não calculável" e NUNCA R$ 0,00.\n- ${requireFull10Sections ? "Auditoria detalhada solicitada: entregue as 10 seções exatas com rigor factual." : "Modo rápido padrão ativo: entregue entre 120 e 200 palavras em 5 blocos objetivos (Veredito, Resultado principal, Leitura do funil, O que fazer agora, Como validar). PROIBIDO expor IDs, hashes, versões de contrato/prompt, códigos de evento da API ou UUIDs RAG."}\n- ${operationalMode === "ACTION_PROPOSAL" ? "Ações mutáveis exigem proposta estruturada com aprovação humana explícita." : "MODO READ_ONLY_ANALYSIS ATIVO: PROIBIDO emitir json:action ou propor alteração automática."}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
 
     if (analysisContext && typeof analysisContext === "object") {
       const cat = String(analysisContext.result_indicator?.category || "UNKNOWN");
@@ -1854,8 +1866,9 @@ REGRAS DE RESPOSTA (${VICTORIA_CONTRACT_VERSION}):
       const rawMetricsSnapshot = analysisContext.raw_metrics || analysisContext.metrics || {};
       const financialSnapshot = analysisContext.financial || {};
       const benchSnapshot = analysisContext.governance_and_benchmarks || {};
+      const creativeSnapshot = analysisContext.creative || {};
 
-      promptWithRAG += `\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nCONTRATO CANÔNICO DE CONTEXTO ATIVO (VictoriaAnalysisContext ${VICTORIA_CONTRACT_VERSION}):\n- Request ID: ${analysisContext.request_id || "n/a"} | Context Hash: ${analysisContext.analysis_context_hash || "n/a"}\n- Modo Operacional: ${operationalMode}\n- Entidade Analisada: [${analysisContext.entity_level || "campaign"}] ${analysisContext.entity_name || ""} (ID: ${analysisContext.entity_id || ""})\n- Conta: ${analysisContext.ad_account_name || ""} (${analysisContext.ad_account_id || ""})\n- Período: ${ctxDateFrom || startDateStr} a ${ctxDateTo || endDateStr} (${ctxDaysCount} dia(s)) | Last Sync: ${analysisContext.period?.last_sync_at || "n/a"} (${analysisContext.period?.data_freshness || "unknown"})\n- Categoria / Evento Oficial: ${cat} | Indicador Oficial de Custo: **${costLbl}**\n- Financeiro Oficial: ${JSON.stringify(financialSnapshot)}\n- Métricas Oficiais no Contrato: ${JSON.stringify(rawMetricsSnapshot)}\n- Benchmarks Homogêneos: avg=${benchSnapshot.comparable_same_objective_avg ?? "null"}, comparáveis=${benchSnapshot.comparable_peer_count ?? 0}, meta_conta=${benchSnapshot.account_max_cpl_target ?? "null"}\n- Rótulos PROIBIDOS para esta entidade: ${forbidden || "Nenhum"}\n- Nível de Confiança Calibrado: **${String(analysisContext.confidence_level || "baixa").toUpperCase()}** (${analysisContext.confidence_justification || analysisContext.confidence_reason || ""})\n- Campos Ausentes: ${Array.isArray(analysisContext.missing_fields) ? analysisContext.missing_fields.join(", ") : "nenhum"}\n- REGRA DE ISOLAMENTO ABSOLUTO: Analise EXCLUSIVAMENTE a entidade "${analysisContext.entity_name || ""}". É TERMINANTEMENTE PROIBIDO citar estas entidades irmãs da conta: ${siblingList || "outras campanhas"}.\n- CITAÇÃO OBRIGATÓRIA DE FONTES (Seção 10): ${ragCitations.length > 0 ? `Foram recuperados ${ragCitations.length} documento(s) candidato(s) na base curada RAG abaixo. Na Seção 10, cite APENAS os documentos efetivamente utilizados e pertinentes ao objetivo desta entidade (pelo ID e título exato) e informe a contagem real de usados vs recuperados.` : "Nenhum documento RAG recuperado; informe honestamente que aplicou o contrato canônico sem documentos extras."}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+      promptWithRAG += `\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nCONTEXTO CANÔNICO DA ENTIDADE SELECIONADA:\n- Modo Operacional: ${operationalMode}\n- Entidade Analisada: ${analysisContext.entity_name || ""} (${analysisContext.entity_level || "campaign"})\n- Conta: ${analysisContext.ad_account_name || ""}\n- Período: ${ctxDateFrom || startDateStr} a ${ctxDateTo || endDateStr} (${ctxDaysCount} dia(s))\n- Categoria / Unidade Oficial: ${cat} | **${costLbl}**\n- Financeiro Oficial: ${JSON.stringify(financialSnapshot)}\n- Métricas Oficiais: ${JSON.stringify(rawMetricsSnapshot)}\n- Criativo acessível: has_media=${Boolean(creativeSnapshot.has_media || analysisContext.configuration?.has_creative_data)}, headline="${creativeSnapshot.headline || ""}", cta="${creativeSnapshot.cta_type || ""}"\n- Meta do usuário: ${analysisContext.user_target?.amount ? `R$ ${analysisContext.user_target.amount}` : "não informada no prompt"} | Meta conta: ${benchSnapshot.account_max_cpl_target ?? "null"} | Referência comparável mesma conta/objetivo: ${benchSnapshot.comparable_same_objective_avg ?? "null"} (${benchSnapshot.comparable_peer_count ?? 0} comparáveis)\n- Rótulos PROIBIDOS para esta entidade: ${forbidden || "Nenhum"}\n- Campos Ausentes: ${Array.isArray(analysisContext.missing_fields) ? analysisContext.missing_fields.join(", ") : "nenhum"}\n- REGRA DE ISOLAMENTO ABSOLUTO: Analise EXCLUSIVAMENTE "${analysisContext.entity_name || ""}". PROIBIDO citar entidades irmãs da conta: ${siblingList || "outras campanhas"}.\n- ${requireFull10Sections ? `CITAÇÃO DE FONTES (Seção 10): ${ragCitations.length > 0 ? `Cite apenas os documentos efetivamente utilizados.` : "Nenhum documento RAG."}` : `APRESENTAÇÃO AO USUÁRIO: Nunca liste IDs/UUIDs RAG, hashes ou códigos de eventos no texto final.`}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
     }
     if (knowledgeCtx) {
       promptWithRAG += `\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nBASE DE CONHECIMENTO CURADA NC PERFORMANCE (APENAS APPROVED — Prioridade: 1º Dados Reais da Conta > 2º Metas da Conta > 3º Documentos RAG abaixo):\n\n${knowledgeCtx}\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
@@ -2021,7 +2034,8 @@ REGRAS DE RESPOSTA (${VICTORIA_CONTRACT_VERSION}):
             analysisContext,
             ragCitations,
             operationalMode,
-            requireFull10Sections
+            requireFull10Sections,
+            rawLatestUserText
           );
           await finalizeTelemetry({
             usedFallback: guarded.replacedByDeterministic,
@@ -2095,7 +2109,8 @@ REGRAS DE RESPOSTA (${VICTORIA_CONTRACT_VERSION}):
                   analysisContext,
                   ragCitations,
                   operationalMode,
-                  requireFull10Sections
+                  requireFull10Sections,
+                  rawLatestUserText
                 );
                 const latencyMs = Date.now() - requestStartedAt;
                 await finalizeTelemetry({
@@ -2163,8 +2178,10 @@ REGRAS DE RESPOSTA (${VICTORIA_CONTRACT_VERSION}):
     const fallbackUsedDocs = analysisContext && analysisContext.entity_id ? ragCitations.slice(0, 4) : [];
     // Fallback determinístico completo se nenhum provedor respondeu
     const deterministicFallback = analysisContext && analysisContext.entity_id
-      ? generateDeterministic10SectionAnalysis(analysisContext, fallbackUsedDocs)
-      : `### Victoria AI (${VICTORIA_CONTRACT_VERSION})\n\nDesculpe, ${userName}, houve indisponibilidade momentânea do provedor de IA (${lastProviderError || "sem conexão"}). Os dados oficiais continuam ativos — informe qual conta ou campanha deseja auditar.`;
+      ? (requireFull10Sections
+          ? generateDeterministic10SectionAnalysis(analysisContext, fallbackUsedDocs)
+          : generateQuickExecutiveAnalysisServer(analysisContext, rawLatestUserText))
+      : `### Victoria AI\n\nDesculpe, ${userName}, houve indisponibilidade momentânea do provedor de IA. Os dados oficiais continuam ativos — informe qual conta ou campanha deseja analisar.`;
 
     await finalizeTelemetry({
       usedFallback: true,

@@ -8,6 +8,8 @@ import {
   VICTORIA_CONTRACT_VERSION,
   VICTORIA_PROMPT_VERSION,
   VICTORIA_ANALYTICAL_TEMPERATURE,
+  resolveVictoriaResponseMode,
+  stripTechnicalArtifactsForQuickMode,
 } from "@/lib/victoriaContract";
 import {
   isReadOnlyAnalysisRequest,
@@ -250,8 +252,9 @@ DATA DE REFERÊNCIA DO SISTEMA (Use isso para saber quais datas correspondem a '
 
     const lastUserMessage = [...messages].reverse().find((m) => m.role === "user")?.content || "";
     const isReadOnly = isReadOnlyAnalysisRequest(lastUserMessage);
+    const isDetailedAudit = resolveVictoriaResponseMode({ userPrompt: lastUserMessage }) === "detailed_audit";
 
-    const systemPrompt = `Você é a Victoria AI, Estrategista Sênior de Tráfego Pago da NC Performance (Contrato Canônico ${VICTORIA_CONTRACT_VERSION}, Prompt ${VICTORIA_PROMPT_VERSION}, modo ${isReadOnly ? "READ_ONLY_ANALYSIS" : "ACTION_PROPOSAL"}). Você analisa campanhas exclusivamente com base nos dados reais e unidades oficiais registradas na conta.
+    const systemPrompt = `Você é a Victoria AI, Estrategista Sênior de Tráfego Pago da NC Performance (modo ${isReadOnly ? "READ_ONLY_ANALYSIS" : "ACTION_PROPOSAL"}). Você analisa campanhas exclusivamente com base nos dados reais e unidades oficiais registradas na conta.
 
 REGRAS CRÍTICAS DE UNIDADE E GOVERNANÇA:
 1. **Respeite o Objetivo Oficial de Cada Campanha:**
@@ -280,9 +283,10 @@ Data | Plataforma | Campanha | Investimento | Resultados (do objetivo) | Cliques
 ${dailySeriesText}
 
 REGRAS DE RESPOSTA:
-1. Responda sempre em Português Brasileiro usando Markdown estruturado.
-2. Nunca invente percentuais ou métricas que não estejam explícitas nos dados acima.
-3. Bloqueio de Ações em Somente Leitura: se READ_ONLY_ANALYSIS estiver ativo, não gere blocos json:action.`;
+1. Responda sempre em Português Brasileiro usando Markdown limpo.
+2. Nunca invente percentuais, metas ou métricas que não estejam explícitas nos dados acima.
+3. Bloqueio de Ações em Somente Leitura: se READ_ONLY_ANALYSIS estiver ativo, não gere blocos json:action.
+4. ${isDetailedAudit ? "Auditoria detalhada solicitada: entregue leitura completa por etapas." : "Resposta executiva padrão (120 a 200 palavras): entregue em 5 blocos objetivos (Veredito, Resultado principal, Leitura do funil, O que fazer agora, Como validar). PROIBIDO expor IDs, hashes, versões de contrato/prompt, códigos de evento da API ou UUIDs internos."}`;
 
     const GEMINI_API_KEY = getEnvVariable("GEMINI_API_KEY");
     const LOVABLE_API_KEY = getEnvVariable("LOVABLE_API_KEY");
@@ -377,9 +381,12 @@ REGRAS DE RESPOSTA:
       throw new Error("Não foi possível conectar aos modelos de IA. Verifique suas chaves de API.");
     }
 
-    const safeResponse = isReadOnly
+    const cleanedByMode = isReadOnly
       ? stripJsonActionBlocks(responseText).cleanText
       : responseText;
+    const safeResponse = isDetailedAudit
+      ? cleanedByMode
+      : stripTechnicalArtifactsForQuickMode(cleanedByMode);
 
     return { message: safeResponse };
   });

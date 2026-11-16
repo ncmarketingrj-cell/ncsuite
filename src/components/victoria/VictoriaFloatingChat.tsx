@@ -32,6 +32,8 @@ import {
   buildSuggestedQuestionsForContext,
   sanitizeVictoriaOutputText,
   generateSeniorStructuredAnalysis,
+  generateQuickExecutiveAnalysis,
+  resolveVictoriaResponseMode,
   matchesCanonicalContextIdentity,
   VICTORIA_BUILD_TAG,
   VICTORIA_ANALYTICAL_TEMPERATURE,
@@ -359,6 +361,7 @@ export const VictoriaFloatingChat: React.FC<VictoriaFloatingChatProps> = ({
         endpointUrl: `${EXTERNAL_SUPABASE_URL}/functions/v1/victoria-agent`,
         authToken: token,
         anonKey: EXTERNAL_SUPABASE_ANON_KEY,
+        requireFull10Sections: false,
         onToken: (partialText, validatedCtx) => {
           if (isStale()) return;
           const idCheck = matchesCanonicalContextIdentity(ctxSnapshot, toIdentityPayload(validatedCtx));
@@ -383,7 +386,7 @@ export const VictoriaFloatingChat: React.FC<VictoriaFloatingChatProps> = ({
       const idCheck = matchesCanonicalContextIdentity(ctxSnapshot, toIdentityPayload(result.context));
       const safeFinalText = idCheck.valid
         ? result.text
-        : generateSeniorStructuredAnalysis(ctxSnapshot);
+        : generateQuickExecutiveAnalysis(ctxSnapshot);
 
       if (!idCheck.valid) {
         console.warn("[VICTORIA_FLOATING_ID_MISMATCH]", idCheck.mismatches);
@@ -437,7 +440,7 @@ export const VictoriaFloatingChat: React.FC<VictoriaFloatingChatProps> = ({
     } catch (err: any) {
       if (isStale()) return;
       console.error("[VICTORIA_FLOATING_DIAG_ERR]", err);
-      const fallback = generateSeniorStructuredAnalysis(ctxSnapshot);
+      const fallback = generateQuickExecutiveAnalysis(ctxSnapshot);
       setResponseOrigin("deterministic_fallback");
       setFallbackReason(err?.message || "Erro na chamada diagnóstica.");
       setMessages([
@@ -532,7 +535,7 @@ export const VictoriaFloatingChat: React.FC<VictoriaFloatingChatProps> = ({
         anonKey: EXTERNAL_SUPABASE_ANON_KEY,
         userPrompt: text,
         conversationHistory,
-        requireFull10Sections: false,
+        requireFull10Sections: resolveVictoriaResponseMode({ userPrompt: text }) === "detailed_audit",
         onToken: (partialText, validatedCtx) => {
           if (isStale()) return;
           if (!matchesCanonicalContextIdentity(ctxSnapshot, toIdentityPayload(validatedCtx)).valid) return;
@@ -564,10 +567,13 @@ export const VictoriaFloatingChat: React.FC<VictoriaFloatingChatProps> = ({
       }
 
       const idCheck = matchesCanonicalContextIdentity(ctxSnapshot, toIdentityPayload(result.context));
+      const useDetailedAudit = resolveVictoriaResponseMode({ userPrompt: text }) === "detailed_audit";
       const finalSafeText = sanitizeVictoriaOutputText(
         idCheck.valid && result.text
           ? result.text
-          : generateSeniorStructuredAnalysis(ctxSnapshot),
+          : (useDetailedAudit
+              ? generateSeniorStructuredAnalysis(ctxSnapshot)
+              : generateQuickExecutiveAnalysis(ctxSnapshot, { userPrompt: text })),
         ctxSnapshot
       );
 
@@ -842,6 +848,15 @@ export const VictoriaFloatingChat: React.FC<VictoriaFloatingChatProps> = ({
                 </button>
               </div>
               <div className="flex items-center gap-1.5 min-w-0">
+                <button
+                  type="button"
+                  onClick={() => void handleSend("Quero uma auditoria completa detalhada deste anúncio")}
+                  disabled={isLoading}
+                  className="rounded px-1.5 py-0.5 text-[8px] font-bold bg-primary/10 text-primary border border-primary/25 hover:bg-primary/20 transition"
+                  title="Solicitar relatório completo em 10 seções"
+                >
+                  Auditoria completa
+                </button>
                 {responseOrigin && (
                   <span
                     className={`rounded px-1.5 py-0.5 font-mono text-[8px] font-bold border ${responseOrigin === "generative"
@@ -850,22 +865,10 @@ export const VictoriaFloatingChat: React.FC<VictoriaFloatingChatProps> = ({
                       }`}
                     title={fallbackReason || undefined}
                   >
-                    {responseOrigin === "generative" ? "⚡ IA" : "🛡️ Fallback"}
+                    {responseOrigin === "generative" ? "⚡ IA" : "🛡️ Local"}
                     {responseLatencyMs ? ` ${(responseLatencyMs / 1000).toFixed(1)}s` : ""}
                   </span>
                 )}
-                {(ragCitations.length > 0 || ragCandidatesCount > 0) && (
-                  <span
-                    className="rounded px-1.5 py-0.5 font-mono text-[8px] font-bold bg-violet-500/10 text-violet-300 border border-violet-500/30"
-                    title={`${ragCitations.length} documento(s) citado(s) na resposta de ${Math.max(ragCandidatesCount, ragCitations.length)} candidato(s) recuperado(s)`}
-                  >
-                    📚 {ragCitations.length}
-                    {ragCandidatesCount > ragCitations.length ? `/${ragCandidatesCount}` : ""}
-                  </span>
-                )}
-                <span className="font-mono text-[8px] text-muted-foreground/60 truncate">
-                  {activeContext.analysis_context_hash}
-                </span>
               </div>
             </div>
 
@@ -987,7 +990,6 @@ export const VictoriaFloatingChat: React.FC<VictoriaFloatingChatProps> = ({
                           hour: "2-digit",
                           minute: "2-digit",
                         })}
-                        {m.contextHash ? ` · ${m.contextHash}` : ""}
                       </span>
                     </div>
                   </motion.div>

@@ -1140,6 +1140,7 @@ test("Auditoria Gap 1: executeGovernedVictoriaDiagnostic distingue Resposta Gene
       controller: ctrl1,
       endpointUrl: "https://example.supabase.co/functions/v1/victoria-agent",
       anonKey: "anon",
+      requireFull10Sections: true,
     });
 
     assert.equal(resGen.responseOrigin, "generative");
@@ -1164,7 +1165,21 @@ test("Auditoria Gap 1: executeGovernedVictoriaDiagnostic distingue Resposta Gene
 
     assert.equal(resFallback.responseOrigin, "deterministic_fallback");
     assert.ok((resFallback.fallbackReason || "").length > 0);
-    assert.equal(hasAllMandatory10Sections(resFallback.text), true);
+    assert.equal(hasAllMandatory10Sections(resFallback.text), false);
+    assert.ok(resFallback.text.includes("Veredito"));
+    assert.ok(resFallback.text.includes("O que fazer agora"));
+
+    const ctrl3 = new VictoriaSessionController();
+    const resDetailedFallback = await executeGovernedVictoriaDiagnostic({
+      ctx,
+      controller: ctrl3,
+      endpointUrl: "https://example.supabase.co/functions/v1/victoria-agent",
+      anonKey: "anon",
+      requireFull10Sections: true,
+    });
+
+    assert.equal(resDetailedFallback.responseOrigin, "deterministic_fallback");
+    assert.equal(hasAllMandatory10Sections(resDetailedFallback.text), true);
   } finally {
     globalThis.fetch = originalFetch;
   }

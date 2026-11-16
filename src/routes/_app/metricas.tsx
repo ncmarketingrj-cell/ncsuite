@@ -24,6 +24,7 @@ import { supabase, EXTERNAL_SUPABASE_URL, EXTERNAL_SUPABASE_ANON_KEY } from "@/i
 import {
   VictoriaSessionController,
   generateSeniorStructuredAnalysis,
+  generateQuickExecutiveAnalysis,
   buildSuggestedQuestionsForContext,
   type VictoriaAnalysisContext,
 } from "@/lib/victoriaContract";
@@ -569,7 +570,7 @@ function generateLocalDiagnostic(
     siblingEntities: options?.siblingEntities,
     operationalMode: "READ_ONLY_ANALYSIS",
   });
-  return generateSeniorStructuredAnalysis(ctx);
+  return generateQuickExecutiveAnalysis(ctx);
 }
 function parseMarkdown(text: string) {
   if (!text) return null;
@@ -1176,7 +1177,7 @@ function MetricasCampanhasPage() {
           ? "cost, conversions, impressions, clicks, inline_link_clicks, all_clicks, optimization_goal, result_indicator, purchase_value, reach, date, result_type"
           : "cost, conversions, impressions, clicks, reach, date";
         const selectExpr = withExtended
-          ? `id, name, status, external_id, campaign_id, ad_set_id, creative_url, campaigns(id, name, objective, status, delivery_status, stop_time), ad_sets(id, name, end_time), asset_metrics(${metricCols})`
+          ? `id, name, status, external_id, campaign_id, ad_set_id, creative_url, thumbnail_url, creative_body, creative_title, creative_format, creative_image_url, call_to_action_type, creative_name, campaigns(id, name, objective, status, delivery_status, stop_time), ad_sets(id, name, end_time), asset_metrics(${metricCols})`
           : `id, name, status, external_id, campaign_id, ad_set_id, creative_url, campaigns(id, name, objective), asset_metrics(${metricCols})`;
         let q = (supabase as any)
           .from("ads")
@@ -1766,7 +1767,8 @@ function MetricasCampanhasPage() {
 
   const insights = useMemo(() => gerarInsights(enrichedCampaigns, totCost, totConv, avgCpl, avgCtr, avgCpm), [enrichedCampaigns, totCost, totConv, avgCpl, avgCtr, avgCpm]);
 
-  const loadAiInsight = async (item: any) => {
+  const loadAiInsight = async (item: any, opts?: { detailedAudit?: boolean }) => {
+    const detailedAudit = Boolean(opts?.detailedAudit);
     if (!item) return;
     inspectorSessionRef.current.abortActive();
     setIsGeneratingInsight(true);
@@ -1816,6 +1818,7 @@ function MetricasCampanhasPage() {
         endpointUrl: `${EXTERNAL_SUPABASE_URL}/functions/v1/victoria-agent`,
         authToken: token,
         anonKey: EXTERNAL_SUPABASE_ANON_KEY,
+        requireFull10Sections: detailedAudit,
         onToken: (partialText) => {
           setAiInsightText(partialText);
         },
@@ -1834,7 +1837,11 @@ function MetricasCampanhasPage() {
       console.error("Erro na Victoria IA:", e);
       setInspectorResponseOrigin("deterministic_fallback");
       setInspectorFallbackReason(e?.message || "Erro inesperado na execução do diagnóstico.");
-      setAiInsightText(generateSeniorStructuredAnalysis(ctx));
+      setAiInsightText(
+        detailedAudit
+          ? generateSeniorStructuredAnalysis(ctx)
+          : generateQuickExecutiveAnalysis(ctx)
+      );
     } finally {
       setIsGeneratingInsight(false);
     }
@@ -4047,9 +4054,6 @@ function MetricasCampanhasPage() {
                             <span className="rounded-full bg-primary/10 px-1.5 py-0.5 text-[8px] font-mono font-bold text-primary border border-primary/20">
                               Confiança {inspectorContext.confidence_level.toUpperCase()}
                             </span>
-                            <span className="rounded-full bg-white/5 px-1.5 py-0.5 text-[8px] font-mono text-muted-foreground border border-white/10">
-                              {inspectorContext.analysis_context_hash}
-                            </span>
                             {inspectorResponseOrigin && (
                               <span
                                 className={`rounded-full px-1.5 py-0.5 text-[8px] font-mono font-bold border ${inspectorResponseOrigin === "generative"
@@ -4058,13 +4062,8 @@ function MetricasCampanhasPage() {
                                   }`}
                                 title={inspectorFallbackReason || undefined}
                               >
-                                {inspectorResponseOrigin === "generative" ? "⚡ IA Generativa" : "🛡️ Fallback Determinístico"}
+                                {inspectorResponseOrigin === "generative" ? "⚡ IA" : "🛡️ Análise local"}
                                 {inspectorLatencyMs ? ` · ${(inspectorLatencyMs / 1000).toFixed(1)}s` : ""}
-                              </span>
-                            )}
-                            {inspectorRagCitations.length > 0 && (
-                              <span className="rounded-full bg-violet-500/10 px-1.5 py-0.5 text-[8px] font-mono font-bold text-violet-300 border border-violet-500/30">
-                                📚 {inspectorRagCitations.length} doc{inspectorRagCitations.length > 1 ? "s" : ""} RAG
                               </span>
                             )}
                           </>
@@ -4073,13 +4072,22 @@ function MetricasCampanhasPage() {
                       <div className="flex items-center gap-2">
                         <button
                           type="button"
-                          onClick={() => void loadAiInsight(selectedFocusItem)}
+                          onClick={() => void loadAiInsight(selectedFocusItem, { detailedAudit: false })}
                           disabled={isGeneratingInsight}
                           className="flex items-center gap-1 text-[10px] font-bold text-muted-foreground hover:text-foreground"
-                          title="Regerar análise desta entidade"
+                          title="Regerar análise rápida"
                         >
                           <RefreshCw className={`h-3 w-3 ${isGeneratingInsight ? "animate-spin" : ""}`} />
                           Atualizar
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void loadAiInsight(selectedFocusItem, { detailedAudit: true })}
+                          disabled={isGeneratingInsight}
+                          className="text-[10px] font-bold text-muted-foreground hover:text-foreground"
+                          title="Gerar auditoria técnica completa em 10 seções"
+                        >
+                          Auditoria completa
                         </button>
                         <button
                           type="button"

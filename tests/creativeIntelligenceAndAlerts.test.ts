@@ -478,7 +478,9 @@ Mensagens no WhatsApp.
         raw_metrics: { result_value: 10, cost_per_result: 10, impressions: 1000, reach: 800, link_clicks: 20, frequency: 1.25 },
         period: { date_from: "2026-11-01", date_to: "2026-11-15", days_count: 15, sync_freshness: "fresh" },
       },
-      candidates
+      candidates,
+      "READ_ONLY_ANALYSIS",
+      true
     );
     assert.equal(guarded.replacedByDeterministic, false);
     assert.deepEqual(guarded.citationsUsed.map((c) => c.id), ["doc-meta-1"]);
