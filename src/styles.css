@@ -1,6 +1,7 @@
 @import "tailwindcss" source(none);
 @source "../src";
 @import "tw-animate-css";
+@custom-variant dark (&:where(.dark, .dark *));
 
 @theme inline {
   --font-display: "Plus Jakarta Sans", system-ui, sans-serif;
@@ -51,6 +52,7 @@
    Vermelho Ferrari como acento neon vivo.
    ═══════════════════════════════════════════ */
 :root {
+  color-scheme: dark;
   --radius: 0.75rem;
   --background: 230 25% 4%;
   --foreground: 210 20% 96%;
@@ -89,6 +91,7 @@
    Claramente cinza — nunca branco puro — elegante, com contraste impecável.
    ═══════════════════════════════════════════ */
 html.light {
+  color-scheme: light;
   --background: 220 12% 80%;
   /* #C6CAD1 — cinza nardo clássico e perceptível, nunca branco */
   --foreground: 220 32% 10%;
@@ -717,7 +720,6 @@ html.light {
   ────────────────────────────────────────── */
   html.theme-transition {
     /* As CSS custom props propagam automaticamente — não precisa transicionar os filhos */
-    color-scheme: light dark;
   }
 
   /* Apenas os containers que têm background/border próprio visível */
@@ -936,6 +938,19 @@ html.light {
     background-color: hsl(var(--card)) !important;
     color: hsl(var(--foreground)) !important;
     border-color: hsl(var(--border)) !important;
+  }
+
+  /* Native <select> dropdown options follow the active app theme, not OS color-scheme */
+  html:not(.light) select option,
+  html:not(.light) select optgroup {
+    background-color: hsl(var(--popover));
+    color: hsl(var(--popover-foreground));
+  }
+
+  html.light select option,
+  html.light select optgroup {
+    background-color: hsl(var(--popover)) !important;
+    color: hsl(var(--popover-foreground)) !important;
   }
 
   html.light input::placeholder,

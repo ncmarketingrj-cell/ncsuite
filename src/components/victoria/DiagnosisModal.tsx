@@ -121,16 +121,16 @@ export const DiagnosisModal: React.FC<DiagnosisModalProps> = ({
             initial={{ opacity: 0, scale: 0.95, y: 16 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95, y: 16 }}
-            className="relative w-full max-w-lg overflow-hidden rounded-2xl border border-white/10 bg-zinc-900/95 p-6 shadow-2xl backdrop-blur-md"
+            className="relative w-full max-w-lg overflow-hidden rounded-2xl border border-border bg-card/95 text-card-foreground p-6 shadow-2xl backdrop-blur-md"
           >
             {/* Cabeçalho */}
-            <div className="flex items-start justify-between gap-4 border-b border-white/5 pb-4 mb-4">
+            <div className="flex items-start justify-between gap-4 border-b border-border pb-4 mb-4">
               <div className="flex items-center gap-3">
                 <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 border border-primary/20 text-primary">
                   <Cpu className="h-5 w-5 animate-pulse" />
                 </div>
                 <div>
-                  <h3 className="text-sm font-bold text-white flex items-center gap-1.5">
+                  <h3 className="text-sm font-bold text-foreground flex items-center gap-1.5">
                     Diagnóstico Causal de Alerta
                   </h3>
                   <p className="text-[10px] text-muted-foreground uppercase font-mono mt-0.5 tracking-wider truncate max-w-[280px]">
@@ -140,7 +140,7 @@ export const DiagnosisModal: React.FC<DiagnosisModalProps> = ({
               </div>
               <button
                 onClick={onClose}
-                className="rounded-lg p-1 text-muted-foreground hover:bg-white/5 hover:text-white transition"
+                className="rounded-lg p-1 text-muted-foreground hover:bg-muted hover:text-foreground transition"
               >
                 <X className="h-4 w-4" />
               </button>

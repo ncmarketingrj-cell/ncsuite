@@ -881,7 +881,7 @@ export const VictoriaFloatingChat: React.FC<VictoriaFloatingChatProps> = ({
 
             {/* PAINEL EXPANSÍVEL: DADOS USADOS */}
             {showDataUsed && (
-              <div className="px-3 py-2.5 bg-zinc-950/90 border-b border-white/10 text-[10px] font-mono space-y-1 max-h-40 overflow-y-auto shrink-0">
+              <div className="px-3 py-2.5 bg-muted/80 border-b border-border text-[10px] font-mono space-y-1 max-h-40 overflow-y-auto shrink-0">
                 <div className="flex items-center justify-between text-primary font-bold">
                   <span>Contrato VictoriaAnalysisContext ({activeContext.contract_version})</span>
                   <span>Fonte: {activeContext.result_indicator.source}</span>
@@ -913,7 +913,7 @@ export const VictoriaFloatingChat: React.FC<VictoriaFloatingChatProps> = ({
 
             {/* PAINEL EXPANSÍVEL: POR QUE ESTA RECOMENDAÇÃO */}
             {showWhyRec && (
-              <div className="px-3 py-2.5 bg-zinc-950/90 border-b border-white/10 text-[10px] space-y-1 max-h-40 overflow-y-auto shrink-0">
+              <div className="px-3 py-2.5 bg-muted/80 border-b border-border text-[10px] space-y-1 max-h-40 overflow-y-auto shrink-0">
                 <div className="flex items-center gap-1.5 text-amber-400 font-bold">
                   <ShieldCheck className="h-3.5 w-3.5" />
                   <span>Governança & Calibração de Evidência ({activeContext.confidence_level.toUpperCase()})</span>

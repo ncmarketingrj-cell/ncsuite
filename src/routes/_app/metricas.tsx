@@ -3835,11 +3835,11 @@ function MetricasCampanhasPage() {
                                       >
                                         {conv > 0 && <span className="text-[7px] text-white/80">{conv}</span>}
                                         {/* Tooltip on hover */}
-                                        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block w-max bg-black/90 border border-white/10 p-2 rounded-lg z-50 shadow-xl pointer-events-none">
-                                          <p className="font-bold text-white mb-1">{dayName}, {h}h - {h + 1}h</p>
-                                          <p className="text-white/70">Conversões: <span className="text-white font-bold">{conv}</span></p>
-                                          <p className="text-white/70">Gasto: <span className="text-white font-bold">R$ {cell.cost.toFixed(2)}</span></p>
-                                          <p className="text-white/70">CPL: <span className="text-white font-bold">R$ {cpl.toFixed(2)}</span></p>
+                                        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block w-max bg-popover/95 text-popover-foreground border border-border p-2 rounded-lg z-50 shadow-xl pointer-events-none">
+                                          <p className="font-bold text-foreground mb-1">{dayName}, {h}h - {h + 1}h</p>
+                                          <p className="text-muted-foreground">Conversões: <span className="text-foreground font-bold">{conv}</span></p>
+                                          <p className="text-muted-foreground">Gasto: <span className="text-foreground font-bold">R$ {cell.cost.toFixed(2)}</span></p>
+                                          <p className="text-muted-foreground">CPL: <span className="text-foreground font-bold">R$ {cpl.toFixed(2)}</span></p>
                                         </div>
                                       </div>
                                     );
@@ -4127,7 +4127,7 @@ function MetricasCampanhasPage() {
                     )}
 
                     {inspectorShowData && inspectorContext && (
-                      <div className="rounded-xl border border-white/10 bg-zinc-950/90 p-3 text-[10px] font-mono space-y-1">
+                      <div className="rounded-xl border border-border bg-card/95 p-3 text-[10px] font-mono space-y-1">
                         <p className="text-primary font-bold">
                           Contrato Canônico v{inspectorContext.contract_version} · Fonte: {inspectorContext.result_indicator.source}
                         </p>
@@ -4149,7 +4149,7 @@ function MetricasCampanhasPage() {
                     )}
 
                     {inspectorShowWhy && inspectorContext && (
-                      <div className="rounded-xl border border-white/10 bg-zinc-950/90 p-3 text-[10px] space-y-1">
+                      <div className="rounded-xl border border-border bg-card/95 p-3 text-[10px] space-y-1">
                         <p className="text-amber-400 font-bold">
                           Calibração de Confiança ({inspectorContext.confidence_level.toUpperCase()}) & Isolamento de Unidade
                         </p>

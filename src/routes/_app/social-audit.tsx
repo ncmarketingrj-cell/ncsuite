@@ -498,21 +498,21 @@ ${lowLines}
                   : null;
                 setSelectedPage(nextId, label);
               }}
-              className="bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-xs font-bold text-white focus:outline-none focus:border-primary/50 cursor-pointer appearance-none pr-8 min-w-[220px]"
+              className="bg-card border border-border rounded-xl px-4 py-2 text-xs font-bold text-foreground focus:outline-none focus:border-primary/50 cursor-pointer appearance-none pr-8 min-w-[220px]"
             >
-              <option value="all" className="bg-neutral-900">
+              <option value="all" className="bg-popover text-popover-foreground">
                 {isLoadingAccounts && activePages.length === 0
                   ? "Todas as Contas (Carregando...)"
                   : `Todas as Contas (${activePages.length})`}
               </option>
               {canonicalSelectedPage !== "all" &&
                 !activePages.some((p) => p.page_id === canonicalSelectedPage) && (
-                  <option value={canonicalSelectedPage} className="bg-neutral-900">
+                  <option value={canonicalSelectedPage} className="bg-popover text-popover-foreground">
                     {storedAccountLabel || "Conta selecionada"}
                   </option>
                 )}
               {activePages.map((page) => (
-                <option key={page.page_id} value={page.page_id} className="bg-neutral-900">
+                <option key={page.page_id} value={page.page_id} className="bg-popover text-popover-foreground">
                   {page.page_name} {page.instagram_handle ? `(@${page.instagram_handle})` : ""}
                 </option>
               ))}
@@ -706,13 +706,13 @@ ${lowLines}
                       <XAxis dataKey="label" stroke="rgba(255,255,255,0.4)" fontSize={10} />
                       <YAxis stroke="rgba(255,255,255,0.4)" fontSize={10} />
                       <Tooltip
-                        cursor={{ fill: "rgba(255,255,255,0.04)" }}
+                        cursor={{ fill: "rgba(150,150,150,0.08)" }}
                         contentStyle={{
-                          backgroundColor: "rgba(10,10,10,0.95)",
-                          border: "1px solid rgba(255,255,255,0.1)",
+                          backgroundColor: "hsl(var(--popover))",
+                          border: "1px solid hsl(var(--border))",
                           borderRadius: "12px",
                           fontSize: "11px",
-                          color: "#fff",
+                          color: "hsl(var(--popover-foreground))",
                         }}
                       />
                       {chartAverage > 0 && (

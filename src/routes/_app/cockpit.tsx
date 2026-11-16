@@ -460,10 +460,10 @@ function CockpitGauge({
       {/* ── TELEMETRY EXPLANATORY BALLOON (ON HOVER) ────────────────────────── */}
       {info && (
         <div
-          className={`absolute bottom-[calc(100%+10px)] ${tooltipPosCls} w-80 p-4 rounded-2xl bg-zinc-950/98 text-zinc-100 border border-white/20 shadow-[0_25px_60px_-15px_rgba(0,0,0,0.85)] backdrop-blur-2xl opacity-0 group-hover/gauge:opacity-100 group-hover/gauge:translate-y-0 translate-y-2 pointer-events-none transition-all duration-200 z-[999] text-left`}
+          className={`absolute bottom-[calc(100%+10px)] ${tooltipPosCls} w-80 p-4 rounded-2xl bg-popover/98 text-popover-foreground border border-border shadow-2xl backdrop-blur-2xl opacity-0 group-hover/gauge:opacity-100 group-hover/gauge:translate-y-0 translate-y-2 pointer-events-none transition-all duration-200 z-[999] text-left`}
         >
           {/* Header */}
-          <div className="flex items-center justify-between border-b border-white/10 pb-2.5 mb-2.5">
+          <div className="flex items-center justify-between border-b border-border/80 pb-2.5 mb-2.5">
             <div className="flex items-center gap-2">
               <div
                 className="p-1.5 rounded-lg shrink-0 flex items-center justify-center"
@@ -472,10 +472,10 @@ function CockpitGauge({
                 <info.icon className="h-4 w-4" style={{ color: glowColor }} />
               </div>
               <div className="min-w-0">
-                <span className="text-[8px] font-black tracking-widest uppercase text-zinc-400 block">
+                <span className="text-[8px] font-black tracking-widest uppercase text-muted-foreground block">
                   {info.category}
                 </span>
-                <span className="text-xs font-black tracking-wider text-white uppercase truncate block">
+                <span className="text-xs font-black tracking-wider text-foreground uppercase truncate block">
                   {label}
                 </span>
               </div>
@@ -493,54 +493,54 @@ function CockpitGauge({
           </div>
 
           {/* Body Content */}
-          <div className="space-y-2.5 text-[10px] leading-relaxed text-zinc-300">
+          <div className="space-y-2.5 text-[10px] leading-relaxed text-muted-foreground">
             {/* O Que Mede em Palavras Simples */}
             <div>
-              <span className="text-[8px] font-black uppercase tracking-widest text-zinc-400 block mb-0.5">
+              <span className="text-[8px] font-black uppercase tracking-widest text-muted-foreground block mb-0.5">
                 O QUE SIGNIFICA NA PRÁTICA
               </span>
-              <p className="text-[10px] text-zinc-300 leading-snug">{info.what}</p>
+              <p className="text-[10px] text-foreground/90 leading-snug">{info.what}</p>
             </div>
 
             {/* Fórmula */}
-            <div className="p-2 rounded-lg bg-white/5 border border-white/10 font-mono text-[9px] text-zinc-300 flex items-center justify-between">
-              <span className="text-[8px] font-black text-zinc-400 uppercase">FÓRMULA MATEMÁTICA:</span>
+            <div className="p-2 rounded-lg bg-muted/60 border border-border/80 font-mono text-[9px] text-foreground flex items-center justify-between">
+              <span className="text-[8px] font-black text-muted-foreground uppercase">FÓRMULA MATEMÁTICA:</span>
               <span className="text-primary font-bold text-[9px]">{info.formula}</span>
             </div>
 
             {/* Benchmark Automotivo */}
             <div>
-              <span className="text-[8px] font-black uppercase tracking-widest text-zinc-400 block mb-1">
+              <span className="text-[8px] font-black uppercase tracking-widest text-muted-foreground block mb-1">
                 PADRÃO DO MERCADO AUTOMOTIVO
               </span>
               <div className="grid grid-cols-3 gap-1.5 text-[8px] text-center font-mono">
-                <div className="p-1.5 rounded-md bg-red-500/15 text-red-300 border border-red-500/25">
-                  <span className="block text-[7px] text-red-400 font-sans font-bold">PREJUÍZO/ALERTA</span>
+                <div className="p-1.5 rounded-md bg-red-500/15 text-red-700 dark:text-red-300 border border-red-500/25">
+                  <span className="block text-[7px] text-red-600 dark:text-red-400 font-sans font-bold">PREJUÍZO/ALERTA</span>
                   {info.benchmark.bad}
                 </div>
-                <div className="p-1.5 rounded-md bg-amber-500/15 text-amber-300 border border-amber-500/25">
-                  <span className="block text-[7px] text-amber-400 font-sans font-bold">MÉDIA NORMAL</span>
+                <div className="p-1.5 rounded-md bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/25">
+                  <span className="block text-[7px] text-amber-600 dark:text-amber-400 font-sans font-bold">MÉDIA NORMAL</span>
                   {info.benchmark.mid}
                 </div>
-                <div className="p-1.5 rounded-md bg-emerald-500/15 text-emerald-300 border border-emerald-500/25">
-                  <span className="block text-[7px] text-emerald-400 font-sans font-bold">IDEAL/LUCRO</span>
+                <div className="p-1.5 rounded-md bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/25">
+                  <span className="block text-[7px] text-emerald-600 dark:text-emerald-400 font-sans font-bold">IDEAL/LUCRO</span>
                   {info.benchmark.good}
                 </div>
               </div>
             </div>
 
             {/* Diagnóstico & Tomada de Decisão */}
-            <div className="pt-2 border-t border-white/10">
-              <span className="text-[8px] font-black uppercase tracking-widest text-emerald-400 block mb-0.5">
+            <div className="pt-2 border-t border-border/80">
+              <span className="text-[8px] font-black uppercase tracking-widest text-emerald-600 dark:text-emerald-400 block mb-0.5">
                 TOMADA DE DECISÃO RECOMENDADA
               </span>
-              <p className="text-[10px] text-zinc-100 leading-snug font-medium">{currentAction}</p>
+              <p className="text-[10px] text-foreground leading-snug font-medium">{currentAction}</p>
             </div>
           </div>
 
           {/* Caret / Arrow */}
           <div
-            className={`absolute top-full -mt-px border-solid border-t-zinc-950 border-t-8 border-x-transparent border-x-8 border-b-0 ${
+            className={`absolute top-full -mt-px border-solid border-t-popover border-t-8 border-x-transparent border-x-8 border-b-0 ${
               alignTooltip === "left"
                 ? "left-6"
                 : alignTooltip === "right"
@@ -741,8 +741,8 @@ function CockpitThermometer({
 
       {/* Thermometer Tooltip Balloon */}
       {info && (
-        <div className="absolute bottom-[calc(100%+10px)] left-0 sm:left-2 w-80 p-4 rounded-2xl bg-zinc-950/98 text-zinc-100 border border-white/20 shadow-[0_25px_60px_-15px_rgba(0,0,0,0.85)] backdrop-blur-2xl opacity-0 group-hover/gauge:opacity-100 group-hover/gauge:translate-y-0 translate-y-2 pointer-events-none transition-all duration-200 z-[999] text-left">
-          <div className="flex items-center justify-between border-b border-white/10 pb-2.5 mb-2.5">
+        <div className="absolute bottom-[calc(100%+10px)] left-0 sm:left-2 w-80 p-4 rounded-2xl bg-popover/98 text-popover-foreground border border-border shadow-2xl backdrop-blur-2xl opacity-0 group-hover/gauge:opacity-100 group-hover/gauge:translate-y-0 translate-y-2 pointer-events-none transition-all duration-200 z-[999] text-left">
+          <div className="flex items-center justify-between border-b border-border/80 pb-2.5 mb-2.5">
             <div className="flex items-center gap-2">
               <div
                 className="p-1.5 rounded-lg shrink-0 flex items-center justify-center"
@@ -751,10 +751,10 @@ function CockpitThermometer({
                 <Flame className="h-4 w-4" style={{ color: col }} />
               </div>
               <div>
-                <span className="text-[8px] font-black tracking-widest uppercase text-zinc-400 block">
+                <span className="text-[8px] font-black tracking-widest uppercase text-muted-foreground block">
                   {info.category}
                 </span>
-                <span className="text-xs font-black tracking-wider text-white uppercase truncate block">
+                <span className="text-xs font-black tracking-wider text-foreground uppercase truncate block">
                   {label}
                 </span>
               </div>
@@ -771,44 +771,44 @@ function CockpitThermometer({
             </span>
           </div>
 
-          <div className="space-y-2.5 text-[10px] leading-relaxed text-zinc-300">
+          <div className="space-y-2.5 text-[10px] leading-relaxed text-muted-foreground">
             <div>
-              <span className="text-[8px] font-black uppercase tracking-widest text-zinc-400 block mb-0.5">
+              <span className="text-[8px] font-black uppercase tracking-widest text-muted-foreground block mb-0.5">
                 O QUE SIGNIFICA NA PRÁTICA
               </span>
-              <p className="text-[10px] text-zinc-300 leading-snug">{info.what}</p>
+              <p className="text-[10px] text-foreground/90 leading-snug">{info.what}</p>
             </div>
 
-            <div className="p-2 rounded-lg bg-white/5 border border-white/10 font-mono text-[9px] text-zinc-300 flex items-center justify-between">
-              <span className="text-[8px] font-black text-zinc-400 uppercase">FÓRMULA MATEMÁTICA:</span>
+            <div className="p-2 rounded-lg bg-muted/60 border border-border/80 font-mono text-[9px] text-foreground flex items-center justify-between">
+              <span className="text-[8px] font-black text-muted-foreground uppercase">FÓRMULA MATEMÁTICA:</span>
               <span className="text-primary font-bold text-[9px]">{info.formula}</span>
             </div>
 
             <div>
-              <span className="text-[8px] font-black uppercase tracking-widest text-zinc-400 block mb-1">
+              <span className="text-[8px] font-black uppercase tracking-widest text-muted-foreground block mb-1">
                 PADRÃO DO MERCADO AUTOMOTIVO
               </span>
               <div className="grid grid-cols-3 gap-1.5 text-[8px] text-center font-mono">
-                <div className="p-1.5 rounded-md bg-emerald-500/15 text-emerald-300 border border-emerald-500/25">
-                  <span className="block text-[7px] text-emerald-400 font-sans font-bold">ESTÁVEL</span>
+                <div className="p-1.5 rounded-md bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/25">
+                  <span className="block text-[7px] text-emerald-600 dark:text-emerald-400 font-sans font-bold">ESTÁVEL</span>
                   {info.benchmark.good}
                 </div>
-                <div className="p-1.5 rounded-md bg-amber-500/15 text-amber-300 border border-amber-500/25">
-                  <span className="block text-[7px] text-amber-400 font-sans font-bold">MÉDIA</span>
+                <div className="p-1.5 rounded-md bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/25">
+                  <span className="block text-[7px] text-amber-600 dark:text-amber-400 font-sans font-bold">MÉDIA</span>
                   {info.benchmark.mid}
                 </div>
-                <div className="p-1.5 rounded-md bg-red-500/15 text-red-300 border border-red-500/25">
-                  <span className="block text-[7px] text-red-400 font-sans font-bold">DISPUTA ALTA</span>
+                <div className="p-1.5 rounded-md bg-red-500/15 text-red-700 dark:text-red-300 border border-red-500/25">
+                  <span className="block text-[7px] text-red-600 dark:text-red-400 font-sans font-bold">DISPUTA ALTA</span>
                   {info.benchmark.bad}
                 </div>
               </div>
             </div>
 
-            <div className="pt-2 border-t border-white/10">
-              <span className="text-[8px] font-black uppercase tracking-widest text-emerald-400 block mb-0.5">
+            <div className="pt-2 border-t border-border/80">
+              <span className="text-[8px] font-black uppercase tracking-widest text-emerald-600 dark:text-emerald-400 block mb-0.5">
                 TOMADA DE DECISÃO RECOMENDADA
               </span>
-              <p className="text-[10px] text-zinc-100 leading-snug font-medium">
+              <p className="text-[10px] text-foreground leading-snug font-medium">
                 {pressure > 70
                   ? info.actionBad
                   : pressure > 40
@@ -817,7 +817,7 @@ function CockpitThermometer({
               </p>
             </div>
           </div>
-          <div className="absolute top-full left-6 -mt-px border-solid border-t-zinc-950 border-t-8 border-x-transparent border-x-8 border-b-0" />
+          <div className="absolute top-full left-6 -mt-px border-solid border-t-popover border-t-8 border-x-transparent border-x-8 border-b-0" />
         </div>
       )}
     </motion.div>
@@ -1046,9 +1046,9 @@ function ScoreOrb({
               </div>
 
               {/* Hover popup for each pillar */}
-              <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-48 p-2 rounded-xl bg-zinc-950/98 text-zinc-200 border border-white/15 shadow-2xl text-[9px] leading-relaxed opacity-0 pointer-events-none group-hover/pillar:opacity-100 transition-all z-50 text-center">
-                <p className="font-bold text-white mb-0.5 uppercase tracking-wider">{c.label} ({c.weight})</p>
-                <p className="text-[8px] text-zinc-300">{c.desc}</p>
+              <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-48 p-2 rounded-xl bg-popover/98 text-popover-foreground border border-border shadow-2xl text-[9px] leading-relaxed opacity-0 pointer-events-none group-hover/pillar:opacity-100 transition-all z-50 text-center">
+                <p className="font-bold text-foreground mb-0.5 uppercase tracking-wider">{c.label} ({c.weight})</p>
+                <p className="text-[8px] text-muted-foreground">{c.desc}</p>
               </div>
             </motion.div>
           );
@@ -1093,12 +1093,12 @@ function ScoreHistorico({ data }: { data: Array<{ date: string; score: number }>
             <YAxis domain={[0, 100]} hide />
             <RTooltip
               contentStyle={{
-                background: "rgba(10,10,15,0.95)",
-                border: "1px solid rgba(255,255,255,0.15)",
+                backgroundColor: "hsl(var(--popover))",
+                border: "1px solid hsl(var(--border))",
                 borderRadius: 8,
                 fontSize: 10,
                 fontFamily: "monospace",
-                color: "#fff",
+                color: "hsl(var(--popover-foreground))",
               }}
               formatter={(v: any) => [`${v} pts`, "Saúde da Conta"]}
             />

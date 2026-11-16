@@ -1063,14 +1063,14 @@ Responda de forma objetiva e tática em Markdown com:
     if (!active || !payload?.length) return null;
     const item = payload[0]?.payload;
     return (
-      <div className="bg-[#0c0c14]/95 border border-white/15 backdrop-blur-md rounded-xl px-3.5 py-2.5 shadow-xl text-xs space-y-1">
-        <p className="font-bold text-white flex items-center justify-between gap-4">
+      <div className="bg-popover/95 text-popover-foreground border border-border backdrop-blur-md rounded-xl px-3.5 py-2.5 shadow-xl text-xs space-y-1">
+        <p className="font-bold text-foreground flex items-center justify-between gap-4">
           <span>{item.label} ({item.date})</span>
           {item.isSelectedRange && (
             <span className="text-[11px] px-1.5 py-0.5 rounded bg-primary/20 text-primary uppercase">No filtro</span>
           )}
         </p>
-        <p className="font-mono text-white font-bold">
+        <p className="font-mono text-foreground font-bold">
           {chartMetricMeta[chartMetric].label}:{" "}
           <span style={{ color: chartMetricMeta[chartMetric].color }}>
             {Number(item.value || 0).toLocaleString("pt-BR")}
@@ -1792,7 +1792,7 @@ Responda de forma objetiva e tática em Markdown com:
                     <YAxis tick={{ fontSize: 9, fill: "#a1a1aa" }} axisLine={false} tickLine={false} unit="%" />
                     <Tooltip
                       formatter={(v: any, name: any) => [`${v}%`, name]}
-                      contentStyle={{ backgroundColor: "#0c0c14", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 12, fontSize: 11 }}
+                      contentStyle={{ backgroundColor: "hsl(var(--popover))", border: "1px solid hsl(var(--border))", borderRadius: 12, fontSize: 11, color: "hsl(var(--popover-foreground))" }}
                     />
                     <Bar dataKey="Homens" fill="hsl(var(--primary))" radius={[3, 3, 0, 0]} />
                     <Bar dataKey="Mulheres" fill="#ec4899" radius={[3, 3, 0, 0]} />
