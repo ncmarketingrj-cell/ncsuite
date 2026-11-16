@@ -43,6 +43,37 @@ function asArray<T>(val: unknown): T[] {
   return Array.isArray(val) ? (val as T[]) : [];
 }
 
+async function resolveSocialClientId(
+  pageId?: string | null,
+  explicitClientId?: string | null
+): Promise<string | null> {
+  if (explicitClientId) return explicitClientId;
+  if (!pageId || pageId === "all") return null;
+  try {
+    const { data } = await sb
+      .from("social_account_strategies")
+      .select("client_id")
+      .eq("page_id", pageId)
+      .maybeSingle();
+    return data?.client_id ?? null;
+  } catch {
+    return null;
+  }
+}
+
+async function propagateClientIdToPageRecords(
+  pageId: string,
+  clientId?: string | null
+): Promise<void> {
+  if (!pageId || pageId === "all" || !clientId) return;
+  await Promise.allSettled([
+    sb.from("social_content_items").update({ client_id: clientId }).eq("page_id", pageId).is("client_id", null),
+    sb.from("social_project_tasks").update({ client_id: clientId }).eq("page_id", pageId).is("client_id", null),
+    sb.from("social_experiments").update({ client_id: clientId }).eq("page_id", pageId).is("client_id", null),
+    sb.from("social_learnings").update({ client_id: clientId }).eq("page_id", pageId).is("client_id", null),
+  ]);
+}
+
 function normalizeStrategyRow(row: any, accountNameFallback = ""): SocialAccountStrategy {
   return {
     id: row.id,
@@ -322,7 +353,9 @@ export function useUpsertSocialStrategyMutation(tenantId?: string | null) {
         .select("*")
         .single();
       if (error) throw error;
-      return normalizeStrategyRow(data, strategy.account_name);
+      const saved = normalizeStrategyRow(data, strategy.account_name);
+      await propagateClientIdToPageRecords(saved.page_id, saved.client_id);
+      return saved;
     },
     onSuccess: (saved) => {
       qc.invalidateQueries({ queryKey: ["social-hub", "strategy", tenantId || "default", saved.page_id] });
@@ -378,9 +411,10 @@ export function useSaveSocialContentMutation() {
           })
         : item.history || [];
 
+      const resolvedClientId = await resolveSocialClientId(item.page_id, item.client_id ?? null);
       const payload: Record<string, any> = {
         page_id: item.page_id,
-        client_id: item.client_id ?? null,
+        client_id: resolvedClientId,
         account_name: item.account_name,
         title: item.title.trim(),
         stage: item.stage || "idea",
@@ -507,9 +541,11 @@ export function useSaveSocialTaskMutation() {
           ].slice(0, 40)
         : task.history || [];
 
+      const normalizedPageId = task.page_id && task.page_id !== "all" ? task.page_id : null;
+      const resolvedClientId = await resolveSocialClientId(normalizedPageId, task.client_id ?? null);
       const payload: Record<string, any> = {
-        page_id: task.page_id && task.page_id !== "all" ? task.page_id : null,
-        client_id: task.client_id ?? null,
+        page_id: normalizedPageId,
+        client_id: resolvedClientId,
         account_name: task.account_name || "",
         title: task.title.trim(),
         description: task.description || "",
@@ -604,9 +640,10 @@ export function useSaveSocialExperimentMutation() {
       exp: Partial<SocialExperiment> & { id?: string; page_id: string; account_name: string; title: string; hypothesis: string; primary_variable: string }
     ): Promise<SocialExperiment> => {
       const { data: userData } = await supabase.auth.getUser();
+      const resolvedClientId = await resolveSocialClientId(exp.page_id, exp.client_id ?? null);
       const payload: Record<string, any> = {
         page_id: exp.page_id,
-        client_id: exp.client_id ?? null,
+        client_id: resolvedClientId,
         account_name: exp.account_name,
         title: exp.title.trim(),
         hypothesis: exp.hypothesis.trim(),
@@ -669,9 +706,10 @@ export function useSaveSocialLearningMutation() {
     ): Promise<SocialLearningRecord> => {
       const { data: userData } = await supabase.auth.getUser();
       const userId = userData?.user?.id ?? null;
+      const resolvedClientId = await resolveSocialClientId(item.page_id, item.client_id ?? null);
       const payload: Record<string, any> = {
         page_id: item.page_id,
-        client_id: item.client_id ?? null,
+        client_id: resolvedClientId,
         account_name: item.account_name,
         title: item.title.trim(),
         category: item.category || "conteudo",

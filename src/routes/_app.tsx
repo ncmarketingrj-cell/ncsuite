@@ -1009,25 +1009,17 @@ function Shell() {
           {/* RIGHT: Actions — largura fixa ~220px, zero breakpoints, estável em qualquer zoom */}
           <div className="flex shrink-0 items-center gap-1">
 
-            {/* Sync — indicador passivo com slot fixo (zero layout shift); texto técnico oculto para usuários comuns */}
+            {/* Sync — indicador visual discreto com slot fixo (zero layout shift), sem texto técnico */}
             <div
               role="status"
               aria-live="polite"
-              aria-label={
-                headerSpinner.showSpinner
-                  ? canViewIntegrations
-                    ? headerSpinner.ariaLabel ?? undefined
-                    : "Atualizando dados"
-                  : undefined
-              }
+              aria-label={headerSpinner.showSpinner ? "Atualizando dados" : undefined}
               className="hidden sm:flex h-8 w-8 shrink-0 items-center justify-center"
             >
               {headerSpinner.showSpinner && (
                 <>
                   <RefreshCw className="h-3.5 w-3.5 animate-spin text-primary" aria-hidden="true" />
-                  <span className="sr-only">
-                    {canViewIntegrations ? "Sincronização em andamento" : "Atualizando dados"}
-                  </span>
+                  <span className="sr-only">Atualizando dados</span>
                 </>
               )}
             </div>

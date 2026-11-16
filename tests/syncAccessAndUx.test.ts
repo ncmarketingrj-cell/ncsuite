@@ -239,7 +239,8 @@ describe("RBAC e Simplificação da Experiência de Sincronização (Perfis, Est
     assert.equal(appShell.includes('aria-label="Sincronizar contas Meta Ads"'), false);
     assert.equal(appShell.includes("Sincronizar Meta"), false);
     assert.ok(appShell.includes("resolveHeaderSpinnerState"));
-    assert.ok(appShell.includes("Sincronização em andamento"));
+    assert.equal(appShell.includes("Sincronização em andamento"), false);
+    assert.ok(appShell.includes("Atualizando dados"));
     assert.ok(appShell.includes('pathname.startsWith("/integrations")'));
     assert.ok(appShell.includes("useAutoSync({ enabled: canManageIntegrations })"));
 

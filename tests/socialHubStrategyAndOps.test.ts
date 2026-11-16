@@ -502,11 +502,20 @@ describe("Social Hub Evolution — Navegação, Contas, IA, Pipeline e Operaçã
     assert.ok(insightsRoute.includes('useState<"period" | 7 | 14 | 30>("period")'));
     assert.ok(insightsRoute.includes("Total do Período"));
 
-    // Ponto 2: Texto técnico de sincronização no topo é restrito a quem possui canViewIntegrations
+    // Ponto 2: Barra superior global nunca expõe texto técnico "Sincronização em andamento"
     const appShell = fs.readFileSync(
       path.join(process.cwd(), "src/routes/_app.tsx"),
       "utf8"
     );
-    assert.ok(appShell.includes('canViewIntegrations ? "Sincronização em andamento" : "Atualizando dados"'));
+    assert.equal(appShell.includes("Sincronização em andamento"), false);
+    assert.ok(appShell.includes("Atualizando dados"));
+
+    // Ponto 3: Serviço Hub Social resolve e propaga client_id para isolamento RLS
+    const hubService = fs.readFileSync(
+      path.join(process.cwd(), "src/lib/socialHubService.ts"),
+      "utf8"
+    );
+    assert.ok(hubService.includes("resolveSocialClientId"));
+    assert.ok(hubService.includes("propagateClientIdToPageRecords"));
   });
 });

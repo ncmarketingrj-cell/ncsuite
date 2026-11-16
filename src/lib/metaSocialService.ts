@@ -2100,7 +2100,7 @@ export async function fetchRealSocialInsights(params: {
   chartDaysOverride?: number;
   masterToken: string | null;
 }): Promise<RealSocialInsightsResult> {
-  const snapshotKey = `${params.selectedPageId}:${params.dateFrom}:${params.dateTo}:${params.chartDaysOverride || 14}`;
+  const snapshotKey = `${params.selectedPageId}:${params.dateFrom}:${params.dateTo}:${params.chartDaysOverride || "period"}`;
   const [overviewRes, postsRes] = await Promise.allSettled([
     fetchAccountSocialOverview(params),
     fetchAccountSocialPosts({
