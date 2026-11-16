@@ -85,7 +85,7 @@ async function publishPostInternal(post: any) {
 
         const fbData = await fbRes.json()
         if (fbData.error) throw new Error(`Facebook: ${fbData.error.message}`)
-        results.facebook = fbData.id || fbData.post_id
+        results.facebook = fbData.post_id || fbData.id
       } catch (e) {
         errors.push(e.message)
       }
@@ -376,6 +376,131 @@ serve(async (req) => {
       return new Response(JSON.stringify({ success: true, meta_id: pubRes.metaId, warning: pubRes.warning }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" }
       })
+    }
+
+    // ==========================================
+    // AÇÃO: EXCLUIR POSTAGEM (DELETE-POST) — Facebook Feed / Agendados + Banco Local
+    // ==========================================
+    if (action === "delete-post") {
+      const { post_id, meta_post_id, page_id, platform } = body
+
+      // Verificação de perfil/permissão mínima para escrita em Social
+      const { data: callerProfile } = await supabase
+        .from("profiles")
+        .select("role, permissions")
+        .eq("id", user.id)
+        .maybeSingle()
+
+      const callerRole = String(callerProfile?.role || "").toLowerCase()
+      const callerSocialPerm = String(callerProfile?.permissions?.social || "").toLowerCase()
+      const isPrivileged = ["admin", "master_admin", "diretor", "gerente"].includes(callerRole)
+      if (callerRole === "client_store" || (!isPrivileged && callerSocialPerm && callerSocialPerm !== "edit")) {
+        return new Response(JSON.stringify({
+          ok: false,
+          error: "Sem permissão de edição no módulo Social para excluir publicações."
+        }), { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } })
+      }
+
+      const rawMetaIds = String(meta_post_id || "")
+        .split(",")
+        .map((s) => s.trim())
+        .filter((s) => s && !s.startsWith("mock_") && !s.startsWith("meta_"))
+
+      if (platform === "instagram" && rawMetaIds.length > 0 && !post_id?.match(/^[0-9a-f-]{36}$/i)) {
+        return new Response(JSON.stringify({
+          ok: false,
+          unsupportedByMetaApi: true,
+          error: "A API oficial da Meta não permite excluir publicações já publicadas no Instagram por apps externos. Apague diretamente pelo aplicativo do Instagram ou Meta Business Suite."
+        }), { headers: { ...corsHeaders, "Content-Type": "application/json" } })
+      }
+
+      let metaDeleted = false
+      const warnings: string[] = []
+
+      if (rawMetaIds.length > 0 && platform !== "instagram") {
+        let token: string | null = null
+        if (page_id) {
+          const { data: pg } = await supabase
+            .from("social_pages")
+            .select("access_token")
+            .eq("page_id", page_id)
+            .maybeSingle()
+          token = pg?.access_token || null
+        }
+        if (!token) {
+          const { data: cfg } = await supabase
+            .from("meta_ads_configs")
+            .select("access_token")
+            .eq("user_id", user.id)
+            .maybeSingle()
+          token = cfg?.access_token || null
+        }
+        if (!token) {
+          const { data: anyCfg } = await supabase
+            .from("meta_ads_configs")
+            .select("access_token")
+            .not("access_token", "is", null)
+            .order("created_at", { ascending: false })
+            .limit(1)
+            .maybeSingle()
+          token = anyCfg?.access_token || null
+        }
+
+        if (!token || token.startsWith("mock_")) {
+          return new Response(JSON.stringify({
+            ok: false,
+            error: "Token da página na Meta não encontrado para executar a exclusão."
+          }), { headers: { ...corsHeaders, "Content-Type": "application/json" } })
+        }
+
+        // Em publicações "both", o primeiro ID costuma ser Facebook e o segundo IG
+        const fbCandidateId = rawMetaIds[0]
+        const candidates = [fbCandidateId]
+        if (page_id && !fbCandidateId.includes("_")) {
+          candidates.push(`${page_id}_${fbCandidateId}`)
+        }
+
+        let lastMetaError: string | null = null
+        for (const candidate of candidates) {
+          const delRes = await fetch(
+            `${META_API_BASE}/${encodeURIComponent(candidate)}?access_token=${encodeURIComponent(token)}`,
+            { method: "DELETE" }
+          )
+          const delJson = await delRes.json().catch(() => ({}))
+          if (!delJson?.error && (delJson?.success === true || delRes.ok)) {
+            metaDeleted = true
+            lastMetaError = null
+            break
+          }
+          lastMetaError = delJson?.error?.message || `HTTP ${delRes.status}`
+        }
+
+        if (!metaDeleted && lastMetaError) {
+          return new Response(JSON.stringify({
+            ok: false,
+            error: `A Meta recusou a exclusão na página: ${lastMetaError}`
+          }), { headers: { ...corsHeaders, "Content-Type": "application/json" } })
+        }
+
+        if (platform === "both" && rawMetaIds.length > 1) {
+          warnings.push("Post removido no Facebook e no Planejador. A cópia publicada no Instagram precisa ser removida diretamente no app do Instagram (restrição da Meta API).")
+        }
+      }
+
+      // Remove também qualquer registro correspondente salvo em social_posts
+      const isUuid = typeof post_id === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(post_id)
+      if (isUuid) {
+        await supabase.from("social_posts").delete().eq("id", post_id)
+      }
+      if (rawMetaIds.length > 0) {
+        await supabase.from("social_posts").delete().in("meta_post_id", [String(meta_post_id || ""), rawMetaIds[0]])
+      }
+
+      return new Response(JSON.stringify({
+        ok: true,
+        metaDeleted,
+        warnings,
+      }), { headers: { ...corsHeaders, "Content-Type": "application/json" } })
     }
 
     // ==========================================

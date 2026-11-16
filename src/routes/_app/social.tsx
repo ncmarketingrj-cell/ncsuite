@@ -57,12 +57,14 @@ import { toast } from "sonner";
 import {
   publishOrScheduleToMeta,
   deleteMetaScheduledPost,
+  deleteMetaPostViaEdge,
   type PlannerPost,
   type RealSocialAccount,
   type RealIgProfileDetails,
   type BestSlotItem,
 } from "@/lib/metaSocialService";
 import { useAuth } from "@/lib/auth";
+import { usePagePermission } from "@/hooks/usePagePermission";
 import { canonicalizeSocialPageId, useSocialHubFilters } from "@/lib/socialHubStore";
 import {
   useManualSocialSync,
@@ -127,6 +129,8 @@ function SafeMediaThumb({
 export default function SocialMediaPage() {
   const qc = useQueryClient();
   const { user } = useAuth();
+  const { canEdit } = usePagePermission();
+  const canEditSocial = canEdit("social");
   const tenantId = user?.id || "default";
 
   const { selectedPage, selectedAccountLabel, setSelectedPage, selectedNetwork } = useSocialHubFilters();
@@ -422,42 +426,88 @@ export default function SocialMediaPage() {
   };
 
   const handleDeletePost = async (post: SocialPost) => {
-    if (post.source === "meta_live" && post.status === "published") {
-      toast.info("Posts já publicados no Instagram/Facebook não podem ser apagados pelo Planejador. Gerencie diretamente no app da Meta.");
+    if (!canEditSocial) {
+      toast.error("Você possui acesso somente leitura no módulo Social.");
+      return;
+    }
+    if (post.source === "meta_live" && post.status === "published" && post.platform === "instagram") {
+      toast.info("A API oficial do Instagram não permite excluir posts já publicados por aplicativos externos. Apague diretamente no app do Instagram ou Meta Business Suite.");
       return;
     }
 
     const label =
-      post.source === "meta_live"
-        ? "Cancelar este post agendado diretamente no Facebook/Meta?"
-        : "Tem certeza que deseja excluir esta publicação do Planejador?";
+      post.status === "published" && (post.platform === "facebook" || post.platform === "both") && post.meta_post_id
+        ? "Tem certeza que deseja excluir esta publicação diretamente da Página do Facebook e do Planejador?"
+        : post.source === "meta_live"
+          ? "Cancelar este post agendado diretamente no Facebook/Meta?"
+          : "Tem certeza que deseja excluir esta publicação do Planejador?";
     if (!confirm(label)) return;
 
+    const toastId = toast.loading("Excluindo publicação...");
     try {
-      if (post.source === "meta_live" && post.meta_post_id) {
-        const acc = activePages.find((a) => a.page_id === post.page_id);
-        const token = acc?.access_token || masterToken;
-        if (!token) throw new Error("Token da página não disponível para cancelar no Meta.");
-        const delRes = await deleteMetaScheduledPost(post.meta_post_id, token);
-        if (!delRes.ok) throw new Error(delRes.error || "Meta API recusou cancelamento.");
-        toast.success("Agendamento cancelado no Meta!");
-      } else {
-        // Se também tiver agendamento nativo vinculado no Facebook, tenta cancelar no Meta também
-        if (post.status === "scheduled" && post.meta_post_id) {
+      const res = await deleteMetaPostViaEdge({
+        postId: post.id,
+        metaPostId: post.meta_post_id || (post.id.startsWith("meta_fb_") ? post.id.replace("meta_fb_", "") : null),
+        pageId: post.page_id,
+        platform: post.platform,
+      });
+
+      let metaDeletedFinal = Boolean(res.metaDeleted);
+      if (!res.ok) {
+        if (res.unsupportedByMetaApi) {
+          throw new Error(res.error || "Exclusão não suportada pela API oficial do Instagram.");
+        }
+        // Fallback direto via Page Token quando Edge Function ainda estiver na versão anterior
+        const candidateMetaId =
+          post.meta_post_id?.split(",")[0]?.trim() ||
+          (post.id.startsWith("meta_fb_") ? post.id.replace("meta_fb_", "") : "");
+        const canDirectMetaDelete =
+          Boolean(candidateMetaId) &&
+          !candidateMetaId.startsWith("mock_") &&
+          (post.platform === "facebook" || post.platform === "both" || post.status === "scheduled");
+
+        if (canDirectMetaDelete) {
           const acc = activePages.find((a) => a.page_id === post.page_id);
           const token = acc?.access_token || masterToken;
-          if (token) {
-            await deleteMetaScheduledPost(post.meta_post_id.split(",")[0], token);
+          if (!token) throw new Error(res.error || "Token da página não disponível para excluir no Facebook.");
+          let direct = await deleteMetaScheduledPost(candidateMetaId, token);
+          if (!direct.ok && post.page_id && !candidateMetaId.includes("_")) {
+            direct = await deleteMetaScheduledPost(`${post.page_id}_${candidateMetaId}`, token);
           }
+          if (!direct.ok) {
+            throw new Error(direct.error || res.error || "Meta API recusou a exclusão.");
+          }
+          metaDeletedFinal = true;
+        } else if (post.source !== "supabase") {
+          throw new Error(res.error || "Falha ao excluir publicação.");
         }
-        const { error } = await supabase.from("social_posts").delete().eq("id", post.id);
-        if (error) throw error;
-        toast.success("Publicação removida do Planejador.");
+
+        if (post.source === "supabase" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(post.id)) {
+          const { error: dbDelErr } = await supabase.from("social_posts").delete().eq("id", post.id);
+          if (dbDelErr) throw dbDelErr;
+        }
+      }
+
+      // Remove imediatamente do cache da UI
+      qc.setQueriesData({ queryKey: ["social-hub", "planner"] }, (oldData: any) => {
+        if (!oldData || !Array.isArray(oldData.posts)) return oldData;
+        return {
+          ...oldData,
+          posts: oldData.posts.filter((item: SocialPost) => item.id !== post.id),
+        };
+      });
+
+      if (res.warnings && res.warnings.length > 0) {
+        toast.warning(res.warnings[0], { id: toastId });
+      } else if (metaDeletedFinal) {
+        toast.success("Publicação excluída no Facebook e no Planejador!", { id: toastId });
+      } else {
+        toast.success("Publicação removida do Planejador.", { id: toastId });
       }
       refetchPlanner();
       qc.invalidateQueries({ queryKey: ["social-hub", "planner"] });
     } catch (err: any) {
-      toast.error(`Erro ao remover: ${err.message}`);
+      toast.error(`Erro ao remover: ${err.message}`, { id: toastId });
     }
   };
 
@@ -1161,6 +1211,7 @@ export default function SocialMediaPage() {
         <DeviceMockupModal
           post={previewPost}
           page={activePages.find((p) => p.page_id === previewPost.page_id) || activePageObj}
+          canEditSocial={canEditSocial}
           onClose={() => setPreviewPost(null)}
           onEdit={() => {
             setEditingPost(previewPost);
@@ -2693,6 +2744,7 @@ function CreatePostModal({
 interface DeviceModalProps {
   post: SocialPost;
   page: RealSocialAccount | null;
+  canEditSocial: boolean;
   onClose: () => void;
   onEdit: () => void;
   onPublishNow: () => void;
@@ -2702,6 +2754,7 @@ interface DeviceModalProps {
 function DeviceMockupModal({
   post,
   page,
+  canEditSocial,
   onClose,
   onEdit,
   onPublishNow,
@@ -2812,13 +2865,22 @@ function DeviceMockupModal({
             )}
           </div>
 
-          <div className="flex items-center gap-2">
-            {(post.source === "supabase" || post.status === "scheduled") && (
+          <div className="flex items-center gap-2 flex-wrap">
+            {canEditSocial &&
+              (post.source === "supabase" ||
+                post.status === "scheduled" ||
+                post.platform === "facebook" ||
+                post.platform === "both") && (
               <button
                 onClick={onDelete}
-                className="px-3 py-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 font-bold text-xs cursor-pointer"
+                className="px-3 py-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 font-bold text-xs cursor-pointer inline-flex items-center gap-1.5"
               >
-                {post.source === "meta_live" ? "Cancelar no Meta" : "Excluir"}
+                <Trash2 className="h-3.5 w-3.5" />
+                {post.status === "scheduled" && post.source === "meta_live"
+                  ? "Cancelar no Meta"
+                  : post.status === "published" && (post.platform === "facebook" || post.platform === "both")
+                    ? "Excluir do Facebook"
+                    : "Excluir"}
               </button>
             )}
 
@@ -2831,7 +2893,7 @@ function DeviceMockupModal({
               </button>
             )}
 
-            {post.source === "supabase" && (
+            {post.source === "supabase" && canEditSocial && (
               <button
                 onClick={onEdit}
                 className="px-3.5 py-2 rounded-xl bg-muted hover:bg-muted/80 text-foreground font-bold text-xs uppercase tracking-wider transition cursor-pointer"
@@ -2841,6 +2903,12 @@ function DeviceMockupModal({
             )}
           </div>
         </div>
+
+        {post.status === "published" && (post.platform === "instagram" || post.platform === "both") && (
+          <p className="text-[11px] text-muted-foreground border-t border-border/50 pt-2">
+            Nota Meta API: publicações já enviadas ao <strong>Instagram</strong> só podem ser apagadas diretamente no aplicativo do Instagram ou no Meta Business Suite.
+          </p>
+        )}
       </div>
     </div>
   );

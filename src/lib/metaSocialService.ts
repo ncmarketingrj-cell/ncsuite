@@ -3577,4 +3577,40 @@ export async function deleteMetaScheduledPost(metaPostId: string, pageToken: str
   }
 }
 
+export async function deleteMetaPostViaEdge(params: {
+  postId?: string | null;
+  metaPostId?: string | null;
+  pageId?: string | null;
+  platform?: PlannerPost["platform"];
+}): Promise<{ ok: boolean; metaDeleted?: boolean; warnings?: string[]; unsupportedByMetaApi?: boolean; error?: string }> {
+  try {
+    const { data, error } = await supabase.functions.invoke("sync-social-media", {
+      body: {
+        action: "delete-post",
+        post_id: params.postId ?? null,
+        meta_post_id: params.metaPostId ?? null,
+        page_id: params.pageId ?? null,
+        platform: params.platform ?? "facebook",
+      },
+    });
+    if (error) {
+      return { ok: false, error: error.message || "Falha ao comunicar com a função de exclusão." };
+    }
+    if (!data?.ok) {
+      return {
+        ok: false,
+        unsupportedByMetaApi: Boolean(data?.unsupportedByMetaApi),
+        error: data?.error || "A Meta recusou a exclusão da publicação.",
+      };
+    }
+    return {
+      ok: true,
+      metaDeleted: Boolean(data?.metaDeleted),
+      warnings: Array.isArray(data?.warnings) ? data.warnings : [],
+    };
+  } catch (err: any) {
+    return { ok: false, error: err?.message || "Erro inesperado ao excluir publicação." };
+  }
+}
+
 

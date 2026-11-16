@@ -480,5 +480,18 @@ describe("Social Hub Evolution — Navegação, Contas, IA, Pipeline e Operaçã
         assert.equal(text.includes(pat), false, `${f} não deve conter '${pat}'`);
       }
     }
+    const edgeSyncSocial = fs.readFileSync(
+      path.join(process.cwd(), "supabase/functions/sync-social-media/index.ts"),
+      "utf8"
+    );
+    assert.ok(edgeSyncSocial.includes('if (action === "delete-post")'));
+    assert.ok(edgeSyncSocial.includes("unsupportedByMetaApi: true"));
+
+    const socialRoute = fs.readFileSync(
+      path.join(process.cwd(), "src/routes/_app/social.tsx"),
+      "utf8"
+    );
+    assert.ok(socialRoute.includes("deleteMetaPostViaEdge"));
+    assert.ok(socialRoute.includes("Excluir do Facebook"));
   });
 });
