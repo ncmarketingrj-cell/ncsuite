@@ -166,18 +166,18 @@ function SocialProjectsPage() {
     <div className="space-y-6 pb-24 lg:pb-8">
       <PageHeader
         eyebrow="Social Hub"
-        title="Projetos & Operação Social"
-        description="Tarefas vinculadas a contas, responsáveis, aprovações pendentes, recorrências e calendário operacional."
+        title="Tarefas & Aprovações"
+        description="Pendências da equipe, prazos e aprovações por conta."
       />
 
       <SocialHubChrome
         tenantId={tenantId}
         rightSlot={
-          <div className="flex flex-wrap items-center gap-1.5">
+          <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-1.5 w-full sm:w-auto">
             <button
               type="button"
               onClick={() => setViewMode("tasks")}
-              className={`rounded-xl px-3 py-1.5 text-xs font-semibold inline-flex items-center gap-1 ${
+              className={`rounded-xl px-3 py-2 sm:py-1.5 text-xs font-semibold inline-flex items-center justify-center gap-1 min-h-[38px] sm:min-h-0 ${
                 viewMode === "tasks"
                   ? "bg-primary text-primary-foreground"
                   : "border border-border bg-background hover:bg-muted"
@@ -188,7 +188,7 @@ function SocialProjectsPage() {
             <button
               type="button"
               onClick={() => setViewMode("approvals")}
-              className={`rounded-xl px-3 py-1.5 text-xs font-semibold inline-flex items-center gap-1 ${
+              className={`rounded-xl px-3 py-2 sm:py-1.5 text-xs font-semibold inline-flex items-center justify-center gap-1 min-h-[38px] sm:min-h-0 ${
                 viewMode === "approvals"
                   ? "bg-primary text-primary-foreground"
                   : "border border-border bg-background hover:bg-muted"
@@ -199,7 +199,7 @@ function SocialProjectsPage() {
             <button
               type="button"
               onClick={() => setViewMode("calendar")}
-              className={`rounded-xl px-3 py-1.5 text-xs font-semibold inline-flex items-center gap-1 ${
+              className={`rounded-xl px-3 py-2 sm:py-1.5 text-xs font-semibold inline-flex items-center justify-center gap-1 min-h-[38px] sm:min-h-0 ${
                 viewMode === "calendar"
                   ? "bg-primary text-primary-foreground"
                   : "border border-border bg-background hover:bg-muted"
@@ -211,7 +211,7 @@ function SocialProjectsPage() {
               <button
                 type="button"
                 onClick={() => setShowNew((v) => !v)}
-                className="rounded-xl bg-primary/10 px-3 py-1.5 text-xs font-semibold text-primary hover:bg-primary/20 inline-flex items-center gap-1"
+                className="rounded-xl bg-primary/10 px-3 py-2 sm:py-1.5 text-xs font-semibold text-primary hover:bg-primary/20 inline-flex items-center justify-center gap-1 min-h-[38px] sm:min-h-0"
               >
                 <Plus className="h-3.5 w-3.5" /> Nova tarefa
               </button>

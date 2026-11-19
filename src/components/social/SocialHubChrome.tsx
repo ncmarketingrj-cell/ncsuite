@@ -70,11 +70,11 @@ export function SocialHubChrome({
   const hasToolbarContent = hasSubLinks || showAccountSelector || Boolean(humanSync) || Boolean(rightSlot);
 
   return (
-    <div className="space-y-3 mb-5">
-      {/* Barra Contextual Social (Sub-páginas do grupo + Seletor de Conta + Status — sem repetir o menu superior) */}
+    <div className="space-y-3 mb-4 sm:mb-5">
+      {/* Barra Contextual Social (Mobile-first: sub-páginas + seletor de conta fácil de tocar) */}
       {hasToolbarContent && (
-        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-2.5 rounded-2xl border border-border/80 bg-card/85 px-3.5 py-2.5 shadow-sm backdrop-blur-sm">
-          {/* Sub-links quando o grupo ativo possui múltiplas páginas (Conteúdo / Inteligência / Ferramentas) */}
+        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-2.5 rounded-2xl border border-border/80 bg-card/85 p-3 sm:px-3.5 sm:py-2.5 shadow-sm backdrop-blur-sm">
+          {/* Sub-links quando o grupo ativo possui múltiplas páginas */}
           {hasSubLinks ? (
             <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-0.5 lg:pb-0">
               {activeGroup!.children!.map((sub) => {
@@ -88,13 +88,13 @@ export function SocialHubChrome({
                     to={sub.to as any}
                     preload="intent"
                     title={sub.description}
-                    className={`inline-flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1 text-[11px] font-semibold transition-all ${
+                    className={`inline-flex shrink-0 items-center gap-1.5 rounded-xl px-3 py-2 sm:py-1.5 text-xs sm:text-[11px] font-semibold transition-all min-h-[36px] sm:min-h-0 ${
                       isSubActive
-                        ? "bg-primary/12 text-primary border border-primary/25"
+                        ? "bg-primary/12 text-primary border border-primary/25 shadow-sm"
                         : "text-muted-foreground hover:text-foreground hover:bg-muted/60 border border-transparent"
                     }`}
                   >
-                    {sub.to === "/social" && <Calendar className="h-3 w-3" />}
+                    {sub.to === "/social" && <Calendar className="h-3.5 w-3.5" />}
                     <span>{sub.label}</span>
                   </Link>
                 );
@@ -105,11 +105,11 @@ export function SocialHubChrome({
           )}
 
           {/* Seletor Compartilhado de Conta + Status Humano */}
-          <div className="flex flex-wrap items-center gap-2 lg:ml-auto">
+          <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-2 lg:ml-auto w-full lg:w-auto">
             {showAccountSelector && (
-              <div className="flex items-center gap-2 min-w-0">
-                <div className="relative flex items-center">
-                  <Building2 className="h-3.5 w-3.5 text-muted-foreground absolute left-2.5 pointer-events-none" />
+              <div className="flex items-center gap-2 min-w-0 w-full sm:w-auto">
+                <div className="relative flex items-center flex-1 sm:flex-initial">
+                  <Building2 className="h-4 w-4 sm:h-3.5 sm:w-3.5 text-muted-foreground absolute left-3 sm:left-2.5 pointer-events-none" />
                   <select
                     data-testid="social-account-selector"
                     aria-label="Selecionar conta social"
@@ -119,10 +119,10 @@ export function SocialHubChrome({
                       const acc = accounts.find((a) => a.page_id === val);
                       setSelectedPage(val, acc?.page_name || null);
                     }}
-                    className="h-8 rounded-xl border border-border bg-background pl-8 pr-7 text-xs font-semibold text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 max-w-[260px]"
+                    className="h-10 sm:h-8 w-full sm:w-auto rounded-xl border border-border bg-background pl-9 sm:pl-8 pr-7 text-sm sm:text-xs font-semibold text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 sm:max-w-[260px]"
                   >
                     <option value="all">
-                      Todas as Contas ({accounts.length} conectadas)
+                      Todas as Contas ({accounts.length})
                     </option>
                     {accounts.map((acc) => (
                       <option key={acc.page_id} value={acc.page_id}>
@@ -135,7 +135,7 @@ export function SocialHubChrome({
 
                 {selectedClassification && (
                   <span
-                    className={`inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-[11px] font-semibold ${
+                    className={`inline-flex shrink-0 items-center gap-1 rounded-lg border px-2 py-1.5 sm:py-1 text-[11px] font-semibold ${
                       selectedClassification.hasInstagram
                         ? "border-pink-500/20 bg-pink-500/10 text-pink-600 dark:text-pink-400"
                         : "border-blue-500/20 bg-blue-500/10 text-blue-600 dark:text-blue-400"
@@ -147,7 +147,7 @@ export function SocialHubChrome({
                       </>
                     ) : (
                       <>
-                        <Share2 className="h-3 w-3" /> Somente FB
+                        <Share2 className="h-3 w-3" /> FB
                       </>
                     )}
                   </span>
@@ -155,17 +155,19 @@ export function SocialHubChrome({
               </div>
             )}
 
-            {humanSync && (
-              <span
-                className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-[11px] font-medium ${
-                  toneBadgeClass[humanSync.tone]
-                }`}
-              >
-                {humanSync.label}
-              </span>
-            )}
+            <div className="flex flex-wrap items-center gap-2">
+              {humanSync && (
+                <span
+                  className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-[11px] font-medium ${
+                    toneBadgeClass[humanSync.tone]
+                  }`}
+                >
+                  {humanSync.label}
+                </span>
+              )}
 
-            {rightSlot}
+              {rightSlot}
+            </div>
           </div>
         </div>
       )}

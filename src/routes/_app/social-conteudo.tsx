@@ -374,36 +374,36 @@ function SocialContentWorkspacePage() {
     <div className="space-y-6 pb-24 lg:pb-8">
       <PageHeader
         eyebrow="Social Hub"
-        title="Conteúdo — Ideias, Roteiros & Produção"
-        description="Da pauta fundamentada ao roteiro em 3 camadas, aprovação em estágios e envio seguro para o Planejador."
+        title="Conteúdo & Aprovação"
+        description="Crie pautas, acompanhe a produção e aprove posts antes de ir para o calendário."
       />
 
       <SocialHubChrome
         tenantId={tenantId}
         requireExplicitAccount={activeTab === "generator" ? "script" : null}
         rightSlot={
-          <div className="flex items-center gap-1.5">
+          <div className="grid grid-cols-2 sm:flex items-center gap-1.5 w-full sm:w-auto">
             <button
               type="button"
               onClick={() => setActiveTab("pipeline")}
-              className={`rounded-xl px-3 py-1.5 text-xs font-semibold transition-all ${
+              className={`rounded-xl px-3 py-2 sm:py-1.5 text-xs font-semibold transition-all min-h-[38px] sm:min-h-0 ${
                 activeTab === "pipeline"
                   ? "bg-primary text-primary-foreground"
                   : "border border-border bg-background hover:bg-muted"
               }`}
             >
-              Esteira & Aprovação
+              Aprovações
             </button>
             <button
               type="button"
               onClick={() => setActiveTab("generator")}
-              className={`rounded-xl px-3 py-1.5 text-xs font-semibold transition-all inline-flex items-center gap-1.5 ${
+              className={`rounded-xl px-3 py-2 sm:py-1.5 text-xs font-semibold transition-all inline-flex items-center justify-center gap-1.5 min-h-[38px] sm:min-h-0 ${
                 activeTab === "generator"
                   ? "bg-primary text-primary-foreground"
                   : "border border-border bg-background hover:bg-muted"
               }`}
             >
-              <Sparkles className="h-3.5 w-3.5" /> Nova Ideia / Roteiro IA
+              <Sparkles className="h-3.5 w-3.5" /> Nova Ideia
             </button>
           </div>
         }

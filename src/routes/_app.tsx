@@ -123,12 +123,11 @@ const REGRAS_NAV_ITEMS: NavItem[] = [
 ];
 
 const SOCIAL_NAV_ITEMS: NavItem[] = [
-  { to: "/social-hub", icon: LayoutDashboard, label: "Visão Geral" },
-  { to: "/social-estrategia", icon: Target, label: "Estratégia" },
+  { to: "/social-hub", icon: LayoutDashboard, label: "Hoje" },
   { to: "/social-conteudo", icon: Sparkles, label: "Conteúdo" },
-  { to: "/social-insights", icon: BarChart3, label: "Inteligência" },
-  { to: "/social-projetos", icon: FolderKanban, label: "Projetos" },
-  { to: "/link-bio", icon: Wrench, label: "Ferramentas" },
+  { to: "/social-projetos", icon: FolderKanban, label: "Tarefas" },
+  { to: "/social-insights", icon: BarChart3, label: "Métricas" },
+  { to: "/social-estrategia", icon: Target, label: "Estratégia" },
 ];
 
 const GESTAO_NAV_ITEMS: NavItem[] = [
@@ -1478,7 +1477,7 @@ function Shell() {
                 <Link
                   key={item.to} title={item.label}
                   to={item.to}
-                  className={`relative flex flex-col items-center justify-center gap-1 min-w-[70px] flex-1 px-2.5 py-2 rounded-xl text-[10px] font-bold whitespace-nowrap shrink-0 transition-all active:scale-95 ${
+                  className={`relative flex flex-col items-center justify-center gap-1 min-w-[60px] flex-1 px-1.5 py-2 rounded-xl text-[10px] font-bold whitespace-nowrap shrink-0 transition-all active:scale-95 ${
                     isActive
                       ? "bg-primary/12 text-primary border border-primary/25 shadow-glow-sm"
                       : "text-muted-foreground hover:text-foreground hover:bg-muted/40 border border-transparent"

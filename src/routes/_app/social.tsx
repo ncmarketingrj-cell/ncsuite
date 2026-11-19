@@ -571,31 +571,31 @@ export default function SocialMediaPage() {
   }, [dayModalDate, filteredPosts]);
 
   return (
-    <div className="space-y-6 pb-20">
+    <div className="space-y-6 pb-24 lg:pb-8">
       <SocialHubChrome showAccountSelector={false} />
       {/* ─── HEADER EXECUTIVO DE SOCIAL MEDIA ─── */}
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-border/40 pb-5">
         <div>
           <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-2xl bg-gradient-to-tr from-pink-500 to-rose-500 flex items-center justify-center text-white shadow-lg shadow-pink-500/20">
+            <div className="h-10 w-10 rounded-2xl bg-gradient-to-tr from-pink-500 to-rose-500 flex items-center justify-center text-white shadow-lg shadow-pink-500/20 shrink-0">
               <Share2 className="h-5 w-5" />
             </div>
             <div>
-              <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-foreground flex items-center gap-2">
-                Planejador & Feed
-                <span className="text-[10px] font-bold uppercase tracking-widest bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2 py-0.5 rounded-full">
-                  Meta API v21.0 Real
+              <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-foreground flex items-center gap-2 flex-wrap">
+                Calendário & Feed
+                <span className="text-[10px] font-bold uppercase tracking-widest bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 px-2 py-0.5 rounded-full">
+                  Conectado
                 </span>
               </h1>
               <p className="text-xs text-muted-foreground">
-                Agendamentos reais da Meta, histórico de publicações por data, grade 3x3 e publicação direta.
+                Agendamentos, grade do perfil e publicação direta por conta.
               </p>
             </div>
           </div>
         </div>
 
-        <div className="flex items-center gap-2.5 flex-wrap">
-          <div className="relative">
+        <div className="flex items-center gap-2.5 flex-wrap w-full lg:w-auto">
+          <div className="relative flex-1 sm:flex-initial">
             <select
               data-testid="social-account-selector"
               value={canonicalSelectedPage}
@@ -607,7 +607,7 @@ export default function SocialMediaPage() {
                   : null;
                 setSelectedPage(nextId, label);
               }}
-              className="bg-card border border-border/80 text-foreground text-xs font-bold rounded-xl px-3 py-2 pr-8 appearance-none focus:outline-none focus:ring-1 focus:ring-primary cursor-pointer hover:border-primary/50 transition shadow-sm min-w-[220px]"
+              className="bg-card border border-border/80 text-foreground text-sm sm:text-xs font-bold rounded-xl px-3 py-2.5 sm:py-2 pr-8 appearance-none focus:outline-none focus:ring-1 focus:ring-primary cursor-pointer hover:border-primary/50 transition shadow-sm w-full sm:w-auto sm:min-w-[220px] min-h-[40px] sm:min-h-0"
             >
               <option value="all">
                 {isLoadingAccounts && activePages.length === 0

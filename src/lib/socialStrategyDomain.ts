@@ -2,16 +2,15 @@ import type { RealSocialAccount, RealSocialPost, PlannerPost } from "@/lib/metaS
 import type { SocialDataState } from "@/lib/metaSocialErrors";
 
 // ============================================================================
-// 1. NAVEGAÇÃO AGRUPADA DO HUB SOCIAL (6 BLOCOS SEM POLUIR MENU GLOBAL)
+// 1. NAVEGAÇÃO SIMPLIFICADA DO HUB SOCIAL (5 BLOCOS CLAROS NO DESKTOP E MOBILE)
 // ============================================================================
 
 export type SocialNavGroupId =
   | "visao_geral"
-  | "estrategia"
   | "conteudo"
-  | "inteligencia"
   | "projetos"
-  | "ferramentas";
+  | "inteligencia"
+  | "estrategia";
 
 export interface SocialSubNavItem {
   to: string;
@@ -30,15 +29,9 @@ export interface SocialNavGroup {
 export const SOCIAL_HUB_NAV_GROUPS: SocialNavGroup[] = [
   {
     id: "visao_geral",
-    label: "Visão Geral",
+    label: "Hoje",
     to: "/social-hub",
     activePrefixes: ["/social-hub"],
-  },
-  {
-    id: "estrategia",
-    label: "Estratégia",
-    to: "/social-estrategia",
-    activePrefixes: ["/social-estrategia"],
   },
   {
     id: "conteudo",
@@ -48,55 +41,60 @@ export const SOCIAL_HUB_NAV_GROUPS: SocialNavGroup[] = [
     children: [
       {
         to: "/social-conteudo",
-        label: "Ideias, Roteiros & Produção",
-        description: "Pautas com contexto do cliente, roteiros com IA e fluxo de aprovação",
+        label: "Ideias & Roteiros",
+        description: "Pautas, roteiros e aprovação",
       },
       {
         to: "/social",
-        label: "Planejador & Feed",
-        description: "Calendário visual, grade do perfil, melhores horários e publicação",
-      },
-    ],
-  },
-  {
-    id: "inteligencia",
-    label: "Inteligência",
-    to: "/social-insights",
-    activePrefixes: ["/social-insights", "/social-audit", "/social-testes"],
-    children: [
-      {
-        to: "/social-insights",
-        label: "Insights Meta",
-        description: "Alcance, seguidores, interações e série diária por conta",
-      },
-      {
-        to: "/social-audit",
-        label: "Auditoria Orgânica",
-        description: "Diagnóstico de formatos, pilares e histórico de publicações",
-      },
-      {
-        to: "/social-testes",
-        label: "Testes & Aprendizados",
-        description: "Experimentos direcionais e banco validado de aprendizados",
+        label: "Calendário & Feed",
+        description: "Agendamentos, grade e publicação",
       },
     ],
   },
   {
     id: "projetos",
-    label: "Projetos",
+    label: "Tarefas",
     to: "/social-projetos",
     activePrefixes: ["/social-projetos"],
   },
   {
-    id: "ferramentas",
-    label: "Ferramentas",
-    to: "/link-bio",
-    activePrefixes: ["/link-bio", "/formulario", "/quiz", "/organizador"],
+    id: "inteligencia",
+    label: "Métricas",
+    to: "/social-insights",
+    activePrefixes: ["/social-insights", "/social-audit", "/social-testes"],
     children: [
-      { to: "/link-bio", label: "Link Bio", description: "Páginas de links e conversão na bio" },
-      { to: "/formulario", label: "Formulário", description: "Captação rápida de leads" },
-      { to: "/quiz", label: "Quiz", description: "Qualificação interativa de audiência" },
-      { to: "/organizador", label: "Organizador", description: "Utilitário de captura e ordem rápida" },
+      {
+        to: "/social-insights",
+        label: "Insights",
+        description: "Alcance, seguidores e interações",
+      },
+      {
+        to: "/social-audit",
+        label: "Auditoria",
+        description: "Desempenho de formatos e posts",
+      },
+      {
+        to: "/social-testes",
+        label: "Testes",
+        description: "Experimentos e aprendizados",
+      },
+    ],
+  },
+  {
+    id: "estrategia",
+    label: "Estratégia",
+    to: "/social-estrategia",
+    activePrefixes: ["/social-estrategia", "/link-bio", "/formulario", "/quiz", "/organizador"],
+    children: [
+      {
+        to: "/social-estrategia",
+        label: "Estratégia",
+        description: "Objetivo, público e pilares da conta",
+      },
+      { to: "/link-bio", label: "Link Bio", description: "Links na bio" },
+      { to: "/formulario", label: "Formulário", description: "Captação de leads" },
+      { to: "/quiz", label: "Quiz", description: "Qualificação interativa" },
+      { to: "/organizador", label: "Organizador", description: "Notas e links rápidos" },
     ],
   },
 ];

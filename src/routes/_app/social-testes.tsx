@@ -211,19 +211,19 @@ function SocialExperimentsAndLearningsPage() {
     <div className="space-y-6 pb-24 lg:pb-8">
       <PageHeader
         eyebrow="Social Hub"
-        title="Inteligência — Testes & Banco de Aprendizados"
-        description="Experimentos orgânicos com leitura direcional honesta e aprendizados validados pela equipe."
+        title="Testes & Aprendizados"
+        description="Registre o que foi testado e o que funcionou melhor em cada conta."
       />
 
       <SocialHubChrome
         tenantId={tenantId}
         requireExplicitAccount={showNewExp || showNewLearning ? "experiment" : null}
         rightSlot={
-          <div className="flex items-center gap-1.5">
+          <div className="grid grid-cols-2 sm:flex items-center gap-1.5 w-full sm:w-auto">
             <button
               type="button"
               onClick={() => setTab("experiments")}
-              className={`rounded-xl px-3 py-1.5 text-xs font-semibold inline-flex items-center gap-1.5 ${
+              className={`rounded-xl px-3 py-2 sm:py-1.5 text-xs font-semibold inline-flex items-center justify-center gap-1.5 min-h-[38px] sm:min-h-0 ${
                 tab === "experiments"
                   ? "bg-primary text-primary-foreground"
                   : "border border-border bg-background hover:bg-muted"
@@ -234,7 +234,7 @@ function SocialExperimentsAndLearningsPage() {
             <button
               type="button"
               onClick={() => setTab("learnings")}
-              className={`rounded-xl px-3 py-1.5 text-xs font-semibold inline-flex items-center gap-1.5 ${
+              className={`rounded-xl px-3 py-2 sm:py-1.5 text-xs font-semibold inline-flex items-center justify-center gap-1.5 min-h-[38px] sm:min-h-0 ${
                 tab === "learnings"
                   ? "bg-primary text-primary-foreground"
                   : "border border-border bg-background hover:bg-muted"

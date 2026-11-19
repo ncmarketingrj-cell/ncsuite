@@ -72,11 +72,11 @@ const ALL_22_ACCOUNTS: RealSocialAccount[] = [
 ];
 
 describe("Social Hub Evolution — Navegação, Contas, IA, Pipeline e Operação", () => {
-  it("1. Arquitetura de navegação organiza 6 blocos e preserva todas as rotas existentes", () => {
-    assert.equal(SOCIAL_HUB_NAV_GROUPS.length, 6);
+  it("1. Arquitetura de navegação organiza 5 blocos claros e preserva todas as 12 rotas existentes", () => {
+    assert.equal(SOCIAL_HUB_NAV_GROUPS.length, 5);
     assert.deepEqual(
       SOCIAL_HUB_NAV_GROUPS.map((g) => g.label),
-      ["Visão Geral", "Estratégia", "Conteúdo", "Inteligência", "Projetos", "Ferramentas"]
+      ["Hoje", "Conteúdo", "Tarefas", "Métricas", "Estratégia"]
     );
 
     // Preservação das URLs existentes no módulo Social
@@ -106,9 +106,9 @@ describe("Social Hub Evolution — Navegação, Contas, IA, Pipeline e Operaçã
     assert.equal(getActiveSocialNavGroup("/social-audit"), "inteligencia");
     assert.equal(getActiveSocialNavGroup("/social-testes"), "inteligencia");
     assert.equal(getActiveSocialNavGroup("/social-projetos"), "projetos");
-    assert.equal(getActiveSocialNavGroup("/link-bio"), "ferramentas");
-    assert.equal(getActiveSocialNavGroup("/formulario"), "ferramentas");
-    assert.equal(getActiveSocialNavGroup("/quiz"), "ferramentas");
+    assert.equal(getActiveSocialNavGroup("/link-bio"), "estrategia");
+    assert.equal(getActiveSocialNavGroup("/formulario"), "estrategia");
+    assert.equal(getActiveSocialNavGroup("/quiz"), "estrategia");
   });
 
   it("2. Matriz das 22 contas classifica corretamente IG+FB, Somente FB, MVM restrita e automotivas", () => {

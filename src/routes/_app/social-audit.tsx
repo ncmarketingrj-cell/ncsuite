@@ -450,20 +450,20 @@ ${lowLines}
     chartMetric === "reachIg" ? "#e11d48" : chartMetric === "followers" ? "#10b981" : "#3b82f6";
 
   return (
-    <div className="space-y-6 pb-12">
+    <div className="space-y-6 pb-24 lg:pb-8">
       <SocialHubChrome showAccountSelector={false} />
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2 text-[10px] font-black text-primary uppercase tracking-widest">
             <Sparkles className="w-3.5 h-3.5 text-primary" />
-            Social Media Core • Meta Graph API v21.0
+            Social Hub • Auditoria
           </div>
-          <h2 className="text-xl font-black tracking-tight text-white mt-1">
-            Auditoria de Crescimento Orgânico
+          <h2 className="text-xl font-black tracking-tight text-foreground mt-1">
+            Auditoria Orgânica
           </h2>
           <p className="text-xs text-muted-foreground">
-            Análise real do desempenho das suas páginas e plano prático de crescimento orgânico.
+            Veja o que funcionou melhor nas suas páginas e os próximos passos recomendados.
           </p>
         </div>
 

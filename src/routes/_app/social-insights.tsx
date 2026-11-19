@@ -1098,26 +1098,26 @@ Responda de forma objetiva e tática em Markdown com:
   ];
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 pb-24 lg:pb-8">
       <SocialHubChrome showAccountSelector={false} />
       {/* Top Header */}
-      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 border-b border-white/5 pb-5">
+      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 border-b border-border/60 pb-5">
         <div className="space-y-1">
           <span className="label-mono text-primary text-xs uppercase tracking-widest font-bold">
-            Social &amp; Performance Orgânica
+            Social Hub • Métricas
           </span>
-          <h2 className="text-2xl font-bold tracking-wider text-foreground uppercase flex items-center gap-2 mt-0.5">
-            <BarChart3 className="h-6 w-6 text-primary" /> Performance do Meta
+          <h2 className="text-xl sm:text-2xl font-bold tracking-wider text-foreground uppercase flex items-center gap-2 mt-0.5">
+            <BarChart3 className="h-5 w-5 sm:h-6 sm:w-6 text-primary" /> Insights das Redes
           </h2>
         </div>
 
-        <div className="flex items-center gap-2 flex-wrap">
+        <div className="grid grid-cols-2 sm:flex items-center gap-2 w-full sm:w-auto">
           <Link
             to="/social"
-            className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-pink-500 to-rose-600 px-4 py-2.5 text-xs font-bold text-white shadow-lg shadow-pink-500/20 hover:opacity-90 active:scale-95 transition"
+            className="flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-pink-500 to-rose-600 px-3 sm:px-4 py-2.5 text-xs font-bold text-white shadow-lg shadow-pink-500/20 hover:opacity-90 active:scale-95 transition min-h-[40px]"
           >
-            <Calendar className="h-4 w-4" />
-            <span>Planejador &amp; Feed</span>
+            <Calendar className="h-4 w-4 shrink-0" />
+            <span>Calendário</span>
           </Link>
           <button
             data-testid="social-victoria-btn"
@@ -1128,10 +1128,10 @@ Responda de forma objetiva e tática em Markdown com:
                 ? "Executar diagnóstico contextual da Victoria AI"
                 : "Aguardando contexto válido de conta social"
             }
-            className="flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-xs font-bold text-primary-foreground shadow-glow hover:opacity-90 active:scale-95 transition cursor-pointer disabled:opacity-50"
+            className="flex items-center justify-center gap-2 rounded-xl bg-primary px-3 sm:px-4 py-2.5 text-xs font-bold text-primary-foreground shadow-glow hover:opacity-90 active:scale-95 transition cursor-pointer disabled:opacity-50 min-h-[40px]"
           >
-            {isGeneratingAi ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-            Diagnóstico Victoria AI
+            {isGeneratingAi ? <Loader2 className="h-4 w-4 animate-spin shrink-0" /> : <Sparkles className="h-4 w-4 shrink-0" />}
+            <span>Análise IA</span>
           </button>
         </div>
       </div>
